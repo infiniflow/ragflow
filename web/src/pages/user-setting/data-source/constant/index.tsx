@@ -1533,10 +1533,31 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.webdav_url',
       type: FormFieldType.Text,
       required: false,
-      placeholder: 'https://sync.zotero.org',
+      placeholder: 'https://webdav.example.com',
       tooltip: t('setting.zoteroWebdavUrlTip'),
       shouldRender: (formValues: any) =>
         formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavUrlRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroWebdavUsername'),
+      name: 'config.credentials.webdav_username',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.zoteroWebdavUsernameTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavUsernameRequired');
+        }
+        return true;
+      },
     },
     {
       label: t('setting.dataSourceFieldZoteroWebdavPassword'),
@@ -2561,10 +2582,11 @@ export const DataSourceFormDefaultValues = {
     config: {
       zotero_user_id: '',
       storage_mode: 'zotero_storage',
-      webdav_url: 'https://sync.zotero.org',
+      webdav_url: '',
       batch_size: 4,
       credentials: {
         zotero_api_key: '',
+        webdav_username: '',
         webdav_password: '',
       },
     },

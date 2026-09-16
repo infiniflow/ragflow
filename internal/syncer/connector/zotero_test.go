@@ -24,16 +24,21 @@ func TestZoteroConnectorOpenSyncDownloadsPDF(t *testing.T) {
 		t.Fatalf("NewZoteroConnector: %v", err)
 	}
 	connector.httpClient = server.Client()
+	downloads := 0
 	connector.listItems = func(ctx context.Context, start int) ([]zoteroAPIItem, int, error) {
 		return server.listItems(start)
 	}
 	connector.downloadPDF = func(ctx context.Context, attachment zoteroAPIItem) ([]byte, string, error) {
+		downloads++
 		return server.downloadPDF(attachment.Key)
 	}
 
 	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-02-01T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
+	}
+	if downloads != 0 {
+		t.Fatalf("OpenSync downloaded %d attachments before NextBatch", downloads)
 	}
 	first, err := session.NextBatch(context.Background())
 	if err != nil {

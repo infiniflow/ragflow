@@ -2108,6 +2108,7 @@ class Zotero(SyncBase):
             batch_size=batch_size,
         )
         self.connector.load_credentials(conf["credentials"])
+        self.connector.validate_local_settings()
 
         poll_start = task.get("poll_range_start")
         if task["reindex"] == "1" or poll_start is None:
@@ -2126,7 +2127,7 @@ class Zotero(SyncBase):
             f"user_id={conf.get('zotero_user_id') or conf['credentials'].get('zotero_user_id')} storage={conf.get('storage_mode', 'zotero_storage')}",
             task,
         )
-        return document_generator
+        return iter_in_worker_thread(document_generator)
 
 
 class SeaFile(SyncBase):

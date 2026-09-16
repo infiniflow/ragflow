@@ -8,7 +8,7 @@ import zipfile
 from collections.abc import Generator
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from common.data_source.config import BLOB_STORAGE_SIZE_THRESHOLD, INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import (
@@ -19,15 +19,18 @@ from common.data_source.exceptions import (
 )
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
 from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument
-from common.data_source.utils import batch_generator, rl_requests
+from common.data_source.utils import rl_requests
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 
 logger = logging.getLogger(__name__)
 
 ZOTERO_API_BASE = "https://api.zotero.org"
-DEFAULT_WEBDAV_URL = "https://sync.zotero.org"
+DEFAULT_WEBDAV_URL = ""
 STORAGE_MODE_ZOTERO = "zotero_storage"
 STORAGE_MODE_WEBDAV = "webdav"
 PAGE_SIZE = 100
+ZOTERO_API_KEY_HOSTS = frozenset({"api.zotero.org"})
+MAX_FILE_REDIRECTS = 10
 
 
 class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -43,6 +46,7 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.webdav_url = (webdav_url or DEFAULT_WEBDAV_URL).rstrip("/")
         self.batch_size = batch_size
         self.api_key: str | None = None
+        self.webdav_username: str | None = None
         self.webdav_password: str | None = None
         self.size_threshold = BLOB_STORAGE_SIZE_THRESHOLD
 
@@ -64,17 +68,29 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if not api_key:
             raise ConnectorMissingCredentialError("Zotero API key is required")
         self.api_key = api_key
+        self.webdav_username = (credentials.get("webdav_username") or "").strip() or None
         self.webdav_password = credentials.get("webdav_password")
 
-    def validate_connector_settings(self) -> None:
+    def validate_local_settings(self) -> None:
         if not self.user_id:
             raise ConnectorMissingCredentialError("Zotero user ID is required")
         if not self.api_key:
             raise ConnectorMissingCredentialError("Zotero API key is required")
-        if self.storage_mode == STORAGE_MODE_WEBDAV and not self.webdav_password:
-            raise ConnectorMissingCredentialError("WebDAV password is required when storage_mode is webdav")
         if self.storage_mode not in {STORAGE_MODE_ZOTERO, STORAGE_MODE_WEBDAV}:
             raise ConnectorValidationError("storage_mode must be 'zotero_storage' or 'webdav'")
+        if self.storage_mode != STORAGE_MODE_WEBDAV:
+            return
+        if not self.webdav_url:
+            raise ConnectorValidationError("webdav_url is required when storage_mode is webdav")
+        if urlparse(self.webdav_url).scheme.lower() != "https":
+            raise ConnectorValidationError("WebDAV URL must use HTTPS")
+        if not self.webdav_username:
+            raise ConnectorMissingCredentialError("WebDAV username is required when storage_mode is webdav")
+        if not self.webdav_password:
+            raise ConnectorMissingCredentialError("WebDAV password is required when storage_mode is webdav")
+
+    def validate_connector_settings(self) -> None:
+        self.validate_local_settings()
         self._list_attachment_items(start=0)
 
     def load_from_state(self) -> GenerateDocumentsOutput:
@@ -112,8 +128,11 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             if not blob:
                 continue
             documents.append(self._build_document(item, blob, filename, modified))
-        for batch in batch_generator(iter(documents), self.batch_size):
-            yield batch
+            if len(documents) >= self.batch_size:
+                yield documents
+                documents = []
+        if documents:
+            yield documents
 
     def _build_document(self, item: dict[str, Any], blob: bytes, filename: str, modified: datetime) -> Document:
         data = item.get("data") or {}
@@ -181,36 +200,78 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
     def _download_via_zotero_api(self, attachment_key: str, filename: str) -> tuple[bytes, str]:
         url = f"{ZOTERO_API_BASE}/users/{self.user_id}/items/{attachment_key}/file"
-        response = rl_requests.get(url, headers=self._headers(), timeout=120, allow_redirects=True)
-        if response.status_code >= 400:
-            logger.warning("Failed to download Zotero attachment %s: HTTP %s", attachment_key, response.status_code)
+        blob = self._get_zotero_file(url)
+        if blob is None:
             return b"", filename
-        blob = response.content
         if len(blob) > self.size_threshold:
             logger.warning("Skipping oversized Zotero attachment %s", attachment_key)
             return b"", filename
         return blob, filename
 
+    def _get_zotero_file(self, start_url: str) -> bytes | None:
+        current = start_url
+        for _ in range(MAX_FILE_REDIRECTS):
+            parsed = urlparse(current)
+            headers = {"Zotero-API-Version": "3"}
+            if (parsed.hostname or "").lower() in ZOTERO_API_KEY_HOSTS:
+                headers["Zotero-API-Key"] = self.api_key or ""
+            try:
+                host, ip = assert_url_is_safe(current, allowed_schemes=frozenset({"https"}))
+            except ValueError as exc:
+                logger.warning("Blocked Zotero file URL %s: %s", current, exc)
+                return None
+            with pin_dns(host, ip):
+                response = rl_requests.get(current, headers=headers, timeout=120, allow_redirects=False)
+            if 300 <= response.status_code < 400:
+                location = response.headers.get("Location")
+                if not location:
+                    logger.warning("Zotero file redirect missing Location header")
+                    return None
+                current = urljoin(current, location)
+                continue
+            if response.status_code >= 400:
+                logger.warning("Failed to download Zotero attachment: HTTP %s", response.status_code)
+                return None
+            blob = response.content
+            if len(blob) > self.size_threshold:
+                return blob
+            return blob
+        logger.warning("Stopped after too many Zotero file redirects")
+        return None
+
     def _download_via_webdav(self, attachment_key: str, filename: str) -> tuple[bytes, str]:
+        self.validate_local_settings()
         zip_url = urljoin(self.webdav_url + "/", f"{attachment_key}.zip")
-        response = rl_requests.get(
-            zip_url,
-            auth=(self.user_id, self.webdav_password or ""),
-            timeout=120,
-        )
+        try:
+            host, ip = assert_url_is_safe(zip_url, allowed_schemes=frozenset({"https"}))
+        except ValueError as exc:
+            logger.warning("Blocked Zotero WebDAV URL %s: %s", zip_url, exc)
+            return b"", filename
+        with pin_dns(host, ip):
+            response = rl_requests.get(
+                zip_url,
+                auth=(self.webdav_username or "", self.webdav_password or ""),
+                timeout=120,
+                allow_redirects=False,
+            )
         if response.status_code >= 400:
             logger.warning("Failed to download Zotero WebDAV archive %s: HTTP %s", attachment_key, response.status_code)
             return b"", filename
+        if len(response.content) > self.size_threshold:
+            logger.warning("Skipping oversized Zotero WebDAV archive %s", attachment_key)
+            return b"", filename
         return self._extract_pdf_from_zip(response.content, filename)
 
-    @staticmethod
-    def _extract_pdf_from_zip(zip_bytes: bytes, fallback_name: str) -> tuple[bytes, str]:
+    def _extract_pdf_from_zip(self, zip_bytes: bytes, fallback_name: str) -> tuple[bytes, str]:
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
             for name in archive.namelist():
                 if name.endswith("/") or not name.lower().endswith(".pdf"):
                     continue
                 with archive.open(name) as handle:
-                    blob = handle.read()
+                    blob = handle.read(self.size_threshold + 1)
+                if len(blob) > self.size_threshold:
+                    logger.warning("Skipping oversized PDF in Zotero WebDAV archive %s", name)
+                    continue
                 if blob:
                     return blob, name.split("/")[-1]
         logger.warning("No PDF found in Zotero WebDAV archive for %s", fallback_name)
