@@ -607,3 +607,30 @@ func TestS3PinnedTransportPinsDial(t *testing.T) {
 	}
 	_ = conn.Close()
 }
+
+// TestS3PinnedHTTPClientRedirectPolicy locks in the SDK-faithful redirect
+// policy: 301/302/303 are returned to the AWS SDK (which re-signs and retries
+// S3 region redirects) instead of being auto-followed by http.Client, while
+// method-preserving 307/308 are followed like the SDK default.
+func TestS3PinnedHTTPClientRedirectPolicy(t *testing.T) {
+	client := s3PinnedHTTPClient()
+	if client.CheckRedirect == nil {
+		t.Fatalf("s3PinnedHTTPClient must set CheckRedirect so the AWS SDK processes 3xx itself")
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://bucket.s3.example.com/obj", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther} {
+		req.Response = &http.Response{StatusCode: code, Request: req}
+		if err := client.CheckRedirect(req, nil); err != http.ErrUseLastResponse {
+			t.Fatalf("CheckRedirect(%d) = %v, want http.ErrUseLastResponse", code, err)
+		}
+	}
+	for _, code := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		req.Response = &http.Response{StatusCode: code, Request: req}
+		if err := client.CheckRedirect(req, nil); err != nil {
+			t.Fatalf("CheckRedirect(%d) = %v, want nil (follow)", code, err)
+		}
+	}
+}

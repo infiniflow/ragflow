@@ -191,6 +191,22 @@ func (c *S3CompatibleConnector) ensureClient(ctx context.Context) (*s3.Client, e
 // the DNS-rebinding window between validation and the actual connection.
 func s3PinnedHTTPClient() *http.Client {
 	return &http.Client{
+		// Mirror the AWS SDK's own default client policy (BuildableClient's
+		// limitedRedirect): never auto-follow 301/302 — S3 region redirects
+		// must be returned to the SDK so it can re-sign and retry against the
+		// correct endpoint. Only method-preserving 307/308 are followed, same
+		// as the SDK default. Without this, Go's default client would follow a
+		// 301/302 before the SDK sees it, replaying a request signed for one
+		// endpoint against another host.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.Response != nil {
+				switch req.Response.StatusCode {
+				case http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+					return nil
+				}
+			}
+			return http.ErrUseLastResponse
+		},
 		Transport: &http.Transport{
 			// Ignore environment proxies: HTTP_PROXY / HTTPS_PROXY would route
 			// the connection through a proxy host instead of the pinned IP.
