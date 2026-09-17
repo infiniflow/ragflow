@@ -79,3 +79,39 @@ def test_apply_document_vertical_coords_for_supplemented_box():
     assert out["bottom"] == 120.0
     assert "_embedded_supplement" not in out
 
+
+@pytest.mark.p1
+def test_apply_document_vertical_coords_updates_positions():
+    from PIL import Image
+
+    box = {
+        "page_number": 2,
+        "top": 10.0,
+        "bottom": 20.0,
+        "positions": [[2, 0, 100, 10, 20]],
+        "_embedded_supplement": True,
+    }
+    page_cum_height = [0, 100, 250]
+    out = _apply_document_vertical_coords(box, page_cum_height)
+    assert out["positions"][0][3:] == [110, 120]
+
+
+@pytest.mark.p1
+def test_merge_updates_existing_table_figure_by_position():
+    from PIL import Image
+
+    pdf_parser = Mock()
+    pdf_parser._line_tag = Mock(return_value="@@9\t0\t0\t0\t0##")
+    img = Image.new("RGB", (10, 10))
+    tables = [((img, ["caption"]), [(1, 0.0, 10.0, 0.0, 10.0)])]
+    bboxes = [
+        {
+            "text": "VLM caption",
+            "image": img,
+            "positions": [[2, 0, 10, 0, 10]],
+        }
+    ]
+    sections, tables = merge_vlm_enhanced_bboxes_into_naive_pdf([("body", "@@1\t0\t0\t0\t0##")], tables, bboxes, pdf_parser)
+    assert len(tables) == 1
+    assert tables[0][0][1] == ["VLM caption"]
+

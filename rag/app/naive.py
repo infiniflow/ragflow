@@ -170,16 +170,18 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
 
     sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
 
-    tables = vision_figure_parser_pdf_wrapper(
-        tbls=tables,
-        sections=sections,
-        callback=callback,
-        lang=lang,
-        **kwargs,
-    )
     tenant_id = kwargs.get("tenant_id")
     parser_config = kwargs.get("parser_config") or {}
-    if tenant_id and naive_deepdoc_vision_available(tenant_id, parser_config):
+    use_unified_vlm = bool(tenant_id and naive_deepdoc_vision_available(tenant_id, parser_config))
+    if not use_unified_vlm:
+        tables = vision_figure_parser_pdf_wrapper(
+            tbls=tables,
+            sections=sections,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
+    if use_unified_vlm:
         blob = binary
         if blob is None and filename:
             with open(filename, "rb") as pdf_file:

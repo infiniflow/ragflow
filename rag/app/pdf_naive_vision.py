@@ -69,8 +69,62 @@ def _apply_document_vertical_coords(box, page_cum_height):
     for key in ("top", "bottom"):
         if updated.get(key) is not None:
             updated[key] = float(updated[key]) + offset
+    positions = []
+    for pos in updated.get("positions") or []:
+        if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+            positions.append(pos)
+            continue
+        try:
+            positions.append(
+                [
+                    pos[0],
+                    pos[1],
+                    pos[2],
+                    int(float(pos[3]) + offset),
+                    int(float(pos[4]) + offset),
+                ]
+            )
+        except (TypeError, ValueError):
+            positions.append(pos)
+    if positions:
+        updated["positions"] = positions
     updated.pop("_embedded_supplement", None)
     return updated
+
+
+def _position_tuple_key(positions):
+    if not positions:
+        return None
+    pos = positions[0]
+    if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+        return None
+    try:
+        return (
+            int(pos[0]),
+            round(float(pos[1]), 1),
+            round(float(pos[2]), 1),
+            round(float(pos[3]), 1),
+            round(float(pos[4]), 1),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_figure_table_item(item):
+    from rag.utils.lazy_image import is_image_like
+
+    try:
+        return is_image_like(item[0][0]) and isinstance(item[0][1], list)
+    except (TypeError, IndexError, KeyError):
+        return False
+
+
+def _with_figure_table_description(item, enhanced_text):
+    image, desc = item[0]
+    positions = item[1]
+    if enhanced_text:
+        return ((image, [enhanced_text]), positions)
+    return item
 
 
 def merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parser, zoomin=3):
@@ -95,11 +149,20 @@ def merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parse
                 sections[i] = (enhanced_text or sec_text, sec_tag)
                 matched = True
                 break
-            st = (sec_text or "").strip()
-            if st and enhanced_text and (enhanced_text.startswith(st) or st in enhanced_text):
-                sections[i] = (enhanced_text, sec_tag)
-                matched = True
-                break
+
+        if matched:
+            continue
+
+        poss = _bbox_positions_for_naive_tables(box)
+        pos_key = _position_tuple_key(poss)
+        if pos_key is not None:
+            for j, tbl in enumerate(tables):
+                if not _is_figure_table_item(tbl):
+                    continue
+                if _position_tuple_key(tbl[1]) == pos_key:
+                    tables[j] = _with_figure_table_description(tbl, enhanced_text)
+                    matched = True
+                    break
 
         if matched:
             continue
@@ -107,7 +170,6 @@ def merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parse
         if sections_was_empty:
             continue
 
-        poss = _bbox_positions_for_naive_tables(box)
         desc = [enhanced_text] if enhanced_text else ["figure"]
         tables.append(((box["image"], desc), poss))
 

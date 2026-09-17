@@ -177,6 +177,8 @@ def supplement_deepdoc_bboxes_with_embedded_images(
                         x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
                         if x1 <= x0 or bottom <= top:
                             continue
+                        if (x1 - x0) < 11 or (bottom - top) < 11:
+                            continue
                         region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
                         if region in represented:
                             continue

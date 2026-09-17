@@ -48,7 +48,7 @@ def test_supplement_merges_text_bboxes_with_embedded_images(monkeypatch):
     module = _load_pdf_chunk_metadata(monkeypatch)
     text_bbox = {"layout_type": "text", "text": "body", "page_number": 1}
     fake_page = SimpleNamespace(
-        images=[{"x0": 0, "top": 0, "x1": 10, "bottom": 10}],
+        images=[{"x0": 0, "top": 0, "x1": 12, "bottom": 12}],
         chars=[object()],
         crop=lambda rect: SimpleNamespace(
             to_image=lambda resolution, antialias: SimpleNamespace(original=object())
@@ -86,16 +86,16 @@ def test_supplement_appends_only_missing_embedded_images(monkeypatch):
         "layout_type": "figure",
         "page_number": 1,
         "x0": 0.0,
-        "x1": 10.0,
+        "x1": 12.0,
         "top": 0.0,
-        "bottom": 10.0,
+        "bottom": 12.0,
         "image": existing_image,
-        "positions": [[1, 0, 10, 0, 10]],
+        "positions": [[1, 0, 12, 0, 12]],
     }
     fake_page = SimpleNamespace(
         images=[
-            {"x0": 0, "top": 0, "x1": 10, "bottom": 10},
-            {"x0": 20, "top": 0, "x1": 30, "bottom": 10},
+            {"x0": 0, "top": 0, "x1": 12, "bottom": 12},
+            {"x0": 20, "top": 0, "x1": 32, "bottom": 12},
         ],
         chars=[object()],
         crop=lambda rect: SimpleNamespace(
@@ -125,6 +125,7 @@ def test_supplement_appends_only_missing_embedded_images(monkeypatch):
     assert out[0]["image"] is existing_image
     assert out[1].get("image") is not None
     assert out[1]["x0"] == 20.0
+    assert out[1]["x1"] == 32.0
 
 
 @pytest.mark.p1
