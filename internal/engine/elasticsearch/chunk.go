@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
@@ -47,14 +48,6 @@ var jsonIterator = sonic.Config{
 }.Froze()
 
 var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
-
-var (
-	elasticsearchHighlightEmTagRE     = regexp.MustCompile(`<em>[^<>]+</em>`)
-	elasticsearchHighlightNewlineRE   = regexp.MustCompile(`[\r\n]`)
-	elasticsearchHighlightDelimiterRE = regexp.MustCompile(`[.?!;\n]`)
-	elasticsearchLetterRE             = regexp.MustCompile(`\pL`)
-	elasticsearchEnglishLetterRE      = regexp.MustCompile(`[A-Za-z]`)
-)
 
 // CreateChunkStore creates an index
 func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
@@ -2358,13 +2351,7 @@ func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 // GetHighlight returns highlighted text for matching keywords
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
-	if len(chunks) == 0 || len(keywords) == 0 {
-		return result
-	}
-
-	normalizedKeywords := normalizeElasticsearchHighlightKeywords(keywords)
-	englishPatterns := compileElasticsearchHighlightPatterns(normalizedKeywords)
-	nonEnglishPattern := compileElasticsearchNonEnglishHighlightPattern(normalizedKeywords)
+	pattern := compileElasticsearchHighlightPattern(keywords)
 
 	for _, chunk := range chunks {
 		docID, ok := elasticsearchChunkID(chunk)
@@ -2372,47 +2359,16 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 			continue
 		}
 
-		if highlightText := firstElasticsearchHighlight(chunk); highlightText != "" {
-			result[docID] = highlightText
-			continue
-		}
-
 		txt, ok := chunk[fieldName].(string)
-		if fieldName == "content_with_weight" && (!ok || txt == "") {
-			txt, ok = chunk["content"].(string)
-		}
-		if !ok || txt == "" {
+		if !ok {
 			continue
 		}
-
-		if elasticsearchHighlightEmTagRE.MatchString(txt) {
-			result[docID] = txt
-			continue
+		if pattern != nil {
+			txt = pattern.ReplaceAllStringFunc(txt, func(match string) string {
+				return "<em>" + match + "</em>"
+			})
 		}
-
-		txt = elasticsearchHighlightNewlineRE.ReplaceAllString(txt, " ")
-		segments := elasticsearchHighlightDelimiterRE.Split(txt, -1)
-
-		var highlightedSegments []string
-		for _, segment := range segments {
-			segmentToCheck := segment
-			if isMostlyEnglishElasticsearchSegment(segment) {
-				for _, pattern := range englishPatterns {
-					segmentToCheck = pattern.ReplaceAllString(segmentToCheck, "$1<em>$2</em>$3")
-				}
-			} else if nonEnglishPattern != nil {
-				segmentToCheck = nonEnglishPattern.ReplaceAllStringFunc(segmentToCheck, func(match string) string {
-					return "<em>" + match + "</em>"
-				})
-			}
-			if segmentToCheck != segment {
-				highlightedSegments = append(highlightedSegments, strings.TrimSpace(segmentToCheck))
-			}
-		}
-
-		if len(highlightedSegments) > 0 {
-			result[docID] = strings.Join(highlightedSegments, "... ")
-		}
+		result[docID] = txt
 	}
 	return result
 }
@@ -2427,68 +2383,30 @@ func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
 	return "", false
 }
 
-func firstElasticsearchHighlight(chunk map[string]interface{}) string {
-	highlight, ok := chunk["highlight"].(map[string]interface{})
-	if !ok || len(highlight) == 0 {
-		return ""
-	}
-
-	for _, vals := range highlight {
-		if arr, ok := vals.([]interface{}); ok && len(arr) > 0 {
-			if str, ok := arr[0].(string); ok {
-				return str
-			}
-		}
-	}
-	return ""
-}
-
 func countElasticsearchAggregationTag(counts map[string]int, tag string) {
 	if tag = strings.TrimSpace(tag); tag != "" {
 		counts[tag]++
 	}
 }
 
-func isMostlyEnglishElasticsearchSegment(segment string) bool {
-	totalCount := len(elasticsearchLetterRE.FindAllString(segment, -1))
-	return totalCount > 0 && float64(len(elasticsearchEnglishLetterRE.FindAllString(segment, -1)))/float64(totalCount) > 0.5
-}
-
-func compileElasticsearchHighlightPatterns(keywords []string) []*regexp.Regexp {
-	patterns := make([]*regexp.Regexp, 0, len(keywords))
+func compileElasticsearchHighlightPattern(keywords []string) *regexp.Regexp {
+	nonEmpty := make([]string, 0, len(keywords))
 	for _, kw := range keywords {
-		patterns = append(patterns, regexp.MustCompile(`(?i)(^|[ .?/'\"\(\)!,:;-])(`+regexp.QuoteMeta(kw)+`)([ .?/'\"\(\)!,:;-]|$)`))
+		if kw != "" {
+			nonEmpty = append(nonEmpty, kw)
+		}
 	}
-	return patterns
-}
-
-func compileElasticsearchNonEnglishHighlightPattern(keywords []string) *regexp.Regexp {
-	if len(keywords) == 0 {
+	if len(nonEmpty) == 0 {
 		return nil
 	}
-	parts := make([]string, 0, len(keywords))
-	for _, kw := range keywords {
-		parts = append(parts, regexp.QuoteMeta(kw))
-	}
-	return regexp.MustCompile(strings.Join(parts, "|"))
-}
-
-func normalizeElasticsearchHighlightKeywords(keywords []string) []string {
-	seen := make(map[string]struct{}, len(keywords))
-	normalized := make([]string, 0, len(keywords))
-	for _, kw := range keywords {
-		if kw == "" {
-			continue
-		}
-		if _, ok := seen[kw]; !ok {
-			seen[kw] = struct{}{}
-			normalized = append(normalized, kw)
-		}
-	}
-	slices.SortStableFunc(normalized, func(a, b string) int {
-		return cmp.Compare(len(b), len(a))
+	slices.SortStableFunc(nonEmpty, func(a, b string) int {
+		return cmp.Compare(utf8.RuneCountInString(b), utf8.RuneCountInString(a))
 	})
-	return normalized
+	parts := make([]string, len(nonEmpty))
+	for i, keyword := range nonEmpty {
+		parts[i] = regexp.QuoteMeta(keyword)
+	}
+	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
 }
 
 // DropChunkStore deletes a chunk index
