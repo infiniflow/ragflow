@@ -31,12 +31,13 @@ const (
 	// tocMinEntries is the minimum number of confirming entry markers (chapter
 	// markers plus page numbers) a page must carry to be classified as TOC.
 	tocMinEntries = 3
-	// tocMaxCandidatePages is the number of non-blank pages scanned from the
-	// front of the document. A TOC is always the very first page, so only the
-	// first non-blank page is a candidate. Kept at 1 to avoid misclassifying
-	// chapter pages that happen to have multiple short chapter headings (e.g.
-	// the Daodejing's per-chapter pages) as TOC.
-	tocMaxCandidatePages = 1
+	// tocMaxLeadPages bounds how many leading pages without body text may
+	// precede the TOC. A cover, copyright page or frontispiece carries no body
+	// text and is skipped, so a TOC that is not physically page one is still
+	// reachable; the first page carrying body text ends the search.
+	tocMaxLeadPages = 3
+	// tocMaxTOCPages bounds how many consecutive pages one TOC may span.
+	tocMaxTOCPages = 5
 )
 
 // ---------------------------------------------------------------------------
@@ -131,10 +132,11 @@ func outlineTitle(title string) string {
 //  1. outlinePages — the pages the PDF bookmarks identify as TOC (see
 //     TOCPageRangeFromOutlines). Strongest, and the only one that still sees a
 //     TOC whose entries were already merged into a single box.
-//  2. Box shape — among the first tocMaxCandidatePages non-blank pages, a page
+//  2. Box shape — the leading run of pages that read as a TOC list: a page
 //     carrying at least tocMinShortBoxes short boxes and tocMinEntries
-//     confirming markers (chapter markers or page numbers). Kept for documents
-//     that carry no usable bookmark.
+//     confirming markers (chapter markers or page numbers), preceded only by
+//     pages without body text and spanning at most tocMaxTOCPages pages. Kept
+//     for documents that carry no usable bookmark.
 //
 // Both signals pass through one guard: a page carrying body text (more than
 // tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
@@ -170,18 +172,31 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBo
 		}
 	}
 
-	candidates := 0
+	// Heuristic fallback, for documents that carry no usable bookmark. A TOC is
+	// a document prefix, so only the leading pages are candidates: pages without
+	// body text (a cover, copyright page) may be skipped, one TOC may span
+	// consecutive pages, and the first page carrying body text ends the search —
+	// which is what keeps per-chapter pages that happen to hold several short
+	// headings (the Daodejing case) out of scope.
+	inTOC, lead, span := false, 0, 0
 	for _, pg := range pages {
-		if shapes[pg].isTOC() {
-			selected[pg] = true
-		}
-		// Count non-blank pages (those with enough boxes to matter).
-		if len(perPage[pg]) >= tocMinShortBoxes {
-			candidates++
-			if candidates >= tocMaxCandidatePages {
+		if inTOC {
+			if span >= tocMaxTOCPages || !shapes[pg].isTOC() {
 				break
 			}
+			selected[pg] = true
+			span++
+			continue
 		}
+		if shapes[pg].isTOC() {
+			inTOC, span = true, 1
+			selected[pg] = true
+			continue
+		}
+		if shapes[pg].carriesProse() || lead >= tocMaxLeadPages {
+			break
+		}
+		lead++
 	}
 
 	drop := make(map[int]struct{}, len(boxes))

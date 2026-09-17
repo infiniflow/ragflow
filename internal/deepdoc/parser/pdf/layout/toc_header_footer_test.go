@@ -290,6 +290,87 @@ func TestRemoveTOCBoxes_KeepsTOCOnlyDocument(t *testing.T) {
 	}
 }
 
+// TestRemoveTOCBoxes_MultiPageTOC: one TOC spanning consecutive pages is dropped
+// as a whole, not just its first page.
+func TestRemoveTOCBoxes_MultiPageTOC(t *testing.T) {
+	boxes := tocPageBoxes(0, 3)
+	boxes = append(boxes, tocPageBoxes(1, 3)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("TOC page 0 must be dropped, %d boxes survived", n)
+	}
+	if n := countPage(got, 1); n != 0 {
+		t.Fatalf("TOC page 1 must be dropped, %d boxes survived", n)
+	}
+	if n := countPage(got, 2); n != 3 {
+		t.Fatalf("body page 2 must survive, %d of 3 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_TOCBehindCoverPage: a cover page carrying several short
+// boxes must not close the candidate window before the TOC is reached.
+func TestRemoveTOCBoxes_TOCBehindCoverPage(t *testing.T) {
+	cover := []pdf.TextBox{
+		tb("The Analects", 0, 150, 400, 200, 230),
+		tb("Translated by Someone", 0, 150, 400, 260, 280),
+		tb("Second Edition", 0, 150, 400, 300, 320),
+		tb("Some Press, 2024", 0, 150, 400, 340, 360),
+	}
+	boxes := append(cover, tocPageBoxes(1, 3)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 0); n != 4 {
+		t.Fatalf("the cover page must be kept, %d of 4 boxes", n)
+	}
+	if n := countPage(got, 1); n != 0 {
+		t.Fatalf("the TOC behind the cover must be dropped, %d boxes survived", n)
+	}
+	if n := countPage(got, 2); n != 3 {
+		t.Fatalf("body page 2 must survive, %d of 3 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_StopsAtProsePage: widening the candidate window must not
+// reach past a page of body text. A TOC-shaped page behind one is kept.
+func TestRemoveTOCBoxes_StopsAtProsePage(t *testing.T) {
+	boxes := []pdf.TextBox{tb("The Analects", 0, 150, 400, 200, 230)}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, tocPageBoxes(2, 3)...)
+	boxes = append(boxes, bodyPageBoxes(3)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 2); n != 10 {
+		t.Fatalf("a TOC-shaped page behind a body page must be kept, %d of 10 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_BareCJKChapterTitles pins the shape reported in #19744: a
+// CJK TOC whose entries are bare chapter titles, with no leader dots and no page
+// numbers. The section-level prefix scan under-deleted these entries; the box
+// signal drops the page as a whole.
+func TestRemoveTOCBoxes_BareCJKChapterTitles(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb("第一章 绪论", 0, 72, 200, 160, 175),
+		tb("第二章 背景", 0, 72, 200, 190, 205),
+		tb("第三章 方法", 0, 72, 200, 220, 235),
+		tb("第四章 结论", 0, 72, 200, 250, 265),
+	}
+	boxes = append(boxes, tb("第一章 绪论", 1, 72, 200, 160, 175))
+	boxes = append(boxes, bodyPageBoxes(1)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("the bare-title TOC page must be dropped, %d boxes survived", n)
+	}
+	if n := countPage(got, 1); n != 4 {
+		t.Fatalf("the body page must be kept, %d of 4 boxes", n)
+	}
+}
+
 func TestRemoveTOCText_Normalize(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"Hello   World", "hello world"},
