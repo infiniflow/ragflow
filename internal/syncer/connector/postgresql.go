@@ -154,6 +154,7 @@ func (c *PostgreSQLConnector) OpenSync(ctx context.Context, request SyncRequest)
 		batchSize:         c.batchSize,
 		orderColumn:       orderColumn,
 		checkpointEnabled: orderColumn != "",
+		lastDocQuery:      -1,
 	}
 	for _, q := range queries {
 		session.queries = append(session.queries, q.sql)
@@ -306,13 +307,14 @@ func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncR
 	return queries
 }
 
-// syncOrderColumn returns the column that makes this sync window
+// syncOrderColumn returns the ordering key that makes this sync window
 // deterministic, or "" when the connector cannot checkpoint/resume the
-// stream (no stable ordering key).
+// stream (no stable ordering key). Incremental windows order by timestamp
+// plus id so rows sharing a timestamp still resume deterministically.
 func (c *PostgreSQLConnector) syncOrderColumn(request SyncRequest) string {
 	switch {
-	case !request.FromBeginning && c.timestampColumn != "":
-		return c.timestampColumn
+	case !request.FromBeginning && c.timestampColumn != "" && c.idColumn != "":
+		return c.timestampColumn + "," + c.idColumn
 	case request.FromBeginning && c.idColumn != "":
 		return c.idColumn
 	}
@@ -341,10 +343,16 @@ func (c *PostgreSQLConnector) buildTimeFilteredQuery(base string, start, end *ti
 	return query
 }
 
-// buildTimeFilteredOrderedQuery is the incremental query plus a stable ORDER
-// BY on the timestamp column, which resume relies on.
+// buildTimeFilteredOrderedQuery is the incremental query plus a deterministic
+// ORDER BY on the timestamp and id columns, which resume relies on. Without a
+// configured id column the order is timestamp-only and the stream is not
+// checkpointed.
 func (c *PostgreSQLConnector) buildTimeFilteredOrderedQuery(base string, start, end *time.Time) string {
-	return c.buildTimeFilteredQuery(base, start, end) + " ORDER BY ragflow_src." + c.timestampColumn + " ASC"
+	query := c.buildTimeFilteredQuery(base, start, end) + " ORDER BY ragflow_src." + c.timestampColumn + " ASC"
+	if c.idColumn != "" {
+		query += ", ragflow_src." + c.idColumn + " ASC"
+	}
+	return query
 }
 
 // buildSlimQuery selects only the columns needed to identify documents.
@@ -602,8 +610,12 @@ type postgresSyncSession struct {
 	// custom SQL query does not expose the configured ordering column.
 	fallbackQueries []string
 	queryIndex      int
-	rows            *sql.Rows
-	batchSize       int
+	// lastDocQuery is the index of the query that produced the most recently
+	// appended document, used to checkpoint against the right query name even
+	// when later queries in the batch contributed no documents.
+	lastDocQuery int
+	rows         *sql.Rows
+	batchSize    int
 
 	orderColumn       string
 	checkpointEnabled bool
@@ -645,6 +657,7 @@ func (s *postgresSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) 
 				continue
 			}
 			documents = append(documents, doc)
+			s.lastDocQuery = s.queryIndex - 1
 		}
 	}
 	if len(documents) == 0 {
@@ -749,7 +762,7 @@ func (s *postgresSyncSession) batchCheckpoint(doc SourceDocument) *SyncCheckpoin
 		return nil
 	}
 	queryName := ""
-	if idx := s.queryIndex - 1; idx >= 0 && idx < len(s.queryNames) {
+	if idx := s.lastDocQuery; idx >= 0 && idx < len(s.queryNames) {
 		queryName = s.queryNames[idx]
 	}
 	updatedAt := doc.UpdatedAt

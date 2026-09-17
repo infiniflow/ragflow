@@ -37,10 +37,11 @@ type rdbmsSyncQuery struct {
 }
 
 // rdbmsResumeCursor identifies where a MySQL/PostgreSQL sync left off: the
-// query that produced the last committed batch, the ordering column the
-// stream was sorted by, and the SourceID of the last emitted row (the resume
-// anchor). It is stored JSON-encoded in SyncCheckpoint.Cursor so arbitrary
-// table names and source ids survive the round trip.
+// query that produced the last committed batch, the ordering key the stream
+// was sorted by (a single column, or "timestamp,id" for incremental windows),
+// and the SourceID of the last emitted row (the resume anchor). It is stored
+// JSON-encoded in SyncCheckpoint.Cursor so arbitrary table names and source
+// ids survive the round trip.
 type rdbmsResumeCursor struct {
 	Query    string `json:"q"`
 	Order    string `json:"o"`
