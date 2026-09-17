@@ -67,6 +67,11 @@ func TestAliyunSignedHeadersMatchPythonSDKVector(t *testing.T) {
 }
 
 func TestAliyunProtocolUsesSavedTemplateSignedExecuteAndDelete(t *testing.T) {
+	// The Aliyun SDK proxies loopback requests too, and its NO_PROXY matching
+	// requires the exact host:port. Keep this local protocol test off CI proxies.
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		t.Setenv(key, "")
+	}
 	var sawCreate, sawExecute, sawDelete bool
 	var executeAuth string
 	var executeBody struct {
