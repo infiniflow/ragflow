@@ -325,8 +325,9 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 }
 
 // ResolveTableProfile extracts the strongly-typed TableProfile from parser_config.
-// Tries root-level flat keys first; falls back to resolving from a Parser
-// component entry's spreadsheet config in a component-ID-keyed parser_config.
+// Tries root-level flat keys first; falls back to the first Parser component, in
+// ascending component-id order, whose spreadsheet config actually states a mode,
+// a role or a column.
 func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 	if parserConfig == nil {
 		return nil
@@ -351,21 +352,24 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 		if ss == nil {
 			continue
 		}
+		mode := modeStr
 		if v, ok := ss["column_mode"].(string); ok {
-			modeStr = v
+			mode = v
 		}
-		if r, raw := parseTableColumnRoles(ss["column_roles"]); len(r) > 0 {
-			roles = r
-			rawRoles = raw
-		}
-		if n := parseTableColumnNames(ss["column_names"]); len(n) > 0 {
-			names = n
+		ssRoles, ssRawRoles := parseTableColumnRoles(ss["column_roles"])
+		ssNames := parseTableColumnNames(ss["column_names"])
+		// An entry that states nothing is not a profile: a canvas can carry a
+		// spreadsheet block for a component the user never configured, and
+		// stopping there would hide the profile a later component does declare.
+		// Same gate as the root level above.
+		if mode == "" && len(ssRoles) == 0 && len(ssNames) == 0 {
+			continue
 		}
 		return &TableProfile{
-			Mode:     common.NormalizeTableColumnMode(modeStr),
-			Roles:    roles,
-			RawRoles: rawRoles,
-			Columns:  names,
+			Mode:     common.NormalizeTableColumnMode(mode),
+			Roles:    ssRoles,
+			RawRoles: ssRawRoles,
+			Columns:  ssNames,
 		}
 	}
 	return nil

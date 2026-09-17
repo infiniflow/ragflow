@@ -556,6 +556,43 @@ func TestResolveTableColumnConfig_WriterShapes(t *testing.T) {
 	}
 }
 
+// A canvas can carry a spreadsheet block for a component nobody configured.
+// Stopping at it would hide the profile a later component does declare, so the
+// resolution continues to the next id that states a mode, a role or a column.
+func TestResolveTableColumnConfig_SkipsEmptySpreadsheetEntry(t *testing.T) {
+	cfg := map[string]interface{}{
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{},
+		},
+		"Parser:B": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"age": "metadata"},
+			},
+		},
+	}
+	mode, roles, names := ResolveTableColumnConfig(cfg)
+	if mode != "manual" {
+		t.Errorf("mode = %q, want \"manual\" from the entry that states one", mode)
+	}
+	if len(roles) != 1 || roles["age"] != "metadata" {
+		t.Errorf("roles = %v, want age=metadata", roles)
+	}
+	if len(names) != 0 {
+		t.Errorf("names = %v, want none", names)
+	}
+
+	// A component that states nothing anywhere leaves no profile at all.
+	emptyOnly := map[string]interface{}{
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_mode": "", "column_roles": map[string]interface{}{}},
+		},
+	}
+	if mode, roles, names := ResolveTableColumnConfig(emptyOnly); mode != "" || roles != nil || names != nil {
+		t.Errorf("empty component = %q/%v/%v, want unset", mode, roles, names)
+	}
+}
+
 func TestResolveTableColumnConfig_NestedComponent(t *testing.T) {
 	cfg := map[string]interface{}{
 		"Parser:HipSignsRhyme": map[string]interface{}{
