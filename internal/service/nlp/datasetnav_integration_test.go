@@ -48,6 +48,7 @@ func findNavRow(t *testing.T, tenantID, kbID, docID string) map[string]interface
 	idx := "ragflow_" + tenantID
 	req := &types.SearchRequest{
 		IndexNames:   []string{idx},
+		KbIDs:        []string{kbID},
 		Filter:       map[string]interface{}{"doc_id": []string{docID}, "compile_kwd": []string{"dataset_nav"}},
 		SelectFields: []string{"available_int", "compile_kwd", "type_kwd"},
 		Limit:        10,
