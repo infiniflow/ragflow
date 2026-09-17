@@ -103,6 +103,11 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ConnectorValidationError("webdav_url is required when storage_mode is webdav")
         if urlparse(self.webdav_url).scheme.lower() != "https":
             raise ConnectorValidationError("WebDAV URL must use HTTPS")
+        probe_url = urljoin(self.webdav_url + "/", "zotero/")
+        try:
+            assert_url_is_safe(probe_url, allowed_schemes=frozenset({"https"}))
+        except ValueError as exc:
+            raise ConnectorValidationError(f"WebDAV URL is not allowed: {exc}") from exc
         if not self.webdav_username:
             raise ConnectorMissingCredentialError("WebDAV username is required when storage_mode is webdav")
         if not self.webdav_password:

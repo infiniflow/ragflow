@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -112,6 +113,9 @@ func (c *ZoteroConnector) Validate(ctx context.Context) error {
 	if err := c.validateStatic(); err != nil {
 		return err
 	}
+	if err := c.validateWebDAVAccess(ctx); err != nil {
+		return err
+	}
 	if _, _, err := c.listItems(ctx, 0); err != nil {
 		return classifyZoteroError(err)
 	}
@@ -135,6 +139,9 @@ func (c *ZoteroConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	if err := c.validateStatic(); err != nil {
 		return nil, err
 	}
+	if err := c.validateWebDAVAccess(ctx); err != nil {
+		return nil, err
+	}
 	records, err := c.collectPDFRecords(ctx, request)
 	if err != nil {
 		return nil, classifyZoteroError(err)
@@ -152,6 +159,9 @@ func (c *ZoteroConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 // OpenPrune opens one complete Zotero prune snapshot session.
 func (c *ZoteroConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
 	if err := c.validateStatic(); err != nil {
+		return nil, err
+	}
+	if err := c.validateWebDAVAccess(ctx); err != nil {
 		return nil, err
 	}
 	records, err := c.collectPDFRecords(ctx, SyncRequest{FromBeginning: true})
@@ -193,6 +203,18 @@ func (c *ZoteroConnector) validateStatic() error {
 	}
 	if c.batchSize <= 0 {
 		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
+	}
+	return nil
+}
+
+func (c *ZoteroConnector) validateWebDAVAccess(ctx context.Context) error {
+	if c.storageMode != zoteroStorageModeWebDAV {
+		return nil
+	}
+	probeURL := strings.TrimRight(c.webdavURL, "/") + "/zotero/"
+	_, _, err := assertRestAPIURLSafe(ctx, probeURL)
+	if err != nil {
+		return &ConnectorValidationError{Message: fmt.Sprintf("WebDAV URL is not allowed: %v", err)}
 	}
 	return nil
 }
@@ -516,7 +538,7 @@ func zoteroParseTime(value string) (time.Time, error) {
 	if value == "" {
 		return time.Time{}, errors.New("missing timestamp")
 	}
-	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T%H:%M:%SZ"}
+	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05Z"}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
 			return parsed.UTC(), nil
@@ -554,28 +576,57 @@ func classifyZoteroError(err error) error {
 }
 
 type zoteroSyncSession struct {
-	connector *ZoteroConnector
-	records   []zoteroPDFRecord
-	batchSize int
-	index     int
+	connector        *ZoteroConnector
+	records          []zoteroPDFRecord
+	batchSize        int
+	index            int
+	downloadFailures int
 }
 
 func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	documents := make([]SourceDocument, 0, s.batchSize)
-	for s.index < len(s.records) && len(documents) < s.batchSize {
+	for len(documents) < s.batchSize && s.index < len(s.records) {
 		record := s.records[s.index]
-		s.index++
 		blob, filename, err := s.connector.downloadPDF(ctx, record.attachment)
 		if err != nil || len(blob) == 0 {
+			s.downloadFailures++
+			slog.Warn(
+				"zotero: attachment download failed",
+				"item_key", record.attachment.Key,
+				"source_id", s.connector.sourceID(record.attachment.Key),
+				"error", err,
+			)
+			if len(documents) > 0 {
+				break
+			}
+			s.index++
 			continue
 		}
 		if int64(len(blob)) > zoteroMaxAttachmentBytes {
+			s.downloadFailures++
+			slog.Warn(
+				"zotero: skipping oversized attachment",
+				"item_key", record.attachment.Key,
+				"source_id", s.connector.sourceID(record.attachment.Key),
+				"bytes", len(blob),
+			)
+			if len(documents) > 0 {
+				break
+			}
+			s.index++
 			continue
 		}
 		documents = append(documents, s.connector.buildDocument(record, blob, filename))
+		s.index++
 	}
 	if len(documents) == 0 {
-		return SyncBatch{}, io.EOF
+		if s.index >= len(s.records) {
+			if s.downloadFailures > 0 {
+				slog.Warn("zotero: sync completed with attachment download failures", "count", s.downloadFailures)
+			}
+			return SyncBatch{}, io.EOF
+		}
+		return SyncBatch{}, fmt.Errorf("zotero: failed to download attachment %q", s.records[s.index].attachment.Key)
 	}
 	return SyncBatch{Documents: documents, Checkpoint: zoteroSyncCheckpoint(documents[len(documents)-1])}, nil
 }

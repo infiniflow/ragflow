@@ -112,6 +112,25 @@ def test_zotero_connector_requires_user_id():
         connector.validate_local_settings()
 
 
+def test_zotero_rejects_blocked_webdav_url(monkeypatch):
+    def _blocked(url, allowed_schemes=None):
+        if url.endswith("/zotero/"):
+            raise ValueError("blocked host")
+        return ("example.com", "1.2.3.4")
+
+    monkeypatch.setattr(zotero_mod, "assert_url_is_safe", _blocked)
+    connector = ZoteroConnector(
+        zotero_user_id="12345678",
+        storage_mode="webdav",
+        webdav_url="https://example.com/dav",
+    )
+    connector.load_credentials(
+        {"zotero_api_key": "secret", "webdav_username": "dav", "webdav_password": "pw"}
+    )
+    with pytest.raises(Exception, match="not allowed"):
+        connector.validate_local_settings()
+
+
 def test_zotero_rejects_http_webdav_url():
     connector = ZoteroConnector(
         zotero_user_id="12345678",

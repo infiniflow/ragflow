@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestZoteroConnectorOpenSyncDownloadsPDF(t *testing.T) {
@@ -56,6 +57,68 @@ func TestZoteroConnectorOpenSyncDownloadsPDF(t *testing.T) {
 	}
 	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
+	}
+}
+
+func TestZoteroParseTime(t *testing.T) {
+	parsed, err := zoteroParseTime("2026-01-02T12:34:56Z")
+	if err != nil {
+		t.Fatalf("zoteroParseTime: %v", err)
+	}
+	if parsed.UTC().Format(time.RFC3339) != "2026-01-02T12:34:56Z" {
+		t.Fatalf("parsed = %s", parsed.UTC().Format(time.RFC3339))
+	}
+}
+
+func TestZoteroNextBatchRetriesFailedDownloadAfterPartialBatch(t *testing.T) {
+	connector, err := NewZoteroConnector(map[string]any{
+		"zotero_user_id": "12345678",
+		"storage_mode":   zoteroStorageModeZotero,
+		"batch_size":     10,
+		"credentials": map[string]any{
+			"zotero_api_key": "test-key",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewZoteroConnector: %v", err)
+	}
+	attempts := map[string]int{}
+	connector.downloadPDF = func(ctx context.Context, attachment zoteroAPIItem) ([]byte, string, error) {
+		attempts[attachment.Key]++
+		switch attachment.Key {
+		case "ATTACH1":
+			return []byte("%PDF"), "one.pdf", nil
+		case "ATTACH2":
+			return nil, "", errors.New("transient failure")
+		default:
+			return nil, "", errors.New("unexpected attachment")
+		}
+	}
+	session := &zoteroSyncSession{
+		connector: connector,
+		records: []zoteroPDFRecord{
+			{attachment: zoteroAPIItem{Key: "ATTACH1"}, title: "One"},
+			{attachment: zoteroAPIItem{Key: "ATTACH2"}, title: "Two"},
+		},
+		batchSize: 10,
+	}
+
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch: %v", err)
+	}
+	if len(first.Documents) != 1 || first.Documents[0].SourceID != "zotero:12345678:ATTACH1" {
+		t.Fatalf("unexpected first batch: %+v", first.Documents)
+	}
+	if session.index != 1 {
+		t.Fatalf("index = %d, want 1 to retry failed attachment", session.index)
+	}
+
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("second NextBatch: %v", err)
+	}
+	if attempts["ATTACH2"] < 2 {
+		t.Fatalf("ATTACH2 attempts = %d, want at least 2", attempts["ATTACH2"])
 	}
 }
 
