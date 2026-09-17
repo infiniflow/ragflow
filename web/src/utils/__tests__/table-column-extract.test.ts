@@ -90,6 +90,39 @@ describe('table-column-extract', () => {
       ).toEqual({ mode: 'auto', roles: {} });
     });
 
+    // A blank name is still a column of the schema, so a list holding only one
+    // counts as stated: indexdoc.parseTableColumnNames keeps it verbatim.
+    it('counts a blank column name as a stated schema', () => {
+      expect(
+        resolveDatasetTableColumnSettings({
+          table_column_names: [''],
+          'Parser:Table': {
+            spreadsheet: {
+              column_mode: 'manual',
+              column_roles: { a: 'metadata' },
+            },
+          },
+        }),
+      ).toEqual({ mode: 'auto', roles: {} });
+    });
+
+    // A component entry that states nothing is not a profile either: a canvas
+    // can carry an empty spreadsheet block, and the resolution has to reach the
+    // component that does declare one.
+    it('skips a component entry that states nothing', () => {
+      expect(
+        resolveDatasetTableColumnSettings({
+          'Parser:A': { spreadsheet: {} },
+          'Parser:B': {
+            spreadsheet: {
+              column_mode: 'manual',
+              column_roles: { a: 'metadata' },
+            },
+          },
+        }),
+      ).toEqual({ mode: 'manual', roles: { a: 'metadata' } });
+    });
+
     it('defaults to auto with no settings', () => {
       expect(resolveDatasetTableColumnSettings(undefined)).toEqual({
         mode: 'auto',

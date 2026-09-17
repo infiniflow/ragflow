@@ -243,8 +243,8 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 			}
 			if names, ok := ck["table_column_names"].([]interface{}); ok && len(names) > 0 {
 				for _, n := range names {
-					if s, ok := n.(string); ok && strings.TrimSpace(s) != "" {
-						cols = append(cols, strings.TrimSpace(s))
+					if s, ok := n.(string); ok {
+						cols = append(cols, s)
 					}
 				}
 				break
@@ -267,11 +267,10 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 
 	var metaCols []string
 	if len(cols) > 0 {
+		// The column name is the chunk_data key, so it is matched verbatim;
+		// trimming or dropping a blank one here would silently exclude a column
+		// that exists (rag/utils/table_es_metadata.py:187).
 		for _, col := range cols {
-			col = strings.TrimSpace(col)
-			if col == "" {
-				continue
-			}
 			role := roleFor(profile, col)
 			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
 				metaCols = append(metaCols, col)
@@ -441,28 +440,16 @@ func parseTableColumnNames(raw any) []string {
 	}
 	switch list := raw.(type) {
 	case []string:
-		if len(list) == 0 {
-			return nil
-		}
-		out := make([]string, 0, len(list))
-		for _, s := range list {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
+		return list
 	case []interface{}:
-		if len(list) == 0 {
-			return nil
-		}
 		out := make([]string, 0, len(list))
 		for _, item := range list {
+			// Verbatim, including a blank name: table_column_names carries the
+			// columns as the parser named them, and that exact string is both the
+			// key a role is looked up under and the key chunk_data is stored with
+			// (rag/app/table.py:675-678 writing what :594 built).
 			if s, ok := item.(string); ok {
-				s = strings.TrimSpace(s)
-				if s != "" {
-					out = append(out, s)
-				}
+				out = append(out, s)
 			}
 		}
 		return out

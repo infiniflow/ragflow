@@ -94,10 +94,9 @@ func BuildFieldMap(profile *TableProfile, columns []string) map[string]interface
 	}
 	fieldMap := make(map[string]interface{})
 	for _, col := range columns {
-		col = strings.TrimSpace(col)
-		if col == "" {
-			continue
-		}
+		// Verbatim: Python builds field_map from the column names as the parser
+		// named them, so a padded or blank name is an addressable column too
+		// (rag/app/table.py:633,645).
 		role := roleFor(profile, col)
 		if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
 			fieldMap[col] = strings.ReplaceAll(col, "_", " ")

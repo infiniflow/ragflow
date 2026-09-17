@@ -145,7 +145,7 @@ func tableDocumentConfigForFile(base entity.JSONMap, namesByFile []interface{}, 
 	names := make([]interface{}, 0, len(rawNames))
 	for _, rawName := range rawNames {
 		name, ok := rawName.(string)
-		if !ok || name == "" {
+		if !ok {
 			continue
 		}
 		if _, exists := columns[name]; !exists {

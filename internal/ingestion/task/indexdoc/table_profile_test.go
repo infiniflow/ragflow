@@ -91,8 +91,10 @@ func TestBuildFieldMap(t *testing.T) {
 	if fm["empty_col"] != "empty col" {
 		t.Errorf("unconfigured column defaults to both: %v", fm["empty_col"])
 	}
-	if _, ok := fm[" "]; ok {
-		t.Errorf("blank column name must be skipped: %v", fm)
+	if fm[" "] != " " {
+		// Python builds field_map from the column names as indexed, blanks
+		// included (rag/app/table.py:633,645).
+		t.Errorf("a blank column name is still a column: %v", fm)
 	}
 
 	if got := BuildFieldMap(nil, []string{"a"}); got != nil {

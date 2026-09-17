@@ -48,10 +48,9 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 		seen := make(map[string]struct{}, len(newNames))
 		names := make([]string, 0, len(newNames))
 		for _, n := range newNames {
-			n = strings.TrimSpace(n)
-			if n == "" {
-				continue
-			}
+			// Keep the name as the parser wrote it: it is the key both the role
+			// lookup and chunk_data use, so trimming or dropping a blank one
+			// would orphan that column's role (rag/app/table.py:665-670).
 			if _, ok := seen[n]; !ok {
 				seen[n] = struct{}{}
 				names = append(names, n)
@@ -98,10 +97,8 @@ func (s *DocumentService) SaveKBTableState(ctx context.Context, kbID string, nam
 	columns := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
 	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
+		// Same rule as the document's own copy: the published schema must name
+		// the columns exactly as the run indexed them.
 		if _, ok := seen[n]; !ok {
 			seen[n] = struct{}{}
 			columns = append(columns, n)

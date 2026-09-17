@@ -136,8 +136,11 @@ func TestSaveKBTableState_ReplacesSchemaAndKeepsFieldMapWhenNotOwned(t *testing.
 		t.Errorf("new_col must be written, got %#v", fm)
 	}
 	names, ok := updated.ParserConfig["table_column_names"].([]interface{})
-	if !ok || !reflect.DeepEqual(names, []interface{}{"new_col"}) {
-		t.Errorf("table_column_names = %#v, want [new_col]", updated.ParserConfig["table_column_names"])
+	// A blank name survives: it is a real column of a delimited file, and the
+	// published schema has to name the columns exactly as the run indexed them
+	// (rag/app/table.py:665-670).
+	if !ok || !reflect.DeepEqual(names, []interface{}{"new_col", " "}) {
+		t.Errorf("table_column_names = %#v, want [new_col, ' ']", updated.ParserConfig["table_column_names"])
 	}
 	if updated.ParserConfig["dataset_setting"] != "preserved" {
 		t.Errorf("unrelated parser_config keys must be preserved: %#v", updated.ParserConfig)

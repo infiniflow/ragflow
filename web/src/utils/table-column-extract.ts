@@ -221,15 +221,12 @@ function storedMode(raw: unknown): string {
   return typeof raw === 'string' ? raw : '';
 }
 
-// hasStoredColumnNames counts only the names the runtime keeps
-// (internal/ingestion/task/indexdoc, parseTableColumnNames): a blank or
-// non-string entry is not a column, so a list of blanks alone leaves that level
-// unset rather than claiming it.
+// hasStoredColumnNames counts the names the runtime keeps: any string entry,
+// blank included, because a delimited header can name a column "" and that is a
+// real column of the published schema
+// (internal/ingestion/task/indexdoc, parseTableColumnNames).
 function hasStoredColumnNames(raw: unknown): boolean {
-  return (
-    Array.isArray(raw) &&
-    raw.some((name) => typeof name === 'string' && name.trim() !== '')
-  );
+  return Array.isArray(raw) && raw.some((name) => typeof name === 'string');
 }
 
 /**
