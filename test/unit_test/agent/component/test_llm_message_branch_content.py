@@ -23,7 +23,9 @@ class _FakeCanvas:
         self.task_id = "test-task"
 
     def get_component(self, cid):
-        return self.components[cid]
+        # Mirrors real Canvas.get_component: None for a missing ID (a
+        # dangling downstream reference retained by the DSL).
+        return self.components.get(cid)
 
     def get_component_obj(self, cid):
         return self.objs[cid]
@@ -73,6 +75,14 @@ def _make_llm(canvas, cid, param):
     return cpn
 
 
+def _link(canvas, cid, component_name, downstream=()):
+    """Register a downstream component the way a loaded canvas would: the
+    component dict carries the live ``obj`` while ``objs`` backs the legacy
+    ``get_component_obj`` lookup."""
+    canvas.components[cid] = {"downstream": list(downstream), "obj": SimpleNamespace(component_name=component_name)}
+    canvas.objs[cid] = SimpleNamespace(component_name=component_name)
+
+
 @pytest.fixture
 def no_model_resolution(monkeypatch):
     """_prepare_prompt_variables resolves tenant model config through the DB;
@@ -100,7 +110,7 @@ def test_no_message_downstream_yields_eager_answer_string(no_model_resolution):
     (pre-existing contract)."""
     canvas = _FakeCanvas()
     canvas.components["llm1"] = {"downstream": ["llm2"]}
-    canvas.objs["llm2"] = SimpleNamespace(component_name="LLM")
+    _link(canvas, "llm2", "LLM")
 
     llm1 = _make_llm(canvas, "llm1", _make_param([{"role": "user", "content": "What is glorp?"}], "SYS"))
 
@@ -121,7 +131,7 @@ def test_pure_message_downstream_keeps_deferred_streaming_partial(no_model_resol
     (streaming behavior preserved, no model call made here)."""
     canvas = _FakeCanvas()
     canvas.components["llm1"] = {"downstream": ["msg1"]}
-    canvas.objs["msg1"] = SimpleNamespace(component_name="Message")
+    _link(canvas, "msg1", "Message")
 
     llm1 = _make_llm(canvas, "llm1", _make_param([{"role": "user", "content": SECRET_USER_QUESTION}], SECRET_LLM_SYSTEM_PROMPT))
 
@@ -146,8 +156,8 @@ def test_mixed_llm_and_message_downstream_sees_answer_not_partial(no_model_resol
     """
     canvas = _FakeCanvas()
     canvas.components["llm1"] = {"downstream": ["llm2", "msg1"]}
-    canvas.objs["llm2"] = SimpleNamespace(component_name="LLM")
-    canvas.objs["msg1"] = SimpleNamespace(component_name="Message")
+    _link(canvas, "llm2", "LLM")
+    _link(canvas, "msg1", "Message")
 
     llm1 = _make_llm(canvas, "llm1", _make_param([{"role": "user", "content": SECRET_USER_QUESTION}], SECRET_LLM_SYSTEM_PROMPT))
     calls = []
@@ -179,8 +189,8 @@ def test_no_tool_agent_delegates_to_llm_mixed_branch(no_model_resolution):
 
     canvas = _FakeCanvas()
     canvas.components["agent1"] = {"downstream": ["agent2", "msg1"]}
-    canvas.objs["agent2"] = SimpleNamespace(component_name="Agent")
-    canvas.objs["msg1"] = SimpleNamespace(component_name="Message")
+    _link(canvas, "agent2", "Agent")
+    _link(canvas, "msg1", "Message")
 
     param = AgentParam()
     param.prompts = [{"role": "user", "content": SECRET_USER_QUESTION}]
@@ -204,6 +214,73 @@ def test_no_tool_agent_delegates_to_llm_mixed_branch(no_model_resolution):
     asyncio.run(agent1._invoke_async())
 
     content = agent1._param.outputs["content"]["value"]
+    assert content == PRODUCED_ANSWER
+    assert not isinstance(content, partial)
+    assert len(calls) == 1
+
+
+@pytest.mark.p1
+def test_dangling_downstream_id_stays_eager_without_raising(no_model_resolution):
+    """A downstream ID missing from the loaded components (dangling DSL
+    reference) must not raise: it is ineligible for streaming, so the LLM
+    takes the eager path -- matching the Go helper, which already treats
+    missing IDs as eager."""
+    canvas = _FakeCanvas()
+    canvas.components["llm1"] = {"downstream": ["msg1", "ghost_0"]}
+    _link(canvas, "msg1", "Message")
+    # ghost_0 is intentionally absent: a dangling reference.
+
+    llm1 = _make_llm(canvas, "llm1", _make_param([{"role": "user", "content": SECRET_USER_QUESTION}], SECRET_LLM_SYSTEM_PROMPT))
+    calls = []
+
+    async def fake_generate(msg, **kwargs):
+        calls.append(1)
+        return PRODUCED_ANSWER
+
+    llm1._generate_async = fake_generate
+    asyncio.run(llm1._invoke_async())
+
+    content = llm1._param.outputs["content"]["value"]
+    assert content == PRODUCED_ANSWER
+    assert not isinstance(content, partial)
+    assert len(calls) == 1
+
+
+@pytest.mark.p1
+def test_tool_agent_dangling_downstream_id_stays_eager(no_model_resolution):
+    """Same dangling-ID contract on the tool-enabled Agent path
+    (AgentWithTools._invoke_async)."""
+    from agent.component.agent_with_tools import Agent, AgentParam
+
+    canvas = _FakeCanvas()
+    canvas.components["agent1"] = {"downstream": ["msg1", "ghost_0"]}
+    _link(canvas, "msg1", "Message")
+    # ghost_0 is intentionally absent: a dangling reference.
+
+    param = AgentParam()
+    param.prompts = [{"role": "user", "content": SECRET_USER_QUESTION}]
+    param.sys_prompt = SECRET_LLM_SYSTEM_PROMPT
+    param.debug_inputs = {}
+
+    agent1 = Agent.__new__(Agent)
+    agent1._canvas = canvas
+    agent1._id = "agent1"
+    agent1._param = param
+    agent1.chat_mdl = SimpleNamespace(max_length=8192)
+    agent1.imgs = []
+    agent1.tools = {"retrieval_0": object()}
+    agent1._fit_messages = lambda prompt, msg: (msg, None)
+    calls = []
+
+    async def fake_generate(msg, **kwargs):
+        calls.append(1)
+        return PRODUCED_ANSWER
+
+    agent1._generate_async = fake_generate
+    result = asyncio.run(agent1._invoke_async())
+
+    content = agent1._param.outputs["content"]["value"]
+    assert result == PRODUCED_ANSWER
     assert content == PRODUCED_ANSWER
     assert not isinstance(content, partial)
     assert len(calls) == 1

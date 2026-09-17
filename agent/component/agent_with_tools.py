@@ -244,8 +244,13 @@ class Agent(LLM, ToolBase):
         # prompt normalization stringifies it into "functools.partial(...)",
         # leaking the bound system prompt/message state. A mixed graph therefore
         # takes the eager path so every consumer sees the same answer string.
-        # (An empty downstream list keeps the previous eager behavior.)
-        has_message_downstream = bool(downstreams) and all(self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams)
+        # (An empty downstream list keeps the previous eager behavior. A
+        # dangling downstream ID -- retained by the canvas/DSL but missing
+        # from the loaded components -- must not raise here: it is simply
+        # ineligible for streaming, so the eager path runs instead.)
+        has_message_downstream = bool(downstreams) and all(
+            (component := self._canvas.get_component(cid)) is not None and component["obj"].component_name.lower() == "message" for cid in downstreams
+        )
         if has_message_downstream and not (ex and ex["goto"]) and not output_schema:
             _logger.debug("[Agent] Entering streaming mode (has message downstream)")
             self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
