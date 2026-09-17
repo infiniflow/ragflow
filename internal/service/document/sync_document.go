@@ -71,7 +71,7 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 	if existing != nil && existing.ContentHash != nil && *existing.ContentHash == contentHash {
 		metadataDeferred, err := s.ensureSyncDocumentPostWrite(ctx, input, existing)
 		if err != nil {
-			return service.DocumentUpsertResult{}, err
+			return service.DocumentUpsertResult{MetadataDeferred: metadataDeferred}, err
 		}
 		return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionSkipped, MetadataDeferred: metadataDeferred}, nil
 	}
@@ -132,7 +132,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	// write metadata and do `auto_parse` (or not)
 	metadataDeferred, err := s.afterSyncDocumentUpsert(ctx, input, doc, false)
 	if err != nil {
-		return service.DocumentUpsertResult{}, err
+		return service.DocumentUpsertResult{MetadataDeferred: metadataDeferred}, err
 	}
 
 	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionAdded, MetadataDeferred: metadataDeferred}, nil
@@ -168,7 +168,7 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 	// write metadata and do `auto_parse`
 	metadataDeferred, err := s.afterSyncDocumentUpsert(ctx, input, doc, true)
 	if err != nil {
-		return service.DocumentUpsertResult{}, err
+		return service.DocumentUpsertResult{MetadataDeferred: metadataDeferred}, err
 	}
 	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionUpdated, MetadataDeferred: metadataDeferred}, nil
 }

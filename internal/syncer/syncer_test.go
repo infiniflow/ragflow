@@ -86,7 +86,7 @@ func (s *fakeSink) Upsert(ctx context.Context, input service.DocumentUpsertInput
 	s.current--
 	s.mu.Unlock()
 	if err := s.errBySourceID[input.SourceDocument.SourceID]; err != nil {
-		return service.DocumentUpsertResult{}, err
+		return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionAdded, MetadataDeferred: s.metadataDeferred}, err
 	}
 	return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionAdded, MetadataDeferred: s.metadataDeferred}, nil
 }
@@ -1065,6 +1065,34 @@ func TestSyncBatchRefreshesMetadataOnce(t *testing.T) {
 	}
 	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
+	}
+	if len(sink.refreshCalls) != 1 || sink.refreshCalls[0] != "tenant-1" {
+		t.Fatalf("refresh calls = %v, want [tenant-1]", sink.refreshCalls)
+	}
+}
+
+// TestSyncBatchRefreshesMetadataOnDeferredWriteError verifies a batch whose
+// document write fails after deferring metadata still refreshes the tenant
+// metadata index once instead of dropping the deferred write with the error.
+func TestSyncBatchRefreshesMetadataOnDeferredWriteError(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
+		t.Fatalf("set running task: %v", err)
+	}
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{
+		{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}},
+	}}
+	sink := &fakeSink{metadataDeferred: true, errBySourceID: map[string]error{"bad": errors.New("boom")}}
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err == nil {
+		t.Fatalf("execute succeeded, want document error")
 	}
 	if len(sink.refreshCalls) != 1 || sink.refreshCalls[0] != "tenant-1" {
 		t.Fatalf("refresh calls = %v, want [tenant-1]", sink.refreshCalls)

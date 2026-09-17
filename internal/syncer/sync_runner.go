@@ -349,6 +349,9 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 			lastCancelCheck = time.Now()
 		}
 		result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
+		if result.MetadataDeferred {
+			metadataDeferred = true
+		}
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -356,9 +359,6 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 			continue
 		}
 		stats.AddResult(result)
-		if result.MetadataDeferred {
-			metadataDeferred = true
-		}
 	}
 	if metadataDeferred {
 		// Make the batch's metadata writes searchable with one refresh instead
@@ -375,14 +375,17 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 // processDocumentWithRetry retries transient item failures.
 func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	var lastErr error
+	metadataDeferred := false
 	for attempt := 1; attempt <= r.config.ItemRetryCount; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return service.DocumentUpsertResult{}, err
+			return service.DocumentUpsertResult{MetadataDeferred: metadataDeferred}, err
 		}
 		result, err := r.processDocument(ctx, taskContext, sourceType, session, sourceDocument)
 		if err == nil {
+			result.MetadataDeferred = result.MetadataDeferred || metadataDeferred
 			return result, nil
 		}
+		metadataDeferred = metadataDeferred || result.MetadataDeferred
 
 		lastErr = err
 		if !service.IsRetryable(err) || attempt == r.config.ItemRetryCount {
@@ -403,11 +406,11 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 
 		select {
 		case <-ctx.Done():
-			return service.DocumentUpsertResult{}, ctx.Err()
+			return service.DocumentUpsertResult{MetadataDeferred: metadataDeferred}, ctx.Err()
 		case <-time.After(delay):
 		}
 	}
-	return service.DocumentUpsertResult{}, lastErr
+	return service.DocumentUpsertResult{MetadataDeferred: metadataDeferred}, lastErr
 }
 
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.

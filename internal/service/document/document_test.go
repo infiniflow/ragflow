@@ -830,6 +830,83 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 	}
 }
 
+// TestSyncUpsertPreservesDeferredMetadataOnPostWriteError verifies that when
+// document post-write processing (StartParseDocuments) fails after metadata was
+// written with a deferred refresh, Upsert still reports MetadataDeferred so the
+// batch owner refreshes the tenant metadata index.
+func TestSyncUpsertPreservesDeferredMetadataOnPostWriteError(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-sync", "tenant-1", 0, 0, 0)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	// Seed a document whose content hash matches the incoming blob so Upsert
+	// takes the unchanged-skip path and only post-write work runs. Leave the
+	// location empty so StartParseDocuments fails during storage validation
+	// AFTER deferred metadata has been written.
+	oldHash := contentHashHex([]byte("same content"))
+	oldName := "same.txt"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-sync-skip",
+		KbID:         "kb-sync",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "github",
+		Type:         string(utility.FileTypeTXT),
+		CreatedBy:    "tenant-1",
+		Name:         &oldName,
+		Size:         int64(len("same content")),
+		Suffix:       "txt",
+		ContentHash:  &oldHash,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	engineImpl := &deferredMetadataDocEngine{metadataDocEngine: newMetadataDocEngine(nil, map[string]string{})}
+	svc := testDocumentService(t)
+	svc.docEngine = engineImpl
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engineImpl)
+
+	result, err := svc.Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector: entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: entity.Knowledgebase{
+				ID:           "kb-sync",
+				TenantID:     "tenant-1",
+				Name:         "Sync KB",
+				ParserID:     "naive",
+				ParserConfig: entity.JSONMap{},
+			},
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-skip",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID:           "source-1",
+			SemanticIdentifier: "same",
+			Extension:          ".txt",
+			Blob:               []byte("same content"),
+			Metadata:           map[string]interface{}{"author": "Alice"},
+		},
+		AutoParse:            true,
+		DeferMetadataRefresh: true,
+	})
+	if err == nil {
+		t.Fatal("expected post-write error, got nil")
+	}
+	if !result.MetadataDeferred {
+		t.Fatal("MetadataDeferred = false, want true after a deferred metadata write followed by a parse error")
+	}
+	if len(engineImpl.deferredWrites) != 1 || engineImpl.deferredWrites[0] != "doc-sync-skip" {
+		t.Fatalf("deferred writes = %v, want [doc-sync-skip]", engineImpl.deferredWrites)
+	}
+}
+
 func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	db := setupServiceTestDB(t)
