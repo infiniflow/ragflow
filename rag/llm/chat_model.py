@@ -3085,6 +3085,31 @@ class CheaperInferenceChat(Base):
         model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
 
+    def _clean_conf(self, gen_conf):
+        """Map the thinking selection onto the field the gateway reads.
+
+        The gateway reads the OpenAI ``reasoning_effort`` field and ignores
+        ``thinking`` and ``enable_thinking``. Measured on claude-opus-5 with
+        one prompt: no field gives 78-80 reasoning tokens, ``high`` 44-63,
+        ``medium`` 31-41, ``low`` 24-25 and ``none`` 0, while
+        ``thinking={"type": "disabled"}`` keeps the default 56. ``none`` is
+        accepted by every model family the gateway serves. ``Base._clean_conf``
+        drops all three keys, so the translation happens here.
+        """
+        thinking = gen_conf.get("thinking")
+        if isinstance(thinking, dict):
+            thinking = thinking.get("type")
+        enable_thinking = gen_conf.get("enable_thinking")
+        reasoning_effort = gen_conf.get("reasoning_effort")
+
+        gen_conf = super()._clean_conf(gen_conf)
+
+        if thinking == "disabled" or enable_thinking is False:
+            reasoning_effort = "none"
+        if reasoning_effort:
+            gen_conf["reasoning_effort"] = reasoning_effort
+        return gen_conf
+
 
 class DaoXEChat(Base):
     """DaoXE OpenAI-compatible chat adapter.
