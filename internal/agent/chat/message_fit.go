@@ -29,7 +29,7 @@ import (
 //
 // This lives in the chat package rather than internal/agent/component so that
 // both component (which owns the production eino invoker) and
-// internal/rag/advanced_rag/harness (which composes answers) can fit prompts
+// internal/rag/agentic-rag/harness (which composes answers) can fit prompts
 // without forming an import cycle — component cannot import harness, because
 // harness's own tests import component.
 
