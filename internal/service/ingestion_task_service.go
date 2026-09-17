@@ -451,10 +451,6 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	if err != nil {
 		return nil, err
 	}
-	// The task row is gone, so no worker will ever reach the terminal writer
-	// for this run. Drop its open row, otherwise the detail page keeps a
-	// queued entry.
-	s.deleteOpenLogBestEffort(ctx, task)
 	return info, nil
 }
 
@@ -810,21 +806,6 @@ func (s *IngestionTaskService) ensureRunIdentity(ctx context.Context, task *enti
 			return nil
 		}
 
-		open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, tx, lockedTask.DocumentID)
-		if err != nil {
-			return err
-		}
-		if open != nil {
-			deleted, err := s.pipelineLogDAO.DeleteUnownedOpenLogByID(ctx, tx, open.ID)
-			if err != nil {
-				return err
-			}
-			if !deleted {
-				return fmt.Errorf("open pipeline log %s is owned by another live task", open.ID)
-			}
-			common.Warn(fmt.Sprintf("dropped unowned open pipeline log %s for document %s (status %s)", open.ID, lockedTask.DocumentID, open.OperationStatus))
-		}
-
 		runCount, err := s.pipelineLogDAO.NextRunCount(ctx, tx, lockedTask.DocumentID)
 		if err != nil {
 			return err
@@ -889,19 +870,6 @@ func (s *IngestionTaskService) recordRunTerminal(ctx context.Context, task *enti
 	}
 	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, message); err != nil {
 		common.Warn(fmt.Sprintf("record run terminal event for task %s: %v", task.ID, err))
-	}
-}
-
-// deleteOpenLogBestEffort drops the open row a run owns, so a rolled-back or
-// deleted run leaves no permanently queued entry on the detail page. Only the
-// run's own open row goes: a terminal row is history, and a newer run's row is
-// not this caller's to drop.
-func (s *IngestionTaskService) deleteOpenLogBestEffort(ctx context.Context, task *entity.IngestionTask) {
-	if task == nil || task.PipelineLogID == nil || s.pipelineLogDAO == nil {
-		return
-	}
-	if err := s.pipelineLogDAO.DeleteOpenLogByID(ctx, dao.DB, *task.PipelineLogID); err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: delete open pipeline log for document %s: %v", task.DocumentID, err))
 	}
 }
 

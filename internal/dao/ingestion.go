@@ -326,7 +326,6 @@ const (
 	EventTypeMessage
 	EventTypeTerminal
 	EventTypeSystem
-	EventTypeLegacy
 )
 
 func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
@@ -421,9 +420,17 @@ func (dao *IngestionTaskLogDAO) ListEventsPageByPipelineLogID(ctx context.Contex
 	if len(events) == 0 {
 		switch {
 		case afterID != nil:
-			page.HasMoreBefore, _ = dao.hasEventBeforeOrEqual(ctx, db, pipelineLogID, *afterID)
+			var err error
+			page.HasMoreBefore, err = dao.hasEventBeforeOrEqual(ctx, db, pipelineLogID, *afterID)
+			if err != nil {
+				return nil, err
+			}
 		case beforeID != nil:
-			page.HasMoreAfter, _ = dao.hasEventAfterOrEqual(ctx, db, pipelineLogID, *beforeID)
+			var err error
+			page.HasMoreAfter, err = dao.hasEventAfterOrEqual(ctx, db, pipelineLogID, *beforeID)
+			if err != nil {
+				return nil, err
+			}
 		}
 		return page, nil
 	}

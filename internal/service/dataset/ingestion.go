@@ -58,9 +58,8 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	}, common.CodeSuccess, nil
 }
 
-// ListIngestionMessages returns only events owned by the requested immutable
-// pipeline log. A legacy log (run_count <= 0) intentionally exposes no event
-// history and is terminal so clients never poll it forever after rollout.
+// ListIngestionMessages returns events owned by the requested immutable
+// pipeline log.
 func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, userID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeArgumentError, errors.New(`lack of "Dataset ID"`)
@@ -94,11 +93,10 @@ func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, u
 		}
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
 	}
-	response := &IngestionMessagesResponse{}
 	if run.RunCount == nil || *run.RunCount <= 0 {
-		response.Terminal = true
-		return response, common.CodeSuccess, nil
+		return nil, common.CodeDataError, errors.New("log not found")
 	}
+	response := &IngestionMessagesResponse{}
 	response.RunCount = *run.RunCount
 	response.Terminal = isTerminalIngestionLogStatus(run.OperationStatus)
 
@@ -204,8 +202,15 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 		}
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
 	}
+	if log.RunCount == nil || *log.RunCount <= 0 {
+		return nil, common.CodeDataError, errors.New("log not found")
+	}
 
-	return datasetIngestionLogToMap(log, nil), common.CodeSuccess, nil
+	latestEvents, err := dao.NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(ctx, dao.DB, []string{log.ID})
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("get latest ingestion event: %w", err)
+	}
+	return datasetIngestionLogToMap(log, ingestionEventItem(latestEvents[log.ID])), common.CodeSuccess, nil
 }
 
 func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *service.IngestionEventItem) map[string]interface{} {

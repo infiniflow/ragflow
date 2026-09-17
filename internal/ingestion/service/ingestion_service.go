@@ -1184,6 +1184,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	}
 	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
+		return
 	}
 	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message); err != nil {
 		common.Warn(fmt.Sprintf("record terminal event for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))

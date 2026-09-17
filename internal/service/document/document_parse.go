@@ -85,7 +85,7 @@ func (s *DocumentService) renewCleanupClaim(ctx context.Context, documentID, tok
 	if err != nil {
 		return err
 	}
-	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds)
+	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds, cleanupTakeoverGraceSecs)
 }
 
 // startCleanupClaimHeartbeat keeps a cleanup claim alive while the workflow

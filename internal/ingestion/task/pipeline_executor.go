@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
@@ -38,6 +37,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -199,7 +199,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	if pipelineDSL != "" {
+	if pipelineDSL != "" && s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil && *s.taskCtx.IngestionTask.PipelineLogID != "" {
 		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone))
 	}
 
@@ -799,6 +799,9 @@ func recordPipelineLog(
 	input PipelineLogInput,
 	createFunc func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error,
 ) error {
+	if db == nil && strings.TrimSpace(input.PipelineLogID) != "" {
+		return errors.New("pipeline log database is required")
+	}
 	var dslMap entity.JSONMap
 	if strings.TrimSpace(input.DSL) == "" {
 		dslMap = entity.JSONMap{}
@@ -866,6 +869,13 @@ func recordPipelineLog(
 	if doc.Status != nil && *doc.Status != "" {
 		statusValue = *doc.Status
 	}
+	if input.PipelineLogID != "" {
+		if handled, err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
+			return fmt.Errorf("advance pipeline log for document %s: %w", input.DocumentID, err)
+		} else if handled {
+			return nil
+		}
+	}
 	sourceFrom := doc.SourceType
 	if parts := strings.SplitN(sourceFrom, "/", 2); len(parts) > 0 {
 		sourceFrom = parts[0]
@@ -873,13 +883,6 @@ func recordPipelineLog(
 	documentName := ""
 	if doc.Name != nil {
 		documentName = *doc.Name
-	}
-	if db != nil {
-		if handled, err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
-			common.Warn(fmt.Sprintf("failed to advance open pipeline log for document %s: %v", input.DocumentID, err))
-		} else if handled {
-			return nil
-		}
 	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
@@ -910,35 +913,14 @@ func recordPipelineLog(
 // snapshot. It reports whether the caller must stop (true) or insert a new row
 // (false).
 //
-// The row is targeted by PipelineLogID when the caller has one, so a superseded run
-// whose row was deleted with the task can never reach into the replacement
-// run's row. Only when the caller has no bound row (legacy, debug-adjacent, or
-// non-ingestion callers) does it adopt the document's newest unowned open row,
-// so a stray open row is closed rather than left queued; a row a live run owns
-// is never adopted, because that run's own terminal write would then be lost.
+// The row is targeted by PipelineLogID, so a superseded run whose row was
+// deleted with the task can never reach into the replacement run's row.
 // RowsAffected is not used to decide whether to create: once a target row is
 // known, the write is final — a lost CAS means another writer already finalized
 // this run or the row was dropped with a superseded run, and neither may
 // produce a second entry.
 func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
 	targetID := input.PipelineLogID
-	if targetID == "" {
-		open, err := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, input.DocumentID)
-		if err != nil {
-			return false, err
-		}
-		if open == nil {
-			return false, nil
-		}
-		owned, err := dao.NewPipelineOperationLogDAO().HasLiveTaskOwner(ctx, db, open.ID)
-		if err != nil {
-			return false, err
-		}
-		if owned {
-			return false, nil
-		}
-		targetID = open.ID
-	}
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
 		"status":           statusValue,

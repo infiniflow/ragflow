@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 
@@ -123,7 +122,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 // documents share a name.
 func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("kb_id = ?", kbID)
+		Where("kb_id = ? AND run_count > 0", kbID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
@@ -176,31 +175,6 @@ func OpenPipelineOperationStatuses() []string {
 		string(entity.TaskStatusSchedule),
 		string(entity.TaskStatusRunning),
 	}
-}
-
-// GetOpenLogByDocumentID returns the newest open pipeline operation log for a
-// document, or nil when the document has no in-flight run.
-//
-// It locates a row; it deliberately does not decide what may happen to it. The
-// create path drops whatever it finds (dropping a leftover from a run that no
-// longer exists), and the terminal writer adopts it only when the caller has no
-// bound row of its own. Whether a *terminal* write may touch a row is bound to
-// the run's own row id (ingestion_task.pipeline_log_id), so a superseded run
-// cannot reach the replacement run's row.
-func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentID(ctx context.Context, db *gorm.DB, documentID string) (*entity.PipelineOperationLog, error) {
-	var log entity.PipelineOperationLog
-	err := db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, OpenPipelineOperationStatuses()).
-		Order("create_time DESC").
-		Order("id DESC").
-		First(&log).Error
-	if err != nil {
-		if IsNotFoundErr(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &log, nil
 }
 
 // OpenLogInput carries the bookkeeping needed to open or advance the
@@ -297,54 +271,6 @@ func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
 		Update("operation_status", operationStatus).Error
-}
-
-// DeleteOpenLogByID removes only a legacy, unnumbered pre-terminal row. A
-// numbered run is its document's immutable numbering ledger and must remain
-// available even when publication or task cleanup later fails.
-func (dao *PipelineOperationLogDAO) DeleteOpenLogByID(ctx context.Context, db *gorm.DB, logID string) error {
-	if logID == "" {
-		return nil
-	}
-	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND run_count IS NULL AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
-		Delete(&entity.PipelineOperationLog{}).Error
-}
-
-// DeleteUnownedOpenLogByID removes an open row only when no live ingestion
-// task owns it. Existing databases may contain more than one task per document,
-// so document identity alone is not sufficient proof that a row is leftover.
-func (dao *PipelineOperationLogDAO) DeleteUnownedOpenLogByID(ctx context.Context, db *gorm.DB, logID string) (bool, error) {
-	if logID == "" {
-		return false, nil
-	}
-	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND run_count IS NULL AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
-		Where("NOT EXISTS (SELECT 1 FROM ingestion_task WHERE pipeline_log_id = ? AND status IN ?)", logID, common.ActiveTaskStatuses).
-		Delete(&entity.PipelineOperationLog{})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
-}
-
-// HasLiveTaskOwner reports whether a live ingestion task is bound to the given
-// pipeline operation log row. Adoption of an open row is gated on this: the
-// create path never takes a row a live run owns, and the terminal fallback must
-// apply the same rule, or it would finalize the live run's entry with another
-// run's status and swallow the live run's own terminal write.
-func (dao *PipelineOperationLogDAO) HasLiveTaskOwner(ctx context.Context, db *gorm.DB, logID string) (bool, error) {
-	if logID == "" {
-		return false, nil
-	}
-	var count int64
-	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("pipeline_log_id = ? AND status IN ?", logID, common.ActiveTaskStatuses).
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.

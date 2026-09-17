@@ -48,7 +48,7 @@ func TestListIngestionMessagesUsesRunScopedKeysets(t *testing.T) {
 	}
 }
 
-func TestListIngestionMessagesTreatsLegacyRunAsTerminalAndEmpty(t *testing.T) {
+func TestListIngestionMessagesRejectsUnnumberedRun(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
@@ -59,11 +59,28 @@ func TestListIngestionMessagesTreatsLegacyRunAsTerminalAndEmpty(t *testing.T) {
 	insertMessageEvent(t, db, "legacy-run", "task-1", dao.EventTypeMessage, "old detail")
 
 	response, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "legacy-run", 200, nil, nil)
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", response, code, err)
+	if response != nil || err == nil || code != common.CodeDataError {
+		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want not-found data error", response, code, err)
 	}
-	if response.RunCount != 0 || !response.Terminal || len(response.Items) != 0 || response.OldestID != 0 || response.NewestID != 0 {
-		t.Fatalf("legacy response = %+v, want terminal empty history", response)
+}
+
+func TestListIngestionLogsExcludesUnnumberedRuns(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+	insertMessageRun(t, "old-run", "kb-1", "doc-2", entity.TaskStatusDone, 0)
+
+	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	logs, ok := result["logs"].([]map[string]interface{})
+	if !ok || len(logs) != 1 || logs[0]["id"] != "run-1" {
+		t.Fatalf("logs = %#v, want only numbered run", result["logs"])
 	}
 }
 
@@ -94,6 +111,23 @@ func TestListIngestionLogsEmbedsLatestRunEventWithoutRewritingLegacyMessage(t *t
 	}
 	assertLatestEventMap(t, byID["run-1"], 2, "latest first")
 	assertLatestEventMap(t, byID["run-2"], 3, "latest second")
+}
+
+func TestGetIngestionLogEmbedsLatestRunEvent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, "latest detail")
+
+	result, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "run-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", result, code, err)
+	}
+	assertLatestEventMap(t, result, 1, "latest detail")
 }
 
 func insertMessageRun(t *testing.T, id, kbID, documentID string, status entity.TaskStatus, runCount int) {
@@ -147,7 +181,7 @@ func assertMessageEventIDs(t *testing.T, items []service.IngestionEventItem, wan
 func assertLatestEventMap(t *testing.T, log map[string]interface{}, wantID int, wantMessage string) {
 	t.Helper()
 	event, ok := log["latest_ingestion_event"].(*service.IngestionEventItem)
-	if !ok {
+	if !ok || event == nil {
 		t.Fatalf("latest_ingestion_event = %#v, want event item", log["latest_ingestion_event"])
 	}
 	if event.ID != wantID {

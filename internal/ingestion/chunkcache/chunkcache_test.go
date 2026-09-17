@@ -38,6 +38,7 @@ type fakeStore struct {
 	failSet     bool
 	expireFails bool
 	membersErr  error
+	deleteFails map[string]bool
 }
 
 func newFakeStore() *fakeStore {
@@ -87,6 +88,9 @@ func (f *fakeStore) SMembers(_ context.Context, key string) ([]string, error) {
 
 func (f *fakeStore) Delete(_ context.Context, key string) bool {
 	f.deleted = append(f.deleted, key)
+	if f.deleteFails[key] {
+		return false
+	}
 	delete(f.kv, key)
 	delete(f.sets, key)
 	return true
@@ -278,6 +282,21 @@ func TestPurgeTask_NoopWithoutTaskOrStore(t *testing.T) {
 		t.Errorf("deleted = %v, want none for an empty task id", f.deleted)
 	}
 	PurgeTask(context.Background(), nil, "task-1")
+}
+
+func TestPurgeTaskPropagatesEntryDeleteFailure(t *testing.T) {
+	f := newFakeStore()
+	ctx := taskCtx("task-1")
+	key := "kc:extractor:keywords:a"
+	Set(ctx, f, key, "result")
+	f.deleteFails = map[string]bool{key: true}
+
+	if err := PurgeTask(context.Background(), f, "task-1"); err == nil {
+		t.Fatal("PurgeTask error = nil, want entry delete failure")
+	}
+	if _, ok := f.sets[manifestKey("task-1")]; !ok {
+		t.Fatal("manifest was deleted after an entry delete failure")
+	}
 }
 
 func TestPurgeTaskPropagatesManifestReadError(t *testing.T) {

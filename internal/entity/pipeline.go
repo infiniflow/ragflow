@@ -23,8 +23,7 @@ type PipelineOperationLog struct {
 	ID         string `gorm:"column:id;primaryKey;size:32" json:"id"`
 	DocumentID string `gorm:"column:document_id;size:32;index;uniqueIndex:idx_pipeline_operation_log_document_run,priority:1" json:"document_id"`
 	// RunCount is the monotonically allocated display number for a Go ingestion
-	// run. NULL denotes a legacy or Python-owned row and deliberately remains
-	// outside the document/run uniqueness constraint.
+	// run. The Go read path only exposes positive run numbers.
 	RunCount        *int       `gorm:"column:run_count;uniqueIndex:idx_pipeline_operation_log_document_run,priority:2" json:"run_count,omitempty"`
 	TenantID        string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	KbID            string     `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`

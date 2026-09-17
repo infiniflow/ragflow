@@ -185,8 +185,12 @@ func PurgeTask(ctx context.Context, s Store, taskID string) error {
 		return fmt.Errorf("read chunk cache manifest %s: %w", mk, err)
 	}
 	for _, k := range keys {
-		s.Delete(ctx, k)
+		if !s.Delete(ctx, k) {
+			return fmt.Errorf("delete chunk cache entry %s", k)
+		}
 	}
-	s.Delete(ctx, mk)
+	if !s.Delete(ctx, mk) {
+		return fmt.Errorf("delete chunk cache manifest %s", mk)
+	}
 	return nil
 }

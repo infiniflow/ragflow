@@ -55,7 +55,7 @@ func TestDocumentCleanupClaimMySQLTakeoverAndFencing(t *testing.T) {
 	if second.Token == first.Token || second.Owner != "new-owner" {
 		t.Fatalf("replacement claim = %+v, want a new new-owner token", second)
 	}
-	if err = claims.Renew(t.Context(), dbA, documentID, first.Token, 267, 120); !errors.Is(err, ErrDocumentCleanupClaimLost) {
+	if err = claims.Renew(t.Context(), dbA, documentID, first.Token, 267, 120, 45); !errors.Is(err, ErrDocumentCleanupClaimLost) {
 		t.Fatalf("renew with fenced token error = %v, want ErrDocumentCleanupClaimLost", err)
 	}
 

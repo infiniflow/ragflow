@@ -987,8 +987,8 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	if !inserted {
 		t.Fatal("expected insertChunks to be called")
 	}
-	if !logged {
-		t.Fatal("expected pipeline log to be created")
+	if logged {
+		t.Fatal("executor must not create a log without a bound run")
 	}
 }
 
@@ -1089,14 +1089,8 @@ func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
 	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if capturedLog == nil {
-		t.Fatalf("expected pipeline operation log to be recorded")
-	}
-	if capturedLog.OperationStatus == "" {
-		t.Fatalf("expected OperationStatus to be non-empty")
-	}
-	if capturedLog.OperationStatus != string(entity.TaskStatusDone) {
-		t.Fatalf("expected OperationStatus = %q, got %q", entity.TaskStatusDone, capturedLog.OperationStatus)
+	if capturedLog != nil {
+		t.Fatalf("executor created an operation log without a bound run: %+v", capturedLog)
 	}
 }
 

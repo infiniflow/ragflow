@@ -71,13 +71,14 @@ func (dao *DocumentCleanupClaimDAO) Acquire(ctx context.Context, db *gorm.DB, do
 	return &existing, nil
 }
 
-// Renew extends a claim only when the fencing token still owns it.
-func (dao *DocumentCleanupClaimDAO) Renew(ctx context.Context, db *gorm.DB, documentID, token string, now, lease int64) error {
-	if documentID == "" || token == "" || lease <= 0 {
+// Renew extends a claim only while its fencing token remains within the lease
+// and takeover grace period.
+func (dao *DocumentCleanupClaimDAO) Renew(ctx context.Context, db *gorm.DB, documentID, token string, now, lease, grace int64) error {
+	if documentID == "" || token == "" || lease <= 0 || grace < 0 {
 		return ErrDocumentCleanupClaimLost
 	}
 	result := db.WithContext(ctx).Model(&entity.DocumentCleanupClaim{}).
-		Where("document_id = ? AND token = ?", documentID, token).
+		Where("document_id = ? AND token = ? AND expires_at + ? >= ?", documentID, token, grace, now).
 		Updates(map[string]any{"expires_at": now + lease, "update_time": now})
 	if result.Error != nil {
 		return result.Error
