@@ -89,6 +89,12 @@ func TestValidateTableColumnSettings(t *testing.T) {
 		{"empty mode means unset", map[string]interface{}{"table_column_mode": ""}},
 		{"nil values", map[string]interface{}{"table_column_mode": nil, "table_column_roles": nil}},
 		{"string-valued roles map", map[string]interface{}{"table_column_roles": map[string]string{"a": "both"}}},
+		{"names list", map[string]interface{}{"table_column_names": []interface{}{"a", "b"}}},
+		{"names as []string", map[string]interface{}{"table_column_names": []string{"a"}}},
+		{"empty names list", map[string]interface{}{"table_column_names": []interface{}{}}},
+		// Python's dict[str, Literal[...]] accepts an empty key; the runtime never
+		// matches it against a real column, so it is not an error.
+		{"empty column name", map[string]interface{}{"table_column_roles": map[string]interface{}{"": "both"}}},
 		{"component-shaped spreadsheet", map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
 				"spreadsheet": map[string]interface{}{
@@ -118,7 +124,8 @@ func TestValidateTableColumnSettings(t *testing.T) {
 		{"non-string mode", map[string]interface{}{"table_column_mode": float64(1)}, "must be a string"},
 		{"unknown role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "skip"}}, `table_column_roles["a"]`},
 		{"non-string role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": float64(1)}}, "must be a string"},
-		{"empty column name", map[string]interface{}{"table_column_roles": map[string]interface{}{"": "both"}}, "empty column name"},
+		{"names not a list", map[string]interface{}{"table_column_names": "a,b"}, "must be a list of strings"},
+		{"names with a non-string entry", map[string]interface{}{"table_column_names": []interface{}{"a", float64(2)}}, "must contain only strings"},
 		{"roles not a map", map[string]interface{}{"table_column_roles": "indexing"}, "must be an object"},
 		{"unknown nested mode", map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
@@ -130,6 +137,11 @@ func TestValidateTableColumnSettings(t *testing.T) {
 				"spreadsheet": map[string]interface{}{"column_roles": map[string]interface{}{"a": "skip"}},
 			},
 		}, `Parser:HipSignsRhyme.spreadsheet: column_roles["a"]`},
+		{"non-list nested names", map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"spreadsheet": map[string]interface{}{"column_names": float64(1)},
+			},
+		}, "Parser:HipSignsRhyme.spreadsheet: column_names must be a list of strings"},
 	}
 	for _, tc := range invalid {
 		t.Run("invalid/"+tc.name, func(t *testing.T) {

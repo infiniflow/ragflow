@@ -85,25 +85,31 @@ func NormalizeTableColumnMode(mode string) TableColumnMode {
 }
 
 // ValidateTableColumnSettings rejects table column values the runtime cannot
-// act on: a mode other than auto/manual and a role other than the three known
-// values (plus the legacy "vectorize" alias). An absent or empty value is
-// accepted — that is "unset", which the runtime reads as the default.
+// act on: a mode other than auto/manual, a role other than the three known
+// values (plus the legacy "vectorize" alias), and column names that are not a
+// list of strings. An absent or empty value is accepted — that is "unset",
+// which the runtime reads as the default.
 //
-// Both shapes a request can use are covered: the root-level `table_column_mode`
-// / `table_column_roles` keys (upload override, dataset settings) and the
-// component-shaped `column_mode` / `column_roles` keys a parser dialog writes
-// under a `Parser:<id>` spreadsheet entry.
+// Both shapes a request can use are covered: the root-level `table_column_*`
+// keys (upload override, dataset settings) and the component-shaped
+// `column_*` keys a parser dialog writes under a `Parser:<id>` spreadsheet
+// entry.
 //
 // Python validates the same contract at its API boundary
-// (api/utils/validation_utils.py:430 defines the role Literal, :456-459 the
+// (api/utils/validation_utils.py:430 defines the role Literal, :456-461 the
 // fields), so an unknown value never reaches parsing there. This is the Go
 // equivalent: the runtime's "unknown role is excluded" rule stays a safety net
 // for legacy rows instead of the normal write path.
+//
+// The checks accept what Python accepts (a role entry keyed by an empty column
+// name is meaningless but not rejected there, and mode comparison is
+// case-insensitive here as the runtime's normalization is), and reject what
+// Python rejects (unknown role, non-string role, non-list names).
 func ValidateTableColumnSettings(config map[string]interface{}) error {
 	if config == nil {
 		return nil
 	}
-	if err := validateTableColumnKeys(config, "table_column_mode", "table_column_roles"); err != nil {
+	if err := validateTableColumnKeys(config, "table_column_mode", "table_column_roles", "table_column_names"); err != nil {
 		return err
 	}
 	for _, cpnID := range sortedKeys(config) {
@@ -118,14 +124,14 @@ func ValidateTableColumnSettings(config map[string]interface{}) error {
 		if !ok {
 			continue
 		}
-		if err := validateTableColumnKeys(spreadsheet, "column_mode", "column_roles"); err != nil {
+		if err := validateTableColumnKeys(spreadsheet, "column_mode", "column_roles", "column_names"); err != nil {
 			return fmt.Errorf("%s.spreadsheet: %w", cpnID, err)
 		}
 	}
 	return nil
 }
 
-func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey string) error {
+func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey, namesKey string) error {
 	if raw, ok := config[modeKey]; ok && raw != nil {
 		mode, isString := raw.(string)
 		if !isString {
@@ -139,29 +145,44 @@ func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey st
 		}
 	}
 
-	raw, ok := config[rolesKey]
-	if !ok || raw == nil {
-		return nil
-	}
-	switch roles := raw.(type) {
-	case map[string]interface{}:
-		return validateTableColumnRoles(rolesKey, roles)
-	case map[string]string:
-		converted := make(map[string]interface{}, len(roles))
-		for column, role := range roles {
-			converted[column] = role
+	if raw, ok := config[rolesKey]; ok && raw != nil {
+		switch roles := raw.(type) {
+		case map[string]interface{}:
+			if err := validateTableColumnRoles(rolesKey, roles); err != nil {
+				return err
+			}
+		case map[string]string:
+			converted := make(map[string]interface{}, len(roles))
+			for column, role := range roles {
+				converted[column] = role
+			}
+			if err := validateTableColumnRoles(rolesKey, converted); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("%s must be an object mapping column name to role", rolesKey)
 		}
-		return validateTableColumnRoles(rolesKey, converted)
-	default:
-		return fmt.Errorf("%s must be an object mapping column name to role", rolesKey)
 	}
+
+	if raw, ok := config[namesKey]; ok && raw != nil {
+		names, isList := raw.([]interface{})
+		if !isList {
+			if _, isStringList := raw.([]string); isStringList {
+				return nil
+			}
+			return fmt.Errorf("%s must be a list of strings", namesKey)
+		}
+		for _, name := range names {
+			if _, isString := name.(string); !isString {
+				return fmt.Errorf("%s must contain only strings, got %T", namesKey, name)
+			}
+		}
+	}
+	return nil
 }
 
 func validateTableColumnRoles(rolesKey string, roles map[string]interface{}) error {
 	for _, column := range sortedKeys(roles) {
-		if strings.TrimSpace(column) == "" {
-			return fmt.Errorf("%s must not contain an empty column name", rolesKey)
-		}
 		role, isString := roles[column].(string)
 		if !isString {
 			return fmt.Errorf("%s[%q] must be a string", rolesKey, column)
