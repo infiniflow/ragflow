@@ -2515,6 +2515,33 @@ func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
 	}
 }
 
+func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return purgeErr }
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("clearDocumentParseResults error = %v, want purge error", err)
+	}
+	remaining, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	}
+	if remaining == nil {
+		t.Fatal("task was deleted despite resumable state cleanup failure")
+	}
+}
+
 func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
 	docEngine := &sourceAvailabilityDocEngine{}
 	svc := testDocumentService(t)

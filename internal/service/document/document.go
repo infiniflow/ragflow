@@ -44,6 +44,7 @@ type DocumentService struct {
 	fileDAO             *dao.FileDAO
 	canvasDAO           *dao.UserCanvasDAO
 	api4ConvDAO         *dao.API4ConversationDAO
+	purgeTaskState      func(context.Context, string) error
 }
 
 // NewDocumentService create document service

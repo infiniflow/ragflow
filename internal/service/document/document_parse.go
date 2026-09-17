@@ -15,6 +15,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
+	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -219,6 +220,24 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 			task.Status = common.STOPPED
 		}
 		taskExisted = true
+	}
+	if task != nil {
+		purgeTaskState := s.purgeTaskState
+		if purgeTaskState == nil {
+			purgeTaskState = ingestionpipeline.PurgeTaskState
+		}
+		if err := s.beginCleanupBatch(ctx, doc.ID, claimToken); err != nil {
+			return fmt.Errorf("begin task state cleanup for document %s: %w", doc.ID, err)
+		}
+		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		err := purgeTaskState(batchCtx, task.ID)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("purge task state for document %s: %w", doc.ID, err)
+		}
+		if err := s.finishCleanupBatch(ctx, doc.ID, claimToken); err != nil {
+			return fmt.Errorf("cleanup claim for document %s was lost: %w", doc.ID, err)
+		}
 	}
 
 	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
