@@ -1289,18 +1289,24 @@ func startServer(ctx context.Context, args *serverArgs) error {
 				common.Warn("compiled expansion disabled: unknown reason")
 			}
 		}
+		// The two projections of one reasoning step: the sentence the chat UI
+		// appends to its think block, and the structured event a step-rendering
+		// client consumes. Steps.Stage/Emit feeds both from one call, so the
+		// trace cannot drift from its structured twin. Each step is an
+		// isThink=true delta, i.e. think-block content rather than answer text.
 		if req.AnswerSink != nil {
+			answerSink := req.AnswerSink
 			deps.AnswerSink = &advanced_rag.AnswerSink{
 				OnDelta: req.AnswerSink,
 			}
-			// Engine-stage progress (planner/orchestrator/research/SCA) is
-			// research-time think content — mirroring Python think_log, which
-			// forwarded the tagged lines into the <think> block. Deliver each
-			// line as an isThink=true delta so the live reasoning block shows
-			// the research as it happens.
-			deps.Progress = func(line string) {
-				req.AnswerSink(line, true)
-			}
+			deps.Steps.Text = func(line string) { answerSink(line, true) }
+		}
+		if req.ThinkSink != nil {
+			// One type on both sides — harness.ThinkEvent is an alias of
+			// service.ThinkEvent — so the sink passes straight through: there is
+			// nothing to copy field by field, and no way to forget a field that
+			// was added on one side only.
+			deps.Steps.Events = req.ThinkSink
 		}
 		r := advanced_rag.Rag(ctx, deps, harness.RunRequest{
 			Question:        req.Question,

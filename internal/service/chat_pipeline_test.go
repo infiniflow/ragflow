@@ -18,8 +18,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -1560,10 +1562,20 @@ func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 	}
 }
 
-// TestRetrieveViaHarnessEmitsToolLoopLines covers the Python
-// rag/llm/chat_model.py "[Tool loop]" lines that think_log forwarded from the
-// "rag.llm.chat_model" namespace.
-func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
+// collectThinkSink is collectSink's structured twin: the harness' step events in
+// order, so a test can assert what reached the request's ThinkSink.
+func collectThinkSink(events *[]ThinkEvent) func(ThinkEvent) {
+	return func(ev ThinkEvent) { *events = append(*events, ev) }
+}
+
+// TestRetrieveViaHarnessDoesNotSynthesizeLoopLines pins the fix for a trace that
+// described a loop which had not run: the pipeline used to emit
+// "[Tool loop] Deciding what to do next ..." / "Step 1: running rag..." around
+// EVERY non-naive harness call, whether or not the outer react loop was the
+// thing driving research. Those steps are now reported by the loop itself
+// (advanced_rag.runOuterReact*), so a harness stub — which by definition runs no
+// outer loop — must produce no narration at all.
+func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
 	stubHarness(t, "the final cited answer")
 	var receivedHistory []map[string]interface{}
 	retriever := harnessRetriever
@@ -1575,8 +1587,9 @@ func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
 
 	var got []string
 	var thinks []bool
+	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "", history)
+	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
@@ -1586,72 +1599,100 @@ func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
 	if answer != "the final cited answer" {
 		t.Fatalf("answer = %q", answer)
 	}
-
-	joined := strings.Join(got, "")
-	for _, want := range []string{
-		"[Tool loop] Deciding what to do next (step 1); available tools: rag",
-		"[Tool loop] Step 1: running rag...",
-		// A non-empty answer is the terminal case in Python.
-		"[Tool loop] The rag tool produced the final answer, done.",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("missing %q; got:\n%s", want, joined)
-		}
+	if len(got) != 0 {
+		t.Errorf("the pipeline synthesized %d think delta(s), want none: %#v", len(got), got)
 	}
-	// Every line must be tagged as thinking and ThinkLineBreak-terminated so
-	// the HTML think block does not glue the stages together.
-	if len(thinks) != 3 {
-		t.Fatalf("got %d deltas, want 3: %#v", len(thinks), got)
-	}
-	for i, isThink := range thinks {
-		if !isThink {
-			t.Errorf("delta %d (%q) not tagged as thinking", i, got[i])
-		}
-		if !strings.HasSuffix(got[i], thinkLineBreak) {
-			t.Errorf("delta %d (%q) missing trailing %s", i, got[i], thinkLineBreak)
-		}
+	if len(events) != 0 {
+		t.Errorf("the pipeline synthesized %d step event(s), want none: %#v", len(events), events)
 	}
 }
 
-// TestRetrieveViaHarnessToolLoopObservation covers the non-terminal case: an
-// empty answer means the tool fed the next round, not the final reply.
-func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
-	stubHarness(t, "")
+// TestRetrieveViaHarnessForwardsThinkSink pins the structured-step channel: the
+// sink the pipeline is given reaches the harness request, and the events the
+// harness emits arrive with their fields intact.
+func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		if req.ThinkSink == nil {
+			return HarnessResult{}, fmt.Errorf("harness request carries no ThinkSink")
+		}
+		req.ThinkSink(ThinkEvent{
+			Kind: "tool_result", Stage: "Function tool", Tool: "retrieve",
+			Status: "ok", Reason: "no_doc", Cause: "index not found", Results: 3, Documents: 2,
+			Sources: []string{"c1", "c2"}, DurationMS: 12,
+			Summary: "[Function tool] The retrieve tool returned 3 results.",
+		})
+		return HarnessResult{Answer: "a"}, nil
+	}
 
-	var got []string
-	var thinks []bool
+	// The text sink is beside the point here (this test is about the structured
+	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
+	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
-	joined := strings.Join(got, "")
-	if !strings.Contains(joined, "[Tool loop] The rag tool produced an observation for step 1.") {
-		t.Errorf("missing observation line; got:\n%s", joined)
+	// Only what the harness reported: the pipeline adds nothing of its own.
+	var got *ThinkEvent
+	for i := range events {
+		if events[i].Kind == "tool_result" {
+			got = &events[i]
+			break
+		}
 	}
-	if strings.Contains(joined, "final answer") {
-		t.Errorf("empty answer must not claim a final answer:\n%s", joined)
+	if got == nil {
+		t.Fatalf("no tool_result among %#v", events)
+	}
+	if got.Tool != "retrieve" || got.Status != "ok" || got.Cause != "index not found" ||
+		got.Results != 3 || got.Documents != 2 || got.DurationMS != 12 ||
+		len(got.Sources) != 2 || got.Summary == "" {
+		t.Errorf("event lost fields on the way through: %#v", *got)
+	}
+	if len(events) != 1 {
+		t.Errorf("events = %#v, want only what the harness reported", events)
 	}
 }
 
-// TestRetrieveViaHarnessNaiveSkipsToolLoop guards the naive path: no agentic
-// loop runs, so no [Tool loop] narration must appear.
-func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
+// TestHarnessThinkSinkForwardsEvent covers the pipeline-side half: one event in,
+// one chunk out, carrying the event and no answer delta.
+func TestHarnessThinkSinkForwardsEvent(t *testing.T) {
+	out := make(chan AsyncChatResult, 1)
+	harnessThinkSink(context.Background(), out)(ThinkEvent{Kind: "stage", Summary: "[Planner] x"})
+
+	select {
+	case chunk := <-out:
+		if chunk.ThinkEvent == nil || chunk.ThinkEvent.Kind != "stage" || chunk.ThinkEvent.Summary != "[Planner] x" {
+			t.Fatalf("chunk = %#v, want the event", chunk)
+		}
+		if chunk.Answer != "" || chunk.Final {
+			t.Errorf("an event chunk must carry no answer and not be final: %#v", chunk)
+		}
+	default:
+		t.Fatal("event was not forwarded")
+	}
+
+	// A cancelled request must not block the producer.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	harnessThinkSink(ctx, make(chan AsyncChatResult))(ThinkEvent{Summary: "y"})
+}
+
+// TestRetrieveViaHarnessNaiveEmitsNothing guards the naive path: no agentic loop
+// runs, so nothing is narrated — and with the pipeline no longer synthesizing
+// its own lines, nothing is emitted at all.
+func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
 	stubHarness(t, "x")
 
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("naive mode emitted %d deltas, want 0: %#v", len(got), got)
 	}
-}
-
-// TestToolLoopLineNilSink guards the nil-sink path (streaming disabled).
-func TestToolLoopLineNilSink(t *testing.T) {
-	toolLoopLine(nil, "[Tool loop] Step 1: running rag...") // must not panic
 }
 
 // TestDecorateHarnessAnswerReferenceUsesClientChunkShape pins that the reasoning
@@ -1732,4 +1773,65 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 	if !found {
 		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
 	}
+}
+
+// TestThinkEventWireKeys pins the JSON keys of a fully populated step: they ARE
+// the client contract (the SSE `think_event` field), so renaming or dropping a tag
+// breaks every client while neither the compiler nor any Go caller notices.
+//
+// It is also the only assertion on this struct's shape, which is why the harness
+// ALIASES it (harness.ThinkEvent) instead of carrying a second copy bridged field
+// by field in cmd — that copy compiled for as long as it stayed a subset, and
+// silently dropped any field added on the other side.
+func TestThinkEventWireKeys(t *testing.T) {
+	// Every field populated: with `omitempty` on all but Kind and Summary, that is
+	// what makes the whole key set appear.
+	full := ThinkEvent{
+		Kind:       "tool_result",
+		Stage:      "Function tool",
+		Tool:       "retrieve",
+		Args:       `{"query":"q"}`,
+		Status:     "ok",
+		Reason:     "no_doc",
+		Cause:      "the knowledge base returned no searchable hits",
+		Results:    3,
+		Documents:  2,
+		Sources:    []string{"c1", "c2"},
+		DurationMS: 12,
+		Summary:    "The retrieve tool returned 3 results from 2 documents.",
+	}
+	want := []string{
+		"args", "cause", "documents", "duration_ms", "kind", "reason",
+		"results", "sources", "stage", "status", "summary", "tool",
+	}
+	if got := thinkEventWireKeys(t, full); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("wire keys = %v, want %v", got, want)
+	}
+
+	// A stage step carries only Kind, Stage and Summary; everything else is
+	// omitted rather than sent as a zero — a client must treat each optional field
+	// as absent-when-zero, not as present-and-empty.
+	got := thinkEventWireKeys(t, ThinkEvent{Kind: "stage", Stage: "RAGAgent", Summary: "x"})
+	if strings.Join(got, ",") != "kind,stage,summary" {
+		t.Errorf("stage step keys = %v, want kind,stage,summary", got)
+	}
+}
+
+// thinkEventWireKeys marshals one event and returns its sorted JSON key set.
+func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
+	t.Helper()
+	raw, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	keys := make([]string, 0, len(decoded))
+	for k := range decoded {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
