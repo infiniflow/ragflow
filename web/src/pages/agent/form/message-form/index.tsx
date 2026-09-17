@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { WebHookResponseStatusFormField } from '@/components/webhook-response-status';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -123,7 +123,7 @@ function MessageForm({ node }: INextOperatorForm) {
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormControl>
-                      <RAGFlowSelect
+                      <SelectWithSearch
                         options={Object.keys(ExportFileType).map(
                           (key: string) => {
                             return {
@@ -136,10 +136,9 @@ function MessageForm({ node }: INextOperatorForm) {
                           },
                         )}
                         {...field}
-                        onValueChange={field.onChange}
                         placeholder={t('common.selectPlaceholder')}
                         allowClear
-                      ></RAGFlowSelect>
+                      ></SelectWithSearch>
                     </FormControl>
                   </FormItem>
                 )}

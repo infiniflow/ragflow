@@ -212,7 +212,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 		p := queue[0]
 		queue = queue[1:]
 		for _, child := range p.node.Children {
-			if child.ID == "" {
+			if child == nil || child.ID == "" {
 				continue
 			}
 			// Entity: child node (dedup by id so a DAG-shaped tree does not emit
@@ -241,24 +241,28 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 				})
 			}
 			// Relation: parent → child edge (type = "related", Python default).
-			out = append(out, common.Product{
-				ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "relation", p.parent, child.ID),
-				DocID:    docID,
-				TenantID: tenantID,
-				Variant:  common.VariantMindmap,
-				Content: payloadJSON(map[string]any{
-					"source": p.parent,
-					"target": child.ID,
-					"type":   "related",
-				}),
-				Meta: map[string]any{
-					"kind":          "relation",
-					"from":          p.parent,
-					"to":            child.ID,
-					"relation_type": "related",
-					"compile_kwd":   "mindmap",
-				},
-			})
+			// A node may be repeated as the synthetic root when batch roots are
+			// merged; do not persist that self-loop.
+			if p.parent != child.ID {
+				out = append(out, common.Product{
+					ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "relation", p.parent, child.ID),
+					DocID:    docID,
+					TenantID: tenantID,
+					Variant:  common.VariantMindmap,
+					Content: payloadJSON(map[string]any{
+						"source": p.parent,
+						"target": child.ID,
+						"type":   "related",
+					}),
+					Meta: map[string]any{
+						"kind":          "relation",
+						"from":          p.parent,
+						"to":            child.ID,
+						"relation_type": "related",
+						"compile_kwd":   "mindmap",
+					},
+				})
+			}
 			queue = append(queue, pending{child, child.ID})
 		}
 	}

@@ -300,8 +300,8 @@ func (dao *KnowledgebaseDAO) GetAllByTenantIDs(ctx context.Context, db *gorm.DB,
 	var kbs []*entity.Knowledgebase
 
 	err := db.WithContext(ctx).Where(
-		"(tenant_id IN ? AND permission = ?) OR tenant_id = ?",
-		tenantIDs, string(entity.TenantPermissionTeam), userID,
+		"((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
+		tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid),
 	).Order("create_time ASC").Find(&kbs).Error
 
 	return kbs, err

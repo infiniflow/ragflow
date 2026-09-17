@@ -1972,8 +1972,8 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 // TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
 // template group owned by the caller appears in the merged /agents list
 // (no canvas_category filter), carrying the "compilation_template_group" type
-// discriminator and its title = name. Built-in catalogue groups (empty tenant)
-// must NOT leak in.
+// discriminator and its title = name. Groups without the caller's tenant
+// ownership must NOT leak in.
 func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -1993,7 +1993,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// The caller's own group (must appear), updated before the canvas.
 	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
-	// A built-in catalogue group with empty tenant_id (must NOT appear).
+	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
 		Scope: "file", BaseModel: entity.BaseModel{CreateTime: &base},

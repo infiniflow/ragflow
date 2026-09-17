@@ -147,6 +147,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		Highlight:              req.Highlight,
 		AllowDenseFallback:     req.AllowDenseFallback,
 		Filter:                 req.Filter,
 		Language:               req.Language,
@@ -336,15 +337,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			resultChunk["vector"] = zeroVector
 		}
 
-		highlightEnabled := false
-		if req.Highlight != nil && *req.Highlight {
-			highlightEnabled = true
-		}
-		if highlightEnabled && searchResult.Highlight != nil {
+		if searchResult.Highlight != nil {
 			if highlightText, ok := searchResult.Highlight[chunkID]; ok {
-				resultChunk["highlight"] = RemoveRedundantSpaces(highlightText)
-			} else if contentWithWeight, ok := chunk["content_with_weight"].(string); ok {
-				resultChunk["highlight"] = RemoveRedundantSpaces(contentWithWeight)
+				resultChunk["highlight"] = highlightText
 			}
 		}
 		filteredChunks = append(filteredChunks, resultChunk)
@@ -811,8 +806,8 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	aggregation := s.docEngine.GetAggregation(searchResult.Chunks, "docnm_kwd")
 
 	// Build Highlight using GetHighlight
-	var highlight map[string]string
-	if len(keywordsList) > 0 {
+	highlight := make(map[string]string)
+	if *req.Highlight {
 		highlight = s.docEngine.GetHighlight(searchResult.Chunks, keywordsList, "content_with_weight")
 	}
 

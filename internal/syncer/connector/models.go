@@ -17,7 +17,9 @@
 package connector
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -105,4 +107,54 @@ type SlimDocument struct {
 // PruneBatch contains one slim snapshot batch.
 type PruneBatch struct {
 	Documents []SlimDocument
+}
+
+// rdbmsQuery is one base SQL query plus the identity used by resume cursors:
+// the table name in per-table mode, or "" for a single custom query.
+type rdbmsQuery struct {
+	name string
+	sql  string
+}
+
+// rdbmsSyncQuery is one prepared sync query with its resume metadata.
+type rdbmsSyncQuery struct {
+	name     string
+	sql      string
+	ordered  bool
+	fallback string
+}
+
+// rdbmsResumeCursor identifies where a MySQL/PostgreSQL sync left off: the
+// query that produced the last committed batch, the ordering key the stream
+// was sorted by (a single column, or "timestamp,id" for incremental windows),
+// and the SourceID of the last emitted row (the resume anchor). It is stored
+// JSON-encoded in SyncCheckpoint.Cursor so arbitrary table names and source
+// ids survive the round trip.
+type rdbmsResumeCursor struct {
+	Query    string `json:"q"`
+	Order    string `json:"o"`
+	SourceID string `json:"s"`
+}
+
+// encodeRDBMSCursor serializes a resume cursor for SyncCheckpoint.Cursor.
+func encodeRDBMSCursor(query, order, sourceID string) string {
+	raw, _ := json.Marshal(rdbmsResumeCursor{Query: query, Order: order, SourceID: sourceID})
+	return string(raw)
+}
+
+// parseRDBMSCursor decodes a resume cursor. A missing or malformed cursor is
+// treated as invalid progress so the runner restarts the task window instead
+// of guessing an offset.
+func parseRDBMSCursor(cursor string) (rdbmsResumeCursor, error) {
+	var c rdbmsResumeCursor
+	if cursor == "" {
+		return c, fmt.Errorf("rdbms sync checkpoint has no cursor: %w", ErrSyncResumeInvalid)
+	}
+	if err := json.Unmarshal([]byte(cursor), &c); err != nil {
+		return c, fmt.Errorf("rdbms sync checkpoint cursor is malformed: %w", ErrSyncResumeInvalid)
+	}
+	if c.SourceID == "" {
+		return c, fmt.Errorf("rdbms sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	return c, nil
 }

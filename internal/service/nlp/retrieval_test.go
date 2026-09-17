@@ -68,12 +68,60 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 			t.Fatalf("must_not filter = %#v", filters["must_not"])
 		}
 	}
+	if engine.highlightCalls != 0 {
+		t.Fatalf("GetHighlight calls = %d with highlighting disabled, want 0", engine.highlightCalls)
+	}
+}
+
+func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	rows := []map[string]interface{}{
+		{"id": "highlighted", "content_ltks": "alpha", "content_with_weight": "alpha élève", "_score": 0.9},
+		{"id": "unmatched", "content_ltks": "alpha", "content_with_weight": "plain content", "_score": 0.8},
+	}
+	docEngine := &retrievalCountEngine{
+		rows:       rows,
+		highlights: map[string]string{"highlighted": "<em>alpha</em> élève"},
+	}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 1.0
+	highlight := true
+
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               2,
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Highlight:              &highlight,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if docEngine.highlightCalls != 1 {
+		t.Fatalf("GetHighlight calls = %d, want 1", docEngine.highlightCalls)
+	}
+	if got := result.Chunks[0]["highlight"]; got != "<em>alpha</em> élève" {
+		t.Fatalf("highlight = %q, want spacing preserved", got)
+	}
+	if _, ok := result.Chunks[1]["highlight"]; ok {
+		t.Fatalf("unmatched chunk received fallback highlight: %#v", result.Chunks[1])
+	}
 }
 
 type retrievalCountEngine struct {
-	rows          []map[string]interface{}
-	searchLimits  []int
-	searchFilters []map[string]interface{}
+	rows           []map[string]interface{}
+	searchLimits   []int
+	searchFilters  []map[string]interface{}
+	highlights     map[string]string
+	highlightCalls int
 }
 
 func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -184,7 +232,8 @@ func (e *retrievalCountEngine) GetAggregation([]map[string]interface{}, string) 
 	return nil
 }
 func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
-	return nil
+	e.highlightCalls++
+	return e.highlights
 }
 func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
 	return nil, nil

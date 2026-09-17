@@ -55,6 +55,10 @@ type RetrievalChunk struct {
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
+	// DocType is the engine's doc_type_kwd ("text" / "image" / "table").
+	// Carried so an image chunk reaches the harness evidence pool with its type
+	// intact and the answer reference card can still render it as an image.
+	DocType string
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.

@@ -117,30 +117,29 @@ func newLocalProviderFromEnv() *LocalProvider {
 // vars, mirroring the admin-panel settings JSON shape.
 func localConfigFromEnv() map[string]any {
 	return map[string]any{
-		"PYTHON_BIN":         common.GetEnv(common.EnvLocalPythonBin),
-		"NODE_BIN":           common.GetEnv(common.EnvLocalNodeBin),
-		"WORK_DIR":           common.GetEnv(common.EnvLocalWorkDir),
-		"TIMEOUT":            common.GetEnv(common.EnvLocalTimeout),
-		"MAX_MEMORY_MB":      common.GetEnv(common.EnvLocalMaxMemoryMB),
-		"MAX_OUTPUT_BYTES":   common.GetEnv(common.EnvLocalMaxOutputBytes),
-		"MAX_ARTIFACTS":      common.GetEnv(common.EnvLocalMaxArtifacts),
-		"MAX_ARTIFACT_BYTES": common.GetEnv(common.EnvLocalMaxArtifactBytes),
+		"python_bin":         common.GetEnv(common.EnvLocalPythonBin),
+		"node_bin":           common.GetEnv(common.EnvLocalNodeBin),
+		"work_dir":           common.GetEnv(common.EnvLocalWorkDir),
+		"timeout":            common.GetEnv(common.EnvLocalTimeout),
+		"max_memory_mb":      common.GetEnv(common.EnvLocalMaxMemoryMB),
+		"max_output_bytes":   common.GetEnv(common.EnvLocalMaxOutputBytes),
+		"max_artifacts":      common.GetEnv(common.EnvLocalMaxArtifacts),
+		"max_artifact_bytes": common.GetEnv(common.EnvLocalMaxArtifactBytes),
 	}
 }
 
 // newLocalProviderFromConfig builds the provider from a JSON
-// config map. Config keys mirror the env-var names without the
-// LOCAL_ prefix.
+// config map. Config keys use the lowercase Python schema names.
 func newLocalProviderFromConfig(cfg map[string]any) *LocalProvider {
 	p := &LocalProvider{
-		pythonBin:        configString(cfg, "PYTHON_BIN"),
-		nodeBin:          configString(cfg, "NODE_BIN"),
-		workDir:          configString(cfg, "WORK_DIR"),
-		timeout:          configInt(cfg, "TIMEOUT", localDefaultTimeout),
-		maxMemoryMB:      configInt(cfg, "MAX_MEMORY_MB", localDefaultMaxMemoryMB),
-		maxOutputBytes:   configInt(cfg, "MAX_OUTPUT_BYTES", localDefaultMaxOutputBytes),
-		maxArtifacts:     configInt(cfg, "MAX_ARTIFACTS", localDefaultMaxArtifacts),
-		maxArtifactBytes: configInt(cfg, "MAX_ARTIFACT_BYTES", localDefaultMaxArtifactBytes),
+		pythonBin:        configString(cfg, "python_bin"),
+		nodeBin:          configString(cfg, "node_bin"),
+		workDir:          configString(cfg, "work_dir"),
+		timeout:          configInt(cfg, "timeout", localDefaultTimeout),
+		maxMemoryMB:      configInt(cfg, "max_memory_mb", localDefaultMaxMemoryMB),
+		maxOutputBytes:   configInt(cfg, "max_output_bytes", localDefaultMaxOutputBytes),
+		maxArtifacts:     configInt(cfg, "max_artifacts", localDefaultMaxArtifacts),
+		maxArtifactBytes: configInt(cfg, "max_artifact_bytes", localDefaultMaxArtifactBytes),
 		instances:        map[string]string{},
 	}
 	if p.pythonBin == "" {

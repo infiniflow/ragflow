@@ -45,6 +45,7 @@ import {
   useUpdateDataSourceStatus,
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
+import BackButton from '@/components/back-button';
 
 const SourceDetailPage = () => {
   const { t } = useTranslation();
@@ -237,8 +238,10 @@ const SourceDetailPage = () => {
       {/* <BackButton /> */}
       <Card className="bg-transparent border border-border-button px-5 pt-[10px] pb-5 rounded-md mt-5">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-3">
-          {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
           <CardTitle className="text-2xl text-text-primary flex gap-1 items-center font-normal pb-3">
+            <BackButton className="border-none">
+              <></>
+            </BackButton>
             {detailInfo?.icon}
             {detail?.name}
           </CardTitle>

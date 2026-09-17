@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
+	"ragflow/internal/tokenizer"
 )
 
 // Dataset-nav constants. These mirror Python's dataset_nav.py: nav rows live in
@@ -163,9 +164,9 @@ func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID, keywords 
 	if strings.TrimSpace(keywords) != "" {
 		filter = navFilter(nil)
 	}
-	matchExpressions := navKeywordExpressions(keywords)
 	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter,
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize, matchExpressions)
+		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
+		navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -185,7 +186,7 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, key
 	offset := page * pageSize
 	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
 		navFilter(map[string]interface{}{"parent_kwd": []string{name}}),
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
+		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
 		navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
@@ -209,6 +210,9 @@ func navKeywordExpressions(keywords string) []interface{} {
 	keywords = strings.TrimSpace(keywords)
 	if keywords == "" {
 		return nil
+	}
+	if tokenized, err := tokenizer.Tokenize(keywords); err == nil && tokenized != "" {
+		keywords = tokenized
 	}
 	return []interface{}{&types.MatchTextExpr{
 		Fields:       []string{"content_ltks^10", "content_sm_ltks"},
@@ -549,11 +553,22 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		}
 		vec = embeddings[0]
 	}
+	contentLtks, err := tokenizer.Tokenize(in.Summary)
+	if err != nil || contentLtks == "" {
+		contentLtks = in.Summary
+	}
+	contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
+	if err != nil || contentSmLtks == "" {
+		contentSmLtks = contentLtks
+	}
 
 	// storeGet: skip if a nav_doc for this doc already exists with same summary.
 	existing, _, err := s.navSearch(ctx, in.TenantID, in.KbID,
-		navFilter(map[string]interface{}{"doc_id": []string{in.DocID}}),
-		[]string{"content_with_weight"}, 0, 1, nil)
+		navFilter(map[string]interface{}{
+			"type_kwd": []string{nav.TypeNavDoc},
+			"doc_id":   []string{in.DocID},
+		}),
+		[]string{"content_with_weight", "content_ltks", "content_sm_ltks"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -562,7 +577,20 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			var m map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &m); err == nil {
 				if d, _ := m["description"].(string); d == in.Summary {
-					return nil // unchanged
+					if firstStringValue(existing[0]["content_ltks"]) != "" && firstStringValue(existing[0]["content_sm_ltks"]) != "" {
+						return nil // unchanged
+					}
+					return de.UpdateChunks(ctx,
+						map[string]interface{}{
+							"compile_kwd": []string{navCompileKwd},
+							"type_kwd":    []string{nav.TypeNavDoc},
+							"doc_id":      []string{in.DocID},
+							"kb_id":       in.KbID,
+						},
+						map[string]interface{}{
+							"content_ltks":    contentLtks,
+							"content_sm_ltks": contentSmLtks,
+						}, s.navIndexName(in.TenantID), in.KbID)
 				}
 			}
 		}
@@ -599,7 +627,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// deterministic id (hash of the "dataset_nav:doc:{doc_id}" key) so
 		// RemoveDoc / cascade cleanup can locate and delete it precisely,
 		// instead of relying on a doc_id + type filter alone.
-		_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+		row := map[string]interface{}{
 			"id":            navDocID(in.TenantID, in.KbID, in.DocID),
 			"compile_kwd":   navCompileKwd,
 			"available_int": 0,
@@ -615,8 +643,11 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"doc_id":              in.DocID,
 			"doc_count_int":       1,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+			"content_ltks":        contentLtks,
+			"content_sm_ltks":     contentSmLtks,
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-		}}, idx, in.KbID, "")
+		}
+		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID, "")
 		return err
 	}
 
@@ -638,7 +669,15 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if summary == "" {
 		summary = in.Summary
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+	clusterContentLtks, err := tokenizer.Tokenize(summary)
+	if err != nil || clusterContentLtks == "" {
+		clusterContentLtks = summary
+	}
+	clusterContentSmLtks, err := tokenizer.FineGrainedTokenize(clusterContentLtks)
+	if err != nil || clusterContentSmLtks == "" {
+		clusterContentSmLtks = clusterContentLtks
+	}
+	clusterRow := map[string]interface{}{
 		"id":                  navClusterID(in.TenantID, in.KbID, name),
 		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
 		"compile_kwd":         navCompileKwd,
@@ -650,8 +689,11 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_count_int":       1,
 		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
+		"content_ltks":        clusterContentLtks,
+		"content_sm_ltks":     clusterContentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID, "")
+	}
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID, "")
 	if err != nil {
 		return err
 	}
@@ -660,7 +702,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	// new root cluster that only folds the doc into doc_ids_kwd would leave the
 	// nav tree with a single cluster and no nav_doc child, so /children returns
 	// empty. The nav_doc carries a readable title + parent_kwd = the cluster name.
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+	docRow := map[string]interface{}{
 		"id":                  navDocID(in.TenantID, in.KbID, in.DocID),
 		"compile_kwd":         navCompileKwd,
 		"available_int":       0,
@@ -671,8 +713,11 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_id":              in.DocID,
 		"doc_count_int":       1,
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+		"content_ltks":        contentLtks,
+		"content_sm_ltks":     contentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID, "")
+	}
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID, "")
 	return err
 }
 
@@ -965,6 +1010,15 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 				spl.count++
 			}
 		}
+		description := "split of " + clusterName
+		contentLtks, err := tokenizer.Tokenize(description)
+		if err != nil || contentLtks == "" {
+			contentLtks = description
+		}
+		contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
+		if err != nil || contentSmLtks == "" {
+			contentSmLtks = contentLtks
+		}
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
 			"compile_kwd":         navCompileKwd,
@@ -975,7 +1029,9 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			"depth_int":           clusterDepth(clusterChunks),
 			"doc_count_int":       spl.count,
 			"doc_ids_kwd":         spl.ids,
-			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": "split of " + clusterName}),
+			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": description}),
+			"content_ltks":        contentLtks,
+			"content_sm_ltks":     contentSmLtks,
 		}
 		// Representative vector: if any reparented child carried a vector, use it
 		// so the split cluster participates in KNN routing. This is a heuristic

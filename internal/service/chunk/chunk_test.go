@@ -422,11 +422,17 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	if !ok {
 		t.Fatalf("MatchExprs[0] = %T, want *types.MatchTextExpr", engine.searchReq.MatchExprs[0])
 	}
-	if matchText.MatchingText != "invoice terms" {
-		t.Fatalf("MatchingText = %q, want %q", matchText.MatchingText, "invoice terms")
+	if matchText.MatchingText == "invoice terms" || !strings.Contains(matchText.MatchingText, "invoice") || !strings.Contains(matchText.MatchingText, "terms") {
+		t.Fatalf("MatchingText = %q, want a tokenized query containing invoice and terms", matchText.MatchingText)
 	}
-	if matchText.TopN != size {
-		t.Fatalf("TopN = %d, want %d", matchText.TopN, size)
+	if matchText.TopN != 100 {
+		t.Fatalf("TopN = %d, want 100", matchText.TopN)
+	}
+	if got := matchText.ExtraOptions["original_query"]; got != "invoice terms" {
+		t.Fatalf("original_query = %#v, want %q", got, "invoice terms")
+	}
+	if got := matchText.ExtraOptions["minimum_should_match"]; got != 0.3 {
+		t.Fatalf("minimum_should_match = %#v, want 0.3", got)
 	}
 }
 

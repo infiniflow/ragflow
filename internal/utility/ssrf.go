@@ -34,11 +34,14 @@ var AllowedURLSchemes = []string{"http", "https"}
 // LookupHost is the indirection used to resolve hostnames. Tests override it.
 var LookupHost = net.LookupHost
 
-// AllowAnyHostForTest is a test-only override that bypasses the
-// SSRF guard (no public-IP check, no DNS resolution, no DNS
-// pinning). Production code MUST leave this at its zero value
-// (false). Tests that need to talk to a local httptest server
-// flip it on and reset it in t.Cleanup.
+// AllowAnyHostForTest is a test-only override that skips the
+// public-IP routability check in AssertURLSafe and AssertHostSafe.
+// Scheme, host, and DNS resolution checks are unchanged: hostnames
+// still resolve, unresolvable hostnames still fail, and callers
+// still pin connections to the returned resolved address. Production
+// code MUST leave this at its zero value (false). Tests that need to
+// talk to a local httptest server flip it on and reset it in
+// t.Cleanup.
 //
 // The previous form (env-var ALLOW_ANY_HOST) was a live runtime
 // toggle that any operator could flip to disable the SSRF guard
@@ -103,6 +106,54 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 		}
 	}
 	return hostname, resolvedIP, nil
+}
+
+// AssertHostSafe validates a bare host (a hostname or a literal IP, with no
+// scheme or port) and returns the first resolved public IP. It is the
+// host-type counterpart of AssertURLSafe: every resolved address must be
+// globally routable (private, loopback, link-local, metadata, multicast and
+// reserved ranges are rejected). Callers dial the returned IP directly so DNS
+// cannot rebind the connection to an internal address between validation and
+// the TCP connect.
+//
+// Used by host-based data sources (IMAP/MySQL/PostgreSQL) and by the ExeSQL /
+// test_db_connection host guards, mirroring common/ssrf_guard.py:
+// assert_host_is_safe.
+var AssertHostSafe = func(host string) (resolvedIP string, err error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", fmt.Errorf("host is missing")
+	}
+
+	allowAny := allowAnyHost()
+	if ip := net.ParseIP(host); ip != nil {
+		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+			return "", fmt.Errorf("host is not a public address (%s), which is not allowed", ip.String())
+		}
+		return ip.String(), nil
+	}
+
+	addresses, err := LookupHost(host)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve hostname '%s': %w", host, err)
+	}
+	if len(addresses) == 0 {
+		return "", fmt.Errorf("hostname '%s' resolved to no addresses", host)
+	}
+
+	for _, addr := range addresses {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			return "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, host)
+		}
+		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+			return "", fmt.Errorf("hostname '%s' resolves to a non-public address (%s), which is not allowed", host, ip.String())
+		}
+		if resolvedIP == "" {
+			resolvedIP = ip.String()
+		}
+	}
+	return resolvedIP, nil
 }
 
 // effectiveIP unwraps IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1) so

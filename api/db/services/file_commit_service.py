@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Optional
 
+from api.db import FileType
 from api.db.db_models import DB, FileCommit, FileCommitItem, File, User
 from api.db.services.common_service import CommonService
 from api.db.services.file_service import FileService
@@ -370,8 +371,26 @@ class FileCommitService(CommonService):
                         item["old_hash"] = old_hash
                         item["old_location"] = old_location
 
-                    # Soft-delete the file record
-                    File.update(status="0", update_time=current_timestamp()).where(File.id == file_id).execute()
+                    # Remove the file record. The blob stays in the content-addressed object
+                    # store, and history keeps its metadata in the tree_state tombstone below
+                    # rather than in the File row.
+                    #
+                    # Folders are exempt: _build_hierarchical_tree resolves sub-folder parentage
+                    # from live File rows, so dropping one makes every historical entry beneath it
+                    # unreachable. File entries are read from tree_state, so they are unaffected.
+                    row = File.get_or_none(File.id == file_id)
+                    if row is not None and row.type == FileType.FOLDER.value:
+                        # Drop the whole change, not just the delete: recording the tombstone and
+                        # the commit item below would leave history calling the folder deleted
+                        # while its row is still there.
+                        logging.warning(
+                            "create_commit: refusing to delete folder %s in commit for %s",
+                            file_id,
+                            folder_id,
+                        )
+                        continue
+                    if row is not None:
+                        File.delete().where(File.id == file_id).execute()
 
                     # Remove from tree state (mark deleted)
                     if file_id in tree_state:
