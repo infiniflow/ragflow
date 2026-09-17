@@ -118,8 +118,8 @@ func TestZoteroNextBatchRetriesFailedDownloadAfterPartialBatch(t *testing.T) {
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("second NextBatch: %v", err)
 	}
-	if attempts["ATTACH2"] < 4 {
-		t.Fatalf("ATTACH2 attempts = %d, want at least 4 (1 partial batch + 3 retries)", attempts["ATTACH2"])
+	if attempts["ATTACH2"] != 3 {
+		t.Fatalf("ATTACH2 attempts = %d, want 3 (1 in partial batch + 2 before permanent skip)", attempts["ATTACH2"])
 	}
 }
 
