@@ -388,6 +388,29 @@ func TestRemoveTOCBoxes_MultiPageTOC(t *testing.T) {
 	}
 }
 
+// TestRemoveTOCBoxes_LongTOCRun: the run length follows the page shapes, not a
+// fixed cap. A real TOC can be longer than any constant small enough to be a
+// useful bound, and truncating the run leaks the remaining TOC pages into the
+// output — the tail page of a six-page TOC was kept while the cap was five.
+func TestRemoveTOCBoxes_LongTOCRun(t *testing.T) {
+	const tocPages = 6
+	var boxes []pdf.TextBox
+	for pg := 0; pg < tocPages; pg++ {
+		boxes = append(boxes, tocPageBoxes(pg, 3)...)
+	}
+	boxes = append(boxes, bodyPageBoxes(tocPages)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	for pg := 0; pg < tocPages; pg++ {
+		if n := countPage(got, pg); n != 0 {
+			t.Fatalf("TOC page %d must be dropped, %d boxes survived", pg, n)
+		}
+	}
+	if n := countPage(got, tocPages); n != 3 {
+		t.Fatalf("the body page after the TOC must survive, %d of 3 boxes", n)
+	}
+}
+
 // TestRemoveTOCBoxes_TOCBehindCoverPage: a cover page carrying several short
 // boxes must not close the candidate window before the TOC is reached.
 func TestRemoveTOCBoxes_TOCBehindCoverPage(t *testing.T) {

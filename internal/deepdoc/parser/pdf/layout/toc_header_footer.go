@@ -42,8 +42,6 @@ const (
 	// text and is skipped, so a TOC that is not physically page one is still
 	// reachable; the first page carrying body text ends the search.
 	tocMaxLeadPages = 3
-	// tocMaxTOCPages bounds how many consecutive pages one TOC may span.
-	tocMaxTOCPages = 5
 )
 
 // ---------------------------------------------------------------------------
@@ -151,8 +149,8 @@ func outlineTitle(title string) string {
 //     carrying at least tocMinShortBoxes short boxes and tocMinEntries
 //     confirming markers (chapter markers or page numbers), or one long box
 //     that is itself tocMinMergedRuns leader+page-number runs, preceded only by
-//     pages without body text and spanning at most tocMaxTOCPages pages. Kept
-//     for documents that carry no usable bookmark.
+//     pages without body text and spanning as many consecutive pages as keep
+//     satisfying that shape. Kept for documents that carry no usable bookmark.
 //
 // Both signals pass through one guard: a page carrying body text (more than
 // tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
@@ -190,22 +188,25 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBo
 
 	// Heuristic fallback, for documents that carry no usable bookmark. A TOC is
 	// a document prefix, so only the leading pages are candidates: pages without
-	// body text (a cover, copyright page) may be skipped, one TOC may span
-	// consecutive pages, and the first page carrying body text ends the search —
-	// which is what keeps per-chapter pages that happen to hold several short
-	// headings (the Daodejing case) out of scope.
-	inTOC, lead, span := false, 0, 0
+	// body text (a cover, copyright page) may be skipped, and the run continues
+	// while pages keep satisfying isTOC(). It ends on the first page that does
+	// not — in practice the first page carrying body text, which is what keeps
+	// per-chapter pages that happen to hold several short headings (the Daodejing
+	// case) out of scope. The run is deliberately unbounded in length: a real
+	// TOC can span more pages than any fixed cap would allow, and truncating it
+	// silently keeps the remaining TOC pages in the output. Length is bounded
+	// instead by isTOC() itself and by the all-TOC guard below.
+	inTOC, lead := false, 0
 	for _, pg := range pages {
 		if inTOC {
-			if span >= tocMaxTOCPages || !shapes[pg].isTOC() {
+			if !shapes[pg].isTOC() {
 				break
 			}
 			selected[pg] = true
-			span++
 			continue
 		}
 		if shapes[pg].isTOC() {
-			inTOC, span = true, 1
+			inTOC = true
 			selected[pg] = true
 			continue
 		}
