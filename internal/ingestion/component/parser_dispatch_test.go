@@ -790,11 +790,10 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -828,10 +827,9 @@ func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *tes
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
