@@ -23,8 +23,9 @@ type TableColumnUploadValues = Pick<
 // table_column_mode / table_column_roles are sent ONLY when the user chose them
 // in the dialog: a document-level key wins over the dataset's, so submitting
 // the untouched default would pin every uploaded document to "auto" and the
-// dataset's own table settings could never apply (the backend only falls back
-// to the dataset for keys the document does not define).
+// dataset's own table settings could never apply (the Go backend resolves the
+// dataset's value only for keys the document does not state —
+// internal/ingestion/task/pipeline_executor.go, resolveTableColumnSettings).
 export function buildTableUploadParserConfig(
   fileList: UploadFormSchemaType['fileList'],
   {

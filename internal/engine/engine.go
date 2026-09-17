@@ -109,10 +109,14 @@ func IsOceanBaseFamily(engineName string) bool {
 }
 
 // StoresTableChunkData reports whether a document engine keeps table-parser
-// metadata in a `chunk_data` column. Infinity/OceanBase/SeekDB/SereneDB do
-// (they are Python's JSON-column engines, rag/app/table.py), which is exactly
+// metadata in a `chunk_data` column addressed by the raw column name, which is
 // the representation the table row renderer emits: chunk_data keyed by the raw
 // column name, with a dataset field_map of raw-name → display-name.
+// Python selects that representation for Infinity, OceanBase, GaussDB and
+// SereneDB (rag/app/table.py:634); this is the same set restricted to the
+// engines the Go registry has — GaussDB is not one of them, and SeekDB shares
+// OceanBase's SQL implementation (IsOceanBaseFamily), so its chunk_data column
+// is addressed the same way.
 //
 // Elasticsearch/OpenSearch address columns directly and need the typed-field
 // representation (pinyin keys + type suffix) that the Go path does not produce

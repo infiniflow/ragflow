@@ -38,12 +38,13 @@ const probeXLSXMaxBytes = 32 * 1024 * 1024
 // endpoint's get_error_argument_result for the same formats.
 var ErrUnsupportedTableFormat = errors.New("unsupported table format")
 
-// ProbeTable extracts the column names from a table file (CSV, TSV, XLSX) from
-// its leading rows only, delegating the header rules to the parser that indexes
-// the file: parser.ProbeDelimitedColumnNames reads a delimited header through
+// ProbeTable extracts the column names from a table file (delimited .csv/.tsv/.txt,
+// or a ZIP-based workbook .xlsx/.xlsm/.xltx/.xltm) from its leading rows only,
+// delegating the header rules to the parser that indexes the file:
+// parser.ProbeDelimitedColumnNames reads a delimited header through
 // the CSV parser's own reader, and parser.ProbeSpreadsheetColumnNames applies
-// the spreadsheet rule. The columns offered for configuration are therefore
-// exactly the columns ingestion creates.
+// the spreadsheet rule to the union of the sheets' headers. The columns offered
+// for configuration are therefore exactly the columns ingestion creates.
 // Binary XLS (BIFF8) is not supported for streaming probe and returns
 // ErrUnsupportedTableFormat, enabling client-side extraction fallback.
 func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, error) {
