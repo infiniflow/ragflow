@@ -1,12 +1,16 @@
 import asyncio
 import copy
 import json
+from contextlib import contextmanager
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from peewee import SqliteDatabase
 
+from api.db.db_models import DB, UserCanvas
+from api.db.services.canvas_service import UserCanvasService
 from test.testcases.restful_api.test_mcp_routes_unit import _load_mcp_api
 
 
@@ -119,10 +123,54 @@ class SharedMcpCatalogTests(unittest.TestCase):
         self.canvases.query.return_value = []
         self.assertEqual(self.ns["detail"]("server")["code"], 102)
 
+    @contextmanager
+    def sqlite_canvases(self):
+        database = SqliteDatabase(":memory:")
+        with database.bind_ctx([UserCanvas], bind_refs=False, bind_backrefs=False):
+            database.create_tables([UserCanvas])
+            try:
+                with (
+                    patch.object(DB, "is_closed", return_value=False),
+                    patch.object(DB, "close"),
+                    patch.object(DB, "connect", side_effect=AssertionError("Unexpected external database connection")),
+                    patch.object(self.module, "UserCanvasService", UserCanvasService),
+                ):
+                    yield
+            finally:
+                database.close()
+
     def test_dataflow_with_agent_component_does_not_grant_access(self):
-        dataflows = self.canvases.query.return_value
-        self.canvases.query.side_effect = lambda **filters: dataflows if filters.get("canvas_category") in (None, self.module.CanvasCategory.DataFlow) else []
-        self.assertEqual(self.ns["detail"]("server")["code"], 102)
+        with self.sqlite_canvases():
+            UserCanvas.create(
+                id="dataflow",
+                user_id="team",
+                permission="team",
+                canvas_category=self.module.CanvasCategory.DataFlow,
+                dsl=json.loads(self.canvases.query.return_value[0].dsl),
+            )
+            self.assertEqual([row.id for row in UserCanvasService.query(user_id="team", permission="team")], ["dataflow"])
+            self.assertEqual(UserCanvasService.query(user_id="team", permission="team", canvas_category=self.module.CanvasCategory.Agent), [])
+            with patch.object(self.module, "safe_json_parse", wraps=parse_json) as parse:
+                self.assertEqual(self.ns["detail"]("server")["code"], 102)
+                parse.assert_not_called()
+
+    def test_database_query_excludes_dataflow_private_and_other_tenant_canvases(self):
+        allowed_dsl = json.loads(self.canvases.query.return_value[0].dsl)
+        other_dsl = copy.deepcopy(allowed_dsl)
+        other_dsl["components"]["agent"]["obj"]["params"]["mcp"][0]["tools"] = {"unselected": {}}
+        with self.sqlite_canvases():
+            for cid, owner, permission, category, dsl in (
+                ("agent", "team", "team", self.module.CanvasCategory.Agent, allowed_dsl),
+                ("dataflow", "team", "team", self.module.CanvasCategory.DataFlow, other_dsl),
+                ("private", "team", "me", self.module.CanvasCategory.Agent, other_dsl),
+                ("other-tenant", "other", "team", self.module.CanvasCategory.Agent, other_dsl),
+            ):
+                UserCanvas.create(id=cid, user_id=owner, permission=permission, canvas_category=category, dsl=dsl)
+            rows = UserCanvasService.query(user_id="team", permission="team", canvas_category=self.module.CanvasCategory.Agent)
+            self.assertEqual([row.id for row in rows], ["agent"])
+            result = self.ns["detail"]("server")
+            self.assertEqual(result["code"], 0)
+            self.assertEqual(set(result["data"]["variables"]["tools"]), {"allowed"})
 
     def test_other_server_reference_does_not_grant_access(self):
         self.canvases.query.return_value = [
