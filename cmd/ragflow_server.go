@@ -32,6 +32,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
+	native "ragflow/internal/deepdoc/native"
+	pdf "ragflow/internal/deepdoc/parser/pdf"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -52,6 +54,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -592,8 +595,12 @@ func main() {
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	if err = dao.InitDB(ctx, false); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	if err = checkDatabaseVersion(ctx); err != nil {
+		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
@@ -660,6 +667,58 @@ func main() {
 	}
 }
 
+// checkDatabaseVersion refuses to run a server when the running code is older
+// than the version recorded in the system_settings migration marker. Migrating
+// the database forward is a one-way operation, so an older binary would read and
+// write a schema it does not understand.
+//
+// A missing marker, or a version on either side that cannot be parsed, never
+// blocks startup: without a usable comparison there is no evidence that the
+// database is ahead of the code.
+//
+// RAGFLOW_DEV_MODE turns the check off entirely. A development build can carry
+// a marker for a release that is not tagged yet, in which case the comparison
+// would reject the build that wrote the marker.
+func checkDatabaseVersion(ctx context.Context) error {
+	if common.DevModeEnabled() {
+		common.Warn("Development mode is enabled, skipping the database downgrade check",
+			zap.String("env", common.EnvRAGFlowDevMode))
+		return nil
+	}
+
+	databaseVersion, err := dao.GetDatabaseMigrationVersion(ctx, dao.DB)
+	if err != nil {
+		return fmt.Errorf("read database version marker: %w", err)
+	}
+	if databaseVersion == "" {
+		return nil
+	}
+
+	codeVersion := common.GetRAGFlowVersion()
+	older, comparable := common.IsOlderReleaseThan(codeVersion, databaseVersion)
+	if !comparable {
+		common.Warn("Cannot compare code version with database version, skipping the downgrade check",
+			zap.String("code_version", codeVersion),
+			zap.String("database_version", databaseVersion))
+		return nil
+	}
+	if older {
+		return fmt.Errorf("code version %s is older than database version %s: upgrade this deployment to %s or newer before starting",
+			codeVersion, databaseVersion, databaseVersion)
+	}
+
+	common.Info("Database version check passed",
+		zap.String("code_version", codeVersion),
+		zap.String("database_version", databaseVersion))
+	return nil
+}
+
+// runMigrate runs the database schema and data migrations and returns. It is
+// the whole of the standalone --migrate action: load the configuration, run
+// dao.InitDB with migrations enabled, then exit. It deliberately does not call
+// registerNativeDeepDoc or initialize the doc engine, Redis, storage or the
+// message queue, so it can run on its own, before any server mode boots (see
+// docker/entrypoint-go.sh and docker/launch_backend_service.sh).
 func runMigrate(ctx context.Context, args *serverArgs) error {
 	const serverName = "migrate"
 
@@ -747,6 +806,11 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every peer.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
@@ -1307,12 +1371,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	// WithDocumentService wires the rerun dependency used by
-	// POST /api/v1/agents/rerun (dataflow "re-run" in the pipeline
-	// result viewer). RerunAgent fails closed without it, so this must
-	// stay attached to NewAgentHandler.
-	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService).
-		WithDocumentService(documentService)
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
@@ -1421,6 +1480,14 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every
+	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
+	// login audit records, so gin's trust-everything default would let any
+	// caller pick its own address.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	// Note: common.GinLogger() is registered inside router.Setup so the
@@ -1447,8 +1514,18 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// WriteTimeout spans "request header read → response written", so it is a
+		// ceiling on the WHOLE request, not on a slow client's reads. Measured
+		// (2026-09-15, FRAMES 20q): three multi-hop questions take 150–225s to reach
+		// their response, and at 120s the server closed the connection with no
+		// response at all — the client reports
+		// `RemoteDisconnected('Remote end closed connection without response')` and
+		// the benchmark re-runs the whole question (max_retries: 2), so one slow
+		// question cost three full pipelines. 180s clears the measured distribution's
+		// middle; questions whose composition alone runs past it still need streaming
+		// or a larger budget.
+		WriteTimeout: 180 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	apiListener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -1683,6 +1760,16 @@ func registerNativeDeepDoc() {
 	}
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
+
+	// DeepDoc sessions run single-threaded, so the process inference budget is a
+	// plain concurrency cap. Register it with the native gate every inference
+	// call passes through (internal/deepdoc/native/inference_limit.go); without
+	// this the process would let every page worker call inference at once.
+	limit := pdf.DeepDocConcurrency()
+	native.SetInferenceLimit(limit)
+	common.Info("in-process DeepDoc inference limit registered",
+		zap.Int("max_concurrent_inference", limit),
+		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 }
 
 // resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR

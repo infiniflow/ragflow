@@ -33,7 +33,7 @@ from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.llm_request_context import openai_user_kwargs
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
@@ -697,7 +697,7 @@ class BedrockEmbed(Base):
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
         #   - "assume_role": uses the default AWS credential chain.
         #   - "bedrock_api_key": uses a request-scoped Bearer token.
-        key = json.loads(key)
+        key = _resolve_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")
@@ -1187,27 +1187,20 @@ class BaiduYiyanEmbed(Base):
             self.client = qianfan.Embedding(access_token=key_obj)
         self.model_name = model_name
 
+    def _call(self, batch):
+        res = self.client.do(model=self.model_name, texts=batch).body
+        return [r["embedding"] for r in res["data"]], total_token_count_from_response(res)
+
     def encode(self, texts: list, batch_size=16):
-        try:
-            res = self.client.do(model=self.model_name, texts=texts).body
-            return (
-                np.array([r["embedding"] for r in res["data"]]),
-                total_token_count_from_response(res),
-            )
-        except Exception as _e:
-            logger.exception("BaiduYiyanEmbed: embedding request failed")
-            raise EmbeddingError(f"Embedding request failed for BaiduYiyanEmbed. Error: {_e}") from _e
+        # `batch_size` has been part of this signature since the class was added but the
+        # request went out whole, so a document with more chunks than the provider accepts
+        # per call failed as a whole. Drive the shared template instead, as every other
+        # OpenAI-style provider here does.
+        return self._batched_encode(texts, self._call, batch_size=batch_size)
 
     def encode_queries(self, text):
-        try:
-            res = self.client.do(model=self.model_name, texts=[text]).body
-            return (
-                np.array(res["data"][0]["embedding"]),
-                total_token_count_from_response(res),
-            )
-        except Exception as _e:
-            logger.exception("BaiduYiyanEmbed: query embedding request failed")
-            raise EmbeddingError(f"Embedding request failed for BaiduYiyanEmbed. Error: {_e}") from _e
+        vectors, token_count = self._batched_encode([text], self._call, batch_size=1)
+        return vectors[0], token_count
 
 
 class VoyageEmbed(Base):

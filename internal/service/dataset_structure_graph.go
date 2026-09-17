@@ -34,6 +34,7 @@ var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -492,7 +493,8 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 			}
 		}
 		entities = dedupEntities(entities)
-		return entities, normalizeRelationEndpoints(entities, relations), nil
+		relations = normalizeRelationEndpoints(entities, relations)
+		return entities, relations, nil
 	}
 
 	// Large bucket: sample. A = top entities by mention_count_int desc.
@@ -811,7 +813,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			break
 		}
 	}
-
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
 	templateDAO := dao.NewCompilationTemplateDAO()
@@ -840,7 +841,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			bucketScopes[bid] = scope
 		}
 	}
-
 	grouped := map[string]DocumentStructureGraphTemplate{}
 	for bid, meta := range bucketMetas {
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, bucketScopes[bid], nil)

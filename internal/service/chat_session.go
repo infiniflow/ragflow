@@ -47,7 +47,7 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
+	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
 	CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error)
 }
@@ -244,7 +244,7 @@ type ChatSessionPayload struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, orderby, desc, page, pageSize, includeHistory...)
+	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, terms, page, pageSize, includeHistory...)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +407,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", "create_time", true, 0, -1, false)
+			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, false)
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}

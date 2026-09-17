@@ -67,7 +67,7 @@ func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenan
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, orderBy string, desc bool, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 
@@ -93,12 +93,12 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 		return nil, 0, err
 	}
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderBy + " " + orderDirection)
+	// Apply ordering. Route orderBy through fileOrderClause so a user-supplied
+	// query param can never reach Order() verbatim: the helper validates
+	// against fileOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: fileOrderClause
+	query = query.Order(fileOrderClause(terms))
 
 	// Apply pagination
 	if page > 0 && pageSize > 0 {

@@ -19,6 +19,7 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -30,9 +31,15 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+func IsLLMDebugEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
+	return err == nil && enabled
+}
+
 // environment variables
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
+	EnvRAGFlowDevMode                    = "RAGFLOW_DEV_MODE"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
@@ -99,6 +106,7 @@ const (
 	EnvOpenAIAPIKey                      = "OPENAI_API_KEY"
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
+	EnvLLMDebug                          = "LLM_DEBUG"
 	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"

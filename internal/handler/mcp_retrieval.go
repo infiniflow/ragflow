@@ -50,7 +50,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		const maxPageSize = 100
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
-				"", "", page, pageSize, "create_time", true,
+				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 				"", nil, "", userID, nil,
 			)
 			return data, total, err
