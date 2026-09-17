@@ -106,7 +106,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		return nil, common.CodeDataError, errors.New("mutually exclusive")
 	}
 
-	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+	if req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if modeErr != nil {
 			return nil, common.CodeDataError, modeErr
@@ -139,8 +139,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if req.ParserConfig != nil {
+		if err = validateDatasetParserConfig(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 		if err = validateDatasetParserConfigSize(req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
+			return nil, common.CodeArgumentError, err
 		}
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err

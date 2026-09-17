@@ -198,6 +198,9 @@ func (s *ChatPipelineService) AsyncChat(
 	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
+	if kwargs == nil {
+		kwargs = make(map[string]interface{})
+	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
 	out := make(chan AsyncChatResult, 16)
@@ -332,7 +335,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Whether the message carried image attachments before the
 		// vision gate (read by the empty-response fallback below).
 		var hasImageAttachments bool
-		// Joined text attachments (appended to system prompt).
+		// Joined text attachments (appended to the last user message).
 		var attachments string
 		// When files are file dicts, splitFileAttachments fetches blobs
 		// from storage. When plain strings, falls back to string splitting;
@@ -479,6 +482,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// - "knowledge" is always skipped (system-injected, not caller-supplied).
 		// - Missing non-optional param => return error immediately.
 		// - Missing optional param => replace "{key}" placeholder with space.
+		kwargs["date"] = time.Now().UTC().Format(time.RFC3339)
 		systemPrompt, _ := promptConfig["system"].(string)
 		for _, p := range parameters {
 			pMap, ok := p.(map[string]interface{})
@@ -755,7 +759,7 @@ func (s *ChatPipelineService) AsyncChat(
 					for k, v := range kwargs {
 						kws[k] = v
 					}
-					kws["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
+					kws["date"] = time.Now().UTC().Format(time.RFC3339)
 					if _, ok := kws["knowledge"]; !ok {
 						kws["knowledge"] = harnessBoundDatasetNames(kbs)
 					}
@@ -956,7 +960,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// must reach a vision model instead of being swallowed by the
 		// canned response. In that case we skip the early return and fall
 		// through to the normal LLM call where attachments are appended to
-		// the system prompt.
+		// the last user message.
 		//
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
@@ -992,7 +996,7 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		systemPrompt = ""
 		if sp, ok := promptConfig["system"].(string); ok {
-			systemPrompt = s.formatPrompt(sp, kwargs) + attachments
+			systemPrompt = s.formatPrompt(sp, kwargs)
 			// If knowledge was retrieved but the template has no {knowledge}
 			// placeholder, auto-append it so the LLM still sees the context.
 			if len(knowledges) > 0 && !strings.Contains(sp, "{knowledge}") {
@@ -1052,6 +1056,11 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			llmMessage["content"] = content
 			llmMessages = append(llmMessages, llmMessage)
+		}
+		if attachments != "" && len(llmMessages) > 0 {
+			if lastContent, ok := llmMessages[len(llmMessages)-1]["content"].(string); ok {
+				llmMessages[len(llmMessages)-1]["content"] = lastContent + attachments
+			}
 		}
 
 		// Fit messages within token budget.
@@ -1450,7 +1459,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		promptConfig := chat.PromptConfig
 		systemPrompt := ""
 		if sp, ok := promptConfig["system"].(string); ok {
-			systemPrompt = sp
+			systemPrompt = strings.ReplaceAll(sp, "{date}", time.Now().UTC().Format(time.RFC3339))
 		}
 
 		// 1b. Resolve LLM model config (needed early for model_type dispatch).

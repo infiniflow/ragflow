@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Form } from '@/components/ui/form';
+import { FileType } from '@/constants/file';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LucideTrash2 } from 'lucide-react';
@@ -16,7 +17,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { FileType, initialParserValues } from '../../constant/pipeline';
+import { initialParserValues } from '../../constant/pipeline';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';

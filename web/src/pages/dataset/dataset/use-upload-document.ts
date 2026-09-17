@@ -5,14 +5,14 @@ import {
   useRunDocument,
   useUploadDocument,
 } from '@/hooks/use-document-request';
+import { FileType } from '@/constants/file';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { FileType } from '@/pages/agent/constant/pipeline';
 import { getExtension, getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { buildMissingModelModalContent } from './parser-model-gap-content';
-import { useParserModelValidation } from './use-parser-model-validation';
-import { getFileTypeByExtension } from './utils';
+import { buildParserGapModalContent } from './parser-gap-content';
+import { useParserGapValidation } from './use-parser-gap-validation';
+import { getFileTypeByExtension, hasUnsupportedTypeGap } from './utils';
 
 export const useHandleUploadDocument = () => {
   const { t } = useTranslation();
@@ -23,8 +23,7 @@ export const useHandleUploadDocument = () => {
   } = useSetModalState();
   const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
-  const { findFilesMissingModels, goToDatasetConfiguration } =
-    useParserModelValidation();
+  const { findParseGaps } = useParserGapValidation();
 
   const proceedUpload = useCallback(
     async (
@@ -108,25 +107,25 @@ export const useHandleUploadDocument = () => {
       const names = fileList.map((file) =>
         file instanceof File ? file.name : file.file.name,
       );
-      const gaps = findFilesMissingModels(names);
+      const gaps = findParseGaps(names);
       if (gaps.length > 0) {
         const failingFileTypes = new Set(gaps.map((gap) => gap.fileType));
         Modal.warning({
-          title: t('knowledgeDetails.uploadMissingModelsTitle'),
-          content: buildMissingModelModalContent(
+          title: t(
+            hasUnsupportedTypeGap(gaps)
+              ? 'knowledgeDetails.uploadUnsupportedTypesTitle'
+              : 'knowledgeDetails.uploadMissingModelsTitle',
+          ),
+          content: buildParserGapModalContent(
             t,
             gaps,
-            'knowledgeDetails.configureInDatasetSettingHint',
+            'knowledgeDetails.reselectParserAfterUploadHint',
           ),
           okText: t('knowledgeDetails.continueUpload'),
-          cancelText: t('knowledgeDetails.goToConfiguration'),
+          cancelText: t('common.cancel'),
           closable: false,
           onOk: () => {
             proceedUpload(values, failingFileTypes);
-          },
-          onCancel: () => {
-            hideDocumentUploadModal();
-            goToDatasetConfiguration();
           },
         });
         return;
@@ -134,13 +133,7 @@ export const useHandleUploadDocument = () => {
 
       return proceedUpload(values, new Set());
     },
-    [
-      findFilesMissingModels,
-      goToDatasetConfiguration,
-      hideDocumentUploadModal,
-      proceedUpload,
-      t,
-    ],
+    [findParseGaps, proceedUpload, t],
   );
 
   return {

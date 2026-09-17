@@ -32,44 +32,6 @@ import (
 // distinguish "missing" from "forbidden" so the response cannot be used
 // to enumerate other users' canvas ids — see plan §4.8 (IDOR mitigation).
 
-// userCanvasOrderableColumns whitelists the columns that may appear in an
-// ORDER BY clause. Keeps user-supplied `orderby` query params from being
-// spliced straight into SQL.
-var userCanvasOrderableColumns = map[string]struct{}{
-	"id":              {},
-	"user_id":         {},
-	"title":           {},
-	"permission":      {},
-	"canvas_type":     {},
-	"canvas_category": {},
-	"tags":            {},
-	"create_time":     {},
-	"create_date":     {},
-	"update_time":     {},
-	"update_date":     {},
-}
-
-func userCanvasOrderClause(orderby string, desc bool) string {
-	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
-func userCanvasQualifiedOrderClause(orderby string, desc bool) string {
-	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	order := "user_canvas." + orderby
-	if desc {
-		return order + " DESC"
-	}
-	return order + " ASC"
-}
-
 func splitUserCanvasTags(raw string) []string {
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))
@@ -272,7 +234,7 @@ func (dao *UserCanvasDAO) GetByUserAndTitle(ctx context.Context, db *gorm.DB, us
 
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
-func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID string, pageNumber, itemsPerPage int, terms []OrderTerm, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
 
 	query := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
@@ -292,12 +254,12 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 	}
 
 	// Order by
-	// Route orderby through userCanvasOrderClause above so user-supplied
+	// Route the requested terms through userCanvasOrderClause above so user-supplied
 	// query params can never reach Order() verbatim. The helper validates
 	// against userCanvasOrderableColumns (a closed allowlist) and falls
 	// back to "create_time" on any miss, so the string spliced into the
 	// SQL fragment is always one of a fixed set of column names.
-	query = query.Order(userCanvasOrderClause(orderby, desc))
+	query = query.Order(userCanvasOrderClause(terms))
 
 	// Pagination
 	if pageNumber > 0 && itemsPerPage > 0 {
@@ -346,7 +308,7 @@ type UserCanvasListItem struct {
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
 // keyword filter, tag filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string, canvasCategories []string, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string, canvasCategories []string, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -392,7 +354,7 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, owne
 		return nil, 0, err
 	}
 
-	order := userCanvasQualifiedOrderClause(orderby, desc)
+	order := userCanvasQualifiedOrderClause(terms)
 	// codeql[go/sql-injection] False positive: `order` was just derived
 	// from userCanvasQualifiedOrderClause above, which validates `orderby`
 	// against userCanvasOrderableColumns (a closed allowlist) and

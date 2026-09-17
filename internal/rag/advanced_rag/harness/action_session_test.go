@@ -1235,3 +1235,165 @@ func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 		t.Errorf("empty answer with patch: branches = %+v, want one state with candidate 74", states)
 	}
 }
+
+// TestSnippetsPerQueryRisesWithModeAndFallsBack pins the per-query snippet cap.
+//
+// The cap decides how much of ONE query's candidate list the session reads, and
+// that list is where a themed query's fact-bearing passage sits: the engine
+// returns 30-60 candidates per leg, and on a 64-candidate leg the passage that
+// carried the answer ranked 20th and 38th — both discarded by a flat cap of four,
+// while handing the model those same passages produced the complete list.
+//
+// A deeper mode issues more queries and owns a larger budget, so it reads deeper;
+// a mode that declares no cap keeps the flat fallback, which is what every mode
+// did before this existed. Nothing here depends on a corpus or a language.
+func TestSnippetsPerQueryRisesWithModeAndFallsBack(t *testing.T) {
+	for _, mode := range []string{"medium", "high", "ultra"} {
+		spec := GetMode(mode)
+		if spec.SnippetsPerQuery <= snippetsPerQuery {
+			t.Errorf("%s cap = %d, want it above the flat fallback %d", mode, spec.SnippetsPerQuery, snippetsPerQuery)
+		}
+		if got := snippetsPerQueryFor(mode); got != spec.SnippetsPerQuery {
+			t.Errorf("snippetsPerQueryFor(%s) = %d, want %d", mode, got, spec.SnippetsPerQuery)
+		}
+	}
+	if GetMode("medium").SnippetsPerQuery >= GetMode("high").SnippetsPerQuery ||
+		GetMode("high").SnippetsPerQuery >= GetMode("ultra").SnippetsPerQuery {
+		t.Error("the per-query cap must rise with the mode")
+	}
+	// Unset (low, or an unknown label) falls back to the flat cap.
+	for _, mode := range []string{"low", "no-such-mode"} {
+		if got := snippetsPerQueryFor(mode); got != snippetsPerQuery {
+			t.Errorf("snippetsPerQueryFor(%q) = %d, want the fallback %d", mode, got, snippetsPerQuery)
+		}
+	}
+}
+
+// TestRetrieveDescriptionCarriesTheEnumerationContract pins the recall path in
+// the tool description the model reads while deciding how to call it.
+//
+// Measured (2026-09-16): the same corpus and question answered sixteen members
+// with this contract present and nine-to-fourteen without it, while the runtime
+// underneath was identical — the seats, the batch weaving and the reach notes
+// exist in BOTH trees. What the description carries is how to ASK: probe the
+// names themselves in an alternation, in small batches, guess the next batch
+// yourself, and read a miss as a RESULT rather than as silence.
+func TestRetrieveDescriptionCarriesTheEnumerationContract(t *testing.T) {
+	desc := ToolMap["retrieve"].Function.Description
+	for _, want := range []string{
+		"ENUMERATING A SET",
+		"alternated with |",
+		"4-6 per query",
+		"guess the next batch yourself",
+		"in an enumeration that is a RESULT",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("retrieve description is missing %q", want)
+		}
+	}
+	// It must not send the opposite instruction. "Do not conclude the corpus lacks
+	// the fact" is right for a fuzzy query and wrong for an exact-term probe: a
+	// model told that stops probing names and settles for the ones it already
+	// holds, which is the shape of the nine-member answer.
+	if strings.Contains(desc, "do not conclude the corpus lacks the fact") {
+		t.Error("retrieve description must not contradict the enumeration semantics of a miss")
+	}
+}
+
+// TestTurnFloorIsPaidOnlyByASetSession pins the shape gate on the mode's turn floor.
+//
+// The deeper modes raised the floor for the enumeration path, and the floor is billed
+// to every turn of every session on the question, so a session with no batch to spend
+// those turns on must run on the value floor instead. The gate is the session's own
+// writing (or a parent table that declares a count/list), resolved per turn, so a
+// shape that declares itself later is not penalised.
+func TestTurnFloorIsPaidOnlyByASetSession(t *testing.T) {
+	ts := &Toolset{ThinkingMode: "high"}
+	if got := ResolveMode(ts).ActionMaxTurns; got <= valueTurnFloor {
+		t.Fatalf("mode high ActionMaxTurns = %d, want > %d (the floor this gate shares)", got, valueTurnFloor)
+	}
+	modeFloor := ResolveMode(ts).ActionMaxTurns
+
+	// A value session: no batch written, and the table asks for a value.
+	value := &SessionState{
+		Tools:        ts,
+		Direction:    "in what year did the Sikh Empire's capital come under the British Crown",
+		ParentState:  State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1849")}}},
+		DeadlineLeft: 70,
+	}
+	if got := value.actionMaxTurns(); got != valueTurnFloor {
+		t.Errorf("value session turn floor = %d, want %d", got, valueTurnFloor)
+	}
+
+	// The caller's own batch is the tell that survives contact: the session is now
+	// enumerating, and it pays the mode's floor for the turns it spends on it.
+	value.SearchQueries = []string{"华雄|颜良|文丑"}
+	if got := value.actionMaxTurns(); got != modeFloor {
+		t.Errorf("session that wrote a batch turn floor = %d, want %d", got, modeFloor)
+	}
+
+	// A direction whose table declares a set needs the floor from its first turn: it
+	// may enumerate one probe per member and never write a two-name batch.
+	declared := &SessionState{
+		Tools:        ts,
+		Direction:    "how many officers did Guan Yu kill",
+		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("16")}}},
+		DeadlineLeft: 70,
+	}
+	if got := declared.actionMaxTurns(); got != modeFloor {
+		t.Errorf("count direction turn floor = %d, want %d", got, modeFloor)
+	}
+}
+
+// TestSessionWallFollowsTheShape pins the clock an enumeration session gets.
+//
+// The wall clock is spent differently by the two shapes: an enumeration session is
+// midway through a batch when its clock runs out, and a batch that is cut loses the
+// members it had already reached — measured (2026-09-16, 三国/关羽) a session was
+// cancelled one millisecond before the patch that recorded 管亥, a member it had
+// already found and whose passages were already in the shared pool. A value session
+// has no work in flight at its deadline, so it keeps the tighter clock.
+func TestSessionWallFollowsTheShape(t *testing.T) {
+	set := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("13")}}}
+	if got := SessionWallS(set); got != setActionTimeoutS {
+		t.Errorf("set-shaped direction wall = %.0f, want %.0f", got, setActionTimeoutS)
+	}
+	value := State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}
+	if got := SessionWallS(value); got != actionTimeoutS {
+		t.Errorf("value direction wall = %.0f, want %.0f", got, actionTimeoutS)
+	}
+	if setActionTimeoutS <= actionTimeoutS {
+		t.Errorf("the set clock (%.0f) must exceed the value clock (%.0f)", setActionTimeoutS, actionTimeoutS)
+	}
+}
+
+// TestDigestShowsAPassageWholeEnoughToNameSomeone pins the seed digest's per-chunk
+// cap.
+//
+// The digest is how a session SEES the pool without re-querying it, and its cap used
+// to mirror Python's hard `[:300]` cut. A 300-code-point window is shorter than the
+// sentence a deed is reported in: the passage names the actor early and the person at
+// the end, so the cut removed exactly the clause that makes a member a member — and a
+// model told to answer only from what it was shown then excluded them.
+//
+// Measured (2026-09-14, fixrecall): with the cap at 1200 an enumeration reached
+// seventeen members. Measured here (2026-09-16, 三国/关羽): 管亥 / 杨龄 / 程远志
+// appeared ZERO times in whole runs whose pool held their passages.
+func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
+	narrative := strings.Repeat("却说曹兵势大", 60) + "云长手起刀落，砍杨龄于马下。"
+	kb := &Kbinfos{}
+	kb.Admit(func(p *PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "c1", "content": narrative})
+	})
+
+	digest := extractRelevantEvidence(kb, "关羽杀了多少有姓名的人物", 4)
+	if !strings.Contains(digest, "砍杨龄于马下") {
+		t.Fatalf("digest = %q…, want the clause that names the member (cap %d)", truncateRunes(digest, 120), evidenceDigestChars)
+	}
+	if got := len([]rune(digest)); got > evidenceDigestChars+64 {
+		t.Errorf("digest = %d runes, want no more than one capped chunk plus its id", got)
+	}
+	if evidenceDigestChars < 1200 {
+		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries", evidenceDigestChars)
+	}
+}
