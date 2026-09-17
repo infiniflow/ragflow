@@ -1942,19 +1942,6 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	}
 }
 
-// formalizeAnswerNode mirrors the `formalize_answer` node's state mutation
-// (query_rewrite). The answer composition itself (Phase 5 synthesis) is out of
-// scope here — it needs the report prompt templates; the caller reads the
-// approved draft from st.KB.PreSummary.
-// finalizeSummary renders the finalize step's state as a sentence. The two flags
-// used to be printed as `partial=%v empty=%v`: a reader had to know what a
-// "partial" answer and an "empty" result mean before the line said anything.
-//
-// The evidence size is deliberately NOT here. This node decides the state; the
-// compose step that follows reports what the answer is built from — and compose
-// is also the only step on the paths that never reach this node (low mode, the
-// compose fallback), so the count belongs there and saying it here would only
-// repeat it one line later.
 // chunkCount is the pool size for a narration line, tolerant of a nil Kbinfos (a
 // graph that failed before the state was wired still reports Finalize).
 func chunkCount(kb *harness.Kbinfos) int {
