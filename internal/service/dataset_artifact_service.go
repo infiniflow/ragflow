@@ -741,7 +741,7 @@ func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenan
 	if id, ok := params["compilation_template_id"].(string); ok && id != "" {
 		var template entity.CompilationTemplate
 		if err := dao.DB.WithContext(ctx).
-			Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND status = ?", id, tenantID, string(entity.StatusValid)).
+			Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, string(entity.StatusValid)).
 			First(&template).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return false, nil
@@ -790,7 +790,7 @@ func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenan
 func (s *DatasetArtifactService) groupHasWikiTemplate(ctx context.Context, tenantID, groupID string) (bool, error) {
 	var group entity.CompilationTemplateGroup
 	if err := dao.DB.WithContext(ctx).
-		Where("id = ? AND (tenant_id = ? OR tenant_id = '') AND status = ?", groupID, tenantID, string(entity.StatusValid)).
+		Where("id = ? AND tenant_id = ? AND status = ?", groupID, tenantID, string(entity.StatusValid)).
 		First(&group).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, nil

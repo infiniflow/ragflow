@@ -463,3 +463,37 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
 	}
 }
+
+// TestProcessChunksForPipeline_StripsPipelineOnlyFields pins the index boundary
+// against the parser/chunker bookkeeping keys: none of them is a chunk-store
+// column, and a strict engine rejects the whole insert over one of them
+// ("Column ck_type not found in table", InfinityException 3013). ES only
+// swallowed them because its mapping is dynamic.
+func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
+	ck := map[string]any{
+		"text": "hello",
+		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
+		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
+		"layoutno": "0", "image": "data:image/png;base64,AAAA",
+		"context_above": "above", "context_below": "below", "page_number": 2,
+		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
+		"headers": []string{"h"}, "cells": []string{"c"},
+		"row_start": 0, "row_end": 1, "col_start": 0, "col_end": 1,
+	}
+
+	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "Doc", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+
+	for _, key := range pipelineOnlyFields {
+		if _, exists := ck[key]; exists {
+			t.Errorf("%q must be stripped before persist (no chunk column; a strict engine rejects the insert)", key)
+		}
+	}
+	if ck["content_with_weight"] != "hello" {
+		t.Errorf("content_with_weight = %v, want the chunk text (the strip must not touch persist fields)", ck["content_with_weight"])
+	}
+	if ck["doc_id"] != "doc-1" {
+		t.Errorf("doc_id = %v, want doc-1 (the strip must not touch persist fields)", ck["doc_id"])
+	}
+}

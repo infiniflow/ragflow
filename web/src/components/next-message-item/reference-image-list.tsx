@@ -60,7 +60,7 @@ function ImagePhotoView({ id, index }: ImageItem) {
       <Image
         id={id}
         className="h-40 w-full"
-        label={`${t('common.figure')} ${(index + 1).toString()}`}
+        label={`[${index + 1}]`}
       />
     </PhotoView>
   );
