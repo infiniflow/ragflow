@@ -34,11 +34,14 @@ var AllowedURLSchemes = []string{"http", "https"}
 // LookupHost is the indirection used to resolve hostnames. Tests override it.
 var LookupHost = net.LookupHost
 
-// AllowAnyHostForTest is a test-only override that bypasses the
-// SSRF guard (no public-IP check, no DNS resolution, no DNS
-// pinning). Production code MUST leave this at its zero value
-// (false). Tests that need to talk to a local httptest server
-// flip it on and reset it in t.Cleanup.
+// AllowAnyHostForTest is a test-only override that skips the
+// public-IP routability check in AssertURLSafe and AssertHostSafe.
+// Scheme, host, and DNS resolution checks are unchanged: hostnames
+// still resolve, unresolvable hostnames still fail, and callers
+// still pin connections to the returned resolved address. Production
+// code MUST leave this at its zero value (false). Tests that need to
+// talk to a local httptest server flip it on and reset it in
+// t.Cleanup.
 //
 // The previous form (env-var ALLOW_ANY_HOST) was a live runtime
 // toggle that any operator could flip to disable the SSRF guard

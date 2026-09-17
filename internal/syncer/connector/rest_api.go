@@ -134,8 +134,9 @@ var (
 )
 
 // NewRestAPIConnector parses a connector config and returns a connector. It
-// performs schema validation and the base-URL SSRF check but performs no
-// network I/O. Credentials are read from config["credentials"].
+// performs schema validation and the base-URL SSRF check (which resolves the
+// hostname to enforce the shared guard) but performs no HTTP request I/O.
+// Credentials are read from config["credentials"].
 func NewRestAPIConnector(config map[string]any) (*RestAPIConnector, error) {
 	cfg, err := parseRestAPIConfig(config)
 	if err != nil {
@@ -785,9 +786,10 @@ func restAPIEncodeParams(params map[string]any) string {
 // SSRF protection
 // ---------------------------------------------------------------------------
 
-// validateRestAPIURLForSSRF performs quick deny-list checks plus DNS
-// resolution. Resolution failure is logged and tolerated because the
-// per-request check re-validates.
+// validateRestAPIURLForSSRF is the config-time SSRF check for the REST API
+// connector. It delegates to the shared connector guard, which validates the
+// scheme, rejects localhost and non-public literal addresses, and resolves the
+// hostname. The per-request path re-validates and DNS-pins every hop.
 func validateRestAPIURLForSSRF(rawURL string) error {
 	return validateConnectorURL(rawURL)
 }

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,11 +29,29 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"ragflow/internal/utility"
 )
+
+// restAPITestPublicIP is the fixed public address used to satisfy the
+// config-time SSRF check for hostname-based test URLs (e.g. example.com)
+// without touching the real resolver, keeping unit tests hermetic.
+const restAPITestPublicIP = "93.184.216.34"
+
+// restAPITestLookupHost fakes DNS resolution for the REST API unit tests:
+// literal IPs resolve to themselves (so the guard's private-address rejection
+// still works), any other hostname resolves to a fixed public address.
+func restAPITestLookupHost(host string) ([]string, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		return []string{ip.String()}, nil
+	}
+	return []string{restAPITestPublicIP}, nil
+}
 
 func withRestAPITestHooks(t *testing.T) {
 	t.Helper()
 	origLoopback := connectorAllowLoopbackForTest
+	origLookup := utility.LookupHost
 	origTries := restAPIRetryTries
 	origBaseDelay := restAPIRetryBaseDelay
 	origMaxDelay := restAPIRetryMaxDelay
@@ -41,6 +60,7 @@ func withRestAPITestHooks(t *testing.T) {
 	orig429Waits := restAPI429MaxWaits
 	orig429Wait := restAPI429DefaultWait
 	connectorAllowLoopbackForTest = true
+	utility.LookupHost = restAPITestLookupHost
 	restAPIRetryTries = 3
 	restAPIRetryBaseDelay = time.Millisecond
 	restAPIRetryMaxDelay = 10 * time.Millisecond
@@ -50,6 +70,7 @@ func withRestAPITestHooks(t *testing.T) {
 	restAPI429DefaultWait = time.Millisecond
 	t.Cleanup(func() {
 		connectorAllowLoopbackForTest = origLoopback
+		utility.LookupHost = origLookup
 		restAPIRetryTries = origTries
 		restAPIRetryBaseDelay = origBaseDelay
 		restAPIRetryMaxDelay = origMaxDelay
