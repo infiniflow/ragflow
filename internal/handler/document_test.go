@@ -2179,3 +2179,56 @@ func TestProbeTable_NoFile(t *testing.T) {
 		t.Fatalf("expected argument error code, got %v", resp["code"])
 	}
 }
+
+// A file the probe declines is something the caller works around by reading the
+// header locally, so it must not be reported as a server failure. The Python
+// endpoint answers the same requests with an argument error.
+func TestProbeTable_ErrorCodeFollowsFailureKind(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want common.ErrorCode
+	}{
+		{
+			name: "unsupported format",
+			err:  fmt.Errorf("%w: %s", document.ErrUnsupportedTableFormat, ".pdf"),
+			want: common.CodeArgumentError,
+		},
+		{
+			name: "unreadable workbook",
+			err:  errors.New("zip: not a valid zip file"),
+			want: common.CodeServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewDocumentHandler(&fakeDocumentService{probeErr: tt.err}, nil, nil)
+
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", "table.pdf")
+			if err != nil {
+				t.Fatalf("create form file: %v", err)
+			}
+			part.Write([]byte("anything"))
+			writer.Close()
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			req := httptest.NewRequest("POST", "/api/v1/documents/probe_table", body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			c.Request = req
+
+			h.ProbeTable(c)
+
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal resp: %v", err)
+			}
+			if resp["code"] != float64(tt.want) {
+				t.Fatalf("code = %v, want %d", resp["code"], tt.want)
+			}
+		})
+	}
+}

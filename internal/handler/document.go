@@ -2046,6 +2046,13 @@ func (h *DocumentHandler) ProbeTable(c *gin.Context) {
 
 	cols, err := h.documentService.ProbeTable(file, header.Filename)
 	if err != nil {
+		// A format the probe declines is a property of the request, and the
+		// caller already falls back to reading the header locally; report it
+		// like the Python endpoint does instead of as a server failure.
+		if errors.Is(err, document.ErrUnsupportedTableFormat) {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, fmt.Sprintf("Failed to probe table schema: %v", err))
 		return
 	}

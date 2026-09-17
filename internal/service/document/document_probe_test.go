@@ -19,6 +19,7 @@ package document
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -285,8 +286,8 @@ func TestProbeTable_XLS_Fallback(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for binary xls probe, got cols: %v", cols)
 	}
-	if !strings.Contains(err.Error(), "binary xls") {
-		t.Fatalf("unexpected error message: %v", err)
+	if !errors.Is(err, ErrUnsupportedTableFormat) {
+		t.Fatalf("binary xls must report the unsupported-format sentinel, got %v", err)
 	}
 }
 
@@ -296,7 +297,7 @@ func TestProbeTable_UnsupportedFormat(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for pdf probe, got cols: %v", cols)
 	}
-	if !strings.Contains(err.Error(), "unsupported table format") {
-		t.Fatalf("unexpected error message: %v", err)
+	if !errors.Is(err, ErrUnsupportedTableFormat) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

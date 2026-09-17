@@ -17,6 +17,7 @@
 package document
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -31,14 +32,20 @@ import (
 // back to local extraction instead of the server reading an unbounded stream.
 const probeXLSXMaxBytes = 32 * 1024 * 1024
 
+// ErrUnsupportedTableFormat marks a file the probe declines because no header
+// rule covers it, which is a property of the request rather than a server
+// failure. The handler reports it as an argument error, like the Python
+// endpoint's get_error_argument_result for the same formats.
+var ErrUnsupportedTableFormat = errors.New("unsupported table format")
+
 // ProbeTable extracts the column names from a table file (CSV, TSV, XLSX) from
 // its leading rows only, delegating the header rules to the parser that indexes
 // the file: parser.ProbeDelimitedColumnNames reads a delimited header through
 // the CSV parser's own reader, and parser.ProbeSpreadsheetColumnNames applies
 // the spreadsheet rule. The columns offered for configuration are therefore
 // exactly the columns ingestion creates.
-// Binary XLS (BIFF8) is not supported for streaming probe and returns an error,
-// enabling client-side extraction fallback.
+// Binary XLS (BIFF8) is not supported for streaming probe and returns
+// ErrUnsupportedTableFormat, enabling client-side extraction fallback.
 func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, error) {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
@@ -48,8 +55,8 @@ func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, er
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		return parser.ProbeSpreadsheetColumnNames(io.LimitReader(r, probeXLSXMaxBytes))
 	case ".xls":
-		return nil, fmt.Errorf("server probe does not support binary xls format: fallback to client probe")
+		return nil, fmt.Errorf("%w: server probe does not support binary xls format, fallback to client probe", ErrUnsupportedTableFormat)
 	default:
-		return nil, fmt.Errorf("unsupported table format: %s", ext)
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedTableFormat, ext)
 	}
 }
