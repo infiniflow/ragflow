@@ -770,21 +770,26 @@ type PipelineLogInput struct {
 	Status     string
 	Document   entity.Document
 	// PipelineLogID is the id of the pipeline_operation_log row this run owns
-	// (ingestion_task.pipeline_log_id). When set, the terminal write updates
-	// exactly that row and never creates a second one — so a superseded run
-	// whose row was deleted cannot adopt the replacement run's row. Empty for
-	// legacy, debug-adjacent, or non-ingestion callers.
+	// (ingestion_task.pipeline_log_id). The public writer requires it and updates
+	// exactly that row, never creating a second one — so a superseded run whose
+	// row was deleted cannot adopt the replacement run's row.
 	PipelineLogID string
 }
+
+// ErrMissingRunIdentity reports an attempt to persist an ingestion terminal
+// outcome without the run row that owns it.
+var ErrMissingRunIdentity = errors.New("pipeline log id is required")
 
 // RecordPipelineLog persists a pipeline operation log without requiring
 // executor setup. Callers should pass the status in Status.
 //
 // When the run created a queued row (CREATED/SCHEDULED), the terminal write
 // advances that same row so the dataset detail page shows one entry per run.
-// Without a bound row (legacy runs, debug-adjacent paths) it adopts the
-// document's open row, or creates a new row when none exists.
+// A missing run identity is rejected before any database lookup or fallback.
 func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
+	if strings.TrimSpace(input.PipelineLogID) == "" {
+		return ErrMissingRunIdentity
+	}
 	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
 }
 

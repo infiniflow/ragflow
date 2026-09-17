@@ -370,6 +370,15 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		OperationStatus: "5",
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
 
 	docName := "terminal.pdf"
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
@@ -387,6 +396,7 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 			Name:         &docName,
 			Suffix:       ".pdf",
 		},
+		PipelineLogID: "run-1",
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -400,6 +410,13 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	}
 	if len(log.DSL) != 0 {
 		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
+func TestRecordPipelineLogRejectsMissingRunIdentity(t *testing.T) {
+	err := RecordPipelineLog(t.Context(), nil, PipelineLogInput{DocumentID: "doc-1", Status: "3"})
+	if !errors.Is(err, ErrMissingRunIdentity) {
+		t.Fatalf("RecordPipelineLog error = %v, want ErrMissingRunIdentity", err)
 	}
 }
 
@@ -520,6 +537,15 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed knowledgebase: %v", err)
 	}
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		OperationStatus: "5",
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
 	docName := "sample.avi"
 	if err := dao.DB.Create(&entity.Document{
 		ID:           "doc-1",
@@ -535,9 +561,10 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 	// Mirrors Ingestor.recordTerminalPipelineLog: only the terminal status is
 	// known; pipeline_id and DSL are absent and must come from the document.
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		KbID:       "kb-1",
-		DocumentID: "doc-1",
-		Status:     "3",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "run-1",
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -834,179 +861,6 @@ func TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("pipeline log rows = %d, want 1 (a bound missing row must not create a duplicate)", count)
-	}
-}
-
-// TestRecordPipelineLog_UnboundAdoptsOpenRow keeps the legacy contract for
-// callers that carry no bound row (debug-adjacent and non-ingestion paths): the
-// document's newest open row is adopted so a stray queued entry is closed
-// rather than left open.
-func TestRecordPipelineLog_UnboundAdoptsOpenRow(t *testing.T) {
-	cleanup := setupPipelineExecutorTestDB(t)
-	defer cleanup()
-
-	openMsg := "Task is queued..."
-	open := &entity.PipelineOperationLog{
-		ID:              "open-log",
-		DocumentID:      "doc-1",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		ParserID:        "naive",
-		TaskType:        "Parse",
-		OperationStatus: "5",
-		ProgressMsg:     &openMsg,
-	}
-	if err := dao.DB.Create(open).Error; err != nil {
-		t.Fatalf("seed open log: %v", err)
-	}
-
-	finalMsg := "Parser Done"
-	if err := dao.DB.Create(&entity.Document{
-		ID:           "doc-1",
-		KbID:         "kb-1",
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		SourceType:   "local",
-		Type:         "pdf",
-		CreatedBy:    "tenant-1",
-		Suffix:       ".pdf",
-		ProgressMsg:  &finalMsg,
-	}).Error; err != nil {
-		t.Fatalf("seed document: %v", err)
-	}
-
-	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		TenantID:   "tenant-1",
-		KbID:       "kb-1",
-		DocumentID: "doc-1",
-		Status:     "3",
-	}); err != nil {
-		t.Fatalf("RecordPipelineLog: %v", err)
-	}
-
-	var reloaded entity.PipelineOperationLog
-	if err := dao.DB.First(&reloaded, "id = ?", "open-log").Error; err != nil {
-		t.Fatalf("reload open log: %v", err)
-	}
-	if reloaded.OperationStatus != "3" {
-		t.Fatalf("open row OperationStatus = %q, want %q (adopted by the unbound writer)", reloaded.OperationStatus, "3")
-	}
-	var count int64
-	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
-		t.Fatalf("count pipeline logs: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("pipeline log rows = %d, want 1 (adopted, not duplicated)", count)
-	}
-}
-
-// TestRecordPipelineLog_DoesNotAdoptLiveRunsOpenRow locks the ownership rule on
-// the unbound fallback: the document's newest open row belongs to a live run, so
-// another run's terminal write must not finalize it. Adopting it would stamp the
-// live run's entry with a foreign status and swallow that run's own terminal
-// write (its CAS would find the row already closed).
-func TestRecordPipelineLog_DoesNotAdoptLiveRunsOpenRow(t *testing.T) {
-	cleanup := setupPipelineExecutorTestDB(t)
-	defer cleanup()
-
-	liveMsg := "Task is queued..."
-	if err := dao.DB.Create(&entity.PipelineOperationLog{
-		ID:              "live-run-log",
-		DocumentID:      "doc-1",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		ParserID:        "naive",
-		TaskType:        "Parse",
-		OperationStatus: "5",
-		ProgressMsg:     &liveMsg,
-	}).Error; err != nil {
-		t.Fatalf("seed live run's open log: %v", err)
-	}
-	if err := dao.DB.Create(&entity.IngestionTask{
-		ID:         "live-task",
-		UserID:     "user-1",
-		DocumentID: "doc-1",
-		DatasetID:  "kb-1",
-		Status:     "RUNNING",
-	}).Error; err != nil {
-		t.Fatalf("seed live task: %v", err)
-	}
-	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "live-task").
-		Update("pipeline_log_id", "live-run-log").Error; err != nil {
-		t.Fatalf("bind live task: %v", err)
-	}
-
-	finalMsg := "Parser Done"
-	if err := dao.DB.Create(&entity.Document{
-		ID:           "doc-1",
-		KbID:         "kb-1",
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		SourceType:   "local",
-		Type:         "pdf",
-		CreatedBy:    "tenant-1",
-		Suffix:       ".pdf",
-		ProgressMsg:  &finalMsg,
-	}).Error; err != nil {
-		t.Fatalf("seed document: %v", err)
-	}
-
-	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		TenantID:   "tenant-1",
-		KbID:       "kb-1",
-		DocumentID: "doc-1",
-		Status:     "4",
-	}); err != nil {
-		t.Fatalf("RecordPipelineLog: %v", err)
-	}
-
-	var live entity.PipelineOperationLog
-	if err := dao.DB.First(&live, "id = ?", "live-run-log").Error; err != nil {
-		t.Fatalf("load live run's log: %v", err)
-	}
-	if live.OperationStatus != "5" {
-		t.Fatalf("live run's row was adopted: OperationStatus = %q, want it untouched at %q", live.OperationStatus, "5")
-	}
-	var count int64
-	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
-		t.Fatalf("count pipeline logs: %v", err)
-	}
-	if count != 2 {
-		t.Fatalf("pipeline log rows = %d, want 2 (the unbound run records its own entry)", count)
-	}
-}
-
-func TestRecordPipelineLog_CreatesRowWithoutOpenPreTerminalRow(t *testing.T) {
-	cleanup := setupPipelineExecutorTestDB(t)
-	defer cleanup()
-
-	docName := "legacy.pdf"
-	if err := dao.DB.Create(&entity.Document{
-		ID:           "doc-1",
-		KbID:         "kb-1",
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		SourceType:   "local",
-		Type:         "pdf",
-		CreatedBy:    "tenant-1",
-		Name:         &docName,
-		Suffix:       ".pdf",
-	}).Error; err != nil {
-		t.Fatalf("seed document: %v", err)
-	}
-
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = "naive"
-	var captured *entity.PipelineOperationLog
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
-		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
-			captured = log
-			return nil
-		},
-	)
-	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
-	if captured == nil {
-		t.Fatal("logCreateFunc was not called: expected Create fallback without an open row")
 	}
 }
 
