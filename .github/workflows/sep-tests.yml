@@ -1018,11 +1018,24 @@ jobs:
 
       - name: Collect ragflow log Infinity
         if: ${{ !cancelled() }}
+        # Log collection is diagnostics only: rebuild the artifacts path here
+        # (the directory created by "Prepare function test environment" may be
+        # gone by now, which made `cp` fail with ENOENT) and never fail the job
+        # over a log copy error.
         run: |
+          set -uo pipefail
+          RUNNER_WORKSPACE_PREFIX="${RUNNER_WORKSPACE_PREFIX:-${HOME}}"
+          ARTIFACTS_DIR="${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}/${API_PROXY_SCHEME}"
+          LOG_DEST="${ARTIFACTS_DIR}/ragflow-logs-infinity"
+          mkdir -p "${ARTIFACTS_DIR}"
           if [ -d docker/ragflow-logs ]; then
-            destination="${ARTIFACTS_DIR}/ragflow-logs-infinity"
-            sudo cp -r docker/ragflow-logs "${destination}"
-            sudo chown -R "$(id -u):$(id -g)" "${destination}"
+            sudo rm -rf "${LOG_DEST}"
+            if sudo cp -a docker/ragflow-logs "${LOG_DEST}"; then
+              sudo chown -R "$(id -u):$(id -g)" "${LOG_DEST}" || true
+              echo "Copied ragflow logs to ${LOG_DEST}"
+            else
+              echo "::warning::Failed to copy ragflow logs to ${LOG_DEST}; continuing"
+            fi
             echo "ragflow log" && sudo tail -n 200 docker/ragflow-logs/ragflow_server.log || true
           else
             echo "No docker/ragflow-logs directory found; skipping log collection"
@@ -1697,11 +1710,23 @@ jobs:
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
+        # Keep this step self-sufficient: rebuild the artifacts path instead of
+        # relying on the directory created earlier, and downgrade copy failures
+        # to warnings so a diagnostics step can never fail the job.
         run: |
+          set -uo pipefail
+          RUNNER_WORKSPACE_PREFIX="${RUNNER_WORKSPACE_PREFIX:-${HOME}}"
+          ARTIFACTS_DIR="${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}/${API_PROXY_SCHEME}"
+          LOG_DEST="${ARTIFACTS_DIR}/ragflow-logs-es"
+          mkdir -p "${ARTIFACTS_DIR}"
           if [ -d docker/ragflow-logs ]; then
-            destination="${ARTIFACTS_DIR}/ragflow-logs-es"
-            sudo cp -r docker/ragflow-logs "${destination}"
-            sudo chown -R "$(id -u):$(id -g)" "${destination}"
+            sudo rm -rf "${LOG_DEST}"
+            if sudo cp -a docker/ragflow-logs "${LOG_DEST}"; then
+              sudo chown -R "$(id -u):$(id -g)" "${LOG_DEST}" || true
+              echo "Copied ragflow logs to ${LOG_DEST}"
+            else
+              echo "::warning::Failed to copy ragflow logs to ${LOG_DEST}; continuing"
+            fi
             echo "ragflow log" && sudo tail -n 200 docker/ragflow-logs/ragflow_server.log || true
           else
             echo "No docker/ragflow-logs directory found; skipping log collection"
