@@ -14,8 +14,7 @@
  *  limitations under the License.
  */
 
-import api from '@/utils/api';
-import request from '@/utils/request';
+import { probeTableColumns } from '@/services/knowledge-service';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -28,12 +27,13 @@ export async function extractTableColumns(file: File): Promise<string[]> {
   try {
     const formData = new FormData();
     formData.append('file', file);
-    const res = await request.post(api.probeTable, { data: formData });
-    if (res?.data?.code === 0 && Array.isArray(res?.data?.data?.columns)) {
-      return res.data.data.columns;
+    const body = await probeTableColumns(formData);
+    if (body?.code === 0 && Array.isArray(body?.data?.columns)) {
+      return body.data.columns;
     }
   } catch {
-    // Graceful fallback to client-side parsing below
+    // A probe that is unreachable or declines the format is not a failure the
+    // user acted on: the local parse below answers the same question.
   }
 
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
@@ -180,10 +180,13 @@ export type DatasetTableColumnSettings = {
   roles: Record<string, 'indexing' | 'metadata' | 'both'>;
 };
 
+// normalizeRole canonicalises a stored role for display only. The comparison is
+// exact because the runtime compares it exactly: the table parser matches the
+// stored string without trimming or case-folding (rag/app/table.py), so a value
+// like " Indexing " is excluded from indexing rather than honoured, and the
+// dialog must not show a match ingestion will not make.
 function normalizeRole(raw: unknown): 'indexing' | 'metadata' | 'both' {
-  const role = String(raw ?? '')
-    .trim()
-    .toLowerCase();
+  const role = String(raw ?? '');
   if (role === 'indexing' || role === 'vectorize') {
     return 'indexing';
   }
@@ -198,19 +201,41 @@ function collectRoles(raw: unknown): DatasetTableColumnSettings['roles'] {
     return {};
   }
   const roles: DatasetTableColumnSettings['roles'] = {};
+  // Keep every stored key: the backend matches a role to a column by exact name
+  // (internal/service/document, filterTableColumnRoles), and a delimited header
+  // can legitimately name a column "" or " ", so dropping a blank key would hide
+  // a role that ingestion honours.
   for (const [column, role] of Object.entries(raw as Record<string, unknown>)) {
-    if (String(column).trim()) {
-      roles[String(column)] = normalizeRole(role);
-    }
+    roles[column] = normalizeRole(role);
   }
   return roles;
+}
+
+// storedMode reads a persisted column mode the way the runtime does: an absent
+// or non-string value is unset, and every other value is taken verbatim, because
+// only the exact "manual" selects manual
+// (internal/common/table_column.go, NormalizeTableColumnMode).
+function storedMode(raw: unknown): string {
+  return typeof raw === 'string' ? raw : '';
+}
+
+// hasStoredColumnNames counts only the names the runtime keeps
+// (internal/ingestion/task/indexdoc, parseTableColumnNames): a blank or
+// non-string entry is not a column, so a list of blanks alone leaves that level
+// unset rather than claiming it.
+function hasStoredColumnNames(raw: unknown): boolean {
+  return (
+    Array.isArray(raw) &&
+    raw.some((name) => typeof name === 'string' && name.trim() !== '')
+  );
 }
 
 /**
  * Effective dataset-level table column settings. Root-level keys come first —
  * that is what the dataset settings page saves — then the component-shaped
  * entry a canvas or the document dialog writes. Mirrors the backend's
- * ResolveTableProfile ordering.
+ * ResolveTableProfile ordering, including its rule that any one of mode, roles
+ * or names makes a level the authoritative one.
  *
  * The upload dialog shows these as its initial selection so an untouched
  * dialog displays what ingestion will actually use; it does not send them back
@@ -220,11 +245,15 @@ export function resolveDatasetTableColumnSettings(
   parserConfig?: Record<string, any> | null,
 ): DatasetTableColumnSettings {
   const config = parserConfig ?? {};
-  const rootMode = String(config.table_column_mode ?? '').trim();
+  const rootMode = storedMode(config.table_column_mode);
   const rootRoles = collectRoles(config.table_column_roles);
-  if (rootMode || Object.keys(rootRoles).length > 0) {
+  if (
+    rootMode ||
+    Object.keys(rootRoles).length > 0 ||
+    hasStoredColumnNames(config.table_column_names)
+  ) {
     return {
-      mode: rootMode.toLowerCase() === 'manual' ? 'manual' : 'auto',
+      mode: rootMode === 'manual' ? 'manual' : 'auto',
       roles: rootRoles,
     };
   }
@@ -237,11 +266,15 @@ export function resolveDatasetTableColumnSettings(
     if (!spreadsheet || typeof spreadsheet !== 'object') {
       continue;
     }
-    const nestedMode = String(spreadsheet.column_mode ?? '').trim();
+    const nestedMode = storedMode(spreadsheet.column_mode);
     const nestedRoles = collectRoles(spreadsheet.column_roles);
-    if (nestedMode || Object.keys(nestedRoles).length > 0) {
+    if (
+      nestedMode ||
+      Object.keys(nestedRoles).length > 0 ||
+      hasStoredColumnNames(spreadsheet.column_names)
+    ) {
       return {
-        mode: nestedMode.toLowerCase() === 'manual' ? 'manual' : 'auto',
+        mode: nestedMode === 'manual' ? 'manual' : 'auto',
         roles: nestedRoles,
       };
     }

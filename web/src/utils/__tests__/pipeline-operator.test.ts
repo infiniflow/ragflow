@@ -143,9 +143,9 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
   });
 });
 
-// A minimal DSL-shaped Parser node where the component's spreadsheet config
-// carries column_mode:"auto" — the template default that was previously
-// masking the user's upload-time "manual" selection.
+// A minimal DSL-shaped Parser node whose component spreadsheet config carries
+// column_mode:"auto" — the value a canvas saved by an earlier template wrote,
+// which previously masked the user's upload-time "manual" selection.
 const parserNodeWithAutoColumnMode = {
   id: 'Parser:HipSignsRhyme',
   data: {
@@ -153,7 +153,7 @@ const parserNodeWithAutoColumnMode = {
       setups: [
         {
           fileFormat: 'spreadsheet',
-          column_mode: 'auto', // ← DSL template default (always "auto")
+          column_mode: 'auto', // ← written by a canvas saved with the old default
           column_names: [],
           column_roles: {},
           parse_method: 'DeepDOC',
@@ -220,7 +220,11 @@ describe('buildOperatorNode spreadsheet column_mode priority', () => {
     expect(spreadsheetSetup.column_names).toEqual(['x']);
   });
 
-  it('falls back to "auto" when no column_mode is present anywhere', () => {
+  // An untouched setup has to stay unset. The form renders "auto" for an empty
+  // value, but a value written here is saved back into the component entry and
+  // lifted to the dataset root, where it outranks a manual profile the user
+  // configures afterwards.
+  it('leaves column_mode unset when no level states one', () => {
     const node = buildOperatorNode(
       {
         id: 'Parser:HipSignsRhyme',
@@ -249,7 +253,7 @@ describe('buildOperatorNode spreadsheet column_mode priority', () => {
     const spreadsheetSetup = form.setups?.find(
       (s: any) => s.fileFormat === 'spreadsheet',
     );
-    expect(spreadsheetSetup.column_mode).toBe('auto');
+    expect(spreadsheetSetup.column_mode).toBeUndefined();
   });
 
   it('root-level table_column_names wins over component-level column_names', () => {

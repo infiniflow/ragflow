@@ -1,12 +1,12 @@
-import request from '@/utils/request';
+import { probeTableColumns } from '@/services/knowledge-service';
 import {
   extractTableColumns,
   isTableFile,
   resolveDatasetTableColumnSettings,
 } from '../table-column-extract';
 
-jest.mock('@/utils/request', () => ({
-  post: jest.fn(),
+jest.mock('@/services/knowledge-service', () => ({
+  probeTableColumns: jest.fn(),
 }));
 
 describe('table-column-extract', () => {
@@ -55,6 +55,41 @@ describe('table-column-extract', () => {
       ).toEqual({ mode: 'manual', roles: { a: 'metadata' } });
     });
 
+    // The runtime compares both values verbatim: only the exact "manual"
+    // selects manual (common.NormalizeTableColumnMode) and a role is matched
+    // without trimming or case-folding, so the dialog must not show a choice
+    // ingestion will not honour, nor drop a column name that is merely blank.
+    it('reads a stored mode and stored roles exactly', () => {
+      expect(
+        resolveDatasetTableColumnSettings({ table_column_mode: ' Manual ' }),
+      ).toEqual({ mode: 'auto', roles: {} });
+
+      expect(
+        resolveDatasetTableColumnSettings({
+          table_column_roles: { ' Indexing ': ' INDEXING ', '': 'metadata' },
+        }),
+      ).toEqual({
+        mode: 'auto',
+        roles: { ' Indexing ': 'both', '': 'metadata' },
+      });
+    });
+
+    // Any of mode, roles or names makes the root level authoritative, even when
+    // the manual profile is on the canvas (indexdoc.ResolveTableProfile).
+    it('treats stored column names alone as a root-level setting', () => {
+      expect(
+        resolveDatasetTableColumnSettings({
+          table_column_names: ['a'],
+          'Parser:Table': {
+            spreadsheet: {
+              column_mode: 'manual',
+              column_roles: { a: 'metadata' },
+            },
+          },
+        }),
+      ).toEqual({ mode: 'auto', roles: {} });
+    });
+
     it('defaults to auto with no settings', () => {
       expect(resolveDatasetTableColumnSettings(undefined)).toEqual({
         mode: 'auto',
@@ -69,13 +104,11 @@ describe('table-column-extract', () => {
 
   describe('extractTableColumns', () => {
     it('returns columns from backend probe when available', async () => {
-      (request.post as unknown as jest.Mock).mockResolvedValueOnce({
+      (probeTableColumns as unknown as jest.Mock).mockResolvedValueOnce({
+        code: 0,
         data: {
-          code: 0,
-          data: {
-            columns: ['Name', 'City', 'Role'],
-            total_columns: 3,
-          },
+          columns: ['Name', 'City', 'Role'],
+          total_columns: 3,
         },
       });
 
@@ -84,12 +117,12 @@ describe('table-column-extract', () => {
       });
       const columns = await extractTableColumns(file);
 
-      expect(request.post).toHaveBeenCalledTimes(1);
+      expect(probeTableColumns).toHaveBeenCalledTimes(1);
       expect(columns).toEqual(['Name', 'City', 'Role']);
     });
 
     it('falls back to local parsing if server probe errors', async () => {
-      (request.post as unknown as jest.Mock).mockRejectedValueOnce(
+      (probeTableColumns as unknown as jest.Mock).mockRejectedValueOnce(
         new Error('Network error'),
       );
 
@@ -101,7 +134,7 @@ describe('table-column-extract', () => {
     });
 
     it('falls back to local TSV parsing with tab delimiter', async () => {
-      (request.post as unknown as jest.Mock).mockRejectedValueOnce(
+      (probeTableColumns as unknown as jest.Mock).mockRejectedValueOnce(
         new Error('Probe disabled'),
       );
 
@@ -114,8 +147,22 @@ describe('table-column-extract', () => {
       expect(columns).toEqual(['ID', 'Product', 'Price']);
     });
 
+    it('falls back to a tab delimiter for a .txt table too', async () => {
+      (probeTableColumns as unknown as jest.Mock).mockRejectedValueOnce(
+        new Error('Probe disabled'),
+      );
+
+      // rag/app/table.py splits a .txt table on a tab, so the comma inside the
+      // first field is part of the column name.
+      const txtContent = 'name,full\tamount\nAlice,Ann\t10\n';
+      const file = new File([txtContent], 'test.txt', { type: 'text/plain' });
+      const columns = await extractTableColumns(file);
+
+      expect(columns).toEqual(['name,full', 'amount']);
+    });
+
     it('takes a delimited header exactly as ingestion indexes it', async () => {
-      (request.post as unknown as jest.Mock).mockRejectedValueOnce(
+      (probeTableColumns as unknown as jest.Mock).mockRejectedValueOnce(
         new Error('Probe disabled'),
       );
 

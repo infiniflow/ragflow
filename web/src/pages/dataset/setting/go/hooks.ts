@@ -142,15 +142,19 @@ export const useSaveDatasetSetting = () => {
           transformedConfig.metadata = extractorMetadataGroup;
         }
         if (spreadsheetConfig) {
+          // Lift only what the canvas actually states. The backend takes the
+          // root keys as authoritative as soon as any of mode, roles or names
+          // is set there, so writing an untouched "auto" with an empty map
+          // would pin the dataset to auto and hide a manual profile configured
+          // on the canvas afterwards.
           if (spreadsheetConfig.column_mode) {
             transformedConfig.table_column_mode = spreadsheetConfig.column_mode;
           }
-          // Column roles default to "both" per column (Python table chunker
-          // convention). Send an explicit map — never undefined — so the
-          // backend cannot mistake "absent" for "indexing-only".
-          transformedConfig.table_column_roles =
-            spreadsheetConfig.column_roles ?? {};
-          if (spreadsheetConfig.column_names) {
+          const columnRoles = spreadsheetConfig.column_roles;
+          if (columnRoles && Object.keys(columnRoles).length > 0) {
+            transformedConfig.table_column_roles = columnRoles;
+          }
+          if (spreadsheetConfig.column_names?.length > 0) {
             transformedConfig.table_column_names =
               spreadsheetConfig.column_names;
           }

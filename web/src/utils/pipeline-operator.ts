@@ -503,13 +503,13 @@ export function buildOperatorNode(
           //   2. setup.column_* — from the component entry in parser_config
           //      (written when the dialog is saved under the Go backend).
           //   3. setup.table_column_* — Python backend compat keys.
-          //   4. Fallback defaults (empty list / empty object / 'auto').
+          //   4. Nothing, which leaves the setting unset.
           //
-          // The old code evaluated setup.column_mode first; because the DSL
-          // template always seeds column_mode:"auto" into the component entry,
-          // that truthy "auto" would short-circuit the root-level "manual",
-          // causing the dialog to always display "auto" even after the user
-          // had explicitly chosen "manual" at upload time.
+          // The old code evaluated setup.column_mode first; a canvas saved with
+          // the earlier template default carries column_mode:"auto" in the
+          // component entry, and that truthy "auto" short-circuited the
+          // root-level "manual", so the dialog always displayed "auto" even
+          // after the user had explicitly chosen "manual" at upload time.
           const columnModeValue =
             pipelineParserConfig.table_column_mode ||
             setup.column_mode ||
@@ -535,7 +535,11 @@ export function buildOperatorNode(
                   ? setup.table_column_roles
                   : undefined;
           const column_names = columnNamesValue ?? [];
-          const column_mode = columnModeValue || 'auto';
+          // An untouched setup stays unset rather than becoming "auto": the form
+          // renders "auto" for an empty value (spreadsheet-form-fields), while a
+          // value here is saved back into the component and lifted to the dataset
+          // root, where it would outrank a manual profile configured later.
+          const column_mode = columnModeValue;
           const column_roles = columnRolesValue ?? {};
           return {
             ...setup,

@@ -422,6 +422,23 @@ export const uploadDocument = async (datasetId: string, formData: FormData) => {
   return response.data;
 };
 
+// probeTableColumns asks the server for the column headers of a table file
+// before ingestion. The probe is optional: on a format it declines (binary xls)
+// or a failure, the caller reads the header from the local file instead, so the
+// global error notification would report a problem the user has already been
+// spared.
+const probeTableProxy = registerNextServer({
+  probeTable: { url: api.probeTable, method: 'post' },
+} as const);
+
+export const probeTableColumns = async (formData: FormData) => {
+  const response = await probeTableProxy.probeTable(
+    { data: formData, skipGlobalErrorNotification: true },
+    true,
+  );
+  return response.data;
+};
+
 export const createDocument = async (datasetId: string, name: string) => {
   const response = await request.post(api.documentCreate(datasetId), {
     data: { name },
