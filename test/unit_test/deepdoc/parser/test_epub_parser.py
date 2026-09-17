@@ -495,3 +495,54 @@ class TestEpubParserUnreadableChapter:
         """Only failures caused by the chapter itself are skipped; any other error propagates."""
         with mock.patch.object(_epub_mod.RAGFlowHtmlParser, "parser_txt", side_effect=TypeError("parser bug")), pytest.raises(TypeError, match="parser bug"):
             self._parse(_make_epub(self._CHAPTERS))
+
+
+class TestEpubParserNothingReadable:
+    """A book in which no chapter could be read must fail instead of parsing to nothing."""
+
+    _CHAPTERS = TestEpubParserUnreadableChapter._CHAPTERS
+
+    def _parse(self, epub_bytes):
+        """Parse `epub_bytes` and return the sections."""
+        return RAGFlowEpubParser()(None, binary=epub_bytes, chunk_token_num=512)
+
+    def test_a_book_with_every_chapter_encrypted_raises(self):
+        """A DRM-protected book used to come back as zero sections."""
+        epub_bytes = _make_epub(self._CHAPTERS)
+        for name, _ in self._CHAPTERS:
+            epub_bytes = _set_encrypted_flag(epub_bytes, f"OEBPS/{name}".encode())
+
+        with pytest.raises(ValueError, match=r"No readable content in EPUB: 3 of 3 content items .* is encrypted"):
+            self._parse(epub_bytes)
+
+    def test_a_book_with_every_chapter_undecodable_raises(self):
+        """Parse failures count as well as read failures."""
+        chapters = [
+            ("ch1.xhtml", bytes(range(256)) * 8),
+            ("ch2.xhtml", bytes(range(256)) * 8),
+        ]
+
+        with pytest.raises(ValueError, match="No readable content in EPUB: 2 of 2 content items"):
+            self._parse(_make_epub(chapters))
+
+    def test_a_book_whose_spine_points_only_at_missing_files_raises(self):
+        """A missing spine item is a failure too."""
+        # Rename the members in the ZIP headers, so every spine href points at nothing.
+        epub_bytes = _make_epub(self._CHAPTERS).replace(b"OEBPS/ch", b"OEBPS/xx")
+
+        with pytest.raises(ValueError, match=r"No readable content in EPUB: 3 of 3 content items .* no item named"):
+            self._parse(epub_bytes)
+
+    def test_an_empty_chapter_next_to_an_unreadable_one_raises(self):
+        """Nothing readable is left, even though only one of the two items failed."""
+        chapters = [
+            ("ch1.xhtml", b""),
+            ("ch2.xhtml", bytes(range(256)) * 8),
+        ]
+
+        with pytest.raises(ValueError, match="No readable content in EPUB: 1 of 2 content items"):
+            self._parse(_make_epub(chapters))
+
+    def test_a_book_whose_only_chapter_is_empty_still_returns_nothing(self):
+        """An empty chapter is not a failure, so there is nothing to report."""
+        assert self._parse(_make_epub([("ch1.xhtml", b"")])) == []

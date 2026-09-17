@@ -42,7 +42,8 @@ class RAGFlowEpubParser:
         """Return the text sections of every readable content item, in spine order.
 
         An item that cannot be read or parsed is skipped with a warning. Raises
-        ValueError for an empty payload.
+        ValueError for an empty payload, and when items failed and nothing
+        readable is left.
         """
         if binary is not None:
             if not binary:
@@ -58,6 +59,7 @@ class RAGFlowEpubParser:
         try:
             content_items = self._get_spine_items(zf)
             all_sections = []
+            failures = []
             html_parser = RAGFlowHtmlParser()
 
             for item_path in content_items:
@@ -68,6 +70,7 @@ class RAGFlowEpubParser:
                     # compression method zipfile does not implement. Only that chapter is
                     # unreadable; the rest of the book still parses.
                     logger.warning("Skipping unreadable EPUB content item '%s': %s", item_path, e)
+                    failures.append(f"{item_path}: {e}")
                     continue
                 if not html_bytes:
                     logger.debug("Skipping empty EPUB content item: %s", item_path)
@@ -81,9 +84,12 @@ class RAGFlowEpubParser:
                     # malformed markup, and the HTML walker recurses once per element.
                     # Same reasoning as above; any other error is a bug and propagates.
                     logger.warning("Skipping EPUB content item '%s' that failed to parse: %s", item_path, e)
+                    failures.append(f"{item_path}: {e}")
                     continue
                 all_sections.extend(sections)
 
+            if failures and not all_sections:
+                raise ValueError(f"No readable content in EPUB: {len(failures)} of {len(content_items)} content items could not be read or parsed ({failures[0]})")
             return all_sections
         finally:
             zf.close()
