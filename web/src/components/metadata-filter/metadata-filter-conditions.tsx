@@ -40,9 +40,9 @@ import { useCallback, useMemo } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { LogicalOperator } from '../logical-operator';
+import { SelectWithSearch } from '../originui/select-with-search';
 import { Card, CardContent } from '../ui/card';
 import { InputSelect } from '../ui/input-select';
-import { RAGFlowSelect } from '../ui/select';
 
 type ConditionCardsProps = {
   fieldName: string;
@@ -124,7 +124,7 @@ function ConditionCards({
               render={({ field }) => (
                 <FormItem>
                   <FormControl>
-                    <RAGFlowSelect
+                    <SelectWithSearch
                       {...field}
                       onChange={(value) => {
                         handleChangeOp(value);

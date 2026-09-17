@@ -100,17 +100,17 @@ declare namespace AdminService {
   export type ListServicesItem = {
     extra: Record<string, unknown>;
     host: string;
-    id: number;
+    id: number | string;
     name: string;
-    port: number;
+    port: number | string;
     service_type: string;
-    status: 'alive' | 'timeout' | 'fail';
+    status: string;
   };
 
   export type ServiceDetail =
     | {
         service_name: string;
-        status: 'alive' | 'timeout';
+        status: string;
         message: string | Record<string, any> | Record<string, any>[];
       }
     | {
