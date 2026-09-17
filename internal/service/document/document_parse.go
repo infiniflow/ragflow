@@ -124,6 +124,12 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
+		if task.Status == common.CREATED || task.Status == common.SCHEDULED {
+			if err := s.ingestionTaskSvc.SupersedeUnstartedTask(ctx, task.ID); err != nil {
+				return fmt.Errorf("supersede queued ingestion task for document %s: %w", doc.ID, err)
+			}
+			task.Status = common.STOPPED
+		}
 		taskExisted = true
 	}
 

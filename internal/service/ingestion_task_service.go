@@ -327,6 +327,30 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	}
 }
 
+// SupersedeUnstartedTask closes a queued run before a replacement parse is
+// created. A numbered pipeline log is an immutable run ledger, so this must
+// record its cancellation rather than deleting the row with the task.
+func (s *IngestionTaskService) SupersedeUnstartedTask(ctx context.Context, taskID string) error {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	switch task.Status {
+	case common.CREATED, common.SCHEDULED:
+		stopped, err := s.transition(ctx, taskID, common.STOPPED)
+		if err != nil {
+			return err
+		}
+		s.advanceOpenLog(ctx, stopped, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
+		s.recordRunTerminal(ctx, stopped, "Task superseded by a new parse request.")
+		return nil
+	case common.RUNNING, common.STOPPING:
+		return fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
+	default:
+		return nil
+	}
+}
+
 func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string) error {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {

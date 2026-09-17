@@ -1356,6 +1356,57 @@ func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 	}
 }
 
+func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set document location: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
+	ctx := t.Context()
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load knowledgebase: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{}); err != nil {
+		t.Fatalf("start first parse: %v", err)
+	}
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true}); err != nil {
+		t.Fatalf("rerun queued parse: %v", err)
+	}
+
+	var logs []entity.PipelineOperationLog
+	if err = db.Where("document_id = ?", "doc-1").Order("run_count ASC").Find(&logs).Error; err != nil {
+		t.Fatalf("list pipeline logs: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("pipeline logs = %d, want 2", len(logs))
+	}
+	if logs[0].RunCount == nil || *logs[0].RunCount != 1 || logs[0].OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("first run = %+v, want cancelled run 1", logs[0])
+	}
+	if logs[1].RunCount == nil || *logs[1].RunCount != 2 || logs[1].OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("second run = %+v, want scheduled run 2", logs[1])
+	}
+
+	var terminal entity.IngestionTaskLog
+	if err = db.Where("pipeline_log_id = ? AND event_type = ?", logs[0].ID, dao.EventTypeTerminal).First(&terminal).Error; err != nil {
+		t.Fatalf("load superseded terminal event: %v", err)
+	}
+	if terminal.Message != "Task superseded by a new parse request." {
+		t.Fatalf("terminal message = %q", terminal.Message)
+	}
+}
+
 func TestStopParseDocuments_Success(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
