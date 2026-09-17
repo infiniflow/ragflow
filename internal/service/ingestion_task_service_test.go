@@ -276,6 +276,47 @@ func TestIngestionTaskServiceStartRunningTransitionsScheduledTask(t *testing.T) 
 	}
 }
 
+func TestIngestionTaskServiceStartRunningFromCreatedTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	task, err := NewIngestionTaskService().StartRunning(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
+func TestIngestionTaskServiceTransitionFromRejectsConflict(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+	_, err := svc.transitionFrom(ctx, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
+	if err == nil {
+		t.Fatal("expected conflict error, got nil")
+	}
+	var conflictErr *TaskStatusConflictError
+	if !errors.As(err, &conflictErr) {
+		t.Fatalf("expected TaskStatusConflictError, got %T (%v)", err, err)
+	}
+	if conflictErr.ExpectedFrom != "CREATED/SCHEDULED" {
+		t.Fatalf("expected %q, got %q", "CREATED/SCHEDULED", conflictErr.ExpectedFrom)
+	}
+	if conflictErr.ActualCurrent != common.STOPPED {
+		t.Fatalf("actual current = %q, want %q", conflictErr.ActualCurrent, common.STOPPED)
+	}
+}
+
 func TestIngestionTaskServiceListByUserFiltersDataset(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

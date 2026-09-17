@@ -8,10 +8,10 @@ import (
 
 // byteTrimStub reproduces tokenizer.TrimContentToTokenLimit's encoder-missing
 // fallback (UTF-8-safe byte-length trim) verbatim, minus the global encoder
-// lookup. Swapping it into the trimToTokenLimit seam pins the encoder-missing
-// path of hardSplitPiece deterministically: no global tiktoken state is
-// touched, so the test is order-independent in full-package runs (tiktoken-go
-// caches the loaded encoding in a package-level map that no reset can evict).
+// lookup. Swapping it into the trimToTokenLimit seam pins the byte loop
+// deterministically: no global tiktoken state is touched, so the test is
+// order-independent in full-package runs (tiktoken-go caches the loaded
+// encoding in a package-level map that no reset can evict).
 func byteTrimStub(s string, limit int) string {
 	if limit < 0 {
 		limit = 0
@@ -29,22 +29,29 @@ func byteTrimStub(s string, limit int) string {
 	return string(b[:limit])
 }
 
+// deadEncodeStub reports the encoder as unavailable, the same degraded world
+// production hits when InitCL100KEncoder failed, without touching any global
+// tiktoken state.
+func deadEncodeStub(string) ([]int, bool) { return nil, false }
+
 // TestHardSplitPiece_EncoderMissingFallback pins the encoder-missing fallback
-// path of hardSplitPiece. With the encoder unavailable, trimToTokenLimit falls
-// back to a UTF-8-safe byte-length trim. The pre-optimization loop guard
+// path of hardSplitPiece. With the encoder unavailable, the token-space walk
+// is skipped and the byte loop drives off trimToTokenLimit, which falls back
+// to a UTF-8-safe byte-length trim. The pre-optimization loop guard
 // (tokenizeStr(rest) > target) never fired in that state, so the whole
 // over-limit remainder was emitted as ONE piece; the current loop drives off
 // the trim result and keeps emitting bounded pieces instead — strictly more
 // correct, and the behavior this test locks in so the fallback stays a
 // first-class, tested path.
 func TestHardSplitPiece_EncoderMissingFallback(t *testing.T) {
-	orig := trimToTokenLimit
-	trimToTokenLimit = byteTrimStub
-	t.Cleanup(func() { trimToTokenLimit = orig })
+	origEncode, origTrim := encodeTokens, trimToTokenLimit
+	encodeTokens, trimToTokenLimit = deadEncodeStub, byteTrimStub
+	t.Cleanup(func() { encodeTokens, trimToTokenLimit = origEncode, origTrim })
 
-	// Pure ASCII+CJK text with no @@...## tags: adjustCutPastTag extends a cut
-	// past a tag when tokenizeStr(head) <= target, which a dead encoder makes
-	// always true and would swallow the byte-bounded shape under test.
+	// Pure ASCII+CJK text with no @@...## tags: the byte loop's
+	// adjustCutPastTag extends a cut past a tag when tokenizeStr(head) <=
+	// target, which a dead encoder makes always true and would swallow the
+	// byte-bounded shape under test.
 	text := hardSplitBenchText()
 	const target = 64
 

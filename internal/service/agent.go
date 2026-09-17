@@ -1165,6 +1165,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		if err := component.ValidateDynamicEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
+		if err := validateAgentChatModels(ctx, userID, dslMap); err != nil {
+			return err
+		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
@@ -1713,6 +1716,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			dsl = dslpkg.NormalizeForRun(session.DSL)
 		}
 	}
+	if err := validateAgentChatModels(ctx, userID, dsl); err != nil {
+		return nil, err
+	}
 	// A handler may allocate the session id before calling RunAgent so the
 	// effective id is available even when the run emits no events. Treat an
 	// absent conversation row as a first touch regardless of who generated the
@@ -1857,6 +1863,33 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}()
 	registrationHandedOff = true
 	return out, nil
+}
+
+// validateAgentChatModels rejects stale Agent model references before saving or
+// execution. Agent components always invoke a chat model; model-free canvases
+// contain no Agent component and pass through.
+func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]any) error {
+	c, err := canvas.DecodeFromDSL(dsl)
+	if err != nil {
+		return nil
+	}
+	resolver := NewModelProviderService()
+	for _, node := range c.Components {
+		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
+			continue
+		}
+		modelRef, ok := node.Obj.Params["model_id"].(string)
+		if !ok {
+			modelRef, _ = node.Obj.Params["llm_id"].(string)
+		}
+		if _, _, _, _, err := resolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
+			}
+			return fmt.Errorf("validate Agent chat model: %w: %w", err, ErrAgentStorageError)
+		}
+	}
+	return nil
 }
 
 // buildRunFunc assembles the per-run RunFunc the orchestrator (canvas.Runner)

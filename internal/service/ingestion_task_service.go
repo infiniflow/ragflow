@@ -280,7 +280,7 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 	}
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		task, err = s.transition(ctx, taskID, common.RUNNING)
+		task, err = s.transitionFrom(ctx, taskID, []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
 		if err != nil {
 			return nil, err
 		}
@@ -333,7 +333,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	}
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		stopped, err := s.transition(ctx, taskID, common.STOPPED)
+		stopped, err := s.transitionFrom(ctx, taskID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
 		if err != nil {
 			return nil, err
 		}
@@ -535,6 +535,27 @@ func (s *IngestionTaskService) newTaskStatusConflictError(ctx context.Context, t
 	}
 }
 
+func (s *IngestionTaskService) transitionFrom(ctx context.Context, taskID string, fromStatuses []string, to string) (*entity.IngestionTask, error) {
+	for _, from := range fromStatuses {
+		if err := validateTransition(from, to); err != nil {
+			var transitionErr *InvalidTaskTransitionError
+			if errors.As(err, &transitionErr) {
+				return nil, &InvalidTaskTransitionError{TaskID: taskID, From: transitionErr.From, To: transitionErr.To}
+			}
+			return nil, err
+		}
+	}
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, fromStatuses, to)
+	if err != nil {
+		return nil, err
+	}
+	if !updated {
+		expected := strings.Join(fromStatuses, "/")
+		return nil, s.newTaskStatusConflictError(ctx, taskID, expected, to)
+	}
+	return s.GetTask(ctx, taskID)
+}
+
 func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to string) (*entity.IngestionTask, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
@@ -547,7 +568,7 @@ func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to
 		}
 		return task, err
 	}
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, task.Status, to)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{task.Status}, to)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +651,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, status)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
 	if err != nil {
 		return err
 	}
@@ -650,7 +671,7 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 // the unstarted from-state, so it never regresses a row the worker already
 // advanced.
 func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, common.SCHEDULED)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, common.SCHEDULED)
 	if err != nil {
 		return nil, err
 	}

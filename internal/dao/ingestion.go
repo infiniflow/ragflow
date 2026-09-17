@@ -60,9 +60,13 @@ func (dao *IngestionTaskDAO) Create(ctx context.Context, db *gorm.DB, ingestionT
 	return ingestionTask, nil
 }
 
-func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm.DB, taskID, fromStatus, toStatus string) (bool, error) {
+// UpdateStatusIfCurrent updates the task status if its current status matches any of the given fromStatuses.
+func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm.DB, taskID string, fromStatuses []string, toStatus string) (bool, error) {
+	if len(fromStatuses) == 0 {
+		return false, nil
+	}
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ?", taskID, fromStatus).
+		Where("id = ? AND status IN (?)", taskID, fromStatuses).
 		Update("status", toStatus)
 	if result.Error != nil {
 		return false, result.Error

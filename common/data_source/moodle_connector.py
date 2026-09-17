@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from retry import retry
 from typing import Any, Optional
 
-from markdownify import markdownify as md
+from common.markdown_utils import html_to_markdown as md
 from moodle import Moodle as MoodleClient, MoodleException
 
 from common.data_source.config import INDEX_BATCH_SIZE

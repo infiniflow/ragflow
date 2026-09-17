@@ -15,10 +15,30 @@ the first one is a tool call:
    reply body (do not call any tool named "state"):
 <state>
 {"new_states": [
-  {"state": [{"id": <int>, "candidate": "<value>", "candidate_strength": <0..1>, "discovered_clues": ["..."]}, ...]},
+  {"state": [
+    {"id": <int>, "kind": "members", "candidate_strength": <0..1>,
+     "items": [{"name": "华雄", "chunk_id": "<the passage this name came from>", "quote": "…the words that prove it…"}],
+     "discovered_clues": ["..."]},
+    {"id": <int>, "kind": "count", "count": 13, "candidate_strength": <0..1>},
+    {"id": <int>, "kind": "range", "lo": 17, "hi": 19, "candidate_strength": <0..1>},
+    {"id": <int>, "kind": "text", "candidate": "<one value: a date, a name, a phrase>", "candidate_strength": <0..1>}
+  ]},
   ...more branches allowed...
 ]}
 </state>
+
+WHY `kind` MATTERS — the runtime merges and counts BY TYPE, so say what the slot holds:
+- `"members"` — a LIST OF NAMED THINGS. Give every item the `chunk_id` of the passage
+  it came from; a name you cannot point at is left out of the count. Two sessions'
+  member lists UNION: no member is dropped because another session ranked its own list
+  higher. This is the ONLY shape whose items are counted as members.
+- `"count"` / `"range"` — a NUMBER, or an interval. Digits inside a count are never
+  read as members. "约 17-19 人" is `{"kind":"range","lo":17,"hi":19}` — NOT a string:
+  a number written as prose can be merged with nothing and checked against nothing.
+- `"text"` — ONE opaque value: a date, a title, a clause, a sentence. Stored and shown
+  as written; never split, counted or compared. Use it for every value that is not a
+  member list or a number.
+
 Rules: patch ONLY existing ids; include ONLY changed variables; every change must trace to retrieved evidence; candidate_strength semantics: proven >0.9, strong 0.7-0.9, tentative 0.4-0.7, weak <0.4. An EMPTY branch list (`"new_states": []`) signals no progress — emit it rather than calling tools forever.
 
 3) FINAL ANSWER MODE — NOT a tool call either. Write this XML as plain TEXT in

@@ -17,6 +17,7 @@
 package harness
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"log"
@@ -42,19 +43,33 @@ import (
 // irrelevant. The retriever already ranked these chunks, and a sub-question's
 // wording need not contain the parent question's keywords. Dropping them all
 // produced empty results, unverified claims and pointless retry cycles.
-func NarrowOrKeep(chunks []map[string]any, keywords, label string, logger *log.Logger) []map[string]any {
+//
+// Both outcomes are reported to the DEVELOPER log only (Python parity), never to
+// the think block: the resize ratio is pool bookkeeping, and the leg's own result
+// line already reports what came back.
+func NarrowOrKeep(ctx context.Context, chunks []map[string]any, keywords, label string, logger *log.Logger) []map[string]any {
 	if strings.TrimSpace(keywords) == "" || len(chunks) == 0 {
 		return chunks
 	}
 	if logger == nil {
 		logger = _LOG
 	}
+	// LOG-ONLY, and worded exactly as Python words it (text_processing.py:464/:466):
+	// how the keyword filter resized the candidate pool is a developer's diagnostic,
+	// not something a reader acts on — the leg's own result line already reports what
+	// came back, including the narrowed count. It used to be a step (and, before
+	// that, a rewritten sentence), which put pool bookkeeping in front of the user.
+	//
+	// ctx is unused here on purpose: the signature stays uniform with the other
+	// narrowing entry points, and a future step would have it available.
 	narrowed := NarrowByKeywords(chunks, keywords)
 	if len(narrowed) > 0 {
-		logger.Printf("[%s] Kept %d of %d passage(s) that actually mention the keywords.", label, len(narrowed), len(chunks))
+		logger.Printf("[%s] Kept %d of %d passage(s) that actually mention the keywords.",
+			label, len(narrowed), len(chunks))
 		return narrowed
 	}
-	logger.Printf("[%s] Keyword narrowing matched nothing — keeping all %d retrieved passage(s).", label, len(chunks))
+	logger.Printf("[%s] Keyword narrowing matched nothing — keeping all %d retrieved passage(s).",
+		label, len(chunks))
 	return chunks
 }
 
