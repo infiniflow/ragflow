@@ -258,6 +258,9 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err := s.deleteDocumentGeneratedChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return fmt.Errorf("delete generated products for document %s: %w", doc.ID, err)
 	}
+	if err := s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID); err != nil {
+		return fmt.Errorf("delete chunk images for document %s: %w", doc.ID, err)
+	}
 	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
@@ -546,38 +549,70 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 }
 
 func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Document, indexName string) {
-	if s.docEngine == nil {
+	if doc == nil {
 		return
+	}
+	_ = s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID)
+}
+
+// deleteDocumentChunkImages removes source chunk image objects in bounded,
+// claim-fenced search batches. Images are external storage state, so a
+// takeover can fence the cleanup only at batch boundaries; repeating the
+// operation is safe because deleting an absent object is a no-op.
+func (s *DocumentService) deleteDocumentChunkImages(ctx context.Context, indexName, datasetID, documentID string) error {
+	if s.docEngine == nil {
+		return nil
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
-		return
+		return nil
 	}
 
 	const pageSize = 1000
+	claimToken := s.cleanupClaimToken(ctx, documentID)
 	for offset := 0; ; offset += pageSize {
-		result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		if err := s.beginCleanupBatch(ctx, documentID, claimToken); err != nil {
+			return err
+		}
+		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(batchCtx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
-			KbIDs:        []string{doc.KbID},
+			KbIDs:        []string{datasetID},
 			Offset:       offset,
 			Limit:        pageSize,
-			SelectFields: []string{"id", "img_id"},
-			Filter:       map[string]interface{}{"doc_id": doc.ID},
-			MatchExprs:   nil,
-			OrderBy:      nil,
-			RankFeature:  nil,
+			SelectFields: []string{"id", "img_id", "compile_kwd"},
+			Filter:       map[string]interface{}{"doc_id": documentID},
 		})
-		if err != nil || result == nil || len(result.Chunks) == 0 {
-			return
+		if err != nil {
+			cancel()
+			return err
+		}
+		if result == nil || len(result.Chunks) == 0 {
+			cancel()
+			if err := s.finishCleanupBatch(ctx, documentID, claimToken); err != nil {
+				return err
+			}
+			return nil
 		}
 		for _, chunk := range result.Chunks {
-			imageKey, ok := chunkImageStorageKey(doc.KbID, chunk)
-			if !ok {
+			if strings.TrimSpace(documentStoreString(chunk["compile_kwd"])) != "" {
 				continue
 			}
-			if storageImpl.ObjExist(ctx, doc.KbID, imageKey) {
-				_ = storageImpl.Remove(ctx, doc.KbID, imageKey)
+			imageKey, ok := chunkImageStorageKey(datasetID, chunk)
+			if !ok || !storageImpl.ObjExist(batchCtx, datasetID, imageKey) {
+				continue
 			}
+			if err := storageImpl.Remove(batchCtx, datasetID, imageKey); err != nil {
+				cancel()
+				return err
+			}
+		}
+		cancel()
+		if err := s.finishCleanupBatch(ctx, documentID, claimToken); err != nil {
+			return err
+		}
+		if int64(offset+len(result.Chunks)) >= result.Total {
+			return nil
 		}
 	}
 }

@@ -258,7 +258,7 @@ func (e *generatedCleanupDocEngine) Search(_ context.Context, req *types.SearchR
 	if req.Offset > 0 {
 		return &types.SearchResult{Chunks: nil, Total: 1}, nil
 	}
-	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "source-1"}}, Total: 1}, nil
+	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "source-1", "img_id": "kb-1-image-001"}}, Total: 1}, nil
 }
 
 func (e *generatedCleanupDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, _, _ string) (int64, error) {
@@ -2482,6 +2482,36 @@ func TestClearDocumentParseResultsDeletesDocumentGeneratedChunks(t *testing.T) {
 	}
 	if engine.generatedCond["doc_id"] != "doc-1" || engine.generatedCond["kb_id"] != "kb-1" {
 		t.Fatalf("generated cleanup condition = %#v, want document and dataset scope", engine.generatedCond)
+	}
+}
+
+func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	imageStore := newFakeUploadStorage()
+	if err := imageStore.Put(t.Context(), "kb-1", "image-001", []byte("png")); err != nil {
+		t.Fatalf("seed chunk image: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	previousStore := factory.GetStorage()
+	factory.SetStorage(imageStore)
+	t.Cleanup(func() { factory.SetStorage(previousStore) })
+
+	svc := testDocumentService(t)
+	svc.docEngine = &generatedCleanupDocEngine{}
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults failed: %v", err)
+	}
+	if imageStore.ObjExist(t.Context(), "kb-1", "image-001") {
+		t.Fatal("source chunk image still exists after cleanup")
 	}
 }
 
