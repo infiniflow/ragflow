@@ -2179,7 +2179,7 @@ func viewChunkIDs(view []map[string]any) []string {
 // call, plus one corrective round that feeds the malformed answer and the parse
 // error back to the model.
 //
-// Deliberately NO reply cache: Python's gen_json carries Redis cache code, but
+// Deliberately NO reply cache: Python's gen_json carries Kvrocks cache code, but
 // its set/get keys never match — get_llm_cache hashes (llm_name, system,
 // user_prompt, gen_conf) (generator.py:569) while set_llm_cache hashes
 // (llm_name, system, ans, user_prompt, gen_conf) (generator.py:582, the value

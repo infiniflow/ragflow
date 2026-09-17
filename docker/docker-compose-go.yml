@@ -2,6 +2,14 @@ include:
   - ./docker-compose-base.yml
 # To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
 services:
+  # The Go stack uses Kvrocks exclusively (see the `kvrocks` service) and does
+  # not need Valkey. Disable the Valkey `redis` service inherited from the base
+  # compose by giving it a profile the Go deployment never activates, so it does
+  # not occupy host 6379 and Kvrocks can reuse that port (see below).
+  redis:
+    profiles:
+      - ragflow-py
+
   deepdoc:
     image: ${DEEPDOC_IMAGE:-deepdoc_oss:latest}
     profiles:
@@ -55,10 +63,14 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint-go.sh:/ragflow/entrypoint.sh
     env_file: .env-go
-    # Route the Go services' cache/queue backend to the separate Kvrocks service
-    # (overriding REDIS_HOST=redis from .env-go). The Python services keep Valkey.
+    # Route the Go services' cache/queue backend to the separate Kvrocks service.
+    # The Python services use the Valkey `redis` service, which the Go deployment
+    # disables (see the `redis` profile override above) so Kvrocks can reuse host
+    # port 6379. KVROCKS_PORT=6379 is the in-container port; host-run binaries use
+    # KVROCKS_PORT=6379 too (see .env-go).
     environment:
-      - REDIS_HOST=kvrocks
+      - KVROCKS_HOST=kvrocks
+      - KVROCKS_PORT=6379
     networks:
       - ragflow
     restart: unless-stopped
@@ -100,10 +112,14 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint-go.sh:/ragflow/entrypoint.sh
     env_file: .env-go
-    # Route the Go services' cache/queue backend to the separate Kvrocks service
-    # (overriding REDIS_HOST=redis from .env-go). The Python services keep Valkey.
+    # Route the Go services' cache/queue backend to the separate Kvrocks service.
+    # The Python services use the Valkey `redis` service, which the Go deployment
+    # disables (see the `redis` profile override above) so Kvrocks can reuse host
+    # port 6379. KVROCKS_PORT=6379 is the in-container port; host-run binaries use
+    # KVROCKS_PORT=6379 too (see .env-go).
     environment:
-      - REDIS_HOST=kvrocks
+      - KVROCKS_HOST=kvrocks
+      - KVROCKS_PORT=6379
     networks:
       - ragflow
     restart: unless-stopped

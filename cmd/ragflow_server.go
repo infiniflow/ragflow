@@ -68,7 +68,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	et "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
@@ -609,11 +609,11 @@ func main() {
 	}
 	defer engine.Close()
 
-	// Initialize Redis cache
-	if err = redis.Init(ctx); err != nil {
-		common.Fatal("Failed to initialize Redis", zap.Error(err))
+	// Initialize Kvrocks cache
+	if err = kvrocks.Init(ctx); err != nil {
+		common.Fatal("Failed to initialize Kvrocks", zap.Error(err))
 	}
-	defer redis.Close()
+	defer kvrocks.Close()
 
 	if err = storage.Init(ctx); err != nil {
 		common.Error("Failed to initialize storage factory", err)
@@ -626,7 +626,7 @@ func main() {
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err = server.InitVariables(redis.Get()); err != nil {
+	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
@@ -1363,7 +1363,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	// Install the agent service's Redis-backed run infrastructure
+	// Install the agent service's Kvrocks-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
 	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
 	// the constructors return errors, and we fall through to the
@@ -1679,7 +1679,7 @@ type agentRunOptions struct {
 	runTracker      *canvas.RunTracker
 }
 
-// buildAgentRunOptions installs the Redis-backed run infrastructure
+// buildAgentRunOptions installs the Kvrocks-backed run infrastructure
 // when Redis is available. The Redis client is the one already
 // initialized at the top of main; the TTL is a conservative 24h for
 // both the checkpoint store and the run tracker. On any error
@@ -1688,11 +1688,11 @@ type agentRunOptions struct {
 // to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
-	if !redis.IsEnabled() || redis.Get() == nil {
+	if !kvrocks.IsEnabled() || kvrocks.Get() == nil {
 		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
 		return out
 	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
+	cp := canvas.NewKvrocksCheckPointStore(24 * time.Hour)
 	out.checkpointStore = cp
 	// stateSerializer is intentionally left nil. eino's default
 	// InternalSerializer (used when no compose.WithSerializer is

@@ -61,7 +61,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	redisengine "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
@@ -230,7 +230,7 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 // generateRawMessageID returns the Redis auto-increment id used by the Python
 // side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
 func generateRawMessageID(ctx context.Context) int64 {
-	if redisClient := redisengine.Get(); redisClient != nil {
+	if redisClient := kvrocks.Get(); redisClient != nil {
 		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}

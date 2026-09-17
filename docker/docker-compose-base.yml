@@ -303,9 +303,14 @@ services:
     entrypoint: ["/bin/sh", "/etc/kvrocks/entrypoint.sh"]
     user: "0:0"
     env_file: .env
-    # No host port publish: the Go services reach Kvrocks over the internal
-    # docker network at `kvrocks:6379`. Gated to the Go stack profile so the
-    # Python-only stack does not spin up an unused container.
+    # Publish the Kvrocks port so a host-run Go binary (e.g. ./bin/ragflow_server
+    # --ingestor) can reach it. Bound to loopback on 6379 to match the conventional
+    # Redis port; the Go deployment disables the Valkey `redis` service (see
+    # docker-compose-go.yml), so there is no clash on the host. Inside the docker
+    # network the Go services still reach `kvrocks:6379`
+    # (docker-compose-go.yml overrides KVROCKS_HOST/KVROCKS_PORT accordingly).
+    ports:
+      - "127.0.0.1:${KVROCKS_PORT:-6379}:6379"
     profiles:
       - ragflow-go
     volumes:

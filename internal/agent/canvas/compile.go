@@ -20,7 +20,7 @@ import (
 )
 
 // CheckPointStore is the minimal interface Compile needs at compile time.
-// RedisCheckPointStore satisfies this; tests can pass any in-memory
+// KvrocksCheckPointStore satisfies this; tests can pass any in-memory
 // implementation. Matches eino's compose.CheckPointStore (an alias for
 // core.CheckPointStore) and adds a Delete method.
 type CheckPointStore interface {
@@ -314,7 +314,7 @@ func dedupeStrings(in []string) []string {
 }
 
 // checkPointAdapter drops the Delete method that compose.CheckPointStore
-// does not declare. The RedisCheckPointStore in this package has deleted;
+// does not declare. The KvrocksCheckPointStore in this package has deleted;
 // the adapter is a thin passthrough.
 type checkPointAdapter struct{ inner CheckPointStore }
 

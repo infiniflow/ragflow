@@ -29,7 +29,7 @@ import (
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/utility"
@@ -55,7 +55,7 @@ type Pipeline struct {
 	store   canvas.CheckPointStore // optional injected; nil -> resolve at Run
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
 	// requireResume, when true, makes Run refuse to start if no checkpoint
-	// store can be resolved (no injected store AND no global Redis client).
+	// store can be resolved (no injected store AND no global Kvrocks client).
 	// Plan §6.a M4: a deployment that cannot persist checkpoints must
 	// not silently degrade to a non-resumable run — it must surface a clear,
 	// distinguishable error so the caller knows resume is unavailable.
@@ -76,20 +76,20 @@ var ErrResumeUnavailable = errors.New("resume unavailable: no checkpoint store (
 type PipelineOption func(*Pipeline)
 
 // WithCheckPointStore injects a checkpoint store. When unset, Run resolves
-// one from the global Redis client (and degrades to a non-resumable run when
+// one from the global Kvrocks client (and degrades to a non-resumable run when
 // Redis is unavailable — plan §6.a).
 func WithCheckPointStore(s canvas.CheckPointStore) PipelineOption {
 	return func(p *Pipeline) { p.store = s }
 }
 
 // WithRunTracker injects a RunTracker for interrupt-id persistence / crash
-// recovery. When unset, Run resolves one from the global Redis client.
+// recovery. When unset, Run resolves one from the global Kvrocks client.
 func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 	return func(p *Pipeline) { p.tracker = t }
 }
 
 // WithRequireResume makes Run refuse to start when no checkpoint store can be
-// resolved (no injected store AND no global Redis client). This is plan A: a
+// resolved (no injected store AND no global Kvrocks client). This is plan A: a
 // deployment that cannot persist checkpoints must not silently
 // degrade to a non-resumable run — it must surface a clear, distinguishable
 // error (ErrResumeUnavailable) so the caller knows resume is unavailable.
@@ -516,15 +516,15 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	return p.runResumable(ctx, runCtx, current, compiled, store, tracker, runState)
 }
 
-// resolveStore returns the injected store, or a Redis-backed one when the
-// global Redis client is available. Returns nil (degraded, non-resumable)
+// resolveStore returns the injected store, or a Kvrocks-backed one when the
+// global Kvrocks client is available. Returns nil (degraded, non-resumable)
 // when neither is present.
 func (p *Pipeline) resolveStore() canvas.CheckPointStore {
 	if p.store != nil {
 		return p.store
 	}
-	if redis2.Get() != nil {
-		return canvas.NewRedisCheckPointStore(defaultCheckpointTTL)
+	if kvrocks.Get() != nil {
+		return canvas.NewKvrocksCheckPointStore(defaultCheckpointTTL)
 	}
 	return nil
 }
@@ -534,7 +534,7 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 	if p.tracker != nil {
 		return p.tracker
 	}
-	if redis2.Get() != nil {
+	if kvrocks.Get() != nil {
 		return canvas.NewRunTracker(defaultCheckpointTTL)
 	}
 	return nil

@@ -30,7 +30,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -1050,7 +1050,10 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	// cache engine
 	cacheType := globalConfig.CacheEngineType()
 	switch cacheType {
-	case "redis":
+	// The Go stack talks to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template; both map to
+	// the same Kvrocks backend, so probe the same connection.
+	case "redis", "kvrocks":
 		mysqlStatus := s.getRedisInfo(ctx)
 		results = append(results, mysqlStatus)
 	default:
@@ -1154,7 +1157,7 @@ func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
 
 	startTime := time.Now()
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
 		return newServiceStatus(serviceType, name, "alive", startTime, "")
 	}
