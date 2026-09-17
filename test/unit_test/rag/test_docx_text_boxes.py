@@ -334,6 +334,51 @@ def test_text_box_outside_the_page_range_is_skipped(docx_modules):
     assert "CALLOUT" not in [text for text, _style in secs]
 
 
+def _break_then_box_paragraph(d):
+    """A paragraph whose first run ends page 0 and whose second run anchors a box."""
+    paragraph = d.add_paragraph()
+    _anchor(paragraph, f"<w:r {NS}><w:t>PAGE ZERO TEXT</w:t><w:lastRenderedPageBreak/></w:r>")
+    _anchor(paragraph, _run(_drawing_box("BOX ON PAGE ONE")))
+
+
+@pytest.mark.p2
+def test_text_box_is_placed_on_the_page_of_its_anchor(docx_modules):
+    """A paragraph can span pages; the box belongs to the page of the run that
+    anchors it, not to the page the paragraph started on."""
+    secs, _ = docx_modules.parser()(_build_docx(_break_then_box_paragraph), from_page=1, to_page=2)
+
+    assert "BOX ON PAGE ONE" in [text for text, _style in secs]
+
+
+@pytest.mark.p2
+def test_text_box_on_a_later_page_is_left_out_of_an_earlier_range(docx_modules):
+    secs, _ = docx_modules.parser()(_build_docx(_break_then_box_paragraph), from_page=0, to_page=1)
+    texts = [text for text, _style in secs]
+
+    assert "PAGE ZERO TEXT" in texts
+    assert "BOX ON PAGE ONE" not in texts
+
+
+@pytest.mark.p2
+def test_text_box_found_only_under_a_fallback_is_kept(docx_modules):
+    """`mc:Fallback` is a general container. Only the copy of a box that its
+    `mc:Choice` already holds is a duplicate; a box found only there is the one
+    copy the document has."""
+    run = f"""<w:r {NS}>
+      <mc:AlternateContent>
+        <mc:Choice Requires="wps"><w:t>no text box here</w:t></mc:Choice>
+        <mc:Fallback>{_vml_box("ONLY IN THE FALLBACK")}</mc:Fallback>
+      </mc:AlternateContent>
+    </w:r>"""
+
+    def builder(d):
+        _anchor(d.add_paragraph("PARAGRAPH TEXT"), run)
+
+    secs, _ = docx_modules.parser()(_build_docx(builder))
+
+    assert "ONLY IN THE FALLBACK" in [text for text, _style in secs]
+
+
 # --------------------------------------------------------------------------- #
 # The chunkers
 # --------------------------------------------------------------------------- #
