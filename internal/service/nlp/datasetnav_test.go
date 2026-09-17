@@ -473,11 +473,12 @@ func TestNavService_Search_DocScope(t *testing.T) {
 	}
 	row := func(typ, docID, title string, docIDs []string, w float64) map[string]interface{} {
 		r := map[string]interface{}{
-			"compile_kwd": navCompileKwd,
-			"type_kwd":    typ,
-			"doc_id":      docID,
-			"title_kwd":   title,
-			"q_1024_vec":  vec(w),
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      typ,
+			"doc_id":        docID,
+			"title_kwd":     title,
+			"q_1024_vec":    vec(w),
 		}
 		if len(docIDs) > 0 {
 			r["doc_ids_kwd"] = docIDs
@@ -569,28 +570,31 @@ func TestNavService_Search_DocScopeBeyondAnyPoolSize(t *testing.T) {
 	rows := make([]map[string]interface{}, 0, 1202)
 	for i := 0; i < 1200; i++ {
 		rows = append(rows, map[string]interface{}{
-			"compile_kwd": navCompileKwd,
-			"type_kwd":    nav.TypeNavDoc,
-			"doc_id":      fmt.Sprintf("dx%d", i),
-			"title_kwd":   fmt.Sprintf("out %d", i),
-			"q_4_vec":     vec(1),
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      nav.TypeNavDoc,
+			"doc_id":        fmt.Sprintf("dx%d", i),
+			"title_kwd":     fmt.Sprintf("out %d", i),
+			"q_4_vec":       vec(1),
 		})
 	}
 	rows = append(rows,
 		map[string]interface{}{
-			"compile_kwd": navCompileKwd,
-			"type_kwd":    nav.TypeNavDoc,
-			"doc_id":      "d1",
-			"title_kwd":   "in scope",
-			"q_4_vec":     vec(0.5),
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      nav.TypeNavDoc,
+			"doc_id":        "d1",
+			"title_kwd":     "in scope",
+			"q_4_vec":       vec(0.5),
 		},
 		map[string]interface{}{
-			"compile_kwd": navCompileKwd,
-			"type_kwd":    nav.TypeNavCluster,
-			"doc_id":      "kb1",
-			"title_kwd":   "covering d1+d2",
-			"doc_ids_kwd": []string{"d1", "d2"},
-			"q_4_vec":     vec(0.4),
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      nav.TypeNavCluster,
+			"doc_id":        "kb1",
+			"title_kwd":     "covering d1+d2",
+			"doc_ids_kwd":   []string{"d1", "d2"},
+			"q_4_vec":       vec(0.4),
 		},
 	)
 	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
