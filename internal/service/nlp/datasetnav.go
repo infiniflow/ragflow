@@ -556,8 +556,11 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 
 	// storeGet: skip if a nav_doc for this doc already exists with same summary.
 	existing, _, err := s.navSearch(ctx, in.TenantID, in.KbID,
-		navFilter(map[string]interface{}{"doc_id": []string{in.DocID}}),
-		[]string{"content_with_weight"}, 0, 1, nil)
+		navFilter(map[string]interface{}{
+			"type_kwd": []string{nav.TypeNavDoc},
+			"doc_id":   []string{in.DocID},
+		}),
+		[]string{"content_with_weight", "content_ltks", "content_sm_ltks"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -566,7 +569,19 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			var m map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &m); err == nil {
 				if d, _ := m["description"].(string); d == in.Summary {
-					return nil // unchanged
+					if firstStringValue(existing[0]["content_ltks"]) != "" && firstStringValue(existing[0]["content_sm_ltks"]) != "" {
+						return nil // unchanged
+					}
+					searchText := map[string]interface{}{}
+					setNavSearchText(searchText, in.Summary)
+					return de.UpdateChunks(ctx,
+						map[string]interface{}{
+							"compile_kwd": []string{navCompileKwd},
+							"type_kwd":    []string{nav.TypeNavDoc},
+							"doc_id":      []string{in.DocID},
+							"kb_id":       in.KbID,
+						},
+						searchText, s.navIndexName(in.TenantID), in.KbID)
 				}
 			}
 		}
