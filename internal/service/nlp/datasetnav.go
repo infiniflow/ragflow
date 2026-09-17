@@ -164,8 +164,9 @@ func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID, keywords 
 	if strings.TrimSpace(keywords) != "" {
 		filter = navFilter(nil)
 	}
-	chunks, total, err := s.searchNavRows(ctx, tenantID, kbID, keywords, filter,
-		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize)
+	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter,
+		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
+		navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -183,9 +184,10 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, key
 		pageSize = 100
 	}
 	offset := page * pageSize
-	chunks, total, err := s.searchNavRows(ctx, tenantID, kbID, keywords,
+	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
 		navFilter(map[string]interface{}{"parent_kwd": []string{name}}),
-		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize)
+		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
+		navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -199,28 +201,6 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, key
 		nodes = append(nodes, s.nodeFromRow(c, nodeType))
 	}
 	return nodes, total, nil
-}
-
-// searchNavRows applies the lexical keyword search first, then falls back to
-// semantic search when no lexical row matches, mirroring Python's navigation
-// search behavior.
-func (s *NavService) searchNavRows(ctx context.Context, tenantID, kbID, keywords string, filter map[string]interface{}, selectFields []string, offset, limit int) ([]map[string]interface{}, int64, error) {
-	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter, selectFields, offset, limit, navKeywordExpressions(keywords))
-	if err != nil || len(chunks) > 0 || strings.TrimSpace(keywords) == "" || s.embed == nil {
-		return chunks, total, err
-	}
-	embeddings, err := encodeNavQuery(ctx, s.embed, tenantID, []string{keywords})
-	if err != nil || len(embeddings) == 0 || len(embeddings[0]) == 0 {
-		return chunks, total, nil
-	}
-	vec := embeddings[0]
-	return s.navSearch(ctx, tenantID, kbID, filter, selectFields, offset, limit, []interface{}{&types.MatchDenseExpr{
-		VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
-		EmbeddingData:     f32ToF64Slice(vec),
-		EmbeddingDataType: "float",
-		DistanceType:      "cosine",
-		TopN:              offset + limit,
-	}})
 }
 
 // navKeywordExpressions builds the lexical search expression used by the REST
