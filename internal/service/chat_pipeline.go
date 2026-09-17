@@ -2998,10 +2998,8 @@ func (s *ChatPipelineService) decorateAnswer(
 		}
 	}
 
-	// Build refs: deepcopy kbinfos and strip vectors — done whenever
-	// hasKnowledges is true, regardless of quote flag.
-	// Mirrors dialog_service.py:826-829.
-	if hasKnowledges {
+	// Include sources only when citations are enabled, stripping chunk vectors.
+	if hasKnowledges && quote {
 		refs = make(map[string]interface{})
 		for k, v := range kbinfos {
 			refs[k] = v
@@ -3020,6 +3018,8 @@ func (s *ChatPipelineService) decorateAnswer(
 			}
 			refs["chunks"] = chunksFormat(newChunks)
 		}
+	} else if !quote {
+		refs = map[string]interface{}{}
 	}
 
 	// Check for invalid API key errors (outside knowledges guard).

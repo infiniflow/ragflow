@@ -652,7 +652,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -667,6 +667,23 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	chunk := chunks[0]
 	if _, has := chunk["vector"]; has {
 		t.Errorf("vector field should be stripped from reference chunks, got %+v", chunk)
+	}
+}
+
+func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kb := map[string]interface{}{
+		"chunks":   []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Source"}},
+	}
+	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
+		nil, 0, false, nil, "", nil, "", nil, true)
+	if result.Reference == nil || len(result.Reference) != 0 {
+		t.Fatalf("disabled citations must explicitly clear references: %#v", result.Reference)
+	}
+	if result.Answer != "Answer" {
+		t.Fatalf("answer changed: %q", result.Answer)
 	}
 }
 
