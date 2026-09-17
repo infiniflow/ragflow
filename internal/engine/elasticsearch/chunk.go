@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"ragflow/internal/common"
@@ -2405,8 +2406,20 @@ func compileElasticsearchHighlightPattern(keywords []string) *regexp.Regexp {
 	parts := make([]string, len(nonEmpty))
 	for i, keyword := range nonEmpty {
 		parts[i] = regexp.QuoteMeta(keyword)
+		if isLatinKeyword(keyword) {
+			parts[i] += `\p{Latin}*`
+		}
 	}
 	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
+}
+
+func isLatinKeyword(keyword string) bool {
+	for _, r := range keyword {
+		if !unicode.In(r, unicode.Latin) {
+			return false
+		}
+	}
+	return keyword != ""
 }
 
 // DropChunkStore deletes a chunk index

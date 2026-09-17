@@ -564,8 +564,23 @@ func TestElasticsearchGetHighlightUsesRegex(t *testing.T) {
 
 	got := engine.GetHighlight(chunks, []string{"beta"}, "content_with_weight")
 	assertEqual(t, got, map[string]string{
-		"full-text": "Alpha <em>beta</em>.\n<em>beta</em>max soup. <em>BETA</em> again!",
+		"full-text": "Alpha <em>beta</em>.\n<em>betamax</em> soup. <em>BETA</em> again!",
 		"no-match":  "Keep the complete text.",
+	})
+}
+
+func TestElasticsearchGetHighlightExpandsLatinStems(t *testing.T) {
+	engine := &Engine{}
+	chunks := []map[string]interface{}{
+		{
+			"_id":                 "latin",
+			"content_with_weight": "Required coordinated isolation. Coordinación.",
+		},
+	}
+
+	got := engine.GetHighlight(chunks, []string{"requir", "coordin", "isol"}, "content_with_weight")
+	assertEqual(t, got, map[string]string{
+		"latin": "<em>Required</em> <em>coordinated</em> <em>isolation</em>. <em>Coordinación</em>.",
 	})
 }
 

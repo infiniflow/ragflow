@@ -28,8 +28,26 @@ func TestGetHighlightUsesRegex(t *testing.T) {
 
 	got := engine.GetHighlight(chunks, []string{"beta"}, "content_with_weight")
 	want := map[string]string{
-		"full-text": "Alpha <em>beta</em>.\n<em>beta</em>max soup. <em>BETA</em> again!",
+		"full-text": "Alpha <em>beta</em>.\n<em>betamax</em> soup. <em>BETA</em> again!",
 		"no-match":  "Keep the complete text.",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetHighlight() = %#v, want %#v", got, want)
+	}
+}
+
+func TestGetHighlightExpandsLatinStems(t *testing.T) {
+	engine := &Engine{}
+	chunks := []map[string]interface{}{
+		{
+			"id":                  "latin",
+			"content_with_weight": "Required coordinated isolation. Coordinación.",
+		},
+	}
+
+	got := engine.GetHighlight(chunks, []string{"requir", "coordin", "isol"}, "content_with_weight")
+	want := map[string]string{
+		"latin": "<em>Required</em> <em>coordinated</em> <em>isolation</em>. <em>Coordinación</em>.",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("GetHighlight() = %#v, want %#v", got, want)

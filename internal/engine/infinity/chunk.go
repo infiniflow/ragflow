@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -1950,8 +1951,20 @@ func compileInfinityHighlightPattern(keywords []string) *regexp.Regexp {
 	parts := make([]string, len(nonEmpty))
 	for i, keyword := range nonEmpty {
 		parts[i] = regexp.QuoteMeta(keyword)
+		if isLatinKeyword(keyword) {
+			parts[i] += `\p{Latin}*`
+		}
 	}
 	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
+}
+
+func isLatinKeyword(keyword string) bool {
+	for _, r := range keyword {
+		if !unicode.In(r, unicode.Latin) {
+			return false
+		}
+	}
+	return keyword != ""
 }
 
 // KNNScores for Infinity - since Infinity normalizes scores during fusion,
