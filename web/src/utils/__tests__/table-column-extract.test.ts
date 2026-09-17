@@ -1,5 +1,9 @@
 import request from '@/utils/request';
-import { extractTableColumns, isTableFile } from '../table-column-extract';
+import {
+  extractTableColumns,
+  isTableFile,
+  resolveDatasetTableColumnSettings,
+} from '../table-column-extract';
 
 jest.mock('@/utils/request', () => ({
   post: jest.fn(),
@@ -22,6 +26,44 @@ describe('table-column-extract', () => {
       expect(isTableFile(new File([], 'test.pdf'))).toBe(false);
       expect(isTableFile(new File([], 'test.docx'))).toBe(false);
       expect(isTableFile(new File([], 'test.png'))).toBe(false);
+    });
+  });
+
+  describe('resolveDatasetTableColumnSettings', () => {
+    it('prefers root-level dataset settings', () => {
+      expect(
+        resolveDatasetTableColumnSettings({
+          table_column_mode: 'manual',
+          table_column_roles: { a: 'vectorize', b: 'nonsense' },
+          'Parser:Table': {
+            spreadsheet: { column_mode: 'auto', column_roles: { a: 'both' } },
+          },
+        }),
+      ).toEqual({ mode: 'manual', roles: { a: 'indexing', b: 'both' } });
+    });
+
+    it('falls back to the component-shaped entry', () => {
+      expect(
+        resolveDatasetTableColumnSettings({
+          'Parser:Table': {
+            spreadsheet: {
+              column_mode: 'manual',
+              column_roles: { a: 'metadata' },
+            },
+          },
+        }),
+      ).toEqual({ mode: 'manual', roles: { a: 'metadata' } });
+    });
+
+    it('defaults to auto with no settings', () => {
+      expect(resolveDatasetTableColumnSettings(undefined)).toEqual({
+        mode: 'auto',
+        roles: {},
+      });
+      expect(resolveDatasetTableColumnSettings({})).toEqual({
+        mode: 'auto',
+        roles: {},
+      });
     });
   });
 

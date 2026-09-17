@@ -76,4 +76,39 @@ describe('buildTableUploadParserConfig', () => {
 
     expect(config).toEqual({ table_column_mode: 'auto' });
   });
+
+  // Regression: the dialog used to submit its untouched default ("auto") for
+  // every upload, which pinned each document and hid the dataset's own table
+  // settings — the backend only falls back to the dataset for keys the
+  // document does not define.
+  it('does not pin a mode the user never chose', () => {
+    const config = buildTableUploadParserConfig([csvFile(), xlsxFile()], {
+      tableColumnMode: undefined,
+      tableColumnNames: ['a', 'b'],
+      tableColumnNamesByFile: [['a', 'b'], ['c']],
+      tableColumnRoles: {},
+    });
+
+    expect(config).toEqual({
+      table_column_names: ['a', 'b'],
+      table_column_names_by_file: [['a', 'b'], ['c']],
+    });
+    expect(config).not.toHaveProperty('table_column_mode');
+    expect(config).not.toHaveProperty('table_column_roles');
+  });
+
+  it('does not send role keys outside manual mode', () => {
+    const config = buildTableUploadParserConfig([csvFile()], {
+      tableColumnMode: 'auto',
+      tableColumnNames: ['a'],
+      tableColumnNamesByFile: [['a']],
+      tableColumnRoles: { a: 'metadata' },
+    });
+
+    expect(config).toEqual({
+      table_column_mode: 'auto',
+      table_column_names: ['a'],
+      table_column_names_by_file: [['a']],
+    });
+  });
 });

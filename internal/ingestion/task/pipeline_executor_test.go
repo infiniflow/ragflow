@@ -15,6 +15,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
@@ -1211,6 +1212,96 @@ func TestApplyTableColumnOverride_CanvasTableRunInheritsDatasetParser(t *testing
 	}
 }
 
+// The document parser dialog stores its column settings under the Parser
+// component entry, so that shape is document-level too: it must win over the
+// dataset rather than being overwritten by it.
+func TestApplyTableColumnOverride_ComponentShapedDocumentConfigWins(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "table"
+	taskCtx.Doc.ParserConfig = entity.JSONMap{
+		"Parser:Table": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"Name": "metadata"},
+				"column_names": []interface{}{"Name"},
+			},
+		},
+	}
+	taskCtx.KB.ParserConfig = entity.JSONMap{
+		"table_column_mode":  "auto",
+		"table_column_names": []interface{}{"Other"},
+	}
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+	got := svc.applyTableColumnOverride(map[string]interface{}(taskCtx.Doc.ParserConfig), dsl)
+
+	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
+	if spreadsheet["column_mode"] != "manual" {
+		t.Errorf("column_mode = %#v, want manual", spreadsheet["column_mode"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_names"], []interface{}{"Name"}) {
+		t.Errorf("column_names = %#v, want [Name]", spreadsheet["column_names"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "metadata"}) {
+		t.Errorf("column_roles = %#v, want the document's roles", spreadsheet["column_roles"])
+	}
+}
+
+// The upload dialog used to submit its untouched default, which pinned every
+// document to "auto". A bare default mode must not shadow the dataset's manual
+// mode and roles: the dataset is where a column configuration lives.
+func TestApplyTableColumnOverride_BareDefaultModeKeepsDatasetSettings(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "table"
+	taskCtx.Doc.ParserConfig = entity.JSONMap{
+		"table_column_mode":  "auto",
+		"table_column_names": []interface{}{"Name"},
+	}
+	taskCtx.KB.ParserConfig = entity.JSONMap{
+		"table_column_mode":  "manual",
+		"table_column_roles": map[string]interface{}{"Name": "indexing"},
+	}
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+	got := svc.applyTableColumnOverride(map[string]interface{}(taskCtx.Doc.ParserConfig), dsl)
+
+	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
+	if spreadsheet["column_mode"] != "manual" {
+		t.Errorf("column_mode = %#v, want the dataset's manual", spreadsheet["column_mode"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "indexing"}) {
+		t.Errorf("column_roles = %#v, want the dataset's roles", spreadsheet["column_roles"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_names"], []interface{}{"Name"}) {
+		t.Errorf("column_names = %#v, want the document's discovered names", spreadsheet["column_names"])
+	}
+}
+
+// A non-table run must not receive the dataset table settings, and the task
+// context's document must stay untouched (the resolved config is per-run state).
+func TestApplyTableColumnOverride_DoesNotMutateTaskDocument(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "table"
+	docConfig := entity.JSONMap{"table_column_mode": "manual"}
+	taskCtx.Doc.ParserConfig = docConfig
+	taskCtx.KB.ParserConfig = entity.JSONMap{"table_column_names": []interface{}{"Name"}}
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+	got := svc.applyTableColumnOverride(map[string]interface{}(docConfig), dsl)
+	if _, ok := got["Parser:Table"]; !ok {
+		t.Fatalf("expected the parser entry to be injected, got %#v", got)
+	}
+	if _, ok := taskCtx.Doc.ParserConfig["Parser:Table"]; ok {
+		t.Errorf("the task context's document config must not be mutated: %#v", taskCtx.Doc.ParserConfig)
+	}
+	if _, ok := taskCtx.Doc.ParserConfig["table_column_names"]; ok {
+		t.Errorf("the dataset fallback must not be written onto the task document: %#v", taskCtx.Doc.ParserConfig)
+	}
+}
+
 // A document whose parser is not the table parser must survive a reparse with
 // its metadata intact, even when the document or its dataset still carries
 // table column settings: the strip pass deletes metadata entries named after
@@ -1352,7 +1443,14 @@ func TestProcessOutput_PersistsDiscoveredColumnsFromPayload(t *testing.T) {
 		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
 	output := map[string]any{
 		"chunks": []map[string]any{{"text": "- Name: Alice"}},
-		"file":   map[string]any{"name": "table.csv", "table_column_names": []string{"Name", "City"}},
+		// The shape a real run produces: no top-level file map, the parser's
+		// file metadata under the run state snapshot.
+		"state": map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"output_format": "json",
+				"file":          map[string]any{"name": "table.csv", "table_column_names": []string{"Name", "City"}},
+			},
+		},
 	}
 	res, err := svc.processOutput(t.Context(), output, time.Now())
 	if err != nil {
@@ -1430,6 +1528,10 @@ func TestProcessOutput_StripsStaleTableMetadataOnReparse(t *testing.T) {
 func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
+	// The dataset field_map is the contract of engines whose chunks carry a
+	// chunk_data column; on any other engine the run must not publish one.
+	engine.SetDocEngineType(string(engine.EngineInfinity))
+	t.Cleanup(func() { engine.SetDocEngineType("") })
 
 	status := string(entity.StatusValid)
 	kb := &entity.Knowledgebase{
@@ -1498,8 +1600,8 @@ func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
 		t.Errorf("indexing-only column internal_seq must NOT be in FieldMapUpdates, got %v", res.FieldMapUpdates["internal_seq"])
 	}
 
-	if err := documentpkg.NewDocumentService().SaveKBTableFieldMap(t.Context(), kb.ID, res.FieldMapUpdates); err != nil {
-		t.Fatalf("saveKBTableFieldMap: %v", err)
+	if err := documentpkg.NewDocumentService().SaveKBTableState(t.Context(), kb.ID, res.DiscoveredColumns, res.FieldMapUpdates); err != nil {
+		t.Fatalf("SaveKBTableState: %v", err)
 	}
 
 	persistedKB, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), dao.DB, "kb-1")
@@ -1519,27 +1621,126 @@ func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
 	if _, ok := fm["internal_seq"]; ok {
 		t.Errorf("indexing-only column internal_seq must NOT be in field_map, got %v", fm["internal_seq"])
 	}
+	names, ok := persistedKB.ParserConfig["table_column_names"].([]interface{})
+	if !ok || len(names) != 3 {
+		t.Errorf("dataset must carry the discovered columns, got %#v", persistedKB.ParserConfig["table_column_names"])
+	}
 }
 
-func TestMergeKBTableColumnFallback(t *testing.T) {
-	doc := map[string]interface{}{"table_column_mode": "manual"}
+// An engine that addresses columns directly gets the discovered names (the
+// dataset-level role selector reads them) but no field_map: its chunks hold the
+// metadata in a chunk_data object, so a map of field names would make chat
+// generate SQL against fields that do not exist.
+func TestProcessOutput_NonChunkDataEnginePublishesNamesOnly(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	engine.SetDocEngineType(string(engine.EngineElasticsearch))
+	t.Cleanup(func() { engine.SetDocEngineType("") })
+
+	name := "table.csv"
+	doc := &entity.Document{
+		ID:       "doc-1",
+		KbID:     "kb-1",
+		ParserID: "table",
+		ParserConfig: entity.JSONMap{
+			"table_column_mode":  "manual",
+			"table_column_roles": map[string]interface{}{"order_id": "metadata"},
+		},
+		CreatedBy: "tenant-1",
+		Type:      "csv",
+		Suffix:    "csv",
+		Name:      &name,
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc = *doc
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+
+	output := map[string]any{
+		"chunks": []map[string]any{{"text": "- product_name: Widget"}},
+		"file": map[string]any{
+			"name":               "table.csv",
+			"table_column_names": []string{"order_id", "product_name"},
+		},
+	}
+	res, err := svc.processOutput(t.Context(), output, time.Now())
+	if err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	if len(res.DiscoveredColumns) != 2 {
+		t.Errorf("discovered columns must still be published, got %#v", res.DiscoveredColumns)
+	}
+	if res.FieldMapUpdates != nil {
+		t.Errorf("ES run must not publish a dataset field_map, got %#v", res.FieldMapUpdates)
+	}
+}
+
+func TestResolveTableColumnSettings(t *testing.T) {
 	kb := map[string]interface{}{
 		"table_column_mode":  "auto",
 		"table_column_roles": map[string]interface{}{"Age": "metadata"},
 		"table_column_names": []interface{}{"Name", "Age"},
 	}
-	got := mergeKBTableColumnFallback(doc, kb)
+
+	// A document that defines only a bare default mode records no schema: the
+	// dataset's manual mode and roles must still apply (both dialogs emit
+	// "auto" for a form the user never touched).
+	got := resolveTableColumnSettings(map[string]interface{}{"table_column_mode": "auto"}, map[string]interface{}{
+		"table_column_mode":  "manual",
+		"table_column_roles": map[string]interface{}{"Age": "metadata"},
+	})
 	if got["table_column_mode"] != "manual" {
-		t.Errorf("doc mode must win, got %v", got["table_column_mode"])
+		t.Errorf("bare document auto must not shadow the dataset mode, got %v", got["table_column_mode"])
 	}
 	if _, ok := got["table_column_roles"]; !ok {
-		t.Errorf("absent roles must fall back to KB, got %v", got)
+		t.Errorf("absent roles must fall back to the dataset, got %v", got)
+	}
+
+	// An explicit document mode/roles wins.
+	got = resolveTableColumnSettings(map[string]interface{}{
+		"table_column_mode":  "manual",
+		"table_column_roles": map[string]interface{}{"Name": "indexing"},
+	}, kb)
+	if got["table_column_mode"] != "manual" {
+		t.Errorf("document manual mode must win, got %v", got["table_column_mode"])
+	}
+	if roles, _ := got["table_column_roles"].(map[string]interface{}); roles["Name"] != "indexing" {
+		t.Errorf("document roles must win, got %v", got["table_column_roles"])
 	}
 	if _, ok := got["table_column_names"]; !ok {
-		t.Errorf("absent names must fall back to KB, got %v", got)
+		t.Errorf("absent names must fall back to the dataset, got %v", got)
 	}
-	if out := mergeKBTableColumnFallback(nil, nil); out != nil {
-		t.Errorf("nil KB must return doc unchanged, got %v", out)
+
+	// A component-shaped document configuration is document-level too: it must
+	// not lose to the dataset just because it is stored under the parser entry.
+	got = resolveTableColumnSettings(map[string]interface{}{
+		"Parser:Table": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"Name": "metadata"},
+				"column_names": []interface{}{"Name"},
+			},
+		},
+	}, kb)
+	if got["table_column_mode"] != "manual" {
+		t.Errorf("component-shaped document mode must win, got %v", got["table_column_mode"])
+	}
+	if roles, _ := got["table_column_roles"].(map[string]interface{}); roles["Name"] != "metadata" {
+		t.Errorf("component-shaped document roles must win, got %#v", got["table_column_roles"])
+	}
+	if names, _ := got["table_column_names"].([]interface{}); len(names) != 1 || names[0] != "Name" {
+		t.Errorf("component-shaped document names must win, got %#v", got["table_column_names"])
+	}
+
+	if out := resolveTableColumnSettings(nil, nil); out != nil {
+		t.Errorf("no settings on either side must return the document config unchanged, got %v", out)
 	}
 }
 
@@ -1550,6 +1751,42 @@ func TestTableColumnNamesFromPayload(t *testing.T) {
 	}
 	if got := tableColumnNamesFromPayload(map[string]any{}); len(got) != 0 {
 		t.Errorf("missing file must yield nil, got %v", got)
+	}
+}
+
+// The terminal payload of a real run carries no top-level file map: the chunker
+// and tokenizer emit only their own chunks, so the parser's file metadata has
+// to be read from the run state snapshot (finalizeResult attaches
+// output["state"][<cpnID>]). Reading only the top level silently disabled
+// column discovery — the parser's names never reached the document or the
+// dataset.
+func TestTableColumnNamesFromPayload_ReadsParserStateSnapshot(t *testing.T) {
+	out := map[string]any{
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "- Title: Doc A"}},
+		"state": map[string]any{
+			"File": map[string]any{"name": "table.csv"},
+			"Parser:HipSignsRhyme": map[string]any{
+				"output_format": "json",
+				"file": map[string]any{
+					"name":               "table.csv",
+					"table_column_names": []interface{}{"Title", "Country"},
+				},
+			},
+			"TableChunker:FastFoxesJump": map[string]any{"output_format": "chunks"},
+		},
+	}
+
+	got := tableColumnNamesFromPayload(out)
+	if len(got) != 2 || got[0] != "Title" || got[1] != "Country" {
+		t.Fatalf("got %q, want [Title Country]", got)
+	}
+
+	// A state snapshot without parser file metadata (e.g. a non-spreadsheet
+	// parser) yields nothing rather than inventing columns.
+	bare := map[string]any{"state": map[string]any{"Parser:HipSignsRhyme": map[string]any{"output_format": "json"}}}
+	if got := tableColumnNamesFromPayload(bare); len(got) != 0 {
+		t.Errorf("got %q, want nil", got)
 	}
 }
 

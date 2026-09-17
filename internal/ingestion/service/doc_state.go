@@ -36,7 +36,7 @@ type docStateSvc interface {
 	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error
 	ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
 	SaveDocumentTableColumns(ctx context.Context, docID string, names []string) error
-	SaveKBTableFieldMap(ctx context.Context, kbID string, fieldMap map[string]interface{}) error
+	SaveKBTableState(ctx context.Context, kbID string, names []string, fieldMap map[string]interface{}) error
 }
 
 // docStateUpdater applies a pipeline run's results to document state: it
@@ -69,9 +69,13 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 			common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", r.DocID, err))
 		}
 	}
-	if len(r.FieldMapUpdates) > 0 && r.KbID != "" {
-		if err := u.docSvc.SaveKBTableFieldMap(ctx, r.KbID, r.FieldMapUpdates); err != nil {
-			common.Warn(fmt.Sprintf("failed to sync table field map to KB %s: %v", r.KbID, err))
+	// The discovered schema belongs to the dataset as well: the dataset-level
+	// role selector reads it, and an older document picks it up at task time.
+	// Mirrors Python's table chunker, which updates the knowledgebase with
+	// table_column_names + field_map on every parse (rag/app/table.py:596-602).
+	if len(r.DiscoveredColumns) > 0 && r.KbID != "" {
+		if err := u.docSvc.SaveKBTableState(ctx, r.KbID, r.DiscoveredColumns, r.FieldMapUpdates); err != nil {
+			common.Warn(fmt.Sprintf("failed to sync table schema to KB %s: %v", r.KbID, err))
 		}
 	}
 	// Built-in metadata (update_time / file_name) is applied on top of the

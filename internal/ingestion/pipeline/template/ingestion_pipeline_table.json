@@ -59,7 +59,8 @@
                             "suffix": [
                                 "xls",
                                 "xlsx",
-                                "csv"
+                                "csv",
+                                "tsv"
                             ],
                             "vlm": {},
                             "column_mode": "auto",

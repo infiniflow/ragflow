@@ -34,6 +34,7 @@ type stubDocStateSvc struct {
 	gotSaveDocID       string
 	gotSaveDocCols     []string
 	gotSaveKbID        string
+	gotSaveKbCols      []string
 	gotSaveFieldMap    map[string]interface{}
 	setCalled          bool
 	incrementCalled    bool
@@ -71,9 +72,10 @@ func (s *stubDocStateSvc) SaveDocumentTableColumns(ctx context.Context, docID st
 	return nil
 }
 
-func (s *stubDocStateSvc) SaveKBTableFieldMap(ctx context.Context, kbID string, fieldMap map[string]interface{}) error {
+func (s *stubDocStateSvc) SaveKBTableState(ctx context.Context, kbID string, names []string, fieldMap map[string]interface{}) error {
 	s.saveFieldMapCalled = true
 	s.gotSaveKbID = kbID
+	s.gotSaveKbCols = names
 	s.gotSaveFieldMap = fieldMap
 	return nil
 }
@@ -374,6 +376,32 @@ func TestDocStateUpdater_PersistsTableColumnsAndFieldMap(t *testing.T) {
 		t.Errorf("SaveDocumentTableColumns not called properly: %+v", svc)
 	}
 	if !svc.saveFieldMapCalled || svc.gotSaveKbID != "kb-456" || svc.gotSaveFieldMap["ColA"] != "ColA" {
-		t.Errorf("SaveKBTableFieldMap not called properly: %+v", svc)
+		t.Errorf("SaveKBTableState not called properly: %+v", svc)
+	}
+	if len(svc.gotSaveKbCols) != 2 {
+		t.Errorf("the dataset must receive the discovered columns too: %+v", svc)
+	}
+}
+
+// A run on an engine without a chunk_data column publishes the discovered names
+// and reports no field map; the dataset write must still happen for the names.
+func TestDocStateUpdater_PersistsTableColumnsWithoutFieldMap(t *testing.T) {
+	svc := &stubDocStateSvc{}
+	u := &docStateUpdater{docSvc: svc}
+
+	u.apply(t.Context(), &taskpkg.PipelineResult{
+		DocID:             "doc-123",
+		KbID:              "kb-456",
+		DiscoveredColumns: []string{"ColA"},
+	})
+
+	if !svc.saveFieldMapCalled {
+		t.Fatalf("SaveKBTableState must be called for the discovered columns: %+v", svc)
+	}
+	if svc.gotSaveFieldMap != nil {
+		t.Errorf("no field map must be published, got %#v", svc.gotSaveFieldMap)
+	}
+	if len(svc.gotSaveKbCols) != 1 || svc.gotSaveKbCols[0] != "ColA" {
+		t.Errorf("dataset columns = %#v, want [ColA]", svc.gotSaveKbCols)
 	}
 }

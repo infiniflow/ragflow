@@ -108,6 +108,26 @@ func IsOceanBaseFamily(engineName string) bool {
 	return engineName == string(EngineOceanBase) || engineName == string(EngineSeekDB)
 }
 
+// StoresTableChunkData reports whether a document engine keeps table-parser
+// metadata in a `chunk_data` column. Infinity/OceanBase/SeekDB/SereneDB do
+// (they are Python's JSON-column engines, rag/app/table.py), which is exactly
+// the representation the table row renderer emits: chunk_data keyed by the raw
+// column name, with a dataset field_map of raw-name → display-name.
+//
+// Elasticsearch/OpenSearch address columns directly and need the typed-field
+// representation (pinyin keys + type suffix) that the Go path does not produce
+// yet, so a dataset field_map must not be published there: the SQL retrieval
+// path treats field_map keys as real fields and would generate queries against
+// columns that do not exist.
+func StoresTableChunkData(engineName string) bool {
+	switch EngineType(engineName) {
+	case EngineInfinity, EngineOceanBase, EngineSeekDB, EngineSereneDB:
+		return true
+	default:
+		return false
+	}
+}
+
 type MessageQueue interface {
 	Init() error
 	Type() string

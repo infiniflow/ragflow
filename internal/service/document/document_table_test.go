@@ -66,7 +66,7 @@ func TestSaveDocumentTableColumns_PersistsAndFiltersRoles(t *testing.T) {
 	}
 }
 
-func TestSaveKBTableFieldMap_MergesFieldMap(t *testing.T) {
+func TestSaveKBTableState_ReplacesSchemaAndKeepsFieldMapWhenNotOwned(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -76,8 +76,10 @@ func TestSaveKBTableFieldMap_MergesFieldMap(t *testing.T) {
 		Status: &status,
 		ParserConfig: entity.JSONMap{
 			"field_map": map[string]interface{}{
-				"existing_col": "existing label",
+				"stale_col": "stale label",
 			},
+			"table_column_names": []interface{}{"stale_col"},
+			"dataset_setting":    "preserved",
 		},
 	}
 	if err := db.Create(kb).Error; err != nil {
@@ -87,11 +89,12 @@ func TestSaveKBTableFieldMap_MergesFieldMap(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
 
-	newFields := map[string]interface{}{
+	// The discovered schema is the file's current schema: names and field_map
+	// are replaced, not merged, so a dropped column stops being offered.
+	if err := svc.SaveKBTableState(ctx, "kb-1", []string{"new_col", "new_col", " "}, map[string]interface{}{
 		"new_col": "new label",
-	}
-	if err := svc.SaveKBTableFieldMap(ctx, "kb-1", newFields); err != nil {
-		t.Fatalf("SaveKBTableFieldMap: %v", err)
+	}); err != nil {
+		t.Fatalf("SaveKBTableState: %v", err)
 	}
 
 	var updated entity.Knowledgebase
@@ -103,11 +106,56 @@ func TestSaveKBTableFieldMap_MergesFieldMap(t *testing.T) {
 	if !ok {
 		t.Fatalf("field_map missing or invalid type: %#v", updated.ParserConfig)
 	}
-
-	if fm["existing_col"] != "existing label" {
-		t.Errorf("existing_col should be preserved, got %v", fm["existing_col"])
+	if _, ok := fm["stale_col"]; ok {
+		t.Errorf("stale_col must be dropped from field_map, got %#v", fm)
 	}
 	if fm["new_col"] != "new label" {
-		t.Errorf("new_col should be merged, got %v", fm["new_col"])
+		t.Errorf("new_col must be written, got %#v", fm)
+	}
+	names, ok := updated.ParserConfig["table_column_names"].([]interface{})
+	if !ok || !reflect.DeepEqual(names, []interface{}{"new_col"}) {
+		t.Errorf("table_column_names = %#v, want [new_col]", updated.ParserConfig["table_column_names"])
+	}
+	if updated.ParserConfig["dataset_setting"] != "preserved" {
+		t.Errorf("unrelated parser_config keys must be preserved: %#v", updated.ParserConfig)
+	}
+}
+
+// A run on an engine without a chunk_data column publishes only the discovered
+// names and must leave the dataset's field_map untouched.
+func TestSaveKBTableState_NilFieldMapLeavesFieldMapAlone(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	status := string(entity.StatusValid)
+	kb := &entity.Knowledgebase{
+		ID:     "kb-1",
+		Status: &status,
+		ParserConfig: entity.JSONMap{
+			"field_map": map[string]interface{}{
+				"python_written_col": "python written label",
+			},
+		},
+	}
+	if err := db.Create(kb).Error; err != nil {
+		t.Fatalf("create kb: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	if err := svc.SaveKBTableState(t.Context(), "kb-1", []string{"name"}, nil); err != nil {
+		t.Fatalf("SaveKBTableState: %v", err)
+	}
+
+	var updated entity.Knowledgebase
+	if err := db.First(&updated, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	fm, ok := updated.ParserConfig["field_map"].(map[string]interface{})
+	if !ok || fm["python_written_col"] != "python written label" {
+		t.Fatalf("field_map must be untouched, got %#v", updated.ParserConfig["field_map"])
+	}
+	names, ok := updated.ParserConfig["table_column_names"].([]interface{})
+	if !ok || !reflect.DeepEqual(names, []interface{}{"name"}) {
+		t.Errorf("table_column_names = %#v, want [name]", updated.ParserConfig["table_column_names"])
 	}
 }

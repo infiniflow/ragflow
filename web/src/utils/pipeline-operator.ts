@@ -15,9 +15,9 @@
  */
 
 import { Operator } from '@/constants/agent';
+import { FileType } from '@/constants/file';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
-  FileType,
   getInitialExtractorValues,
   initialGoExtractorValues,
   initialGeneralChunkerValues,

@@ -79,11 +79,33 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 	})
 }
 
-// SaveKBTableFieldMap merges newly discovered or updated metadata fields into the
-// knowledgebase's parser_config["field_map"] for NL2SQL querying.
-func (s *DocumentService) SaveKBTableFieldMap(ctx context.Context, kbID string, newFieldMap map[string]interface{}) error {
-	if len(newFieldMap) == 0 || kbID == "" || dao.DB == nil {
+// SaveKBTableState publishes a table-parser run's schema to the dataset
+// (knowledgebase) parser_config: the discovered column names, plus the
+// field_map the SQL retrieval path reads. Mirrors Python's table chunker, which
+// updates the knowledgebase with table_column_names + field_map on every parse
+// (rag/app/table.py:596-602).
+//
+// Both keys are REPLACED rather than merged: the discovered schema is the
+// current file's schema, so a column that disappeared, or whose role changed
+// away from metadata/both, must stop being offered to the SQL prompt. A nil
+// fieldMap means the run's engine does not maintain a dataset field_map (its
+// chunks carry no chunk_data column), and leaves that key untouched.
+func (s *DocumentService) SaveKBTableState(ctx context.Context, kbID string, names []string, fieldMap map[string]interface{}) error {
+	if kbID == "" || dao.DB == nil || (len(names) == 0 && fieldMap == nil) {
 		return nil
+	}
+
+	columns := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; !ok {
+			seen[n] = struct{}{}
+			columns = append(columns, n)
+		}
 	}
 
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -97,14 +119,12 @@ func (s *DocumentService) SaveKBTableFieldMap(ctx context.Context, kbID string, 
 		if kb.ParserConfig == nil {
 			kb.ParserConfig = entity.JSONMap{}
 		}
-		fm, ok := kb.ParserConfig["field_map"].(map[string]interface{})
-		if !ok || fm == nil {
-			fm = make(map[string]interface{}, len(newFieldMap))
+		if len(columns) > 0 {
+			kb.ParserConfig["table_column_names"] = columns
 		}
-		for k, v := range newFieldMap {
-			fm[k] = v
+		if fieldMap != nil {
+			kb.ParserConfig["field_map"] = fieldMap
 		}
-		kb.ParserConfig["field_map"] = fm
 		return tx.Model(&entity.Knowledgebase{}).Where("id = ?", kbID).Update("parser_config", kb.ParserConfig).Error
 	})
 }

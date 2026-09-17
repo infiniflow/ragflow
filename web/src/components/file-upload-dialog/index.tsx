@@ -30,7 +30,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
-import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
+import {
+  DatasetTableColumnSettings,
+  extractTableColumns,
+  isTableFile,
+} from '@/utils/table-column-extract';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -93,11 +97,18 @@ type UploadFormProps = {
   submit: (values?: UploadFormSchemaType) => void;
   showParseOnCreation?: boolean;
   isTableParser?: boolean;
+  // Dataset-level table column settings, shown as the initial selection so an
+  // untouched dialog displays what ingestion will use. They are deliberately
+  // NOT submitted: only a mode/role the user changed in this dialog is sent,
+  // otherwise the document would pin the dataset's default and later dataset
+  // changes could never reach it.
+  defaultTableColumnSettings?: DatasetTableColumnSettings;
 };
 function UploadForm({
   submit,
   showParseOnCreation,
   isTableParser,
+  defaultTableColumnSettings,
 }: UploadFormProps) {
   const { t } = useTranslation();
   const FormSchema = buildUploadFormSchema(t);
@@ -108,7 +119,6 @@ function UploadForm({
     defaultValues: {
       parseOnCreation: false,
       fileList: [],
-      tableColumnMode: 'auto',
       tableColumnNames: [],
       tableColumnNamesByFile: [],
       tableColumnRoles: {},
@@ -116,8 +126,12 @@ function UploadForm({
   });
 
   const [extractedColumns, setExtractedColumns] = useState<string[]>([]);
-  const [columnMode, setColumnMode] = useState<'auto' | 'manual'>('auto');
-  const [columnRoles, setColumnRoles] = useState<TableColumnRoles>({});
+  const [columnMode, setColumnMode] = useState<'auto' | 'manual'>(
+    defaultTableColumnSettings?.mode ?? 'auto',
+  );
+  const [columnRoles, setColumnRoles] = useState<TableColumnRoles>(
+    defaultTableColumnSettings?.roles ?? {},
+  );
   // Guards the async column-extraction loop: rapid file-list changes must not
   // let a stale extraction overwrite the latest selection.
   const extractionVersion = useRef(0);
@@ -295,13 +309,17 @@ function UploadForm({
 }
 
 type FileUploadDialogProps = IModalProps<UploadFormSchemaType> &
-  Pick<UploadFormProps, 'showParseOnCreation' | 'isTableParser'>;
+  Pick<
+    UploadFormProps,
+    'showParseOnCreation' | 'isTableParser' | 'defaultTableColumnSettings'
+  >;
 export function FileUploadDialog({
   hideModal,
   onOk,
   loading,
   showParseOnCreation = false,
   isTableParser = false,
+  defaultTableColumnSettings,
 }: FileUploadDialogProps) {
   const { t } = useTranslation();
 
@@ -318,6 +336,7 @@ export function FileUploadDialog({
           submit={onOk!}
           showParseOnCreation={showParseOnCreation}
           isTableParser={isTableParser}
+          defaultTableColumnSettings={defaultTableColumnSettings}
         />
         <DialogFooter>
           <ButtonLoading type="submit" loading={loading} form={UploadFormId}>

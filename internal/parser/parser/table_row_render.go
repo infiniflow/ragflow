@@ -80,6 +80,38 @@ func DeduplicateColumnNames(columns []string) []string {
 	return unique
 }
 
+// tableBookkeepingColumns are the spreadsheet columns Python deletes before
+// rendering (rag/app/table.py: `for n in ["id", "_id", "index", "idx"]: del df[n]`).
+// They carry no content, and keeping them would index the row's primary key
+// into the chunk text and into chunk_data. The schema probe drops them too, so
+// the columns it reports are exactly the columns ingestion can index.
+var tableBookkeepingColumns = map[string]struct{}{
+	"id": {}, "_id": {}, "index": {}, "idx": {},
+}
+
+// TableColumnHeaderNames turns a header row into the column names the table
+// parser indexes: cells are trimmed, an empty header is named Column_<position>,
+// the row-bookkeeping columns are dropped, and the survivors are deduplicated.
+// sourceIndexes carries each surviving name's position in headerRow, which is
+// how a data row is mapped onto the columns. The schema probe uses the same
+// function, so what it offers for configuration is what ingestion produces.
+func TableColumnHeaderNames(headerRow []string) (names []string, sourceIndexes []int) {
+	raw := make([]string, 0, len(headerRow))
+	indexes := make([]int, 0, len(headerRow))
+	for i, h := range headerRow {
+		name := strings.TrimSpace(h)
+		if name == "" {
+			name = fmt.Sprintf("Column_%d", i+1)
+		}
+		if _, reserved := tableBookkeepingColumns[name]; reserved {
+			continue
+		}
+		raw = append(raw, name)
+		indexes = append(indexes, i)
+	}
+	return DeduplicateColumnNames(raw), indexes
+}
+
 // RenderRowsToJSONChunks converts table rows into structured row chunks (one chunk per row),
 // respecting column_mode and column_roles.
 // Text lines are formatted as "- col: val" and stored in the "text" field.
@@ -110,26 +142,9 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 		return nil, nil
 	}
 
-	headerRow := rows[headerRowIdx]
 	// Spreadsheet bookkeeping columns are dropped before rendering, mirroring
 	// rag/app/table.py (`for n in ["id", "_id", "index", "idx"]: del df[n]`).
-	// They carry no content, and keeping them would index the row's primary key
-	// into the chunk text and into chunk_data.
-	rawHeaders := make([]string, 0, len(headerRow))
-	headerIndexes := make([]int, 0, len(headerRow))
-	for i, h := range headerRow {
-		name := strings.TrimSpace(h)
-		if name == "" {
-			name = fmt.Sprintf("Column_%d", i+1)
-		}
-		switch name {
-		case "id", "_id", "index", "idx":
-			continue
-		}
-		rawHeaders = append(rawHeaders, name)
-		headerIndexes = append(headerIndexes, i)
-	}
-	headers := DeduplicateColumnNames(rawHeaders)
+	headers, headerIndexes := TableColumnHeaderNames(rows[headerRowIdx])
 
 	isManual := strings.EqualFold(strings.TrimSpace(columnMode), "manual")
 	items := make([]map[string]any, 0, len(rows)-headerRowIdx-1)

@@ -60,11 +60,7 @@ function extractCsvColumns(file: File, isTSV: boolean): Promise<string[]> {
         const rows = (results.data as string[][]) ?? [];
         for (const row of rows) {
           if (row.some((cell) => String(cell ?? '').trim().length > 0)) {
-            const raw = row.map((cell, idx) => {
-              const trimmed = String(cell ?? '').trim();
-              return trimmed.length > 0 ? trimmed : `Column_${idx + 1}`;
-            });
-            resolve(deduplicateColumns(raw));
+            resolve(tableColumnHeaderNames(row));
             return;
           }
         }
@@ -93,11 +89,7 @@ function extractExcelColumns(file: File): Promise<string[]> {
         const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
         for (const row of rows) {
           if (row.some((cell) => String(cell ?? '').trim().length > 0)) {
-            const raw = row.map((cell, idx) => {
-              const trimmed = String(cell ?? '').trim();
-              return trimmed.length > 0 ? trimmed : `Column_${idx + 1}`;
-            });
-            resolve(deduplicateColumns(raw));
+            resolve(tableColumnHeaderNames(row));
             return;
           }
         }
@@ -136,10 +128,105 @@ function deduplicateColumns(columns: string[]): string[] {
   return unique;
 }
 
+// Spreadsheet bookkeeping columns carry no content: the table parser deletes
+// them before rendering (rag/app/table.py, mirrored by the Go
+// parser.TableColumnHeaderNames), so the client-side fallback must drop them as
+// well — otherwise it would offer a role for a column that never reaches a
+// chunk. Kept in sync with tableBookkeepingColumns in
+// internal/parser/parser/table_row_render.go.
+const BOOKKEEPING_COLUMNS = ['id', '_id', 'index', 'idx'];
+
+// tableColumnHeaderNames applies the ingestion header rules to a raw header
+// row: trim, name empty headers by position, drop bookkeeping columns, dedupe.
+function tableColumnHeaderNames(row: unknown[]): string[] {
+  const raw = row.map((cell, idx) => {
+    const trimmed = String(cell ?? '').trim();
+    return trimmed.length > 0 ? trimmed : `Column_${idx + 1}`;
+  });
+  return deduplicateColumns(
+    raw.filter((name) => !BOOKKEEPING_COLUMNS.includes(name)),
+  );
+}
+
 /**
  * Check if a file is a table file (CSV, TSV, or Excel).
  */
 export function isTableFile(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
   return ['csv', 'xlsx', 'xls', 'tsv'].includes(ext);
+}
+
+export type DatasetTableColumnSettings = {
+  mode: 'auto' | 'manual';
+  roles: Record<string, 'indexing' | 'metadata' | 'both'>;
+};
+
+function normalizeRole(raw: unknown): 'indexing' | 'metadata' | 'both' {
+  const role = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  if (role === 'indexing' || role === 'vectorize') {
+    return 'indexing';
+  }
+  if (role === 'metadata') {
+    return 'metadata';
+  }
+  return 'both';
+}
+
+function collectRoles(raw: unknown): DatasetTableColumnSettings['roles'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+  const roles: DatasetTableColumnSettings['roles'] = {};
+  for (const [column, role] of Object.entries(raw as Record<string, unknown>)) {
+    if (String(column).trim()) {
+      roles[String(column)] = normalizeRole(role);
+    }
+  }
+  return roles;
+}
+
+/**
+ * Effective dataset-level table column settings. Root-level keys come first —
+ * that is what the dataset settings page saves — then the component-shaped
+ * entry a canvas or the document dialog writes. Mirrors the backend's
+ * ResolveTableProfile ordering.
+ *
+ * The upload dialog shows these as its initial selection so an untouched
+ * dialog displays what ingestion will actually use; it does not send them back
+ * (see buildTableUploadParserConfig).
+ */
+export function resolveDatasetTableColumnSettings(
+  parserConfig?: Record<string, any> | null,
+): DatasetTableColumnSettings {
+  const config = parserConfig ?? {};
+  const rootMode = String(config.table_column_mode ?? '').trim();
+  const rootRoles = collectRoles(config.table_column_roles);
+  if (rootMode || Object.keys(rootRoles).length > 0) {
+    return {
+      mode: rootMode.toLowerCase() === 'manual' ? 'manual' : 'auto',
+      roles: rootRoles,
+    };
+  }
+
+  const parserIDs = Object.keys(config)
+    .filter((key) => key.startsWith('Parser:'))
+    .sort();
+  for (const parserID of parserIDs) {
+    const spreadsheet = config[parserID]?.spreadsheet;
+    if (!spreadsheet || typeof spreadsheet !== 'object') {
+      continue;
+    }
+    const nestedMode = String(spreadsheet.column_mode ?? '').trim();
+    const nestedRoles = collectRoles(spreadsheet.column_roles);
+    if (nestedMode || Object.keys(nestedRoles).length > 0) {
+      return {
+        mode: nestedMode.toLowerCase() === 'manual' ? 'manual' : 'auto',
+        roles: nestedRoles,
+      };
+    }
+  }
+
+  return { mode: 'auto', roles: {} };
 }

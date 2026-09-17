@@ -40,6 +40,22 @@ func TestProbeTable_CSV(t *testing.T) {
 	}
 }
 
+// The parser deletes the spreadsheet bookkeeping columns before rendering, so
+// the probe must not offer a role for a column that never reaches a chunk.
+func TestProbeTable_DropsBookkeepingColumns(t *testing.T) {
+	svc := &DocumentService{}
+
+	cols, err := svc.ProbeTable(strings.NewReader("id,name,index,amount\n1,Alice,2,10\n"), "test.csv")
+	if err != nil {
+		t.Fatalf("ProbeTable: %v", err)
+	}
+
+	want := []string{"name", "amount"}
+	if !reflect.DeepEqual(cols, want) {
+		t.Fatalf("got %#v, want %#v", cols, want)
+	}
+}
+
 func TestProbeTable_CSVStripsBOM(t *testing.T) {
 	svc := &DocumentService{}
 

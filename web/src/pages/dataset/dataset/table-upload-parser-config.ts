@@ -19,6 +19,12 @@ type TableColumnUploadValues = Pick<
 // order. The array therefore stays aligned with the full file list — non-table
 // files keep an empty placeholder rather than being compacted out, which would
 // shift every later entry onto the wrong document.
+//
+// table_column_mode / table_column_roles are sent ONLY when the user chose them
+// in the dialog: a document-level key wins over the dataset's, so submitting
+// the untouched default would pin every uploaded document to "auto" and the
+// dataset's own table settings could never apply (the backend only falls back
+// to the dataset for keys the document does not define).
 export function buildTableUploadParserConfig(
   fileList: UploadFormSchemaType['fileList'],
   {
@@ -32,13 +38,11 @@ export function buildTableUploadParserConfig(
     const file = entry instanceof File ? entry : entry.file;
     return isTableFile(file);
   });
-  if (!hasTableFile || !tableColumnMode) {
+  if (!hasTableFile) {
     return undefined;
   }
 
-  const parserConfig: Record<string, any> = {
-    table_column_mode: tableColumnMode,
-  };
+  const parserConfig: Record<string, any> = {};
   if (tableColumnNames?.length) {
     parserConfig.table_column_names = tableColumnNames;
   }
@@ -51,8 +55,12 @@ export function buildTableUploadParserConfig(
       parserConfig.table_column_names_by_file = byFile;
     }
   }
+  if (tableColumnMode) {
+    parserConfig.table_column_mode = tableColumnMode;
+  }
   if (tableColumnMode === 'manual' && tableColumnRoles) {
     parserConfig.table_column_roles = tableColumnRoles;
   }
-  return parserConfig;
+
+  return Object.keys(parserConfig).length > 0 ? parserConfig : undefined;
 }

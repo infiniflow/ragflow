@@ -31,8 +31,9 @@ import (
 )
 
 // ProbeTable extracts the column names from a table file (CSV, TSV, XLSX)
-// by reading only the initial rows, skipping leading empty rows, and deduplicating
-// column headers with the exact same logic used during ingestion.
+// by reading only the initial rows, skipping leading empty rows, and applying
+// the same header rules as ingestion (parser.TableColumnHeaderNames), so the
+// columns offered for configuration are exactly the columns the parser indexes.
 // Binary XLS (BIFF8) is not supported for streaming probe and returns an error,
 // enabling client-side extraction fallback.
 func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, error) {
@@ -87,14 +88,8 @@ func probeCSV(r io.Reader, isTSV bool) ([]string, error) {
 			continue
 		}
 
-		rawHeaders := make([]string, len(record))
-		for i, h := range record {
-			rawHeaders[i] = strings.TrimSpace(h)
-			if rawHeaders[i] == "" {
-				rawHeaders[i] = fmt.Sprintf("Column_%d", i+1)
-			}
-		}
-		return parser.DeduplicateColumnNames(rawHeaders), nil
+		names, _ := parser.TableColumnHeaderNames(record)
+		return names, nil
 	}
 }
 
@@ -132,14 +127,8 @@ func probeXLSX(r io.Reader) ([]string, error) {
 			continue
 		}
 
-		rawHeaders := make([]string, len(cols))
-		for i, h := range cols {
-			rawHeaders[i] = strings.TrimSpace(h)
-			if rawHeaders[i] == "" {
-				rawHeaders[i] = fmt.Sprintf("Column_%d", i+1)
-			}
-		}
-		return parser.DeduplicateColumnNames(rawHeaders), nil
+		names, _ := parser.TableColumnHeaderNames(cols)
+		return names, nil
 	}
 
 	return []string{}, nil

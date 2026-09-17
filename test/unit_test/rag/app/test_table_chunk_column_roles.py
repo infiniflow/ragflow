@@ -50,6 +50,11 @@ TEST_PARTIAL_NUMERIC_CSV = b"""row_id,amount,note
 3,300,third
 """
 
+TEST_TSV = b"""row_id\ttitle\tamount
+1\tEarthquake hits Turkey\t10
+2\tOil prices surge\t20
+"""
+
 FILENAME = "test.csv"
 KB_ID = "test_kb_id"
 
@@ -132,6 +137,24 @@ def test_chunk_deduplicates_repeated_column_names(table_module, mock_update_kb: 
     assert "- name_2: Team A" in cww
     args, kwargs = mock_update_kb.call_args
     assert args[1]["table_column_names"] == ["name", "name_3", "name_2"]
+
+
+def test_chunk_reads_tsv_with_tab_delimiter(table_module, mock_update_kb: MagicMock):
+    """A .tsv is the tab-separated form of the csv branch (the Go CSV parser
+    and the schema probe accept it too, and the upload dialog offers it)."""
+    chunks = table_module.chunk(
+        "test.tsv",
+        binary=TEST_TSV,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    assert len(chunks) == 2
+    assert "- title: Earthquake hits Turkey" in chunks[0]["content_with_weight"]
+    assert "- amount: 10" in chunks[0]["content_with_weight"]
+    args, _ = mock_update_kb.call_args
+    assert args[1]["table_column_names"] == ["row_id", "title", "amount"]
 
 
 def test_excel_image_description_string_stays_single_cell(table_module, monkeypatch):

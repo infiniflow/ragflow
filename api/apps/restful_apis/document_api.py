@@ -207,34 +207,9 @@ async def probe_table():
         return get_result(data={"columns": [], "total_columns": 0})
 
     try:
-        from rag.app.table import _deduplicate_column_names
-        import csv
-        import io
+        from rag.app.table import probe_table_headers
 
-        headers = []
-        if filename.endswith((".csv", ".tsv", ".txt")):
-            delimiter = "\t" if filename.endswith(".tsv") else ","
-            text_stream = io.StringIO(content.decode("utf-8-sig", errors="replace"))
-            reader = csv.reader(text_stream, delimiter=delimiter)
-            for row in reader:
-                if any(cell.strip() for cell in row):
-                    headers = [cell.strip() or f"Column_{i + 1}" for i, cell in enumerate(row)]
-                    break
-        elif filename.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
-            import openpyxl
-
-            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-            if wb.sheetnames:
-                ws = wb[wb.sheetnames[0]]
-                for row in ws.iter_rows(values_only=True):
-                    if any(str(c or "").strip() for c in row):
-                        headers = [str(cell or "").strip() or f"Column_{i + 1}" for i, cell in enumerate(row)]
-                        break
-            wb.close()
-
-        if headers:
-            headers = _deduplicate_column_names(headers)
-
+        headers = probe_table_headers(content, filename)
         return get_result(data={"columns": headers, "total_columns": len(headers)})
     except Exception as e:
         logging.exception("probe_table failed")

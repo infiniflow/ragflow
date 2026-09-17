@@ -276,7 +276,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"flatten_media_to_text": false,
 			"html4excel":            false,
 			"output_format":         "json",
-			"suffix":                []string{"xls", "xlsx", "csv"},
+			"suffix":                []string{"xls", "xlsx", "csv", "tsv"},
 		},
 		"doc": {
 			"remove_toc":           false,
