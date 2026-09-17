@@ -604,7 +604,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         len(_uncached_node_names),
     )
     if _uncached_node_names:
-        _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        _enable_ta = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
         _timeout = 3 if _enable_ta else 30000000
         for _i in range(0, len(_uncached_node_names), _INSERT_BULK_SIZE):
             _batch = _uncached_node_names[_i : _i + _INSERT_BULK_SIZE]
@@ -657,7 +657,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     if _uncached_edge_items:
         _edge_keys = [f"{f}->{t}" for f, t, _ in _uncached_edge_items]
         _edge_texts = [f"{f}->{t}: {a['description']}" for f, t, a in _uncached_edge_items]
-        _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        _enable_ta = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
         _timeout = 3 if _enable_ta else 30000000
         for _i in range(0, len(_edge_texts), _INSERT_BULK_SIZE):
             _btexts = _edge_texts[_i : _i + _INSERT_BULK_SIZE]
