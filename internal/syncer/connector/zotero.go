@@ -42,7 +42,8 @@ const (
 	zoteroMaxAttachmentBytes = 100 * 1024 * 1024
 	zoteroStorageModeZotero  = "zotero_storage"
 	zoteroStorageModeWebDAV  = "webdav"
-	zoteroMaxFileRedirects   = 10
+	zoteroMaxFileRedirects              = 10
+	zoteroMaxDownloadAttemptsPerAttachment = 3
 )
 
 // ZoteroConnector syncs PDF attachments from a Zotero library.
@@ -149,7 +150,12 @@ func (c *ZoteroConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	sort.Slice(records, func(i, j int) bool {
 		return c.sourceID(records[i].attachment.Key) < c.sourceID(records[j].attachment.Key)
 	})
-	session := &zoteroSyncSession{connector: c, records: records, batchSize: c.batchSize}
+	session := &zoteroSyncSession{
+		connector:        c,
+		records:          records,
+		batchSize:        c.batchSize,
+		downloadAttempts: make(map[string]int),
+	}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -581,6 +587,40 @@ type zoteroSyncSession struct {
 	batchSize        int
 	index            int
 	downloadFailures int
+	downloadAttempts map[string]int
+}
+
+func (s *zoteroSyncSession) handleDownloadFailure(
+	record zoteroPDFRecord,
+	reason string,
+	documentsLen int,
+	attrs ...any,
+) (breakBatch bool, advanceIndex bool) {
+	s.downloadFailures++
+	key := record.attachment.Key
+	s.downloadAttempts[key]++
+	args := []any{
+		"item_key", key,
+		"source_id", s.connector.sourceID(key),
+		"attempt", s.downloadAttempts[key],
+		"max_attempts", zoteroMaxDownloadAttemptsPerAttachment,
+	}
+	args = append(args, attrs...)
+	slog.Warn("zotero: "+reason, args...)
+
+	if s.downloadAttempts[key] >= zoteroMaxDownloadAttemptsPerAttachment {
+		slog.Warn(
+			"zotero: permanently skipping attachment after repeated download failures",
+			"item_key", key,
+			"source_id", s.connector.sourceID(key),
+			"attempts", s.downloadAttempts[key],
+		)
+		return false, true
+	}
+	if documentsLen > 0 {
+		return true, false
+	}
+	return false, false
 }
 
 func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
@@ -589,31 +629,35 @@ func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		record := s.records[s.index]
 		blob, filename, err := s.connector.downloadPDF(ctx, record.attachment)
 		if err != nil || len(blob) == 0 {
-			s.downloadFailures++
-			slog.Warn(
-				"zotero: attachment download failed",
-				"item_key", record.attachment.Key,
-				"source_id", s.connector.sourceID(record.attachment.Key),
+			breakBatch, advanceIndex := s.handleDownloadFailure(
+				record,
+				"attachment download failed",
+				len(documents),
 				"error", err,
 			)
-			if len(documents) > 0 {
+			if advanceIndex {
+				s.index++
+				continue
+			}
+			if breakBatch {
 				break
 			}
-			s.index++
 			continue
 		}
 		if int64(len(blob)) > zoteroMaxAttachmentBytes {
-			s.downloadFailures++
-			slog.Warn(
-				"zotero: skipping oversized attachment",
-				"item_key", record.attachment.Key,
-				"source_id", s.connector.sourceID(record.attachment.Key),
+			breakBatch, advanceIndex := s.handleDownloadFailure(
+				record,
+				"skipping oversized attachment",
+				len(documents),
 				"bytes", len(blob),
 			)
-			if len(documents) > 0 {
+			if advanceIndex {
+				s.index++
+				continue
+			}
+			if breakBatch {
 				break
 			}
-			s.index++
 			continue
 		}
 		documents = append(documents, s.connector.buildDocument(record, blob, filename))
@@ -626,7 +670,7 @@ func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			}
 			return SyncBatch{}, io.EOF
 		}
-		return SyncBatch{}, fmt.Errorf("zotero: failed to download attachment %q", s.records[s.index].attachment.Key)
+		return SyncBatch{}, fmt.Errorf("zotero: stalled downloading attachment %q", s.records[s.index].attachment.Key)
 	}
 	return SyncBatch{Documents: documents, Checkpoint: zoteroSyncCheckpoint(documents[len(documents)-1])}, nil
 }

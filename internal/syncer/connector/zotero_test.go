@@ -100,7 +100,8 @@ func TestZoteroNextBatchRetriesFailedDownloadAfterPartialBatch(t *testing.T) {
 			{attachment: zoteroAPIItem{Key: "ATTACH1"}, title: "One"},
 			{attachment: zoteroAPIItem{Key: "ATTACH2"}, title: "Two"},
 		},
-		batchSize: 10,
+		batchSize:        10,
+		downloadAttempts: make(map[string]int),
 	}
 
 	first, err := session.NextBatch(context.Background())
@@ -117,8 +118,49 @@ func TestZoteroNextBatchRetriesFailedDownloadAfterPartialBatch(t *testing.T) {
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("second NextBatch: %v", err)
 	}
-	if attempts["ATTACH2"] < 2 {
-		t.Fatalf("ATTACH2 attempts = %d, want at least 2", attempts["ATTACH2"])
+	if attempts["ATTACH2"] < 4 {
+		t.Fatalf("ATTACH2 attempts = %d, want at least 4 (1 partial batch + 3 retries)", attempts["ATTACH2"])
+	}
+}
+
+func TestZoteroNextBatchRetriesImmediatelyBeforeSkip(t *testing.T) {
+	connector, err := NewZoteroConnector(map[string]any{
+		"zotero_user_id": "12345678",
+		"storage_mode":   zoteroStorageModeZotero,
+		"batch_size":     1,
+		"credentials": map[string]any{
+			"zotero_api_key": "test-key",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewZoteroConnector: %v", err)
+	}
+	attempts := 0
+	connector.downloadPDF = func(ctx context.Context, attachment zoteroAPIItem) ([]byte, string, error) {
+		attempts++
+		if attempts < 3 {
+			return nil, "", errors.New("transient failure")
+		}
+		return []byte("%PDF"), "paper.pdf", nil
+	}
+	session := &zoteroSyncSession{
+		connector: connector,
+		records: []zoteroPDFRecord{
+			{attachment: zoteroAPIItem{Key: "ATTACH1"}, title: "One"},
+		},
+		batchSize:        1,
+		downloadAttempts: make(map[string]int),
+	}
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1 after in-batch retries", len(batch.Documents))
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3 immediate retries before success", attempts)
 	}
 }
 
