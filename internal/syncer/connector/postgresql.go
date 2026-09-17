@@ -22,15 +22,20 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
@@ -55,6 +60,7 @@ type PostgreSQLConnector struct {
 	metadataColumns []string
 	idColumn        string
 	timestampColumn string
+	fileExtension   string
 	batchSize       int
 	username        string
 	password        string
@@ -73,14 +79,17 @@ func NewPostgreSQLConnector(config map[string]any) (*PostgreSQLConnector, error)
 		database:        strings.TrimSpace(stringConfig(config["database"])),
 		idColumn:        strings.TrimSpace(stringConfig(config["id_column"])),
 		timestampColumn: strings.TrimSpace(stringConfig(config["timestamp_column"])),
+		fileExtension:   fileExtensionFromConfig(config["file_extension"]),
 		batchSize:       configInt(config["batch_size"], defaultPostgresBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
 		sslmode:         strings.TrimSpace(stringConfig(config["sslmode"])),
 		connectTimeout:  configInt(config["connect_timeout"], defaultPostgresConnectTimeout),
-		openDB: func(dsn string) (*sql.DB, error) {
-			return sql.Open("pgx", dsn)
-		},
+	}
+	// Production dials through the SSRF-guarded, DNS-pinned openDB. Tests
+	// replace it with an injected openDB that avoids the real network.
+	connector.openDB = func(dsn string) (*sql.DB, error) {
+		return connector.openPinned(dsn)
 	}
 	if connector.sslmode == "" {
 		connector.sslmode = "prefer"
@@ -113,11 +122,17 @@ func (c *PostgreSQLConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("Failed to connect to PostgreSQL: %w", err)
 	}
 	defer db.Close()
-	var one int
-	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("Failed to connect to PostgreSQL: %w", err)
 	}
 	return nil
+}
+
+// ValidateConnectorSetting validates PostgreSQL settings from an unsaved config.
+func (c *PostgreSQLConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
 }
 
 // OpenSync opens one PostgreSQL sync session.
@@ -132,7 +147,26 @@ func (c *PostgreSQLConnector) OpenSync(ctx context.Context, request SyncRequest)
 		return nil, err
 	}
 	queries := c.buildSyncQueries(bases, request)
-	return &postgresSyncSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
+	orderColumn := c.syncOrderColumn(request)
+	session := &postgresSyncSession{
+		connector:         c,
+		db:                db,
+		batchSize:         c.batchSize,
+		orderColumn:       orderColumn,
+		checkpointEnabled: orderColumn != "",
+		lastDocQuery:      -1,
+	}
+	for _, q := range queries {
+		session.queries = append(session.queries, q.sql)
+		session.queryNames = append(session.queryNames, q.name)
+		session.orderedFlags = append(session.orderedFlags, q.ordered)
+		session.fallbackQueries = append(session.fallbackQueries, q.fallback)
+	}
+	if err := session.applyResume(request.Resume); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return session, nil
 }
 
 // OpenPrune opens one complete PostgreSQL prune snapshot session.
@@ -148,7 +182,7 @@ func (c *PostgreSQLConnector) OpenPrune(ctx context.Context, request PruneReques
 	}
 	queries := make([]string, 0, len(bases))
 	for _, base := range bases {
-		queries = append(queries, c.buildSlimQuery(base))
+		queries = append(queries, c.buildSlimQuery(base.sql))
 	}
 	return &postgresPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
@@ -171,10 +205,41 @@ func (c *PostgreSQLConnector) open() (*sql.DB, error) {
 	return c.openDB(dsn.String())
 }
 
-// baseQueries returns the configured query or a SELECT per table.
-func (c *PostgreSQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string, error) {
+// openPinned is the production openDB: it validates the configured host with
+// the shared host-type SSRF guard and installs a pgx DialFunc pinned to the
+// validated IP, closing the DNS-rebinding window between validation and the
+// TCP connect. The DSN keeps the original hostname so TLS ServerName /
+// host-based authentication are unchanged; only the underlying TCP dial is
+// rewritten.
+func (c *PostgreSQLConnector) openPinned(dsn string) (*sql.DB, error) {
+	pinIP, err := assertConnectorHostSafe(c.host)
+	if err != nil {
+		return nil, err
+	}
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	timeout := time.Duration(c.connectTimeout) * time.Second
+	port := strconv.Itoa(int(config.Port))
+	config.DialFunc = postgresPinnedDial(pinIP, port, timeout)
+	return stdlib.OpenDB(*config), nil
+}
+
+// postgresPinnedDial returns a pgx DialFunc that connects every dial to
+// pinIP:port, ignoring the host parsed from the DSN.
+func postgresPinnedDial(pinIP net.IP, port string, timeout time.Duration) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: timeout}).DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
+	}
+}
+
+// baseQueries returns the configured query or a SELECT per table. Table names
+// are sorted so the sync stream order is stable across runs and a resume
+// cursor can reliably skip already-processed tables.
+func (c *PostgreSQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]rdbmsQuery, error) {
 	if c.query != "" {
-		return []string{c.query}, nil
+		return []rdbmsQuery{{name: "", sql: c.query}}, nil
 	}
 	rows, err := db.QueryContext(ctx, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
 	if err != nil {
@@ -192,9 +257,10 @@ func (c *PostgreSQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]st
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	queries := make([]string, 0, len(tables))
+	sort.Strings(tables)
+	queries := make([]rdbmsQuery, 0, len(tables))
 	for _, table := range tables {
-		queries = append(queries, fmt.Sprintf("SELECT * FROM \"public\".%s", quotePostgresIdentifier(table)))
+		queries = append(queries, rdbmsQuery{name: table, sql: fmt.Sprintf("SELECT * FROM \"public\".%s", quotePostgresIdentifier(table))})
 	}
 	return queries, nil
 }
@@ -206,21 +272,59 @@ func quotePostgresIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-// buildSyncQueries applies the incremental window when a timestamp column exists.
-func (c *PostgreSQLConnector) buildSyncQueries(bases []string, request SyncRequest) []string {
-	var start, end *time.Time
-	if !request.FromBeginning {
-		start = request.WindowStart
-		end = &request.WindowEnd
-	}
-	if c.timestampColumn == "" || (start == nil && end == nil) {
-		return bases
-	}
-	queries := make([]string, 0, len(bases))
-	for _, base := range bases {
-		queries = append(queries, c.buildTimeFilteredQuery(base, start, end))
+// buildSyncQueries applies the incremental window and a stable ordering when
+// one is available, so a checkpoint can resume the stream from an anchor.
+// Each query carries an unordered fallback used when a custom SQL query does
+// not expose the configured ordering column.
+func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncRequest) []rdbmsSyncQuery {
+	queries := make([]rdbmsSyncQuery, 0, len(bases))
+	switch {
+	case !request.FromBeginning && c.timestampColumn != "":
+		start := request.WindowStart
+		end := &request.WindowEnd
+		for _, base := range bases {
+			queries = append(queries, rdbmsSyncQuery{
+				name:     base.name,
+				sql:      c.buildTimeFilteredOrderedQuery(base.sql, start, end),
+				ordered:  true,
+				fallback: c.buildTimeFilteredQuery(base.sql, start, end),
+			})
+		}
+	case request.FromBeginning && c.idColumn != "":
+		for _, base := range bases {
+			queries = append(queries, rdbmsSyncQuery{
+				name:     base.name,
+				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
+				ordered:  true,
+				fallback: c.wrapQuery(base.sql),
+			})
+		}
+	default:
+		for _, base := range bases {
+			queries = append(queries, rdbmsSyncQuery{name: base.name, sql: base.sql})
+		}
 	}
 	return queries
+}
+
+// syncOrderColumn returns the ordering key that makes this sync window
+// deterministic, or "" when the connector cannot checkpoint/resume the
+// stream (no stable ordering key). Incremental windows order by timestamp
+// plus id so rows sharing a timestamp still resume deterministically.
+func (c *PostgreSQLConnector) syncOrderColumn(request SyncRequest) string {
+	switch {
+	case !request.FromBeginning && c.timestampColumn != "" && c.idColumn != "":
+		return c.timestampColumn + "," + c.idColumn
+	case request.FromBeginning && c.idColumn != "":
+		return c.idColumn
+	}
+	return ""
+}
+
+// buildOrderedQuery wraps the base query and orders it by a stable column so
+// connector sync can resume from a checkpoint.
+func (c *PostgreSQLConnector) buildOrderedQuery(base, orderColumn string) string {
+	return c.wrapQuery(base) + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -235,6 +339,18 @@ func (c *PostgreSQLConnector) buildTimeFilteredQuery(base string, start, end *ti
 	query := c.wrapQuery(base)
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
+	}
+	return query
+}
+
+// buildTimeFilteredOrderedQuery is the incremental query plus a deterministic
+// ORDER BY on the timestamp and id columns, which resume relies on. Without a
+// configured id column the order is timestamp-only and the stream is not
+// checkpointed.
+func (c *PostgreSQLConnector) buildTimeFilteredOrderedQuery(base string, start, end *time.Time) string {
+	query := c.buildTimeFilteredQuery(base, start, end) + " ORDER BY ragflow_src." + c.timestampColumn + " ASC"
+	if c.idColumn != "" {
+		query += ", ragflow_src." + c.idColumn + " ASC"
 	}
 	return query
 }
@@ -407,7 +523,7 @@ func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedCol
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: semanticID,
-		Extension:          ".txt",
+		Extension:          c.fileExtension,
 		Blob:               blob,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
@@ -487,9 +603,25 @@ type postgresSyncSession struct {
 	connector  *PostgreSQLConnector
 	db         *sql.DB
 	queries    []string
-	queryIndex int
-	rows       *sql.Rows
-	batchSize  int
+	queryNames []string
+	// orderedFlags[i] reports whether queries[i] carries a stable ORDER BY.
+	orderedFlags []bool
+	// fallbackQueries[i] is the unordered variant of queries[i], used when a
+	// custom SQL query does not expose the configured ordering column.
+	fallbackQueries []string
+	queryIndex      int
+	// lastDocQuery is the index of the query that produced the most recently
+	// appended document, used to checkpoint against the right query name even
+	// when later queries in the batch contributed no documents.
+	lastDocQuery int
+	rows         *sql.Rows
+	batchSize    int
+
+	orderColumn       string
+	checkpointEnabled bool
+	orderable         bool
+	resume            *rdbmsResumeCursor
+	resumePending     bool
 }
 
 // NextBatch returns the next PostgreSQL document batch.
@@ -499,7 +631,7 @@ func (s *postgresSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) 
 		if s.rows == nil {
 			if s.queryIndex >= len(s.queries) {
 				if len(documents) == 0 {
-					return SyncBatch{}, io.EOF
+					return s.endOfStream()
 				}
 				break
 			}
@@ -521,10 +653,17 @@ func (s *postgresSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) 
 			continue
 		}
 		if doc, ok := s.connector.rowToSourceDocument(row, columns); ok {
+			if !s.includeResumed(doc) {
+				continue
+			}
 			documents = append(documents, doc)
+			s.lastDocQuery = s.queryIndex - 1
 		}
 	}
-	return SyncBatch{Documents: documents}, nil
+	if len(documents) == 0 {
+		return s.endOfStream()
+	}
+	return SyncBatch{Documents: documents, Checkpoint: s.batchCheckpoint(documents[len(documents)-1])}, nil
 }
 
 // Close closes the PostgreSQL sync session.
@@ -533,14 +672,33 @@ func (s *postgresSyncSession) Close() error {
 	return s.db.Close()
 }
 
-// openNextQuery runs the next base query.
+// openNextQuery runs the next base query. When a custom SQL query does not
+// expose the configured ordering column (PostgreSQL SQLSTATE 42703), it falls
+// back to the unordered query and stops checkpointing so the remaining stream
+// is never resumed against a non-deterministic order. A pending resume never
+// falls back: the ordering that produced the anchor is gone, so the window
+// restarts.
 func (s *postgresSyncSession) openNextQuery(ctx context.Context) error {
-	query := s.queries[s.queryIndex]
+	idx := s.queryIndex
 	s.queryIndex++
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, s.queries[idx])
 	if err != nil {
+		if s.orderedFlags[idx] && isPostgresUnknownColumn(err) {
+			if s.resumePending {
+				return fmt.Errorf("PostgreSQL sync resume query lost its ordering column: %w", ErrSyncResumeInvalid)
+			}
+			s.checkpointEnabled = false
+			rows, err = s.db.QueryContext(ctx, s.fallbackQueries[idx])
+			if err != nil {
+				return fmt.Errorf("PostgreSQL query failed: %w", err)
+			}
+			s.orderable = false
+			s.rows = rows
+			return nil
+		}
 		return fmt.Errorf("PostgreSQL query failed: %w", err)
 	}
+	s.orderable = s.orderedFlags[idx]
 	s.rows = rows
 	return nil
 }
@@ -551,6 +709,89 @@ func (s *postgresSyncSession) closeRows() {
 		s.rows.Close()
 		s.rows = nil
 	}
+}
+
+// applyResume positions the session after the last committed batch. The
+// cursor's query and ordering column must still exist, otherwise the runner
+// restarts the task window.
+func (s *postgresSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	cursor, err := parseRDBMSCursor(checkpoint.Cursor)
+	if err != nil {
+		return err
+	}
+	if s.orderColumn == "" || cursor.Order != s.orderColumn {
+		return fmt.Errorf("PostgreSQL sync resume ordering changed from %q to %q: %w", cursor.Order, s.orderColumn, ErrSyncResumeInvalid)
+	}
+	idx := -1
+	for i, name := range s.queryNames {
+		if name == cursor.Query {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("PostgreSQL sync resume query %q no longer exists: %w", cursor.Query, ErrSyncResumeInvalid)
+	}
+	s.queryIndex = idx
+	s.resume = &cursor
+	s.resumePending = true
+	return nil
+}
+
+// includeResumed reports whether doc should be emitted. While a resume is
+// pending, every row before (and including) the anchor is skipped because it
+// was already committed.
+func (s *postgresSyncSession) includeResumed(doc SourceDocument) bool {
+	if !s.resumePending {
+		return true
+	}
+	if s.resume != nil && doc.SourceID == s.resume.SourceID {
+		s.resumePending = false
+		return false
+	}
+	return false
+}
+
+// batchCheckpoint builds the checkpoint for a batch whose last row is doc.
+// Batches from a non-deterministic (unordered) query never carry a checkpoint.
+func (s *postgresSyncSession) batchCheckpoint(doc SourceDocument) *SyncCheckpoint {
+	if !s.checkpointEnabled || !s.orderable {
+		return nil
+	}
+	queryName := ""
+	if idx := s.lastDocQuery; idx >= 0 && idx < len(s.queryNames) {
+		queryName = s.queryNames[idx]
+	}
+	updatedAt := doc.UpdatedAt
+	return &SyncCheckpoint{
+		Cursor:    encodeRDBMSCursor(queryName, s.orderColumn, doc.SourceID),
+		SourceID:  doc.SourceID,
+		UpdatedAt: &updatedAt,
+	}
+}
+
+// endOfStream returns io.EOF when the stream is exhausted, or
+// ErrSyncResumeInvalid when a pending resume anchor was never found.
+func (s *postgresSyncSession) endOfStream() (SyncBatch, error) {
+	if s.resumePending {
+		anchor := ""
+		if s.resume != nil {
+			anchor = s.resume.SourceID
+		}
+		return SyncBatch{}, fmt.Errorf("PostgreSQL resume anchor %q was not found in the current result: %w", anchor, ErrSyncResumeInvalid)
+	}
+	return SyncBatch{}, io.EOF
+}
+
+// isPostgresUnknownColumn reports whether err is PostgreSQL SQLSTATE 42703
+// (undefined column), used to detect custom queries that do not expose the
+// configured ordering column.
+func isPostgresUnknownColumn(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "42703"
 }
 
 type postgresPruneSession struct {

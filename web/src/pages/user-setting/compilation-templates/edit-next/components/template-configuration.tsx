@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ICompilationTemplateBuiltin } from '@/interfaces/database/compilation-template';
-import { startCase } from 'lodash';
+import { isEmpty, startCase } from 'lodash';
 import { ReactNode, useCallback } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -158,7 +158,7 @@ export function TemplateConfiguration({
         <div className="max-w-4xl mx-auto space-y-6">
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.name`}
-            label={t('setting.templateName')}
+            label={t('common.name')}
             required
           >
             <Input placeholder={t('common.namePlaceholder')} />
@@ -166,7 +166,7 @@ export function TemplateConfiguration({
 
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.description`}
-            label={t('setting.templateDescription')}
+            label={t('knowledgeCompilation.description')}
           >
             <Textarea
               placeholder={t('common.descriptionPlaceholder')}
@@ -193,10 +193,10 @@ export function TemplateConfiguration({
 
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.config.global_rules`}
-            label={t('setting.globalRules')}
+            label={t('knowledgeCompilation.globalRules')}
           >
             <Textarea
-              placeholder={t('setting.globalRulesPlaceholder')}
+              placeholder={t('knowledgeCompilation.globalRulesPlaceholder')}
               rows={8}
               resize="vertical"
             />
@@ -205,8 +205,8 @@ export function TemplateConfiguration({
           {kind === CompilationTemplateKind.Artifacts && (
             <RAGFlowFormItem
               name={`templates.${selectedTemplateIndex}.config.mode`}
-              label={t('setting.wikiMode')}
-              tooltip={t('setting.wikiModeTip')}
+              label={t('knowledgeCompilation.wikiMode')}
+              tooltip={t('knowledgeCompilation.wikiModeTip')}
             >
               {(field) => (
                 <SelectWithSearch
@@ -214,8 +214,14 @@ export function TemplateConfiguration({
                   onChange={field.onChange}
                   disabled={field.disabled}
                   options={[
-                    { label: t('setting.entityMode'), value: 'entity' },
-                    { label: t('setting.topicMode'), value: 'topic' },
+                    {
+                      label: t('knowledgeCompilation.entityMode'),
+                      value: 'entity',
+                    },
+                    {
+                      label: t('knowledgeCompilation.topicMode'),
+                      value: 'topic',
+                    },
                   ]}
                 />
               )}
@@ -226,21 +232,23 @@ export function TemplateConfiguration({
             <TreeTemplateFields index={selectedTemplateIndex} />
           ) : (
             <>
-              {kind !== CompilationTemplateKind.Artifacts && (
+              {kind !== CompilationTemplateKind.Artifacts && !isEmpty(kind) && (
                 <>
                   <SwitchFormField
                     name={`templates.${selectedTemplateIndex}.config.rechunk`}
-                    label={t('setting.rechunkInput')}
-                    tooltip={t('setting.rechunkInputTip')}
+                    label={t('knowledgeCompilation.rechunkInput')}
+                    tooltip={t('knowledgeCompilation.rechunkInputTip')}
                     vertical={false}
                   />
                   {rechunk && (
                     <RAGFlowFormItem
                       name={`templates.${selectedTemplateIndex}.config.rechunk_rules`}
-                      label={t('setting.rechunkRules')}
+                      label={t('knowledgeCompilation.rechunkRules')}
                     >
                       <Textarea
-                        placeholder={t('setting.rechunkRulesPlaceholder')}
+                        placeholder={t(
+                          'knowledgeCompilation.rechunkRulesPlaceholder',
+                        )}
                         rows={6}
                         resize="vertical"
                       />

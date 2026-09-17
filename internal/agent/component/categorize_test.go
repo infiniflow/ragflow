@@ -23,7 +23,7 @@ func TestCategorize_ChosenCategory(t *testing.T) {
 		Categories:      []string{"sales", "support", "billing"},
 		DefaultCategory: "support",
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestCategorize_FallbackToDefault(t *testing.T) {
 		Categories:      []string{"a", "b", "c"},
 		DefaultCategory: "b",
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestCategorize_DefaultDefaultsToFirstCategory(t *testing.T) {
 		Categories: []string{"alpha", "beta", "gamma"},
 		// no default_category
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCategorize_CaseInsensitive(t *testing.T) {
 		Categories:      []string{"sales", "support", "billing"},
 		DefaultCategory: "sales",
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCategorize_PromptListsCategories(t *testing.T) {
 		DefaultCategory: "x",
 		Items:           []string{"foo", "bar"},
 	})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestCategorize_PromptIncludesRuntimeQuery(t *testing.T) {
 
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["query"] = "he who desires but acts not"
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	c := NewCategorizeComponent(CategorizeParam{
 		ModelID:    "stub",
@@ -189,7 +189,7 @@ func TestCategorize_PromptUsesInputQueryValue(t *testing.T) {
 		Query:      "sys.query",
 		Categories: []string{"Number", "chinese", "English"},
 	})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"query": "测试"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"query": "测试"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestCategorize_HistoryWindowRealData(t *testing.T) {
 		{"role": "assistant", "content": "prior answer"},
 		{"role": "user", "content": "stale latest"},
 	}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	c := NewCategorizeComponent(CategorizeParam{
 		ModelID:                  "stub",
@@ -252,7 +252,7 @@ func TestCategorizeRegistered_DefaultHistoryWindow(t *testing.T) {
 		{"role": "user", "content": "old user"},
 		{"role": "assistant", "content": "stale latest"},
 	}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	c, err := New("Categorize", map[string]any{
 		"model_id":   "stub",
@@ -286,7 +286,7 @@ func TestCategorize_HistoryWindowRejectsNegative(t *testing.T) {
 		Categories:               []string{"Number", "chinese", "English"},
 		MessageHistoryWindowSize: -1,
 	})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"query": "current question"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"query": "current question"})
 	if err == nil {
 		t.Fatal("expected negative message_history_window_size error")
 	}
@@ -334,7 +334,7 @@ func TestCategorize_SplitsCompositeLLMIDIntoDriverAndModel(t *testing.T) {
 		Categories:      []string{"sales", "support"},
 		DefaultCategory: "support",
 	})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -359,6 +359,11 @@ func TestSplitCompositeLLMID(t *testing.T) {
 		{"gpt-4o", "gpt-4o", "", false},
 		{"gpt-4o@OpenAI", "gpt-4o", "OpenAI", true},
 		{"Qwen/Qwen3-8B@default@SILICONFLOW", "Qwen/Qwen3-8B", "SILICONFLOW", true},
+		// Model names may themselves contain '@' (e.g. LM Studio quant
+		// suffixes): the provider is the LAST segment and the model name
+		// keeps its embedded '@'. Mirrors Python's rsplit("@", 2).
+		{"model@q8_0@lmstudio@LM-Studio", "model@q8_0", "LM-Studio", true},
+		{"a@b@c@d@e", "a@b@c", "e", true},
 	}
 	for _, tc := range cases {
 		gotModel, gotDrv, gotOK := splitCompositeLLMID(tc.in)
@@ -410,6 +415,61 @@ func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 	}
 	if stub.captured.BaseURL != "https://instance.example" {
 		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "https://instance.example")
+	}
+}
+
+// TestCategorize_ResolvesInstanceCredentialsModelNameWithAt covers a
+// composite llm_id whose model name itself contains '@' — e.g. LM Studio's
+// "model@q8_0" ids produce "model@q8_0@instance@provider". The provider must
+// be taken from the LAST segment (Python split_model_name uses rsplit); a
+// left-anchored split resolves provider "q8_0" and no credentials are found.
+func TestCategorize_ResolvesInstanceCredentialsModelNameWithAt(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "LM-Studio",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "lmstudio",
+		APIKey:       "lm-studio-key",
+		Status:       "active",
+		Extra:        `{"base_url":"http://localhost:1234/v1"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "support", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:         "text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio",
+		Categories:      []string{"sales", "support"},
+		DefaultCategory: "support",
+	})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if stub.captured.Driver != "LM-Studio" {
+		t.Fatalf("Driver=%q, want %q", stub.captured.Driver, "LM-Studio")
+	}
+	if stub.captured.ModelName != "text-embedding-nomic-embed-text-v1.5@q8_0" {
+		t.Fatalf("ModelName=%q, want %q", stub.captured.ModelName, "text-embedding-nomic-embed-text-v1.5@q8_0")
+	}
+	if stub.captured.APIKey != "lm-studio-key" {
+		t.Fatalf("APIKey=%q, want %q", stub.captured.APIKey, "lm-studio-key")
+	}
+	if stub.captured.BaseURL != "http://localhost:1234/v1" {
+		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "http://localhost:1234/v1")
 	}
 }
 
@@ -527,7 +587,7 @@ func TestCategorize_RoutesToSelectedCategoryHandle(t *testing.T) {
 		CategoryRoutes:  map[string]string{"打招呼": "a111", "Retrieval": "b222", "Other": "c333"},
 		DefaultCategory: "Other",
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -545,7 +605,7 @@ func TestCategorize_RoutesFromCategoryDescriptionToList(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewCategorizeComponent(CategorizeParam{ModelID: "stub"})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"category_description": map[string]any{
 			"打招呼":       map[string]any{"description": "hello", "to": []any{"Message:CateLoop"}},
 			"Retrieval": map[string]any{"description": "rag", "to": []any{"Message:CateRetrieval"}},
@@ -569,7 +629,7 @@ func TestCategorize_ExplicitCategoriesKeepCategoryDescriptionMetadata(t *testing
 	withStubInvoker(t, stub)
 
 	c := NewCategorizeComponent(CategorizeParam{ModelID: "stub"})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"categories": []any{"Number", "chinese", "English"},
 		"category_description": map[string]any{
 			"Number":  map[string]any{"description": "This query has only a number", "examples": []any{"4321"}, "to": []any{"Message:Number"}},
@@ -617,7 +677,7 @@ func TestCategorizeRegistered_ExplicitCategoriesKeepCategoryDescriptionMetadata(
 	if err != nil {
 		t.Fatalf("New(Categorize): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "hello"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"query": "hello"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

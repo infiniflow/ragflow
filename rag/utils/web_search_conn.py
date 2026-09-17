@@ -18,10 +18,18 @@ import logging
 from typing import Protocol
 
 from rag.utils.querit_conn import Querit
+from rag.utils.serply_conn import Serply
 from rag.utils.tavily_conn import Tavily
+from rag.utils.youcom_conn import YouCom
 
 WEB_SEARCH_PROVIDER_TAVILY = "tavily"
 WEB_SEARCH_PROVIDER_QUERIT = "querit"
+WEB_SEARCH_PROVIDER_SERPLY = "serply"
+WEB_SEARCH_PROVIDER_YOUCOM = "youcom"
+
+# You.com serves a keyless endpoint, so it is usable with no credentials at all.
+# Every other provider here requires a key before it can be selected.
+KEYLESS_WEB_SEARCH_PROVIDERS = frozenset({WEB_SEARCH_PROVIDER_YOUCOM})
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +48,14 @@ def has_web_search_provider(prompt_config: dict | None) -> bool:
     if not prompt_config:
         return False
     provider = prompt_config.get("web_search_provider", WEB_SEARCH_PROVIDER_TAVILY)
+    if provider in KEYLESS_WEB_SEARCH_PROVIDERS:
+        return True
     if provider == WEB_SEARCH_PROVIDER_TAVILY:
         return bool(_get_api_key(prompt_config, "tavily_api_key"))
     if provider == WEB_SEARCH_PROVIDER_QUERIT:
         return bool(_get_api_key(prompt_config, "querit_api_key"))
+    if provider == WEB_SEARCH_PROVIDER_SERPLY:
+        return bool(_get_api_key(prompt_config, "serply_api_key"))
     return False
 
 
@@ -53,7 +65,12 @@ def create_web_search_provider(prompt_config: dict | None) -> WebSearchProvider 
         return None
 
     provider = prompt_config.get("web_search_provider", WEB_SEARCH_PROVIDER_TAVILY)
-    if provider not in (WEB_SEARCH_PROVIDER_TAVILY, WEB_SEARCH_PROVIDER_QUERIT):
+    if provider not in (
+        WEB_SEARCH_PROVIDER_TAVILY,
+        WEB_SEARCH_PROVIDER_QUERIT,
+        WEB_SEARCH_PROVIDER_SERPLY,
+        WEB_SEARCH_PROVIDER_YOUCOM,
+    ):
         logger.debug("Web search provider resolution: provider=%s status=invalid", provider)
         return None
     if not has_web_search_provider(prompt_config):
@@ -63,4 +80,9 @@ def create_web_search_provider(prompt_config: dict | None) -> WebSearchProvider 
     logger.debug("Web search provider resolution: provider=%s status=resolved", provider)
     if provider == WEB_SEARCH_PROVIDER_QUERIT:
         return Querit(_get_api_key(prompt_config, "querit_api_key"))
+    if provider == WEB_SEARCH_PROVIDER_SERPLY:
+        return Serply(_get_api_key(prompt_config, "serply_api_key"))
+    if provider == WEB_SEARCH_PROVIDER_YOUCOM:
+        # The key is optional: an empty one selects the keyless endpoint.
+        return YouCom(_get_api_key(prompt_config, "youcom_api_key"))
     return Tavily(_get_api_key(prompt_config, "tavily_api_key"))

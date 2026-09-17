@@ -197,7 +197,7 @@ func stripESQuery(matchingText string) string {
 	txt = esSyntaxRe.ReplaceAllString(txt, " ")
 	seen := map[string]struct{}{}
 	var out []string
-	for _, t := range strings.Fields(txt) {
+	for t := range strings.FieldsSeq(txt) {
 		if _, ok := seen[t]; ok {
 			continue
 		}

@@ -171,6 +171,32 @@ def test_messages_add_list_recent_content_update_forget(rest_client, create_memo
 
 
 @pytest.mark.p2
+def test_message_keeps_the_caller_supplied_user_id(rest_client, create_memory_resource):
+    """An API key belongs to an agent backend talking on behalf of its own end
+    users, so the `user_id` it sends is the subject the memory is written
+    against rather than the key owner's tenant id."""
+    memory_id = create_memory_resource("restful_message_user_id")
+    external_user_id = f"external-{uuid.uuid4().hex}"
+
+    add_res = rest_client.post(
+        "/messages",
+        json={
+            "memory_id": [memory_id],
+            "agent_id": uuid.uuid4().hex,
+            "session_id": uuid.uuid4().hex,
+            "user_id": external_user_id,
+            "user_input": "who am I?",
+            "agent_response": "you are the one asking",
+        },
+    )
+    assert add_res.status_code == 200
+    assert add_res.json()["code"] == 0, add_res.json()
+
+    message_list = _wait_for_memory_messages(rest_client, memory_id)
+    assert {message["user_id"] for message in message_list} == {external_user_id}, message_list
+
+
+@pytest.mark.p2
 def test_message_status_validation_requires_boolean(rest_client, create_memory_resource):
     memory_id = create_memory_resource("restful_message_status_validation")
     _add_message(rest_client, memory_id, user_input="hello", agent_response="hello")

@@ -36,9 +36,9 @@ export function CompilationTemplateDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <ConfirmDeleteDialog
-          title={t('setting.deleteTemplateGroupModalTitle')}
+          title={t('knowledgeCompilation.deleteTemplateGroupTitle')}
           content={{
-            title: t('setting.deleteTemplateGroupModalContent'),
+            title: t('knowledgeCompilation.deleteTemplateGroupDescription'),
             node: <ConfirmDeleteDialogNode name={data.name} />,
           }}
           onOk={handleDelete}

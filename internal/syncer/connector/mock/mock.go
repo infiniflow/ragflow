@@ -24,15 +24,21 @@ import (
 
 // Connector is a programmable connector for syncer tests.
 type Connector struct {
-	ValidateErr  error
-	SyncBatches  []syncerconnector.SyncBatch
-	SyncErrAt    int
-	PruneBatches []syncerconnector.PruneBatch
-	PruneErrAt   int
-	FetchBlobs   map[string][]byte
-	OnSyncBatch  func(index int)
-	OnPruneBatch func(index int)
-	SyncRequests []syncerconnector.SyncRequest
+	ValidateErr                 error
+	ValidateConnectorSettingErr error
+	SyncBatches                 []syncerconnector.SyncBatch
+	SyncErrAt                   int
+	NextBatchResumeInvalidAt    int
+	NextBatchResumeFirstSession bool
+	PruneBatches                []syncerconnector.PruneBatch
+	PruneErrAt                  int
+	FetchBlobs                  map[string][]byte
+	OnSyncBatch                 func(index int)
+	OnPruneBatch                func(index int)
+	SyncRequests                []syncerconnector.SyncRequest
+	OpenSyncResumeInvalidAt     int
+	OpenSyncResumeInvalidAlways bool
+	openCount                   int
 }
 
 // Validate returns the configured validation error.
@@ -40,10 +46,19 @@ func (c *Connector) Validate(ctx context.Context) error {
 	return c.ValidateErr
 }
 
+// ValidateConnectorSetting returns the configured settings validation error.
+func (c *Connector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	return c.ValidateConnectorSettingErr
+}
+
 // OpenSync opens a mock sync session.
 func (c *Connector) OpenSync(ctx context.Context, request syncerconnector.SyncRequest) (syncerconnector.SyncSession, error) {
+	c.openCount++
 	c.SyncRequests = append(c.SyncRequests, request)
-	return &SyncSession{connector: c}, nil
+	if c.OpenSyncResumeInvalidAlways || (c.OpenSyncResumeInvalidAt > 0 && c.openCount == c.OpenSyncResumeInvalidAt) {
+		return nil, syncerconnector.ErrSyncResumeInvalid
+	}
+	return &SyncSession{connector: c, openCount: c.openCount}, nil
 }
 
 // OpenPrune opens a mock prune session.
@@ -54,6 +69,7 @@ func (c *Connector) OpenPrune(ctx context.Context, request syncerconnector.Prune
 // SyncSession streams configured sync batches.
 type SyncSession struct {
 	connector *Connector
+	openCount int
 	index     int
 }
 
@@ -61,6 +77,11 @@ type SyncSession struct {
 func (s *SyncSession) NextBatch(ctx context.Context) (syncerconnector.SyncBatch, error) {
 	if s.connector.SyncErrAt > 0 && s.index+1 == s.connector.SyncErrAt {
 		return syncerconnector.SyncBatch{}, io.ErrUnexpectedEOF
+	}
+	if s.connector.NextBatchResumeInvalidAt > 0 && s.index+1 == s.connector.NextBatchResumeInvalidAt {
+		if !s.connector.NextBatchResumeFirstSession || s.openCount == 1 {
+			return syncerconnector.SyncBatch{}, syncerconnector.ErrSyncResumeInvalid
+		}
 	}
 	if s.index >= len(s.connector.SyncBatches) {
 		return syncerconnector.SyncBatch{}, io.EOF

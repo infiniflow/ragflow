@@ -25,14 +25,13 @@ import (
 	"ragflow/internal/utility"
 )
 
-// RenameTextToContentWithWeight renames the "text" key to "content_with_weight".
-// If "content_with_weight" already exists, the "text" key is simply removed.
-// Mirrors Python: ck["content_with_weight"] = ck["text"]; del ck["text"]
+// RenameTextToContentWithWeight maps the canonical pre-index "text" field to the
+// storage field "content_with_weight" and removes "text". The text value is
+// always authoritative at this boundary — any pre-existing content_with_weight
+// is overwritten so identity/embedding and persisted content cannot diverge.
 func RenameTextToContentWithWeight(chunk map[string]any) {
-	if _, exists := chunk["content_with_weight"]; !exists {
-		if text, ok := chunk["text"]; ok {
-			chunk["content_with_weight"] = text
-		}
+	if text, ok := chunk["text"].(string); ok {
+		chunk["content_with_weight"] = text
 	}
 	delete(chunk, "text")
 }
@@ -85,17 +84,36 @@ func ProcessChunksForPipeline(
 		ck["create_time"] = timeStr
 		ck["create_timestamp_flt"] = timestamp
 
+		text, err := requireStringText(ck)
+		if err != nil {
+			return nil, err
+		}
+
 		if _, exists := ck["id"]; !exists {
-			text, _ := ck["text"].(string)
 			ck["id"] = common.ChunkID(docID, text)
 		}
 
 		cleanupConsumedChunkFields(ck)
+		stripPipelineOnlyFields(ck)
 		metadata = mergeChunkMetadata(metadata, ck)
 		RenameTextToContentWithWeight(ck)
 		processChunkPositions(ck)
 	}
 	return metadata, nil
+}
+
+// requireStringText enforces the pre-index wire contract: every chunk must
+// carry a string "text" field before chunk-id generation or persistence mapping.
+func requireStringText(ck map[string]any) (string, error) {
+	textRaw, exists := ck["text"]
+	if !exists {
+		return "", fmt.Errorf("chunk missing required string text field")
+	}
+	text, ok := textRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("chunk text must be string, got %T", textRaw)
+	}
+	return text, nil
 }
 
 // cleanupConsumedChunkFields materializes the stored array form of the
@@ -122,14 +140,49 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 	delete(ck, "summary")
 }
 
+// pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
+// consumed inside the pipeline (ck_type drives chunk merging and the image-crop
+// decision, tk_nums carries the chunker's token count into the Tokenizer,
+// layout*/image/context_* describe the media block, and page_number/table_id/
+// sheet/headers/cells describe the table or spreadsheet block) and NONE of them
+// is a chunk-store column.
+//
+// The Python index doc carries none of them — its chunk builder emits only the
+// persist fields — but Go's chunker hands them on, and the write boundary is
+// strict about unknown columns: Infinity rejects the whole insert with
+// "Column ck_type not found in table" (InfinityException 3013). Elasticsearch
+// merely swallowed them, because a dynamic mapping accepts any field.
+var pipelineOnlyFields = []string{
+	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
+	"context_above", "context_below", "page_number",
+	"table_id", "sheet", "sheet_index", "headers", "cells",
+	"row_start", "row_end", "col_start", "col_end",
+}
+
+// stripPipelineOnlyFields drops those bookkeeping keys at the index boundary,
+// leaving the chunk with the persist schema only.
+func stripPipelineOnlyFields(ck map[string]any) {
+	for _, key := range pipelineOnlyFields {
+		delete(ck, key)
+	}
+}
+
 func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]any {
 	metaVal, exists := ck["metadata"]
 	if !exists {
 		return metadata
 	}
-	if metaMap, ok := metaVal.(map[string]any); ok {
-		metadata = utility.UpdateMetadataTo(metadata, metaMap)
+	metaMap, ok := metaVal.(map[string]any)
+	if !ok {
+		// Contract: ck["metadata"] is produced by the Extractor component and
+		// is always a map[string]any (the merge of enable_metadata + the
+		// field_name="metadata" extraction). A non-map value signals an
+		// upstream bug, not a value to guess-parse — record and drop it.
+		common.Warn(fmt.Sprintf("mergeChunkMetadata: chunk metadata is %T, want map[string]any; dropping", metaVal))
+		delete(ck, "metadata")
+		return metadata
 	}
+	metadata = utility.UpdateMetadataTo(metadata, metaMap)
 	delete(ck, "metadata")
 	return metadata
 }

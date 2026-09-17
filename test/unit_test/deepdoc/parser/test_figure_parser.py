@@ -70,6 +70,7 @@ def _load_figure_parser(monkeypatch):
         monkeypatch,
         "api.db.services.llm_service",
         LLMBundle=Mock(),
+        resolve_llm_setting=Mock(return_value={}),
     )
     _module(
         monkeypatch,
@@ -80,6 +81,7 @@ def _load_figure_parser(monkeypatch):
     def timeout(*_args, **_kwargs):
         return lambda function: function
 
+    _module(monkeypatch, "common.exceptions", TaskCanceledException=type("TaskCanceledException", (Exception,), {}))
     _module(monkeypatch, "common.connection_utils", timeout=timeout)
     _module(
         monkeypatch,
@@ -296,3 +298,37 @@ def test_figure_wrappers_pass_dataset_language_to_model_and_parser(
     )
     assert module.VisionFigureParser.call_args.kwargs["lang"] == expected_language
     parser_instance.assert_called_once()
+
+
+@pytest.mark.p1
+def test_vision_figure_parser_pdf_wrapper_handles_textless_figure_items(monkeypatch):
+    module, FakeImage = _load_figure_parser(monkeypatch)
+    model_config = {"llm_name": "vision-model"}
+    vision_model = object()
+    fake_img = FakeImage()
+    boosted_figures = [((fake_img, ["Enhanced VLM visual description"]), [(0, 10, 100, 20, 200)])]
+    parser_instance = Mock(return_value=boosted_figures)
+
+    module.get_tenant_default_model_by_type = Mock(return_value=model_config)
+    module.LLMBundle = Mock(return_value=vision_model)
+    module.VisionFigureParser = Mock(return_value=parser_instance)
+
+    # tbls containing a figure with empty initial OCR text (e.g. textless image/diagram)
+    tbls = [
+        (
+            (fake_img, [""]),
+            [(0, 10, 100, 20, 200)],
+        )
+    ]
+
+    result = module.vision_figure_parser_pdf_wrapper(
+        tbls=tbls,
+        sections=[],
+        callback=lambda *_args, **_kwargs: None,
+        tenant_id="tenant-id",
+        lang="English",
+    )
+
+    assert result == boosted_figures
+    module.VisionFigureParser.assert_called_once()
+    assert module.VisionFigureParser.call_args.kwargs["figures_data"] == [((fake_img, [""]), [(0, 10, 100, 20, 200)])]

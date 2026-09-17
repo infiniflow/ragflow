@@ -1,0 +1,653 @@
+{
+  "providers": [
+    {
+      "id": "local",
+      "name": "Local",
+      "description": "Execute code directly on the current host process.",
+      "tags": [
+        "local",
+        "host",
+        "minimal"
+      ]
+    },
+    {
+      "id": "self_managed",
+      "name": "Self-Managed",
+      "description": "On-premise deployment using Daytona/Docker",
+      "tags": [
+        "self-hosted",
+        "low-latency",
+        "secure"
+      ]
+    },
+    {
+      "id": "ssh",
+      "name": "SSH",
+      "description": "Execute code on a remote machine over SSH.",
+      "tags": [
+        "remote",
+        "ssh",
+        "custom-runtime"
+      ]
+    },
+    {
+      "id": "aliyun_codeinterpreter",
+      "name": "Aliyun Code Interpreter",
+      "description": "Aliyun Function Compute Code Interpreter - Code execution in serverless microVMs",
+      "tags": [
+        "saas",
+        "cloud",
+        "scalable",
+        "aliyun"
+      ]
+    },
+    {
+      "id": "e2b",
+      "name": "E2B",
+      "description": "E2B Cloud - Code Execution Sandboxes",
+      "tags": [
+        "saas",
+        "fast",
+        "global"
+      ]
+    },
+    {
+      "id": "tenki",
+      "name": "Tenki",
+      "description": "Tenki - Disposable microVM code sandboxes",
+      "tags": [
+        "saas",
+        "cloud",
+        "microvm",
+        "isolated"
+      ]
+    },
+    {
+      "id": "ucloud_agent_sandbox",
+      "name": "UCloud Agent Sandbox",
+      "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution",
+      "tags": [
+        "saas",
+        "cloud",
+        "isolated",
+        "ucloud"
+      ]
+    }
+  ],
+  "schemas": {
+    "local": {
+      "python_bin": {
+        "type": "string",
+        "required": false,
+        "default": "python3",
+        "label": "Python Binary",
+        "description": "Python executable used for local code execution."
+      },
+      "node_bin": {
+        "type": "string",
+        "required": false,
+        "default": "node",
+        "label": "Node.js Binary",
+        "description": "Node.js executable used for local JavaScript execution."
+      },
+      "work_dir": {
+        "type": "string",
+        "required": false,
+        "default": "/tmp/ragflow-codeexec",
+        "label": "Working Directory",
+        "description": "Directory used to store temporary scripts and artifacts on the current host."
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "default": 30,
+        "label": "Timeout (seconds)",
+        "description": "Maximum execution time for each local run. Unit: seconds.",
+        "min": 1,
+        "max": 600
+      },
+      "max_memory_mb": {
+        "type": "integer",
+        "required": false,
+        "default": 512,
+        "label": "Max Memory (MB)",
+        "description": "Address-space memory limit for the local child process. Unit: MB.",
+        "min": 1,
+        "max": 65536
+      },
+      "max_output_bytes": {
+        "type": "integer",
+        "required": false,
+        "default": 1048576,
+        "label": "Max Output (bytes)",
+        "description": "Maximum combined stdout and stderr size. Unit: bytes.",
+        "min": 1024,
+        "max": 10485760
+      },
+      "max_artifacts": {
+        "type": "integer",
+        "required": false,
+        "default": 20,
+        "label": "Max Artifacts",
+        "description": "Maximum number of files collected from the artifacts directory.",
+        "min": 0,
+        "max": 100
+      },
+      "max_artifact_bytes": {
+        "type": "integer",
+        "required": false,
+        "default": 10485760,
+        "label": "Max Artifact Size (bytes)",
+        "description": "Maximum size of a single artifact file. Unit: bytes.",
+        "min": 1024,
+        "max": 104857600
+      }
+    },
+    "self_managed": {
+      "endpoint": {
+        "type": "string",
+        "required": true,
+        "label": "Executor Manager Endpoint",
+        "placeholder": "http://sandbox-executor-manager:9385",
+        "default": "http://sandbox-executor-manager:9385",
+        "description": "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.",
+        "scope": "runtime",
+        "readonly": false
+      },
+      "api_token": {
+        "type": "string",
+        "required": false,
+        "label": "Executor Manager API Token",
+        "secret": true,
+        "placeholder": "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN",
+        "default": "",
+        "description": "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.",
+        "scope": "runtime",
+        "readonly": false
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Request Timeout (seconds)",
+        "default": 30,
+        "min": 5,
+        "max": 300,
+        "description": "Maximum request time for a single code execution call. Unit: seconds.",
+        "scope": "runtime",
+        "readonly": false
+      },
+      "executor_manager_image": {
+        "type": "string",
+        "required": false,
+        "label": "Executor Manager Image",
+        "default": "infiniflow/sandbox-executor-manager:latest",
+        "description": "Docker image used by sandbox-executor-manager.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "executor_manager_pool_size": {
+        "type": "integer",
+        "required": false,
+        "label": "Container Pool Size",
+        "default": 3,
+        "min": 1,
+        "max": 100,
+        "description": "Container pool size used by sandbox-executor-manager.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "base_python_image": {
+        "type": "string",
+        "required": false,
+        "label": "Base Python Image",
+        "default": "infiniflow/sandbox-base-python:latest",
+        "description": "Python runtime image used by executor-managed containers.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "base_nodejs_image": {
+        "type": "string",
+        "required": false,
+        "label": "Base Node.js Image",
+        "default": "infiniflow/sandbox-base-nodejs:latest",
+        "description": "Node.js runtime image used by executor-managed containers.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "executor_manager_port": {
+        "type": "integer",
+        "required": false,
+        "label": "Executor Manager Port",
+        "default": 9385,
+        "min": 1,
+        "max": 65535,
+        "description": "Host port exposed by sandbox-executor-manager.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "enable_seccomp": {
+        "type": "boolean",
+        "required": false,
+        "label": "Enable Seccomp",
+        "default": false,
+        "description": "Whether sandbox-executor-manager starts containers with seccomp enabled.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "max_memory": {
+        "type": "string",
+        "required": false,
+        "label": "Max Memory",
+        "default": "256m",
+        "description": "Memory limit applied to each sandbox container. Common format: 256m or 1g.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "container_network": {
+        "type": "string",
+        "required": false,
+        "label": "Container Network",
+        "default": "none",
+        "description": "Docker network attached to sandbox containers. Defaults to 'none' (no external network access); set to 'bridge' only if sandboxed code needs outbound network.",
+        "scope": "deployment",
+        "readonly": true
+      },
+      "sandbox_timeout": {
+        "type": "string",
+        "required": false,
+        "label": "Sandbox Timeout",
+        "default": "10s",
+        "description": "Executor-manager container timeout for each sandbox run. Common format: 10s or 1m.",
+        "scope": "deployment",
+        "readonly": true
+      }
+    },
+    "ssh": {
+      "host": {
+        "type": "string",
+        "required": true,
+        "label": "SSH Host",
+        "placeholder": "192.168.1.10",
+        "description": "Remote host that will execute generated code."
+      },
+      "port": {
+        "type": "integer",
+        "required": true,
+        "label": "SSH Port",
+        "default": 22,
+        "min": 1,
+        "max": 65535,
+        "description": "SSH port on the remote host."
+      },
+      "username": {
+        "type": "string",
+        "required": true,
+        "label": "SSH Username",
+        "placeholder": "ragflow",
+        "description": "Username used to connect to the remote host."
+      },
+      "password": {
+        "type": "string",
+        "required": false,
+        "label": "SSH Password",
+        "secret": true,
+        "placeholder": "Optional when using a private key",
+        "description": "Password-based SSH authentication."
+      },
+      "private_key": {
+        "type": "string",
+        "required": false,
+        "label": "SSH Private Key",
+        "secret": true,
+        "multiline": true,
+        "placeholder": "Paste PEM content or enter a local file path",
+        "description": "Private key PEM content or a readable private key path on the RAGFlow host."
+      },
+      "passphrase": {
+        "type": "string",
+        "required": false,
+        "label": "Private Key Passphrase",
+        "secret": true,
+        "placeholder": "Optional",
+        "description": "Passphrase for the private key if it is encrypted."
+      },
+      "known_hosts": {
+        "type": "string",
+        "required": false,
+        "label": "SSH known_hosts File",
+        "placeholder": "/etc/ragflow/ssh_known_hosts",
+        "description": "Path to an OpenSSH-format known_hosts file used to verify the remote host's key. When set, the file is loaded on top of the system host keys (~/.ssh/known_hosts). When unset, only system keys are used and unknown hosts are rejected."
+      },
+      "python_bin": {
+        "type": "string",
+        "required": false,
+        "default": "python3",
+        "label": "Python Binary",
+        "description": "Python executable used for remote code execution."
+      },
+      "node_bin": {
+        "type": "string",
+        "required": false,
+        "default": "node",
+        "label": "Node.js Binary",
+        "description": "Node.js executable used for remote JavaScript execution."
+      },
+      "work_dir": {
+        "type": "string",
+        "required": false,
+        "label": "Remote Workspace Root",
+        "default": "/tmp",
+        "placeholder": "/tmp",
+        "description": "Writable remote directory used to create a temporary workspace."
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Timeout (seconds)",
+        "default": 30,
+        "min": 1,
+        "max": 600,
+        "description": "Maximum SSH execution time for a single run."
+      },
+      "max_output_bytes": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Output Bytes",
+        "default": 1048576,
+        "min": 1024,
+        "max": 10485760,
+        "description": "Maximum combined stdout and stderr size."
+      },
+      "max_artifacts": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Artifacts",
+        "default": 20,
+        "min": 0,
+        "max": 100,
+        "description": "Maximum number of files collected from the remote artifacts directory."
+      },
+      "max_artifact_bytes": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Artifact Bytes",
+        "default": 10485760,
+        "min": 1024,
+        "max": 104857600,
+        "description": "Maximum size of a single artifact file in bytes."
+      }
+    },
+    "aliyun_codeinterpreter": {
+      "access_key_id": {
+        "type": "string",
+        "required": true,
+        "label": "Access Key ID",
+        "placeholder": "LTAI5t...",
+        "description": "Aliyun AccessKey ID for authentication",
+        "secret": false
+      },
+      "access_key_secret": {
+        "type": "string",
+        "required": true,
+        "label": "Access Key Secret",
+        "placeholder": "••••••••••••••••",
+        "description": "Aliyun AccessKey Secret for authentication",
+        "secret": true
+      },
+      "account_id": {
+        "type": "string",
+        "required": true,
+        "label": "Account ID",
+        "placeholder": "1234567890...",
+        "description": "Aliyun primary account ID, required for API calls"
+      },
+      "region": {
+        "type": "string",
+        "required": false,
+        "label": "Region",
+        "default": "cn-hangzhou",
+        "description": "Aliyun region for Code Interpreter service",
+        "options": [
+          "cn-hangzhou",
+          "cn-beijing",
+          "cn-shanghai",
+          "cn-shenzhen",
+          "cn-guangzhou"
+        ]
+      },
+      "template_name": {
+        "type": "string",
+        "required": false,
+        "label": "Template Name",
+        "placeholder": "my-interpreter",
+        "description": "Optional sandbox template name for pre-configured environments"
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Execution Timeout (seconds)",
+        "default": 30,
+        "min": 1,
+        "max": 30,
+        "description": "Code execution timeout (max 30 seconds - hard limit)"
+      }
+    },
+    "e2b": {
+      "api_key": {
+        "type": "string",
+        "required": true,
+        "label": "API Key",
+        "placeholder": "e2b_sk_...",
+        "description": "E2B API key for authentication",
+        "secret": true
+      },
+      "region": {
+        "type": "string",
+        "required": false,
+        "label": "Region",
+        "default": "us",
+        "description": "E2B service region (us or eu)"
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Request Timeout (seconds)",
+        "default": 30,
+        "min": 5,
+        "max": 300,
+        "description": "API request timeout for code execution"
+      }
+    },
+    "tenki": {
+      "api_key": {
+        "type": "string",
+        "required": true,
+        "label": "API Key",
+        "secret": true,
+        "placeholder": "tk_...",
+        "description": "Tenki API key. Create one at https://app.tenki.cloud under API Keys."
+      },
+      "base_url": {
+        "type": "string",
+        "required": false,
+        "label": "API Endpoint",
+        "placeholder": "https://api.tenki.cloud",
+        "description": "Override the Tenki API endpoint. Leave empty for the default."
+      },
+      "image": {
+        "type": "string",
+        "required": false,
+        "label": "Sandbox Image",
+        "description": "Base image for sandboxes. Empty uses the Tenki default image (includes python3 and node)."
+      },
+      "allow_outbound": {
+        "type": "boolean",
+        "required": false,
+        "label": "Allow Outbound Network",
+        "default": false,
+        "description": "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages)."
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Timeout (seconds)",
+        "default": 30,
+        "min": 1,
+        "max": 600,
+        "description": "Maximum execution time for a single run."
+      },
+      "max_lifetime": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Sandbox Lifetime (seconds)",
+        "default": 3600,
+        "min": 60,
+        "max": 86400,
+        "description": "Tenki reclaims a sandbox after this, guarding against leaks if the run is interrupted."
+      },
+      "cpu_cores": {
+        "type": "integer",
+        "required": false,
+        "label": "vCPU Cores",
+        "default": 0,
+        "min": 0,
+        "max": 16,
+        "description": "vCPU per sandbox. 0 uses the Tenki default."
+      },
+      "memory_mb": {
+        "type": "integer",
+        "required": false,
+        "label": "Memory (MB)",
+        "default": 0,
+        "min": 0,
+        "max": 65536,
+        "description": "Memory per sandbox in MB. 0 uses the Tenki default."
+      },
+      "disk_size_gb": {
+        "type": "integer",
+        "required": false,
+        "label": "Disk Size (GB)",
+        "default": 0,
+        "min": 0,
+        "max": 100,
+        "description": "Disk size per sandbox in GB. 0 uses the Tenki default."
+      },
+      "max_output_bytes": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Output Bytes",
+        "default": 1048576,
+        "min": 1024,
+        "max": 10485760,
+        "description": "Maximum combined stdout and stderr size."
+      },
+      "max_artifacts": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Artifacts",
+        "default": 20,
+        "min": 0,
+        "max": 100,
+        "description": "Maximum number of files collected from the sandbox artifacts directory."
+      },
+      "max_artifact_bytes": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Artifact Bytes",
+        "default": 10485760,
+        "min": 1024,
+        "max": 104857600,
+        "description": "Maximum size of a single artifact file in bytes."
+      }
+    },
+    "ucloud_agent_sandbox": {
+      "api_key": {
+        "type": "string",
+        "required": true,
+        "label": "API Key",
+        "secret": true,
+        "description": "UCloud Agent Sandbox API key."
+      },
+      "region": {
+        "type": "string",
+        "required": false,
+        "label": "Region",
+        "default": "cn-wlcb",
+        "description": "UCloud Agent Sandbox region, for example cn-wlcb or us-ca."
+      },
+      "domain": {
+        "type": "string",
+        "required": false,
+        "label": "Domain",
+        "description": "Override the sandbox domain. Leave empty to derive it from Region."
+      },
+      "api_url": {
+        "type": "string",
+        "required": false,
+        "label": "API URL",
+        "description": "Override the UCloud Agent Sandbox control-plane API URL."
+      },
+      "template": {
+        "type": "string",
+        "required": false,
+        "label": "Template",
+        "default": "base",
+        "description": "Sandbox template. The base template includes Python and Node.js."
+      },
+      "allow_internet_access": {
+        "type": "boolean",
+        "required": false,
+        "label": "Allow Internet Access",
+        "default": false,
+        "description": "Allow sandboxed code to access the internet. Disabled by default."
+      },
+      "insecure_http": {
+        "type": "boolean",
+        "required": false,
+        "label": "Use Insecure HTTP",
+        "default": false,
+        "description": "Use HTTP instead of HTTPS. Enable only for trusted private deployments."
+      },
+      "timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Execution Timeout (seconds)",
+        "default": 30,
+        "min": 1,
+        "max": 600
+      },
+      "sandbox_timeout": {
+        "type": "integer",
+        "required": false,
+        "label": "Sandbox Lifetime (seconds)",
+        "default": 300,
+        "min": 60,
+        "max": 86400
+      },
+      "max_output_bytes": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Output Bytes",
+        "default": 1048576,
+        "min": 1024,
+        "max": 10485760
+      },
+      "max_artifacts": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Artifacts",
+        "default": 20,
+        "min": 0,
+        "max": 100
+      },
+      "max_artifact_bytes": {
+        "type": "integer",
+        "required": false,
+        "label": "Max Artifact Bytes",
+        "default": 10485760,
+        "min": 1024,
+        "max": 104857600
+      }
+    }
+  }
+}

@@ -238,6 +238,90 @@ func TestDifyRetrieval_Basic(t *testing.T) {
 	}
 }
 
+func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+			return &service.SearchMetadataResponse{
+				MetadataRecords: []map[string]interface{}{
+					{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
+				},
+			}, nil
+		},
+	}
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	meta := firstRecordMetadata(t, w.Body.Bytes())
+
+	if got := meta["author"]; got != "Zhang San" {
+		t.Errorf("custom metadata field author = %v, want %q", got, "Zhang San")
+	}
+	if got := meta["doc_id"]; got != "doc1" {
+		t.Errorf("doc_id = %v, want %q", got, "doc1")
+	}
+	if got := meta["document_id"]; got != "doc1" {
+		t.Errorf("document_id = %v, want %q", got, "doc1")
+	}
+}
+
+// A custom metadata key named doc_id or document_id must not replace the
+// identifiers the handler sets.
+func TestDifyRetrieval_DocumentIDsOverrideCustomMetadata(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+			return &service.SearchMetadataResponse{
+				MetadataRecords: []map[string]interface{}{
+					{"id": "doc1", "meta_fields": map[string]interface{}{
+						"doc_id":      "spoofed",
+						"document_id": "spoofed",
+					}},
+				},
+			}, nil
+		},
+	}
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	meta := firstRecordMetadata(t, w.Body.Bytes())
+
+	if got := meta["doc_id"]; got != "doc1" {
+		t.Errorf("doc_id = %v, want %q", got, "doc1")
+	}
+	if got := meta["document_id"]; got != "doc1" {
+		t.Errorf("document_id = %v, want %q", got, "doc1")
+	}
+}
+
+func firstRecordMetadata(t *testing.T, body []byte) map[string]interface{} {
+	t.Helper()
+	var resp struct {
+		Records []struct {
+			Metadata map[string]interface{} `json:"metadata"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Records) == 0 {
+		t.Fatalf("expected at least one record, got %s", body)
+	}
+	return resp.Records[0].Metadata
+}
+
 func TestDifyRetrieval_GET(t *testing.T) {
 	_, r := setupDifyTest("user1")
 	w := httptest.NewRecorder()

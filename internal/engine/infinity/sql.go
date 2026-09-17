@@ -84,7 +84,7 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 			continue
 		}
 		var firstAlias string
-		for _, raw := range strings.Split(info.Comment, ",") {
+		for raw := range strings.SplitSeq(info.Comment, ",") {
 			alias := strings.TrimSpace(raw)
 			if alias == "" {
 				continue
@@ -216,7 +216,7 @@ func parsePsqlTable(output string) *psqlResult {
 		return res
 	}
 
-	for _, raw := range strings.Split(lines[0], "|") {
+	for raw := range strings.SplitSeq(lines[0], "|") {
 		if col := strings.TrimSpace(raw); col != "" {
 			res.Columns = append(res.Columns, col)
 		}

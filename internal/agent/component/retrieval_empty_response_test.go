@@ -42,7 +42,7 @@ func TestRetrievalComponent_PreservesConfiguredEmptyResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newRetrievalComponent: %v", err)
 	}
-	output, err := component.Invoke(context.Background(), nil, map[string]any{"query": "love"})
+	output, err := component.Invoke(t.Context(), nil, map[string]any{"query": "love"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

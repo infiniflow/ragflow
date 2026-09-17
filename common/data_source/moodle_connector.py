@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from retry import retry
 from typing import Any, Optional
 
-from markdownify import markdownify as md
+from common.markdown_utils import html_to_markdown as md
 from moodle import Moodle as MoodleClient, MoodleException
 
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -66,6 +66,13 @@ class MoodleConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _yield_in_batches(self, generator: Generator[Document, None, None]) -> Generator[list[Document], None, None]:
         for batch in batch_generator(generator, self.batch_size):
             yield batch
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "MoodleConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(moodle_url=config["moodle_url"], batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> None:
         token = credentials.get("moodle_token")

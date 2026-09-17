@@ -51,6 +51,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   index: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
+  isLast?: boolean;
 }
 
 const MessageItem = ({
@@ -68,6 +69,7 @@ const MessageItem = ({
   showLoudspeaker = true,
   visibleAvatar = true,
   nickname,
+  isLast = false,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -164,7 +166,7 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                {sendLoading && isEmpty(messageContent) ? (
+                {sendLoading && isLast && isEmpty(messageContent) ? (
                   <LoadingDots className="text-text-secondary" />
                 ) : (
                   <MarkdownContent
@@ -172,6 +174,7 @@ const MessageItem = ({
                     content={messageContent}
                     reference={reference}
                     clickDocumentButton={clickDocumentButton}
+                    disableMath={isUser}
                   ></MarkdownContent>
                 )}
               </div>

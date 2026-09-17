@@ -66,7 +66,7 @@ func NewKnowledgeCompilerComponent(name string, params map[string]any) (runtime.
 // Inputs documents the component's input surface for the catalog.
 func (c *KnowledgeCompilerComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text/content_with_weight.",
+		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text.",
 		"historical_candidates": "Optional []common.Candidate override for historical dedup (test/offline).",
 	}
 }
@@ -210,6 +210,9 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			o.Products[i].Variant = variant
 		}
 		out.Products = append(out.Products, o.Products...)
+		out.AffectedPageSlugs = append(out.AffectedPageSlugs, o.AffectedPageSlugs...)
+		out.RemovedPageSlugs = append(out.RemovedPageSlugs, o.RemovedPageSlugs...)
+		out.WikiActiveStates = append(out.WikiActiveStates, o.WikiActiveStates...)
 	}
 
 	// Convert the compiled products into chunk-aligned docs (matching
@@ -246,7 +249,52 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		zap.Int("wiki_relation", relationCount),
 		zap.Int("chunk_docs", len(compiled)),
 	)
-	return mergeChunks(inputs, compiled), nil
+	result := mergeChunks(inputs, compiled)
+	if len(out.AffectedPageSlugs) > 0 {
+		result["wiki_affected_slugs"] = uniqueSorted(out.AffectedPageSlugs)
+	}
+	if len(out.RemovedPageSlugs) > 0 {
+		result["wiki_removed_slugs"] = uniqueSorted(out.RemovedPageSlugs)
+	}
+	if len(out.WikiActiveStates) > 0 {
+		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
+	}
+	return result, nil
+}
+
+// wikiActiveStateValues keeps the component output checkpoint-safe. Pipeline
+// node outputs cross an eino serialization boundary, so package-specific Go
+// structs must not escape in map[string]any values.
+func wikiActiveStateValues(states []common.WikiMapActiveState) []map[string]any {
+	values := make([]map[string]any, 0, len(states))
+	for _, state := range states {
+		values = append(values, map[string]any{
+			"key":         state.Key,
+			"tenant_id":   state.TenantID,
+			"dataset_id":  state.DatasetID,
+			"document_id": state.DocumentID,
+			"payload":     string(state.Payload),
+		})
+	}
+	return values
+}
+
+func uniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // resolveTemplateSpecs resolves the configured compilation template spec(s) to
@@ -355,8 +403,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 	docs := make([]schema.ChunkDoc, 0, len(products))
 	for _, p := range products {
 		doc := schema.ChunkDoc{
-			Text:              p.Content,
-			ContentWithWeight: p.Content,
+			Text: p.Content,
 		}
 		// Populate content_ltks / content_sm_ltks the same way the chunker
 		// components do (see chunker/tag.go, chunker/qa.go): coarse tokenize
@@ -364,7 +411,19 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		// are ignored (tokenizer pool may be uninitialised in no-CGo tests),
 		// leaving the fields empty — matching the chunker's graceful-degrade
 		// behaviour.
-		if ltks, err := tokenizer.Tokenize(p.Content); err == nil && ltks != "" {
+		//
+		// Structure rows tokenize the FLATTENED PAYLOAD DESCRIPTION, not the
+		// raw JSON: Python indexes
+		// _tokenize_for_search(_struct_payload_description(payload)), so
+		// tokenizing p.Content here would feed JSON keys/brackets and opaque
+		// chunk ids into the inverted index.
+		indexText := p.Content
+		if p.Variant == common.VariantStructure {
+			if d := structure.IndexText(p.Content); strings.TrimSpace(d) != "" {
+				indexText = d
+			}
+		}
+		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
 			doc.ContentLtks = ltks
 			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
 				doc.ContentSmLtks = sm
@@ -560,6 +619,30 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			// same storage contract as the structure variant, so both share
 			// applyStructureGraphColumns.
 			return applyStructureGraphColumns(doc, p, kind)
+		case "claim":
+			// Claim rows are searchable on their own (global KNN) but are NOT
+			// part of the structure graph: they carry no relation, and a
+			// relation-less row would be rendered as a root in the artifacts
+			// tree. So they deliberately skip knowledge_graph_kwd, which keeps
+			// them out of the artifacts query (it filters
+			// knowledge_graph_kwd=["entity","relation"]) without a frontend
+			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
+			if v := metaString(p.Meta, "name"); v != "" {
+				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+					return err
+				}
+			}
+			if v := metaString(p.Meta, "entity_type"); v != "" {
+				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+					return err
+				}
+			}
+			if v, ok := metaInt(p.Meta, "mention_count"); ok {
+				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+					return err
+				}
+			}
+			return nil
 		default:
 			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
 			// raptor_layer_int records tree depth.
@@ -796,9 +879,7 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 		}
 		if t, ok := m["text"].(string); ok {
 			ch.Text = t
-		}
-		if cw, ok := m["content_with_weight"].(string); ok {
-			ch.Content = cw
+			ch.Content = t
 		}
 		// Reuse the embedding the upstream pipeline already computed on the
 		// chunk (stored under q_<dim>_vec); variants fall back to embedding
@@ -830,7 +911,7 @@ func init() {
 	meta := runtime.Metadata{
 		Version: "0.1.0",
 		Inputs: map[string]string{
-			"chunks":                "Upstream chunker/parser output chunks (id + text/content_with_weight).",
+			"chunks":                "Upstream chunker/parser output chunks (id + text).",
 			"historical_candidates": "Optional historical dedup candidates for offline/test runs.",
 		},
 		Outputs: chunkerOutputs,

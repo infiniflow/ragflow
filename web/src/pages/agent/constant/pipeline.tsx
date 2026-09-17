@@ -1,21 +1,9 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { FileType } from '@/constants/file';
+import { ModelTypeToField } from '@/constants/llm';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
-
-export enum FileType {
-  PDF = 'pdf',
-  Spreadsheet = 'spreadsheet',
-  Image = 'image',
-  Email = 'email',
-  TextMarkdown = 'markdown',
-  Code = 'text&code',
-  Html = 'html',
-  Doc = 'doc',
-  Docx = 'docx',
-  PowerPoint = 'slides',
-  Video = 'video',
-  Audio = 'audio',
-}
 
 export enum PdfOutputFormat {
   Json = 'json',
@@ -28,7 +16,7 @@ export enum SpreadsheetOutputFormat {
 }
 
 export enum ImageOutputFormat {
-  Text = 'text',
+  Json = 'json',
 }
 
 export enum EmailOutputFormat {
@@ -77,19 +65,12 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-export const InitialOutputFormatMap = {
-  [FileType.PDF]: PdfOutputFormat.Json,
-  [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Text,
-  [FileType.Email]: EmailOutputFormat.Text,
-  [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
-  [FileType.Code]: TextJsonOutputFormat.Json,
-  [FileType.Html]: TextJsonOutputFormat.Json,
-  [FileType.Doc]: DocxOutputFormat.Json,
-  [FileType.Docx]: DocxOutputFormat.Json,
-  [FileType.PowerPoint]: PptOutputFormat.Json,
-  [FileType.Video]: VideoOutputFormat.Text,
-  [FileType.Audio]: AudioOutputFormat.Text,
+// The video parser defaults to the tenant's VLM model and the audio parser to
+// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
+// type without a configured tenant default keeps its empty model id.
+export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
+  [FileType.Video]: ModelTypeToField.vision,
+  [FileType.Audio]: ModelTypeToField.asr,
 };
 
 export enum ContextGeneratorFieldName {
@@ -200,14 +181,14 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Spreadsheet,
-      output_format: SpreadsheetOutputFormat.Html,
+      output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Text,
+      output_format: ImageOutputFormat.Json,
       parse_method: ImageParseMethod.OCR,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',
@@ -255,6 +236,16 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
+    {
+      fileFormat: FileType.Video,
+      output_format: VideoOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
+    {
+      fileFormat: FileType.Audio,
+      output_format: AudioOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
   ],
 };
 
@@ -265,8 +256,41 @@ export const initialTokenChunkerValues = {
   delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
-  delimiters: [{ value: '\n' }],
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
+};
+
+export const initialGeneralChunkerValues = {
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
+  table_context_size: 0,
+  image_context_size: 0,
+  enable_children: false,
+  children_delimiters: [],
 };
 
 export enum Hierarchy {
@@ -344,15 +368,15 @@ export const initialTitleChunkerValues = {
   hierarchyGroup: '0',
   include_heading_content: false,
   root_chunk_as_heading: false,
+  chunk_token_cap: 512,
   hierarchyRules: cloneDeep(originalRules),
   groupRules: cloneDeep(originalRules),
 };
 
+// Defaults for the Python backend extractor (legacy flat fields).
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
-  auto_keywords: 0,
-  auto_questions: 0,
   auto_tags: 1,
   tag_file_id: '',
   outputs: {
@@ -360,10 +384,48 @@ export const initialExtractorValues = {
   },
 };
 
+// Defaults for the Go backend extractor: the LLM settings plus the nested
+// per-feature groups the Go schema reads (schema.ExtractorParam).
+export const initialGoExtractorValues = {
+  ...initialLlmBaseValues,
+  keywords: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  questions: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  tags: {
+    top_n: 0,
+    tag_file_id: '',
+  },
+  summary: {
+    enabled: false,
+    system_prompt: '',
+  },
+  metadata: {
+    enabled: false,
+    metadata: [],
+    built_in_metadata: [],
+  },
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export function getInitialExtractorValues() {
+  return pickByBackend<
+    typeof initialGoExtractorValues | typeof initialExtractorValues
+  >({
+    go: initialGoExtractorValues,
+    python: initialExtractorValues,
+  });
+}
+
 export const initialCompilationValues = {
   compilation_template_group_id: '',
   llm_id: '',
-  mode: 'entity',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
@@ -371,54 +433,9 @@ export const initialCompilationValues = {
 
 export const NoDebugOperatorsList = [Operator.File];
 
-export const FileTypeSuffixMap = {
-  [FileType.PDF]: ['pdf'],
-  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
-  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
-  [FileType.Email]: ['eml', 'msg'],
-  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
-  [FileType.Code]: [
-    'txt',
-    'py',
-    'js',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'php',
-    'go',
-    'ts',
-    'sh',
-    'cs',
-    'kt',
-    'sql',
-  ],
-  [FileType.Html]: ['htm', 'html'],
-  [FileType.Doc]: ['doc'],
-  [FileType.Docx]: ['docx'],
-  [FileType.PowerPoint]: ['pptx', 'ppt'],
-  [FileType.Video]: ['mp4', 'avi', 'mkv'],
-  [FileType.Audio]: [
-    'da',
-    'wave',
-    'wav',
-    'mp3',
-    'aac',
-    'flac',
-    'ogg',
-    'aiff',
-    'au',
-    'midi',
-    'wma',
-    'realaudio',
-    'vqf',
-    'oggvorbis',
-    'ape',
-  ],
-};
-
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Parser,

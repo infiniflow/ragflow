@@ -50,6 +50,7 @@ type ListAgentSessionsRequest struct {
 	Desc       bool
 	ExpUserID  string
 	IncludeDSL bool
+	NoHistory  bool
 }
 
 // ListAgentSessionsResponse is the response body for ListAgentSessions.
@@ -359,6 +360,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 		SessionID:  req.SessionID,
 		UserID:     req.UserID,
 		IncludeDSL: req.IncludeDSL,
+		NoHistory:  req.NoHistory,
 		Keywords:   req.Keywords,
 		FromDate:   fromDate,
 		ToDate:     toDate,
@@ -371,6 +373,9 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 	data := make([]map[string]interface{}, 0, len(sessions))
 	for _, session := range sessions {
 		data = append(data, normalizeAgentSession(session, req.IncludeDSL))
+		if req.NoHistory {
+			delete(data[len(data)-1], "message")
+		}
 	}
 	return &ListAgentSessionsResponse{Data: data, Total: total}, common.CodeSuccess, nil
 }
@@ -417,6 +422,25 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 		return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
+	// Shared-session readonly rule (same design as the owner-only batch
+	// delete below): deleting a session is a write, so it is limited to the
+	// canvas owner or the session's creator. Team members who can read the
+	// shared agent see the session readonly.
+	conv, cerr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
+	if cerr != nil {
+		return false, common.CodeServerError, cerr
+	}
+	if conv == nil {
+		return false, common.CodeSuccess, nil
+	}
+	canvasOwned, oerr := s.canvasOwnedByUser(ctx, userID, agentID)
+	if oerr != nil {
+		return false, common.CodeServerError, oerr
+	}
+	if !canvasOwned && conv.UserID != userID {
+		return false, common.CodeAuthenticationError, errors.New("shared session is readonly")
+	}
+
 	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return false, common.CodeServerError, err
@@ -425,6 +449,20 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 		return false, common.CodeSuccess, nil
 	}
 	return true, common.CodeSuccess, nil
+}
+
+// canvasOwnedByUser reports whether the canvas is directly owned by userID
+// (canvas.user_id), ignoring team sharing. Companion of CheckCanvasAccess,
+// which authorizes the wider team-read scope.
+func (s *AgentService) canvasOwnedByUser(ctx context.Context, userID, canvasID string) (bool, error) {
+	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, canvasID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return canvas.UserID == userID, nil
 }
 
 // DeleteAgentSessions removes multiple conversations owned by agentID.
@@ -668,9 +706,8 @@ type CreateAgentSessionRequest struct {
 //   - id          : 32-hex uuid, matches Python uuid.uuid4().hex
 //   - dialog_id   : agent canvas id
 //   - user_id     : caller's id
-//   - message     : JSON array (default []); GET path normalizes it
-//   - reference   : JSON object (default {}) so GET-side parsing
-//     does not crash on .chunks
+//   - message     : ordered rows in api_4_conversation_message
+//   - reference   : ordered rows in api_4_conversation_reference
 //   - dsl         : JSON map; copied from user_canvas.dsl if the
 //     caller did not pass one
 //   - create_time : unix-millis
@@ -703,7 +740,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if len(messages) == 0 {
 		messages = json.RawMessage(`[]`)
 	}
-	reference := json.RawMessage(`{}`)
+	reference := json.RawMessage(`[]`)
 
 	var dsl entity.JSONMap
 	if len(req.DSL) > 0 {
@@ -718,6 +755,12 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 			return nil, common.CodeServerError, fmt.Errorf("load canvas dsl: %w", gErr)
 		}
 		dsl = canvas.DSL
+	}
+	if err := validateAgentChatModels(ctx, req.UserID, dsl); err != nil {
+		if errors.Is(err, ErrAgentStorageError) {
+			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
+		}
+		return nil, common.CodeDataError, err
 	}
 
 	name := strings.TrimSpace(req.Name)

@@ -1,22 +1,33 @@
 import { DelimiterInput } from '@/components/delimiter-form-field';
+import { DelimiterListPreview } from '@/components/delimiter-preview';
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
-import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
+import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
 import { Info, Trash2 } from 'lucide-react';
 import { memo } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialTokenChunkerValues } from '../../constant/pipeline';
+import {
+  initialGeneralChunkerValues,
+  initialTokenChunkerValues,
+} from '../../constant/pipeline';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import {
+  getChunkerChildrenDelimiterPreview,
+  getChunkerDelimiterPreview,
+  getChunkerDelimiterTipKey,
+} from '../../utils';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
@@ -25,7 +36,9 @@ const outputList = buildOutputList(initialTokenChunkerValues.outputs);
 
 export const FormSchema = z.object({
   chunk_token_size: z.number(),
-  image_table_context_window: z.number(),
+  image_table_context_window: z.number().optional(),
+  table_context_size: z.number().optional(),
+  image_context_size: z.number().optional(),
   delimiters: z.array(
     z.object({
       value: z.string().optional(),
@@ -43,12 +56,21 @@ export const FormSchema = z.object({
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
+type TokenChunkerFormProps = INextOperatorForm & {
+  isGeneralChunker?: boolean;
+};
+
 const TokenChunkerForm = ({
   node,
   onValuesChange,
   hideOutputs,
-}: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialTokenChunkerValues, node);
+  externalErrors,
+  isGeneralChunker = false,
+}: TokenChunkerFormProps) => {
+  const initialValues = isGeneralChunker
+    ? initialGeneralChunkerValues
+    : initialTokenChunkerValues;
+  const defaultValues = useFormValues(initialValues, node);
   const { t } = useTranslation();
 
   // Normalize legacy values: 'token_size' (removed tab) and empty fall back
@@ -66,7 +88,10 @@ const TokenChunkerForm = ({
   const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues: formDefaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   const delimiterMode = form.watch('delimiter_mode');
   const name = 'delimiters';
@@ -76,10 +101,21 @@ const TokenChunkerForm = ({
     control: form.control,
   });
 
+  const delimiterValues = useWatch({ control: form.control, name });
+
   const childrenDelimiters = useFieldArray({
     name: 'children_delimiters',
     control: form.control,
   });
+
+  const childrenDelimiterValues = useWatch({
+    control: form.control,
+    name: 'children_delimiters',
+  });
+
+  const childrenPreview = getChunkerChildrenDelimiterPreview(
+    (childrenDelimiterValues ?? []).map((delimiter) => delimiter?.value),
+  );
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
@@ -87,17 +123,19 @@ const TokenChunkerForm = ({
   return (
     <Form {...form}>
       <FormWrapper>
-        <RenderField
-          field={{
-            name: 'delimiter_mode',
-            type: FormFieldType.Segmented,
-            label: '',
-            options: [
-              { label: t('flow.delimiters'), value: 'delimiter' },
-              { label: t('flow.one'), value: 'one' },
-            ],
-          }}
-        />
+        {!isGeneralChunker && (
+          <RenderField
+            field={{
+              name: 'delimiter_mode',
+              type: FormFieldType.Segmented,
+              label: '',
+              options: [
+                { label: t('flow.delimiters'), value: 'delimiter' },
+                { label: t('flow.one'), value: 'one' },
+              ],
+            }}
+          />
+        )}
 
         {delimiterMode === 'delimiter' && (
           <>
@@ -105,23 +143,50 @@ const TokenChunkerForm = ({
               name="chunk_token_size"
               max={2048}
               min={1}
+              integer
               label={t('knowledgeConfiguration.chunkTokenNumber')}
             />
             <SliderInputFormField
               name="overlapped_percent"
               max={30}
               min={0}
+              integer
               label={t('flow.overlappedPercent')}
             />
-            <SliderInputFormField
-              name="image_table_context_window"
-              max={256}
-              min={0}
-              label={t('knowledgeConfiguration.imageTableContextWindow')}
-              tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
-            />
+            {isGeneralChunker ? (
+              <>
+                <SliderInputFormField
+                  name="table_context_size"
+                  max={256}
+                  min={0}
+                  integer
+                  label={t('knowledgeConfiguration.tableContextWindow')}
+                  tooltip={t('knowledgeConfiguration.tableContextWindowTip')}
+                />
+                <SliderInputFormField
+                  name="image_context_size"
+                  max={256}
+                  min={0}
+                  integer
+                  label={t('knowledgeConfiguration.imageContextWindow')}
+                  tooltip={t('knowledgeConfiguration.imageContextWindowTip')}
+                />
+              </>
+            ) : (
+              <SliderInputFormField
+                name="image_table_context_window"
+                max={256}
+                min={0}
+                integer
+                label={t('knowledgeConfiguration.imageTableContextWindow')}
+                tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
+              />
+            )}
             <section>
-              <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
+              <span className="mb-2 inline-flex items-center">
+                {t('flow.delimiters')}
+                <FormTooltip tooltip={t(getChunkerDelimiterTipKey())} />
+              </span>
               <div className="space-y-4">
                 {fields.map((field, index) => (
                   <div key={field.id} className="flex items-center gap-2">
@@ -144,6 +209,11 @@ const TokenChunkerForm = ({
                   </div>
                 ))}
               </div>
+              <DelimiterListPreview
+                parsed={getChunkerDelimiterPreview(
+                  (delimiterValues ?? []).map((delimiter) => delimiter?.value),
+                )}
+              />
             </section>
             <BlockButton type="button" onClick={() => append({ value: '\n' })}>
               {t('common.add')}
@@ -168,23 +238,19 @@ const TokenChunkerForm = ({
         {delimiterMode !== 'one' && (
           <fieldset>
             <div className="mb-2 flex justify-between items-center gap-1">
-              <span>{t('flow.enableChildrenDelimiters')}</span>
+              <span className="inline-flex items-center">
+                {t('flow.enableChildrenDelimiters')}
+                <FormTooltip tooltip={t('flow.childrenDelimitersTip')} />
+              </span>
 
-              <FormField
-                control={form.control}
-                name="enable_children"
-                render={({ field: { value, onChange, ...restProps } }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Switch
-                        checked={value}
-                        onCheckedChange={onChange}
-                        {...restProps}
-                      />
-                    </FormControl>
-                  </FormItem>
+              <RAGFlowFormItem name="enable_children">
+                {(field) => (
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
                 )}
-              />
+              </RAGFlowFormItem>
             </div>
 
             {form.getValues('enable_children') && (
@@ -216,6 +282,9 @@ const TokenChunkerForm = ({
                 >
                   {t('common.add')}
                 </BlockButton>
+                {childrenPreview.length > 0 && (
+                  <DelimiterListPreview parsed={childrenPreview} />
+                )}
               </div>
             )}
           </fieldset>

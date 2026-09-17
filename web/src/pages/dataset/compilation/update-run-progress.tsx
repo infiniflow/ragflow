@@ -9,7 +9,7 @@ import {
   useDatasetGenerate,
   useGenerateStatus,
 } from '@/hooks/use-dataset-generate';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { cn } from '@/lib/utils';
 import { toFixed } from '@/utils/common-util';
 
@@ -25,7 +25,7 @@ export function UpdateRunProgress({
   const { t } = useTranslation();
   const { pauseGenerate } = useDatasetGenerate();
   const { status, percent } = useGenerateStatus(data);
-  const isGo = isGoDatasetBackend();
+  const isGo = useIsGoBackend();
 
   const handlePause = useCallback(
     (e: MouseEvent) => {
@@ -37,7 +37,7 @@ export function UpdateRunProgress({
     [pauseGenerate, data?.id, generateType],
   );
 
-  // Go/hybrid: no scheduler task-level cancel, and no stable terminal state, so
+  // Go: no scheduler task-level cancel, and no stable terminal state, so
   // show the MySQL inflight/backlog entry counts instead of a percentage and no
   // pause button. Error diagnostic takes priority (see plan v4.1 §4.2).
   if (isGo && status === 'running') {
@@ -46,12 +46,13 @@ export function UpdateRunProgress({
         <span className="size-2 rounded-full bg-accent-primary" />
         {data?.compilationError
           ? data.compilationError
-          : t('knowledgeDetails.compiling', {
+          : data?.currentPhase ||
+            t('knowledgeCompilation.compiling', {
               defaultValue: 'Compiling…',
             })}
         {!data?.compilationError && (
           <span>
-            {t('knowledgeDetails.compilingCounts', {
+            {t('knowledgeCompilation.compilingCounts', {
               inflight: data?.inflight ?? 0,
               backlog: data?.backlog ?? 0,
               defaultValue: '{{inflight}} processing / {{backlog}} queued',

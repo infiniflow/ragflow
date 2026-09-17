@@ -1003,8 +1003,8 @@ func TestUpdateDataset_StripsUnknownParam_Builtin(t *testing.T) {
 	if _, exists := rhyme["no_such_param"]; exists {
 		t.Fatal("expected no_such_param to be stripped")
 	}
-	if result["parser_id"] != string(entity.ParserTypeNaive) {
-		t.Fatalf("expected parser_id preserved, got %#v", result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 }
 
@@ -1027,8 +1027,8 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != string(entity.ParserTypeNaive) {
-		t.Fatalf("expected parser_id preserved, got %#v", result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
@@ -1067,9 +1067,11 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 		"Parser:HipSignsRhyme": map[string]interface{}{
 			"pdf": map[string]interface{}{"parse_method": "deepdoc"},
 		},
-		"metadata":          incomingMetadata,
-		"built_in_metadata": incomingBuiltInMetadata,
-		"enable_metadata":   true,
+		"metadata": map[string]interface{}{
+			"enabled":           true,
+			"metadata":          incomingMetadata,
+			"built_in_metadata": incomingBuiltInMetadata,
+		},
 	}
 
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
@@ -1084,14 +1086,18 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], incomingMetadata) {
-		t.Fatalf("metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+		"enabled":           true,
+		"metadata":          incomingMetadata,
+		"built_in_metadata": incomingBuiltInMetadata,
+	}) {
+		t.Fatalf("modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], incomingBuiltInMetadata) {
-		t.Fatalf("built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])
 	}
-	if persisted.ParserConfig["enable_metadata"] != true {
-		t.Fatalf("enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
+	if _, ok := persisted.ParserConfig["built_in_metadata"]; ok {
+		t.Fatalf("built_in_metadata should be absent: %#v", persisted.ParserConfig["built_in_metadata"])
 	}
 	if _, ok := persisted.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{}); !ok {
 		t.Fatalf("component parser_config missing: %#v", persisted.ParserConfig)
@@ -1107,14 +1113,12 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 		"key":  "category",
 		"type": "string",
 	}}
-	existingBuiltInMetadata := []interface{}{map[string]interface{}{
-		"key":  "document_name",
-		"type": "string",
-	}}
 	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
-		"metadata":          existingMetadata,
-		"built_in_metadata": existingBuiltInMetadata,
-		"enable_metadata":   true,
+		"metadata": map[string]interface{}{
+			"enabled":           true,
+			"metadata":          existingMetadata,
+			"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed parser_config: %v", err)
 	}
@@ -1135,14 +1139,18 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], existingMetadata) {
-		t.Fatalf("existing metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+		"enabled":           true,
+		"metadata":          existingMetadata,
+		"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
+	}) {
+		t.Fatalf("existing modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], existingBuiltInMetadata) {
-		t.Fatalf("existing built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])
 	}
-	if persisted.ParserConfig["enable_metadata"] != true {
-		t.Fatalf("existing enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
+	if _, ok := persisted.ParserConfig["built_in_metadata"]; ok {
+		t.Fatalf("built_in_metadata should be absent: %#v", persisted.ParserConfig["built_in_metadata"])
 	}
 }
 
@@ -1240,5 +1248,44 @@ func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
+	}
+}
+
+// TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity pins Python's guard: the
+// engine capability is consulted ONLY when the requested pagerank differs from
+// the stored one (`if "pagerank" in req and req["pagerank"] != kb.pagerank`,
+// dataset_api_service.py:392). A settings form re-sending the value the dataset
+// already has must not fail on a non-ES engine; a real change still must
+// (Python's own tests assert that message:
+// test/testcases/restful_api/test_datasets.py:620).
+func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	// fakeChatDocEngine.SupportsPageRank() == false — the Infinity case.
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = fakeChatDocEngine{}
+
+	unchanged := int64(0) // insertDatasetUpdateKB stores pagerank 0
+	if _, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+		service.UpdateDatasetRequest{Pagerank: &unchanged}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("unchanged pagerank: code=%d err=%v, want success (a no-op, as in Python)", code, err)
+	}
+
+	changed := int64(7)
+	_, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+		service.UpdateDatasetRequest{Pagerank: &changed})
+	if err == nil || !strings.Contains(err.Error(), "can only be set when doc_engine is elasticsearch") {
+		t.Fatalf("changed pagerank: code=%d err=%v, want the doc_engine message", code, err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("changed pagerank: code=%d, want CodeDataError", code)
+	}
+	persisted, getErr := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if getErr != nil {
+		t.Fatalf("get kb: %v", getErr)
+	}
+	if persisted.Pagerank != 0 {
+		t.Fatalf("pagerank = %d, want the rejected update rolled back", persisted.Pagerank)
 	}
 }

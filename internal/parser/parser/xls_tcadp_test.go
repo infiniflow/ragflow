@@ -1,8 +1,11 @@
 package parser
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -31,6 +34,7 @@ func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
 		"output_format":                "json",
+		"chunk_rows":                   50,
 		"tcadp_apiserver":              server.URL,
 		"tcadp_api_key":                "tcadp-secret",
 		"table_result_type":            "1",
@@ -216,11 +220,14 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "html"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if res.HTML == "" {
-		t.Fatal("HTML is empty; want rendered table")
+	if len(res.JSON) < 2 {
+		t.Fatalf("JSON items = %d, want at least header and one data row", len(res.JSON))
+	}
+	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
+		t.Fatalf("JSON items = %#v; want header and row", res.JSON)
 	}
 }
 
@@ -232,6 +239,7 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
 		"output_format":                "json",
+		"chunk_rows":                   50,
 		"tcadp_apiserver":              "https://tcadp.example.com",
 		"tcadp_api_key":                "secret",
 		"table_result_type":            "2",
@@ -251,5 +259,18 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	}
 	if got, want := p.TCADPMarkdownImageResponseType, "2"; got != want {
 		t.Fatalf("TCADPMarkdownImageResponseType = %q, want %q", got, want)
+	}
+}
+
+func TestSpreadsheetParserWarnsForDeprecatedChunkRows(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	p := NewCSVParser()
+	p.ConfigureFromSetup(map[string]any{"chunk_rows": 32})
+	if !strings.Contains(logs.String(), "deprecated chunk_rows") {
+		t.Fatalf("logs = %q, want deprecated chunk_rows warning", logs.String())
 	}
 }

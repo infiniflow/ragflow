@@ -15,10 +15,12 @@
 //
 
 // Package parser: this file holds the pure-Go office_oxide IR data
-// model and JSON helpers for DOCX. It is intentionally cgo-free so
-// that postprocessing (docx_postprocess.go) and unit tests run
-// without the office_oxide native library. The cgo boundary lives
-// entirely in docx_parser.go (officeOxide.OpenFromBytes).
+// model and JSON helpers shared by the DOCX and presentation parsers.
+// It is intentionally cgo-free so that postprocessing
+// (docx_postprocess.go), per-slide section building (pptx_ir.go), and
+// unit tests run without the office_oxide native library. The cgo
+// boundary lives in docx_parser.go / pptx_parser.go
+// (officeOxide.OpenFromBytes).
 
 package parser
 
@@ -55,6 +57,7 @@ type docxIRElement struct {
 	Level   int              `json:"level"`   // heading level (1-6) or list nesting level
 	Style   string           `json:"style"`   // Word style name (e.g. "Normal", "Heading 1")
 	Content json.RawMessage  `json:"content"` // rich text runs or block-level content; decoded per type
+	Text    string           `json:"text"`    // payload of a bare "text" block; not part of the current IR schema
 	Data    []byte           `json:"data"`    // raw image bytes (for "image" type)
 	Rows    []docxIRRow      `json:"rows"`    // table rows
 	Ordered bool             `json:"ordered"` // true=numbered list, false=bullet list (for "list" type)
@@ -70,7 +73,11 @@ func (e docxIRElement) contentRuns() []docxIRRun {
 	return runs
 }
 
-// contentBlocks decodes Content as block-level elements (text_box type).
+// contentBlocks decodes Content as block-level elements (text_box type,
+// list-item content, or table-cell content). Blocks may be plain paragraphs
+// or compound elements (table, list, nested text_box); callers flatten each
+// block via docxElementText so non-paragraph blocks are not silently
+// dropped.
 func (e docxIRElement) contentBlocks() []docxIRElement {
 	var blocks []docxIRElement
 	if len(e.Content) > 0 {
@@ -81,7 +88,7 @@ func (e docxIRElement) contentBlocks() []docxIRElement {
 
 // docxIRListItem represents one item in an ordered/unordered list.
 type docxIRListItem struct {
-	Content []docxIRElement `json:"content"`          // block-level content (typically a single Paragraph)
+	Content []docxIRElement `json:"content"`          // block-level content (typically a single Paragraph; may also hold table/list/text_box)
 	Nested  *docxIRList     `json:"nested,omitempty"` // optional nested sub-list; null/absent when none
 }
 
@@ -93,8 +100,9 @@ type docxIRList struct {
 }
 
 type docxIRRun struct {
-	Type    string          `json:"type"` // "text", "image"
+	Type    string          `json:"type"` // "text", "line_break", "image"
 	Text    string          `json:"text"`
+	Data    []byte          `json:"data"`    // raw image bytes for inline image runs
 	Content []docxIRElement `json:"content"` // nested elements (used in table cells)
 }
 
@@ -103,32 +111,36 @@ type docxIRRow struct {
 }
 
 type docxIRCell struct {
-	Content []docxIRElement `json:"content"` // nested paragraphs inside table cell
+	Content []docxIRElement `json:"content"` // block-level content (typically paragraphs; may also hold list/table)
 }
 
+// joinDOCXIRRuns concatenates inline runs into plain text. Hard line
+// breaks become newlines so multi-line text keeps its line structure;
+// non-text payloads (e.g. inline images) contribute no characters.
 func joinDOCXIRRuns(runs []docxIRRun) string {
 	var b strings.Builder
 	for _, r := range runs {
-		if r.Type == "text" {
+		switch r.Type {
+		case "text":
 			b.WriteString(r.Text)
+		case "line_break":
+			b.WriteByte('\n')
 		}
 	}
 	return b.String()
 }
 
 // extractTextFromListItem extracts the plain text content from a list item.
-// Each list item contains block-level elements (typically a Paragraph),
-// whose text runs are concatenated. Nested sub-lists (multi-level
-// bullets/numbered items) are decoded and recursed so their text is not
-// silently dropped. Mirrors office_oxide ir::ListItem { content, nested }.
+// Each block in the item is flattened via docxElementText so non-paragraph
+// blocks (e.g. a table nested in a list item) are not silently dropped.
+// Nested sub-lists (multi-level bullets/numbered items) are decoded and
+// recursed so their text is not silently dropped.
+// Mirrors office_oxide ir::ListItem { content, nested }.
 func extractTextFromListItem(item docxIRListItem) string {
 	var parts []string
 	for _, el := range item.Content {
-		if el.Type == "paragraph" || el.Type == "heading" {
-			t := joinDOCXIRRuns(el.contentRuns())
-			if t != "" {
-				parts = append(parts, t)
-			}
+		if t := strings.TrimSpace(docxElementText(el, "\n")); t != "" {
+			parts = append(parts, t)
 		}
 	}
 	if item.Nested != nil {
@@ -145,16 +157,15 @@ func extractTextFromListItem(item docxIRListItem) string {
 }
 
 // extractTextFromBlockElements extracts text from a slice of block-level
-// elements (paragraphs/headings), used by text_box and other compound
-// element types.
+// elements (e.g. the content of a text_box). Each block is flattened via
+// docxElementText so non-paragraph blocks (e.g. a table wrapped in a
+// text_box, as office_oxide emits for grouped slide shapes) are not
+// silently dropped.
 func extractTextFromBlockElements(blocks []docxIRElement) string {
 	var parts []string
 	for _, el := range blocks {
-		if el.Type == "paragraph" || el.Type == "heading" {
-			t := joinDOCXIRRuns(el.contentRuns())
-			if t != "" {
-				parts = append(parts, t)
-			}
+		if t := strings.TrimSpace(docxElementText(el, "\n")); t != "" {
+			parts = append(parts, t)
 		}
 	}
 	if len(parts) == 0 {
@@ -163,12 +174,13 @@ func extractTextFromBlockElements(blocks []docxIRElement) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-// joinCellText concatenates all paragraph texts inside a table cell,
-// joined by newlines.
+// joinCellText concatenates all block texts inside a table cell, joined by
+// newlines. Each block is flattened via docxElementText so non-paragraph
+// blocks (e.g. a nested list) are not silently dropped.
 func joinCellText(cell docxIRCell) string {
 	var parts []string
 	for _, el := range cell.Content {
-		if text := joinDOCXIRRuns(el.contentRuns()); text != "" {
+		if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
 			parts = append(parts, text)
 		}
 	}
@@ -193,24 +205,36 @@ func docxIRTableToHTML(el docxIRElement) string {
 }
 
 // docxElementText returns the plain-text rendering of any supported
-// IR element type. Used by extractDOCXFiguresFromIR so that tables,
-// lists, and text boxes contribute to image surrounding context
-// instead of becoming empty flatBlocks (which would drop adjacent
-// VLM context). Returns "" for image and unknown types.
-func docxElementText(el docxIRElement) string {
+// IR element type. Used by buildPPTXJSONSections to flatten one slide
+// section, and by extractDOCXFiguresFromIR so that tables, lists, and
+// text boxes contribute to image surrounding context instead of
+// becoming empty flatBlocks (which would drop adjacent VLM context).
+// A bare "text" block is not part of the current IR schema, but is
+// passed through so its payload is never silently dropped. Returns ""
+// for image and unknown types.
+//
+// For table elements, cellSep joins the cells within a single row. Pass
+// "\n" to put each cell on its own line (the pptx/docx flatten behavior,
+// equivalent to the previous flat-all-cells rendering), or " | " to keep a
+// row's cells on one line (the legacy .doc viewport).
+func docxElementText(el docxIRElement, cellSep string) string {
 	switch el.Type {
 	case "paragraph", "heading":
 		return joinDOCXIRRuns(el.contentRuns())
+	case "text":
+		return el.Text
 	case "table":
-		var lines []string
+		var rows []string
 		for _, row := range el.Rows {
+			var cells []string
 			for _, cell := range row.Cells {
 				if t := joinCellText(cell); t != "" {
-					lines = append(lines, t)
+					cells = append(cells, t)
 				}
 			}
+			rows = append(rows, strings.Join(cells, cellSep))
 		}
-		return strings.Join(lines, "\n")
+		return strings.Join(rows, "\n")
 	case "list":
 		var lines []string
 		for _, item := range el.Items {
@@ -239,19 +263,7 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 		for _, el := range sec.Elements {
 			switch el.Type {
 			case "paragraph", "heading":
-				text := joinDOCXIRRuns(el.contentRuns())
-				if strings.TrimSpace(text) == "" {
-					continue
-				}
-				item := map[string]any{
-					"text":         text,
-					"image":        nil,
-					"doc_type_kwd": "text",
-				}
-				if el.Type == "heading" {
-					item["ck_type"] = "heading"
-				}
-				sections = append(sections, item)
+				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading")
 
 			case "image":
 				b64 := base64.StdEncoding.EncodeToString(el.Data)
@@ -301,6 +313,58 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 	return sections
 }
 
+// appendDOCXParagraphSections emits text and inline-image runs in their IR
+// order. A paragraph is not necessarily a single text unit: office_oxide can
+// place an image between two text runs, and dropping that run would make the
+// downstream DOCX chunker lose both media order and adjacency context.
+func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool) []map[string]any {
+	var text strings.Builder
+	flushText := func() {
+		value := strings.TrimSpace(text.String())
+		text.Reset()
+		if value == "" {
+			return
+		}
+		item := map[string]any{
+			"text":         value,
+			"image":        nil,
+			"doc_type_kwd": "text",
+		}
+		if heading {
+			item["ck_type"] = "heading"
+		}
+		sections = append(sections, item)
+	}
+	appendImage := func(data []byte) {
+		if len(data) == 0 {
+			return
+		}
+		sections = append(sections, map[string]any{
+			"text":         "",
+			"image":        base64.StdEncoding.EncodeToString(data),
+			"doc_type_kwd": "image",
+		})
+	}
+	for _, run := range el.contentRuns() {
+		switch run.Type {
+		case "text":
+			text.WriteString(run.Text)
+		case "line_break":
+			text.WriteByte('\n')
+		case "image":
+			flushText()
+			appendImage(run.Data)
+			for _, nested := range run.Content {
+				if nested.Type == "image" {
+					appendImage(nested.Data)
+				}
+			}
+		}
+	}
+	flushText()
+	return sections
+}
+
 // --- figure extraction (used by the cgo parser path) ---
 
 // extractDOCXFiguresFromIR parses the office_oxide IR JSON and
@@ -325,7 +389,11 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 				flat = append(flat, flatBlock{image: b64})
 				continue
 			}
-			text := docxElementText(el)
+			if el.Type == "paragraph" || el.Type == "heading" {
+				flat = append(flat, docxInlineFlatBlocks(el)...)
+				continue
+			}
+			text := docxElementText(el, "\n")
 			flat = append(flat, flatBlock{text: text})
 		}
 	}
@@ -360,6 +428,45 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 		figures = append(figures, fig)
 	}
 	return figures
+}
+
+// docxInlineFlatBlocks preserves the text/image sequence inside a paragraph
+// for figure context extraction. Top-level element order alone is not enough
+// for DOCX because office_oxide can encode an inline image as a paragraph run.
+func docxInlineFlatBlocks(el docxIRElement) []flatBlock {
+	var blocks []flatBlock
+	var text strings.Builder
+	flushText := func() {
+		if text.Len() == 0 {
+			return
+		}
+		blocks = append(blocks, flatBlock{text: text.String()})
+		text.Reset()
+	}
+	appendImage := func(data []byte) {
+		if len(data) == 0 {
+			return
+		}
+		blocks = append(blocks, flatBlock{image: base64.StdEncoding.EncodeToString(data)})
+	}
+	for _, run := range el.contentRuns() {
+		switch run.Type {
+		case "text":
+			text.WriteString(run.Text)
+		case "line_break":
+			text.WriteByte('\n')
+		case "image":
+			flushText()
+			appendImage(run.Data)
+			for _, nested := range run.Content {
+				if nested.Type == "image" {
+					appendImage(nested.Data)
+				}
+			}
+		}
+	}
+	flushText()
+	return blocks
 }
 
 // --- internal types ---

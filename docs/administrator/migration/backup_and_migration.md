@@ -242,7 +242,7 @@ s3:
   addressing_style: "virtual"
 ```
 
-See [S3 (Tigris)](/configurations#s3-tigris) for full setup instructions.
+See [S3 (Tigris)](../configurations/configurations.md#s3-tigris) for full setup instructions.
 
 ### Iam Policy Example
 

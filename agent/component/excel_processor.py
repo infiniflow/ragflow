@@ -23,6 +23,7 @@ Supports multiple Excel file inputs, data transformation, and Excel output gener
 
 import logging
 import os
+import re
 from abc import ABC
 from io import BytesIO
 
@@ -341,10 +342,32 @@ class ExcelProcessor(ComponentBase, ABC):
                 # Excel output
                 excel_io = BytesIO()
                 with pd.ExcelWriter(excel_io, engine="openpyxl") as writer:
+                    used_sheet_names = set()
+                    normalized_sheet_count = 0
+                    deduplicated_sheet_count = 0
                     for sheet_name, df in dfs.items():
-                        # Sanitize sheet name (max 31 chars, no special chars)
-                        safe_name = sheet_name[:31].replace("/", "_").replace("\\", "_")
+                        # Sanitize sheet name (max 31 chars, no special or reserved names)
+                        original_name = str(sheet_name)
+                        normalized_name = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\\/*?:\[\]]", "_", original_name).strip("'")
+                        if normalized_name.casefold() == "history":
+                            normalized_name = f"{normalized_name}_"
+                        base_name = normalized_name[:31] or "Sheet"
+                        normalized_sheet_count += base_name != original_name
+                        safe_name = base_name
+                        counter = 2
+                        if safe_name.casefold() in used_sheet_names:
+                            deduplicated_sheet_count += 1
+                        while safe_name.casefold() in used_sheet_names:
+                            suffix = f"_{counter}"
+                            safe_name = f"{base_name[: 31 - len(suffix)]}{suffix}"
+                            counter += 1
+                        used_sheet_names.add(safe_name.casefold())
                         df.to_excel(writer, sheet_name=safe_name, index=False)
+                logging.info(
+                    "ExcelProcessor: Normalized %d sheet name(s) and deduplicated %d",
+                    normalized_sheet_count,
+                    deduplicated_sheet_count,
+                )
                 excel_io.seek(0)
                 binary_content = excel_io.read()
                 filename = f"{self._param.output_filename}.xlsx"

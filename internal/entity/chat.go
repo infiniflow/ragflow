@@ -33,7 +33,7 @@ type Chat struct {
 	PromptConfig   JSONMap  `gorm:"column:prompt_config;type:longtext;not null" json:"prompt_config"`
 	MetaDataFilter *JSONMap `gorm:"column:meta_data_filter;type:longtext" json:"meta_data_filter,omitempty"`
 	// NOTE: No `default:` GORM tags here. The service layer (chat.go Create)
-	// supplies sensible defaults (0.1 / 0.3 / 6 / 1024 / "1") when a field is
+	// supplies sensible defaults (0.1 / 0.3 / 6 / 64 / 1024 / "1") when a field is
 	// omitted, and honors an explicitly provided zero value. A GORM `default:`
 	// tag would force GORM to overwrite an explicit zero (e.g.
 	// similarity_threshold=0) with the column default during Create, breaking
@@ -41,7 +41,8 @@ type Chat struct {
 	SimilarityThreshold    float64   `gorm:"column:similarity_threshold" json:"similarity_threshold"`
 	VectorSimilarityWeight float64   `gorm:"column:vector_similarity_weight" json:"vector_similarity_weight"`
 	TopN                   int64     `gorm:"column:top_n" json:"top_n"`
-	TopK                   int64     `gorm:"column:top_k" json:"top_k"`
+	RerankCandidatesCount  int64     `gorm:"column:rerank_candidates_count" json:"rerank_candidates_count"`
+	TopK                   int64     `gorm:"column:top_k;type:int" json:"top_k"`
 	DoRefer                string    `gorm:"column:do_refer;size:1;not null" json:"do_refer"`
 	RerankID               string    `gorm:"column:rerank_id;size:128;not null;default:''" json:"rerank_id"`
 	TenantRerankID         *string   `gorm:"column:tenant_rerank_id;size:32;index" json:"tenant_rerank_id,omitempty"`
@@ -62,13 +63,14 @@ type ChatListItem struct {
 	TenantAvatar *string `gorm:"column:tenant_avatar" json:"tenant_avatar,omitempty"`
 }
 
-// ChatSession chat session model
+// ChatSession chat session model. Message and Reference are hydrated from
+// their ordered child tables.
 type ChatSession struct {
 	ID        string          `gorm:"column:id;primaryKey;size:32" json:"id"`
 	DialogID  string          `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
 	Name      *string         `gorm:"column:name;size:255;index" json:"name,omitempty"`
-	Message   json.RawMessage `gorm:"column:message;type:longtext" json:"message,omitempty"`
-	Reference json.RawMessage `gorm:"column:reference;type:longtext" json:"reference"`
+	Message   json.RawMessage `gorm:"-" json:"message,omitempty"`
+	Reference json.RawMessage `gorm:"-" json:"reference"`
 	UserID    *string         `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
 	BaseModel
 }

@@ -25,13 +25,13 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
-	"gorm.io/gorm"
 )
 
 // fillConfigDefaultLLM mirrors Python CompilationTemplateService.
@@ -96,53 +96,34 @@ type WikiPreset struct {
 	ID          string `json:"id"`
 	Topic       string `json:"topic"`
 	Instruction string `json:"instruction"`
-	PageExample string `json:"page_example"`
+	Example     string `json:"example"`
 }
 
 // CompilationTemplateService implements the read-side compilation template
-// operations (builtins palette + wiki presets) used by the REST APIs.
+// operations (read-only YAML palette + wiki presets) used by the REST APIs.
 type CompilationTemplateService struct {
-	templateDAO *dao.CompilationTemplateDAO
-	tenantDAO   *dao.TenantDAO
+	tenantDAO *dao.TenantDAO
 }
 
 // NewCompilationTemplateService creates a CompilationTemplateService.
 func NewCompilationTemplateService() *CompilationTemplateService {
 	return &CompilationTemplateService{
-		templateDAO: dao.NewCompilationTemplateDAO(),
-		tenantDAO:   dao.NewTenantDAO(),
+		tenantDAO: dao.NewTenantDAO(),
 	}
 }
 
-// ListBuiltins returns the built-in template palette with the tenant's default
-// LLM id lazily filled in, mirroring the Python list_builtins blueprint flow
-// (list from DB; if empty, seed from files and retry; then fill default LLM).
+// ListBuiltins returns the read-only template palette loaded from the YAML
+// definitions. Built-in templates are never persisted in the database.
 func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID string) ([]*BuiltinTemplate, error) {
-	templates, err := s.templateDAO.ListBuiltins(ctx, dao.DB)
+	templates, err := loadBuiltinTemplates()
 	if err != nil {
 		return nil, err
 	}
-	if len(templates) == 0 {
-		if err = s.seedBuiltins(ctx); err != nil {
-			return nil, err
-		}
-		templates, err = s.templateDAO.ListBuiltins(ctx, dao.DB)
-		if err != nil {
-			return nil, err
-		}
+	tenantPtr := &tenantID
+	for _, template := range templates {
+		template.Config = fillConfigDefaultLLM(ctx, s.tenantDAO, template.Config, tenantPtr)
 	}
-	out := make([]*BuiltinTemplate, 0, len(templates))
-	for _, t := range templates {
-		config := fillConfigDefaultLLM(ctx, s.tenantDAO, t.Config, t.TenantID)
-		out = append(out, &BuiltinTemplate{
-			ID:          t.ID,
-			Kind:        t.Kind,
-			DisplayName: t.Name,
-			Description: derefString(t.Description),
-			Config:      config,
-		})
-	}
-	return s.sortBuiltins(out), nil
+	return s.sortBuiltins(templates), nil
 }
 
 // LoadWikiPresets loads the wiki page-structure presets from the
@@ -175,7 +156,7 @@ func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
 			ID:          strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())),
 			Topic:       strings.TrimSpace(yamlStr(doc["topic"])),
 			Instruction: yamlStr(doc["instruction"]),
-			PageExample: yamlStr(doc["page_example"]),
+			Example:     yamlStr(doc["example"]),
 		})
 	}
 	return presets, nil
@@ -199,7 +180,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		}
 	}
 	if desc, ok := req["description"]; ok {
-		if descStr, ok2 := desc.(string); !ok2 || len(descStr) > 1024 {
+		if descStr, ok2 := desc.(string); !ok2 || utf8.RuneCountInString(descStr) > 1024 {
 			return errors.New("invalid template description")
 		}
 	}
@@ -223,7 +204,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		default:
 			return errors.New("invalid template config")
 		}
-		if len(fmt.Sprint(configMap["global_rules"])) > 4096 {
+		if utf8.RuneCountInString(yamlStr(configMap["global_rules"])) > 4096 {
 			return errors.New("global compilation rules is too long")
 		}
 		for _, section := range []string{"entity", "relation"} {
@@ -243,10 +224,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 				if strings.TrimSpace(yamlStr(fm["description"])) == "" {
 					return fmt.Errorf("%s field description is required", capitalizeTitle(section))
 				}
-				if len(yamlStr(fm["description"])) > 1024 {
+				if utf8.RuneCountInString(yamlStr(fm["description"])) > 1024 {
 					return fmt.Errorf("%s field description is too long", capitalizeTitle(section))
 				}
-				if len(yamlStr(fm["rule"])) > 1024 {
+				if utf8.RuneCountInString(yamlStr(fm["rule"])) > 1024 {
 					return fmt.Errorf("%s field rule is too long", capitalizeTitle(section))
 				}
 			}
@@ -265,10 +246,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 						if strings.TrimSpace(yamlStr(fm["subject"])) == "" {
 							return errors.New("claim subject is required")
 						}
-						if len(yamlStr(fm["statement"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["statement"])) > 1024 {
 							return errors.New("claim statement is too long")
 						}
-						if len(yamlStr(fm["subject"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["subject"])) > 1024 {
 							return errors.New("claim subject is too long")
 						}
 					case "concept":
@@ -278,10 +259,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 						if strings.TrimSpace(yamlStr(fm["definition_excerpt"])) == "" {
 							return errors.New("concept definition excerpt is required")
 						}
-						if len(yamlStr(fm["term"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["term"])) > 1024 {
 							return errors.New("concept term is too long")
 						}
-						if len(yamlStr(fm["definition_excerpt"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["definition_excerpt"])) > 1024 {
 							return errors.New("concept definition excerpt is too long")
 						}
 					}
@@ -306,16 +287,17 @@ func (s *CompilationTemplateService) sortBuiltins(templates []*BuiltinTemplate) 
 	return templates
 }
 
-// seedBuiltins loads the built-in templates from the init_data YAML files and
-// upserts them (as a safety net when the DB has no built-ins yet), mirroring
-// Python seed_builtins_from_files.
-func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
+func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
 	dir := filepath.Join(utility.GetProjectBaseDirectory(),
 		"api", "db", "init_data", "compilation_templates")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil // directory absent is acceptable; nothing to seed
+		if os.IsNotExist(err) {
+			return []*BuiltinTemplate{}, nil
+		}
+		return nil, err
 	}
+	templates := make([]*BuiltinTemplate, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") && !strings.HasSuffix(entry.Name(), ".yml") {
 			continue
@@ -337,38 +319,15 @@ func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-		desc := doc.Description
-		valid := string(entity.StatusValid)
-		tmpl := &entity.CompilationTemplate{
-			ID:        id,
-			Name:      doc.DisplayName,
-			Kind:      doc.Kind,
-			Config:    entity.JSONMap(doc.Config),
-			IsBuiltin: true,
-			Status:    &valid,
-		}
-		if doc.Description != "" {
-			tmpl.Description = &desc
-		}
-		_ = s.upsertBuiltin(ctx, tmpl)
+		templates = append(templates, &BuiltinTemplate{
+			ID:          id,
+			Kind:        doc.Kind,
+			DisplayName: doc.DisplayName,
+			Description: doc.Description,
+			Config:      entity.JSONMap(doc.Config),
+		})
 	}
-	return nil
-}
-
-func (s *CompilationTemplateService) upsertBuiltin(ctx context.Context, t *entity.CompilationTemplate) error {
-	existing, err := s.templateDAO.GetByID(ctx, dao.DB, t.ID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return s.templateDAO.Save(ctx, dao.DB, t)
-	}
-	if err != nil {
-		return err
-	}
-	m := map[string]interface{}{
-		"name": t.Name, "kind": t.Kind, "config": t.Config,
-		"description": t.Description, "is_builtin": true,
-		"status": t.Status,
-	}
-	return s.templateDAO.UpdateFields(ctx, dao.DB, existing.ID, m)
+	return templates, nil
 }
 
 func derefString(p *string) string {

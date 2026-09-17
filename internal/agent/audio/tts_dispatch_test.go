@@ -145,6 +145,37 @@ func TestNewTTSDispatchFunc_EmptyModelName(t *testing.T) {
 	}
 }
 
+func TestNewTTSDispatchFunc_PseudoEngineFallsBackToDefault(t *testing.T) {
+	// "gtts" / "edge-tts" are the boolean auto_play UI toggle's engine
+	// selectors, not tenant model names. Passing them as modelName made
+	// the real ModelProviderService dereference nil provider/instance
+	// pointers and panic. The dispatch must leave modelName nil for them
+	// so the dispatcher resolves the tenant's default TTS model.
+	for _, engine := range []string{"gtts", "edge-tts", "custom"} {
+		t.Run(engine, func(t *testing.T) {
+			fake := &fakeTTSDispatcher{
+				resp: &modelModule.TTSResponse{Audio: []byte("x")},
+				code: common.CodeSuccess,
+			}
+			fn := NewTTSDispatchFunc(fake)
+			_, err := fn(t.Context(), ModelProviderRequest{
+				TenantID:  "t1",
+				ModelName: engine,
+				Text:      "hi",
+			})
+			if err != nil {
+				t.Fatalf("dispatch: %v", err)
+			}
+			if fake.gotModelName != nil {
+				t.Errorf("modelName = %q, want nil for built-in engine %q", *fake.gotModelName, engine)
+			}
+			if fake.gotTTSConfig == nil || fake.gotTTSConfig.Format != "mp3" {
+				t.Errorf("ttsConfig = %+v, want Format mp3", fake.gotTTSConfig)
+			}
+		})
+	}
+}
+
 func TestNewTTSDispatchFunc_EmptyVoiceAndLang(t *testing.T) {
 	ctx := t.Context()
 	// Voice and Lang empty → TTSConfig.Params should be nil (not

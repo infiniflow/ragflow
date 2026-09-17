@@ -17,7 +17,6 @@
 package dao
 
 import (
-	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -75,9 +74,9 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db)
 	d := NewFileDAO()
-	ctx := context.Background()
+	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "report")
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -86,7 +85,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Nested file two levels down must be found from the root folder.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "notes")
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "notes", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -95,7 +94,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Folders themselves are searchable by name.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "sub")
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "sub", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -108,10 +107,10 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db)
 	d := NewFileDAO()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Searching inside dirA must not match files outside that subtree.
-	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, "create_time", true, "report")
+	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -120,7 +119,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	}
 
 	// Tenant isolation still applies.
-	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, "create_time", true, "report")
+	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -133,9 +132,9 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db)
 	d := NewFileDAO()
-	ctx := context.Background()
+	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "")
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -146,5 +145,171 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 		if f.ParentID != "root" || f.ID == "root" {
 			t.Fatalf("unexpected entry in direct listing: %+v", f)
 		}
+	}
+}
+
+// fileOrderExpressions are SQL expressions rather than column names. They stand
+// in for the `orderby` query parameter of GET /api/v1/files, which reaches
+// FileDAO straight from the request (issue #14268).
+var fileOrderExpressions = []string{
+	"(SELECT inner_file.name FROM file AS inner_file WHERE inner_file.id = file.id)",
+}
+
+// seedOrderableFiles creates a root folder and three children whose create_time
+// order is the reverse of their name order, so a test can tell which column the
+// ORDER BY clause actually used.
+func seedOrderableFiles(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	testFile(t, db, "root", "root", "t1", "/", "folder")
+	files := []entity.File{
+		{ID: "f-1", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "zulu.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
+		{ID: "f-2", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "mike.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
+		{ID: "f-3", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "alpha.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
+	}
+	for i := range files {
+		if err := db.Create(&files[i]).Error; err != nil {
+			t.Fatalf("failed to create file %s: %v", files[i].ID, err)
+		}
+	}
+}
+
+func assertFileOrder(t *testing.T, rows []*entity.File, want []string, orderBy string) {
+	t.Helper()
+	if len(rows) != len(want) {
+		t.Fatalf("orderby %q returned %d rows, want %d", orderBy, len(rows), len(want))
+	}
+	for i, row := range rows {
+		if row.ID != want[i] {
+			got := make([]string, 0, len(rows))
+			for _, r := range rows {
+				got = append(got, r.ID)
+			}
+			t.Fatalf("orderby %q produced order %v, want %v: the expression reached the ORDER BY clause", orderBy, got, want)
+		}
+	}
+}
+
+// TestFileDAO_GetByPfID_OrderByExpressionFallsBack checks that an `orderby`
+// value that is an expression rather than an allowed column name leaves the
+// rows in the default create_time order.
+func TestFileDAO_GetByPfID_OrderByExpressionFallsBack(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedOrderableFiles(t, db)
+	ctx := t.Context()
+	d := NewFileDAO()
+
+	for _, orderBy := range fileOrderExpressions {
+		t.Run(orderBy, func(t *testing.T) {
+			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: orderBy}}, "", false)
+			if err != nil {
+				t.Fatalf("GetByPfID with orderby %q: %v", orderBy, err)
+			}
+			assertFileOrder(t, rows, []string{"f-1", "f-2", "f-3"}, orderBy)
+		})
+	}
+}
+
+// TestFileDAO_GetByPfID_OrderByAllowedColumn checks that the allowlist still
+// honors a real column in both directions. The skill folder listing already
+// calls GetByPfID with "name".
+func TestFileDAO_GetByPfID_OrderByAllowedColumn(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedOrderableFiles(t, db)
+	ctx := t.Context()
+	d := NewFileDAO()
+
+	rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name"}}, "", false)
+	if err != nil {
+		t.Fatalf("GetByPfID ascending by name: %v", err)
+	}
+	assertFileOrder(t, rows, []string{"f-3", "f-2", "f-1"}, "name")
+
+	rows, _, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name", Desc: true}}, "", false)
+	if err != nil {
+		t.Fatalf("GetByPfID descending by name: %v", err)
+	}
+	assertFileOrder(t, rows, []string{"f-1", "f-2", "f-3"}, "name")
+}
+
+// TestFileDAO_GetByPfID_OrderBySeveralTerms checks that a term list reaches the
+// ORDER BY clause in full, so a second term decides the rows the first one ties,
+// and that a term naming a column the file list does not expose costs only itself.
+func TestFileDAO_GetByPfID_OrderBySeveralTerms(t *testing.T) {
+	db := setupFileTestDB(t)
+	testFile(t, db, "root", "root", "t1", "/", "folder")
+	files := []entity.File{
+		{ID: "g-1", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "bravo.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
+		{ID: "g-2", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "alpha.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
+		{ID: "g-3", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "delta.txt", Type: "img", BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
+		{ID: "g-4", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "charlie.txt", Type: "img", BaseModel: entity.BaseModel{CreateTime: int64Ptr(400)}},
+	}
+	for i := range files {
+		if err := db.Create(&files[i]).Error; err != nil {
+			t.Fatalf("failed to create file %s: %v", files[i].ID, err)
+		}
+	}
+	ctx := t.Context()
+	d := NewFileDAO()
+
+	cases := []struct {
+		label string
+		terms []OrderTerm
+		want  []string
+	}{
+		{
+			label: "type:asc,name:asc",
+			terms: []OrderTerm{{Column: "type"}, {Column: "name"}},
+			want:  []string{"g-2", "g-1", "g-4", "g-3"},
+		},
+		{
+			// Same first term, so only the second one can account for the difference.
+			label: "type:asc,name:desc",
+			terms: []OrderTerm{{Column: "type"}, {Column: "name", Desc: true}},
+			want:  []string{"g-1", "g-2", "g-3", "g-4"},
+		},
+		{
+			label: "password:asc,name:asc",
+			terms: []OrderTerm{{Column: "password"}, {Column: "name"}},
+			want:  []string{"g-2", "g-1", "g-4", "g-3"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, tc.terms, "", false)
+			if err != nil {
+				t.Fatalf("GetByPfID %s: %v", tc.label, err)
+			}
+			assertFileOrder(t, rows, tc.want, tc.label)
+		})
+	}
+}
+
+func TestFileDAO_GetByIDAndTenant(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFileTree(t, db) // f-t2 belongs to tenant t2
+	d := NewFileDAO()
+	ctx := t.Context()
+
+	got, err := d.GetByIDAndTenant(ctx, db, "f-t2", "t2")
+	if err != nil {
+		t.Fatalf("owner tenant lookup failed: %v", err)
+	}
+	if got.ID != "f-t2" {
+		t.Fatalf("id = %q, want f-t2", got.ID)
+	}
+
+	// Another tenant, an empty tenant (fail closed) and a case-different tenant
+	// must all miss.
+	for _, tenantID := range []string{"t1", "", "T2"} {
+		if _, err := d.GetByIDAndTenant(ctx, db, "f-t2", tenantID); !IsNotFoundErr(err) {
+			t.Fatalf("tenant %q: err = %v, want gorm.ErrRecordNotFound", tenantID, err)
+		}
+	}
+
+	// The unscoped GetByID still returns the row across tenants: that is exactly
+	// the lookup the tag-source loader must not use with a user-supplied ID.
+	if _, err := d.GetByID(ctx, db, "f-t2"); err != nil {
+		t.Fatalf("unscoped GetByID should still see the row: %v", err)
 	}
 }

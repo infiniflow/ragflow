@@ -20,13 +20,15 @@ import (
 	"context"
 	"errors"
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/service"
+	"ragflow/internal/dao"
+	"ragflow/internal/utility"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
+
+const scheduledTaskStartupPageSize = 4096
 
 // TaskEnvelope is the only payload sent through the task queue.
 type TaskEnvelope struct {
@@ -46,25 +48,25 @@ type SyncTaskBroker interface {
 
 // Scheduler discovers due work and enqueues task IDs for workers.
 type Scheduler struct {
-	queue       chan<- TaskEnvelope
-	taskService *service.SyncTaskService
-	broker      SyncTaskBroker
-	timerMu     sync.Mutex
-	timers      map[string]*time.Timer
+	queue   chan<- TaskEnvelope
+	taskDAO *dao.SyncTaskDAO
+	broker  SyncTaskBroker
+	timerMu sync.Mutex
+	timers  map[string]*time.Timer
 }
 
 // NewScheduler creates a global scheduler for datasource sync tasks.
-func NewScheduler(queue chan<- TaskEnvelope, taskService *service.SyncTaskService) *Scheduler {
-	return &Scheduler{queue: queue, taskService: taskService, timers: map[string]*time.Timer{}}
+func NewScheduler(queue chan<- TaskEnvelope, taskDAO *dao.SyncTaskDAO) *Scheduler {
+	return &Scheduler{queue: queue, taskDAO: taskDAO, timers: map[string]*time.Timer{}}
 }
 
 // NewNATSScheduler creates a JetStream-driven scheduler with DB reconciliation.
-func NewNATSScheduler(queue chan<- TaskEnvelope, taskService *service.SyncTaskService, broker SyncTaskBroker) *Scheduler {
+func NewNATSScheduler(queue chan<- TaskEnvelope, taskDAO *dao.SyncTaskDAO, broker SyncTaskBroker) *Scheduler {
 	return &Scheduler{
-		queue:       queue,
-		taskService: taskService,
-		broker:      broker,
-		timers:      map[string]*time.Timer{},
+		queue:   queue,
+		taskDAO: taskDAO,
+		broker:  broker,
+		timers:  map[string]*time.Timer{},
 	}
 }
 
@@ -125,25 +127,35 @@ func (s *Scheduler) queueAvailable() int {
 
 // publishStartupTasks scans DB once for startup reconciliation.
 func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
-	if err := s.taskService.RecoverRunning(ctx); err != nil {
+	if _, err := s.taskDAO.RecoverRunning(ctx); err != nil {
 		return err
 	}
 
-	tasks, err := s.taskService.ListScheduledTasks(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, task := range tasks {
-		if err = s.ScheduleTask(ctx, task); err != nil {
+	var cursor *dao.ScheduledSyncTaskCursor
+	for {
+		tasks, err := s.taskDAO.ListScheduledTasks(ctx, scheduledTaskStartupPageSize, cursor)
+		if err != nil {
 			return err
 		}
+		if len(tasks) == 0 {
+			return nil
+		}
+
+		for _, task := range tasks {
+			if err = s.ScheduleTask(ctx, task); err != nil {
+				return err
+			}
+		}
+		if len(tasks) < scheduledTaskStartupPageSize {
+			return nil
+		}
+		nextCursor := tasks[len(tasks)-1].Cursor()
+		cursor = &nextCursor
 	}
-	return nil
 }
 
 // ScheduleTask publishes a due scheduled task or arms a one-shot timer.
-func (s *Scheduler) ScheduleTask(ctx context.Context, task service.ScheduledSyncTask) error {
+func (s *Scheduler) ScheduleTask(ctx context.Context, task dao.ScheduledSyncTask) error {
 	delay, schedule := s.taskDelay(task, time.Now())
 	if !schedule {
 		return nil
@@ -157,14 +169,14 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 		return nil
 	}
 	if delay <= 0 {
-		return s.publishTask(ctx, taskID)
+		return s.publish(ctx, taskID, false)
 	}
 	s.timerMu.Lock()
 	if existing := s.timers[taskID]; existing != nil {
 		existing.Stop()
 	}
 	timer := time.AfterFunc(delay, func() {
-		if err := s.publishTaskWakeup(ctx, taskID); err != nil && ctx.Err() == nil {
+		if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
 			common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
 			_ = s.ScheduleTaskAfter(ctx, taskID, 3*time.Second)
 			return
@@ -178,23 +190,22 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 	return nil
 }
 
-func (s *Scheduler) publishTaskWakeup(ctx context.Context, taskID string) error {
+func (s *Scheduler) publish(ctx context.Context, taskID string, wakeup bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := s.broker.PublishSyncerTaskWakeup(taskID); err != nil {
-		common.Warn("syncer task wakeup publish failed", zap.String("task_id", taskID), zap.Error(err))
-		return err
+	var err error
+	if wakeup {
+		err = s.broker.PublishSyncerTaskWakeup(taskID)
+	} else {
+		err = s.broker.PublishSyncerTask(taskID)
 	}
-	return nil
-}
-
-func (s *Scheduler) publishTask(ctx context.Context, taskID string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := s.broker.PublishSyncerTask(taskID); err != nil {
-		common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
+	if err != nil {
+		message := "syncer task publish failed"
+		if wakeup {
+			message = "syncer task wakeup publish failed"
+		}
+		common.Warn(message, zap.String("task_id", taskID), zap.Error(err))
 		return err
 	}
 	return nil
@@ -210,13 +221,13 @@ func (s *Scheduler) stopTimers() {
 }
 
 // taskDelay reports the delay before publication and whether the task must be scheduled at all.
-func (s *Scheduler) taskDelay(task service.ScheduledSyncTask, now time.Time) (time.Duration, bool) {
+func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.Duration, bool) {
 	freq := int64(0)
 	switch task.TaskType {
-	case service.TaskTypeSync:
+	case dao.TaskTypeSync:
 		freq = task.ConnectorRefreshFreq
-	case service.TaskTypePrune:
-		if !syncerConfigBool(task.ConnectorConfig, "sync_deleted_files") {
+	case dao.TaskTypePrune:
+		if !utility.ConfigBool(task.ConnectorConfig, "sync_deleted_files") {
 			return 0, false
 		}
 		freq = task.ConnectorPruneFreq
@@ -225,19 +236,4 @@ func (s *Scheduler) taskDelay(task service.ScheduledSyncTask, now time.Time) (ti
 		return 0, true
 	}
 	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now), true
-}
-
-func syncerConfigBool(config entity.JSONMap, key string) bool {
-	value, ok := config[key]
-	if !ok {
-		return false
-	}
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case string:
-		return typed == "1" || typed == "true" || typed == "TRUE"
-	default:
-		return false
-	}
 }

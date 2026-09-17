@@ -29,8 +29,8 @@
 //   tool.RetrievalRequest.Query      → nlp.RetrievalRequest.Question
 //   tool.RetrievalRequest.DatasetIDs → nlp.RetrievalRequest.KbIDs
 //   tool.RetrievalRequest.TopN       → nlp.RetrievalRequest.PageSize
-//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.Top
-//                                       (fallback Top=TopN*4 so rerank
+//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.KNNTopK
+//                                       (fallback KNNTopK=TopN*4 so rerank
 //                                        has headroom)
 //   tool.RetrievalRequest.KeywordsSimilarityWeight
 //                                    → nlp.RetrievalRequest.VectorSimilarityWeight
@@ -254,8 +254,14 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		}
 	}
 	query = retrievalUserPrefixPattern.ReplaceAllString(query, "")
+	// rank_feature (Python retrieve: rank_feature=label_question(question,
+	// self.kbs)). Prefer a feature supplied on the request (computed by RAGTools
+	// from its own KB objects) so the agentic tool stays authoritative; fall
+	// back to the enhancer, which resolves the KB objects itself.
 	var rankFeature map[string]float64
-	if a.enhancer != nil {
+	if req.RankFeature != nil && len(*req.RankFeature) > 0 {
+		rankFeature = *req.RankFeature
+	} else if a.enhancer != nil {
 		rankFeature = a.enhancer.LabelQuestion(ctx, query, datasets.kbs)
 	}
 	rerankModel, err := a.resolveRerankModel(ctx, req, datasets.kbs[0].TenantID)
@@ -266,7 +272,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	preparedReq.Query = query
 	preparedReq.DocScope = docIDs
 	preparedReq.DatasetIDs = append([]string(nil), datasets.kbIDs...)
-	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel)
+	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel, preparedReq.ExcludeCompiled)
 	nlpReq.RerankModel = rerankModel
 	if rankFeature != nil {
 		nlpReq.RankFeature = &rankFeature
@@ -313,28 +319,55 @@ func nlpRequestFromRetrieval(
 	tenantIDs []string,
 	topN int,
 	embeddingModel *modelModule.EmbeddingModel,
+	excludeCompiled bool,
 ) *nlp.RetrievalRequest {
 	nlpReq := &nlp.RetrievalRequest{
-		Question:       req.Query,
-		TenantIDs:      append([]string(nil), tenantIDs...),
-		KbIDs:          append([]string(nil), req.DatasetIDs...),
-		DocIDs:         append([]string(nil), compactStrings(req.DocScope)...),
-		Page:           1,
-		PageSize:       topN,
-		EmbeddingModel: embeddingModel,
-		Aggs:           boolPtr(false),
-		Highlight:      boolPtr(false),
+		Question:           req.Query,
+		TenantIDs:          append([]string(nil), tenantIDs...),
+		KbIDs:              append([]string(nil), req.DatasetIDs...),
+		DocIDs:             append([]string(nil), compactStrings(req.DocScope)...),
+		Page:               1,
+		PageSize:           topN,
+		EmbeddingModel:     embeddingModel,
+		Aggs:               boolPtr(false),
+		Highlight:          boolPtr(false),
+		AllowDenseFallback: req.AllowDenseFallback,
+	}
+	if excludeCompiled {
+		// Python hybrid_search excludes compiled products from plain retrieval
+		// via must_not={"exists":"compile_kwd"} (search.py:171). Compiled rows
+		// carry the compile_kwd field; the nlp backend merges req.Filter into
+		// the doc-store term filter, so a must_not.exists excludes them.
+		nlpReq.Filter = map[string]interface{}{
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
+		}
+	}
+	if req.RerankCandidatesCount != 0 {
+		nlpReq.RerankCandidatesCount = &req.RerankCandidatesCount
 	}
 	if req.TopK > 0 {
-		nlpReq.Top = &req.TopK
+		nlpReq.KNNTopK = &req.TopK
 	} else if topN > 0 {
 		rerankBudget := topN * 4
-		nlpReq.Top = &rerankBudget
+		nlpReq.KNNTopK = &rerankBudget
 	}
 	if req.SimilarityThreshold != nil {
 		nlpReq.SimilarityThreshold = req.SimilarityThreshold
 	}
-	if req.KeywordsSimilarityWeight != nil {
+	if req.DisableVectorLeg {
+		// Python embd_mdl=None (bm25_search / grep_search / retrieve with
+		// using_embedding=False): keyword-only search, NO dense leg at all —
+		// not even a weight-0 one, which would still constrain the candidate
+		// pool through the KNN similarity option.
+		nlpReq.EmbeddingModel = nil
+	}
+	if req.VectorSimilarityWeight != nil {
+		// Agentic harness path: the vector weight arrives already in vector
+		// semantics (Python vector_similarity_weight) — forward verbatim.
+		nlpReq.VectorSimilarityWeight = req.VectorSimilarityWeight
+	} else if req.KeywordsSimilarityWeight != nil {
+		// Canvas path: keywords_similarity_weight is the KEYWORD weight
+		// (user-facing config); the vector weight is its complement.
 		vectorSimilarityWeight := 1 - *req.KeywordsSimilarityWeight
 		nlpReq.VectorSimilarityWeight = &vectorSimilarityWeight
 	}
@@ -515,15 +548,16 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 		driver    modelModule.ModelDriver
 		modelName string
 		apiConfig *modelModule.APIConfig
+		maxTokens int
 		err       error
 	)
-	driver, modelName, apiConfig, _, err = a.modelResolver.ResolveModelConfig(
+	driver, modelName, apiConfig, maxTokens, err = a.modelResolver.ResolveModelConfig(
 		ctx, tenantID, entity.ModelTypeRerank, req.RerankID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve rerank model: %w", err)
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.
@@ -538,8 +572,10 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		DocumentName:     stringFromMap(raw, "docnm_kwd"),
 		DatasetID:        stringFromMap(raw, "kb_id"),
 		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
+		DocType:          firstStringFromMap(raw, "doc_type_kwd", "doc_type"),
 		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
 		Positions:        firstValueFromMap(raw, "positions", "position_int"),
+		MomID:            stringFromMap(raw, "mom_id"),
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),

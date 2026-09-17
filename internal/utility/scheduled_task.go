@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -82,6 +83,7 @@ type ScheduledTask struct {
 	Interval  time.Duration
 	Job       func()
 	stop      chan struct{}
+	mu        sync.Mutex
 	running   bool
 	executing int32 // atomic flag: 0 - not executed, 1 running
 }
@@ -92,18 +94,22 @@ func NewScheduledTask(name string, interval time.Duration, job func()) *Schedule
 		Name:     name,
 		Interval: interval,
 		Job:      job,
-		stop:     make(chan struct{}),
 	}
 }
 
 // Start begins the periodic task
 func (t *ScheduledTask) Start() {
+	t.mu.Lock()
 	if t.running {
+		t.mu.Unlock()
 		return
 	}
+	stop := make(chan struct{})
+	t.stop = stop
 	t.running = true
+	t.mu.Unlock()
 
-	go func() {
+	go func(stop <-chan struct{}) {
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()
 
@@ -113,12 +119,12 @@ func (t *ScheduledTask) Start() {
 			select {
 			case <-ticker.C:
 				t.runSafely()
-			case <-t.stop:
+			case <-stop:
 				common.Info("Task stopped", zap.String("name", t.Name))
 				return
 			}
 		}
-	}()
+	}(stop)
 }
 
 // runSafely executes the job with panic recovery and prevents overlap
@@ -143,11 +149,15 @@ func (t *ScheduledTask) runSafely() {
 
 // Stop stops the periodic task
 func (t *ScheduledTask) Stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if !t.running {
 		return
 	}
 	t.running = false
 	close(t.stop)
+	t.stop = nil
 }
 
 // IsExecuting returns whether the task is currently executing

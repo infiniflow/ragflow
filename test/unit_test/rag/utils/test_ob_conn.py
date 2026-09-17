@@ -18,7 +18,40 @@
 Unit tests for OceanBase connection utility functions.
 """
 
-from rag.utils.ob_conn import get_value_str, get_metadata_filter_expression
+import logging
+from unittest.mock import MagicMock
+
+import pytest
+
+from rag.utils.ob_conn import OBConnection, SearchResult, get_filters, get_metadata_filter_expression, get_value_str
+
+
+def _ob_connection_class():
+    return next(cell.cell_contents for cell in OBConnection.__closure__ if isinstance(cell.cell_contents, type))
+
+
+class TestOceanBaseVectorScoreExtraction:
+    def test_get_scores_preserves_scores_and_defaults_missing_scores(self, caplog):
+        """SeekDB vector results expose chunk ids and scores in SearchResult.chunks."""
+        connection = object.__new__(_ob_connection_class())
+        result = SearchResult(
+            total=5,
+            chunks=[
+                {"id": "chunk-1", "_score": 0.8123},
+                {"id": "chunk-2", "_score": 0.1034},
+                {"id": "chunk-3"},
+                {"id": "chunk-4", "_score": None},
+                {"_score": 0.5},
+            ],
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="ragflow.ob_conn"):
+            scores = connection.get_scores(result)
+
+        assert scores == {"chunk-1": 0.8123, "chunk-2": 0.1034, "chunk-3": 0.0, "chunk-4": 0.0}
+        assert "get_scores skipped chunks" in caplog.text
+        assert "missing_id=1" in caplog.text
+        assert "missing_score=2" in caplog.text
 
 
 class TestGetValueStr:
@@ -235,3 +268,66 @@ class TestGetMetadataFilterExpression:
         result = get_metadata_filter_expression(filter_dict)
         assert result.startswith("(")
         assert result.endswith(")")
+
+
+class TestGetFiltersColumnValidation:
+    """Regression tests: get_filters() must not let malicious column names reach SQL (V-004 follow-up)."""
+
+    def test_malicious_column_key_silently_skipped(self):
+        assert get_filters({"id; DROP TABLE users;--": "foo"}) == []
+
+    def test_malicious_compound_key_silently_skipped(self):
+        assert get_filters({"id = 1, malicious_column": "foo"}) == []
+
+    def test_malicious_exists_value_silently_skipped(self):
+        assert get_filters({"exists": "id; DROP TABLE users;--"}) == []
+
+    def test_legitimate_column_still_filtered(self):
+        assert get_filters({"kb_id": "kb1"}) == ["kb_id = 'kb1'"]
+
+
+class TestUpdateColumnValidation:
+    """Regression tests: OBConnection.update() must validate dynamic identifiers before building SQL (V-004 follow-up)."""
+
+    def _connection(self):
+        connection = object.__new__(_ob_connection_class())
+        connection._check_table_exists_cached = lambda index_name: True
+        connection.client = MagicMock()
+        return connection
+
+    def test_malicious_new_value_key_rejected(self):
+        connection = self._connection()
+        with pytest.raises(ValueError):
+            connection.update({}, {"id; DROP TABLE users;--": "foo"}, "test_table", "kb1")
+        connection.client.perform_raw_text_sql.assert_not_called()
+
+    def test_malicious_remove_value_rejected(self):
+        connection = self._connection()
+        with pytest.raises(ValueError):
+            connection.update({}, {"remove": "id; DROP TABLE users;--"}, "test_table", "kb1")
+        connection.client.perform_raw_text_sql.assert_not_called()
+
+    def test_legitimate_update_succeeds(self):
+        connection = self._connection()
+        result = connection.update({"id": "c1"}, {"docnm_kwd": "foo"}, "test_table", "kb1")
+        assert result is True
+        connection.client.perform_raw_text_sql.assert_called_once()
+
+    def test_legitimate_remove_succeeds(self):
+        connection = self._connection()
+        result = connection.update({"id": "c1"}, {"remove": "docnm_kwd"}, "test_table", "kb1")
+        assert result is True
+        connection.client.perform_raw_text_sql.assert_called_once()
+
+    def test_vector_column_update_succeeds(self):
+        """Regression test: dynamic q_<n>_vec columns must not be rejected by the static allowlist."""
+        connection = self._connection()
+        result = connection.update({"id": "c1"}, {"q_1024_vec": [0.1, 0.2, 0.3]}, "test_table", "kb1")
+        assert result is True
+        connection.client.perform_raw_text_sql.assert_called_once()
+
+    def test_vector_column_remove_succeeds(self):
+        connection = self._connection()
+        result = connection.update({"id": "c1"}, {"remove": "q_1024_vec"}, "test_table", "kb1")
+        assert result is True
+        connection.client.perform_raw_text_sql.assert_called_once()

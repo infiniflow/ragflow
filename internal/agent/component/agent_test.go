@@ -110,6 +110,17 @@ func TestScanAllStreamForToolCallAllowsDirectAnswer(t *testing.T) {
 	}
 }
 
+func TestHasCodeExecTool(t *testing.T) {
+	for _, name := range []string{"CodeExec", "code_exec", "execute_code"} {
+		if !hasCodeExecTool([]string{name}) {
+			t.Fatalf("hasCodeExecTool(%q) = false, want true", name)
+		}
+	}
+	if hasCodeExecTool([]string{"Retrieval"}) {
+		t.Fatal("hasCodeExecTool(Retrieval) = true, want false")
+	}
+}
+
 type textThenToolCallModel struct {
 	turn       int
 	boundTools []*schema.ToolInfo
@@ -1304,5 +1315,18 @@ func TestAgent_ReActExhaustsSteps(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("sqlmock expectations: %v", err)
+	}
+}
+
+func TestAgentDisabledMaxTokens(t *testing.T) {
+	p := mergeAgentParam(AgentParam{}, map[string]any{"max_tokens": 256, "maxTokensEnabled": false})
+	if p.MaxTokens != nil {
+		t.Fatalf("disabled max_tokens still applied: %d", *p.MaxTokens)
+	}
+	for _, inputs := range []map[string]any{{"max_tokens": 256}, {"max_tokens": 256, "maxTokensEnabled": true}} {
+		p = mergeAgentParam(AgentParam{}, inputs)
+		if p.MaxTokens == nil || *p.MaxTokens != 256 {
+			t.Fatal("enabled or unflagged max_tokens lost")
+		}
 	}
 }

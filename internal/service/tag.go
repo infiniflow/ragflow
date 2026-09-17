@@ -28,7 +28,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/service/nlp"
@@ -115,21 +114,27 @@ func SetTagsToCache(ctx context.Context, kbIDs []string, tags map[string]float64
 type Knowledgebase = entity.Knowledgebase
 
 // GetAllTagsInPortion returns all tag_kwd values and their occurrence counts
-// for documents belonging to the given kbIDs.
-func (s *MetadataService) GetAllTagsInPortion(ctx context.Context, tenantID string, kbIDs []string) (map[string]float64, error) {
-	if len(kbIDs) == 0 {
+// for documents belonging to the given kbIDs, aggregated across every tenant
+// index in tenantIDs — the same tenant scope TagQuery searches. The dataset
+// and chunk-search callers can supply authorized knowledgebases from multiple
+// tenants, so restricting the aggregation to a single tenant index would omit
+// tags that exist only in the other tenants' indices (leaving them absent from
+// allTags and scored with the 0.0001 fallback, which inflates their scores).
+func (s *MetadataService) GetAllTagsInPortion(ctx context.Context, tenantIDs []string, kbIDs []string) (map[string]float64, error) {
+	if len(kbIDs) == 0 || len(tenantIDs) == 0 {
 		return make(map[string]float64), nil
 	}
 
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	indexNames := make([]string, len(tenantIDs))
+	for i, tenantID := range tenantIDs {
+		indexNames[i] = fmt.Sprintf("ragflow_%s", tenantID)
+	}
 
 	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		KbIDs:      kbIDs,
-		Offset:     0,
-		// Python passes limit=0 ("unlimited") which Go SearchRequest treats
-		// as engine default (Infinity/ES: 30), so use an explicit large cap.
-		Limit:        100000,
+		IndexNames:   indexNames,
+		KbIDs:        kbIDs,
+		Offset:       0,
+		Limit:        common.MAX_RESULT_WINDOW,
 		SelectFields: []string{"tag_kwd"},
 	}
 
@@ -253,78 +258,73 @@ func (s *MetadataService) TagQuery(ctx context.Context, question string, tenantI
 	return resultTags, nil
 }
 
-// LabelQuestion returns rank features for a question based on KB's tag configuration.
+// LabelQuestion returns rank features for a question based on the dataset's own
+// tags.
 //
 // Flow:
-//  1. Collect tag_kb_ids from KBs' parser_config
+//  1. Use the queried KBs themselves as the tag source and search scope
 //  2. Try to get all_tags from cache (via GetTagsFromCache)
 //  3. If cache miss, call GetAllTagsInPortion and cache the result (via SetTagsToCache)
-//  4. Get tag KBs by IDs
-//  5. Call TagQuery to get weighted tag features for the question
+//  4. Call TagQuery to get weighted tag features for the question
+//
+// The Go backend has no separate tag-library dataset as the Python backend
+// does. Instead the Go extractor (extractor_tag.go) writes tag_kwd onto each
+// chunk during ingestion, so the authoritative tag vocabulary lives on the
+// dataset's own chunks and is aggregated from the KBs being queried.
 func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kbs []*Knowledgebase) map[string]float64 {
 	if len(kbs) == 0 || question == "" {
 		return nil
 	}
 
-	// Collect tag_kb_ids from KBs' parser_config and track last KB
-	var tagKBIDs []string
+	// Use the queried KBs themselves as both the tag source and the search
+	// scope. Track the last KB (for tenant_id / topn_tags) and the unique
+	// tenant IDs spanned by the KBs.
+	var kbIDs []string
 	var lastKB *Knowledgebase
+	tenantIDSet := make(map[string]bool)
 	for _, kb := range kbs {
-		if kb.ParserConfig == nil {
+		if kb == nil {
 			continue
 		}
 		lastKB = kb
-		if rawTagKBIDs, ok := kb.ParserConfig["tag_kb_ids"].([]interface{}); ok {
-			for _, id := range rawTagKBIDs {
-				if idStr, ok := id.(string); ok {
-					tagKBIDs = append(tagKBIDs, idStr)
-				}
-			}
+		kbIDs = append(kbIDs, kb.ID)
+		if kb.TenantID != "" {
+			tenantIDSet[kb.TenantID] = true
 		}
 	}
-
-	if len(tagKBIDs) == 0 {
+	if len(kbIDs) == 0 {
+		return nil
+	}
+	uniqueTenantIDs := make([]string, 0, len(tenantIDSet))
+	for tid := range tenantIDSet {
+		uniqueTenantIDs = append(uniqueTenantIDs, tid)
+	}
+	if len(uniqueTenantIDs) == 0 {
 		return nil
 	}
 
-	common.Debug("tag_kb_ids found in parser_config", zap.Strings("tag_kb_ids", tagKBIDs))
-
-	// Get all tags from cache or compute and cache
-	allTags, err := GetTagsFromCache(ctx, tagKBIDs)
+	// Aggregate tag_kwd across the dataset's own chunks (cached by KB set).
+	allTags, err := GetTagsFromCache(ctx, kbIDs)
 	if err != nil {
 		common.Warn("Failed to get tags from cache", zap.Error(err))
 	}
 	if allTags == nil {
 		// Cache miss - compute all_tags_in_portion
-		allTags, err = s.GetAllTagsInPortion(ctx, lastKB.TenantID, tagKBIDs)
+		allTags, err = s.GetAllTagsInPortion(ctx, uniqueTenantIDs, kbIDs)
 		if err != nil {
 			common.Warn("Failed to get all tags in portion", zap.Error(err))
 			return nil
 		}
 		// Store in cache for future lookups
-		if err = SetTagsToCache(ctx, tagKBIDs, allTags); err != nil {
+		if err = SetTagsToCache(ctx, kbIDs, allTags); err != nil {
 			common.Warn("Failed to set tags cache", zap.Error(err))
 		}
 	}
 
-	// Get tag_kbs by IDs
-	kbDAO := dao.NewKnowledgebaseDAO()
-	tagKBs, err := kbDAO.GetByIDs(ctx, dao.DB, tagKBIDs)
-	if err != nil || len(tagKBs) == 0 {
-		// Return nil if no tag_kbs found
-		return nil
-	}
-
-	// Get unique tenant IDs from tag_kbs
-	tenantIDSet := make(map[string]bool)
-	for _, kb := range tagKBs {
-		tenantIDSet[kb.TenantID] = true
-	}
-	var uniqueTenantIDs []string
-	for tid := range tenantIDSet {
-		uniqueTenantIDs = append(uniqueTenantIDs, tid)
-	}
-	if len(uniqueTenantIDs) == 0 {
+	// No tag_kwd on the dataset's chunks means tagging is not in effect for
+	// this query: return nil so the caller applies no tag boost (Python's
+	// label_question returning None).
+	if len(allTags) == 0 {
 		return nil
 	}
 
@@ -346,14 +346,14 @@ func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kb
 		}
 	}
 
-	// Query tags for the question using unique tenant IDs
-	tagFeatures, err := s.TagQuery(ctx, question, uniqueTenantIDs, tagKBIDs, allTags, topnTags)
+	// Query tags for the question across the dataset's own chunks.
+	tagFeatures, err := s.TagQuery(ctx, question, uniqueTenantIDs, kbIDs, allTags, topnTags)
 	if err != nil {
 		return nil
 	}
 	if len(tagFeatures) == 0 {
-		// Tag kb exists but returned no matching tags - return empty map (not nil)
-		// so caller knows tag kb was configured vs not configured at all
+		// Tags configured but the question matched none - return empty map
+		// (not nil) so the caller knows tagging was active for this dataset.
 		return make(map[string]float64)
 	}
 

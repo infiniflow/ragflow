@@ -23,9 +23,9 @@ import (
 	"strings"
 )
 
-// ChunkerFromUpstream is the shared upstream payload consumed by all four
-// chunker variants (TokenChunker, TitleChunker, GroupTitleChunker,
-// HierarchyTitleChunker).
+// ChunkerFromUpstream is the shared upstream payload consumed by the chunker
+// variants (GeneralChunker, TokenChunker, TitleChunker, GroupTitleChunker,
+// HierarchyTitleChunker, and QAChunker).
 //
 // It mirrors the wire shape defined across two equivalent Pydantic
 // schemas in the Python codebase:
@@ -41,6 +41,7 @@ import (
 //	created_time: float | None  (alias _created_time)
 //	elapsed_time: float | None  (alias _elapsed_time)
 //	name: str                   (required)
+//	file_type: str              (canonical parser routing extension)
 //	file: dict | None
 //	chunks: list[dict] | None
 //	output_format: Literal["json","markdown","text","html","chunks"] | None
@@ -54,6 +55,9 @@ type ChunkerFromUpstream struct {
 
 	// Name is the source document name. Required.
 	Name string `json:"name"`
+
+	// FileType is the canonical extension selected by the upstream Parser.
+	FileType string `json:"file_type,omitempty"`
 
 	// DocID is the originating document ID. When set, the chunker can
 	// re-resolve the source PDF from storage to crop section images on
@@ -204,44 +208,6 @@ type TokenChunkerParam struct {
 	// ImageContextSize is the number of surrounding tokens to attach
 	// to image chunks. 0 disables.
 	ImageContextSize int `json:"image_context_size"`
-
-	// UnderCap selects the merge strategy when greedily accumulating
-	// adjacent units (token_chunker UNDER_CAP vs OVER_CAP).
-	//   - false (default): OVER_CAP — mirrors Python's canonical default.
-	//     A chunk may exceed the token target by at most one incoming unit
-	//     (a boundary overflow then closes the chunk).
-	//   - true: UNDER_CAP — strictly never exceed the target; when the
-	//     projected join would overflow, start a fresh chunk instead.
-	// This is the wire-facing bool; the active strategy is exposed as
-	// MergeStrategy so callers never have to invert it.
-	UnderCap bool `json:"under_cap"`
-}
-
-// MergeStrategy selects how the TokenChunker greedily accumulates adjacent
-// units into a chunk. It mirrors Python's rag/nlp/__init__.py MergeStrategy so
-// the Go and Python implementations stay on the same vocabulary (OVER_CAP /
-// UNDER_CAP) instead of a bare inlined bool.
-type MergeStrategy int
-
-const (
-	// MergeOverCap is the canonical default (Python OVER_CAP): a chunk may
-	// exceed the token target by at most one incoming unit (a boundary
-	// overflow then closes the chunk).
-	MergeOverCap MergeStrategy = iota
-	// MergeUnderCap never exceeds the target; when the projected join would
-	// overflow, a fresh chunk is started instead (Python UNDER_CAP).
-	MergeUnderCap
-)
-
-// MergeStrategy reports the active merge strategy for this param. It is derived
-// from UnderCap so existing configs that set "under_cap" keep working without a
-// schema break, and callers read the strategy directly instead of inverting a
-// bool at every call site.
-func (p TokenChunkerParam) MergeStrategy() MergeStrategy {
-	if p.UnderCap {
-		return MergeUnderCap
-	}
-	return MergeOverCap
 }
 
 // Defaults returns the Python default TokenChunkerParam.
@@ -417,17 +383,26 @@ type TitleChunkerParam struct {
 	// RootChunkAsHeading, when true, prepends the root chunk's text
 	// to every emitted chunk (and drops the root chunk itself).
 	RootChunkAsHeading bool `json:"root_chunk_as_heading"`
+
+	// ChunkTokenCap is the hard ceiling on each emitted text chunk's token
+	// count (mirrors Python title_chunker/common.py chunk_token_cap, added in
+	// #18455). A built text chunk exceeding it is re-split on sentence
+	// boundaries into <= cap sub-chunks. 0 disables the ceiling. The Python
+	// default is 512; valid range when non-zero is 128..8000.
+	ChunkTokenCap int `json:"chunk_token_cap"`
 }
 
 // Defaults returns the Python default TitleChunkerParam. `Method` is
 // not initialized in the Python `__init__` (it is set externally); the
 // default is left as the empty string and the component must supply it.
+// `ChunkTokenCap` defaults to 512, matching Python #18455.
 func (TitleChunkerParam) Defaults() TitleChunkerParam {
 	return TitleChunkerParam{
 		Levels:                [][]string{},
 		Hierarchy:             nil,
 		IncludeHeadingContent: false,
 		RootChunkAsHeading:    false,
+		ChunkTokenCap:         512,
 	}
 }
 
@@ -435,6 +410,14 @@ func (TitleChunkerParam) Defaults() TitleChunkerParam {
 // expressible in pure-data terms: when Method == "hierarchy" the
 // hierarchy depth and level config must be present.
 func (p *TitleChunkerParam) Validate() error {
+	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
+	// integer in [128, 8000] (mirrors Python title_chunker #18455). Checked
+	// BEFORE the method switch so an unset method cannot bypass the range.
+	if p.ChunkTokenCap != 0 {
+		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
+			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
+		}
+	}
 	switch p.Method {
 	case "hierarchy", "group":
 	case "":

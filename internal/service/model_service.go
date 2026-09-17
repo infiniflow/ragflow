@@ -35,6 +35,31 @@ import (
 	"gorm.io/gorm"
 )
 
+// errModelConfigUnavailable marks model configuration failures that cannot be
+// repaired by retrying the same task.
+var errModelConfigUnavailable = errors.New("model configuration unavailable")
+
+// modelInstanceExtra contains the instance fields consumed during model
+// resolution. Other provider-specific fields remain valid and are ignored.
+type modelInstanceExtra struct {
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
+}
+
+// decodeModelInstanceExtra reads only the endpoint fields used for model
+// resolution, allowing existing rows to retain provider-specific JSON values.
+func decodeModelInstanceExtra(raw string) (modelInstanceExtra, error) {
+	if strings.TrimSpace(raw) == "" {
+		return modelInstanceExtra{}, nil
+	}
+
+	var extra modelInstanceExtra
+	if err := json.Unmarshal([]byte(raw), &extra); err != nil {
+		return modelInstanceExtra{}, err
+	}
+	return extra, nil
+}
+
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
 // Returns modelName, instanceName, providerName separately.
 //
@@ -199,7 +224,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -400,7 +425,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
-			"content_length": model.ContentLength,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"thinking":       model.Thinking,
@@ -535,6 +560,45 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
+func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, string, error) {
+	if !strings.EqualFold(providerName, "Bedrock") {
+		return false, apiKey, nil
+	}
+	var rawConfig map[string]json.RawMessage
+	if json.Unmarshal([]byte(apiKey), &rawConfig) != nil {
+		return false, apiKey, nil
+	}
+	var authMode string
+	if json.Unmarshal(rawConfig["auth_mode"], &authMode) != nil || authMode != "bedrock_api_key" {
+		return false, apiKey, nil
+	}
+	var config struct {
+		APIKey string `json:"bedrock_api_key"`
+		Region string `json:"bedrock_region"`
+	}
+	if json.Unmarshal([]byte(apiKey), &config) != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	if config.APIKey == "" {
+		return true, apiKey, errors.New("Bedrock API key must be provided")
+	}
+	config.Region = strings.TrimSpace(config.Region)
+	if config.Region == "" {
+		return true, apiKey, errors.New("AWS region must be provided")
+	}
+	if err := modelModule.ValidateBedrockRegion(config.Region); err != nil {
+		return true, apiKey, err
+	}
+	rawConfig["bedrock_api_key"], _ = json.Marshal(config.APIKey)
+	rawConfig["bedrock_region"], _ = json.Marshal(config.Region)
+	normalizedAPIKey, err := json.Marshal(rawConfig)
+	if err != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	return true, string(normalizedAPIKey), nil
+}
+
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
@@ -545,6 +609,9 @@ func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenant
 
 func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -570,10 +637,20 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		apiKey = "x"
 	}
 
-	// Verify the API key against the provider.
-	// Mirrors Python's verify_api_key (provider_api_service.py:596).
-	modelVerifyResult := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
-
+	bedrockAPIKeyAuth, apiKey, err := validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
+	if bedrockAPIKeyAuth {
+		if len(modelInfo) == 0 {
+			return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
+		}
+		for _, model := range modelInfo {
+			if strings.TrimSpace(model.ModelName) == "" {
+				return common.CodeBadRequest, errors.New("Bedrock model name must be provided")
+			}
+		}
+	}
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
@@ -595,25 +672,17 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
-	// Add models with verify result in extra.
+	// Add models to the instance.
 	if len(modelInfo) > 0 {
 		for _, model := range modelInfo {
-			if model.Extra == nil {
-				model.Extra = make(map[string]interface{})
-			}
-			verifyStatus := modelVerifyResult[model.ModelName]
-			if verifyStatus == "" {
-				verifyStatus = entity.ModelVerifyUnknown
-			}
-			model.Extra["verify"] = verifyStatus
 			if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
 				return common.CodeServerError, err
 			}
 		}
-	} else {
+	} else if !bedrockAPIKeyAuth {
 		// model_info not provided — add all factory default models.
 		// Mirrors Python's create_provider_instance
 		// (api/apps/services/provider_api_service.py:506-531).
@@ -624,13 +693,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
 		if factoryProvider != nil {
 			for _, llm := range factoryProvider.Models {
-				verifyStatus := modelVerifyResult[llm.Name]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				extraMap := map[string]interface{}{
-					"verify": verifyStatus,
-				}
+				extraMap := make(map[string]interface{})
 				if llm.Tools != nil {
 					extraMap["is_tools"] = llm.Tools.Support
 				}
@@ -692,62 +755,10 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
-}
-
-// verifyProviderAPIKey verifies the API key against the provider by calling
-// the driver's CheckConnection. It returns a map from model name to verify
-// status (success/fail/unknown).
-func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
-	result := make(map[string]string)
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		// Provider not in system pool — mark all models as unknown.
-		for _, model := range modelInfo {
-			result[model.ModelName] = entity.ModelVerifyUnknown
-		}
-		return result
-	}
-
-	apiKey = strings.TrimSpace(apiKey)
-	region = strings.TrimSpace(region)
-	baseURL = strings.TrimSpace(baseURL)
-	if region == "" {
-		region = "default"
-	}
-
-	driver := providerInfo.ModelDriver
-	if strings.EqualFold(providerInfo.Class, "local") {
-		var err error
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
-		if err != nil {
-			for _, model := range modelInfo {
-				result[model.ModelName] = entity.ModelVerifyFail
-			}
-			return result
-		}
-	}
-
-	apiConfig := &modelModule.APIConfig{
-		ApiKey:  &apiKey,
-		Region:  &region,
-		BaseURL: &baseURL,
-	}
-
-	verifyErr := driver.CheckConnection(ctx, apiConfig)
-	verifyStatus := entity.ModelVerifySuccess
-	if verifyErr != nil {
-		verifyStatus = entity.ModelVerifyFail
-	}
-
-	for _, model := range modelInfo {
-		result[model.ModelName] = verifyStatus
-	}
-	return result
 }
 
 // addModelToInstance creates a single model under the given provider instance.
@@ -788,7 +799,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -803,7 +814,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -871,7 +882,6 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -1019,6 +1029,20 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		ApiKey:  &apiKey,
 		Region:  &region,
 		BaseURL: &baseURL,
+	}
+
+	// The cloud PaddleOCR provider carries its config inside the api_key JSON
+	// payload (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm),
+	// mirroring Python's PaddleOCROcrModel. Unwrap the access token and base url
+	// so the OCR driver authenticates with a plain bearer token. Non-JSON
+	// api_keys (e.g. PaddleOCR.local) pass through untouched.
+	if keyBaseURL, keyAccessToken, _ := modelModule.PaddleOCRConfigFromAPIKey(apiKey); keyAccessToken != "" {
+		apiKey = keyAccessToken
+		if baseURL == "" {
+			baseURL = keyBaseURL
+		}
+		apiConfig.ApiKey = &apiKey
+		apiConfig.BaseURL = &baseURL
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
@@ -1238,7 +1262,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(passedTypes) == 0 {
-		return modelVerifyResult, fmt.Errorf("all model verification attempts failed: %w", errors.Join(errs...))
+		return modelVerifyResult, fmt.Errorf("model verification attempts failed: %w", errors.Join(errs...))
 	}
 
 	return modelVerifyResult, nil
@@ -1332,7 +1356,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
@@ -1594,6 +1618,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1838,8 +1863,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1872,6 +1902,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
@@ -1982,7 +2020,10 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 	return nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -2014,12 +2055,10 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		apiKey = "x"
 	}
 
-	// Verify API key if requested.
-	modelVerifyResult := make(map[string]string)
-	if verify {
-		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+	_, apiKey, err = validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
 	}
-
 	// Update instance record.
 	instanceUpdates := map[string]interface{}{
 		"api_key": apiKey,
@@ -2051,7 +2090,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -2096,17 +2135,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		for _, mdl := range modelInfo {
 			if mdl.ModelName == "" {
 				continue
-			}
-			// Attach verify status.
-			if verify {
-				verifyStatus := modelVerifyResult[mdl.ModelName]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				if mdl.Extra == nil {
-					mdl.Extra = make(map[string]interface{})
-				}
-				mdl.Extra["verify"] = verifyStatus
 			}
 
 			if existingMdl, exists := existingModelMap[mdl.ModelName]; exists {
@@ -2212,13 +2240,21 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerIDOrName, notExistInstances)
 	}
 
-	// Second pass: delete models and instances by IDs.
+	// Second pass: delete models and instances by IDs atomically.
 	// Mirrors Python's: delete_models_by_instance_ids(instance_ids)
 	//                   TenantModelInstanceService.delete_by_ids(instance_ids)
-	if _, err = m.modelDAO.DeleteByInstanceIDs(ctx, dao.DB, instanceIDs); err != nil {
-		return common.CodeServerError, err
-	}
-	if _, err = m.modelInstanceDAO.DeleteByIDs(ctx, dao.DB, instanceIDs); err != nil {
+	// Both deletes share one transaction so a failure of the instance delete
+	// cannot leave the tenant models already removed (partial deletion).
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := m.modelDAO.DeleteByInstanceIDs(ctx, tx, instanceIDs); err != nil {
+			return err
+		}
+		if _, err := m.modelInstanceDAO.DeleteByIDs(ctx, tx, instanceIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2364,6 +2400,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 			"status":     model.Status,
 			"verify":     verify,
 			"features":   features,
+			"extra":      modelExtra,
 		})
 	}
 
@@ -2564,6 +2601,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
 		model.MaxOutput = extra.MaxTokens
+		model.MaxTokens = extra.MaxTokens
 	}
 	if len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
@@ -2605,7 +2643,23 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 	return fallback, nil
 }
 
+func maxTokensFromModelInfo(modelInfo *modelModule.Model, modelType entity.ModelType) int {
+	if modelInfo == nil {
+		return 0
+	}
+	if (modelType == entity.ModelTypeEmbedding || modelType == entity.ModelTypeRerank) && modelInfo.MaxTokens != nil {
+		return *modelInfo.MaxTokens
+	}
+	if modelInfo.MaxOutput != nil {
+		return *modelInfo.MaxOutput
+	}
+	return 0
+}
+
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
+	if providerName == nil || instanceName == nil || modelName == nil {
+		return nil, errors.New("provider name, instance name and model name are required when model id is absent")
+	}
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
@@ -2613,7 +2667,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	}
 
 	if len(tenants) == 0 {
-		return nil, err
+		return nil, fmt.Errorf("no tenant found for user %s", userID)
 	}
 
 	tenantID := tenants[0].TenantID
@@ -3059,7 +3113,8 @@ func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName,
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(ctx, &resolvedModelName, rerankRequest, info.APIConfig, modelConfig, nil)
+	rerankModel := modelModule.NewRerankModel(modelDriver, &resolvedModelName, info.APIConfig, maxTokensFromModelInfo(info.ModelInfo, entity.ModelTypeRerank))
+	response, err = rerankModel.Rerank(ctx, rerankRequest, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3188,6 +3243,28 @@ func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, in
 		if err != nil || info == nil {
 			return nil, common.CodeNotFound, err
 		}
+	} else if providerName == nil && instanceName == nil && modelName == nil {
+		// No explicit model selection: synthesize through the tenant's
+		// default TTS model, mirroring Python's canvas auto_play which
+		// always resolves get_tenant_default_model_by_type(LLMType.TTS).
+		// A missing default surfaces as a typed error ("no default tts
+		// model is set") instead of a nil-pointer panic.
+		driver, name, defaultConfig, _, derr := m.GetTenantDefaultModelByType(ctx, userID, entity.ModelTypeTTS)
+		if derr != nil {
+			return nil, common.CodeNotFound, derr
+		}
+		if modelConfig == nil {
+			modelConfig = &modelModule.TTSConfig{}
+		}
+		var response *modelModule.TTSResponse
+		response, derr = driver.AudioSpeech(ctx, &name, audioContent, defaultConfig, modelConfig, nil)
+		if derr != nil {
+			return nil, common.CodeServerError, derr
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+		return response, common.CodeSuccess, nil
 	} else {
 		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
 		if err != nil || info == nil {
@@ -3417,11 +3494,11 @@ func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compo
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
+	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 type AddModelRequest struct {
@@ -3488,79 +3565,74 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 	modelEntity, err := m.modelDAO.GetByID(ctx, dao.DB, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("tenant model id=%s not found", modelID)
+			return nil, "", nil, 0, fmt.Errorf("%w: tenant model id=%s not found", errModelConfigUnavailable, modelID)
 		}
 		return nil, "", nil, 0, err
 	}
 	if modelEntity.Status != "active" {
-		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s is disabled", modelID)
+		return nil, "", nil, 0, fmt.Errorf("%w: tenant model id=%s is disabled", errModelConfigUnavailable, modelID)
 	}
 	if !entity.ModelType(modelEntity.ModelType).Has(modelType) {
-		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, modelType.String())
+		return nil, "", nil, 0, fmt.Errorf("%w: tenant model id=%s cannot be used as %s model", errModelConfigUnavailable, modelID, modelType.String())
 	}
 
 	providerEntity, err := m.modelProviderDAO.GetByID(ctx, dao.DB, modelEntity.ProviderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
+			return nil, "", nil, 0, fmt.Errorf("%w: provider id=%s not found for model id=%s", errModelConfigUnavailable, modelEntity.ProviderID, modelID)
 		}
 		return nil, "", nil, 0, err
 	}
 	if providerEntity == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
+		return nil, "", nil, 0, fmt.Errorf("%w: provider id=%s not found for model id=%s", errModelConfigUnavailable, modelEntity.ProviderID, modelID)
 	}
 
-	if providerEntity.TenantID != userID {
-		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
-		if terr != nil {
-			return nil, "", nil, 0, terr
-		}
-		allowed := false
-		for _, rel := range userTenants {
-			if rel != nil && rel.TenantID == providerEntity.TenantID {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", userID, providerEntity.TenantID)
-		}
+	allowed, accessErr := m.tenantCanReachProviderTenant(ctx, userID, providerEntity.TenantID)
+
+	if accessErr != nil {
+		return nil, "", nil, 0, accessErr
+	}
+	if !allowed {
+		return nil, "", nil, 0, fmt.Errorf(
+			"%w: tenant %s has no access to provider owned by tenant %s",
+			errModelConfigUnavailable,
+			userID,
+			providerEntity.TenantID,
+		)
 	}
 
 	instanceEntity, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("instance id=%s not found for model id=%s", modelEntity.InstanceID, modelID)
+			return nil, "", nil, 0, fmt.Errorf("%w: instance id=%s not found for model id=%s", errModelConfigUnavailable, modelEntity.InstanceID, modelID)
 		}
 		return nil, "", nil, 0, err
 	}
 
 	apiKey := instanceEntity.APIKey
-	var extra map[string]string
-	if err := json.Unmarshal([]byte(instanceEntity.Extra), &extra); err != nil {
-		return nil, "", nil, 0, err
+	extra, err := decodeModelInstanceExtra(instanceEntity.Extra)
+	if err != nil {
+		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
 	}
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	region := extra.Region
+	baseURL := extra.BaseURL
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
 	if providerInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerEntity.ProviderName)
+		return nil, "", nil, 0, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerEntity.ProviderName)
 	}
 	modelDriver, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerEntity.ProviderName, region, baseURL)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, err)
 	}
 
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.MaxOutput != nil {
-			maxTokens = *mi.MaxOutput
-		}
+		maxTokens = maxTokensFromModelInfo(mi, modelType)
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("%w: read model limits: %v", errModelConfigUnavailable, err)
 	}
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -3583,9 +3655,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
@@ -3593,7 +3665,7 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 
 func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if strings.TrimSpace(modelRef) == "" {
-		return nil, "", nil, 0, fmt.Errorf("model ref is required")
+		return nil, "", nil, 0, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
 	}
 	if _, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
 		return m.GetModelConfigByID(ctx, tenantID, modelType, modelRef)
@@ -3604,7 +3676,7 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 }
 
 // ResolveModelContextLength returns the chat model's effective context window
-// (content_length) in tokens, or 0 when unknown. content_length is the total
+// (context_length) in tokens, or 0 when unknown. context_length is the total
 // context window and max_output is the generation cap; the
 // knowledge_compiler prompt-budget logic needs the context window, not the
 // output cap. modelRef accepts either a tenant model UUID or a
@@ -3612,13 +3684,180 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 //
 // The resolution is delegated to dao.ResolveModelContentLength so every
 // consumer shares one path: a tenant-configured "max_tokens" override in the
-// tenant_model.extra wins, otherwise the provider catalog's content_length is
+// tenant_model.extra wins, otherwise the provider catalog's context_length is
 // used (D22/D23).
 func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
 	if strings.TrimSpace(modelRef) == "" {
 		return 0, fmt.Errorf("model ref is required")
 	}
 	return dao.ResolveModelContentLength(ctx, dao.DB, tenantID, modelRef, "", ""), nil
+}
+
+// ResolveModelToolSupport reports whether the resolved chat model supports
+// function calling (tool calls). It mirrors Python dialog_service.rag_agent's
+// `if not getattr(chat_mdl, "is_tools", False)` gate: a model without tool
+// support must skip the outer rag_agent react loop and fall back to the direct
+// graph (Python falls back to async_chat).
+//
+// Precedence mirrors Python's tenant_model_service
+// `"is_tools": model_extra.get("is_tools", is_tool)` (:363): the flag persisted
+// on the tenant model wins, and the provider catalog is only a default for
+// models enrolled without one. That is why the tenant_model row is resolved
+// first — by UUID, or for a composite "model@instance@provider" reference
+// through the tenant's own provider/instance rows. Reading the catalog first
+// instead would send a tenant-disabled model through the outer react loop —
+// where a model that does not actually call tools answers from its own
+// knowledge and the retrieval never runs.
+//
+// The reference is validated before model_extra is read, mirroring Python's
+// get_model_config_by_id (:324-347): a missing or disabled model, a model not
+// enrolled as this type, a missing provider, or a provider the tenant cannot
+// reach returns an error rather than a definitive is_tools answer. Callers treat
+// an error as "no tool support", the same outcome as an unset flag.
+func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (bool, error) {
+	if strings.TrimSpace(modelRef) == "" {
+		return false, fmt.Errorf("model ref is required")
+	}
+
+	// Tenant-model UUID path. IDs are globally unique and may belong to a
+	// provider shared with a joined tenant, so the lookup itself is unscoped —
+	// tenantCanReachProviderTenant below decides access.
+	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
+		if modelObj.Status != "active" {
+			return false, fmt.Errorf("tenant model id=%s is disabled", modelRef)
+		}
+		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
+			return false, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelRef, modelType.String())
+		}
+		provider, provErr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID)
+		if provErr != nil && !errors.Is(provErr, gorm.ErrRecordNotFound) {
+			return false, provErr
+		}
+		if provider == nil {
+			return false, fmt.Errorf("provider id=%s not found for model id=%s", modelObj.ProviderID, modelRef)
+		}
+		allowed, accessErr := m.tenantCanReachProviderTenant(ctx, tenantID, provider.TenantID)
+		if accessErr != nil {
+			return false, accessErr
+		}
+		if !allowed {
+			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+		}
+		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+
+	// Composite "model@instance@provider" path. The tenant's own rows are
+	// resolved so a flag persisted on the enrolled model still beats the
+	// catalog, exactly as it does on the UUID path.
+	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
+	if err != nil {
+		return false, err
+	}
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	if err != nil {
+		return false, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
+	}
+	if provider == nil {
+		return false, fmt.Errorf("provider %q not found for model %q", providerName, modelRef)
+	}
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
+	if err != nil {
+		return false, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+	}
+	if instance == nil {
+		return false, fmt.Errorf("instance %q not found for model %q", instanceName, modelRef)
+	}
+	modelObj, err := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
+	if err == nil {
+		if modelObj.Status != "active" {
+			return false, fmt.Errorf("model %q is disabled", modelRef)
+		}
+		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
+	}
+
+	// The tenant never enrolled this model as this type: the catalog is the only
+	// source left (the instance api_key payload Python reads here is seeded from
+	// the same catalog at enrolment time).
+	return catalogToolSupport(providerName, pureModelName), nil
+}
+
+// toolSupportFromTenantModel returns the is_tools flag persisted on a tenant
+// model's extra JSON when present, otherwise the provider catalog's declaration
+// for that model. Mirrors Python's model_extra.get("is_tools", is_tool).
+func toolSupportFromTenantModel(extra, providerName, modelName string) bool {
+	if ts, ok := extraToolSupport(extra); ok {
+		return ts
+	}
+	return catalogToolSupport(providerName, modelName)
+}
+
+// tenantCanReachProviderTenant reports whether userID owns the provider's tenant
+// or is a joined member of it. Mirrors Python's tenant_model_service
+// get_model_config_by_id tenant check (:342-347).
+func (m *ModelProviderService) tenantCanReachProviderTenant(ctx context.Context, userID, ownerTenantID string) (bool, error) {
+	if userID == ownerTenantID {
+		return true, nil
+	}
+	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, rel := range userTenants {
+		if rel != nil && rel.TenantID == ownerTenantID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// extraToolSupport reads the is_tools flag persisted on a tenant model's extra
+// JSON. The value is written as a JSON boolean (addModelToInstance stores
+// llm.Tools.Support verbatim) but has historically also been spelled as a
+// string, so both shapes are accepted. ok is false when the key is absent or
+// the extra blob is unreadable, letting the caller fall back to the catalog.
+func extraToolSupport(extra string) (bool, bool) {
+	if strings.TrimSpace(extra) == "" {
+		return false, false
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
+		return false, false
+	}
+	v, ok := fields["is_tools"]
+	if !ok {
+		return false, false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "true"), true
+	case float64:
+		return t != 0, true
+	}
+	return false, false
+}
+
+// catalogToolSupport reports whether a provider's catalog declares the named
+// model as supporting tool (function) calling. Returns false when the provider
+// or model is unknown. Mirrors RAGFlow's model_meta "is_tools" feature derived
+// from conf/models/*.json.
+func catalogToolSupport(providerName, modelName string) bool {
+	pm := dao.GetModelProviderManager()
+	provider := pm.FindProvider(providerName)
+	if provider == nil {
+		return false
+	}
+	mi := pm.FindModel(provider, modelName)
+	if mi == nil || mi.Tools == nil {
+		return false
+	}
+	return mi.Tools.Support
 }
 
 func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
@@ -3884,7 +4123,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil
@@ -3913,7 +4152,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		if modelName == teiModel {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(modelName)
 			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", modelName)
+				return nil, "", nil, 0, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, modelName)
 			}
 			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
 			return builtinDriver, modelName, apiConfig, 0, nil
@@ -3925,7 +4164,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		if teiPure == teiModel && (teiProvider == "Builtin" || teiProvider == "") {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(teiPure)
 			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", teiPure)
+				return nil, "", nil, 0, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, teiPure)
 			}
 			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
 			return builtinDriver, teiPure, apiConfig, 0, nil
@@ -3961,18 +4200,14 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		if pureModelName != "" {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
 			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
+				return nil, "", nil, 0, fmt.Errorf("%w: builtin embedding model %q not found", errModelConfigUnavailable, pureModelName)
 			}
 			apiKey := ""
 			region := ""
 			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 			maxTokens := 0
 			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.MaxOutput == nil {
-					maxTokens = 0
-				} else {
-					maxTokens = *mi.MaxOutput
-				}
+				maxTokens = maxTokensFromModelInfo(mi, modelType)
 			}
 			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 		}
@@ -3980,33 +4215,41 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 
 	pureModelName, instanceName, providerName, err := parseModelName(modelName)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
 	}
 
 	// Direct provider lookup
 	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if provErr != nil {
+		if errors.Is(provErr, gorm.ErrRecordNotFound) {
+			return nil, "", nil, 0, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, provErr)
+		}
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
 	}
 	if provider == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q not found for model %q", providerName, modelName)
+		return nil, "", nil, 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelName)
 	}
 
 	// Direct instance lookup
 	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if instErr != nil {
+		if errors.Is(instErr, gorm.ErrRecordNotFound) {
+			return nil, "", nil, 0, fmt.Errorf("%w: instance %q lookup failed: %w", errModelConfigUnavailable, instanceName, instErr)
+		}
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
 	}
 	if instance == nil {
-		return nil, "", nil, 0, fmt.Errorf("instance %q not found for model %q", instanceName, modelName)
+		return nil, "", nil, 0, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelName)
 	}
 
 	// Decode api_key and extra fields from the instance row
 	apiKey := instance.APIKey
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	extra, err := decodeModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
+	}
+	region := extra.Region
+	baseURL := extra.BaseURL
 
 	// Direct model lookup
 	modelObj, modelErr := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
@@ -4017,28 +4260,24 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		// Happy path: tenant enrolled this model.
 		// INACTIVE check
 		if modelObj.Status == "inactive" {
-			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
+			return nil, "", nil, 0, fmt.Errorf("%w: model %q is disabled", errModelConfigUnavailable, modelName)
 		}
 
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerName)
+			return nil, "", nil, 0, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerName)
 		}
 		driver, driverErr := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, baseURL)
 		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
+			return nil, "", nil, 0, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, driverErr)
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.MaxOutput == nil {
-				maxTokens = 0
-			} else {
-				maxTokens = *mi.MaxOutput
-			}
+			maxTokens = maxTokensFromModelInfo(mi, modelType)
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
 		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
+			return nil, "", nil, 0, fmt.Errorf("%w: read model limits: %v", errModelConfigUnavailable, driverErr)
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
@@ -4070,7 +4309,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	// casing). The rest of the Go codebase uses these helpers too.
 	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
 	if targetProvider == nil {
-		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
+		return nil, "", nil, 0, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}
 	var llmInfo *modelModule.Model
 	for i := range targetProvider.Models {
@@ -4080,17 +4319,14 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 	}
 	if llmInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("model config not found: %s", modelName)
+		return nil, "", nil, 0, fmt.Errorf("%w: model config not found: %s", errModelConfigUnavailable, modelName)
 	}
 	driver, driverErr := newModelDriverForBaseURL(targetProvider.ModelDriver, providerName, region, baseURL)
 	if driverErr != nil {
-		return nil, "", nil, 0, driverErr
+		return nil, "", nil, 0, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, driverErr)
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxOutput != nil {
-		maxTokens = *llmInfo.MaxOutput
-	}
+	maxTokens := maxTokensFromModelInfo(llmInfo, modelType)
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
 

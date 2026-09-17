@@ -16,6 +16,7 @@
 """Tests for MWS provider registration, discovery, and inference adapters."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import numpy as np
@@ -355,6 +356,40 @@ def test_mws_chat_request_flattens_openai_tool_history():
 
 
 @pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_bound_tool_request_normalizes_existing_tool_history():
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+    chat.tools = [{"type": "function", "function": {"name": "lookup", "parameters": {}}}]
+    chat.is_tools = True
+    tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]
+    message = SimpleNamespace(content="Done", tool_calls=None, reasoning_content=None)
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=message, finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=3, completion_tokens=1, total_tokens=4),
+    )
+    chat.async_client.chat.completions.create = AsyncMock(return_value=response)
+
+    answer, token_count = await chat.async_chat_with_tools(
+        "",
+        [
+            {"role": "assistant", "content": None, "tool_calls": tool_calls},
+            {"role": "tool", "tool_call_id": "call_123", "content": "result"},
+        ],
+        {},
+    )
+
+    assert (answer, token_count) == ("Done", 4)
+    sent_messages = chat.async_client.chat.completions.create.await_args.kwargs["messages"]
+    assert sent_messages == [
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_123","content":"result"}</tool_result>'},
+    ]
+
+
+@pytest.mark.p1
 @pytest.mark.parametrize(
     ("history", "error"),
     [
@@ -362,6 +397,10 @@ def test_mws_chat_request_flattens_openai_tool_history():
         ([{"role": "developer", "content": "No"}], "Unsupported MWS chat role"),
         ([{"role": "user", "content": None}], "user message content must be a string"),
         ([{"role": "assistant", "content": None}], "assistant message content must be a string"),
+        (
+            [{"role": "assistant", "content": {"invalid": True}, "tool_calls": [{"id": "call_123"}]}],
+            "assistant message content must be a string",
+        ),
         ([{"role": "tool", "content": "result"}], "requires tool_call_id"),
         (
             [{"role": "tool", "tool_call_id": "call_123", "content": None}],

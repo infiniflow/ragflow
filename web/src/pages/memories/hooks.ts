@@ -3,10 +3,12 @@
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import {
   buildOwnersFilter,
   groupListByArray,
@@ -51,9 +53,15 @@ export const useCreateMemory = () => {
 };
 
 export const useFetchMemoryList = () => {
-  const { handleInputChange, searchString, pagination, setPagination } =
-    useHandleSearchChange();
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const memoryType = Array.isArray(filterValue.memoryType)
@@ -115,10 +123,12 @@ export const useFetchMemoryList = () => {
     isError,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -175,6 +185,7 @@ export const useDeleteMemory = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['memoryList'] });
+      markListItemsDeleted(ListDeletionKey.MemoryList);
       return response;
     },
     onSuccess: () => {
@@ -303,35 +314,50 @@ export const useRenameMemory = () => {
   };
 };
 
-export function useSelectFilters() {
+/**
+ * Build the filter facet collections for the memory list page from the
+ * memory items that are already loaded by the page's list query.
+ *
+ * The filters must be derived from the same query data that renders the
+ * memory cards so that creating, updating or deleting a memory and
+ * refetching the list refreshes the cards and the filter options in
+ * lockstep. Firing a second list query here creates an independent react-
+ * query observer whose key diverges from the page query whenever a search
+ * keyword or a filter is active, leaving the filter options stale after a
+ * memory is created.
+ *
+ * @param memoryList - The memory items of the currently loaded list page.
+ * @returns The filter collections consumed by ListFilterBar.
+ *
+ * @example
+ * const { data: list } = useFetchMemoryList();
+ * const { filters } = useSelectFilters(list?.data?.memory_list ?? []);
+ */
+export function useSelectFilters(memoryList: IMemory[]) {
   const { t } = useTranslation();
-  const { data: res } = useFetchMemoryList();
-  const data = res?.data;
 
-  const memoryType = useMemo(() => {
-    return groupListByArray(data?.memory_list ?? [], 'memory_type');
-  }, [data?.memory_list]);
-  const storageType = useMemo(() => {
-    return groupListByType(
-      data?.memory_list ?? [],
+  const filters: FilterCollection[] = useMemo(() => {
+    const memoryType = groupListByArray(memoryList, 'memory_type');
+    const storageType = groupListByType(
+      memoryList,
       'storage_type',
       'storage_type',
     );
-  }, [data?.memory_list]);
 
-  const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.memory_list ?? [], 'owner_name', t('common.owner')),
-    {
-      field: 'memoryType',
-      list: memoryType,
-      label: t('memories.memoryType'),
-    },
-    {
-      field: 'storageType',
-      list: storageType,
-      label: t('memory.config.storageType'),
-    },
-  ];
+    return [
+      buildOwnersFilter(memoryList, 'owner_name', t('common.owner')),
+      {
+        field: 'memoryType',
+        list: memoryType,
+        label: t('memories.memoryType'),
+      },
+      {
+        field: 'storageType',
+        list: storageType,
+        label: t('memory.config.storageType'),
+      },
+    ];
+  }, [memoryList, t]);
 
   return { filters };
 }
