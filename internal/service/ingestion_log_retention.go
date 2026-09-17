@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -33,6 +34,54 @@ type ingestionDocumentTrimResult struct {
 	DeletedRuns   int
 	DeletedEvents int
 	AfterEvents   int
+}
+
+func logIngestionFoldResult(taskID, pipelineLogID string, result ingestionLogFoldResult, duration time.Duration, err error) {
+	fields := []zap.Field{
+		zap.String("event", "ingestion_log_fold"),
+		zap.String("task_id", taskID),
+		zap.String("pipeline_log_id", pipelineLogID),
+		zap.Int("before", result.Before),
+		zap.Int("after", result.After),
+		zap.Int("deleted", result.DeletedRows),
+		zap.Int("omitted", result.OmittedEvents),
+		zap.Int("protected", result.Protected),
+		zap.Int("summary_id", result.SummaryID),
+		zap.Duration("duration", duration),
+	}
+	if err != nil {
+		fields = append(fields, zap.String("result", "failure"))
+		common.Error("ingestion log fold failed", err, fields...)
+		return
+	}
+	if result.Skipped {
+		fields = append(fields, zap.String("result", "skipped"), zap.String("reason", result.SkipReason))
+		common.Info("ingestion log fold skipped", fields...)
+		return
+	}
+	fields = append(fields, zap.String("result", "success"))
+	common.Info("ingestion log fold completed", fields...)
+}
+
+func logIngestionTrimResult(documentID, taskID, preservePipelineLogID string, result ingestionDocumentTrimResult, duration time.Duration, err error) {
+	fields := []zap.Field{
+		zap.String("event", "ingestion_log_run_delete"),
+		zap.String("document_id", documentID),
+		zap.String("task_id", taskID),
+		zap.String("preserve_pipeline_log_id", preservePipelineLogID),
+		zap.Int("before", result.BeforeEvents),
+		zap.Int("after", result.AfterEvents),
+		zap.Int("deleted_runs", result.DeletedRuns),
+		zap.Int("deleted_events", result.DeletedEvents),
+		zap.Duration("duration", duration),
+	}
+	if err != nil {
+		fields = append(fields, zap.String("result", "failure"))
+		common.Error("ingestion log run deletion failed", err, fields...)
+		return
+	}
+	fields = append(fields, zap.String("result", "success"), zap.String("reason", "document_event_cap"))
+	common.Info("ingestion log run deletion completed", fields...)
 }
 
 // foldIngestionRun compacts one terminal run without changing the run's

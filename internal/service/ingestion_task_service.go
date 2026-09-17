@@ -12,6 +12,7 @@ import (
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -972,10 +973,10 @@ func (s *IngestionTaskService) UpdateComponentTotal(ctx context.Context, taskID 
 // value reloaded from the mutable task row.
 func (s *IngestionTaskService) RecordLifecycle(ctx context.Context, pipelineLogID, taskID, component string, phase int, message string) error {
 	if component == "" {
-		return errors.New("ingestion lifecycle event requires a component")
+		return rejectIngestionEvent("missing_component", pipelineLogID, taskID, errors.New("ingestion lifecycle event requires a component"))
 	}
 	if phase < 0 || phase > 2 {
-		return fmt.Errorf("ingestion lifecycle event has invalid phase %d", phase)
+		return rejectIngestionEvent("invalid_phase", pipelineLogID, taskID, fmt.Errorf("ingestion lifecycle event has invalid phase %d", phase))
 	}
 	return s.insertEvent(ctx, ingestionEventLifecycle, pipelineLogID, taskID, component, phase, message)
 }
@@ -991,26 +992,44 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 	if err := s.insertEvent(ctx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message); err != nil {
 		return err
 	}
-	if _, err := s.foldIngestionRun(context.WithoutCancel(ctx), pipelineLogID, s.logSettings.MaxRowsPerRun); err != nil {
-		common.Warn(fmt.Sprintf("fold terminal ingestion run %s: %v", pipelineLogID, err))
+	foldContext := context.WithoutCancel(ctx)
+	foldStarted := time.Now()
+	foldResult, foldErr := s.foldIngestionRun(foldContext, pipelineLogID, s.logSettings.MaxRowsPerRun)
+	logIngestionFoldResult(taskID, pipelineLogID, foldResult, time.Since(foldStarted), foldErr)
+	if foldErr != nil {
+		common.Warn(fmt.Sprintf("fold terminal ingestion run %s: %v", pipelineLogID, foldErr))
 	}
-	run, err := s.pipelineLogDAO.GetByID(context.WithoutCancel(ctx), dao.DB, pipelineLogID)
+	run, err := s.pipelineLogDAO.GetByID(foldContext, dao.DB, pipelineLogID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("load terminal ingestion run %s for document trimming: %v", pipelineLogID, err))
+		logIngestionTrimResult("", taskID, pipelineLogID, ingestionDocumentTrimResult{}, 0, err)
 		return nil
 	}
-	if _, err := s.trimIngestionDocument(context.WithoutCancel(ctx), run.DocumentID, pipelineLogID, s.logSettings.MaxRowsPerDocument); err != nil {
-		common.Warn(fmt.Sprintf("trim ingestion document %s after terminal run %s: %v", run.DocumentID, pipelineLogID, err))
+	trimStarted := time.Now()
+	trimResult, trimErr := s.trimIngestionDocument(foldContext, run.DocumentID, pipelineLogID, s.logSettings.MaxRowsPerDocument)
+	logIngestionTrimResult(run.DocumentID, taskID, pipelineLogID, trimResult, time.Since(trimStarted), trimErr)
+	if trimErr != nil {
+		common.Warn(fmt.Sprintf("trim ingestion document %s after terminal run %s: %v", run.DocumentID, pipelineLogID, trimErr))
 	}
 	return nil
 }
 
+func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error {
+	common.Warn("ingestion_log_event_rejected",
+		zap.String("event", "ingestion_log_event_rejected"),
+		zap.String("reason", reason),
+		zap.String("pipeline_log_id", pipelineLogID),
+		zap.String("task_id", taskID),
+	)
+	return err
+}
+
 func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
 	if pipelineLogID == "" {
-		return errors.New("ingestion event requires a pipeline log id")
+		return rejectIngestionEvent("missing_pipeline_log_id", pipelineLogID, taskID, errors.New("ingestion event requires a pipeline log id"))
 	}
 	if taskID == "" {
-		return errors.New("ingestion event requires a task id")
+		return rejectIngestionEvent("missing_task_id", pipelineLogID, taskID, errors.New("ingestion event requires a task id"))
 	}
 	eventType := 0
 	switch kind {
@@ -1023,7 +1042,7 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 	case ingestionEventSystem:
 		eventType = dao.EventTypeSystem
 	default:
-		return errors.New("ingestion event has invalid kind")
+		return rejectIngestionEvent("invalid_kind", pipelineLogID, taskID, errors.New("ingestion event has invalid kind"))
 	}
 	if kind != ingestionEventLifecycle {
 		component = ""
