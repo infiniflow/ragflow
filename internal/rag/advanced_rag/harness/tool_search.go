@@ -572,7 +572,8 @@ type SearchOpts struct {
 	// _normalize.
 	PromoteChildren bool
 	// LogLabel / LogVerb / LogKeywords describe the entry point's own
-	// "searching" line, Python-exact:
+	// "searching" line — the LOG form, terse and grep-friendly, with the keywords
+	// suffix and no period:
 	//
 	//	hybrid   → [Hybrid search] Searching for "q" (keywords: k)
 	//	vector   → [Vector search] Searching by meaning for "q" (keywords: k)
@@ -616,7 +617,7 @@ type SearchOpts struct {
 	// without the trace moving with it; the fallback to LogVerb only covers a future
 	// leg that forgets to set one, where an identical sentence beats an empty one.
 	thinkVerb string
-	// cache enables the per-request search cache (SearchCacheLoad/Store). Python
+	// Cache enables the per-request search cache (SearchCacheLoad/Store). Python
 	// keeps that cache on `tools.search_cache` and touches it ONLY inside
 	// hybrid_search (:136-141 read, :207 write); vector_search / bm25_search /
 	// grep_search / RAGTools.retrieve never consult it. Go's cache lives on the
