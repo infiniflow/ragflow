@@ -103,6 +103,46 @@ type claimEntry struct {
 	text string
 }
 
+const claimProgressMilestones = 20
+
+type claimProgressReporter struct {
+	total      int
+	step       int
+	last       int
+	nextTarget int
+}
+
+func newClaimProgressReporter(total int) *claimProgressReporter {
+	step := 1
+	if total > 0 {
+		step = (total + claimProgressMilestones - 1) / claimProgressMilestones
+	}
+	return &claimProgressReporter{total: total, step: step, nextTarget: step}
+}
+
+func (r *claimProgressReporter) shouldReport(completed int) bool {
+	if r == nil || completed <= 0 {
+		return false
+	}
+	if r.total > 0 && completed >= r.total {
+		if r.last == r.total {
+			return false
+		}
+		r.last = r.total
+		return true
+	}
+	if r.last == 0 {
+		r.last = completed
+		return true
+	}
+	if completed >= r.nextTarget {
+		r.last = completed
+		r.nextTarget = (completed/r.step + 1) * r.step
+		return true
+	}
+	return false
+}
+
 // renderClaimSource builds the user prompt body for one claim-extraction call.
 // Every chunk in the batch is a TARGET, so the model harvests claims for all of
 // them in one call. Each chunk carries its own id, which both pins the claim
@@ -200,6 +240,7 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 		// and is not required to be goroutine-safe.
 		mu        sync.Mutex
 		completed int
+		reporter  = newClaimProgressReporter(total)
 	)
 	for i := range batches {
 		i := i
@@ -213,7 +254,9 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 			// which advances the counter only for finished batches; workers
 			// finish out of order, so the figure jumps by batch size).
 			completed += len(batch)
-			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
+			if reporter.shouldReport(completed) {
+				runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
+			}
 			mu.Unlock()
 			return nil
 		})
