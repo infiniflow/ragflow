@@ -305,7 +305,8 @@ const (
 // A box is a candidate when it sits entirely in the top headerZoneRatio or
 // bottom footerZoneRatio of its page and carries text-like content. Among
 // candidates, a (zone, normalized-text) pair that recurs on at least half of
-// the document's pages is treated as a running header / footer and removed.
+// the document's pages — rounded up, so an odd page count raises the bar rather
+// than lowering it — is treated as a running header / footer and removed.
 //
 // Like RemoveTOCBoxes this works on intact box geometry and must run before
 // TextMerge (which can fold a header box into the first body section).
@@ -355,7 +356,10 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 	}
 
 	numPages := len(pageHeights)
-	minPages := numPages / 2
+	// Half the pages, rounded up: rounding an odd page count down would let two
+	// pages of a five-page document pass as "half", which is the one direction
+	// this guard must not drift in.
+	minPages := (numPages + 1) / 2
 	if minPages < 2 {
 		minPages = 2
 	}

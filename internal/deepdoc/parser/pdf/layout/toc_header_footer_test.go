@@ -588,6 +588,45 @@ func TestRemoveHeaderFooterBoxes_FullWidthPageNumbers(t *testing.T) {
 	}
 }
 
+// TestRemoveHeaderFooterBoxes_HalfOfOddPageCount: "at least half the pages" has
+// to round up on an odd page count. Rounding down would let 2 pages of a
+// five-page document pass as half, and this repetition rule is the only guard
+// keeping genuine content out of the drop set.
+func TestRemoveHeaderFooterBoxes_HalfOfOddPageCount(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight, 4: pageHeight}
+
+	// 2 of 5 pages is below half: too rare to be a running header.
+	below := []pdf.TextBox{
+		tb("THE WAY OF GO", 0, 72, 200, 30, 45),
+		tb("Body zero.", 0, 72, 400, 160, 180),
+		tb("Body one.", 1, 72, 400, 160, 180),
+		tb("THE WAY OF GO", 2, 72, 200, 30, 45),
+		tb("Body two.", 2, 72, 400, 160, 180),
+		tb("Body three.", 3, 72, 400, 160, 180),
+		tb("Body four.", 4, 72, 400, 160, 180),
+	}
+	if got := RemoveHeaderFooterBoxes(below, heights); len(got) != len(below) {
+		t.Fatalf("2 of 5 pages is not half, the boxes must be kept: got %d, want %d", len(got), len(below))
+	}
+
+	// 3 of 5 pages is half: a running header.
+	above := []pdf.TextBox{
+		tb("THE WAY OF GO", 0, 72, 200, 30, 45),
+		tb("Body zero.", 0, 72, 400, 160, 180),
+		tb("Body one.", 1, 72, 400, 160, 180),
+		tb("THE WAY OF GO", 2, 72, 200, 30, 45),
+		tb("Body two.", 2, 72, 400, 160, 180),
+		tb("THE WAY OF GO", 3, 72, 200, 30, 45),
+		tb("Body three.", 3, 72, 400, 160, 180),
+		tb("Body four.", 4, 72, 400, 160, 180),
+	}
+	got := RemoveHeaderFooterBoxes(above, heights)
+	if len(got) != 5 {
+		t.Fatalf("3 of 5 pages is half, the headers must be dropped: got %d boxes, want 5", len(got))
+	}
+}
+
 // TestRemoveHeaderFooterBoxes_DropsPageNumberFooter: identical "- N -" footers
 // (digit-masked to the same key) are removed.
 func TestRemoveHeaderFooterBoxes_DropsPageNumberFooter(t *testing.T) {
