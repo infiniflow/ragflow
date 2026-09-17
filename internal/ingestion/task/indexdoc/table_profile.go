@@ -66,16 +66,16 @@ func (p *TableProfile) ToRolesInterfaceMap() map[string]interface{} {
 }
 
 // roleFor returns the effective common.ColumnRole for a column.
-// In auto mode every column is "both"; in manual mode an unconfigured column is
-// "both" too, while a configured value the vocabulary does not know normalizes
-// to common.ColumnRoleNone and is therefore excluded everywhere (text,
+// In auto mode every column is "both"; in manual mode a column the profile does
+// not carry is "both" too, while a carried value the vocabulary does not know
+// normalizes to common.ColumnRoleNone and is therefore excluded everywhere (text,
 // chunk_data, field_map) — the same classification the table parser's row
 // renderer applies (internal/parser/parser/table_row_render.go).
 func roleFor(profile *TableProfile, column string) common.ColumnRole {
 	if profile == nil || !isManualProfile(profile) || profile.Roles == nil {
 		return common.ColumnRoleBoth
 	}
-	if role, ok := profile.Roles[column]; ok && role != "" {
+	if role, ok := profile.Roles[column]; ok {
 		return role
 	}
 	return common.ColumnRoleBoth

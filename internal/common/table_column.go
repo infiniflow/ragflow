@@ -50,45 +50,52 @@ const (
 	// ColumnRoleNone is the outcome for a role value the vocabulary does not
 	// know. It is an internal sentinel, never persisted: the written value is
 	// always what the caller supplied. Python's table chunker classifies an
-	// unknown role by membership tests (rag/app/table.py:626-635 for the chunk
-	// body, rag/app/table.py:558 for the dataset field_map), so such a column
+	// unknown role by membership tests (rag/app/table.py:687-689 for the chunk
+	// body, rag/app/table.py:616 for the dataset field_map), so such a column
 	// is excluded from text, chunk_data and the field_map alike — NOT treated
 	// as "both".
 	ColumnRoleNone ColumnRole = "none"
 )
 
-// NormalizeColumnRole converts a role string into a canonical ColumnRole.
-// "vectorize" is an alias for "indexing"; an empty (or absent) role is the
-// default "both"; any other value is ColumnRoleNone so that a misspelled role
-// is excluded rather than silently promoted to "both" (Python parity).
+// NormalizeColumnRole converts one persisted role value into a canonical
+// ColumnRole. "vectorize" is an alias for "indexing"; anything else the
+// vocabulary does not know — the empty string, a different case, surrounding
+// whitespace included — is ColumnRoleNone, so such a value is excluded rather
+// than silently promoted to "both". This is Python's membership test verbatim
+// (rag/app/table.py:688-689), which compares the stored string and neither
+// trims nor case-folds it. The default "both" belongs to the lookup, not to
+// this function: it applies to a column the roles map does not carry, which is
+// what Python's `column_roles.get(col, "both")` expresses.
 func NormalizeColumnRole(role string) ColumnRole {
-	switch strings.ToLower(strings.TrimSpace(role)) {
+	switch role {
 	case "indexing", "vectorize":
 		return ColumnRoleIndexing
 	case "metadata":
 		return ColumnRoleMetadata
 	case "both":
 		return ColumnRoleBoth
-	case "":
-		return ColumnRoleBoth
 	default:
 		return ColumnRoleNone
 	}
 }
 
-// NormalizeTableColumnMode converts a mode string into a canonical TableColumnMode.
+// NormalizeTableColumnMode maps a persisted mode onto the vocabulary. Only the
+// exact "manual" selects manual, matching Python's
+// `parser_config.get("table_column_mode") == "manual"`
+// (rag/app/table.py:586); every other value — absent, blank, unknown or
+// differently cased — is auto.
 func NormalizeTableColumnMode(mode string) TableColumnMode {
-	if strings.EqualFold(strings.TrimSpace(mode), string(TableColumnModeManual)) {
+	if mode == string(TableColumnModeManual) {
 		return TableColumnModeManual
 	}
 	return TableColumnModeAuto
 }
 
 // ValidateTableColumnSettings rejects table column values the runtime cannot
-// act on: a mode other than auto/manual, a role other than the three known
-// values (plus the legacy "vectorize" alias), and column names that are not a
-// list of strings. An absent or empty value is accepted — that is "unset",
-// which the runtime reads as the default.
+// act on: a mode other than auto/manual, a role outside the three known values
+// (plus the legacy "vectorize" alias), and column names that are not a list of
+// strings. An absent key, and an empty mode, are accepted — that is "unset",
+// which the runtime reads as its default.
 //
 // Both shapes a request can use are covered: the root-level `table_column_*`
 // keys (upload override, dataset settings) and the component-shaped
@@ -96,15 +103,17 @@ func NormalizeTableColumnMode(mode string) TableColumnMode {
 // entry.
 //
 // Python validates the same contract at its API boundary
-// (api/utils/validation_utils.py:430 defines the role Literal, :456-461 the
-// fields), so an unknown value never reaches parsing there. This is the Go
-// equivalent: the runtime's "unknown role is excluded" rule stays a safety net
-// for legacy rows instead of the normal write path.
+// (api/utils/validation_utils.py:430 defines the role Literal, :457/:459/:461
+// the fields, on a strict model at :436), so an unknown value never reaches
+// parsing there. This is the Go equivalent: the runtime's "unknown role is
+// excluded" rule stays a safety net for legacy rows instead of the normal write
+// path.
 //
 // The checks accept what Python accepts (a role entry keyed by an empty column
-// name is meaningless but not rejected there, and mode comparison is
-// case-insensitive here as the runtime's normalization is), and reject what
-// Python rejects (unknown role, non-string role, non-list names).
+// name is meaningless but not rejected there, and an absent value is "unset"),
+// and reject what Python rejects: an unknown, blank, differently cased or
+// non-string role, a mode outside auto/manual, and names that are not a list of
+// strings. Comparison is exact because Python's Literal is.
 func ValidateTableColumnSettings(config map[string]interface{}) error {
 	if config == nil {
 		return nil
@@ -137,10 +146,7 @@ func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey, n
 		if !isString {
 			return fmt.Errorf("%s must be a string", modeKey)
 		}
-		trimmed := strings.TrimSpace(mode)
-		if trimmed != "" &&
-			!strings.EqualFold(trimmed, string(TableColumnModeAuto)) &&
-			!strings.EqualFold(trimmed, string(TableColumnModeManual)) {
+		if mode != "" && mode != string(TableColumnModeAuto) && mode != string(TableColumnModeManual) {
 			return fmt.Errorf("%s must be %q or %q, got %q", modeKey, TableColumnModeAuto, TableColumnModeManual, mode)
 		}
 	}

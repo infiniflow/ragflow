@@ -23,10 +23,12 @@ import (
 
 // The role vocabulary is shared by the table parser's row renderer and the
 // ingestion layer that aggregates the same rows, so its classification is
-// pinned here: a known value maps to its role, an absent/empty value is the
-// default "both", and a value the vocabulary does not know is excluded
-// (ColumnRoleNone) rather than promoted to "both" — matching Python's
-// membership tests (rag/app/table.py:626-635, rag/app/table.py:558).
+// pinned here: a known value maps to its role and anything else — blank,
+// padded, differently cased, misspelled — is excluded (ColumnRoleNone) rather
+// than promoted to "both". Python compares the stored string as is
+// (rag/app/table.py:688-689 for the chunk body, :616 for the dataset
+// field_map), and the "both" default belongs to the lookup, not to this
+// mapping: it covers a column the roles map does not carry.
 func TestNormalizeColumnRole(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -34,14 +36,15 @@ func TestNormalizeColumnRole(t *testing.T) {
 	}{
 		{"indexing", ColumnRoleIndexing},
 		{"vectorize", ColumnRoleIndexing},
-		{"  INDEXING  ", ColumnRoleIndexing},
 		{"metadata", ColumnRoleMetadata},
 		{"both", ColumnRoleBoth},
-		{"", ColumnRoleBoth},
-		{"   ", ColumnRoleBoth},
 		{"skip", ColumnRoleNone},
 		{"none", ColumnRoleNone},
 		{"vectorise", ColumnRoleNone},
+		{"", ColumnRoleNone},
+		{"   ", ColumnRoleNone},
+		{"  INDEXING  ", ColumnRoleNone},
+		{"METADATA", ColumnRoleNone},
 	}
 	for _, tc := range tests {
 		if got := NormalizeColumnRole(tc.in); got != tc.want {
@@ -56,10 +59,14 @@ func TestNormalizeTableColumnMode(t *testing.T) {
 		want TableColumnMode
 	}{
 		{"manual", TableColumnModeManual},
-		{"  MANUAL ", TableColumnModeManual},
 		{"auto", TableColumnModeAuto},
 		{"", TableColumnModeAuto},
 		{"manul", TableColumnModeAuto},
+		// Python compares the persisted string with == "manual", so a padded
+		// or differently cased mode is auto there; the runtime must not read it
+		// as manual.
+		{"MANUAL", TableColumnModeAuto},
+		{"  MANUAL ", TableColumnModeAuto},
 	}
 	for _, tc := range tests {
 		if got := NormalizeTableColumnMode(tc.in); got != tc.want {
@@ -83,9 +90,7 @@ func TestValidateTableColumnSettings(t *testing.T) {
 			"table_column_mode":  "manual",
 			"table_column_roles": map[string]interface{}{"a": "indexing", "b": "metadata", "c": "both"},
 		}},
-		{"mode case-insensitive and trimmed", map[string]interface{}{"table_column_mode": "  MANUAL "}},
 		{"legacy vectorize alias", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "vectorize"}}},
-		{"empty role means default", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": ""}}},
 		{"empty mode means unset", map[string]interface{}{"table_column_mode": ""}},
 		{"nil values", map[string]interface{}{"table_column_mode": nil, "table_column_roles": nil}},
 		{"string-valued roles map", map[string]interface{}{"table_column_roles": map[string]string{"a": "both"}}},
@@ -121,8 +126,14 @@ func TestValidateTableColumnSettings(t *testing.T) {
 		substr string
 	}{
 		{"unknown mode", map[string]interface{}{"table_column_mode": "manul"}, "table_column_mode must be"},
+		{"differently cased mode", map[string]interface{}{"table_column_mode": "MANUAL"}, "table_column_mode must be"},
+		{"padded mode", map[string]interface{}{"table_column_mode": "  manual "}, "table_column_mode must be"},
 		{"non-string mode", map[string]interface{}{"table_column_mode": float64(1)}, "must be a string"},
 		{"unknown role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "skip"}}, `table_column_roles["a"]`},
+		// Python rejects both of these at the API (api/utils/validation_utils.py:430),
+		// and its chunker would exclude the column, so Go must not persist them either.
+		{"empty role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": ""}}, `table_column_roles["a"]`},
+		{"differently cased role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "INDEXING"}}, `table_column_roles["a"]`},
 		{"non-string role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": float64(1)}}, "must be a string"},
 		{"names not a list", map[string]interface{}{"table_column_names": "a,b"}, "must be a list of strings"},
 		{"names with a non-string entry", map[string]interface{}{"table_column_names": []interface{}{"a", float64(2)}}, "must contain only strings"},

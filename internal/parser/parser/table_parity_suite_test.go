@@ -299,37 +299,84 @@ func TestParity_Manual_VectorizeAlias(t *testing.T) {
 	}
 }
 
-// Case 8: Manual mode - case insensitivity
-func TestParity_Manual_CaseInsensitive(t *testing.T) {
+// Case 8: a role shape Python's membership test rejects is excluded, whatever
+// it looks like -- wrong case, wrong padding. The "both" default covers only a
+// column the roles map leaves out.
+func TestParity_Manual_UnknownRoleShapeIsExcluded(t *testing.T) {
 	roles := map[string]string{
 		"Title":    "INDEXING",
 		"Content":  "  indexing  ",
 		"Country":  "MetaData",
-		"Category": "BOTH",
+		"Category": "both",
 		"Year":     "  METADATA  ",
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "Manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
 	row0 := items[0]
 	text0 := row0["text"].(string)
 	cd0 := row0["chunk_data"].(map[string]any)
 
-	if strings.Contains(text0, "Country") || strings.Contains(text0, "Year") {
-		t.Errorf("text0 contains metadata columns: %s", text0)
+	for _, col := range []string{"Title", "Content", "Country", "Year"} {
+		if strings.Contains(text0, "- "+col+": ") {
+			t.Errorf("%q (role %q) must not reach the chunk body: Python excludes a role it does not match exactly", col, roles[col])
+		}
+		if _, ok := cd0[col]; ok {
+			t.Errorf("%q (role %q) must not reach chunk_data", col, roles[col])
+		}
 	}
-	if _, ok := cd0["Content"]; ok {
-		t.Errorf("cd0 contains indexing column Content: %v", cd0)
+	if !strings.Contains(text0, "- Category: ") {
+		t.Errorf("Category with the exact role \"both\" must stay indexed, got %q", text0)
 	}
-	if !strings.Contains(text0, "Title") || !strings.Contains(text0, "Content") || !strings.Contains(text0, "Category") {
-		t.Errorf("text0 missing indexing columns: %s", text0)
+	if _, ok := cd0["Category"]; !ok {
+		t.Errorf("Category with the exact role \"both\" must stay in chunk_data: %v", cd0)
+	}
+}
+
+// Case 8b: the mode is compared exactly, as Python's
+// `parser_config.get("table_column_mode") == "manual"` does (rag/app/table.py:586),
+// so a differently cased mode is auto -- and auto ignores the roles entirely.
+func TestParity_Manual_MisCasedModeIsAuto(t *testing.T) {
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "Manual", map[string]string{"Title": "metadata"})
+	row0 := items[0]
+	text0 := row0["text"].(string)
+	cd0 := row0["chunk_data"].(map[string]any)
+
+	if !strings.Contains(text0, "- Title: ") {
+		t.Errorf("mode %q is not manual, so every column must be indexed, got %q", "Manual", text0)
+	}
+	for _, col := range []string{"Title", "Content", "Country", "Category", "Year"} {
+		if _, ok := cd0[col]; !ok {
+			t.Errorf("%q must be in chunk_data under auto mode: %v", col, cd0)
+		}
+	}
+}
+
+// Case: a column configured with an EMPTY role is excluded, while a column the
+// map leaves out keeps the "both" default. Python's `column_roles.get(col, "both")`
+// (rag/app/table.py:687) tells these apart -- a present-but-empty value matches
+// neither membership test, an omitted key returns the default.
+func TestParity_Manual_PresentEmptyRoleIsExcluded(t *testing.T) {
+	roles := map[string]string{"Title": "", "Content": "metadata"}
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	text0 := items[0]["text"].(string)
+	cd0 := items[0]["chunk_data"].(map[string]any)
+
+	if strings.Contains(text0, "- Title: ") {
+		t.Errorf(`role "" must exclude Title from the chunk body, got %q`, text0)
 	}
 	if _, ok := cd0["Title"]; ok {
-		t.Errorf("cd0 contains indexing column Title: %v", cd0)
+		t.Errorf(`role "" must exclude Title from chunk_data: %v`, cd0)
+	}
+	if !strings.Contains(text0, "- Country: ") {
+		t.Errorf("a column the map omits must default to both, got %q", text0)
 	}
 	if _, ok := cd0["Country"]; !ok {
-		t.Errorf("cd0 missing metadata column Country: %v", cd0)
+		t.Errorf("a column the map omits must default to both in chunk_data: %v", cd0)
 	}
-	if _, ok := cd0["Year"]; !ok {
-		t.Errorf("cd0 missing metadata column Year: %v", cd0)
+	if strings.Contains(text0, "- Content: ") {
+		t.Errorf("a metadata column must not reach the chunk body: %q", text0)
+	}
+	if _, ok := cd0["Content"]; !ok {
+		t.Errorf("a metadata column must be in chunk_data: %v", cd0)
 	}
 }
 

@@ -166,14 +166,16 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 				continue
 			}
 
-			// The mode/role vocabulary and its normalization live in entity, so
-			// this renderer and the ingestion layer that aggregates the same
-			// rows (internal/ingestion/task/indexdoc) classify every value
-			// identically — including a value neither knows, which both treat
-			// as excluded (common.ColumnRoleNone) rather than as "both".
+			// The "both" default belongs to the lookup, not to the normalizer:
+			// Python's `column_roles.get(col, "both")` (rag/app/table.py:687)
+			// defaults only a column the map does not carry, so a column
+			// carried with a blank or unknown value is excluded. common owns
+			// that classification, which the indexdoc aggregation shares.
 			role := common.ColumnRoleBoth
 			if isManual {
-				role = common.NormalizeColumnRole(columnRoles[col])
+				if configured, ok := columnRoles[col]; ok {
+					role = common.NormalizeColumnRole(configured)
+				}
 			}
 
 			if role == common.ColumnRoleIndexing || role == common.ColumnRoleBoth {

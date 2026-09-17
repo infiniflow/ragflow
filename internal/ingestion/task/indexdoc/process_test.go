@@ -666,7 +666,10 @@ func TestAggregateTableDocMetadata_ManualMode(t *testing.T) {
 	}
 }
 
-func TestAggregateTableDocMetadata_RoleCaseInsensitive(t *testing.T) {
+// Python compares the stored role as is (rag/app/table.py:688-689), so a
+// differently cased role excludes the column from document metadata too, while
+// the canonical spellings -- and the legacy "vectorize" alias -- aggregate.
+func TestAggregateTableDocMetadata_RoleIsCaseSensitive(t *testing.T) {
 	chunks := []map[string]any{
 		{
 			"text":       "- A: 1",
@@ -681,14 +684,16 @@ func TestAggregateTableDocMetadata_RoleCaseInsensitive(t *testing.T) {
 		},
 		"table_column_names": []interface{}{"A", "B"},
 	}
-	meta := AggregateTableDocMetadata(chunks, cfg)
-	if meta == nil {
-		t.Fatal("expected non-nil meta")
+	if meta := AggregateTableDocMetadata(chunks, cfg); len(meta) != 0 {
+		t.Fatalf("a differently cased role must exclude both columns, got %v", meta)
 	}
+
+	cfg["table_column_roles"] = map[string]interface{}{"A": "metadata", "B": "vectorize"}
+	meta := AggregateTableDocMetadata(chunks, cfg)
 	if _, ok := meta["A"]; !ok {
-		t.Errorf("A with role Metadata must aggregate, got %v", meta)
+		t.Errorf("A with the canonical role metadata must aggregate, got %v", meta)
 	}
 	if _, hasB := meta["B"]; hasB {
-		t.Errorf("B with legacy role VECTORIZE must not aggregate, got %v", meta)
+		t.Errorf("B with the legacy vectorize alias must not aggregate, got %v", meta)
 	}
 }

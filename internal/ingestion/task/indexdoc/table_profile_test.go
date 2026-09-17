@@ -165,8 +165,20 @@ func TestTableColumnRoleClassification_MatchesRenderLayer(t *testing.T) {
 		}
 	}
 
-	if _, ok := fieldMap["unknown"]; ok {
-		t.Errorf("an unknown role must not be advertised in the field_map: %v", fieldMap)
+	// A carried value the vocabulary does not know is excluded on every surface:
+	// the "both" default covers only a column the map leaves out, which is what
+	// Python's `column_roles.get(col, "both")` expresses.
+	for _, col := range []string{"unknown", "empty", "upper", "padded"} {
+		if role := roleFor(profile, col); role != common.ColumnRoleNone {
+			t.Errorf("roleFor(%q) = %q, want %q (role %q is not one Python matches)",
+				col, role, common.ColumnRoleNone, roles[col])
+		}
+		if _, ok := fieldMap[col]; ok {
+			t.Errorf("%q (role %q) must not be advertised in the field_map: %v", col, roles[col], fieldMap)
+		}
+	}
+	if role := roleFor(profile, "not_configured"); role != common.ColumnRoleBoth {
+		t.Errorf(`roleFor for a column the map omits = %q, want %q (the "both" default)`, role, common.ColumnRoleBoth)
 	}
 }
 
