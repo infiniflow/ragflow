@@ -28,6 +28,13 @@ type ingestionLogFoldResult struct {
 	SkipReason    string
 }
 
+type ingestionDocumentTrimResult struct {
+	BeforeEvents  int
+	DeletedRuns   int
+	DeletedEvents int
+	AfterEvents   int
+}
+
 // foldIngestionRun compacts one terminal run without changing the run's
 // lifecycle truth. The function is intentionally private: callers must first
 // settle the run and then invoke this same implementation, rather than
@@ -186,6 +193,73 @@ func (s *IngestionTaskService) foldIngestionRun(ctx context.Context, pipelineLog
 			return err
 		}
 		result.After = int(after)
+		return nil
+	})
+	return result, err
+}
+
+// trimIngestionDocument enforces the cross-run event cap by deleting complete
+// oldest terminal runs. It deliberately leaves pipeline_operation_log rows in
+// place: run_count is the document's immutable history ledger. The latest run
+// and the caller's run are never deleted, even if a late terminal writer is
+// settling an older delivery.
+func (s *IngestionTaskService) trimIngestionDocument(ctx context.Context, documentID, preservePipelineLogID string, maxRows int) (ingestionDocumentTrimResult, error) {
+	if documentID == "" {
+		return ingestionDocumentTrimResult{}, errors.New("trim ingestion document requires a document id")
+	}
+	if maxRows <= 0 {
+		return ingestionDocumentTrimResult{}, errors.New("trim ingestion document requires positive max rows")
+	}
+
+	var result ingestionDocumentTrimResult
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var runs []*entity.PipelineOperationLog
+		if err := tx.WithContext(ctx).
+			Where("document_id = ? AND run_count IS NOT NULL AND run_count > 0", documentID).
+			Order("run_count ASC").Order("create_time ASC").Order("id ASC").
+			Find(&runs).Error; err != nil {
+			return err
+		}
+		if len(runs) == 0 {
+			return nil
+		}
+
+		latestRunID := runs[len(runs)-1].ID
+		preserved := map[string]struct{}{latestRunID: {}}
+		if preservePipelineLogID != "" {
+			preserved[preservePipelineLogID] = struct{}{}
+		}
+
+		eventCounts := make(map[string]int, len(runs))
+		for _, run := range runs {
+			var count int64
+			if err := tx.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+				Where("pipeline_log_id = ?", run.ID).Count(&count).Error; err != nil {
+				return err
+			}
+			eventCounts[run.ID] = int(count)
+			result.BeforeEvents += int(count)
+		}
+		result.AfterEvents = result.BeforeEvents
+
+		for _, run := range runs {
+			if result.AfterEvents <= maxRows {
+				break
+			}
+			if _, keep := preserved[run.ID]; keep || !isTerminalPipelineOperationStatus(run.OperationStatus) {
+				continue
+			}
+			count := eventCounts[run.ID]
+			if count == 0 {
+				continue
+			}
+			if err := tx.WithContext(ctx).Where("pipeline_log_id = ?", run.ID).Delete(&entity.IngestionTaskLog{}).Error; err != nil {
+				return err
+			}
+			result.DeletedRuns++
+			result.DeletedEvents += count
+			result.AfterEvents -= count
+		}
 		return nil
 	})
 	return result, err

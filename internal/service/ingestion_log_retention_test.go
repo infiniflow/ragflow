@@ -188,6 +188,65 @@ func TestRecordTerminalFoldsTerminalRunAfterWritingEvent(t *testing.T) {
 	}
 }
 
+func TestRecordTerminalDropsOldTerminalRunsOverDocumentCap(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertFoldPipelineLog(t, db, "run-1", entity.TaskStatusDone, 1)
+	insertFoldPipelineLog(t, db, "run-2", entity.TaskStatusDone, 2)
+	for i := 0; i < 5; i++ {
+		insertFoldEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, 0, "", "old detail")
+		insertFoldEvent(t, db, "run-2", "task-1", dao.EventTypeMessage, 0, "", "new detail")
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.SetIngestionLogSettings(IngestionLogSettings{
+		MaxRowsPerRun:      5,
+		MaxRowsPerDocument: 5,
+		MaxMessageChars:    4_000,
+		MaxMessageBytes:    16_384,
+	}); err != nil {
+		t.Fatalf("SetIngestionLogSettings failed: %v", err)
+	}
+	if err := svc.RecordTerminal(t.Context(), "run-2", "task-1", "Task completed."); err != nil {
+		t.Fatalf("RecordTerminal failed: %v", err)
+	}
+	if got := countFoldEvents(t, db, "run-1"); got != 0 {
+		t.Fatalf("old run event count = %d, want entire run removed", got)
+	}
+	if got := countFoldEvents(t, db, "run-2"); got != 5 {
+		t.Fatalf("latest run event count = %d, want 5", got)
+	}
+	var oldRun entity.PipelineOperationLog
+	if err := db.First(&oldRun, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("old pipeline log was deleted: %v", err)
+	}
+}
+
+func TestTrimIngestionDocumentNeverDeletesRunningRun(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertFoldPipelineLog(t, db, "run-1", entity.TaskStatusDone, 1)
+	insertFoldPipelineLog(t, db, "run-2", entity.TaskStatusRunning, 2)
+	for i := 0; i < 4; i++ {
+		insertFoldEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, 0, "", "old detail")
+		insertFoldEvent(t, db, "run-2", "task-1", dao.EventTypeMessage, 0, "", "running detail")
+	}
+
+	result, err := NewIngestionTaskService().trimIngestionDocument(t.Context(), "doc-1", "run-2", 4)
+	if err != nil {
+		t.Fatalf("trimIngestionDocument failed: %v", err)
+	}
+	if result.DeletedRuns != 1 || result.DeletedEvents != 4 {
+		t.Fatalf("trim result = %+v, want one old run/four events deleted", result)
+	}
+	if got := countFoldEvents(t, db, "run-1"); got != 0 {
+		t.Fatalf("old terminal run events = %d, want 0", got)
+	}
+	if got := countFoldEvents(t, db, "run-2"); got != 4 {
+		t.Fatalf("running run event count = %d, want untouched", got)
+	}
+}
+
 func insertFoldPipelineLog(t *testing.T, db *gorm.DB, id string, status entity.TaskStatus, runCount int) {
 	t.Helper()
 	if err := db.Create(&entity.PipelineOperationLog{

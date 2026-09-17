@@ -906,6 +906,14 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 	if _, err := s.foldIngestionRun(context.WithoutCancel(ctx), pipelineLogID, s.logSettings.MaxRowsPerRun); err != nil {
 		common.Warn(fmt.Sprintf("fold terminal ingestion run %s: %v", pipelineLogID, err))
 	}
+	run, err := s.pipelineLogDAO.GetByID(context.WithoutCancel(ctx), dao.DB, pipelineLogID)
+	if err != nil {
+		common.Warn(fmt.Sprintf("load terminal ingestion run %s for document trimming: %v", pipelineLogID, err))
+		return nil
+	}
+	if _, err := s.trimIngestionDocument(context.WithoutCancel(ctx), run.DocumentID, pipelineLogID, s.logSettings.MaxRowsPerDocument); err != nil {
+		common.Warn(fmt.Sprintf("trim ingestion document %s after terminal run %s: %v", run.DocumentID, pipelineLogID, err))
+	}
 	return nil
 }
 
