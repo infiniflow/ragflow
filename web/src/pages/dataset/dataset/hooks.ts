@@ -68,11 +68,12 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     },
   });
   const logID = documentLog?.logs[0]?.id;
-  const { data: messages } = useIngestionMessages(
-    datasetId,
-    logID,
-    visible,
-  );
+  const {
+    data: messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = useIngestionMessages(datasetId, logID, visible);
   const latestEvent = useMemo(() => {
     const items = messages?.items ?? [];
     return items[items.length - 1];
@@ -114,10 +115,22 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
                 latestEvent ?? source.latest_ingestion_event,
             }),
         events: messages?.items,
+        loadPreviousEvents: hasPreviousPage
+          ? () => fetchPreviousPage()
+          : undefined,
+        hasPreviousEvents: hasPreviousPage,
+        isLoadingPreviousEvents: isFetchingPreviousPage,
       };
     }
     return log;
-  }, [sourceDoc, latestEvent, messages]);
+  }, [
+    sourceDoc,
+    latestEvent,
+    messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  ]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

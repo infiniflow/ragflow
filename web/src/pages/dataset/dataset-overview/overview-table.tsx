@@ -353,11 +353,12 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const datasetId = knowledgeId || routeId;
   const isGoBackend = useIsGoBackend();
-  const { data: messages } = useIngestionMessages(
-    datasetId,
-    selectedLogID,
-    isModalVisible,
-  );
+  const {
+    data: messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = useIngestionMessages(datasetId, selectedLogID, isModalVisible);
   const showLog = useCallback((row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
@@ -386,8 +387,20 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       ...logInfo,
       details: '',
       events: messages?.items ?? [],
+      loadPreviousEvents: hasPreviousPage
+        ? () => fetchPreviousPage()
+        : undefined,
+      hasPreviousEvents: hasPreviousPage,
+      isLoadingPreviousEvents: isFetchingPreviousPage,
     };
-  }, [isGoBackend, logInfo, messages]);
+  }, [
+    isGoBackend,
+    logInfo,
+    messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  ]);
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS

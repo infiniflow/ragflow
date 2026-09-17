@@ -119,11 +119,102 @@ describe('useShowLog — Python backend is unaffected by the early-log fallback'
 });
 
 describe('useShowLog — Go backend early-log fallback', () => {
+  it('performs one finishing poll after terminal before stopping', async () => {
+    mockIsGo = true;
+    jest.useFakeTimers();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: { logs: [{ id: 'run-1', document_id: 'doc-1' }], total: 1 },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 1,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    try {
+      const { result } = renderLogs([
+        makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED }),
+      ]);
+      act(() =>
+        result.current.showLog(
+          makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED }),
+        ),
+      );
+      await waitFor(() => expect(mockMessages).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockMessages).toHaveBeenCalledTimes(2));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('exposes a previous-page loader for historical event scrolling', async () => {
+    mockIsGo = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: { logs: [{ id: 'run-1', document_id: 'doc-1' }], total: 1 },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 1,
+          items: [
+            {
+              id: 20,
+              ts: '2026-01-01T00:00:00Z',
+              event_type: 1,
+              component: '',
+              phase: 0,
+              message: 'latest',
+            },
+          ],
+          oldest_id: 20,
+          newest_id: 20,
+          has_more_before: true,
+          has_more_after: false,
+          terminal: false,
+        },
+      },
+    } as any);
+
+    const { result } = renderLogs([
+      makeDoc({ ingestion_status: IngestionTaskStatus.RUNNING }),
+    ]);
+    act(() =>
+      result.current.showLog(
+        makeDoc({ ingestion_status: IngestionTaskStatus.RUNNING }),
+      ),
+    );
+    await waitFor(() => expect(mockMessages).toHaveBeenCalledTimes(1));
+    expect(result.current.logInfo.loadPreviousEvents).toEqual(
+      expect.any(Function),
+    );
+    expect(result.current.logInfo.hasPreviousEvents).toBe(true);
+  });
+
   it('loads messages by the exact pipeline log identity', async () => {
     mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
-      data: { data: { logs: [{ id: 'run-2', document_id: 'doc-1' }], total: 1 } },
+      data: {
+        data: { logs: [{ id: 'run-2', document_id: 'doc-1' }], total: 1 },
+      },
     } as any);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockMessages.mockResolvedValue({
@@ -152,9 +243,11 @@ describe('useShowLog — Go backend early-log fallback', () => {
     act(() => result.current.showLog(doc));
 
     await waitFor(() =>
-      expect(result.current.logInfo.events?.map((event: { message: string }) => event.message)).toEqual([
-        'Task is queued...',
-      ]),
+      expect(
+        result.current.logInfo.events?.map(
+          (event: { message: string }) => event.message,
+        ),
+      ).toEqual(['Task is queued...']),
     );
     expect(mockList).toHaveBeenCalledWith(
       'kb-1',
