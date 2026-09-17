@@ -392,13 +392,16 @@ func TestParity_BlankMode_DefaultsToAuto(t *testing.T) {
 	}
 }
 
-// Case 10: Empty cells in rows
+// Case 10: Empty cells in rows. Python skips a cell only when its string form
+// is empty (rag/app/table.py:696) and renders the value as read, so a
+// whitespace-only cell is content: column_data_type converts a text column with
+// str() (:496), which does not strip it either.
 func TestParity_EmptyCells(t *testing.T) {
 	rows := [][]string{
 		{"A", "B", "C"},
 		{"1", "", "3"},    // B is empty
-		{"", "", ""},      // all empty row -> should be skipped
-		{"  ", "2", "  "}, // whitespace cells -> only B present
+		{"", "", ""},      // all empty row -> skipped, nothing is rendered
+		{"  ", "2", "  "}, // whitespace cells -> kept, padded
 	}
 	items, _ := RenderRowsToJSONChunks(rows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 	if len(items) != 2 {
@@ -415,10 +418,13 @@ func TestParity_EmptyCells(t *testing.T) {
 		t.Errorf("cd0 should skip empty B: %v", cd0)
 	}
 
-	// Second item should only have B: 2
 	text1 := items[1]["text"].(string)
-	if text1 != "- B: 2" {
-		t.Errorf("text1 = %q, want '- B: 2'", text1)
+	if text1 != "- A:   \n- B: 2\n- C:   " {
+		t.Errorf("text1 = %q, want every cell rendered with its own spacing", text1)
+	}
+	cd1 := items[1]["chunk_data"].(map[string]any)
+	if cd1["A"] != "  " || cd1["C"] != "  " {
+		t.Errorf("cd1 = %v, want the blank-only cells stored verbatim", cd1)
 	}
 }
 

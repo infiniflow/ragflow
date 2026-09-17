@@ -190,8 +190,12 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 			col := headers[j]
 			var val string
 			if src := headerIndexes[j]; src < len(row) {
-				val = strings.TrimSpace(row[src])
+				val = row[src]
 			}
+			// No trimming here: Python skips a cell only when it is empty
+			// (rag/app/table.py:696) and renders the value it read, so a padded
+			// or whitespace-only cell is content that lands in the chunk text
+			// and in chunk_data. Trimming here would drop it instead.
 			if val == "" {
 				continue
 			}
