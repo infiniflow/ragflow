@@ -26,8 +26,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/rag/advanced_rag/harness"
 )
 
@@ -596,6 +598,189 @@ func TestOuterReactSessionToolCallKeepsSharedRequestIntact(t *testing.T) {
 	}
 }
 
+// TestOuterReactSessionNarratesToolCalls pins the outer loop's think-block
+// narration: the "[Function tool] Running the {name} tool with: {args}" line
+// Python's FunctionToolSession emits (tool_decorator.py:311) and the result line
+// that closes it — so the top-level step records which tool the outer model
+// called, with which arguments, and what came back.
+func TestOuterReactSessionNarratesToolCalls(t *testing.T) {
+	// summarize_document with no doc_id is the early-return branch: it needs no
+	// retrieval wiring, so the narration contract is testable in isolation.
+	var buf strings.Builder
+	spec := harness.GetMode("naive")
+	session := &outerReactSession{
+		ctx:    context.Background(),
+		spec:   spec,
+		kb:     &harness.Kbinfos{},
+		resp:   &RunResponse{Mode: spec},
+		logger: log.New(&buf, "", 0),
+		req:    harness.RunRequest{Question: "q"},
+	}
+
+	if _, err := session.ToolCall("summarize_document", map[string]interface{}{}); err != nil {
+		t.Fatalf("ToolCall: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"[Function tool] Running the summarize_document tool with: {}",
+		"[Function tool] The summarize_document tool could not run: it was called without a doc_id.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("think-log narration missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestOuterReactSessionUnknownToolNarrates pins the unknown-name branch: a tool
+// the deployment has no binding for reports that nothing ran (MISS/unwired), not
+// an infra failure — and it carries the call's arguments like every other step.
+func TestOuterReactSessionUnknownToolNarrates(t *testing.T) {
+	var buf strings.Builder
+	events := make(chan harness.ThinkEvent, 4)
+	spec := harness.GetMode("naive")
+	session := &outerReactSession{
+		ctx: context.Background(), spec: spec, kb: &harness.Kbinfos{},
+		resp: &RunResponse{Mode: spec}, logger: log.New(&buf, "", 0),
+		req: harness.RunRequest{Question: "q"},
+	}
+	ctx := harness.WithSteps(context.Background(), harness.StepReporter{
+		Events: func(ev harness.ThinkEvent) { events <- ev },
+	})
+	session.ctx = ctx
+
+	if _, err := session.ToolCall("time_travel", map[string]interface{}{"query": "tomorrow"}); err != nil {
+		t.Fatalf("ToolCall: %v", err)
+	}
+	if out := buf.String(); !strings.Contains(out,
+		`[Function tool] The time_travel tool is not wired in this deployment, so nothing ran.`) {
+		t.Errorf("think-log narration:\n%s", out)
+	}
+
+	var result harness.ThinkEvent
+	for len(events) > 0 {
+		ev := <-events
+		if ev.Kind == harness.ThinkKindToolResult {
+			result = ev
+		}
+	}
+	if result.Status != harness.StatusMiss || result.Reason != harness.ReasonUnwired {
+		t.Errorf("result event = %#v, want a miss/unwired outcome", result)
+	}
+	if result.Args != `{"query":"tomorrow"}` {
+		t.Errorf("result args = %q, want the call's arguments (that is what pairs them)", result.Args)
+	}
+}
+
+// TestOuterToolNames pins the tool list the loop's opening step reports: the
+// names the outer model was actually given (the pipeline used to hardcode a
+// single "rag", regardless of what was bound).
+func TestOuterToolNames(t *testing.T) {
+	schemas := []map[string]any{
+		{"type": "function", "function": map[string]any{"name": "rag"}},
+		{"type": "function", "function": map[string]any{"name": "summarize_document"}},
+		// A malformed entry contributes nothing rather than a "<nil>" name.
+		{"type": "function"},
+		{"type": "function", "function": map[string]any{}},
+	}
+	if got := outerToolNames(schemas); got != "rag, summarize_document" {
+		t.Errorf("outerToolNames = %q, want the bound names", got)
+	}
+	if got := outerToolNames(nil); got != "" {
+		t.Errorf("outerToolNames(nil) = %q, want empty", got)
+	}
+}
+
+// TestOuterLoopEndLine pins the closing step's cases: research ran and answered;
+// research ran but composed nothing — the case the call count alone could not see,
+// and which would otherwise contradict the rag result line printed right above it
+// ("gathered N passages but composed no answer"); or no research ran at all, with
+// an answer (the outer model's own reply, which is why it may carry no citations)
+// or with none.
+func TestOuterLoopEndLine(t *testing.T) {
+	cases := []struct {
+		name     string
+		ragCalls int
+		answered bool
+		want     string
+	}{
+		{"answered", 1, true, "The rag tool produced the final answer, done."},
+		{"ran-without-answer", 2, false, "The rag tool ran but produced no answer."},
+		{"direct-answer", 0, true, "The outer model produced the answer without running research."},
+		{"nothing-at-all", 0, false, "The outer model returned no answer and ran no research."},
+	}
+	for _, tc := range cases {
+		if got := outerLoopEndLine(tc.ragCalls, tc.answered); got != tc.want {
+			t.Errorf("%s: outerLoopEndLine = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestOuterLoopAbsentLineStaysOutOfTheThinkBlock pins where that line goes: the
+// developer log, not the think block. It describes the harness' wiring rather than
+// the question or the research, and a deployment without an outer loop would print
+// it on every single run — while the reader-visible trace is simply and honestly
+// missing its "[Tool loop]" section.
+//
+// It also pins that the two reasons stay apart: no outer model wired vs a wired one
+// that cannot emit tool calls (the capability probe fails closed, so an operator
+// needs the log to tell a failed probe from a deployment that has no outer model).
+func TestOuterLoopAbsentLineStaysOutOfTheThinkBlock(t *testing.T) {
+	var think, logged strings.Builder
+	ctx := harness.WithSteps(context.Background(), harness.StepReporter{
+		Text: func(line string) { think.WriteString(line) },
+	})
+	Rag(ctx, RAGTools{Logger: log.New(&logged, "", 0)}, harness.RunRequest{
+		Question:     "anything",
+		ThinkingMode: "low",
+		DatasetIDs:   []string{"kb1"},
+	})
+
+	want := "No outer model is wired, so this run has no outer tool loop."
+	if !strings.Contains(logged.String(), want) {
+		t.Errorf("developer log missing %q; got:\n%s", want, logged.String())
+	}
+	if strings.Contains(think.String(), "outer tool loop") {
+		t.Errorf("the wiring note must not reach the think block; got:\n%s", think.String())
+	}
+
+	if got := outerLoopAbsentLine(RAGTools{Outer: &models.ChatModel{}}); got !=
+		"The outer model cannot call tools, so this run has no outer tool loop." {
+		t.Errorf("outerLoopAbsentLine (tool-incapable model) = %q", got)
+	}
+}
+
+// TestRagToolResultLine pins the outer `rag` result wording: it reports what the
+// answer was grounded in (or why there is none), never the answer itself — and it
+// names the sub-question it researched, because the outer loop can have several
+// `rag` calls in flight whose result lines would otherwise be identical.
+func TestRagToolResultLine(t *testing.T) {
+	twoChunks := []map[string]any{{"chunk_id": "c1"}, {"chunk_id": "c2"}}
+	label := ` for "曹操是谁"`
+	cases := []struct {
+		name  string
+		resp  *RunResponse
+		kb    *harness.Kbinfos
+		label string
+		want  string
+	}{
+		{"grounded", &RunResponse{Answer: "cited answer"}, &harness.Kbinfos{Chunks: twoChunks}, label,
+			`The rag tool returned a cited answer grounded in 2 passages for "曹操是谁".`},
+		{"grounded-singular", &RunResponse{Answer: "a"}, &harness.Kbinfos{Chunks: twoChunks[:1]}, label,
+			`The rag tool returned a cited answer grounded in 1 passage for "曹操是谁".`},
+		{"no-evidence", &RunResponse{Answer: "answer"}, &harness.Kbinfos{}, label,
+			`The rag tool returned no answer for "曹操是谁": research gathered no evidence.`},
+		{"evidence-but-no-answer", &RunResponse{}, &harness.Kbinfos{Chunks: twoChunks}, label,
+			`The rag tool gathered 2 passages but composed no answer for "曹操是谁".`},
+		{"unlabelled", &RunResponse{Answer: "a"}, &harness.Kbinfos{Chunks: twoChunks[:1]}, "",
+			"The rag tool returned a cited answer grounded in 1 passage."},
+	}
+	for _, tc := range cases {
+		if got := ragToolResultLine(tc.resp, tc.kb, tc.label); got != tc.want {
+			t.Errorf("%s: ragToolResultLine = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestRagFlightSharesConcurrentIdenticalCalls pins the single-flight contract:
 // a caller arriving while the flight is open waits on it and replays its
 // answer; a caller arriving AFTER the window closed owns a fresh execution
@@ -788,5 +973,28 @@ func TestOuterReactSessionSelectEvidenceKeepsUnionWithoutAMatch(t *testing.T) {
 
 	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 1 || got[0] != "a0" {
 		t.Errorf("chunks = %v, want the union kept when no call matches", got)
+	}
+}
+
+// TestTruncCutsOnRuneBoundaries pins the fix for the "\xe3" that showed up in a
+// grep line: trunc used to slice BYTES, cutting a Chinese character in half so
+// the trace printed half a rune as an escape (and for CJK it stopped at a third
+// of the requested length).
+func TestTruncCutsOnRuneBoundaries(t *testing.T) {
+	const s = "曹操是谁？"
+	if got := trunc(s, 2); got != "曹操" {
+		t.Errorf("trunc(%q, 2) = %q, want two whole characters", s, got)
+	}
+	for n := 0; n <= utf8.RuneCountInString(s)+1; n++ {
+		got := trunc(s, n)
+		if !utf8.ValidString(got) {
+			t.Errorf("trunc(%q, %d) = %q, which is not valid UTF-8", s, n, got)
+		}
+		if utf8.RuneCountInString(got) > n {
+			t.Errorf("trunc(%q, %d) = %q, longer than asked", s, n, got)
+		}
+	}
+	if got := trunc(s, 99); got != s {
+		t.Errorf("trunc beyond the length = %q, want it unchanged", got)
 	}
 }

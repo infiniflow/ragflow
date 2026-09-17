@@ -338,7 +338,10 @@ type SearchDeps struct {
 	// structure verdict (AskStructure). Required for `calculate`; nil makes the
 	// model-backed tools report a miss.
 	Model SessionModel
-	// Logger is optional; nil uses the default logger.
+	// Logger is optional; nil uses the default logger. It is the DEVELOPER log:
+	// internal diagnostics (search legs, narrowing, compiled expansion) stay
+	// here and are not steps. The tool call and its result ARE steps, reported
+	// through the per-request reporter StepsFrom(ctx) carries.
 	Logger *log.Logger
 	// DocIDVerifier resolves which of the caller-supplied document ids actually
 	// belong to the session's datasets (Python
@@ -557,12 +560,32 @@ type searchOpts struct {
 	// _normalize.
 	promoteChildren bool
 	// logLabel / logVerb / logKeywords describe the entry point's own
-	// "searching" line, Python-exact:
+	// "searching" line — the LOG form, terse and grep-friendly, with the keywords
+	// suffix and no period:
 	//
-	//	hybrid → [Hybrid search] Searching the knowledge base for "q" (keywords: k) (search.py:hybrid_search)
-	//	vector → [Vector search] Searching by meaning for "q" (keywords: k)          (:215)
-	//	bm25   → [BM25 search] Searching by keyword for "q" (keywords: k)            (:252)
-	//	grep   → [Grep search] Keyword-first locate for "q"      (NO keywords)       (:418)
+	//	hybrid   → [Hybrid search] Searching for "q" (keywords: k)
+	//	vector   → [Vector search] Searching by meaning for "q" (keywords: k)
+	//	bm25     → [BM25 search] Searching by keyword for "q" (keywords: k)
+	//	grep     → [Grep search] Keyword-first locate for "q"  (NO keywords)
+	//	retrieve → [Retrieve] Searching for "q" (keywords: k)  (Go-only tag)
+	//
+	// The verbs started out Python-exact (search.py:122/:215/:252/:418), and the
+	// vector/bm25/grep ones still are. The hybrid and retrieve legs dropped "the
+	// knowledge base" from it (2026-09-16): every leg searches it, so the phrase
+	// distinguishes nothing a reader can act on, and the leg's own tag
+	// ("[BM25 search]") already names the tool. The shape a Python log diff is
+	// compared against is otherwise unchanged — same tag, same keywords suffix, same
+	// `"%q -> N chunk(s): …"` result line.
+	//
+	// The think block gets thinkVerb through searchThinkLine instead — one sentence
+	// family for every leg, with the method named and the keyword list left out. The
+	// two sentences come from the same call (runSearch / GrepSearch), so they can
+	// never describe different searches.
+	//
+	// The RESULT line is the other half of a leg (reportSearchResult): every leg
+	// emits one, on every exit, including an empty pool. In the log it keeps Python's
+	// `"%q -> N chunk(s): <per-doc>"` shape where Python has one (hybrid :203, grep
+	// :471); the vector and bm25 legs get it in Go only.
 	//
 	// Python prints the "(keywords: …)" suffix unconditionally on the three legs
 	// that carry it; Go prints it only when non-empty (a keyword-less leg is a
@@ -574,11 +597,14 @@ type searchOpts struct {
 	logLabel    string
 	logVerb     string
 	logKeywords bool
-	// logExtra enables the dedup / compiled-expansion / progress lines. Python
-	// emits those ONLY inside hybrid_search (:140 / :192 / :203); vector_search
-	// and bm25_search log nothing but their searching line (plus a debug line Go
-	// has no equivalent for), and grep_search has its own two lines instead.
-	logExtra bool
+	// thinkVerb is the same leg's verb for the think block, which reports a
+	// SENTENCE: it names the method ("by meaning and keyword") because the
+	// "[Hybrid search]" prefix is a developer's label, and it is the reason the two
+	// projections differ at all. Every leg sets it explicitly — so the log side can
+	// be reworded (the hybrid and retrieve legs dropped "the knowledge base", above)
+	// without the trace moving with it; the fallback to logVerb only covers a future
+	// leg that forgets to set one, where an identical sentence beats an empty one.
+	thinkVerb string
 	// cache enables the per-request search cache (SearchCacheLoad/Store). Python
 	// keeps that cache on `tools.search_cache` and touches it ONLY inside
 	// hybrid_search (:136-141 read, :207 write); vector_search / bm25_search /
@@ -607,12 +633,28 @@ type searchOpts struct {
 	rankFeature bool
 }
 
-// searchLogLine renders a per-leg "searching" line (search.py:hybrid_search/215/252/418):
-// both the bracket label and the verb vary by entry point. The keywords suffix
-// is appended by the caller, because Python prints it on hybrid/vector/bm25
-// only — grep_search's locate line never carries one.
-func searchLogLine(label, verb, question string) string {
-	return fmt.Sprintf("[%s] %s %q", label, verb, question)
+// searchLogLine renders the "what this leg is searching for" message, WITHOUT
+// the stage prefix: the line is a STEP now (StepReporter.StageLine), and that
+// call writes "[<label>] " itself from the same string — so the developer log
+// stays byte-identical to Python's line (search.py:hybrid_search/215/252/418)
+// while the same sentence reaches the think block.
+//
+// Both the verb and the label vary by entry point. The keywords suffix is
+// appended by the caller, because Python prints it on hybrid/vector/bm25 only —
+// grep_search's locate line never carries one.
+func searchLogLine(verb, question string) string {
+	return fmt.Sprintf("%s %q", verb, question)
+}
+
+// searchThinkLine renders the same leg's "searching" sentence for the think block:
+// the same verb with the query in quotes, plus the period a sentence needs (the
+// log line has none — Python's does not) and a length cap (the slot-research
+// driver searches a paragraph of evidence as its "query").
+//
+// It is the log line's sibling, not a replacement: StageLineDetail reports this
+// one and logs searchLogLine's, from the same call.
+func searchThinkLine(verb, question string) string {
+	return fmt.Sprintf("%s %q.", verb, trunc(question, 80))
 }
 
 // searchLogger returns the run's logger, falling back to the package logger.
@@ -686,22 +728,40 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		effectiveQuery = p.Question
 	}
 
-	// Python's per-leg searching line (search.py:hybrid_search/215/252/418): BOTH the
-	// bracket label and the verb vary by entry point — "[Hybrid search]
-	// Searching the knowledge base for", "[Vector search] Searching by meaning
+	// The per-leg searching line: BOTH the bracket label and the verb vary by entry
+	// point — "[Hybrid search] Searching for", "[Vector search] Searching by meaning
 	// for", "[BM25 search] Searching by keyword for", "[Grep search]
 	// Keyword-first locate for" — and only the three keyword-carrying legs
-	// append the keywords (see searchOpts.logLabel / logVerb / logKeywords).
+	// append the keywords (see searchOpts.logLabel / logVerb / logKeywords for which
+	// verbs are Python's own and which dropped "the knowledge base").
 	// The suffix is printed only when non-empty: a keyword-less leg is a
 	// deliberate state (fan-out Channel B is a narrow bypass,
 	// agentic_rag_graph.py:_search_one; search_chunks takes no keywords at all,
 	// action_session.py:execute_tool), so a bare "(keywords: )" reads like a dropped
 	// argument rather than an intentional empty.
-	searchLine := searchLogLine(opts.logLabel, opts.logVerb, p.Question)
+	searchLine := searchLogLine(opts.logVerb, p.Question)
 	if kws := strings.TrimSpace(p.Keywords); opts.logKeywords && kws != "" {
 		searchLine += fmt.Sprintf(" (keywords: %s)", kws)
 	}
-	logger.Printf("%s", searchLine)
+	// A STEP, not only a log line: which leg ran and what it searched for is
+	// exactly what the think block has to show to answer "what did it actually
+	// search".
+	//
+	// The two audiences get different sentences from this one call site. The log
+	// keeps Python's shape — label, keyword list and result line, plus Python's verb
+	// on the vector/bm25/grep legs (the hybrid and retrieve verbs deliberately dropped
+	// "the knowledge base"; see logVerb above for what a log diff can still be
+	// compared against). The think block gets the sentence family every leg
+	// shares, which names the method inside the sentence because "[BM25 search]" is
+	// a developer's label, and leaves out the keyword list: that appears only on the
+	// legs that carry keywords, so in the block it reads as random noise, and it is
+	// a detail a reader would have to parse rather than read.
+	thinkVerb := opts.thinkVerb
+	if thinkVerb == "" {
+		thinkVerb = opts.logVerb
+	}
+	StepsFrom(ctx).StageLineDetail(logger, opts.logLabel,
+		searchThinkLine(thinkVerb, p.Question), searchLine)
 
 	// 3. Per-request dedup: an identical query+scope is retrieved at most once,
 	// so e.g. pre_search and a claim search asking the same question do not
@@ -711,6 +771,10 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	if deps.KB != nil && opts.cache {
 		if chunks, aggs, ok := deps.KB.SearchCacheLoad(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope)); ok {
 			logger.Printf("[%s] Already searched this — reusing the %d passage(s) found earlier.", opts.logLabel, len(chunks))
+			// A cache hit still hands a pool back, so it still reports one: the
+			// dedup line explains WHY nothing was retrieved, this says WHAT the leg
+			// contributed (Go-only: Python returns here silently on the result side).
+			reportSearchResult(ctx, logger, opts.logLabel, p.Question, chunks)
 			return chunks, aggs
 		}
 	}
@@ -726,10 +790,9 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	if opts.rankFeature && deps.Tagger != nil {
 		rankFeature = deps.Tagger.LabelQuestion(ctx, effectiveQuery, deps.KBs)
 	}
-	// The per-query progress line is NOT emitted here: runSearch already logs
-	// "[<kind>] Searching the knowledge base for …" through the run's logger,
-	// which Rag wraps with the think-log forwarder (see think_log.go). Emitting
-	// one here as well would show the same search twice in the reasoning block.
+	// Neither of the leg's two lines is emitted here: the searching line is above
+	// and the result line at the end (reportSearchResult). Emitting either one here
+	// as well would show the same search twice in the reasoning block.
 	// D5: a retrieval that FAILS is retried once before the query is written off. The
 	// failure this exists for is the upstream one: measured (2026-09-16) two queries of a
 	// run answered `SILICONFLOW API error: 503 Service Unavailable … Model service
@@ -800,7 +863,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	}
 
 	// 6. Narrow-or-keep (chunks only; doc_aggs stays as retrieved).
-	chunks = NarrowOrKeep(chunks, p.Keywords, opts.narrowLabel, logger)
+	chunks = NarrowOrKeep(ctx, chunks, p.Keywords, opts.narrowLabel, logger)
 
 	// 7. Compiled expansion.
 	if p.UseCompiled && len(chunks) > 0 && deps.Expand != nil {
@@ -810,13 +873,8 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		}
 	}
 
-	// Python prints this progress line inside hybrid_search only (:203): the
-	// bm25/vector legs log nothing but their searching line, and grep_search
-	// has its own two lines (see GrepSearch). Gated so a log diff against
-	// Python lines up line for line.
-	if len(chunks) > 0 && opts.logExtra {
-		logger.Printf("[%s] %q -> %d chunk(s): %s", opts.logLabel, trunc(p.Question, 80), len(chunks), docStatsLine(chunks))
-	}
+	// What the leg FOUND, reported once, on every path (see reportSearchResult).
+	reportSearchResult(ctx, logger, opts.logLabel, p.Question, chunks)
 
 	// 8. Cache the result — hybrid leg only, mirroring Python search.py:hybrid_search.
 	if deps.KB != nil && opts.cache {
@@ -839,9 +897,9 @@ func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 		// (search.py:143-145 `vector_weight = ... if embd_mdl else 0`).
 		disableVector: !deps.HasEmbedder,
 		logLabel:      "Hybrid search",
-		logVerb:       "Searching the knowledge base for",
+		logVerb:       "Searching for",
 		logKeywords:   true,
-		logExtra:      true, // Python's dedup/compiled/progress lines live here only
+		thinkVerb:     "Searching by meaning and keyword for",
 		cache:         true, // Python's search_cache is read/written here only (:136/:207)
 		// Python passes the SNAKE_CASE tag to _narrow_or_keep on this leg
 		// (search.py:hybrid_search) although its own lines say "Hybrid search" — the
@@ -866,7 +924,7 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 		logLabel:        "Vector search",
 		logVerb:         "Searching by meaning for",
 		logKeywords:     true,
-		logExtra:        false, // Python vector_search logs nothing but its searching line (:215)
+		thinkVerb:       "Searching by meaning for",
 		narrowLabel:     "Vector search",
 	})
 }
@@ -886,7 +944,7 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		logLabel:      "BM25 search",
 		logVerb:       "Searching by keyword for",
 		logKeywords:   true,
-		logExtra:      false, // Python bm25_search logs nothing but its searching line (:252)
+		thinkVerb:     "Searching by keyword for",
 		narrowLabel:   "BM25 search",
 	})
 }
@@ -1140,8 +1198,27 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	query := strings.TrimSpace(p.Question)
 	// Python logs the locate line BEFORE extracting the terms and before the
 	// empty-query bail-out (search.py:grep_search).
-	logger.Printf("%s", searchLogLine("Grep search", "Keyword-first locate for", query))
+	//
+	// Same split as runSearch: the log keeps Python's phrasing ("Keyword-first
+	// locate for", search.py:418) and the think block says what the leg does — find
+	// these exact words — in the family the other legs use. "Keyword-first locate"
+	// was a noun phrase naming the implementation, not an action a reader could read.
+	StepsFrom(ctx).StageLineDetail(logger, "Grep search",
+		searchThinkLine("Searching for the exact words", query),
+		searchLogLine("Keyword-first locate for", query))
+	// Python prints its result line at the END of grep_search, reading whatever the
+	// function is about to return (`_g = res.get("chunks"); if _g:`, :471-477) — so
+	// every early return below gets one too. Reporting through this closure is what
+	// keeps that true: the count is always of the RETURNED set, which for the
+	// fallbacks below is the raw candidate pool or the table chunks, not the pieces
+	// the term window happened to keep.
+	report := func(returned []map[string]any) {
+		reportSearchResult(ctx, logger, "Grep search", query, returned)
+	}
 	if query == "" {
+		// Nothing was searched, so there is no result to report: the searching line
+		// above already says the query was empty, and "Found nothing for \"\"" would
+		// read like a search that ran and came back empty.
 		return nil, nil
 	}
 	terms := GrepTermsFromQuery(query)
@@ -1200,6 +1277,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	chunks, docAggs := retrieveGrepCandidates(ctx, deps, bp, query, weave)
 	// Python: `if not chunks or not terms: return res` (search.py:grep_search).
 	if len(chunks) == 0 || len(terms) == 0 {
+		report(chunks)
 		return chunks, docAggs
 	}
 
@@ -1212,6 +1290,8 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		}
 	}
 	if len(prose) == 0 {
+		// All tables: nothing to locate, and the tables ARE the evidence.
+		report(chunks)
 		return chunks, docAggs
 	}
 
@@ -1249,21 +1329,25 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		GrepOutCharsPerChunk, GrepOutTotalChars)
 	kept := res.Kept
 	if len(kept) == 0 {
-		// Nothing matched: keep the raw BM25 candidates so evidence is not dropped.
+		// Nothing matched: keep the raw BM25 candidates so evidence is not dropped
+		// — and report THOSE, because they are what the caller receives.
+		report(chunks)
 		return chunks, docAggs
 	}
 	out := make([]map[string]any, 0, len(table)+len(kept))
 	out = append(out, table...)
 	out = append(out, kept...)
 	// Python logs the post-narrow size and the per-doc breakdown for the
-	// combined table+prose set (search.py:grep_search / :469) — the grep leg's own two
-	// lines, which is why runSearch keeps logExtra off for it.
+	// combined table+prose set (search.py:grep_search / :469) — the grep leg's own
+	// line, which only exists on this path (the five above return before it). It is
+	// a LOG line, not a step: the think block's result sentence comes from report
+	// below, like every other leg's.
 	chars := 0
 	for _, c := range out {
 		chars += len(ChunkTextOf(c))
 	}
 	logger.Printf("[Grep search] narrowed %d->%d chunk(s), %.1fK chars.", len(chunks), len(out), float64(chars)/1000.0)
-	logger.Printf("[Grep search] %q -> %d chunk(s): %s", trunc(query, 80), len(out), docStatsLine(out))
+	report(out)
 	return out, docAggs
 }
 
@@ -1284,9 +1368,9 @@ func RetrieveSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map
 		// tag stays human-readable and the extra lines stay on, because this is
 		// the only trace the low-mode direct pass leaves.
 		logLabel:    "Retrieve",
-		logVerb:     "Searching the knowledge base for",
+		logVerb:     "Searching for",
 		logKeywords: true,
-		logExtra:    true,
+		thinkVerb:   "Searching for",
 		narrowLabel: "retrieve",
 		// Python RAGTools.retrieve is the ONLY entry point that passes
 		// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668).
@@ -1747,6 +1831,54 @@ func DocAggs(chunks []map[string]any) []map[string]any {
 		})
 	}
 	return out
+}
+
+// searchResultLine is the think-block form of a search leg's result: how many
+// passages came back and how many documents they came from, as a sentence. The
+// query comes last (that is where a reader looks after the numbers) and there is
+// no arrow: "->" is log shorthand, not English, and this line is read by users.
+// An empty result says so in words ("Found nothing for …") rather than counting
+// zero documents.
+//
+// It is deliberately NOT docStatsLine — that one is keyed by 32-hex document id
+// (a developer's handle, and the line Python prints), which is exactly what a
+// reader cannot use. Both are emitted by the same step (StageLineDetail), from
+// the same chunks, so the sentence and the id breakdown always describe the same
+// call.
+func searchResultLine(query string, chunks []map[string]any) string {
+	if len(chunks) == 0 {
+		return fmt.Sprintf("Found nothing for %q.", trunc(query, 80))
+	}
+	return fmt.Sprintf("Found %s in %s for %q.", CountOf(len(chunks), "passage"),
+		CountOf(len(DocAggs(chunks)), "document"), trunc(query, 80))
+}
+
+// searchResultLogLine renders the same result in the log's shape:
+// `"%q -> N chunk(s): <per-document breakdown>"` (Python search.py:203 for hybrid,
+// :471 for grep). The breakdown is dropped when the leg returned nothing, so a
+// zero-result line does not end on a dangling colon.
+func searchResultLogLine(query string, chunks []map[string]any) string {
+	line := fmt.Sprintf("%q -> %d chunk(s)", trunc(query, 80), len(chunks))
+	if stats := docStatsLine(chunks); stats != "" {
+		line += ": " + stats
+	}
+	return line
+}
+
+// reportSearchResult is how a leg ends: it reports what the leg found, to both
+// audiences, from one place.
+//
+// It runs on EVERY exit — an empty result and a cached one included — because a leg
+// with no result line cannot be told apart from a leg that found nothing, and that
+// is the one question the block exists to answer.
+//
+// The log keeps Python's line shape where Python has one. The vector and bm25 legs
+// are the exception: Python logs nothing there beyond the searching line
+// (search.py:215/252), and Go deliberately adds the result line, because those legs
+// are the ones whose pool size a reader most needs.
+func reportSearchResult(ctx context.Context, logger *log.Logger, label, query string, chunks []map[string]any) {
+	StepsFrom(ctx).StageLineDetail(logger, label,
+		searchResultLine(query, chunks), searchResultLogLine(query, chunks))
 }
 
 // docStatsLine renders the per-document breakdown used by the search log line.

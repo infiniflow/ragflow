@@ -127,6 +127,47 @@ func XMLEscape(s string) string {
 	return r.Replace(s)
 }
 
+// ChunkDocIDs lists the distinct documents a chunk set belongs to, in first-seen
+// order. It is what a reasoning step reports as "from N documents".
+func ChunkDocIDs(chunks []map[string]any) []string {
+	seen := make(map[string]struct{}, len(chunks))
+	out := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		id := DocIDOf(c)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// ChunkEvidenceIDs lists a chunk set's chunk ids, deduplicated, capped at limit
+// (limit <= 0 means no cap). These are the anchors a reasoning step points at.
+func ChunkEvidenceIDs(chunks []map[string]any, limit int) []string {
+	seen := make(map[string]struct{}, len(chunks))
+	out := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		id := ChunkIDOf(c)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
 // MergeChunks deduplicates incoming chunks against an existing slice by
 // chunkKey, appending only unseen ones. Mirrors Python's
 // `seen = {_chunk_key(c) for c in kbinfos["chunks"]}` merge pattern used by

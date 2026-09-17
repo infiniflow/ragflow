@@ -176,14 +176,6 @@ func (k *Kbinfos) PoolSize() int {
 	return len(k.Chunks)
 }
 
-// ChunksFrom returns up to limit chunks starting at from, as a copy of the slice
-// header.
-//
-// It exists so a READER can walk the pool the round has already paid for without
-// holding the pool lock (chunks are only ever appended, never rewritten in place,
-// so the header it copies is stable). The maps themselves stay shared and must be
-// read only. Readers are also why this is a copy of the header and not the pool:
-// the pool keeps growing under them while they scan.
 // ChunkByID returns the pool chunk carrying this id, or nil.
 //
 // It takes the pool lock, so it must NOT be called from inside an Admit callback
@@ -202,6 +194,14 @@ func (k *Kbinfos) ChunkByID(id string) map[string]any {
 	return nil
 }
 
+// ChunksFrom returns up to limit chunks starting at from, as a copy of the slice
+// header.
+//
+// It exists so a READER can walk the pool the round has already paid for without
+// holding the pool lock (chunks are only ever appended, never rewritten in place,
+// so the header it copies is stable). The maps themselves stay shared and must be
+// read only. Readers are also why this is a copy of the header and not the pool:
+// the pool keeps growing under them while they scan.
 func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 	if k == nil || limit <= 0 {
 		return nil
