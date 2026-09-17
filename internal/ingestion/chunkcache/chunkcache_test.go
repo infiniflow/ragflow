@@ -37,6 +37,7 @@ type fakeStore struct {
 	deleted     []string
 	failSet     bool
 	expireFails bool
+	membersErr  error
 }
 
 func newFakeStore() *fakeStore {
@@ -73,6 +74,9 @@ func (f *fakeStore) SAdd(_ context.Context, key, member string) bool {
 }
 
 func (f *fakeStore) SMembers(_ context.Context, key string) ([]string, error) {
+	if f.membersErr != nil {
+		return nil, f.membersErr
+	}
 	out := make([]string, 0, len(f.sets[key]))
 	for m := range f.sets[key] {
 		out = append(out, m)
@@ -274,6 +278,18 @@ func TestPurgeTask_NoopWithoutTaskOrStore(t *testing.T) {
 		t.Errorf("deleted = %v, want none for an empty task id", f.deleted)
 	}
 	PurgeTask(context.Background(), nil, "task-1")
+}
+
+func TestPurgeTaskPropagatesManifestReadError(t *testing.T) {
+	f := newFakeStore()
+	f.membersErr = errors.New("redis unavailable")
+
+	if err := PurgeTask(context.Background(), f, "task-1"); !errors.Is(err, f.membersErr) {
+		t.Fatalf("PurgeTask error = %v, want manifest read error", err)
+	}
+	if len(f.deleted) != 0 {
+		t.Fatalf("deleted = %v, want no deletes after manifest read failure", f.deleted)
+	}
 }
 
 // TestKey_DiscriminatesEveryComponent asserts the key builder namespaces by

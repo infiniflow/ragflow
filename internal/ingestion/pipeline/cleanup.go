@@ -40,7 +40,9 @@ func cleanupTaskState(ctx context.Context, store canvas.CheckPointStore, tracker
 	if err := cleanupCheckpointState(ctx, store, tracker, taskID); err != nil {
 		return err
 	}
-	chunkcache.PurgeTask(ctx, chunkcache.Client(), taskID)
+	if err := chunkcache.PurgeTask(ctx, chunkcache.Client(), taskID); err != nil {
+		return fmt.Errorf("purge chunk cache: %w", err)
+	}
 	return nil
 }
 
