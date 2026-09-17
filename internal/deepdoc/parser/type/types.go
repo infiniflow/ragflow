@@ -14,11 +14,17 @@ import (
 
 // PipelineMetrics records diagnostic counts at each pipeline stage.
 type PipelineMetrics struct {
-	BoxesInitial   int
-	BoxesTextMerge int
-	BoxesVertMerge int
-	BoxesFinal     int
-	TablesCount    int
+	BoxesInitial int
+	// BoxesTOCRemoved / BoxesHeaderFooterRemoved count the boxes dropped by the
+	// optional box-level content removal passes, so the box budget can be
+	// reconciled: BoxesInitial - BoxesTOCRemoved - BoxesHeaderFooterRemoved >=
+	// BoxesTextMerge.
+	BoxesTOCRemoved          int
+	BoxesHeaderFooterRemoved int
+	BoxesTextMerge           int
+	BoxesVertMerge           int
+	BoxesFinal               int
+	TablesCount              int
 }
 
 // ParseResult encapsulates all outputs from a single Parse() call.

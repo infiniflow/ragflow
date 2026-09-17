@@ -82,14 +82,7 @@ func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
 // ParseRaw is the internal entry point: runs the core pipeline on an
 // already-opened engine. Exported for tests that inject mock engines.
 func (p *Parser) ParseRaw(ctx context.Context, engine pdf.PDFEngine, docAnalyzer pdf.DocAnalyzer) (*pdf.ParseResult, error) {
-	outlines := p.extractOutlines(engine)
-
-	result, err := p.processPages(ctx, engine, docAnalyzer)
-	if err != nil {
-		return nil, err
-	}
-	result.Outlines = outlines
-	return result, nil
+	return p.processPages(ctx, engine, docAnalyzer)
 }
 
 // ── ParseRaw helper functions ───────────────────────────────────────────────
@@ -429,10 +422,11 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 // state. Document-wide layout, table merge/replace, cross-page figures, and
 // metrics aggregation happen here so page workers never mutate shared state.
 // pageResults are expected to be sorted by page number.
-func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult) (*pdf.ParseResult, error) {
+func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult, outlines []pdf.Outline) (*pdf.ParseResult, error) {
 	result := &pdf.ParseResult{
 		PageHeight: make(map[int]float64),
 		PageWidth:  make(map[int]float64),
+		Outlines:   outlines,
 	}
 
 	var boxes []pdf.TextBox
@@ -528,11 +522,15 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// TextMerge: RemoveTOCBoxes relies on leader-dot boxes (which TextMerge
 	// folds into adjacent text) and RemoveHeaderFooterBoxes relies on header
 	// boxes that TextMerge would otherwise merge into the first body section.
+	boxesBefore := len(boxes)
 	if p.Config.RemoveTOC {
-		boxes = lyt.RemoveTOCBoxes(boxes)
+		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines))
+		result.Metrics.BoxesTOCRemoved = boxesBefore - len(boxes)
+		boxesBefore = len(boxes)
 	}
 	if p.Config.RemoveHeaderFooter {
 		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight)
+		result.Metrics.BoxesHeaderFooterRemoved = boxesBefore - len(boxes)
 	}
 
 	boxes = lyt.TextMerge(boxes, medianHeights)
@@ -571,10 +569,15 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 	if err != nil {
 		return nil, fmt.Errorf("page count: %w", err)
 	}
+	// The outlines are read before the layout is built: buildLayout uses them to
+	// select TOC pages on the intact box geometry (see Parser.buildLayout), so
+	// they cannot be attached to the result afterwards.
+	outlines := p.extractOutlines(engine)
 	if pageCount == 0 {
 		return &pdf.ParseResult{
 			PageHeight: make(map[int]float64),
 			PageWidth:  make(map[int]float64),
+			Outlines:   outlines,
 		}, nil
 	}
 
@@ -594,7 +597,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 		slog.Warn("runPageWorkers: some pages failed", "err", pageErr)
 	}
 
-	result, err := p.assembleDocument(ctx, pages, pageResults)
+	result, err := p.assembleDocument(ctx, pages, pageResults, outlines)
 	if err != nil {
 		return nil, err
 	}

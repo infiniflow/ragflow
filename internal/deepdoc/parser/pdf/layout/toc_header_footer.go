@@ -23,6 +23,11 @@ const (
 	// tocMaxLongBoxes is the maximum number of boxes longer than
 	// tocMaxProseRunes a page may carry and still be classified as TOC.
 	tocMaxLongBoxes = 2
+	// tocMinShortBoxes is the minimum number of short boxes a TOC page carries.
+	// A TOC is a list, so its entries stay separate boxes; a page whose text
+	// arrived as one merged block is not detected here and is covered by the
+	// outline signal instead.
+	tocMinShortBoxes = 4
 	// tocMinEntries is the minimum number of confirming entry markers (chapter
 	// markers plus page numbers) a page must carry to be classified as TOC.
 	tocMinEntries = 3
@@ -47,7 +52,68 @@ var (
 	// with leading dots (..18), roman numerals (III, IV), or dash-wrapped
 	// numbers (- 2 -).
 	pageNumberPattern = regexp.MustCompile(`^[.…]*\d+[.…]*$|^[.…]*[IVXLCDM]+[.…]*$|^\s*-\s*\d+\s*-\s*$`)
+	// tocTitlePattern matches an outline title that names the table of contents.
+	// It mirrors the section-level detector this pass replaces, which is why
+	// "致谢"/"acknowledge" are accepted as end-of-TOC markers alongside the
+	// heading itself.
+	tocTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
 )
+
+// ---------------------------------------------------------------------------
+// Outline signal.
+// ---------------------------------------------------------------------------
+
+// TOCPageRangeFromOutlines returns the 0-based page indices the PDF bookmarks
+// identify as the table of contents: from the outline entry naming the TOC up
+// to — excluding — the next entry at the same level. It returns nil when the
+// document carries no usable bookmark.
+//
+// Outline page numbers are 1-based — pdfium adds one to the 0-based destination
+// index (internal/deepdoc/parser/pdf/pdfium/pdfium.go) — while
+// TextBox.PageNumber is 0-based, because ParseRaw enumerates pages from zero.
+// The conversion happens here, once, so no caller has to know about it.
+func TOCPageRangeFromOutlines(outlines []pdf.Outline) map[int]bool {
+	for i, o := range outlines {
+		if !tocTitlePattern.MatchString(outlineTitle(o.Title)) {
+			continue
+		}
+		first := o.PageNumber - 1
+		if first < 0 {
+			return nil
+		}
+		for _, next := range outlines[i+1:] {
+			if next.Level != o.Level {
+				continue
+			}
+			if tocTitlePattern.MatchString(outlineTitle(next.Title)) {
+				continue
+			}
+			pages := make(map[int]bool, 4)
+			for pg := first; pg < next.PageNumber-1; pg++ {
+				pages[pg] = true
+			}
+			if len(pages) == 0 {
+				return nil
+			}
+			return pages
+		}
+		// No following entry at the same level: the TOC page is known but its
+		// extent is not, so claim only that page and leave the rest to the box
+		// shape signal.
+		return map[int]bool{first: true}
+	}
+	return nil
+}
+
+// outlineTitle strips the "@@" anchor suffix pdfium appends to bookmark titles
+// and lower-cases the result, matching how the section-level detector compared.
+func outlineTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if idx := strings.Index(title, "@@"); idx >= 0 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	return strings.ToLower(title)
+}
 
 // ---------------------------------------------------------------------------
 // TOC removal.
@@ -55,23 +121,27 @@ var (
 
 // RemoveTOCBoxes drops whole pages that are detected as tables of contents.
 //
-// Detection works on box-level signals that are destroyed by the later
-// TextMerge / BoxesToSections passes (leader dots get folded into adjacent
-// boxes, per-entry geometry collapses into a section), so this MUST run before
-// TextMerge (see Parser.buildLayout).
+// Detection works on signals that are destroyed by the later TextMerge /
+// BoxesToSections passes (leader dots get folded into adjacent boxes, per-entry
+// geometry collapses into a section), so this MUST run before TextMerge (see
+// Parser.buildLayout).
 //
-// The detector is deliberately conservative: it prefers missing a TOC page to
-// deleting a content page. A page is classified as TOC only when ALL of the
-// following hold:
+// Two signals select pages and the union is dropped:
 //
-//  1. Position: the page is one of the first tocMaxCandidatePages non-blank
-//     pages (a TOC is always a document prefix).
-//  2. No prose: the page carries at most tocMaxLongBoxes boxes longer than
-//     tocMaxProseRunes. This is the strongest guard — any page with body text
-//     is preserved.
-//  3. Many entries: the page carries at least tocMinEntries confirming markers
-//     (chapter markers or page numbers).
-func RemoveTOCBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+//  1. outlinePages — the pages the PDF bookmarks identify as TOC (see
+//     TOCPageRangeFromOutlines). Strongest, and the only one that still sees a
+//     TOC whose entries were already merged into a single box.
+//  2. Box shape — among the first tocMaxCandidatePages non-blank pages, a page
+//     carrying at least tocMinShortBoxes short boxes and tocMinEntries
+//     confirming markers (chapter markers or page numbers). Kept for documents
+//     that carry no usable bookmark.
+//
+// Both signals pass through one guard: a page carrying body text (more than
+// tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
+// document consisting only of TOC pages is left untouched. The detector stays
+// deliberately conservative — missing a TOC page costs noise chunks, deleting a
+// content page loses text.
+func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
@@ -88,24 +158,44 @@ func RemoveTOCBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	}
 	sort.Ints(pages)
 
-	drop := make(map[int]struct{}, len(boxes))
+	shapes := make(map[int]pageShape, len(pages))
+	for _, pg := range pages {
+		shapes[pg] = shapeOfPage(boxes, perPage[pg])
+	}
+
+	selected := make(map[int]bool, len(pages))
+	for pg := range outlinePages {
+		if _, ok := perPage[pg]; ok {
+			selected[pg] = true
+		}
+	}
+
 	candidates := 0
 	for _, pg := range pages {
-		indices := perPage[pg]
-		if isTOCPage(boxes, indices) {
-			for _, i := range indices {
-				drop[i] = struct{}{}
-			}
+		if shapes[pg].isTOC() {
+			selected[pg] = true
 		}
 		// Count non-blank pages (those with enough boxes to matter).
-		if len(indices) >= 4 {
+		if len(perPage[pg]) >= tocMinShortBoxes {
 			candidates++
 			if candidates >= tocMaxCandidatePages {
 				break
 			}
 		}
 	}
-	if len(drop) == 0 {
+
+	drop := make(map[int]struct{}, len(boxes))
+	droppedPages := 0
+	for _, pg := range pages {
+		if !selected[pg] || shapes[pg].carriesProse() {
+			continue
+		}
+		droppedPages++
+		for _, i := range perPage[pg] {
+			drop[i] = struct{}{}
+		}
+	}
+	if droppedPages == 0 || droppedPages == len(pages) {
 		return boxes
 	}
 
@@ -119,33 +209,41 @@ func RemoveTOCBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	return out
 }
 
-// isTOCPage reports whether the boxes on a single page form a table of
-// contents. All three conditions must hold: no substantial body text, enough
-// short boxes, and enough confirming entry markers.
-func isTOCPage(boxes []pdf.TextBox, indices []int) bool {
-	longBoxes := 0
-	shortBoxes := 0
-	entries := 0
+// pageShape summarises the boxes of one page.
+type pageShape struct {
+	prose   int // boxes longer than tocMaxProseRunes
+	short   int
+	markers int // short boxes opening with a chapter marker or holding a page number
+}
+
+func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
+	var s pageShape
 	for _, i := range indices {
 		text := strings.TrimSpace(boxes[i].Text)
 		if text == "" {
 			continue
 		}
-		n := utf8.RuneCountInString(text)
-		if n > tocMaxProseRunes {
-			longBoxes++
-			if longBoxes > tocMaxLongBoxes {
-				return false
-			}
+		if utf8.RuneCountInString(text) > tocMaxProseRunes {
+			s.prose++
 			continue
 		}
-		shortBoxes++
+		s.short++
 		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) {
-			entries++
+			s.markers++
 		}
 	}
-	return shortBoxes >= 4 && entries >= tocMinEntries
+	return s
 }
+
+// isTOC reports whether the page reads as a table of contents: a list of short
+// boxes carrying entry markers, and no body text.
+func (s pageShape) isTOC() bool {
+	return !s.carriesProse() && s.short >= tocMinShortBoxes && s.markers >= tocMinEntries
+}
+
+// carriesProse reports whether the page carries body text. No signal may drop
+// such a page: this is the single guard that bounds every removal.
+func (s pageShape) carriesProse() bool { return s.prose > tocMaxLongBoxes }
 
 // ---------------------------------------------------------------------------
 // Running header / footer removal.
