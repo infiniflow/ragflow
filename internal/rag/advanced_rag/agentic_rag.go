@@ -580,6 +580,10 @@ type RunResponse struct {
 	// chunk the slot was filled from (those markers index the internal slot
 	// table — nothing the user can open).
 	SlotCitations map[string][]string
+	// CiteChunkIDs is the ordered id list of the chunks the final-answer call
+	// showed the model as numbered evidence (harness.Kbinfos.CiteChunkIDs).
+	// A "[ID:n]" marker the model wrote refers to position n in this list.
+	CiteChunkIDs []string
 }
 
 // AnswerSink forwards a partially produced answer while the model is still
@@ -1388,6 +1392,16 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 	if deps.ComposeAnswer != nil && !*deps.ComposeAnswer {
 		return
 	}
+	// The compose publishes the ordered evidence list it rendered (kb's
+	// CiteChunkIDs) while it runs; hand it to the caller so the chat pipeline
+	// can resolve the answer's [ID:n] markers against that same list. Covered by
+	// a defer because both the streaming and the one-shot path return from
+	// inside the branches below.
+	defer func() {
+		if kb != nil {
+			resp.CiteChunkIDs = kb.CiteChunkIDs
+		}
+	}()
 	adeps := AnswerDeps{
 		Model:         deps.Model,
 		CiteRules:     deps.CiteRules,

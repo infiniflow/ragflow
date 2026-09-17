@@ -1562,3 +1562,30 @@ func TestSetDirectionWidensTheQueryBudget(t *testing.T) {
 	}
 	noPool.MarkSetDirection()
 }
+
+// TestChunksToMapsCarriesReferenceFields pins the fields the answer reference
+// card and the shared citation readers expect on an agentic chunk:
+// doc_type_kwd (the image/table marker) and the content_with_weight spelling of
+// the body. Without them an image chunk reached the response as an untyped,
+// bodyless reference while the naive path rendered it fine.
+func TestChunksToMapsCarriesReferenceFields(t *testing.T) {
+	got := chunksToMaps([]runtime.RetrievalChunk{{
+		ID:      "c1",
+		Content: "wolf",
+		ImageID: "kb-doc",
+		DocType: "image",
+	}})
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0]["doc_type_kwd"] != "image" {
+		t.Errorf("doc_type_kwd = %v, want image", got[0]["doc_type_kwd"])
+	}
+	if got[0]["content_with_weight"] != "wolf" || got[0]["content"] != "wolf" {
+		t.Errorf("content fields = %v/%v, want wolf/wolf",
+			got[0]["content_with_weight"], got[0]["content"])
+	}
+	if got[0]["image_id"] != "kb-doc" {
+		t.Errorf("image_id = %v, want kb-doc", got[0]["image_id"])
+	}
+}

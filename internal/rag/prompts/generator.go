@@ -136,19 +136,20 @@ func CitationPrompt(userDefined string) string {
 	return strings.TrimSpace(string(data)) + citationIDSuffix
 }
 
-// kbpBlock renders one knowledge block (id / title / url / metadata / content)
-// for the given 1-based index. ok is false when the chunk carries no content,
-// which KBPrompt treats as "skip" (mirrors Python's `if not c: continue`).
+// kbpBlock renders one knowledge block (id / title / url / metadata / content) with
+// id as its number — 1-based for kb_prompt parity, 0-based or a pool position for the
+// citation renderers. ok is false when the chunk carries no content, which the
+// renderers treat as "skip" (mirrors Python's `if not c: continue`).
 //
 // The block starts with a newline, mirroring Python's `"\nID: {}".format(...)`,
 // so a caller that joins the blocks with "\n" renders the same prompt Python
 // does.
-func kbpBlock(c map[string]any, index int) (string, bool) {
+func kbpBlock(c map[string]any, id int) (string, bool) {
 	content := chunkText(c)
 	if strings.TrimSpace(content) == "" {
 		return "", false
 	}
-	block := fmt.Sprintf("\nID: %d", index)
+	block := fmt.Sprintf("\nID: %d", id)
 	if title := chunkTitle(c); title != "" {
 		block += "\n├── Title: " + flattenNewlines(title)
 	}
@@ -176,8 +177,12 @@ func kbpBlock(c map[string]any, index int) (string, bool) {
 // KBPrompt mirrors rag/prompts/generator.kb_prompt: render chunks into the
 // numbered knowledge blocks the citation rules refer to.
 //
-// Blocks are numbered by position (1-based) so the model's [n] citations match
-// the block order it sees, matching Python's `ID: {i}` rendering (hash_id=False).
+// Blocks are numbered by rendered position, 1-based, matching Python's `ID: {i}`
+// (hash_id=False). No Go caller whose numbers reach a citation marker uses that
+// numbering any more — a marker names the client's index into reference.chunks,
+// which is 0-based — so this is kept for kb_prompt parity. What the paths render
+// with instead: KBPromptZeroBasedWithSourceIndices (agentic compose) and
+// KBPromptPoolIndexed (summarize_document).
 //
 // The budget is applied to the COMPLETE rendered block (title / url / metadata /
 // content), measured in TOKENS with the same cl100k_base encoder Python's
@@ -192,6 +197,24 @@ func KBPrompt(chunks []map[string]any, maxTokens int) []string {
 	return blocks
 }
 
+// KBPromptZeroBasedWithSourceIndices renders the blocks 0-based — the first is
+// "ID: 0" — and reports, for each, the index in chunks it came from.
+//
+// 0-based because the client resolves a citation marker by using its number as an
+// index into reference.chunks, and it renders the answer as the model streams it, so
+// the model has to write that index itself. The agentic compose renders with this
+// and publishes the same order on harness.Kbinfos.CiteChunkIDs, which
+// decorateHarnessAnswer puts in front of the reference. A 1-based render made every
+// marker point one chunk off — or past the end when the pool was shorter than the
+// render cap.
+//
+// The source indices are what the published id list must be gathered through:
+// kbpBlock renders no block for a chunk with no content, so walking the chunk list
+// instead would carry an id for every skipped chunk and shift every marker after it.
+func KBPromptZeroBasedWithSourceIndices(chunks []map[string]any, maxTokens int) ([]string, []int) {
+	return kbPromptWithIDs(chunks, maxTokens, func(_, rendered int) int { return rendered })
+}
+
 // KBPromptWithSourceIndices is KBPrompt plus, for every rendered block, the
 // index in chunks it was rendered from.
 //
@@ -201,6 +224,23 @@ func KBPrompt(chunks []map[string]any, maxTokens int) []string {
 // chunks[i]. Slicing by a chunk count can therefore drop readable blocks or
 // point past the end.
 func KBPromptWithSourceIndices(chunks []map[string]any, maxTokens int) ([]string, []int) {
+	return kbPromptWithIDs(chunks, maxTokens, func(_, rendered int) int { return rendered + 1 })
+}
+
+// KBPromptPoolIndexed is KBPromptWithSourceIndices with each block numbered by the
+// POSITION OF ITS CHUNK in chunks instead of by its place in the rendered list (see
+// kbPromptWithIDs). Used where a marker has to name a chunk in the pool rather than
+// a block rendered for the client — the summarize_document blocks, whose ids stay
+// addressable however much the render skipped.
+func KBPromptPoolIndexed(chunks []map[string]any, maxTokens int) ([]string, []int) {
+	return kbPromptWithIDs(chunks, maxTokens, func(idx, _ int) int { return idx })
+}
+
+// kbPromptWithIDs renders the blocks and reports, for each, the index in chunks it
+// came from. idAt decides the id printed on a block: its chunk's position (idx) or
+// its place among the rendered blocks (rendered) — the two diverge as soon as a
+// chunk is skipped or the token budget cuts the list short.
+func kbPromptWithIDs(chunks []map[string]any, maxTokens int, idAt func(idx, rendered int) int) ([]string, []int) {
 	out := make([]string, 0, len(chunks))
 	sources := make([]int, 0, len(chunks))
 	used := 0
@@ -208,7 +248,7 @@ func KBPromptWithSourceIndices(chunks []map[string]any, maxTokens int) ([]string
 		if c == nil {
 			continue
 		}
-		block, ok := kbpBlock(c, len(out)+1)
+		block, ok := kbpBlock(c, idAt(idx, len(out)))
 		if !ok {
 			continue
 		}

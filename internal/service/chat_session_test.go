@@ -1352,6 +1352,28 @@ func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
 // chunksFormat tests — verifies field normalization after the rewrite.
 // ===================================================================
 
+// TestChunksFormat_ContentPrefersContent pins Python's precedence in
+// chunks_format: `get_value(chunk, "content", "content_with_weight")`
+// (rag/prompts/generator.py:50) reads the display field FIRST and only falls
+// back to the engine spelling. The two normally hold the same string, so the
+// order is only observable when they differ.
+func TestChunksFormat_ContentPrefersContent(t *testing.T) {
+	svc := &ChatSessionService{}
+	result := svc.chunksFormat(map[string]interface{}{
+		"chunks": []map[string]interface{}{{
+			"chunk_id":            "c1",
+			"content":             "display text",
+			"content_with_weight": "engine body",
+		}},
+	})
+	if len(result) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(result))
+	}
+	if got := result[0]["content"]; got != "display text" {
+		t.Fatalf("content=%v, want display text (Python reads content first)", got)
+	}
+}
+
 func TestChunksFormat_NormalizesRawFieldNames(t *testing.T) {
 	svc := &ChatSessionService{}
 	ref := map[string]interface{}{
