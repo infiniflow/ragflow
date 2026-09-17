@@ -55,12 +55,16 @@ function extractCsvColumns(file: File, isTSV: boolean): Promise<string[]> {
       preview: 5, // Read initial rows to skip leading empties
       header: false,
       skipEmptyLines: false,
+      // A delimited header is indexed exactly as written (Python reads tables
+      // with csv.reader, whose skipinitialspace default keeps every field), so
+      // trimming here would name a column the parser never creates.
+      trimValues: false,
       delimiter: isTSV ? '\t' : undefined,
       complete(results) {
         const rows = (results.data as string[][]) ?? [];
         for (const row of rows) {
           if (row.some((cell) => String(cell ?? '').trim().length > 0)) {
-            resolve(tableColumnHeaderNames(row));
+            resolve(tableColumnHeaderNames(row, 'delimited'));
             return;
           }
         }
@@ -89,7 +93,7 @@ function extractExcelColumns(file: File): Promise<string[]> {
         const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
         for (const row of rows) {
           if (row.some((cell) => String(cell ?? '').trim().length > 0)) {
-            resolve(tableColumnHeaderNames(row));
+            resolve(tableColumnHeaderNames(row, 'spreadsheet'));
             return;
           }
         }
@@ -136,10 +140,21 @@ function deduplicateColumns(columns: string[]): string[] {
 // internal/parser/parser/table_row_render.go.
 const BOOKKEEPING_COLUMNS = ['id', '_id', 'index', 'idx'];
 
-// tableColumnHeaderNames applies the ingestion header rules to a raw header
-// row: trim, name empty headers by position, drop bookkeeping columns, dedupe.
-function tableColumnHeaderNames(row: unknown[]): string[] {
+// tableColumnHeaderNames applies the ingestion header rules of a file kind to a
+// raw header row: drop bookkeeping columns and dedupe the survivors. Only a
+// spreadsheet also trims each cell and names an empty one by position
+// (_parse_simple_headers); a delimited header is indexed exactly as read, so a
+// padded or empty cell keeps that spelling as its column name. Mirrors
+// rag/app/table.py table_column_header_names and the Go TableHeaderRule.
+function tableColumnHeaderNames(
+  row: unknown[],
+  rule: 'spreadsheet' | 'delimited',
+): string[] {
+  const spreadsheet = rule === 'spreadsheet';
   const raw = row.map((cell, idx) => {
+    if (!spreadsheet) {
+      return String(cell ?? '');
+    }
     const trimmed = String(cell ?? '').trim();
     return trimmed.length > 0 ? trimmed : `Column_${idx + 1}`;
   });

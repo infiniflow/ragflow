@@ -113,5 +113,20 @@ describe('table-column-extract', () => {
 
       expect(columns).toEqual(['ID', 'Product', 'Price']);
     });
+
+    it('takes a delimited header exactly as ingestion indexes it', async () => {
+      (request.post as unknown as jest.Mock).mockRejectedValueOnce(
+        new Error('Probe disabled'),
+      );
+
+      // Only a spreadsheet trims a header cell and names an empty one by
+      // position; a delimited column keeps the spelling the file gives it, so
+      // the fallback must not offer a trimmed name or an invented Column_2.
+      const csvContent = ' Name,,amount\nAlice,1,10\n';
+      const file = new File([csvContent], 'test.csv', { type: 'text/csv' });
+      const columns = await extractTableColumns(file);
+
+      expect(columns).toEqual([' Name', '', 'amount']);
+    });
   });
 });

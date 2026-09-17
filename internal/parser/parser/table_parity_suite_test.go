@@ -42,7 +42,7 @@ func TestParity_ReservedColumnsDropped(t *testing.T) {
 		{"id", "_id", "index", "idx", "name", "amount"},
 		{"1", "2", "3", "4", "alice", "10"},
 	}
-	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 
 	if !reflect.DeepEqual(headers, []string{"name", "amount"}) {
 		t.Fatalf("headers = %#v, want name/amount only", headers)
@@ -67,7 +67,7 @@ func TestParity_ReservedColumnsOnlyExactMatch(t *testing.T) {
 		{"id", "", "id_number"},
 		{"1", "kept", "42"},
 	}
-	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 
 	if !reflect.DeepEqual(headers, []string{"Column_2", "id_number"}) {
 		t.Fatalf("headers = %#v, want Column_2/id_number", headers)
@@ -87,7 +87,7 @@ func TestParity_OnlyReservedColumnsProducesNoItems(t *testing.T) {
 		{"id", "index"},
 		{"1", "2"},
 	}
-	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 
 	if len(headers) != 0 || len(items) != 0 {
 		t.Fatalf("headers = %#v, items = %#v; want both empty", headers, items)
@@ -96,7 +96,7 @@ func TestParity_OnlyReservedColumnsProducesNoItems(t *testing.T) {
 
 // Case 1: Auto mode (all columns default to "both", matching Python)
 func TestParity_AutoMode(t *testing.T) {
-	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "auto", nil)
+	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 	if len(headers) != 5 {
 		t.Fatalf("expected 5 headers, got %d", len(headers))
 	}
@@ -129,7 +129,7 @@ func TestParity_Manual_AllIndexing(t *testing.T) {
 		"Category": "indexing",
 		"Year":     "indexing",
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -160,7 +160,7 @@ func TestParity_Manual_AllMetadata(t *testing.T) {
 		"Category": "metadata",
 		"Year":     "metadata",
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -186,7 +186,7 @@ func TestParity_Manual_AllBoth(t *testing.T) {
 		"Category": "both",
 		"Year":     "both",
 	}
-	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -214,7 +214,7 @@ func TestParity_Manual_MixedRoles(t *testing.T) {
 		"Category": "both",
 		"Year":     "metadata",
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -249,7 +249,7 @@ func TestParity_Manual_PartialRoles_DefaultToBoth(t *testing.T) {
 		"Country": "metadata",
 		// Content, Category, Year omitted
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -286,7 +286,7 @@ func TestParity_Manual_VectorizeAlias(t *testing.T) {
 		"Title":   "vectorize",
 		"Country": "both",
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	row0 := items[0]
 	text0 := row0["text"].(string)
 	cd0 := row0["chunk_data"].(map[string]any)
@@ -310,7 +310,7 @@ func TestParity_Manual_UnknownRoleShapeIsExcluded(t *testing.T) {
 		"Category": "both",
 		"Year":     "  METADATA  ",
 	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	row0 := items[0]
 	text0 := row0["text"].(string)
 	cd0 := row0["chunk_data"].(map[string]any)
@@ -335,7 +335,7 @@ func TestParity_Manual_UnknownRoleShapeIsExcluded(t *testing.T) {
 // `parser_config.get("table_column_mode") == "manual"` does (rag/app/table.py:586),
 // so a differently cased mode is auto -- and auto ignores the roles entirely.
 func TestParity_Manual_MisCasedModeIsAuto(t *testing.T) {
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "Manual", map[string]string{"Title": "metadata"})
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "Manual", map[string]string{"Title": "metadata"}, TableHeaderRuleSpreadsheet)
 	row0 := items[0]
 	text0 := row0["text"].(string)
 	cd0 := row0["chunk_data"].(map[string]any)
@@ -356,7 +356,7 @@ func TestParity_Manual_MisCasedModeIsAuto(t *testing.T) {
 // neither membership test, an omitted key returns the default.
 func TestParity_Manual_PresentEmptyRoleIsExcluded(t *testing.T) {
 	roles := map[string]string{"Title": "", "Content": "metadata"}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	text0 := items[0]["text"].(string)
 	cd0 := items[0]["chunk_data"].(map[string]any)
 
@@ -382,7 +382,7 @@ func TestParity_Manual_PresentEmptyRoleIsExcluded(t *testing.T) {
 
 // Case 9: Blank / whitespace column mode defaults to auto
 func TestParity_BlankMode_DefaultsToAuto(t *testing.T) {
-	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "  ", nil)
+	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "  ", nil, TableHeaderRuleSpreadsheet)
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -400,7 +400,7 @@ func TestParity_EmptyCells(t *testing.T) {
 		{"", "", ""},      // all empty row -> should be skipped
 		{"  ", "2", "  "}, // whitespace cells -> only B present
 	}
-	items, _ := RenderRowsToJSONChunks(rows, "", "auto", nil)
+	items, _ := RenderRowsToJSONChunks(rows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items (skipping completely empty row), got %d", len(items))
 	}
@@ -446,7 +446,7 @@ func TestParity_EmptyHeader_ColumnN(t *testing.T) {
 		{"Name", "", "Age", "  "},
 		{"Alice", "Engineer", "30", "Beijing"},
 	}
-	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil, TableHeaderRuleSpreadsheet)
 	wantHeaders := []string{"Name", "Column_2", "Age", "Column_4"}
 	if !reflect.DeepEqual(headers, wantHeaders) {
 		t.Errorf("headers = %v, want %v", headers, wantHeaders)
@@ -470,7 +470,7 @@ func TestParity_ChineseHeaders(t *testing.T) {
 		"城市": "indexing",
 		"职级": "both",
 	}
-	items, _ := RenderRowsToJSONChunks(rows, "", "manual", roles)
+	items, _ := RenderRowsToJSONChunks(rows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
@@ -655,7 +655,7 @@ func TestDirectParityWithPython(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			items, headers := RenderRowsToJSONChunks(standardTableRows, "", tc.mode, tc.roles)
+			items, headers := RenderRowsToJSONChunks(standardTableRows, "", tc.mode, tc.roles, TableHeaderRuleSpreadsheet)
 			if !reflect.DeepEqual(headers, tc.wantCols) {
 				t.Errorf("headers = %v, want %v", headers, tc.wantCols)
 			}

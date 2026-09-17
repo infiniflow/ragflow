@@ -70,18 +70,26 @@ def _deduplicate_column_names(columns):
 TABLE_BOOKKEEPING_COLUMNS = ("id", "_id", "index", "idx")
 
 
-def table_column_header_names(header_row):
-    """Column names a simple header row parses into.
+def table_column_header_names(header_row, spreadsheet):
+    """Column names a header row parses into, under the rules of its file kind.
 
-    Mirrors the ingestion header rules — cells trimmed, an empty header named
-    Column_<position>, bookkeeping columns dropped, survivors deduplicated — so
-    a preview of the columns agrees with what the parser produces.
+    A spreadsheet header is what ``Excel._parse_simple_headers`` indexes: every
+    cell trimmed and an empty one named ``Column_<position>``. A delimited
+    (csv/tsv/txt) header is the first record as read, so a padded name stays
+    padded and an empty one stays empty; it is only deduplicated. Bookkeeping
+    columns are dropped and survivors deduplicated in both kinds.
+
+    ``spreadsheet`` selects the rule, so a preview of the columns agrees with
+    what the parser indexes. Mirrors the Go parser
+    (internal/parser/parser/table_row_render.go, TableHeaderRule).
     """
     names = []
     for i, cell in enumerate(header_row):
-        name = "" if cell is None else str(cell).strip()
-        if not name:
-            name = f"Column_{i + 1}"
+        name = "" if cell is None else str(cell)
+        if spreadsheet:
+            name = name.strip()
+            if not name:
+                name = f"Column_{i + 1}"
         if name in TABLE_BOOKKEEPING_COLUMNS:
             continue
         names.append(name)
@@ -102,7 +110,7 @@ def probe_table_headers(content, filename):
         text_stream = io.StringIO(content.decode("utf-8-sig", errors="replace"))
         for row in csv.reader(text_stream, delimiter=delimiter):
             if any(cell.strip() for cell in row):
-                return table_column_header_names(row)
+                return table_column_header_names(row, spreadsheet=False)
         return []
     if name.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
         import openpyxl
@@ -113,7 +121,7 @@ def probe_table_headers(content, filename):
                 return []
             for row in wb[wb.sheetnames[0]].iter_rows(values_only=True):
                 if any(str(cell or "").strip() for cell in row):
-                    return table_column_header_names(row)
+                    return table_column_header_names(row, spreadsheet=True)
             return []
         finally:
             wb.close()

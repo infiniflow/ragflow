@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -54,6 +55,50 @@ func NewCSVParser() *CSVParser {
 
 func (p *CSVParser) String() string {
 	return "CSVParser"
+}
+
+// newCSVReader configures the delimited reader the table parser uses. The
+// schema probe reads a header through the same function so the columns it
+// reports are the columns this parser indexes; a second reader definition
+// would drift on any of these knobs.
+func newCSVReader(filename, text string) *csv.Reader {
+	reader := csv.NewReader(strings.NewReader(text))
+	if strings.HasSuffix(strings.ToLower(filename), ".tsv") || (!strings.Contains(text, ",") && strings.Contains(text, "\t")) {
+		reader.Comma = '\t'
+	}
+	reader.LazyQuotes = true
+	// TrimLeadingSpace is deliberately left off: Python reads a table with
+	// csv.reader, whose skipinitialspace default keeps every field exactly as
+	// written, and with a tab delimiter Go's trim also swallows the tab that
+	// starts an empty field, silently shifting the rest of the row left.
+	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
+	return reader
+}
+
+// ProbeDelimitedColumnNames returns the column names this parser would index for
+// the given delimited stream, from its first row with content. The caller
+// bounds the reader; a header fits the prefix it reads.
+func ProbeDelimitedColumnNames(r io.Reader, filename string) ([]string, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	decoded, _ := DecodeToUTF8(data, "text/csv")
+	// Python decodes text with utf-8-sig, so the BOM never reaches the first
+	// header cell; the parser strips it the same way.
+	text := strings.TrimPrefix(string(decoded), "\uFEFF")
+
+	records, err := newCSVReader(filename, text).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range cleanIllegalControlChars(records) {
+		if TableRowHasContent(record) {
+			names, _ := TableColumnHeaderNames(record, TableHeaderRuleDelimited)
+			return names, nil
+		}
+	}
+	return []string{}, nil
 }
 
 func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
@@ -154,14 +199,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	reader := csv.NewReader(strings.NewReader(text))
-	if strings.HasSuffix(strings.ToLower(filename), ".tsv") || (!strings.Contains(text, ",") && strings.Contains(text, "\t")) {
-		reader.Comma = '\t'
-	}
-	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
-	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
-
+	reader := newCSVReader(filename, text)
 	records, err := reader.ReadAll()
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
@@ -171,7 +209,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	records = cleanIllegalControlChars(records)
 
 	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
-		items, headers := RenderRowsToJSONChunks(records, "", p.ColumnMode, p.ColumnRoles)
+		items, headers := RenderRowsToJSONChunks(records, "", p.ColumnMode, p.ColumnRoles, TableHeaderRuleDelimited)
 		return ParseResult{
 			OutputFormat: "json",
 			File: map[string]any{

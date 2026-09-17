@@ -63,13 +63,15 @@ def test_probe_csv_reports_ingestion_column_names(table_module):
     ]
 
 
-def test_probe_csv_skips_leading_empty_rows_and_names_empty_headers(table_module):
+def test_probe_csv_skips_leading_empty_rows_and_keeps_header_cells(table_module):
+    # A delimited header is indexed as read (rag/app/table.py:565, :577), so the
+    # probe must not trim it or rename an empty cell: a role configured for the
+    # name the probe reports has to match the column ingestion creates.
     content = b",,\n,name,amount\n,1,10\n"
-    assert table_module.probe_table_headers(content, "data.csv") == [
-        "Column_1",
-        "name",
-        "amount",
-    ]
+    assert table_module.probe_table_headers(content, "data.csv") == ["", "name", "amount"]
+
+    content = b" name ,amount\nAlice,10\n"
+    assert table_module.probe_table_headers(content, "data.csv") == [" name ", "amount"]
 
 
 def test_probe_tsv_uses_tab_delimiter(table_module):
@@ -99,16 +101,40 @@ def test_probe_xlsx_uses_first_sheet_header_row(table_module):
     ]
 
 
+def test_probe_xlsx_applies_the_spreadsheet_header_rule(table_module):
+    # Excel ingestion trims every header cell and names an empty one by
+    # position (_parse_simple_headers), so the probe must do the same.
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append([" amount ", None, "name"])
+    ws.append([10, "x", "Alice"])
+    buffer = BytesIO()
+    wb.save(buffer)
+
+    assert table_module.probe_table_headers(buffer.getvalue(), "data.xlsx") == [
+        "amount",
+        "Column_2",
+        "name",
+    ]
+
+
 def test_probe_rejects_binary_xls(table_module):
     with pytest.raises(ValueError):
         table_module.probe_table_headers(b"\xd0\xcf\x11\xe0binary", "legacy.xls")
 
 
 def test_table_column_header_names_matches_the_parser_rules(table_module):
-    # Bookkeeping columns dropped, duplicates suffixed, empty header named by
-    # position — the same rules the Go parser applies.
-    assert table_module.table_column_header_names(["idx", "a", "", "a", "id"]) == [
+    # Bookkeeping columns dropped and duplicates suffixed in both kinds; only a
+    # spreadsheet trims cells and names an empty header by position.
+    assert table_module.table_column_header_names(["idx", "a", "", "a", "id"], spreadsheet=True) == [
         "a",
         "Column_3",
+        "a_2",
+    ]
+    assert table_module.table_column_header_names(["idx", "a", "", "a", "id"], spreadsheet=False) == [
+        "a",
+        "",
         "a_2",
     ]

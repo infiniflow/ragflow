@@ -127,7 +127,7 @@ func TestTableColumnRoleClassification_MatchesRenderLayer(t *testing.T) {
 		header = append(header, col)
 		row = append(row, col+"_v")
 	}
-	items, headers := parser.RenderRowsToJSONChunks([][]string{header, row}, "", "manual", roles)
+	items, headers := parser.RenderRowsToJSONChunks([][]string{header, row}, "", "manual", roles, parser.TableHeaderRuleSpreadsheet)
 	if len(items) != 1 {
 		t.Fatalf("expected one row chunk, got %d", len(items))
 	}

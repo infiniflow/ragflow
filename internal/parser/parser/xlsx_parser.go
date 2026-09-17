@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -192,7 +193,7 @@ func parseXLSXRowsJSON(data []byte, columnMode string, columnRoles map[string]st
 			continue
 		}
 		rows = cleanIllegalControlChars(rows)
-		items, headers := RenderRowsToJSONChunks(rows, sheet, columnMode, columnRoles)
+		items, headers := RenderRowsToJSONChunks(rows, sheet, columnMode, columnRoles, TableHeaderRuleSpreadsheet)
 		allItems = append(allItems, items...)
 		for _, h := range headers {
 			if _, ok := allColSet[h]; !ok {
@@ -206,6 +207,50 @@ func parseXLSXRowsJSON(data []byte, columnMode string, columnRoles map[string]st
 
 func xlsxRowParseResult(filename string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
 	return spreadsheetRowParseResult(filename, "xlsx", items, columns, warnings, sheets)
+}
+
+// ProbeSpreadsheetColumnNames returns the column names parseXLSXRowsJSON would
+// index for the first sheet of the workbook stream, read from its first row
+// with content. The caller bounds the reader; a header fits the prefix it reads.
+//
+// Only the first sheet is probed: a workbook whose later sheets carry different
+// columns is reported with those columns missing, and the client-side
+// extraction fallback covers that case. A sheet with merged or multi-level
+// headers is parsed hierarchically, which this preview cannot reproduce — the
+// parser stays authoritative.
+func ProbeSpreadsheetColumnNames(r io.Reader) ([]string, error) {
+	f, err := excelize.OpenReader(r)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		return []string{}, nil
+	}
+
+	rows, err := f.Rows(sheets[0])
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		cols, err := rows.Columns()
+		if err != nil {
+			continue
+		}
+		cols = cleanIllegalControlChars([][]string{cols})[0]
+		if !TableRowHasContent(cols) {
+			continue
+		}
+
+		names, _ := TableColumnHeaderNames(cols, TableHeaderRuleSpreadsheet)
+		return names, nil
+	}
+
+	return []string{}, nil
 }
 
 func spreadsheetRowParseResult(filename, format string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {

@@ -57,6 +57,72 @@ func TestDeduplicateColumnNames(t *testing.T) {
 	}
 }
 
+// Each file family has its own header rule, and the probe must apply the rule
+// of the file it is shown: a role configured for a name the probe did not
+// report silently matches nothing, and a name the probe invented indexes
+// nothing.
+func TestTableColumnHeaderNames_PerFileKind(t *testing.T) {
+	tests := []struct {
+		name        string
+		rule        TableHeaderRule
+		headerRow   []string
+		wantNames   []string
+		wantIndexes []int
+	}{
+		{
+			name:        "spreadsheet trims cells and names an empty one by position",
+			rule:        TableHeaderRuleSpreadsheet,
+			headerRow:   []string{" Name ", "", "id", " id", "Name"},
+			wantNames:   []string{"Name", "Column_2", "Name_2"},
+			wantIndexes: []int{0, 1, 4},
+		},
+		{
+			name:        "delimited takes the cells as read",
+			rule:        TableHeaderRuleDelimited,
+			headerRow:   []string{" Name ", "", "id", " id", "Name"},
+			wantNames:   []string{" Name ", "", " id", "Name"},
+			wantIndexes: []int{0, 1, 3, 4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			names, indexes := TableColumnHeaderNames(tt.headerRow, tt.rule)
+			if !reflect.DeepEqual(names, tt.wantNames) {
+				t.Errorf("names = %q, want %q", names, tt.wantNames)
+			}
+			if !reflect.DeepEqual(indexes, tt.wantIndexes) {
+				t.Errorf("source indexes = %v, want %v", indexes, tt.wantIndexes)
+			}
+		})
+	}
+}
+
+// A CSV reader must key its roles on the spelling the CSV file carries, so the
+// renderer has to keep a padded header padded.
+func TestRenderRowsToJSONChunks_DelimitedRuleKeepsHeaderSpelling(t *testing.T) {
+	rows := [][]string{
+		{" Name", "Amount"},
+		{"Alice", "10"},
+	}
+	roles := map[string]string{" Name": "metadata"}
+
+	items, headers := RenderRowsToJSONChunks(rows, "", "manual", roles, TableHeaderRuleDelimited)
+	if !reflect.DeepEqual(headers, []string{" Name", "Amount"}) {
+		t.Fatalf("headers = %q, want the cells as read", headers)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	if text := items[0]["text"]; text != "- Amount: 10" {
+		t.Errorf("text = %q, want only the unconfigured column indexed", text)
+	}
+	cd, _ := items[0]["chunk_data"].(map[string]any)
+	if cd[" Name"] != "Alice" {
+		t.Errorf("chunk_data = %#v, want the padded role to match", cd)
+	}
+}
+
 func TestRenderRowsToJSONChunks(t *testing.T) {
 	rows := [][]string{
 		{"Title", "Content", "Category", "Year"},
@@ -66,7 +132,7 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 	}
 
 	t.Run("auto mode defaults every column to both, matching Python", func(t *testing.T) {
-		items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil)
+		items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil, TableHeaderRuleSpreadsheet)
 		if len(headers) != 4 {
 			t.Fatalf("expected 4 headers, got %d", len(headers))
 		}
@@ -95,7 +161,7 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 		items, headers := RenderRowsToJSONChunks([][]string{
 			{"Name", "", "Age"},
 			{"Alice", "x", "30"},
-		}, "", "auto", nil)
+		}, "", "auto", nil, TableHeaderRuleSpreadsheet)
 		if len(headers) != 3 || headers[1] != "Column_2" {
 			t.Fatalf("headers = %v, want [Name Column_2 Age]", headers)
 		}
@@ -112,7 +178,7 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 		items, _ := RenderRowsToJSONChunks([][]string{
 			{"A", "B"},
 			{"1", "2"},
-		}, "", "manual", map[string]string{"A": "vectorize"})
+		}, "", "manual", map[string]string{"A": "vectorize"}, TableHeaderRuleSpreadsheet)
 		if len(items) != 1 {
 			t.Fatalf("expected 1 item, got %d", len(items))
 		}
@@ -135,7 +201,7 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 			"Category": "metadata",
 			"Year":     "metadata",
 		}
-		items, _ := RenderRowsToJSONChunks(rows, "", "manual", roles)
+		items, _ := RenderRowsToJSONChunks(rows, "", "manual", roles, TableHeaderRuleSpreadsheet)
 		if len(items) != 2 {
 			t.Fatalf("expected 2 items, got %d", len(items))
 		}
@@ -308,7 +374,7 @@ func TestRenderRowsToJSONChunks_SkipLeadingEmptyRows(t *testing.T) {
 		{"Name", "Age", "Role"},
 		{"Alice", "30", "Engineer"},
 	}
-	items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil)
+	items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil, TableHeaderRuleSpreadsheet)
 	if len(headers) != 3 || headers[0] != "Name" || headers[1] != "Age" || headers[2] != "Role" {
 		t.Fatalf("expected headers [Name Age Role], got %v", headers)
 	}

@@ -82,28 +82,62 @@ func DeduplicateColumnNames(columns []string) []string {
 	return unique
 }
 
-// tableBookkeepingColumns are the spreadsheet columns Python deletes before
-// rendering (rag/app/table.py: `for n in ["id", "_id", "index", "idx"]: del df[n]`).
-// They carry no content, and keeping them would index the row's primary key
-// into the chunk text and into chunk_data. The schema probe drops them too, so
-// the columns it reports are exactly the columns ingestion can index.
+// TableRowHasContent reports whether a row carries a non-blank cell, the rule
+// both the renderer and the schema probe use to find the header row of a table.
+func TableRowHasContent(row []string) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// tableBookkeepingColumns are the columns Python deletes from every table
+// before rendering (rag/app/table.py:596-599, `TABLE_BOOKKEEPING_COLUMNS`). They
+// carry no content, and keeping them would index the row's primary key into the
+// chunk text and into chunk_data. The schema probe drops them too, so the
+// columns it reports are the columns ingestion can index.
 var tableBookkeepingColumns = map[string]struct{}{
 	"id": {}, "_id": {}, "index": {}, "idx": {},
 }
 
+// TableHeaderRule selects the header rules of a file family. The table parser
+// does not read a spreadsheet and a delimited file the same way: Excel headers
+// go through _parse_simple_headers, which trims each cell and names an empty
+// one Column_<position> (rag/app/table.py:263-285), while a CSV/TSV header is
+// the first record as read and is only deduplicated (rag/app/table.py:560-577).
+// The schema probe applies the rule of the file it is shown, so the columns it
+// offers for configuration are the columns ingestion indexes.
+type TableHeaderRule int
+
+const (
+	// TableHeaderRuleSpreadsheet trims cells and renames an empty header to
+	// Column_<position>. It is the zero value, which is also the rule the
+	// shared header helper had before the file kinds were separated.
+	TableHeaderRuleSpreadsheet TableHeaderRule = iota
+	// TableHeaderRuleDelimited takes the header cells as read: a padded name
+	// stays padded and an empty name stays empty, because that is what the
+	// column is called in the index.
+	TableHeaderRuleDelimited
+)
+
 // TableColumnHeaderNames turns a header row into the column names the table
-// parser indexes: cells are trimmed, an empty header is named Column_<position>,
-// the row-bookkeeping columns are dropped, and the survivors are deduplicated.
-// sourceIndexes carries each surviving name's position in headerRow, which is
-// how a data row is mapped onto the columns. The schema probe uses the same
-// function, so what it offers for configuration is what ingestion produces.
-func TableColumnHeaderNames(headerRow []string) (names []string, sourceIndexes []int) {
+// parser indexes: the row-bookkeeping columns are dropped and the survivors
+// are deduplicated, under the cell rules of rule. sourceIndexes carries each
+// surviving name's position in headerRow, which is how a data row is mapped
+// onto the columns. The schema probe uses the same function with the same rule,
+// so what it offers for configuration is what ingestion produces.
+func TableColumnHeaderNames(headerRow []string, rule TableHeaderRule) (names []string, sourceIndexes []int) {
 	raw := make([]string, 0, len(headerRow))
 	indexes := make([]int, 0, len(headerRow))
 	for i, h := range headerRow {
-		name := strings.TrimSpace(h)
-		if name == "" {
-			name = fmt.Sprintf("Column_%d", i+1)
+		name := h
+		if rule == TableHeaderRuleSpreadsheet {
+			name = strings.TrimSpace(h)
+			if name == "" {
+				name = fmt.Sprintf("Column_%d", i+1)
+			}
 		}
 		if _, reserved := tableBookkeepingColumns[name]; reserved {
 			continue
@@ -120,23 +154,19 @@ func TableColumnHeaderNames(headerRow []string) (names []string, sourceIndexes [
 // Structured metadata fields are stored in the "chunk_data" map.
 // Auto mode (the default, matching Python's table chunker) gives every column
 // the "both" role, so all columns land in text and in chunk_data. Manual mode
-// honors column_roles; columns without an explicit role default to "both".
-// Empty headers are named Column_N, matching Python's _parse_simple_headers
-// fallback.
-func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string, columnRoles map[string]string) ([]map[string]any, []string) {
+// honors column_roles; a column the roles map does not carry is "both".
+// headerRule is the header rule of the file being rendered: a caller reading a
+// spreadsheet passes TableHeaderRuleSpreadsheet, a CSV/TSV reader passes
+// TableHeaderRuleDelimited.
+func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string, columnRoles map[string]string, headerRule TableHeaderRule) ([]map[string]any, []string) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
 
 	headerRowIdx := -1
 	for rIdx, r := range rows {
-		for _, cell := range r {
-			if strings.TrimSpace(cell) != "" {
-				headerRowIdx = rIdx
-				break
-			}
-		}
-		if headerRowIdx >= 0 {
+		if TableRowHasContent(r) {
+			headerRowIdx = rIdx
 			break
 		}
 	}
@@ -144,9 +174,7 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 		return nil, nil
 	}
 
-	// Spreadsheet bookkeeping columns are dropped before rendering, mirroring
-	// rag/app/table.py (`for n in ["id", "_id", "index", "idx"]: del df[n]`).
-	headers, headerIndexes := TableColumnHeaderNames(rows[headerRowIdx])
+	headers, headerIndexes := TableColumnHeaderNames(rows[headerRowIdx], headerRule)
 
 	isManual := common.NormalizeTableColumnMode(columnMode) == common.TableColumnModeManual
 	items := make([]map[string]any, 0, len(rows)-headerRowIdx-1)

@@ -18,10 +18,13 @@ package document
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"reflect"
 	"strings"
 	"testing"
+
+	"ragflow/internal/parser/parser"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -82,9 +85,94 @@ func TestProbeTable_TSV(t *testing.T) {
 		t.Fatalf("ProbeTable: %v", err)
 	}
 
-	want := []string{"col1", "Column_2", "col3"}
+	// A delimited header is indexed as read, so the blank cell keeps its empty
+	// name; inventing Column_2 here would offer a role for a column that never
+	// exists in the index.
+	want := []string{"col1", "", "col3"}
 	if !reflect.DeepEqual(cols, want) {
 		t.Fatalf("got %#v, want %#v", cols, want)
+	}
+}
+
+// The probe is only useful while a name it reports is the name ingestion
+// creates, so both kinds are compared against the parser that indexes the file
+// rather than against a second copy of the rules.
+func TestProbeTable_MatchesIngestionColumnNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+	}{
+		{name: "csv", filename: "a.csv", content: " Name,,id,Name,amount\nx,y,z,w,v\n"},
+		{name: "tsv", filename: "a.tsv", content: "col1\t\tcol3\n1\t2\t3\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &DocumentService{}
+			probed, err := svc.ProbeTable(strings.NewReader(tt.content), tt.filename)
+			if err != nil {
+				t.Fatalf("ProbeTable: %v", err)
+			}
+
+			p := parser.NewCSVParser()
+			p.OutputFormat = "json"
+			p.ColumnMode = "auto"
+			res := p.ParseWithResult(context.Background(), tt.filename, []byte(tt.content))
+			if res.Err != nil {
+				t.Fatalf("parse: %v", res.Err)
+			}
+			indexed, _ := res.File["table_column_names"].([]string)
+
+			if !reflect.DeepEqual(probed, indexed) {
+				t.Fatalf("probe = %#v, ingestion = %#v", probed, indexed)
+			}
+		})
+	}
+}
+
+func TestProbeTable_XLSXMatchesIngestionColumnNames(t *testing.T) {
+	f := excelize.NewFile()
+	cells := []string{" Product", "", "id", "Product", "Price"}
+	for i, name := range cells {
+		cell, err := excelize.CoordinatesToCellName(i+1, 1)
+		if err != nil {
+			t.Fatalf("coordinate: %v", err)
+		}
+		if err := f.SetCellValue("Sheet1", cell, name); err != nil {
+			t.Fatalf("set header: %v", err)
+		}
+	}
+	if err := f.SetCellValue("Sheet1", "A2", "widget"); err != nil {
+		t.Fatalf("set cell: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		t.Fatalf("write xlsx: %v", err)
+	}
+	workbook := buf.Bytes()
+
+	svc := &DocumentService{}
+	probed, err := svc.ProbeTable(bytes.NewReader(workbook), "catalog.xlsx")
+	if err != nil {
+		t.Fatalf("ProbeTable: %v", err)
+	}
+
+	p, err := parser.NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
+	}
+	p.OutputFormat = "json"
+	p.ColumnMode = "auto"
+	res := p.ParseWithResult(context.Background(), "catalog.xlsx", workbook)
+	if res.Err != nil {
+		t.Fatalf("parse: %v", res.Err)
+	}
+	indexed, _ := res.File["table_column_names"].([]string)
+
+	if !reflect.DeepEqual(probed, indexed) {
+		t.Fatalf("probe = %#v, ingestion = %#v", probed, indexed)
 	}
 }
 
