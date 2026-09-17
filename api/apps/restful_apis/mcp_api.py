@@ -17,6 +17,7 @@
 from quart import Response, request
 
 from api.apps import current_user, login_required
+from api.db import CanvasCategory
 from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.canvas_service import UserCanvasService
@@ -67,7 +68,7 @@ def _shared_mcp_metadata(mcp_id):
         return None
     selected = set()
     referenced = False
-    for canvas in UserCanvasService.query(user_id=server.tenant_id, permission="team"):
+    for canvas in UserCanvasService.query(user_id=server.tenant_id, permission="team", canvas_category=CanvasCategory.Agent):
         dsl = safe_json_parse(canvas.dsl)
         for component in dsl.get("components", {}).values():
             obj = component.get("obj", {})
@@ -81,10 +82,8 @@ def _shared_mcp_metadata(mcp_id):
         return None
     catalog = safe_json_parse(server.variables).get("tools", {})
     fields = {"name", "title", "description", "inputSchema", "outputSchema", "annotations", "enabled"}
-    tools = {name: {k: v for k, v in meta.items() if k in fields}
-             for name, meta in catalog.items() if name in selected and isinstance(meta, dict)}
-    return {"id": server.id, "name": server.name, "server_type": server.server_type,
-            "url": "", "variables": {"tools": tools}, "read_only": True}
+    tools = {name: {k: v for k, v in meta.items() if k in fields} for name, meta in catalog.items() if name in selected and isinstance(meta, dict)}
+    return {"id": server.id, "name": server.name, "server_type": server.server_type, "url": "", "variables": {"tools": tools}, "read_only": True}
 
 
 def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple[str, str, str | None]:
