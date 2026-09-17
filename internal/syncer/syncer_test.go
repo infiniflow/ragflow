@@ -1165,7 +1165,7 @@ func TestSyncRunnerResultWaitHonorsCancel(t *testing.T) {
 func TestBatchFailureDoesNotAdvanceWaterline(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2)}).Error
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2), "retry_count": int64(2), "error_class": "non_transient"}).Error
 	taskDAO := dao.NewSyncTaskDAO(db)
 	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
@@ -1250,7 +1250,7 @@ func TestNonTransientFailureReschedulesTask(t *testing.T) {
 func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(3)}).Error; err != nil {
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(3), "retry_count": int64(3), "error_class": "transient"}).Error; err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
 	taskDAO := dao.NewSyncTaskDAO(db)
@@ -1271,6 +1271,44 @@ func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	}
 	if !strings.Contains(task.ErrorMsg, "failed after 3 retries") || !strings.Contains(task.ErrorMsg, "unexpected EOF") {
 		t.Fatalf("error_msg = %q", task.ErrorMsg)
+	}
+}
+
+// TestErrorClassSwitchResetsRetryBudget verifies a task that switches failure
+// classes starts a fresh retry budget: failures accumulated under one class
+// must not consume the retries of a different class.
+func TestErrorClassSwitchResetsRetryBudget(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	// The task already exhausted the non-transient budget (3 failures), then
+	// hits a transient error with its own larger budget.
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
+		"status":      dao.SyncStatusRunning,
+		"error_count": int64(3),
+		"retry_count": int64(3),
+		"error_class": "non_transient",
+	}).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncErrAt: 1} // unexpected EOF (transient)
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("status = %s, want schedule (fresh transient budget)", task.Status)
+	}
+	if task.ErrorCount != 4 {
+		t.Fatalf("error_count = %d, want 4 (total across classes)", task.ErrorCount)
+	}
+	if task.RetryCount != 1 {
+		t.Fatalf("retry_count = %d, want 1 (reset on class change)", task.RetryCount)
+	}
+	if task.ErrorClass != "transient" {
+		t.Fatalf("error_class = %q, want transient", task.ErrorClass)
 	}
 }
 

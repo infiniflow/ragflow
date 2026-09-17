@@ -32,6 +32,21 @@ const maxTransientTaskRetries int64 = 4
 // task errors: 2 retries plus the final attempt.
 const maxNonTransientTaskRetries int64 = 3
 
+// Error class identifiers persisted in sync_logs.error_class. Each class
+// carries its own retry budget so one class's failures never consume another.
+const (
+	taskErrorClassTransient    = "transient"
+	taskErrorClassNonTransient = "non_transient"
+)
+
+// taskErrorClass returns the persisted retry-class identifier for a task error.
+func taskErrorClass(err error) string {
+	if isTransientSyncError(err) {
+		return taskErrorClassTransient
+	}
+	return taskErrorClassNonTransient
+}
+
 // maxTaskRetries returns the total attempt budget for a task error:
 // whitelisted (transient) errors get more retries than other errors.
 func maxTaskRetries(err error) int64 {

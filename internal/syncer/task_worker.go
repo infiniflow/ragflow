@@ -151,7 +151,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		maxRetries := maxTaskRetries(err)
-		attempts, failed, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), maxRetries)
+		attempts, failed, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), taskErrorClass(err), maxRetries)
 		if transientErr != nil {
 			if err = w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID); err != nil {
 				common.Warn("syncer task reschedule failed after failure handling error", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
