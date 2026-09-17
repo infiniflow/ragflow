@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
+	"ragflow/internal/tokenizer"
 )
 
 // Dataset-nav constants. These mirror Python's dataset_nav.py: nav rows live in
@@ -163,9 +164,8 @@ func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID, keywords 
 	if strings.TrimSpace(keywords) != "" {
 		filter = navFilter(nil)
 	}
-	matchExpressions := navKeywordExpressions(keywords)
-	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter,
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize, matchExpressions)
+	chunks, total, err := s.searchNavRows(ctx, tenantID, kbID, keywords, filter,
+		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -183,10 +183,9 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, key
 		pageSize = 100
 	}
 	offset := page * pageSize
-	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
+	chunks, total, err := s.searchNavRows(ctx, tenantID, kbID, keywords,
 		navFilter(map[string]interface{}{"parent_kwd": []string{name}}),
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
-		navKeywordExpressions(keywords))
+		[]string{"name", "title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -202,6 +201,28 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, key
 	return nodes, total, nil
 }
 
+// searchNavRows applies the lexical keyword search first, then falls back to
+// semantic search when no lexical row matches, mirroring Python's navigation
+// search behavior.
+func (s *NavService) searchNavRows(ctx context.Context, tenantID, kbID, keywords string, filter map[string]interface{}, selectFields []string, offset, limit int) ([]map[string]interface{}, int64, error) {
+	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter, selectFields, offset, limit, navKeywordExpressions(keywords))
+	if err != nil || len(chunks) > 0 || strings.TrimSpace(keywords) == "" || s.embed == nil {
+		return chunks, total, err
+	}
+	embeddings, err := encodeNavQuery(ctx, s.embed, tenantID, []string{keywords})
+	if err != nil || len(embeddings) == 0 || len(embeddings[0]) == 0 {
+		return chunks, total, nil
+	}
+	vec := embeddings[0]
+	return s.navSearch(ctx, tenantID, kbID, filter, selectFields, offset, limit, []interface{}{&types.MatchDenseExpr{
+		VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
+		EmbeddingData:     f32ToF64Slice(vec),
+		EmbeddingDataType: "float",
+		DistanceType:      "cosine",
+		TopN:              offset + limit,
+	}})
+}
+
 // navKeywordExpressions builds the lexical search expression used by the REST
 // navigation endpoints. These are the same indexed summary fields used by the
 // Python navigation search, with a stronger weight on the main content field.
@@ -209,6 +230,9 @@ func navKeywordExpressions(keywords string) []interface{} {
 	keywords = strings.TrimSpace(keywords)
 	if keywords == "" {
 		return nil
+	}
+	if tokenized, err := tokenizer.Tokenize(keywords); err == nil && tokenized != "" {
+		keywords = tokenized
 	}
 	return []interface{}{&types.MatchTextExpr{
 		Fields:       []string{"content_ltks^10", "content_sm_ltks"},
@@ -599,7 +623,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// deterministic id (hash of the "dataset_nav:doc:{doc_id}" key) so
 		// RemoveDoc / cascade cleanup can locate and delete it precisely,
 		// instead of relying on a doc_id + type filter alone.
-		_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+		row := map[string]interface{}{
 			"id":            navDocID(in.TenantID, in.KbID, in.DocID),
 			"compile_kwd":   navCompileKwd,
 			"available_int": 0,
@@ -616,7 +640,9 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"doc_count_int":       1,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-		}}, idx, in.KbID)
+		}
+		setNavSearchText(row, in.Summary)
+		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID)
 		return err
 	}
 
@@ -638,7 +664,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if summary == "" {
 		summary = in.Summary
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+	clusterRow := map[string]interface{}{
 		"id":                  navClusterID(in.TenantID, in.KbID, name),
 		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
 		"compile_kwd":         navCompileKwd,
@@ -651,7 +677,9 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID)
+	}
+	setNavSearchText(clusterRow, summary)
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID)
 	if err != nil {
 		return err
 	}
@@ -660,7 +688,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	// new root cluster that only folds the doc into doc_ids_kwd would leave the
 	// nav tree with a single cluster and no nav_doc child, so /children returns
 	// empty. The nav_doc carries a readable title + parent_kwd = the cluster name.
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+	docRow := map[string]interface{}{
 		"id":                  navDocID(in.TenantID, in.KbID, in.DocID),
 		"compile_kwd":         navCompileKwd,
 		"available_int":       0,
@@ -672,7 +700,9 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_count_int":       1,
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID)
+	}
+	setNavSearchText(docRow, in.Summary)
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID)
 	return err
 }
 
@@ -965,6 +995,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 				spl.count++
 			}
 		}
+		description := "split of " + clusterName
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
 			"compile_kwd":         navCompileKwd,
@@ -975,8 +1006,9 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			"depth_int":           clusterDepth(clusterChunks),
 			"doc_count_int":       spl.count,
 			"doc_ids_kwd":         spl.ids,
-			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": "split of " + clusterName}),
+			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": description}),
 		}
+		setNavSearchText(row, description)
 		// Representative vector: if any reparented child carried a vector, use it
 		// so the split cluster participates in KNN routing. This is a heuristic
 		// stand-in for Python's k-means centroid.
@@ -1337,6 +1369,22 @@ func payloadJSONNav(v map[string]interface{}) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// setNavSearchText stores the tokenized fields used by navigation keyword
+// search. content_with_weight is a stored display payload and is not indexed
+// by Elasticsearch, so it cannot serve the lexical search directly.
+func setNavSearchText(row map[string]interface{}, text string) {
+	coarse, err := tokenizer.Tokenize(text)
+	if err != nil || coarse == "" {
+		coarse = text
+	}
+	fine, err := tokenizer.FineGrainedTokenize(coarse)
+	if err != nil || fine == "" {
+		fine = coarse
+	}
+	row["content_ltks"] = coarse
+	row["content_sm_ltks"] = fine
 }
 
 // truncateString caps s to n runes (not bytes).
