@@ -20,6 +20,8 @@ import zipfile
 from io import BytesIO
 from xml.etree import ElementTree
 
+from bs4 import ParserRejectedMarkup
+
 from .html_parser import RAGFlowHtmlParser
 
 # OPF XML namespaces
@@ -37,6 +39,11 @@ class RAGFlowEpubParser:
     and delegating to RAGFlowHtmlParser for chunking."""
 
     def __call__(self, fnm, binary=None, chunk_token_num=512):
+        """Return the text sections of every readable content item, in spine order.
+
+        An item that cannot be read or parsed is skipped with a warning. Raises
+        ValueError for an empty payload.
+        """
         if binary is not None:
             if not binary:
                 logger.warning(
@@ -69,9 +76,10 @@ class RAGFlowEpubParser:
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=UserWarning)
                         sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
-                except Exception as e:
-                    # decode_text refuses a weak codec guess, and a chapter can be
-                    # mislabelled XHTML. Same reasoning as above.
+                except (UnicodeError, ParserRejectedMarkup, RecursionError) as e:
+                    # decode_text refuses a weak codec guess, html.parser rejects some
+                    # malformed markup, and the HTML walker recurses once per element.
+                    # Same reasoning as above; any other error is a bug and propagates.
                     logger.warning("Skipping EPUB content item '%s' that failed to parse: %s", item_path, e)
                     continue
                 all_sections.extend(sections)

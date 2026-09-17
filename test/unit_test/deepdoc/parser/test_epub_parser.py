@@ -32,6 +32,9 @@ import zipfile
 from io import BytesIO
 from unittest import mock
 
+import pytest
+from bs4 import ParserRejectedMarkup
+
 # Import RAGFlowEpubParser directly by file path to avoid triggering
 # deepdoc/parser/__init__.py which pulls in heavy dependencies
 # (pdfplumber, xgboost, etc.) that may not be available in test environments.
@@ -388,9 +391,11 @@ class TestEpubParserUnreadableChapter:
     ]
 
     def _parse(self, epub_bytes):
+        """Parse `epub_bytes` and join the sections into one string."""
         return " ".join(RAGFlowEpubParser()(None, binary=epub_bytes, chunk_token_num=512))
 
     def test_all_three_chapters_when_the_book_is_intact(self):
+        """The fixture book parses in full when nothing is broken."""
         combined = self._parse(_make_epub(self._CHAPTERS))
 
         assert "ALPHA" in combined
@@ -455,3 +460,38 @@ class TestEpubParserUnreadableChapter:
 
         assert "ALPHA" in combined
         assert "CHARLIE" in combined
+
+    def test_a_chapter_with_rejected_markup_is_skipped(self):
+        """bs4 raises ParserRejectedMarkup when html.parser rejects the markup. Which markup that is depends on the CPython version, so the rejection is simulated."""
+        parser_txt = _epub_mod.RAGFlowHtmlParser.parser_txt
+
+        def reject_bravo(txt, chunk_token_num):
+            if "BRAVO" in txt:
+                raise ParserRejectedMarkup("rejected")
+            return parser_txt(txt, chunk_token_num)
+
+        with mock.patch.object(_epub_mod.RAGFlowHtmlParser, "parser_txt", side_effect=reject_bravo):
+            combined = self._parse(_make_epub(self._CHAPTERS))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    def test_a_chapter_nested_too_deep_to_walk_is_skipped(self):
+        """The HTML walker recurses once per element, so enough unclosed tags raise RecursionError."""
+        chapters = [
+            ("ch1.xhtml", _simple_html("ALPHA chapter")),
+            ("ch2.xhtml", _simple_html("<span>BRAVO " * sys.getrecursionlimit())),
+            ("ch3.xhtml", _simple_html("CHARLIE chapter")),
+        ]
+
+        combined = self._parse(_make_epub(chapters))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    def test_a_parser_bug_is_not_skipped_as_an_unreadable_chapter(self):
+        """Only failures caused by the chapter itself are skipped; any other error propagates."""
+        with mock.patch.object(_epub_mod.RAGFlowHtmlParser, "parser_txt", side_effect=TypeError("parser bug")), pytest.raises(TypeError, match="parser bug"):
+            self._parse(_make_epub(self._CHAPTERS))
