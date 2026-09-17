@@ -4,7 +4,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from common.data_source import zotero_connector as zotero_mod
+from common.data_source.exceptions import ConnectorMissingCredentialError
 from common.data_source.zotero_connector import ZoteroConnector
+
+
+def _file_response(content: bytes) -> MagicMock:
+    response = MagicMock()
+    response.status_code = 200
+    response.iter_content = lambda chunk_size=None: iter([content])
+    response.close = MagicMock()
+    return response
 
 
 def _attachment_item(key: str, modified: str) -> dict:
@@ -41,10 +50,7 @@ def test_zotero_connector_builds_pdf_document(monkeypatch):
         list_response = MagicMock()
         list_response.status_code = 200
         list_response.json.return_value = items
-        file_response = MagicMock()
-        file_response.status_code = 200
-        file_response.content = b"%PDF-1.4 test"
-        mock_get.side_effect = [list_response, file_response]
+        mock_get.side_effect = [list_response, _file_response(b"%PDF-1.4 test")]
 
         batches = list(connector.load_from_state())
 
@@ -79,10 +85,7 @@ def test_zotero_connector_poll_filters_by_modified_time(monkeypatch):
         list_response = MagicMock()
         list_response.status_code = 200
         list_response.json.return_value = items
-        file_response = MagicMock()
-        file_response.status_code = 200
-        file_response.content = b"%PDF"
-        mock_get.side_effect = [list_response, file_response]
+        mock_get.side_effect = [list_response, _file_response(b"%PDF")]
 
         batches = list(
             connector.poll_source(
@@ -98,8 +101,15 @@ def test_zotero_connector_poll_filters_by_modified_time(monkeypatch):
 
 def test_zotero_connector_requires_api_key():
     connector = ZoteroConnector(zotero_user_id="12345678")
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectorMissingCredentialError):
         connector.load_credentials({})
+
+
+def test_zotero_connector_requires_user_id():
+    connector = ZoteroConnector(zotero_user_id=None)
+    connector.load_credentials({"zotero_api_key": "secret"})
+    with pytest.raises(ConnectorMissingCredentialError, match="user ID"):
+        connector.validate_local_settings()
 
 
 def test_zotero_rejects_http_webdav_url():
@@ -136,10 +146,11 @@ def test_zotero_yields_batches_incrementally(monkeypatch):
         list_response = MagicMock()
         list_response.status_code = 200
         list_response.json.return_value = items
-        file_response = MagicMock()
-        file_response.status_code = 200
-        file_response.content = b"%PDF"
-        mock_get.side_effect = [list_response, file_response, file_response]
+        mock_get.side_effect = [
+            list_response,
+            _file_response(b"%PDF"),
+            _file_response(b"%PDF"),
+        ]
         batches = list(connector.load_from_state())
     assert len(batches) == 2
     assert batches[0][0].id.endswith(":A1")

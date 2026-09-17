@@ -294,7 +294,9 @@ func (c *ZoteroConnector) doZoteroRequest(ctx context.Context, url string, metho
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("Zotero-API-Key", c.apiKey)
+	if hostAllowsZoteroAPIKey(req.URL.Hostname()) {
+		req.Header.Set("Zotero-API-Key", c.apiKey)
+	}
 	req.Header.Set("Zotero-API-Version", "3")
 	if len(payload) > 0 {
 		req.Header.Set("Content-Type", "application/json")
@@ -304,6 +306,10 @@ func (c *ZoteroConnector) doZoteroRequest(ctx context.Context, url string, metho
 		return nil, nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		io.Copy(io.Discard, resp.Body)
+		return nil, resp.Header.Clone(), &ConnectorValidationError{Message: "Unexpected redirect from Zotero API"}
+	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, zoteroMaxAttachmentBytes+1024))
 	if err != nil {
 		return nil, nil, err
@@ -432,7 +438,7 @@ func (c *ZoteroConnector) getPinnedURL(ctx context.Context, rawURL string, autho
 }
 
 func (c *ZoteroConnector) downloadPDFViaWebDAV(ctx context.Context, attachmentKey, filename string) ([]byte, string, error) {
-	zipURL := strings.TrimRight(c.webdavURL, "/") + "/" + attachmentKey + ".zip"
+	zipURL := strings.TrimRight(c.webdavURL, "/") + "/zotero/" + attachmentKey + ".zip"
 	data, err := c.getPinnedURL(ctx, zipURL, func(req *http.Request) {
 		req.SetBasicAuth(c.webdavUser, c.webdavPass)
 	})
@@ -445,7 +451,7 @@ func (c *ZoteroConnector) downloadPDFViaWebDAV(ctx context.Context, attachmentKe
 func extractPDFFromZip(zipBytes []byte, fallbackName string) ([]byte, string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil
 	}
 	var pdfName string
 	var pdfData []byte

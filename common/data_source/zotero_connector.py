@@ -31,17 +31,36 @@ STORAGE_MODE_WEBDAV = "webdav"
 PAGE_SIZE = 100
 ZOTERO_API_KEY_HOSTS = frozenset({"api.zotero.org"})
 MAX_FILE_REDIRECTS = 10
+_READ_CHUNK_BYTES = 64 * 1024
+
+
+def _read_response_capped(response, max_bytes: int) -> bytes:
+    """Read a response body up to max_bytes without loading unbounded data."""
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        for chunk in response.iter_content(chunk_size=_READ_CHUNK_BYTES):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                response.close()
+                return b""
+            chunks.append(chunk)
+    finally:
+        response.close()
+    return b"".join(chunks)
 
 
 class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def __init__(
         self,
-        zotero_user_id: str,
+        zotero_user_id: str | None,
         storage_mode: str = STORAGE_MODE_ZOTERO,
         webdav_url: str = DEFAULT_WEBDAV_URL,
         batch_size: int = INDEX_BATCH_SIZE,
     ) -> None:
-        self.user_id = zotero_user_id.strip()
+        self.user_id = (zotero_user_id or "").strip()
         self.storage_mode = (storage_mode or STORAGE_MODE_ZOTERO).strip()
         self.webdav_url = (webdav_url or DEFAULT_WEBDAV_URL).rstrip("/")
         self.batch_size = batch_size
@@ -180,13 +199,25 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _list_attachment_items(self, start: int) -> list[dict[str, Any]]:
         url = f"{ZOTERO_API_BASE}/users/{self.user_id}/items"
         params = {"itemType": "attachment", "format": "json", "limit": PAGE_SIZE, "start": start}
-        response = rl_requests.get(url, headers=self._headers(), params=params, timeout=60)
+        response = rl_requests.get(
+            url,
+            headers=self._headers(),
+            params=params,
+            timeout=60,
+            allow_redirects=False,
+        )
+        if 300 <= response.status_code < 400:
+            response.close()
+            raise ConnectorValidationError("Unexpected redirect from Zotero API")
         if response.status_code in {401, 403}:
             raise CredentialExpiredError("Zotero API key is invalid or expired")
         if response.status_code == 404:
             raise InsufficientPermissionsError("Zotero library was not found")
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response.raise_for_status()
+            payload = response.json()
+        finally:
+            response.close()
         if not isinstance(payload, list):
             raise ConnectorValidationError("Unexpected Zotero API response")
         return payload
@@ -224,6 +255,7 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 response = rl_requests.get(current, headers=headers, timeout=120, allow_redirects=False)
             if 300 <= response.status_code < 400:
                 location = response.headers.get("Location")
+                response.close()
                 if not location:
                     logger.warning("Zotero file redirect missing Location header")
                     return None
@@ -231,17 +263,19 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 continue
             if response.status_code >= 400:
                 logger.warning("Failed to download Zotero attachment: HTTP %s", response.status_code)
+                response.close()
                 return None
-            blob = response.content
+            blob = _read_response_capped(response, self.size_threshold + 1)
             if len(blob) > self.size_threshold:
-                return blob
+                logger.warning("Skipping oversized Zotero attachment download")
+                return None
             return blob
         logger.warning("Stopped after too many Zotero file redirects")
         return None
 
     def _download_via_webdav(self, attachment_key: str, filename: str) -> tuple[bytes, str]:
         self.validate_local_settings()
-        zip_url = urljoin(self.webdav_url + "/", f"{attachment_key}.zip")
+        zip_url = urljoin(self.webdav_url + "/", f"zotero/{attachment_key}.zip")
         try:
             host, ip = assert_url_is_safe(zip_url, allowed_schemes=frozenset({"https"}))
         except ValueError as exc:
@@ -253,17 +287,25 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 auth=(self.webdav_username or "", self.webdav_password or ""),
                 timeout=120,
                 allow_redirects=False,
+                stream=True,
             )
         if response.status_code >= 400:
             logger.warning("Failed to download Zotero WebDAV archive %s: HTTP %s", attachment_key, response.status_code)
+            response.close()
             return b"", filename
-        if len(response.content) > self.size_threshold:
+        zip_bytes = _read_response_capped(response, self.size_threshold + 1)
+        if len(zip_bytes) > self.size_threshold:
             logger.warning("Skipping oversized Zotero WebDAV archive %s", attachment_key)
             return b"", filename
-        return self._extract_pdf_from_zip(response.content, filename)
+        return self._extract_pdf_from_zip(zip_bytes, filename)
 
     def _extract_pdf_from_zip(self, zip_bytes: bytes, fallback_name: str) -> tuple[bytes, str]:
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+        try:
+            archive_ctx = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        except zipfile.BadZipFile:
+            logger.warning("Malformed Zotero WebDAV archive for %s", fallback_name)
+            return b"", fallback_name
+        with archive_ctx as archive:
             for name in archive.namelist():
                 if name.endswith("/") or not name.lower().endswith(".pdf"):
                     continue
