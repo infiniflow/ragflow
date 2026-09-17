@@ -8,7 +8,7 @@ import (
 )
 
 // ============================================
-// 第一部分：findTableAnchors 的测试
+// Part 1: findTableAnchors tests
 // ============================================
 
 func TestFindTableAnchors_SingleTable(t *testing.T) {
@@ -121,7 +121,7 @@ func TestFindTableAnchors_DifferentPage(t *testing.T) {
 }
 
 // ============================================
-// 第二部分：buildTableHTMLs 的测试
+// Part 2: buildTableHTMLs tests
 // ============================================
 
 func TestBuildTableHTMLs_SingleTable(t *testing.T) {
@@ -182,7 +182,7 @@ func TestBuildTableHTMLs_WithTableBoxes(t *testing.T) {
 }
 
 // ============================================
-// 第三部分：insertTableBoxes 的测试
+// Part 3: insertTableBoxes tests
 // ============================================
 
 func TestInsertTableBoxes_Basic(t *testing.T) {
@@ -306,7 +306,7 @@ func TestInsertTableBoxes_EmptyHTML(t *testing.T) {
 }
 
 // ============================================
-// 第四部分：集成测试 - 验证重构后功能保持一致
+// Part 4: Integration tests - verify refactored behavior remains consistent
 // ============================================
 
 func TestExtractTableAndReplace_Integration(t *testing.T) {
@@ -380,7 +380,7 @@ func TestExtractTableAndReplace_ZeroBoxesWithTables(t *testing.T) {
 }
 
 // ============================================
-// 第五部分：FilterBoxesByRemoveSet 单元测试
+// Part 5: FilterBoxesByRemoveSet unit tests
 // ============================================
 
 func TestFilterBoxesByRemoveSet_EmptyRemoveSet(t *testing.T) {
@@ -427,25 +427,25 @@ func TestFilterBoxesByRemoveSet_EmptyInput(t *testing.T) {
 }
 
 func TestFilterBoxesByRemoveSet_Preallocation(t *testing.T) {
-	// 验证容量预分配是否合理
+	// Verify that capacity pre-allocation is reasonable
 	boxes := make([]pdf.TextBox, 100)
 	removeSet := map[int]bool{}
 	for i := 0; i < 30; i++ {
-		removeSet[i] = true // 标记 30 个要移除
+		removeSet[i] = true // Mark 30 entries for removal
 	}
 
 	result := FilterBoxesByRemoveSet(boxes, removeSet)
 	if len(result) != 70 {
 		t.Errorf("expected 70 boxes, got %d", len(result))
 	}
-	// 验证容量至少为 70
+	// Verify capacity is at least 70
 	if cap(result) < 70 {
 		t.Errorf("expected capacity >= 70, got %d", cap(result))
 	}
 }
 
 // ============================================
-// 第六部分：createTableBoxFromItem 单元测试
+// Part 6: createTableBoxFromItem unit tests
 // ============================================
 
 func TestCreateTableBoxFromItem_Basic(t *testing.T) {
@@ -475,7 +475,7 @@ func TestCreateTableBoxFromItem_Basic(t *testing.T) {
 }
 
 func TestCreateTableBoxFromItem_FallbackToPosition(t *testing.T) {
-	// Region 字段为空时，使用 Position 的坐标
+	// When Region fields are empty, use the Position coordinates
 	table := &pdf.TableItem{
 		Positions: []pdf.Position{{
 			PageNumbers: []int{2},
@@ -493,7 +493,7 @@ func TestCreateTableBoxFromItem_FallbackToPosition(t *testing.T) {
 }
 
 func TestCreateTableBoxFromItem_EmptyPositions(t *testing.T) {
-	// 没有 Positions 时也能工作
+	// Also works when Positions is empty
 	table := &pdf.TableItem{
 		RegionLeft:   10,
 		RegionRight:  100,
@@ -508,7 +508,7 @@ func TestCreateTableBoxFromItem_EmptyPositions(t *testing.T) {
 }
 
 // ============================================
-// 第七部分：handleImageOnlyPDFs 单元测试
+// Part 7: handleImageOnlyPDFs unit tests
 // ============================================
 
 func TestHandleImageOnlyPDFs_EmptyTables(t *testing.T) {
@@ -520,7 +520,7 @@ func TestHandleImageOnlyPDFs_EmptyTables(t *testing.T) {
 
 func TestHandleImageOnlyPDFs_EmptyCells(t *testing.T) {
 	tables := []pdf.TableItem{
-		{Cells: []pdf.TSRCell{}}, // 没有 cell 的 table
+		{Cells: []pdf.TSRCell{}}, // Table with no cells
 	}
 	result := handleImageOnlyPDFs(tables)
 	if len(result) != 0 {
@@ -563,7 +563,7 @@ func TestHandleImageOnlyPDFs_MultipleTables(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "table1"}},
 		},
 		{
-			// 没有 cell 的 table，应该被跳过
+			// Table with no cells, should be skipped
 			Cells: []pdf.TSRCell{},
 		},
 		{
@@ -581,7 +581,7 @@ func TestHandleImageOnlyPDFs_MultipleTables(t *testing.T) {
 }
 
 // ============================================
-// 阶段 2: buildAndSortAnchors 和 processTablesWithReplacements
+// Phase 2: buildAndSortAnchors and processTablesWithReplacements
 // ============================================
 
 func TestBuildAndSortAnchors(t *testing.T) {
@@ -608,7 +608,7 @@ func TestBuildAndSortAnchors(t *testing.T) {
 }
 
 // ============================================
-// 第八部分：ConsolidateFigures 子函数的单元测试
+// Part 8: ConsolidateFigures subfunction unit tests
 // ============================================
 
 func TestMarkDataSourceBoxesForRemoval(t *testing.T) {
@@ -617,7 +617,7 @@ func TestMarkDataSourceBoxesForRemoval(t *testing.T) {
 		{Text: "资料来源：abc", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0},
 		{Text: "图表来源 def", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0},
 		{Text: "正常图片内容", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0},
-		{Text: "数据来源: 不应该移除", LayoutType: pdf.LayoutTypeText, PageNumber: 0}, // 不是 figure 类型
+		{Text: "数据来源: 不应该移除", LayoutType: pdf.LayoutTypeText, PageNumber: 0}, // Not a figure type
 	}
 
 	removeSet := markDataSourceBoxesForRemoval(boxes)
@@ -637,7 +637,7 @@ func TestGroupFigureBoxes(t *testing.T) {
 		{Text: "fig1-part1", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "fig-0"},
 		{Text: "fig1-part2", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "fig-0"},
 		{Text: "fig2", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "fig-1"},
-		{Text: "fig3", LayoutType: pdf.LayoutTypeFigure, PageNumber: 1, LayoutNo: "fig-0"}, // 不同页面
+		{Text: "fig3", LayoutType: pdf.LayoutTypeFigure, PageNumber: 1, LayoutNo: "fig-0"}, // Different page
 		{Text: "text", LayoutType: pdf.LayoutTypeText, PageNumber: 0},
 	}
 	removeSet := map[int]bool{}
@@ -647,7 +647,7 @@ func TestGroupFigureBoxes(t *testing.T) {
 		t.Errorf("expected 3 groups, got %d", len(groups))
 	}
 
-	// 验证组的内容
+	// Verify the group's contents
 	key1 := figKey{page: 0, ln: "fig-0"}
 	if len(groups[key1]) != 2 {
 		t.Errorf("expected 2 boxes in fig-0 group, got %d", len(groups[key1]))
@@ -679,7 +679,7 @@ func TestMergeFigureGroups(t *testing.T) {
 
 	mergeFigureGroups(boxes, groups, removeSet)
 
-	// 验证合并后的结果
+	// Verify the merged result
 	if boxes[0].Text != "part1\npart2" {
 		t.Errorf("expected merged text, got %q", boxes[0].Text)
 	}
@@ -706,12 +706,12 @@ func TestConsolidateFigures_Integration(t *testing.T) {
 
 	result := ConsolidateFigures(boxes)
 
-	// 验证结果
-	if len(result) != 2 { // 合并后的 figure + normal text
+	// Verify result
+	if len(result) != 2 { // Merged figure + normal text
 		t.Errorf("expected 2 boxes, got %d", len(result))
 	}
 
-	// 检查 figure 是否正确合并
+	// Check that figures are correctly merged
 	var figureFound bool
 	for _, b := range result {
 		if b.LayoutType == pdf.LayoutTypeFigure {
@@ -750,9 +750,12 @@ func TestConsolidateFigures_OnlyDataSource(t *testing.T) {
 }
 
 func TestExtractTableAndReplace_MergeTablesAcrossPages(t *testing.T) {
-	// Regression test: two tables on consecutive pages with overlapping X
-	// should be merged by MergeTablesAcrossPages, and buildReplacementsAfterMerge
-	// must correctly index into the merged slice (not the original pre-merge slice).
+	// Regression test: ExtractTableAndReplace must correctly replace an
+	// ALREADY-merged cross-page table (merged upstream by Parser.buildLayout at
+	// parser.go:540, which uses page-absolute Y + real medianHeights). It must
+	// NOT re-merge tables itself — that is buildLayout's job. The merged table
+	// carries both pages in its Positions, and buildReplacementsAfterMerge must
+	// index the merged slice so both pages' boxes are replaced by one HTML box.
 	boxes := []pdf.TextBox{
 		{Text: "intro", LayoutType: pdf.LayoutTypeText, PageNumber: 0, X0: 10, X1: 100, Top: 10, Bottom: 30},
 		{Text: "table1", LayoutType: pdf.LayoutTypeTable, PageNumber: 0, X0: 10, X1: 400, Top: 40, Bottom: 150},
@@ -760,21 +763,22 @@ func TestExtractTableAndReplace_MergeTablesAcrossPages(t *testing.T) {
 		{Text: "table2", LayoutType: pdf.LayoutTypeTable, PageNumber: 1, X0: 10, X1: 400, Top: 10, Bottom: 120},
 		{Text: "outro", LayoutType: pdf.LayoutTypeText, PageNumber: 1, X0: 10, X1: 100, Top: 130, Bottom: 160},
 	}
+	// One table already merged across page 0 and page 1: Positions span both
+	// pages so buildReplacementsAfterMerge matches both table boxes; Cells from
+	// both pages so the HTML contains the full cross-page content. MergeTables
+	// (parser.go:540) produces exactly this shape; ExtractTableAndReplace must
+	// consume it without re-merging.
 	tables := []pdf.TableItem{
 		{
-			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 150}},
+			Positions: []pdf.Position{
+				{PageNumbers: []int{0}, Left: 10, Right: 400, Top: 40, Bottom: 150},
+				{PageNumbers: []int{1}, Left: 10, Right: 400, Top: 10, Bottom: 120},
+			},
 			RegionLeft: 10, RegionRight: 400, RegionTop: 40, RegionBottom: 150,
 			Scale: 1.0,
 			Cells: []pdf.TSRCell{
 				{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "Page0_A"},
 				{X0: 100, Y0: 0, X1: 200, Y1: 30, Text: "Page0_B"},
-			},
-		},
-		{
-			Positions:  []pdf.Position{{PageNumbers: []int{1}, Left: 10, Right: 400, Top: 10, Bottom: 120}},
-			RegionLeft: 10, RegionRight: 400, RegionTop: 10, RegionBottom: 120,
-			Scale: 1.0,
-			Cells: []pdf.TSRCell{
 				{X0: 0, Y0: 50, X1: 100, Y1: 80, Text: "Page1_C"},
 				{X0: 100, Y0: 50, X1: 200, Y1: 80, Text: "Page1_D"},
 			},
@@ -785,7 +789,7 @@ func TestExtractTableAndReplace_MergeTablesAcrossPages(t *testing.T) {
 	if len(result) == 0 {
 		t.Fatal("expected non-empty result")
 	}
-	// After merge: 2 table boxes replaced by 1 merged HTML box.
+	// 2 table boxes replaced by 1 merged HTML box.
 	// Original 5 boxes → 4 expected (intro, merged_table, middle, outro).
 	if len(result) != 4 {
 		t.Errorf("expected 4 boxes after merge+replace, got %d", len(result))
@@ -798,5 +802,197 @@ func TestExtractTableAndReplace_MergeTablesAcrossPages(t *testing.T) {
 	// Verify the original text boxes are preserved in the right order.
 	if result[0].Text != "intro" || result[2].Text != "middle" || result[3].Text != "outro" {
 		t.Error("non-table boxes should be preserved in original order")
+	}
+}
+
+// TestProcessTablesWithReplacements_KeepsTextWhenNoCells pins the contract that
+// a text box mislabeled LayoutTypeTable by DLA is kept as prose when TSR yields
+// no cells (HTML missing), instead of being silently dropped.
+func TestProcessTablesWithReplacements_KeepsTextWhenNoCells(t *testing.T) {
+	const body = "REFERENCE [1] body text that must not vanish"
+	boxes := []pdf.TextBox{
+		{Text: "para one", PageNumber: 1, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 100, Top: 0, Bottom: 10},
+		{Text: body, PageNumber: 1, LayoutType: pdf.LayoutTypeTable, X0: 0, X1: 100, Top: 12, Bottom: 22},
+		{Text: "para three", PageNumber: 1, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 100, Top: 24, Bottom: 34},
+	}
+	// DLA table region but no TSR cells → buildTableHTMLs skips, htmls[0] unset.
+	tables := []pdf.TableItem{{}}
+	removeSet := map[int]bool{}
+	replacements := []replacement{{tableIdx: 0, boxIdx: 1}}
+
+	out := processTablesWithReplacements(boxes, tables, removeSet, replacements)
+
+	expectedTexts := []string{"para one", body, "para three"}
+	if len(out) != len(expectedTexts) {
+		t.Fatalf("over-labeled 'table' box was dropped: want %d boxes, got %d: %+v", len(expectedTexts), len(out), out)
+	}
+	for i, want := range expectedTexts {
+		if out[i].Text != want {
+			t.Errorf("output box %d: want text %q, got %q (%+v)", i, want, out[i].Text, out)
+		}
+	}
+}
+
+// TestProcessTablesWithReplacements_NoDupWhenCoveredByEmptyAndRealTable pins the
+// boundary where a single box is covered by TWO replacements — one whose table
+// has no cells (empty HTML) and one whose table has real cells (non-empty HTML)
+// — so the box must NOT be kept while the real table's HTML is also inserted
+// (that would duplicate the content). The box must be removed and only the real
+// table's HTML inserted.
+func TestProcessTablesWithReplacements_NoDupWhenCoveredByEmptyAndRealTable(t *testing.T) {
+	const body = "SHARED BODY spanning two table regions"
+	boxes := []pdf.TextBox{
+		{Text: "para one", PageNumber: 0, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 100, Top: 0, Bottom: 10},
+		{Text: body, PageNumber: 0, LayoutType: pdf.LayoutTypeTable, X0: 0, X1: 400, Top: 12, Bottom: 100},
+		{Text: "para three", PageNumber: 0, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 100, Top: 110, Bottom: 120},
+	}
+	// Both tables occupy the same region as box 1.
+	region := pdf.Position{PageNumbers: []int{0}, Left: 0, Right: 400, Top: 12, Bottom: 100}
+	tables := []pdf.TableItem{
+		{
+			// DLA region but no TSR cells → buildTableHTMLs skips, htmls[0] unset.
+			Positions:  []pdf.Position{region},
+			RegionLeft: 0, RegionRight: 400, RegionTop: 12, RegionBottom: 100,
+		},
+		{
+			// Real table with cells → htmls[1] non-empty.
+			Positions:  []pdf.Position{region},
+			RegionLeft: 0, RegionRight: 400, RegionTop: 12, RegionBottom: 100,
+			Scale: 1.0,
+			Cells: []pdf.TSRCell{{Text: "cell1"}},
+		},
+	}
+	removeSet := map[int]bool{}
+	// box 1 is the replacement target for BOTH tables.
+	replacements := []replacement{{tableIdx: 0, boxIdx: 1}, {tableIdx: 1, boxIdx: 1}}
+
+	out := processTablesWithReplacements(boxes, tables, removeSet, replacements)
+
+	// The box must be removed (replaced by the real table's HTML), not kept
+	// alongside it — otherwise the content is duplicated.
+	for _, b := range out {
+		if b.Text == body {
+			t.Fatalf("box covered by a real table was kept, duplicating content: %+v", out)
+		}
+	}
+	// Exactly one table HTML box (table 1) should be present.
+	var htmlCount int
+	for _, b := range out {
+		if b.LayoutType == pdf.LayoutTypeTable && strings.Contains(b.Text, "cell1") {
+			htmlCount++
+		}
+	}
+	if htmlCount != 1 {
+		t.Errorf("expected exactly one table HTML box, got %d: %+v", htmlCount, out)
+	}
+	if len(out) != 3 {
+		t.Errorf("expected 3 boxes (2 text + 1 HTML), got %d: %+v", len(out), out)
+	}
+}
+
+// TestProcessTablesWithReplacements_KeepsTextWhenCellsButEmptyHTML guards the
+// defensive case where a table has cells but ConstructTable returns an empty
+// string (e.g. degenerate/orphaned cells). The box must be kept as prose rather
+// than silently dropped. This is reachable when the target box is NOT collected
+// as a table box (so the Y/X fallback in ConstructTable cannot recover text),
+// e.g. a DLA-overlabeled text box whose layout type was not upgraded to Table.
+func TestProcessTablesWithReplacements_KeepsTextWhenCellsButEmptyHTML(t *testing.T) {
+	const body = "PROSE that must survive a degenerate table"
+	boxes := []pdf.TextBox{
+		{Text: "para one", PageNumber: 0, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 100, Top: 0, Bottom: 10},
+		{Text: body, PageNumber: 0, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 400, Top: 12, Bottom: 100},
+		{Text: "para three", PageNumber: 0, LayoutType: pdf.LayoutTypeText, X0: 0, X1: 100, Top: 110, Bottom: 120},
+	}
+	tables := []pdf.TableItem{
+		{
+			// Cells present but without text, and the target box is LayoutTypeText
+			// (not collected as a table box) → ConstructTable yields "" → htmls[0]="".
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 400, Top: 12, Bottom: 100}},
+			RegionLeft: 0, RegionRight: 400, RegionTop: 12, RegionBottom: 100,
+			Scale: 1.0,
+			Cells: []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 30}},
+		},
+	}
+	removeSet := map[int]bool{}
+	replacements := []replacement{{tableIdx: 0, boxIdx: 1}}
+
+	out := processTablesWithReplacements(boxes, tables, removeSet, replacements)
+
+	if len(out) != 3 {
+		t.Fatalf("degenerate-table box was dropped: want 3 boxes, got %d: %+v", len(out), out)
+	}
+	for _, b := range out {
+		if b.Text == body {
+			return // original text preserved
+		}
+	}
+	t.Errorf("degenerate-table box text missing from output: %+v", out)
+}
+
+// countTableBoxes returns the number of table-region boxes (LayoutTypeTable)
+// in a box slice. After ExtractTableAndReplace, each merged/un-merged table
+// becomes exactly one LayoutTypeTable HTML box, so this counts tables.
+func countTableBoxes(boxes []pdf.TextBox) int {
+	n := 0
+	for _, b := range boxes {
+		if b.LayoutType == pdf.LayoutTypeTable {
+			n++
+		}
+	}
+	return n
+}
+
+// TestExtractTableAndReplace_NoReMergeAfterPageAbsoluteRejection is the TDD
+// guard for the cross-page over-merge regression: Parser.buildLayout already
+// calls MergeTablesAcrossPages with page-absolute Y + real medianHeights
+// (parser.go:540) and may correctly REJECT a cross-page merge for two tables
+// whose page-local Y merely repeats every page (icbccs pages 4-5). The tables
+// handed to ExtractTableAndReplace are therefore already the desired output.
+//
+// ExtractTableAndReplace must NOT re-run MergeTablesAcrossPages with nil page
+// metadata, because the legacy page-local formula would re-merge the rejected
+// pair and silently undo the page-absolute fix (see CodeRabbit review on
+// table_post.go:290 and known_diffs rule icbccs-crosspage-table-overmerge).
+//
+// This constructs the icbccs shape: anchor page 4 (bottom 172) and
+// continuation page 5 (local top 262); the page-absolute gap (pageHeights[4]=842
+// applied at parser.go:540) is ~842+90 > gate, but the legacy page-local gap
+// is ~99 < gate. With the REJECTED (already-split) tables passed in, the result
+// must keep 2 tables.
+func TestExtractTableAndReplace_NoReMergeAfterPageAbsoluteRejection(t *testing.T) {
+	const scale = 1.0
+	// Two independent pages-4/5 tables; page-local Y repeats every page.
+	tables := []pdf.TableItem{
+		{
+			// page 4 anchor
+			Cells:     []pdf.TSRCell{{Text: "a1", Y0: 60, Y1: 172, X0: 100, X1: 500}},
+			Positions: []pdf.Position{{PageNumbers: []int{4}, Left: 100, Right: 500, Top: 60, Bottom: 172}},
+			Caption:   "请求参数",
+			Scale:     scale,
+		},
+		{
+			// page 5 continuation, page-local top repeats near anchor top
+			Cells:     []pdf.TSRCell{{Text: "b1", Y0: 262, Y1: 280, X0: 100, X1: 500}},
+			Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 100, Right: 500, Top: 262, Bottom: 280}},
+			Caption:   "请求参数",
+			Scale:     scale,
+		},
+	}
+
+	// Table-layout boxes on each page that overlap the table positions so the
+	// replacement logic engages (otherwise ExtractTableAndReplace early-returns
+	// without touching the tables).
+	boxes := []pdf.TextBox{
+		{Text: "page4 table", LayoutType: pdf.LayoutTypeTable, PageNumber: 4, X0: 90, X1: 510, Top: 50, Bottom: 180},
+		{Text: "page5 table", LayoutType: pdf.LayoutTypeTable, PageNumber: 5, X0: 90, X1: 510, Top: 255, Bottom: 290},
+	}
+
+	out := ExtractTableAndReplace(boxes, tables)
+
+	// Bug: line 290 re-runs MergeTablesAcrossPages(tables, nil, nil) with the
+	// legacy page-local formula, re-merging the two tables into ONE HTML box.
+	// Fix: ExtractTableAndReplace must preserve the already-split 2 tables.
+	if got := countTableBoxes(out); got != 2 {
+		t.Errorf("ExtractTableAndReplace re-merged the page-absolute-rejected tables: got %d table boxes, want 2 (the two pages-4/5 tables must stay separate)", got)
 	}
 }

@@ -17,9 +17,9 @@
 package sandbox
 
 import (
-	"context"
-	"errors"
-	"os"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -65,8 +65,119 @@ func TestE2BProvider_EnvOverride(t *testing.T) {
 	if p.template != "custom-template" {
 		t.Errorf("template = %q, want %q", p.template, "custom-template")
 	}
-	if p.sandboxTimeout != 120*time.Second {
-		t.Errorf("sandboxTimeout = %v, want 120s", p.sandboxTimeout)
+	if p.requestTimeout != 120*time.Second {
+		t.Errorf("requestTimeout = %v, want 120s", p.requestTimeout)
+	}
+	if p.sandboxTimeout != e2bDefaultSandboxTimeout {
+		t.Errorf("sandboxTimeout = %v, want %v", p.sandboxTimeout, e2bDefaultSandboxTimeout)
+	}
+}
+
+func TestE2BProvider_ConfigUsesSavedSettings(t *testing.T) {
+	p := newE2BProviderFromConfig(map[string]any{
+		"api_key":  "saved-key",
+		"region":   "us",
+		"template": "saved-template",
+		"timeout":  42,
+	})
+	if p.apiKey != "saved-key" || p.region != "us" || p.template != "saved-template" {
+		t.Fatalf("saved settings not retained: %#v", p)
+	}
+	if p.requestTimeout != 42*time.Second {
+		t.Fatalf("requestTimeout = %v, want 42s", p.requestTimeout)
+	}
+}
+
+func TestE2BProvider_SavedConfigDrivesSDKCreateRequest(t *testing.T) {
+	t.Setenv("E2B_API_KEY", "env-key")
+	t.Setenv("E2B_ACCESS_TOKEN", "")
+	t.Setenv("E2B_DOMAIN", "env.example.test")
+
+	var body map[string]any
+	var apiKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/sandboxes/sbx-1" {
+			_, _ = w.Write([]byte(`{"sandboxID":"sbx-1","templateID":"configured-template","envdVersion":"0.4.0","clientID":"client","cpuCount":1,"memoryMB":512,"diskSizeMB":1024,"state":"running","startedAt":"2026-01-01T00:00:00Z","endAt":"2026-01-01T00:05:00Z"}`))
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/sandboxes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		apiKey = r.Header.Get("X-API-Key")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"sandboxID":"sbx-1","templateID":"configured-template","envdVersion":"0.4.0","clientID":"client"}`))
+	}))
+	defer server.Close()
+	t.Setenv("E2B_API_URL", server.URL)
+
+	p := newE2BProviderFromConfig(map[string]any{
+		"api_key":         "saved-key",
+		"region":          "us",
+		"domain":          "configured.example.test",
+		"template":        "configured-template",
+		"timeout":         7,
+		"sandbox_timeout": 123,
+	})
+	if err := p.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := p.CreateInstance(t.Context(), "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inst.InstanceID != "sbx-1" {
+		t.Fatalf("instance = %q", inst.InstanceID)
+	}
+	if apiKey != "saved-key" {
+		t.Fatalf("X-API-Key = %q, want saved-key", apiKey)
+	}
+	if body["templateID"] != "configured-template" {
+		t.Fatalf("templateID = %v, body=%v", body["templateID"], body)
+	}
+	if body["timeout"] != float64(123) {
+		t.Fatalf("timeout = %v, body=%v", body["timeout"], body)
+	}
+	cfg := p.client.Config()
+	if cfg.Domain != "configured.example.test" {
+		t.Fatalf("domain = %q", cfg.Domain)
+	}
+	if cfg.RequestTimeout != 7*time.Second {
+		t.Fatalf("request timeout = %v", cfg.RequestTimeout)
+	}
+}
+
+func TestE2BProvider_EURequiresExplicitDomain(t *testing.T) {
+	t.Setenv("E2B_API_KEY", "")
+	t.Setenv("E2B_ACCESS_TOKEN", "")
+	t.Setenv("E2B_DOMAIN", "")
+	p := newE2BProviderFromConfig(map[string]any{"api_key": "saved-key", "region": "eu"})
+	if err := p.Initialize(t.Context()); err == nil || !strings.Contains(err.Error(), "domain") {
+		t.Fatalf("Initialize = %v, want missing EU domain error", err)
+	}
+}
+
+func TestE2BProvider_EUUsesConfiguredDomain(t *testing.T) {
+	t.Setenv("E2B_API_KEY", "")
+	t.Setenv("E2B_ACCESS_TOKEN", "")
+	t.Setenv("E2B_DOMAIN", "")
+	p := newE2BProviderFromConfig(map[string]any{
+		"api_key": "saved-key",
+		"region":  "eu",
+		"domain":  "eu.example.test",
+	})
+	if err := p.Initialize(t.Context()); err != nil {
+		t.Fatalf("Initialize = %v", err)
+	}
+}
+
+func TestE2BProvider_RejectsUnknownRegion(t *testing.T) {
+	p := newE2BProviderFromConfig(map[string]any{"api_key": "saved-key", "region": "mars"})
+	if err := p.Initialize(t.Context()); err == nil || !strings.Contains(err.Error(), "unsupported region") {
+		t.Fatalf("Initialize = %v, want unsupported region error", err)
 	}
 }
 
@@ -79,32 +190,12 @@ func TestE2BProvider_Initialize_MissingCreds(t *testing.T) {
 		t.Setenv(k, "")
 	}
 	p := newE2BProviderFromEnv()
-	err := p.Initialize(context.Background())
+	err := p.Initialize(t.Context())
 	if err == nil {
 		t.Fatalf("Initialize with no creds: got nil error, want one")
 	}
 	if !strings.Contains(err.Error(), "E2B_API_KEY") {
 		t.Errorf("err = %v, want to mention E2B_API_KEY", err)
-	}
-}
-
-// TestE2BProvider_Initialize_WithAPIKey exercises the success
-// path. This calls the e2b control plane; we skip when no API
-// key is set (CI without secrets). The skip is loud via a clear
-// log line so missing-secrets is visible in test output.
-func TestE2BProvider_Initialize_WithAPIKey(t *testing.T) {
-	apiKey := os.Getenv("E2B_API_KEY")
-	if apiKey == "" {
-		t.Skip("E2B_API_KEY not set — skipping network-dependent init check")
-	}
-	p := newE2BProviderFromEnv()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := p.Initialize(ctx); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-	if !p.isInitialized() {
-		t.Errorf("provider not flagged initialized after successful build")
 	}
 }
 
@@ -117,18 +208,19 @@ func TestE2BProvider_AllOps_BeforeInit(t *testing.T) {
 	t.Parallel()
 	p := newE2BProviderFromEnv()
 	// Do NOT call Initialize.
+	ctx := t.Context()
 
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderE2B}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(ctx, "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(ctx, inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck before init: got nil error, want one")
 	}
 }
@@ -140,6 +232,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 	// — this lets us test the input-validation paths without
 	// hitting the e2b control plane.
 	p.initialized = true
+	ctx := t.Context()
 
 	cases := []struct {
 		name string
@@ -149,7 +242,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -158,7 +251,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "nil instance",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					nil, "x", "python", 5, nil)
 				return err
 			},
@@ -167,7 +260,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -176,7 +269,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too small",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
 				return err
 			},
@@ -185,7 +278,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too large",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 1000, nil)
 				return err
 			},
@@ -209,7 +302,8 @@ func TestE2BProvider_CreateInstance_UnsupportedLanguage(t *testing.T) {
 	t.Parallel()
 	p := newE2BProviderFromEnv()
 	p.initialized = true
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	ctx := t.Context()
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -218,10 +312,11 @@ func TestE2BProvider_DestroyInstance_EmptyID(t *testing.T) {
 	t.Parallel()
 	p := newE2BProviderFromEnv()
 	p.initialized = true
-	if err := p.DestroyInstance(context.Background(), &SandboxInstance{InstanceID: ""}); err == nil {
+	ctx := t.Context()
+	if err := p.DestroyInstance(ctx, &SandboxInstance{InstanceID: ""}); err == nil {
 		t.Errorf("DestroyInstance(empty id): got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), nil); err == nil {
+	if err := p.DestroyInstance(ctx, nil); err == nil {
 		t.Errorf("DestroyInstance(nil): got nil error, want one")
 	}
 }
@@ -260,36 +355,6 @@ func makeFakeCommandResult(stdout string) *e2bsdk.CommandResult {
 	return &e2bsdk.CommandResult{Stdout: stdout}
 }
 
-// TestE2BProvider_FullE2E_SkipWithoutKey is the integration
-// test path. The body is skipped unless E2B_API_KEY is set, but
-// the test always runs (so missing-secrets shows up in CI logs).
-// When enabled, it creates a real sandbox, runs Python, kills it.
-func TestE2BProvider_FullE2E_SkipWithoutKey(t *testing.T) {
-	apiKey := os.Getenv("E2B_API_KEY")
-	if apiKey == "" {
-		t.Skip("E2B_API_KEY not set — skipping full E2E test (real network call)")
-	}
-	p := newE2BProviderFromEnv()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	if err := p.Initialize(ctx); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-	inst, err := p.CreateInstance(ctx, "python")
-	if err != nil {
-		t.Fatalf("CreateInstance: %v", err)
-	}
-	defer func() { _ = p.DestroyInstance(ctx, inst) }()
-
-	result, err := p.ExecuteCode(ctx, inst, "def main(): return 1+1", "python", 30, nil)
-	if err != nil {
-		t.Fatalf("ExecuteCode: %v", err)
-	}
-	if result.ExitCode != 0 {
-		t.Errorf("ExitCode = %d, want 0; stderr=%q", result.ExitCode, result.Stderr)
-	}
-}
-
 // TestE2BProvider_ProviderType_StaysDistinct ensures the
 // three providers do not collide on the wire. The test would
 // catch any future refactor that aliases them.
@@ -305,27 +370,5 @@ func TestE2BProvider_ProviderType_StaysDistinct(t *testing.T) {
 			t.Errorf("provider type %q seen twice", p.ProviderType())
 		}
 		seen[p.ProviderType()] = true
-	}
-}
-
-// TestE2BProvider_AccessTokenFallback verifies Initialize
-// accepts E2B_ACCESS_TOKEN as an alternative to E2B_API_KEY.
-func TestE2BProvider_AccessTokenFallback(t *testing.T) {
-	t.Setenv("E2B_API_KEY", "")
-	t.Setenv("E2B_ACCESS_TOKEN", "fake-token")
-	p := newE2BProviderFromEnv()
-	// We can't run a real e2b call here (no real token), but
-	// Initialize should NOT fail with "E2B_API_KEY or
-	// E2B_ACCESS_TOKEN is required". The error we'd see is the
-	// SDK's auth error, which is what we want.
-	err := p.Initialize(context.Background())
-	if err == nil {
-		t.Skip("Initialize succeeded — env-var fallback accepted; skipping further checks")
-	}
-	if errors.Is(err, errors.New("")) { // placeholder
-		t.Errorf("unexpected error type: %v", err)
-	}
-	if strings.Contains(err.Error(), "E2B_API_KEY or E2B_ACCESS_TOKEN env var is required") {
-		t.Errorf("Initialize still rejected the access token: %v", err)
 	}
 }

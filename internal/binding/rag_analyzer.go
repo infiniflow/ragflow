@@ -1,5 +1,3 @@
-//go:build cgo
-
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -15,6 +13,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 //
+
+//go:build cgo
 
 package rag_analyzer
 
@@ -94,6 +94,17 @@ func (a *Analyzer) SetEnablePosition(enablePosition bool) {
 		return
 	}
 	C.RAGAnalyzer_SetEnablePosition(a.handle, C.bool(enablePosition))
+}
+
+// SetLanguage configures the Snowball stemmer for the given language (e.g. "English", "Dutch").
+// Falls back to the English Porter stemmer for unmapped languages.
+func (a *Analyzer) SetLanguage(language string) {
+	if a.handle == nil {
+		return
+	}
+	cLang := C.CString(language)
+	defer C.free(unsafe.Pointer(cLang))
+	C.RAGAnalyzer_SetLanguage(a.handle, cLang)
 }
 
 // Analyze analyzes the input text and returns all tokens

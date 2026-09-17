@@ -40,12 +40,13 @@ import (
 	"slices"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
 
 	"github.com/cloudwego/eino/compose"
 )
 
-// loopExpansion holds the two artefacts produced by buildLoopExpansion
+// loopExpansion holds the two artifacts produced by buildLoopExpansion
 // and consumed by BuildWorkflow to install the loop node.
 type loopExpansion struct {
 	Sub        *compose.Workflow[map[string]any, map[string]any]
@@ -123,7 +124,7 @@ func collectLoopMembers(c *Canvas, loopID string) map[string]bool {
 
 func collectDescendants(c *Canvas, root string) map[string]bool {
 	visited := make(map[string]bool)
-	queue := []string{}
+	var queue []string
 	for _, child := range c.Components[root].Downstream {
 		if child == root {
 			continue
@@ -178,8 +179,7 @@ func buildSubWorkflow(
 	// body's mutations accumulate across iterations — otherwise a
 	// VariableAssigner that increments `counter` would be clobbered
 	// back to its initial value at the top of every iteration and
-	// the loop could never terminate on a condition that watches the
-	// counter.
+	// the loop could never terminate on a condition that watches the counter.
 	//
 	// "First time" is detected by checking whether the loop's state
 	// bucket already holds the variable: a missing bucket entry
@@ -241,12 +241,17 @@ func buildSubWorkflow(
 		if name == "" {
 			return nil, fmt.Errorf("canvas: loop %q member %q has empty component_name", loopID, cpnID)
 		}
-		body, err := buildNodeBody(cpnID, name, c.Components[cpnID].Obj.Params)
+		deferToMessage := directMessageDownstream(c, cpnID)
+		nodeOpts := runtime.ComponentExecutionOptions{
+			DeferAgentToMessage:        deferToMessage,
+			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
+		}
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
 		nodes[cpnID] = sub.AddLambdaNode(cpnID,
-			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(body)),
+			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(cpnID, name, body)),
 			compose.WithNodeName(cpnID),
 		)
 	}
@@ -529,7 +534,7 @@ func translateLoopCondition(loopID string, params map[string]any) (workflowx.Loo
 			return false, fmt.Errorf("loop %q: condition eval: no canvas state in context", loopID)
 		}
 		if len(conditions) == 0 {
-			// No conditions means the loop only stops at max count
+			// No conditions mean the loop only stops at max count
 			// — never quit on conditions. Mirrors Python fallback.
 			return false, nil
 		}

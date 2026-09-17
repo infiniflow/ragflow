@@ -21,15 +21,30 @@ the quantization tag, such as `text-embedding-nomic-embed-text-v1.5@q8_0`).
 """
 
 import importlib.util
-import logging
 import sys
 from pathlib import Path
+from enum import IntEnum
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 pytestmark = pytest.mark.p2
+
+
+class _StubModelTypeBinary(IntEnum):
+    """Mimics common.constants.ModelTypeBinary for the stubbed environment."""
+
+    CHAT = 1
+    EMBEDDING = 2
+    ASR = 4
+    VISION = 8
+    RERANK = 16
+    TTS = 32
+    OCR = 64
+
+
+_MODEL_TYPE_TO_BIN = {mt.name.lower(): mt.value for mt in _StubModelTypeBinary}
 
 
 def _stub(monkeypatch, name, **attrs):
@@ -71,10 +86,11 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
     additional behaviour at runtime.
     """
 
-    tenant = SimpleNamespace(id="tenant-1")
+    tenant = SimpleNamespace(id="tenant-1", name="tenant-1")
     provider = SimpleNamespace(
         id="provider-1",
         provider_name="LM-Studio",
+        tenant_id="tenant-1",
     )
     instance = SimpleNamespace(
         id="instance-1",
@@ -95,9 +111,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
             # Default no-op; tests that need to observe the resolved provider
             # name passed by `_get_model_info` override this with
             # monkeypatch.setattr on the loaded stub.
-            get_by_tenant_id_and_provider_name=lambda tenant_id, provider_name: SimpleNamespace(
-                id="provider-1", provider_name=provider_name
-            ),
+            get_by_tenant_id_and_provider_name=lambda tenant_id, provider_name: SimpleNamespace(id="provider-1", provider_name=provider_name),
         ),
     )
     _stub(
@@ -105,9 +119,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         "api.db.services.tenant_model_instance_service",
         TenantModelInstanceService=SimpleNamespace(
             get_by_provider_ids=lambda provider_ids: [instance],
-            get_by_provider_id_and_instance_name=lambda provider_id, instance_name: SimpleNamespace(
-                id="instance-1", provider_id=provider_id, instance_name=instance_name
-            ),
+            get_by_provider_id_and_instance_name=lambda provider_id, instance_name: SimpleNamespace(id="instance-1", provider_id=provider_id, instance_name=instance_name),
         ),
     )
     _stub(
@@ -117,9 +129,8 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
             get_models_by_provider_ids_and_instance_ids=lambda p_ids, i_ids: list(tenant_model_records),
             # Default returns an "active" model so `_get_model_info` treats
             # the row as enabled when exercising the bare-model branch.
-            get_by_provider_id_and_instance_id_and_model_type_and_model_name=lambda *args: SimpleNamespace(
-                status=1
-            ),
+            get_by_provider_id_and_instance_id_and_model_type_and_model_name=lambda *args: SimpleNamespace(status=1),
+            get_by_provider_id_and_instance_id_and_model_name=lambda *args: SimpleNamespace(status=1),
         ),
     )
 
@@ -131,6 +142,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         ensure_mineru_from_env=lambda *a, **kw: None,
         ensure_paddleocr_from_env=lambda *a, **kw: None,
         ensure_opendataloader_from_env=lambda *a, **kw: None,
+        resolve_model_id=MagicMock(),
     )
     _stub(
         monkeypatch,
@@ -143,6 +155,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         "common.constants",
         ActiveStatusEnum=SimpleNamespace(ACTIVE=SimpleNamespace(value=1), INACTIVE=SimpleNamespace(value=0), UNSUPPORTED=SimpleNamespace(value=2)),
         LLMType=SimpleNamespace(EMBEDDING="embedding"),
+        ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
         monkeypatch,
@@ -150,13 +163,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         FACTORY_LLM_INFOS=factory_llm_infos if factory_llm_infos is not None else [],
     )
 
-    module_path = (
-        Path(__file__).resolve().parents[5]
-        / "api"
-        / "apps"
-        / "services"
-        / "models_api_service.py"
-    )
+    module_path = Path(__file__).resolve().parents[5] / "api" / "apps" / "services" / "models_api_service.py"
     spec = importlib.util.spec_from_file_location(
         "test_models_api_service_list_tenant_added_models",
         module_path,
@@ -183,18 +190,22 @@ def _make_model_record(model_name, model_type="embedding", status=1):
 
     Args:
         model_name: Model name; may contain `@` characters.
-        model_type: Model type filter (default `embedding`).
-        status: `ActiveStatusEnum` value (default `1` = ACTIVE).
+        model_type: Model type string (default `embedding`) or int bitmask.
+            String values are automatically converted to the corresponding
+            bitmask so that `record.model_type & filter_bin` works.
+        status: `ActiveStatusEnum` value (default `1` = ACTIVE in stub).
 
     Returns:
         A `SimpleNamespace` with the fields read by
         `list_tenant_added_models`.
     """
+    model_type_bin = _MODEL_TYPE_TO_BIN.get(model_type, model_type) if isinstance(model_type, str) else model_type
     return SimpleNamespace(
+        id=f"{model_name}-id",
         provider_id="provider-1",
         instance_id="instance-1",
         model_name=model_name,
-        model_type=model_type,
+        model_type=model_type_bin,
         status=status,
     )
 
@@ -281,6 +292,65 @@ def test_list_tenant_added_models_still_works_for_plain_model_names(monkeypatch)
 # insurance for future code paths that might construct keys differently.
 # If a future change makes the branch reachable, add a focused unit test for
 # it at that time.
+
+
+@pytest.mark.p2
+def test_list_tenant_added_models_returns_tei_builtin_without_providers(monkeypatch):
+    """A tenant with no added providers still sees the TEI Builtin model.
+
+    When the `tei-*` compose profile is enabled, the tenant gets the default
+    embedding model (TEI_MODEL) even if it has never added any model provider.
+    This guards against the regression where `list_tenant_added_models` early
+    returned `[]` before appending the synthesized Builtin model.
+    """
+    monkeypatch.setenv("COMPOSE_PROFILES", "elasticsearch,cpu,metadata-mysql,tei-cpu")
+    monkeypatch.setenv("TEI_MODEL", "BAAI/bge-small-en-v1.5")
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    monkeypatch.setattr(stubs["tenant_model_provider_service"].TenantModelProviderService, "get_by_tenant_id", lambda tenant_id: [])
+    monkeypatch.setattr(stubs["tenant_model_instance_service"].TenantModelInstanceService, "get_by_provider_ids", lambda provider_ids: [])
+
+    success, result = module.list_tenant_added_models("tenant-1", "embedding")
+
+    assert success is True
+    assert len(result) == 1
+    assert result[0]["provider_name"] == "Builtin"
+    assert result[0]["name"] == "BAAI/bge-small-en-v1.5"
+    assert result[0]["tenant_id"] == "tenant-1"
+
+
+@pytest.mark.p2
+def test_list_tenant_added_models_returns_tei_builtin_without_type_filter(monkeypatch):
+    """The TEI Builtin model is listed even when no type filter is passed."""
+    monkeypatch.setenv("COMPOSE_PROFILES", "tei-gpu")
+    monkeypatch.setenv("TEI_MODEL", "BAAI/bge-small-en-v1.5")
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    monkeypatch.setattr(stubs["tenant_model_provider_service"].TenantModelProviderService, "get_by_tenant_id", lambda tenant_id: [])
+    monkeypatch.setattr(stubs["tenant_model_instance_service"].TenantModelInstanceService, "get_by_provider_ids", lambda provider_ids: [])
+
+    success, result = module.list_tenant_added_models("tenant-1")
+
+    assert success is True
+    assert len(result) == 1
+    assert result[0]["provider_name"] == "Builtin"
+    assert result[0]["name"] == "BAAI/bge-small-en-v1.5"
+
+
+@pytest.mark.p2
+def test_list_tenant_added_models_appends_tei_builtin_after_provider_models(monkeypatch):
+    """The TEI Builtin model is appended after the tenant's own models."""
+    monkeypatch.setenv("COMPOSE_PROFILES", "elasticsearch,cpu,metadata-mysql,tei-cpu")
+    monkeypatch.setenv("TEI_MODEL", "BAAI/bge-small-en-v1.5")
+    record = _make_model_record("text-embedding-nomic-embed-text-v1.5@q8_0")
+    module, _ = _load_module(monkeypatch, tenant_model_records=[record])
+
+    success, result = module.list_tenant_added_models("tenant-1", "embedding")
+
+    assert success is True
+    assert len(result) == 2
+    names = {m["name"] for m in result}
+    assert names == {"text-embedding-nomic-embed-text-v1.5@q8_0", "BAAI/bge-small-en-v1.5"}
+    tei = [m for m in result if m["provider_name"] == "Builtin"][0]
+    assert tei["name"] == "BAAI/bge-small-en-v1.5"
 
 
 @pytest.mark.p2

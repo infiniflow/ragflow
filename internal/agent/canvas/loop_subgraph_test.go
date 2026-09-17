@@ -33,7 +33,6 @@
 package canvas
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -341,7 +340,7 @@ func TestTranslateLoopCondition_SingleOp(t *testing.T) {
 	}
 	state := NewCanvasState("", "")
 	state.SetVar("loop_0", "counter", 3)
-	ctx := WithState(context.Background(), state)
+	ctx := WithState(t.Context(), state)
 	quit, err := cond(ctx, 3, nil, nil)
 	if err != nil {
 		t.Fatalf("cond: %v", err)
@@ -352,7 +351,7 @@ func TestTranslateLoopCondition_SingleOp(t *testing.T) {
 	// counter=2 should NOT quit.
 	state2 := NewCanvasState("", "")
 	state2.SetVar("loop_0", "counter", 2)
-	ctx2 := WithState(context.Background(), state2)
+	ctx2 := WithState(t.Context(), state2)
 	quit, err = cond(ctx2, 2, nil, nil)
 	if err != nil {
 		t.Fatalf("cond: %v", err)
@@ -379,7 +378,7 @@ func TestTranslateLoopCondition_OrQuitsEarly(t *testing.T) {
 	state := NewCanvasState("", "")
 	state.SetVar("L", "a", 1)
 	state.SetVar("L", "b", 0)
-	quit, err := cond(WithState(context.Background(), state), 1, nil, nil)
+	quit, err := cond(WithState(t.Context(), state), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -390,7 +389,7 @@ func TestTranslateLoopCondition_OrQuitsEarly(t *testing.T) {
 	state2 := NewCanvasState("", "")
 	state2.SetVar("L", "a", 0)
 	state2.SetVar("L", "b", 2)
-	quit, err = cond(WithState(context.Background(), state2), 1, nil, nil)
+	quit, err = cond(WithState(t.Context(), state2), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -401,7 +400,7 @@ func TestTranslateLoopCondition_OrQuitsEarly(t *testing.T) {
 	state3 := NewCanvasState("", "")
 	state3.SetVar("L", "a", 0)
 	state3.SetVar("L", "b", 0)
-	quit, err = cond(WithState(context.Background(), state3), 1, nil, nil)
+	quit, err = cond(WithState(t.Context(), state3), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -425,7 +424,7 @@ func TestTranslateLoopCondition_AndRequiresAll(t *testing.T) {
 	state := NewCanvasState("", "")
 	state.SetVar("L", "a", 1)
 	state.SetVar("L", "b", 2)
-	quit, _ := cond(WithState(context.Background(), state), 1, nil, nil)
+	quit, _ := cond(WithState(t.Context(), state), 1, nil, nil)
 	if !quit {
 		t.Errorf("AND with both true should quit")
 	}
@@ -433,7 +432,7 @@ func TestTranslateLoopCondition_AndRequiresAll(t *testing.T) {
 	state2 := NewCanvasState("", "")
 	state2.SetVar("L", "a", 1)
 	state2.SetVar("L", "b", 0)
-	quit, _ = cond(WithState(context.Background(), state2), 1, nil, nil)
+	quit, _ = cond(WithState(t.Context(), state2), 1, nil, nil)
 	if quit {
 		t.Errorf("AND with one false should not quit")
 	}
@@ -448,7 +447,7 @@ func TestTranslateLoopCondition_EmptyConditionsNeverQuit(t *testing.T) {
 		t.Fatalf("translate: %v", err)
 	}
 	state := NewCanvasState("", "")
-	quit, err := cond(WithState(context.Background(), state), 1, nil, nil)
+	quit, err := cond(WithState(t.Context(), state), 1, nil, nil)
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -502,7 +501,7 @@ func TestTranslateLoopCondition_VariableInputMode(t *testing.T) {
 	state := NewCanvasState("", "")
 	state.SetVar("L", "counter", 10)
 	state.SetVar("Begin", "threshold", 5)
-	quit, _ := cond(WithState(context.Background(), state), 1, nil, nil)
+	quit, _ := cond(WithState(t.Context(), state), 1, nil, nil)
 	if !quit {
 		t.Errorf("counter(10) >= threshold(5) should quit")
 	}
@@ -588,7 +587,7 @@ func TestBuildWorkflow_LoopInstallsOneNode(t *testing.T) {
 				Upstream: []string{"loop"}},
 		},
 	}
-	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
 	}
 }
@@ -605,7 +604,7 @@ func TestBuildWorkflow_LegacyExitLoop(t *testing.T) {
 				Upstream: []string{"begin"}},
 		},
 	}
-	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
 		t.Fatalf("BuildWorkflow with ExitLoop: %v", err)
 	}
 }
@@ -685,7 +684,7 @@ func TestBuildWorkflow_LoopExitLoopDoesNotBecomeTerminal(t *testing.T) {
 			"continue":  "loop",
 		},
 	}
-	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
 		t.Fatalf("BuildWorkflow with grouped loop ExitLoop: %v", err)
 	}
 }
@@ -703,7 +702,7 @@ func TestBuildWorkflow_UnknownComponentErrors(t *testing.T) {
 				Upstream: []string{"begin"}},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error on unknown component name, got nil")
 	}
@@ -725,7 +724,7 @@ func TestBuildWorkflow_EmptyComponentNameErrors(t *testing.T) {
 				Upstream: []string{"begin"}},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error on empty component_name, got nil")
 	}
@@ -779,7 +778,7 @@ func TestBuildWorkflow_LoopSharesOuterCanvasState(t *testing.T) {
 				Upstream: []string{"begin"}},
 		},
 	}
-	exp, err := buildLoopExpansion(context.Background(), c, "loop")
+	exp, err := buildLoopExpansion(t.Context(), c, "loop")
 	if err != nil {
 		t.Fatalf("buildLoopExpansion: %v", err)
 	}
@@ -800,7 +799,7 @@ func TestBuildWorkflow_LoopSharesOuterCanvasState(t *testing.T) {
 	// performs, and confirm the mutation is visible to a
 	// LoopCondition-style reader on the SAME *CanvasState.
 	state := NewCanvasState("run-1", "task-1")
-	ctx := WithState(context.Background(), state)
+	ctx := WithState(t.Context(), state)
 
 	got, _, err := GetStateFromContext[*CanvasState](ctx)
 	if err != nil {
@@ -861,7 +860,7 @@ func TestBuildWorkflow_LoopWithBody(t *testing.T) {
 				Upstream: []string{"a"}},
 		},
 	}
-	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
 	}
 }
@@ -914,7 +913,7 @@ func TestBuildWorkflow_LoopBodyWithMultiTerminalCompiles(t *testing.T) {
 		},
 	}
 
-	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
 		t.Fatalf("BuildWorkflow with loop multi-terminal body: %v", err)
 	}
 }
@@ -933,7 +932,7 @@ func TestBuildWorkflow_LoopMissingParams(t *testing.T) {
 				Upstream: []string{"begin"}},
 		},
 	}
-	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
 	}
 }
@@ -954,7 +953,7 @@ func TestBuildWorkflow_LoopIncompleteCondition(t *testing.T) {
 				Upstream: []string{"begin"}},
 		},
 	}
-	if _, err := BuildWorkflow(context.Background(), c); err == nil {
+	if _, err := BuildWorkflow(t.Context(), c); err == nil {
 		t.Errorf("expected error on incomplete condition")
 	}
 }

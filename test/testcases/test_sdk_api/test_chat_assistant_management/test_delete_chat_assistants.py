@@ -28,7 +28,7 @@ class TestChatAssistantsDelete:
             pytest.param({"ids": ["invalid_id"]}, "Chat(invalid_id) not found.", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["\n!?。；！？\"'"]}, """Chat(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r}, "", 0, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"ids": r}, "", 0, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, client, add_chat_assistants_func, payload, expected_message, remaining):
@@ -49,7 +49,7 @@ class TestChatAssistantsDelete:
         assistants = client.list_chats()
         assert len(assistants) == remaining
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_delete_chats_nonzero_response_raises(self, client, monkeypatch):
         class _DummyResponse:
             def json(self):

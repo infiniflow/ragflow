@@ -15,6 +15,7 @@
 #
 
 import pytest
+from configs import HOST_ADDRESS
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.agent import Agent
 from ragflow_sdk.modules.session import Session
@@ -40,7 +41,7 @@ def set_tenant_info():
 
 @pytest.mark.p2
 def test_list_agents_success_and_error(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     captured = {}
 
     def _ok_get(path, params=None, json=None):
@@ -65,7 +66,7 @@ def test_list_agents_success_and_error(monkeypatch):
 
 @pytest.mark.p2
 def test_create_agent_payload_and_error(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     calls = []
 
     def _ok_post(path, json=None, stream=False, files=None):
@@ -91,7 +92,7 @@ def test_create_agent_payload_and_error(monkeypatch):
 
 @pytest.mark.p2
 def test_update_agent_payload_matrix_and_error(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     calls = []
 
     def _ok_put(path, json):
@@ -122,7 +123,7 @@ def test_update_agent_payload_matrix_and_error(monkeypatch):
 
 @pytest.mark.p2
 def test_delete_agent_success_and_error(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     calls = []
 
     def _ok_delete(path, json):
@@ -141,7 +142,7 @@ def test_delete_agent_success_and_error(monkeypatch):
 
 @pytest.mark.p2
 def test_agent_and_dsl_default_initialization():
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
 
     agent = Agent(client, {"id": "agent-1", "title": "Agent One"})
     assert agent.id == "agent-1"
@@ -163,7 +164,7 @@ def test_agent_and_dsl_default_initialization():
 
 @pytest.mark.p2
 def test_agent_session_methods_success_and_error_paths(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     agent = Agent(client, {"id": "agent-1"})
     calls = {"post": [], "get": [], "rm": []}
 

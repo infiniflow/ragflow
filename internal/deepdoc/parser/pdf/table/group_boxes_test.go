@@ -1,4 +1,3 @@
-
 package table
 
 import (
@@ -17,7 +16,7 @@ func TestGroupBoxesByRC_RDiffSplitsRows(t *testing.T) {
 		{X0: 210, X1: 290, Top: 0, Bottom: 30, Text: "C", R: 2, C: 2},
 		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "D", R: 3, C: 0},
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", R: 4, C: 1},
-	{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2},
+		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2},
 	}
 	rows := GroupBoxesByRC(boxes)
 	// R=0,1,2,3,4,5 → 6 rows (Python: R differs → new row).
@@ -62,8 +61,10 @@ func TestGroupBoxesByRC_RDiffSplitsRow(t *testing.T) {
 	if len(rows) != 4 {
 		t.Fatalf("expected 4 rows (R differs → split), got %d", len(rows))
 	}
-	if rows[0][0].Text != "A" || rows[1][0].Text != "B" {
-		t.Errorf("row0/1 wrong: A=%q B=%q", rows[0][0].Text, rows[1][0].Text)
+	// Columns follow the C labels: A/C are C=0 (column 0), B/D are C=1
+	// (column 1), so B sits at rows[1][1], not rows[1][0].
+	if rows[0][0].Text != "A" || rows[1][1].Text != "B" {
+		t.Errorf("row0/1 wrong: A=%q B=%q", rows[0][0].Text, rows[1][1].Text)
 	}
 }
 
@@ -282,10 +283,14 @@ func TestCompressColIndices(t *testing.T) {
 	}
 }
 
-func TestCompressColIndices_OverlapMerge(t *testing.T) {
+func TestCompressColIndices_AdjacentCAlwaysNewColumn(t *testing.T) {
+	// Two boxes with ADJACENT C labels (C=0 then C=1) must land in two
+	// separate columns even though their X ranges overlap. Python's
+	// construct_table starts a new column when C == prev C + 1 (same page),
+	// never merging adjacent C values by X overlap.
 	boxes := []pdf.TextBox{
 		{X0: 10, X1: 100, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
-		{X0: 90, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 0, C: 1}, // Overlaps with A
+		{X0: 90, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 0, C: 1}, // X-overlaps A but C is adjacent
 	}
 	// Sort first
 	sort.Slice(boxes, func(i, j int) bool {
@@ -301,13 +306,13 @@ func TestCompressColIndices_OverlapMerge(t *testing.T) {
 	rowMap, compressed := compressRowIndices(boxes)
 	cCompressed, cMaxCol := compressColIndices(boxes, rowMap, compressed)
 
-	if cCompressed[0][0] != 0 || cCompressed[0][1] != 0 {
-		t.Errorf("overlap merge incorrect: %v", cCompressed[0])
+	// C=0 → column 0, C=1 → column 1 (distinct C rank, never merged).
+	if cCompressed[0][0] != 0 || cCompressed[0][1] != 1 {
+		t.Errorf("adjacent C must split into separate columns: %v", cCompressed[0])
 	}
-	// After fix: cMaxCol tracks unique compressed columns, not original C keys.
-	// 2 overlapping boxes → 1 compressed column → cMaxCol[0] == 0
-	if cMaxCol[0] != 0 {
-		t.Errorf("cMaxCol incorrect: got %d, want 0 (2 overlapping boxes → 1 compressed column)", cMaxCol[0])
+	// Table-wide column count = 2 → cMaxCol == 1.
+	if cMaxCol[0] != 1 {
+		t.Errorf("cMaxCol incorrect: got %d, want 1 (2 distinct C → 2 columns)", cMaxCol[0])
 	}
 }
 

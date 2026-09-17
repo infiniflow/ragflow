@@ -4,84 +4,20 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
 	"strings"
-
-	models "ragflow/internal/entity/models"
 )
 
+// parsePDFWithTCADP sends PDF binary data to the TCADP cloud reconstruction
+// service. Thin wrapper over the shared parseWithTCADP core — env-fallbacks
+// and request construction live there.
 func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseResult {
-	if len(data) == 0 {
-		return emptyPDFResult(filename)
-	}
-	baseURL := strings.TrimSpace(parser.TCADPAPIServer)
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
-	}
-	if baseURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
-	}
-	apiKey := strings.TrimSpace(parser.TCADPAPIKey)
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("TCADP_API_KEY"))
-	}
-	requestBody := map[string]any{
-		"file_type":              "PDF",
-		"file_base64":            base64.StdEncoding.EncodeToString(data),
-		"file_start_page_number": 1,
-		"file_end_page_number":   1000,
-		"config": map[string]any{
-			"TableResultType":           parser.TCADPTableResultType,
-			"MarkdownImageResponseType": parser.TCADPMarkdownImageResponseType,
-		},
-	}
-	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP read submit: %w", err)}
-	}
-	if resp.StatusCode >= 300 {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP HTTP %d: %s", resp.StatusCode, string(raw))}
-	}
-	var payload struct {
-		DocumentRecognizeResultURL string `json:"DocumentRecognizeResultUrl"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP decode submit: %w", err)}
-	}
-	if payload.DocumentRecognizeResultURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP returned no DocumentRecognizeResultUrl")}
-	}
-	downloadReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, payload.DocumentRecognizeResultURL, nil)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
-	}
-	if auth := bearer(apiKey); auth != "" {
-		downloadReq.Header.Set("Authorization", auth)
-	}
-	downloadResp, err := models.NewDriverHTTPClient().Do(downloadReq)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP download: %w", err)}
-	}
-	defer downloadResp.Body.Close()
-	zipBytes, err := io.ReadAll(downloadResp.Body)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP read zip: %w", err)}
-	}
-	items, pageCount, err := tcadpItemsFromZip(zipBytes)
-	if err != nil {
-		return ParseResult{Err: err}
-	}
-	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
+	return parseWithTCADP(context.Background(), filename, data, "PDF",
+		parser.TCADPAPIServer, parser.TCADPAPIKey,
+		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType,
+		parser.OutputFormat)
 }
 
 func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, int, error) {
@@ -143,6 +79,18 @@ func tcadpAnyToItems(raw any) []map[string]any {
 	case map[string]any:
 		text := strings.TrimSpace(stringValue(v["content"]))
 		contentType := strings.ToLower(strings.TrimSpace(stringValue(v["type"])))
+		page := extractTCADPPage(v)
+		emit := func(text, docType, layout string) []map[string]any {
+			m := map[string]any{"text": text, "doc_type_kwd": docType, "layout": layout}
+			if page > 0 {
+				// 1-indexed 5-tuple. AddPositions is a passthrough so
+				// the final position_int / page_num_int carry the same
+				// 1-indexed page number the caller passes. Mirrors
+				// Python presentation.py:148-149.
+				m["positions"] = []float64{float64(page), 0, 0, 0, 0}
+			}
+			return []map[string]any{m}
+		}
 		switch contentType {
 		case "table":
 			if text == "" {
@@ -151,26 +99,40 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": text, "doc_type_kwd": "table", "layout": "table"}}
+			return emit(text, "table", "table")
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {
 				caption = "[Image]"
 			}
-			return []map[string]any{{"text": caption, "doc_type_kwd": "image", "layout": "figure"}}
+			return emit(caption, "image", "figure")
 		case "equation":
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": "$$" + text + "$$", "doc_type_kwd": "text", "layout": "equation"}}
+			return emit("$$"+text+"$$", "text", "equation")
 		default:
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": text, "doc_type_kwd": "text", "layout": "text"}}
+			return emit(text, "text", "text")
 		}
 	}
 	return nil
+}
+
+// extractTCADPPage returns the 1-indexed page number carried by a raw TCADP
+// element, using the same key set collectPDFPageNumbers walks
+// (pdf_parser_remote_common.go). It returns 0 when the element has no page
+// information (e.g. spreadsheet TCADP), so callers can skip position emission
+// and remain parity-correct with Python (table.py sets no page either).
+func extractTCADPPage(v map[string]any) int {
+	for _, key := range []string{"page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
+		if page := int(numberValue(v[key])); page > 0 {
+			return page
+		}
+	}
+	return 0
 }
 
 func tcadpTableRowsText(raw any) string {

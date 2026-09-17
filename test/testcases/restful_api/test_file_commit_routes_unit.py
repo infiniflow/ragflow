@@ -25,6 +25,7 @@ import functools
 import importlib.util
 import logging
 import sys
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -111,7 +112,6 @@ class FileTestModel(BaseTestModel):
     size = BigIntegerField(default=0, index=True)
     type = CharField(max_length=32, index=True)
     source_type = CharField(max_length=128, default="", index=True)
-    status = CharField(max_length=1, null=True, default="1", index=True)
     create_time = BigIntegerField(null=True, index=True)
     create_date = CharField(null=True, max_length=32, index=True)
     update_time = BigIntegerField(null=True, index=True)
@@ -320,7 +320,8 @@ def _load_module(monkeypatch):
     db_pkg.__path__ = [str(repo_root / "api" / "db")]
     db_pkg.UserTenantRole = type("UserTenantRole", (), {k: k for k in ("OWNER", "ADMIN", "NORMAL", "INVITE")})
     db_pkg.TenantPermission = type("TenantPermission", (), {"ME": "me", "TEAM": "team"})
-    db_pkg.FileType = type("FileType", (), {"FOLDER": "folder", "DOC": "doc", "VISUAL": "visual", "AURAL": "aural", "VIRTUAL": "virtual", "PDF": "pdf", "OTHER": "other"})
+    # Mirror api.db.FileType, which is a StrEnum, so members carry .value like the real one.
+    db_pkg.FileType = StrEnum("FileType", {"FOLDER": "folder", "DOC": "doc", "VISUAL": "visual", "AURAL": "aural", "VIRTUAL": "virtual", "PDF": "pdf", "OTHER": "other"})
     db_pkg.KNOWLEDGEBASE_FOLDER_NAME = ".knowledgebase"
     db_pkg.SKILLS_FOLDER_NAME = "skills"
     monkeypatch.setitem(sys.modules, "api.db", db_pkg)
@@ -333,6 +334,18 @@ def _load_module(monkeypatch):
     services_pkg = ModuleType("api.db.services")
     services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    # Stub: api.common.check_team_permission (same-tenant check against the
+    # stubbed services; the team-KB path needs FileService.get_kb_id_by_file_id,
+    # which the harness does not model)
+    ctp_mod = ModuleType("api.common.check_team_permission")
+
+    def check_file_team_permission(file, other):
+        tenant_id = file["tenant_id"] if isinstance(file, dict) else getattr(file, "tenant_id", None)
+        return tenant_id == other
+
+    ctp_mod.check_file_team_permission = check_file_team_permission
+    monkeypatch.setitem(sys.modules, "api.common.check_team_permission", ctp_mod)
 
     # Pre-stub service modules that file_commit_api.py imports.
     # Each stub prevents the real .py file from loading (and cascading deps).
@@ -351,9 +364,14 @@ def _load_module(monkeypatch):
     class _StubKnowledgebaseService:
         @staticmethod
         def get_by_id(dataset_id):
-            if dataset_id == "ds-1":
+            if dataset_id in ("ds-1", "ds-other"):
                 return True, SimpleNamespace(name="test-ds", tenant_id="t1")
             return False, None
+
+        @staticmethod
+        def accessible(kb_id, user_id):
+            # ds-other exists but belongs to another tenant
+            return kb_id == "ds-1"
 
     kb_svc_mod.KnowledgebaseService = _StubKnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
@@ -404,6 +422,10 @@ def set_tenant_info():
 def reset_db():
     """Clear all rows before each test to prevent order-dependent failures."""
     _clear_db()
+    # Workspace folders used across the tests, owned by the logged-in user.
+    # The commit routes resolve these through FileService and check ownership.
+    for folder_id in ("root-folder", "ws-folder", "folder-a", "folder-b"):
+        FileTestModel.create(id=folder_id, parent_id="root", tenant_id="test-user", created_by="test-user", name=folder_id, type="folder")
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────
@@ -499,6 +521,30 @@ def test_create_commit_delete(monkeypatch):
     )
     res = _run(module.create_commit("root-folder"))
     assert res["code"] == 0
+    # The File row is removed rather than flagged, because the model has no status column.
+    assert FileTestModel.get_or_none(FileTestModel.id == "f1") is None
+
+
+@pytest.mark.p2
+def test_create_commit_delete_folder_is_refused(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="d1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="sub", type="folder")
+
+    _setup_request(
+        module,
+        json_payload={
+            "message": "delete folder",
+            "files": [{"file_id": "d1", "file_name": "sub", "operation": "delete"}],
+        },
+    )
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 0
+    # A dropped folder row would strand every historical entry beneath it, because
+    # the hierarchy is rebuilt from live File rows rather than from tree state.
+    assert FileTestModel.get_or_none(FileTestModel.id == "d1") is not None
+    # The refusal drops the whole change, so history must not call the folder deleted.
+    items = list(FileCommitItemTestModel.select().where(FileCommitItemTestModel.file_id == "d1"))
+    assert items == []
 
 
 @pytest.mark.p2
@@ -715,7 +761,7 @@ def test_get_commit_file_content(monkeypatch):
 @pytest.mark.p2
 def test_get_file_version_history(monkeypatch):
     module = _load_module(monkeypatch)
-    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="test-user", created_by="test-user", name="a.txt", type="txt")
 
     # Two commits modifying f1
     _setup_request(
@@ -743,7 +789,7 @@ def test_get_file_version_history(monkeypatch):
 
 @pytest.mark.p2
 def test_workspace_alias(monkeypatch):
-    """Verify /workspace/ alias routes work the same as /folders/."""
+    """Verify /workspaces/ alias routes work the same as /folders/."""
     module = _load_module(monkeypatch)
     FileTestModel.create(id="f1", parent_id="ws-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
@@ -783,3 +829,53 @@ def test_get_commit_wrong_folder_returns_not_found(monkeypatch):
     res = _run(module.get_commit("folder-b", commit_id))
     assert res["code"] == 102
     assert "not found in workspace" in res["message"].lower()
+
+
+# ── Authorization regression tests ────────────────────────────────────────
+# The commit routes must not serve another tenant's folders or datasets.
+
+
+@pytest.mark.p2
+def test_list_commits_denies_cross_tenant_folder(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileCommitTestModel.create(id="c-x", folder_id="other-folder", parent_id=None, message="secret work", author_id="other-user", file_count=1)
+
+    module.request.args = {"page": "1", "page_size": "10"}
+    try:
+        res = _run(module.list_commits("other-folder"))
+        assert res["code"] != 0, f"cross-tenant folder listing must be denied, got {res}"
+        assert res["data"]["total"] == 0
+    except ValueError:
+        pass  # unresolved = denied
+
+
+@pytest.mark.p2
+def test_get_commit_file_content_denies_cross_tenant_folder(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileCommitTestModel.create(id="c-x", folder_id="other-folder", parent_id=None, message="secret", author_id="other-user", file_count=1)
+    FileCommitItemTestModel.create(id="i-x", commit_id="c-x", file_id="f-x", operation="add", new_hash="h1")
+
+    try:
+        res = _run(module.get_commit_file_content("other-folder", "c-x", "f-x"))
+        assert res["code"] != 0, f"cross-tenant commit content must be denied, got {res}"
+    except ValueError:
+        pass
+
+
+@pytest.mark.p2
+def test_version_history_denies_cross_tenant_file(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f-other", parent_id="other-folder", tenant_id="other-tenant", created_by="other-user", name="secret.txt", type="txt")
+    FileCommitTestModel.create(id="c-x", folder_id="other-folder", parent_id=None, message="m", author_id="other-user", file_count=1)
+    FileCommitItemTestModel.create(id="i-x", commit_id="c-x", file_id="f-other", operation="add", new_hash="h1")
+
+    res = _run(module.get_file_version_history("f-other"))
+    assert res["code"] != 0, f"cross-tenant version history must be denied, got {res}"
+
+
+@pytest.mark.p2
+def test_dataset_resolver_denies_inaccessible_dataset(monkeypatch):
+    module = _load_module(monkeypatch)
+    assert module._resolve_folder_id("datasets", "ds-1") == "ds-1"
+    # ds-other exists but belongs to another tenant
+    assert module._resolve_folder_id("datasets", "ds-other") is None

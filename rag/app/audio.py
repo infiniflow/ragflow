@@ -30,6 +30,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
     # is it English
     is_english = lang.lower() == "english"  # is_english(sections)
+    tmp_path = ""
     try:
         _, ext = os.path.splitext(filename)
         if not ext:
@@ -38,14 +39,13 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         if ext not in [".da", ".wave", ".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".ape"]:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
-        tmp_path = ""
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmpf:
             tmpf.write(binary)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
 
         callback(0.1, "USE Sequence2Txt LLM to transcription the audio")
-        seq2txt_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.SPEECH2TEXT)
+        seq2txt_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.ASR)
         seq2txt_mdl = LLMBundle(tenant_id, seq2txt_model_config, lang=lang)
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])

@@ -52,3 +52,42 @@ def test_csv_final_pair_uses_last_line_number():
     assert len(chunks) == 2
     assert chunks[0]["top_int"] == [1]
     assert chunks[1]["top_int"] == [2]
+
+
+@pytest.mark.p2
+def test_csv_quoted_comma_stays_in_one_field():
+    chunks = qa.chunk(
+        "qa.csv",
+        binary=b'"Question, one",Answer 1\nQuestion 2,Answer 2',
+        lang="English",
+        callback=_noop_callback,
+    )
+
+    assert len(chunks) == 2
+    assert chunks[0]["content_with_weight"] == "Question: Question, one\tAnswer: 1"
+
+
+@pytest.mark.p2
+def test_csv_quoted_field_preserves_embedded_newline():
+    chunks = qa.chunk(
+        "qa.csv",
+        binary=b'"first line\nsecond line",some answer\n',
+        lang="English",
+        callback=_noop_callback,
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0]["content_with_weight"] == "Question: first line\nsecond line\tAnswer: some answer"
+
+
+@pytest.mark.p2
+def test_csv_multiline_quote_uses_physical_continuation_line():
+    chunks = qa.chunk(
+        "qa.csv",
+        binary=b'first,one\n"second\nquestion",two\ntwo continued\nthird,three',
+        lang="English",
+        callback=_noop_callback,
+    )
+
+    assert len(chunks) == 3
+    assert chunks[1]["content_with_weight"] == "Question: second\nquestion\tAnswer: two\ntwo continued"

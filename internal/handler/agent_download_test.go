@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http/httptest"
@@ -43,19 +44,19 @@ type fakeAgentFileService struct {
 	urlUploadErr error
 }
 
-func (f *fakeAgentFileService) UploadInfos(_ string, _ []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (f *fakeAgentFileService) UploadInfos(ctx context.Context, _ string, _ []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	if f.uploadErr != nil {
 		return nil, f.uploadErr
 	}
 	return f.uploadList, nil
 }
-func (f *fakeAgentFileService) UploadFromURL(_ string, _ string) (map[string]interface{}, error) {
+func (f *fakeAgentFileService) UploadFromURL(ctx context.Context, _ string, _ string) (map[string]interface{}, error) {
 	if f.urlUploadErr != nil {
 		return nil, f.urlUploadErr
 	}
 	return f.urlUpload, nil
 }
-func (f *fakeAgentFileService) DownloadAgentFile(_ string, _ string) ([]byte, error) {
+func (f *fakeAgentFileService) DownloadAgentFile(ctx context.Context, _ string, _ string) ([]byte, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

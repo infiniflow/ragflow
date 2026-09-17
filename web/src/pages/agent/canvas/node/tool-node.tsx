@@ -6,7 +6,7 @@ import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 import { ToolCard } from '../../form/agent-form/agent-tools';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../../store';
 import { NodeWrapper } from './node-wrapper';
 
@@ -15,7 +15,7 @@ function InnerToolNode({
   isConnectable = true,
   selected,
 }: NodeProps<IToolNode>) {
-  const { edges, getNode, setClickedToolId } = useGraphStore();
+  const { edges, getNode } = useGraphStore();
   const upstreamAgentNodeId = edges.find((x) => x.target === id)?.source;
   const upstreamAgentNode = getNode(upstreamAgentNodeId);
   const { findMcpById } = useFindMcpById();
@@ -39,34 +39,19 @@ function InnerToolNode({
         type="target"
         position={Position.Top}
         isConnectable={isConnectable}
+        isConnectableStart={false}
         className="!bg-accent-primary !size-2"
-      />
-      {/* v1 ExeSQL and similar "tool" components route their result
-          downstream, so they need a source handle too. Without this,
-          any edge where the toolNode is the source silently fails to
-          render. */}
-      <Handle
-        id={NodeHandleId.Start}
-        type="source"
-        position={Position.Right}
-        isConnectable={isConnectable}
-        className="!bg-accent-primary !size-2"
+        isConnectableEnd={false}
       />
 
       <NodeCollapsible items={[tools, mcpList]}>
-        {(x) => {
+        {(x, idx) => {
           if (Reflect.has(x, 'mcp_id')) {
             const mcp = x as unknown as IAgentForm['mcp'][number];
 
             return (
               <ToolCard
-                key={mcp.mcp_id}
-                onClick={(e) => {
-                  if (mcp.mcp_id === Operator.Code) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
+                key={mcp.mcp_id || `mcp-${idx}`}
                 className="cursor-pointer"
                 data-tool={mcp.mcp_id}
               >
@@ -76,21 +61,16 @@ function InnerToolNode({
           }
 
           const tool = x as unknown as IAgentForm['tools'][number];
+          // Code has no config form, so its card is not interactive: without
+          // data-tool attributes the node click handler ignores the click.
+          const isCode = tool.component_name === Operator.Code;
 
           return (
             <ToolCard
-              key={tool.id}
-              onClick={(e) => {
-                if (tool.component_name === Operator.Code) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
-
-                setClickedToolId(tool.id || tool.component_name);
-              }}
-              className="cursor-pointer"
-              data-tool={tool.component_name}
-              data-tool-id={tool.id}
+              key={tool.id || `tool-${idx}`}
+              className={isCode ? undefined : 'cursor-pointer'}
+              data-tool={isCode ? undefined : tool.component_name}
+              data-tool-id={isCode ? undefined : tool.id}
             >
               <div className="flex gap-1 items-center pointer-events-none">
                 <OperatorIcon name={tool.component_name as Operator} />

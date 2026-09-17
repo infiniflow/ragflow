@@ -122,14 +122,19 @@ def _text_expr():
     return MatchTextExpr(fields=["content_ltks"], matching_text="what is kubernetes", topn=10, extra_options={})
 
 
-def _dense_expr():
+_DEFAULT_DENSE_OPTIONS = object()
+
+
+def _dense_expr(extra_options=_DEFAULT_DENSE_OPTIONS):
+    if extra_options is _DEFAULT_DENSE_OPTIONS:
+        extra_options = {"similarity": 0.0}
     return MatchDenseExpr(
         vector_column_name="q_1024_vec",
         embedding_data=[0.1] * 8,
         embedding_data_type="float",
         distance_type="cosine",
         topn=5,
-        extra_options={"similarity": 0.0},
+        extra_options=extra_options,
     )
 
 
@@ -213,6 +218,51 @@ class TestHybridSearchDSL:
         assert "hybrid" not in body["query"], "must not build a hybrid query without a pipeline"
         assert "knn" in body["query"], "must fall back to a pure knn query"
         assert params is None, "must not reference a search_pipeline when disabled"
+
+    def test_knn_does_not_implicitly_set_boost_from_similarity(self):
+        """similarity=0.0 is a threshold input and must not zero-out knn scores
+        by being copied into boost."""
+        conn = _make_os_connection()
+        body, _ = _call_search(conn, [_dense_expr({"similarity": 0.0})])
+
+        knn_clause = body["query"]["knn"]
+        vec_params = next(iter(knn_clause.values()))
+        assert "boost" not in vec_params, "knn boost must be omitted unless explicitly configured"
+
+    def test_knn_honors_explicit_boost(self):
+        conn = _make_os_connection()
+        body, _ = _call_search(conn, [_dense_expr({"similarity": 0.0, "boost": 0.25})])
+
+        knn_clause = body["query"]["knn"]
+        vec_params = next(iter(knn_clause.values()))
+        assert vec_params.get("boost") == 0.25
+
+    def test_knn_accepts_none_extra_options(self):
+        conn = _make_os_connection()
+        body, _ = _call_search(conn, [_dense_expr(extra_options=None)])
+
+        knn_clause = body["query"]["knn"]
+        vec_params = next(iter(knn_clause.values()))
+        assert "boost" not in vec_params, "knn boost must be omitted when extra_options is None"
+
+
+class TestOpenSearchVectorScoreExtraction:
+    def test_get_scores_keeps_nonzero_knn_scores(self):
+        """Vector similarity in retrieval comes from get_scores(_score) in the
+        second knn pass; nonzero engine scores must survive unchanged."""
+        conn = _make_os_connection()
+        res = {
+            "hits": {
+                "hits": [
+                    {"_id": "chunk-1", "_score": 0.8123},
+                    {"_id": "chunk-2", "_score": 0.1034},
+                ]
+            }
+        }
+
+        scores = conn.get_scores(res)
+        assert scores["chunk-1"] == pytest.approx(0.8123)
+        assert scores["chunk-2"] == pytest.approx(0.1034)
 
 
 if __name__ == "__main__":

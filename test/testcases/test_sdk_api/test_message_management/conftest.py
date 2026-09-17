@@ -18,6 +18,10 @@ import uuid
 
 import pytest
 import random
+from configs import IS_GO_PROXY
+
+
+MESSAGE_USER_ID = "sdk-api-test-user" if IS_GO_PROXY else ""
 
 
 @pytest.fixture(scope="class")
@@ -105,7 +109,7 @@ def add_memory_with_multiple_type_message_func(client, request):
         "memory_id": [memory_id],
         "agent_id": agent_id,
         "session_id": uuid.uuid4().hex,
-        "user_id": "",
+        "user_id": MESSAGE_USER_ID,
         "user_input": "what is coriander?",
         "agent_response": """
 Coriander is a versatile herb with two main edible parts, and its name can refer to both:
@@ -141,7 +145,7 @@ def add_memory_with_5_raw_message_func(client, request):
             "memory_id": [memory_id],
             "agent_id": agent_ids[i % 2],
             "session_id": session_ids[i],
-            "user_id": "",
+            "user_id": MESSAGE_USER_ID,
             "user_input": "what is coriander?",
             "agent_response": """
 Coriander is a versatile herb with two main edible parts, and its name can refer to both:

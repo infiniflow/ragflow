@@ -35,7 +35,7 @@ func TestValidateSystemSettingValue(t *testing.T) {
 		{name: "bool accepts true", dataType: "bool", value: "true"},
 		{name: "bool accepts false", dataType: "bool", value: "false"},
 		{name: "bool rejects non bool", dataType: "bool", value: "yes", wantError: true},
-		{name: "json accepts object", dataType: "json", value: `{"endpoint":"http://localhost:9385"}`},
+		{name: "json accepts object", dataType: "json", value: `{"endpoint":"http://sandbox-executor-manager:9385"}`},
 		{name: "json rejects invalid", dataType: "json", value: "{", wantError: true},
 		{name: "unknown type rejects", dataType: "float", value: "1.2", wantError: true},
 	}
@@ -53,9 +53,10 @@ func TestValidateSystemSettingValue(t *testing.T) {
 
 func TestInferSystemSettingDataType(t *testing.T) {
 	tests := map[string]string{
-		"sandbox.self_managed": "json",
-		"mail.enabled":         "bool",
-		"mail.server":          "string",
+		"sandbox.provider_type": "string",
+		"sandbox.self_managed":  "json",
+		"mail.enabled":          "bool",
+		"mail.server":           "string",
 	}
 
 	for name, want := range tests {

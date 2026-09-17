@@ -1,2 +1,9 @@
 *.sh text eol=lf
 docker/entrypoint.sh text eol=lf executable
+
+# Binary fixtures must be stored byte-for-byte. Mark them binary so git
+# never applies text/CRLF normalization, and so the pre-commit text fixers
+# (see tools/hooks/check_files.py) skip them. OLE2 .msg files in particular
+# were previously corrupted by the mixed-line-ending / end-of-file fixers.
+*.msg binary
+

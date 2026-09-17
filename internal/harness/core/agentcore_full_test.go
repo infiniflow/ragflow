@@ -27,7 +27,7 @@ func TestReActAgent_BasicGenerate(t *testing.T) {
 	model := &mockModel{}
 	model.addResp("Hello!")
 	agent := reActAgentSetup(model, nil)
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Fatal("expected events")
@@ -54,7 +54,7 @@ func TestReActAgent_ToolCallAndResponse(t *testing.T) {
 	}
 	tool := &mockTool{name: "search", desc: "Search tool"}
 	agent := reActAgentSetup(wrapperModel, []Tool{tool})
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Search")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("Search")}})
 	drainAgentEvents(t, iter)
 	if !tool.executed {
 		t.Error("tool not executed")
@@ -68,7 +68,7 @@ func TestReActAgent_MaxIterationsExceeded(t *testing.T) {
 		name:   "maxiter",
 	}
 	agent.config.Model = loopModel
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Loop")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("Loop")}})
 	var lastErr error
 	for {
 		ev, ok := iter.Next()
@@ -89,7 +89,7 @@ func TestReActAgent_ZeroMaxIterations(t *testing.T) {
 	model.addResp("zero iter")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model, MaxIterations: 0})
 	agent.name = "zero_iter"
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events even with zero iterations")
@@ -107,7 +107,7 @@ func TestReActAgent_ReturnDirectly(t *testing.T) {
 		ReturnDirectly: map[string]bool{"quick": true},
 	})
 	agent.name = "rd"
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -121,7 +121,7 @@ func TestRunner_CreateAndQuery(t *testing.T) {
 	model.addResp("Runner query")
 	agent := reActAgentSetup(model, nil)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
-	iter := runner.Query(context.Background(), "Test query")
+	iter := runner.Query(t.Context(), "Test query")
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -135,9 +135,9 @@ func TestRunner_MultipleRuns(t *testing.T) {
 	agent := reActAgentSetup(model, nil)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
-	iter1 := runner.Run(context.Background(), []Message{schema.UserMessage("A")})
+	iter1 := runner.Run(t.Context(), []Message{schema.UserMessage("A")})
 	e1 := drainAgentEvents(t, iter1)
-	iter2 := runner.Run(context.Background(), []Message{schema.UserMessage("B")})
+	iter2 := runner.Run(t.Context(), []Message{schema.UserMessage("B")})
 	e2 := drainAgentEvents(t, iter2)
 	if len(e1) == 0 || len(e2) == 0 {
 		t.Errorf("events: %d %d", len(e1), len(e2))
@@ -149,7 +149,7 @@ func TestRunner_WithRunOptions(t *testing.T) {
 	model.addResp("Options")
 	agent := reActAgentSetup(model, nil)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
-	iter := runner.Run(context.Background(), []Message{schema.UserMessage("opts")}, WithSessionValues(map[string]any{"k": "v"}))
+	iter := runner.Run(t.Context(), []Message{schema.UserMessage("opts")}, WithSessionValues(map[string]any{"k": "v"}))
 	drainAgentEvents(t, iter)
 }
 
@@ -159,7 +159,7 @@ func TestRunner_WithCheckpoint(t *testing.T) {
 	agent := reActAgentSetup(model, nil)
 	store := &memStore{}
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	iter := runner.Run(context.Background(), []Message{schema.UserMessage("cp")})
+	iter := runner.Run(t.Context(), []Message{schema.UserMessage("cp")})
 	drainAgentEvents(t, iter)
 }
 
@@ -178,7 +178,7 @@ func TestAgentTool_Basic(t *testing.T) {
 	subAgent := reActAgentSetup(subModel, nil)
 	subAgent.name = "sub_tool"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, subAgent)
 	if agentTool.Name() != "sub_tool" {
 		t.Errorf("tool name = %s", agentTool.Name())
@@ -196,7 +196,7 @@ func TestAgentTool_WithFullChatHistory(t *testing.T) {
 	subModel.addResp("history result")
 	subAgent := reActAgentSetup(subModel, nil)
 	subAgent.name = "history_tool"
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, subAgent, WithFullChatHistoryAsInput())
 	_, err := agentTool.Invoke(ctx, `{"query":"test"}`)
 	if err != nil {
@@ -210,7 +210,7 @@ func TestAgentTool_FromRunner(t *testing.T) {
 	subAgent := reActAgentSetup(subModel, nil)
 	subAgent.name = "research"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, subAgent)
 
 	mainModel := &forcedToolModel{
@@ -239,7 +239,7 @@ func TestToolsNode_Basic(t *testing.T) {
 		Role: schema.RoleAssistant, Content: "",
 		ToolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "greet", Arguments: `{"name":"world"}`}}},
 	}
-	results, action, err := tn.Execute(context.Background(), resp, nil, nil)
+	results, action, err := tn.Execute(t.Context(), resp, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestToolsNode_Basic(t *testing.T) {
 func TestToolsNode_NoToolCalls(t *testing.T) {
 	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{Tools: []Tool{&mockTool{name: "t", desc: "t"}}})
 	resp := &schema.Message{Role: schema.RoleAssistant, Content: "Just text"}
-	results, action, err := tn.Execute(context.Background(), resp, nil, nil)
+	results, action, err := tn.Execute(t.Context(), resp, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestToolsNode_ToolNotFound(t *testing.T) {
 		Role: schema.RoleAssistant, Content: "",
 		ToolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "nonexistent", Arguments: "{}"}}},
 	}
-	results, action, err := tn.Execute(context.Background(), resp, nil, nil)
+	results, action, err := tn.Execute(t.Context(), resp, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestToolsNode_ReturnDirectly(t *testing.T) {
 		Role: schema.RoleAssistant, Content: "",
 		ToolCalls: []schema.ToolCall{{ID: "c1", Function: schema.ToolCallFunction{Name: "quick", Arguments: "{}"}}},
 	}
-	_, action, err := tn.Execute(context.Background(), resp, nil, nil)
+	_, action, err := tn.Execute(t.Context(), resp, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestReActAgent_RetrySucceeds(t *testing.T) {
 	inner.addResp("final")
 	retryM := &retryModel{inner: inner, failAttempts: 2}
 	agent := reActAgentSetup(retryM, nil)
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	drainAgentEvents(t, iter)
 }
 
@@ -310,7 +310,7 @@ func TestReActAgent_RetryExhausted(t *testing.T) {
 	inner.addResp("never")
 	retryM := &retryModel{inner: inner, failAttempts: 100}
 	agent := reActAgentSetup(retryM, nil)
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	var lastErr error
 	for {
 		ev, ok := iter.Next()
@@ -327,7 +327,7 @@ func TestReActAgent_RetryExhausted(t *testing.T) {
 func TestReActAgent_AlwaysFails(t *testing.T) {
 	failing := &failModel{}
 	agent := reActAgentSetup(failing, nil)
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("hello")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("hello")}})
 	var lastErr error
 	for {
 		ev, ok := iter.Next()
@@ -347,7 +347,7 @@ func TestReActAgent_AlwaysFails(t *testing.T) {
 
 func TestInterrupt_Basic(t *testing.T) {
 	agent := reActAgentSetup(&mockModel{}, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	_ = TypedCompositeInterrupt[*schema.Message](ctx, "user_interrupt", nil)
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	drainAgentEvents(t, iter)
@@ -358,7 +358,7 @@ func TestInterrupt_WithResumeData(t *testing.T) {
 	agent.name = "resume"
 	store := &memStore{}
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []Message{schema.UserMessage("test")})
 	drainAgentEvents(t, iter)
 }
@@ -375,7 +375,7 @@ func TestWorkflow_SequentialAgents(t *testing.T) {
 	a2 := reActAgentSetup(m2, nil)
 	a2.name = "a2"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wf, err := NewSequential(ctx, &SequentialConfig{Name: "seq", Description: "test", SubAgents: []Agent{a1, a2}})
 	if err != nil {
 		t.Fatalf("NewSequential: %v", err)
@@ -398,7 +398,7 @@ func TestWorkflow_ParallelAgents(t *testing.T) {
 	a2 := reActAgentSetup(m2, nil)
 	a2.name = "p2"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wf, err := NewParallel(ctx, &ParallelConfig{Name: "par", Description: "test", SubAgents: []Agent{a1, a2}})
 	if err != nil {
 		t.Fatalf("NewParallel: %v", err)
@@ -420,7 +420,7 @@ func TestWorkflow_LoopAgents(t *testing.T) {
 	a2 := reActAgentSetup(m2, nil)
 	a2.name = "critique"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wf, err := NewLoop(ctx, &LoopConfig{
 		Name: "loop", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 2,
 	})
@@ -469,7 +469,7 @@ func TestMiddleware_ChainOrderPreserved(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{m1, m2},
 	})
 	agent.name = "chain"
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	drainAgentEvents(t, iter)
 	t.Logf("m1: %v", m1.executed)
 	t.Logf("m2: %v", m2.executed)
@@ -483,7 +483,7 @@ func TestMiddleware_ErrorPropagation(t *testing.T) {
 			mw := &errorMiddleware{failAt: failAt}
 			agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model, Middlewares: []ReActMiddleware{mw}})
 			agent.name = "err_" + failAt
-			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+			iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 			var lastErr error
 			for {
 				ev, ok := iter.Next()
@@ -510,7 +510,7 @@ func TestMiddleware_WrapModel(t *testing.T) {
 	model.addResp("wrapped")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model, Middlewares: []ReActMiddleware{mw}})
 	agent.name = "wrap_m"
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	drainAgentEvents(t, iter)
 	if !wrapped {
 		t.Error("WrapModel not called")
@@ -530,7 +530,7 @@ func TestCallbacks_OnStartOnEnd(t *testing.T) {
 	agent := reActAgentSetup(model, nil)
 	agent.name = "cb_agent"
 	// Callbacks are wired in flowAgent.Run path
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("cb")}}, WithCallbacks(cb))
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("cb")}}, WithCallbacks(cb))
 	drainAgentEvents(t, iter)
 	_ = onStart
 	_ = onEnd
@@ -549,35 +549,35 @@ func TestCallbackFilter_AgentNameMatch(t *testing.T) {
 // ======================== Callback Infrastructure Tests ========================
 
 func TestInitAgentCallbacks_Nil(t *testing.T) {
-	ctx := initAgentCallbacks(context.Background(), "test", "ReActAgent")
+	ctx := initAgentCallbacks(t.Context(), "test", "ReActAgent")
 	if cbs := getCallbacks(ctx); cbs != nil {
 		t.Error("expected nil callbacks")
 	}
 }
 
 func TestSetRunLocalValue_NoExecCtx(t *testing.T) {
-	err := SetRunLocalValue(context.Background(), "k", "v")
+	err := SetRunLocalValue(t.Context(), "k", "v")
 	if err == nil {
 		t.Error("expected error with no exec ctx")
 	}
 }
 
 func TestGetRunLocalValue_NoExecCtx(t *testing.T) {
-	_, _, err := GetRunLocalValue(context.Background(), "k")
+	_, _, err := GetRunLocalValue(t.Context(), "k")
 	if err == nil {
 		t.Error("expected error")
 	}
 }
 
 func TestDeleteRunLocalValue_NoExecCtx(t *testing.T) {
-	err := DeleteRunLocalValue(context.Background(), "k")
+	err := DeleteRunLocalValue(t.Context(), "k")
 	if err == nil {
 		t.Error("expected error")
 	}
 }
 
 func TestSendEvent_NoExecCtx(t *testing.T) {
-	err := SendEvent(context.Background(), nil)
+	err := SendEvent(t.Context(), nil)
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -695,7 +695,7 @@ func TestConcurrentCancel(t *testing.T) {
 			agent := reActAgentSetup(model, nil)
 			agent.name = "cc"
 			opt, cancel := WithCancel()
-			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("test")}}, opt)
+			iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("test")}}, opt)
 			cancel()
 			drainAgentEvents(t, iter)
 		}(i)
@@ -710,7 +710,7 @@ func TestConcurrentIterators(t *testing.T) {
 			model := &mockModel{}
 			model.addResp("conc")
 			agent := reActAgentSetup(model, nil)
-			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("hi")}})
+			iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("hi")}})
 			drainAgentEvents(t, iter)
 		})
 	}
@@ -748,7 +748,7 @@ func TestRunner_ResumeWithCheckpoint(t *testing.T) {
 	agent.name = "resume_test"
 	store := &memStore{}
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []Message{schema.UserMessage("test")})
 	drainAgentEvents(t, iter)
 }

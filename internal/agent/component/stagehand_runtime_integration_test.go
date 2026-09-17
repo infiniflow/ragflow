@@ -38,6 +38,9 @@
 //	export OPENAI_MODEL=...
 //	rtk go test ./internal/agent/component/ -count=1 \
 //	  -run TestStagehandRuntime_Extract -v -timeout 3m
+
+//go:build integration
+
 package component
 
 import (
@@ -48,11 +51,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"testing"
 	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // TestStagehandRuntime_Extract is the single happy-path integration
@@ -81,9 +87,9 @@ import (
 // against https://www.bbc.com/news/world — returns a non-empty
 // summary string in ~10s.
 func TestStagehandRuntime_Extract(t *testing.T) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
+	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
+	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skipf("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping")
 	}
@@ -91,7 +97,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 	// Default schema: single string. Optional override via env:
 	// STAGEHAND_EXTRACT_SCHEMA_JSON='{"type":"object",...}'.
 	var schema map[string]any
-	if raw := os.Getenv("STAGEHAND_EXTRACT_SCHEMA_JSON"); raw != "" {
+	if raw := common.GetEnv(common.EnvStageHandExtractSchemaJSON); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &schema); err != nil {
 			t.Fatalf("STAGEHAND_EXTRACT_SCHEMA_JSON is not valid JSON: %v", err)
 		}
@@ -123,7 +129,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 		Schema:      schema,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 
 	t.Logf("starting stagehand RunExtract (timeout 3m); spawns subprocess, calls LLM once with schema=%s",
@@ -142,7 +148,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 	t.Logf("extraction result:\n%s", resultJSON)
 
 	// Dump for external observers.
-	dumpPath := os.Getenv("STAGEHAND_EXTRACT_RESULT_FILE")
+	dumpPath := common.GetEnv(common.EnvStageHandExtractResultFile)
 	if dumpPath == "" {
 		dumpPath = "/tmp/stagehand_extract_result.txt"
 	}
@@ -166,7 +172,7 @@ func truncateSchema(s map[string]any) string {
 // binary is missing. We don't fail on miss because the runtime
 // falls back to a GitHub download.
 func cacheDirGuess() string {
-	if v := os.Getenv("XDG_CACHE_HOME"); v != "" {
+	if v := common.GetEnv(common.EnvXDGCacheHome); v != "" {
 		return filepath.Join(v, "stagehand", "lib")
 	}
 	home, err := os.UserHomeDir()
@@ -184,9 +190,9 @@ func cacheDirGuess() string {
 //
 // Skipped unless OPENAI_* env vars are configured.
 func TestBrowser_E2E_Extract(t *testing.T) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	model := os.Getenv("OPENAI_MODEL")
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
+	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
+	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skipf("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping")
 	}
@@ -205,11 +211,11 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	// Override tenant LLM lookup so the test doesn't need a real DB.
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(_, _, _ string) (string, string, error) {
-		return apiKey, baseURL, nil
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(_ context.Context, _ *gorm.DB, _, _ string) (string, string, string, string, error) {
+		return "OpenAI", model, apiKey, baseURL, nil
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	// --- use production stagehand runtime ---
 	r := newStagehandRuntimeFromEnv()
@@ -234,14 +240,14 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 		t.Fatalf("NewBrowserComponent: %v", err)
 	}
 
-	ctx := canvas.WithState(context.Background(), canvas.NewCanvasState("run-1", "task-1"))
+	ctx := canvas.WithState(t.Context(), canvas.NewCanvasState("run-1", "task-1"))
 	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	state.Sys["user_id"] = "tenant-1"
 
 	invokeCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	t.Logf("starting browser.Invoke (RunExtract) against %s (timeout 3m)", srv.URL)
-	out, err := c.Invoke(invokeCtx, nil)
+	out, err := c.Invoke(invokeCtx, nil, nil)
 	if err != nil {
 		t.Logf("extraction failed (best-effort): %v", err)
 		return

@@ -72,7 +72,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/system/config [get]
+// @Router /api/v1/system/config [get]
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig()
 	if err != nil {
@@ -105,11 +105,12 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
-	status, err := h.systemService.GetStatus()
+	ctx := c.Request.Context()
+	status, err := h.systemService.GetStatus(ctx)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -144,7 +145,7 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 // table carried (e.g. "peewee", "pdfminer") were inert for the Go
 // side and are no longer returned.
 func (h *SystemHandler) GetLogLevel(c *gin.Context) {
-	common.SuccessWithData(c, gin.H{"level": common.GetLevel()}, "success")
+	common.SuccessWithData(c, gin.H{"level": common.GetLogLevel()}, "success")
 }
 
 // SetLogLevelRequest set log level request. PkgName is accepted for
@@ -168,17 +169,17 @@ type SetLogLevelRequest struct {
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "pkg_name and level are required")
+		common.ErrorWithCode(c, common.CodeDataError, "pkg_name and level are required")
 		return
 	}
 
-	if err := common.SetLevel(req.Level); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), "Invalid log level: "+req.Level)
+	if err := common.SetLogLevel(req.Level); err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, "Invalid log level: "+req.Level)
 		return
 	}
 
 	if config := server.GetConfig(); config != nil {
-		config.Log.Level = common.GetLevel()
+		config.SetLogLevel(req.Level)
 	}
 
 	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")
@@ -186,9 +187,11 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 
 // ListVariables handle list variables
 func (h *SystemHandler) ListVariables(c *gin.Context) {
-	variables, err := h.systemService.ListAllVariables()
+	ctx := c.Request.Context()
+
+	variables, err := h.systemService.ListAllVariables(ctx)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -206,22 +209,24 @@ type SetVariableHTTPRequest struct {
 func (h *SystemHandler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarValue == "" {
-		common.ErrorWithCode(c, 400, "Var value is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
 		return
 	}
 
-	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+	ctx := c.Request.Context()
+
+	if err := h.systemService.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -233,17 +238,19 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 
 	varName, err := common.DecodeFromBase64(encodedVarName)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if varName == "" {
-		common.ErrorWithCode(c, 400, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
-	variable, err := h.systemService.ShowVariable(varName)
+	ctx := c.Request.Context()
+
+	variable, err := h.systemService.ShowVariable(ctx, varName)
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -254,9 +261,15 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 	environments, err := h.systemService.ListEnvironments()
 	if err != nil {
-		common.ErrorWithCode(c, 500, err.Error())
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
 	common.SuccessWithData(c, environments, "SUCCESS")
+}
+
+// Language returns the backend runtime language so the front end can
+// choose the appropriate code path (Go vs Python).
+func (h *SystemHandler) Language(c *gin.Context) {
+	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
 }

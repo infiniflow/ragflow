@@ -73,6 +73,7 @@ def _load_openai_api(monkeypatch):
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
         get_model_config_from_provider_instance=lambda *_a, **_k: {},
+        resolve_model_config=lambda *_a, **_k: {},
         get_api_key=lambda *_a, **_k: "key",
     )
     _stub(

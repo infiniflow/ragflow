@@ -97,7 +97,11 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
   }
 };
 
-export const changeLanguageAsync = async (lng: string): Promise<void> => {
+export const changeLanguageAsync = async (
+  lng: string,
+  options: { persist?: boolean } = {},
+): Promise<void> => {
+  const { persist = true } = options;
   const normalizedLng = lng;
 
   if (
@@ -107,7 +111,9 @@ export const changeLanguageAsync = async (lng: string): Promise<void> => {
     await loadLanguageAsync(normalizedLng);
   }
 
-  storage.setLanguage(lng);
+  if (persist) {
+    storage.setLanguage(lng);
+  }
 
   updateDocumentLocale(lng);
 

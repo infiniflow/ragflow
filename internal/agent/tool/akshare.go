@@ -310,8 +310,8 @@ func formatAkShareArticles(articles []akshareArticle) string {
 	for _, item := range articles {
 		parts = append(parts, fmt.Sprintf(
 			`<a href="%s">%s</a>
- 新闻内容: %s 
-发布时间:%s 
+ 新闻内容: %s
+发布时间:%s
 文章来源: %s`,
 			item.URL,
 			item.Title,

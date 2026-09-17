@@ -60,11 +60,12 @@ func interruptingParallelSub(t *testing.T) *compose.Workflow[int, int] {
 // CompositeInterrupt whose InterruptContexts cover every
 // per-item interrupt.
 func TestIntegration_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 	sub := interruptingParallelSub(t)
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", sub,
+	pNode, err := AddParallelNode(ctx, outer, "par", sub,
 		WithParallelMaxConcurrency(0),
 		WithParallelCheckpointIDBuilder(func(_ string, idx int) string {
 			return "all-int-cp:" + itoa(idx)
@@ -75,7 +76,7 @@ func TestIntegration_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(ctx,
 		compose.WithCheckPointStore(store),
 	)
 	if err != nil {
@@ -83,7 +84,7 @@ func TestIntegration_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 	}
 
 	cpID := "all-int"
-	_, err = compiled.Invoke(context.Background(), []int{10, 20, 30},
+	_, err = compiled.Invoke(ctx, []int{10, 20, 30},
 		compose.WithCheckPointID(cpID),
 	)
 	if err == nil {
@@ -102,7 +103,7 @@ func TestIntegration_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 	// The CompositeInterrupt propagates the parallel state
 	// through eino's state channel; verify it landed in the
 	// checkpoint store.
-	if _, found, _ := store.Get(context.Background(), cpID); !found {
+	if _, found, _ := store.Get(ctx, cpID); !found {
 		t.Errorf("outer checkpoint %q not written", cpID)
 	}
 }
@@ -121,6 +122,7 @@ func TestIntegration_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 // lambda's control. The unit tests in parallel_test.go cover the
 // resume logic directly.
 func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
+	ctx := t.Context()
 	var calls atomic.Int32
 	interrupted := false
 	sub := testCountingRunnable{
@@ -128,7 +130,7 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 			calls.Add(1)
 			if in == 7 && !interrupted {
 				interrupted = true
-				return 0, compose.StatefulInterrupt(context.Background(), "only-7", in)
+				return 0, compose.StatefulInterrupt(t.Context(), "only-7", in)
 			}
 			return in + 1, nil
 		},
@@ -145,7 +147,7 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 	// on the first call); item 3 also runs and returns 9+1=10.
 	// My code processes all items in order even if some
 	// interrupt, so calls = 4 after the first run.
-	_, err := runParallelInvoke(context.Background(), "par", sub, []int{1, 3, 7, 9}, opts, bridge)
+	_, err := runParallelInvoke(ctx, "par", sub, []int{1, 3, 7, 9}, opts, bridge)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
@@ -164,7 +166,7 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 		TotalCount:         4,
 	}
 	payload, _ := encodeParallelState(state)
-	resumeCtx := injectResumeState(context.Background(), payload)
+	resumeCtx := injectResumeState(ctx, payload)
 	resumeBridge := newParallelBridgeState(nil)
 	// The "interrupted" bool is shared across the test, so
 	// the resume's lambda call for in=7 returns 7+1=8. Item 3 is
@@ -194,6 +196,7 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 // per-item checkpoint ID is the same across the first run
 // and the resume.
 func TestIntegration_StableCheckpointID_AcrossResumes(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 	var observedIDs sync.Map // string -> bool
 
@@ -212,7 +215,7 @@ func TestIntegration_StableCheckpointID_AcrossResumes(t *testing.T) {
 	wf.End().AddInput("op")
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", wf,
+	pNode, err := AddParallelNode(ctx, outer, "par", wf,
 		WithParallelMaxConcurrency(0),
 		WithParallelCheckpointIDBuilder(func(_ string, idx int) string {
 			id := "stable-par-cp:" + itoa(idx)
@@ -225,7 +228,7 @@ func TestIntegration_StableCheckpointID_AcrossResumes(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(ctx,
 		compose.WithCheckPointStore(store),
 	)
 	if err != nil {
@@ -233,13 +236,13 @@ func TestIntegration_StableCheckpointID_AcrossResumes(t *testing.T) {
 	}
 
 	cpID := "stable-cp-test"
-	_, err = compiled.Invoke(context.Background(), []int{0, 1, 2},
+	_, err = compiled.Invoke(ctx, []int{0, 1, 2},
 		compose.WithCheckPointID(cpID),
 	)
 	if err == nil {
 		t.Fatal("expected interrupt, got nil")
 	}
-	resumeCtx := compose.Resume(context.Background(), firstRootInterruptID(t, err))
+	resumeCtx := compose.Resume(ctx, firstRootInterruptID(t, err))
 	_, err = compiled.Invoke(resumeCtx, []int{0, 1, 2},
 		compose.WithCheckPointID(cpID),
 	)
@@ -259,10 +262,11 @@ func TestIntegration_StableCheckpointID_AcrossResumes(t *testing.T) {
 // WithParallelEnableSubCheckpoint(false) still propagates
 // interrupts (just without the per-item WithCheckPointID).
 func TestIntegration_EnableSubCheckpoint_False(t *testing.T) {
+	ctx := t.Context()
 	sub := interruptingParallelSub(t)
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", sub,
+	pNode, err := AddParallelNode(ctx, outer, "par", sub,
 		WithParallelMaxConcurrency(0),
 		WithParallelEnableSubCheckpoint(false),
 	)
@@ -271,11 +275,11 @@ func TestIntegration_EnableSubCheckpoint_False(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), []int{1, 2})
+	_, err = compiled.Invoke(ctx, []int{1, 2})
 	if err == nil {
 		t.Fatal("expected interrupt, got nil")
 	}
@@ -293,8 +297,9 @@ func TestIntegration_EnableSubCheckpoint_False(t *testing.T) {
 // workflow. The Stream() call must return the documented
 // ErrParallelOuterStreamUnsupported.
 func TestIntegration_Stream_OuterUnsupported(t *testing.T) {
+	ctx := t.Context()
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par",
+	pNode, err := AddParallelNode(ctx, outer, "par",
 		buildParallelIncSub(t),
 	)
 	if err != nil {
@@ -302,11 +307,11 @@ func TestIntegration_Stream_OuterUnsupported(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Stream(context.Background(), []int{1, 2, 3})
+	_, err = compiled.Stream(ctx, []int{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected stream-unsupported error, got nil")
 	}
@@ -324,13 +329,14 @@ func TestIntegration_Stream_OuterUnsupported(t *testing.T) {
 // the same semantics as eino's WithForceNewRun. We exercise
 // the contract at the runParallelInvoke level.
 func TestIntegration_WithForceNewRun_ResetsState(t *testing.T) {
+	ctx := t.Context()
 	var interruptCount atomic.Int32
 	makeRunner := func() testCountingRunnable {
 		return testCountingRunnable{
 			fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
 				if in == 0 {
 					interruptCount.Add(1)
-					return 0, compose.StatefulInterrupt(context.Background(), "force-new", in)
+					return 0, compose.StatefulInterrupt(t.Context(), "force-new", in)
 				}
 				return in, nil
 			},
@@ -342,7 +348,7 @@ func TestIntegration_WithForceNewRun_ResetsState(t *testing.T) {
 	})
 	// First run: interrupted at item 0.
 	bridge := newParallelBridgeState(nil)
-	if _, err := runParallelInvoke(context.Background(), "par", makeRunner(), []int{0, 1, 2}, opts, bridge); err == nil {
+	if _, err := runParallelInvoke(ctx, "par", makeRunner(), []int{0, 1, 2}, opts, bridge); err == nil {
 		t.Fatal("expected first interrupt, got nil")
 	}
 	if got := interruptCount.Load(); got != 1 {
@@ -352,7 +358,7 @@ func TestIntegration_WithForceNewRun_ResetsState(t *testing.T) {
 	// state) makes the next runParallelInvoke behave as a
 	// fresh run. Item 0 interrupts again.
 	bridge2 := newParallelBridgeState(nil)
-	if _, err := runParallelInvoke(context.Background(), "par", makeRunner(), []int{0, 1, 2}, opts, bridge2); err == nil {
+	if _, err := runParallelInvoke(ctx, "par", makeRunner(), []int{0, 1, 2}, opts, bridge2); err == nil {
 		t.Fatal("expected second interrupt, got nil")
 	}
 	if got := interruptCount.Load(); got != 2 {

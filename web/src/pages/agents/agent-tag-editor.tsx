@@ -58,7 +58,9 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
   const addTag = (tag: string) => {
     const next = tag.trim();
     if (!next) return;
-    if (!tags.some((existing) => existing.toLowerCase() === next.toLowerCase())) {
+    if (
+      !tags.some((existing) => existing.toLowerCase() === next.toLowerCase())
+    ) {
       setTags([...tags, next]);
     }
     setDraft('');
@@ -100,9 +102,7 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
       <DialogContent onClick={(e) => e.stopPropagation()}>
         <DialogHeader>
           <DialogTitle>{t('flow.editTags')}</DialogTitle>
-          <DialogDescription>
-            {t('flow.editTagsDescription')}
-          </DialogDescription>
+          <DialogDescription>{t('flow.editTagsDescription')}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-wrap gap-1 min-h-8">

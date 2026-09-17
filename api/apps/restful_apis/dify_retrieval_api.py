@@ -27,7 +27,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from common.metadata_utils import meta_filter, convert_conditions
 from api.apps import login_required
 from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_request_json, get_json_result
@@ -260,8 +260,8 @@ async def retrieval(tenant_id):
                 tenant_id,
                 kb_id,
             )
-            return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-        model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+            return build_error_result(message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
+        model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         if metadata_condition:
             doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
@@ -276,21 +276,22 @@ async def retrieval(tenant_id):
             page_size=top,
             similarity_threshold=similarity_threshold,
             vector_similarity_weight=0.3,
-            top=top,
+            knn_top_k=top,
             doc_ids=doc_ids,
             rank_feature=label_question(question, [kb]),
         )
-        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [tenant_id])
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [kb.tenant_id])
 
         if use_kg:
             model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(question, [tenant_id], [kb_id], embd_mdl, LLMBundle(kb.tenant_id, model_config))
+            ck = await settings.kg_retriever.retrieval(question, [kb.tenant_id], [kb_id], embd_mdl, LLMBundle(kb.tenant_id, model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
         doc_ids = list(set([c["doc_id"] for c in ranks["chunks"]]))
         docs = DocumentService.get_by_ids(doc_ids)
         doc_map = {doc.id: doc for doc in docs}
+        metadata_map = DocMetadataService.get_metadata_for_documents(doc_ids, kb_id) if doc_ids else {}
 
         records = []
         for c in ranks["chunks"]:
@@ -298,7 +299,8 @@ async def retrieval(tenant_id):
             if not doc:
                 continue
             c.pop("vector", None)
-            meta = getattr(doc, "meta_fields", {})
+            # Copied because several chunks of one document share a map entry.
+            meta = dict(metadata_map.get(c["doc_id"]) or {})
             meta["doc_id"] = c["doc_id"]
             # Dify expects metadata.document_id for external retrieval sources.
             meta["document_id"] = c["doc_id"]
@@ -308,7 +310,7 @@ async def retrieval(tenant_id):
     except Exception as e:
         if "not_found" in str(e):
             return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
-        logging.exception(e)
+        logger.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 

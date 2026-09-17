@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -33,9 +32,9 @@ func TestUserFillUp_RendersTips(t *testing.T) {
 		"tips":        "Hello {{name}}",
 	})
 	state := canvas.NewCanvasState("run-1", "task-1")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"name": map[string]any{"value": "World"},
 		},
@@ -57,9 +56,9 @@ func TestUserFillUp_DisableTips(t *testing.T) {
 		"tips":        "Should not render",
 	})
 	state := canvas.NewCanvasState("run-2", "task-2")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"name": map[string]any{"value": "World"},
 		},
@@ -83,9 +82,9 @@ func TestUserFillUp_DisableTips(t *testing.T) {
 func TestUserFillUp_PassesThroughInputs(t *testing.T) {
 	c, _ := New(componentNameUserFillUp, map[string]any{"enable_tips": false})
 	state := canvas.NewCanvasState("run-3", "task-3")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"q":     map[string]any{"value": "What is RAGFlow?"},
 			"top_k": map[string]any{"value": 5},
@@ -116,9 +115,9 @@ func TestUserFillUp_FileInputStub(t *testing.T) {
 		"tips":        "Upload {{cv}} please",
 	})
 	state := canvas.NewCanvasState("run-4", "task-4")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"cv": map[string]any{
 				"value": []any{"file-1", "file-2"},

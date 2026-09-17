@@ -367,20 +367,6 @@ func abs(x int) int {
 	return x
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // splitSentences splits text into sentence spans [start, end).
 // Matches Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
 // Go RE2 lacks lookahead, so this manually identifies sentence boundaries:

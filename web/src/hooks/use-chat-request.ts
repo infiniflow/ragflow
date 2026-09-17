@@ -1,6 +1,24 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FileUploadProps } from '@/components/file-upload';
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import {
   IClientConversation,
   IConversation,
@@ -16,6 +34,7 @@ import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-
 import chatService from '@/services/next-chat-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
@@ -62,9 +81,12 @@ export const useGetChatSearchParams = () => {
 };
 
 export const useFetchChatList = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
 
   const {
     data,
@@ -75,10 +97,11 @@ export const useFetchChatList = () => {
       ChatApiAction.FetchChatList,
       {
         debouncedSearchString,
+        filterValue,
         ...pagination,
       },
     ],
-    initialData: { chats: [], total: 0 },
+    placeholderData: (previousData) => previousData ?? { chats: [], total: 0 },
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -88,8 +111,10 @@ export const useFetchChatList = () => {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
+            owner_ids: filterValue.owner,
           },
           data: {},
+          paramsSerializer: { indexes: null },
         },
         true,
       );
@@ -110,9 +135,13 @@ export const useFetchChatList = () => {
     loading,
     refetch,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
+    filterValue,
+    setFilterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -132,6 +161,7 @@ export const useDeleteChat = () => {
         queryClient.invalidateQueries({
           queryKey: [ChatApiAction.FetchChatList],
         });
+        markListItemsDeleted(ListDeletionKey.ChatList);
         message.success(t('message.deleted'));
       }
       return data.code;
@@ -266,7 +296,8 @@ export const useFetchChat = () => {
 export const useFetchSessionList = () => {
   const { id } = useParams();
 
-  const { searchString, handleInputChange } = useHandleSearchStrChange();
+  const { searchString, handleInputChange, setSearchString } =
+    useHandleSearchStrChange();
 
   const {
     data,
@@ -292,7 +323,14 @@ export const useFetchSessionList = () => {
     },
   });
 
-  return { data, loading, refetch, searchString, handleInputChange };
+  return {
+    data,
+    loading,
+    refetch,
+    searchString,
+    handleInputChange,
+    setSearchString,
+  };
 };
 
 export function useFetchSessionManually() {

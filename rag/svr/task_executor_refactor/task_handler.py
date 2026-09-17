@@ -40,7 +40,11 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    get_tenant_default_model_by_type,
+    resolve_model_config,
+    get_model_config_by_id,
+)
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
 from common.constants import LLMType
@@ -63,6 +67,22 @@ from rag.prompts.generator import run_toc_from_text
 from common import settings
 
 
+_EMBEDDING_FACTORIES_REQUIRING_API_KEY = frozenset(
+    {
+        "Azure-OpenAI",
+        "OpenAI",
+        "OpenAI-API-Compatible",
+    }
+)
+
+
+def _embedding_config_has_missing_credentials(model_config: dict) -> bool:
+    """Return whether a credentialed embedding factory has no usable credential."""
+    factory = model_config.get("llm_factory")
+    has_credential = bool(model_config.get("api_key") or model_config.get("api_key_payload"))
+    return factory in _EMBEDDING_FACTORIES_REQUIRING_API_KEY and not has_credential
+
+
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
     """Resolve a doc's parser_config to compile-template ids by
     looking up configured groups. Returns ``[]`` if the doc has no
@@ -81,28 +101,6 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
             seen.add(template_id)
             template_ids.append(template_id)
     return template_ids
-
-
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order:
-      1. The template's own ``llm_id`` (what the user picked in the
-         compilation-template panel).
-      2. The doc's ``parser_config.llm_id`` (the doc-level chunking
-         model).
-      3. ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
-    doc_cfg = getattr(ctx, "parser_config", None) or {}
-    if isinstance(doc_cfg, dict):
-        did = doc_cfg.get("llm_id")
-        if isinstance(did, str) and did.strip():
-            return did.strip()
-    return ctx.llm_id
 
 
 # Document-structure compilation tunables
@@ -150,6 +148,10 @@ class TaskHandler:
 
     @staticmethod
     def _is_standard_chunking_task(task_type: str) -> bool:
+        from rag.svr.task_executor_refactor.dataset_structure_merger import (
+            STRUCTURE_MERGE_TASK_TYPES,
+        )
+
         task_type = (task_type or "").lower()
         return task_type not in {
             "memory",
@@ -161,7 +163,7 @@ class TaskHandler:
             "evaluation",
             "reembedding",
             "clone",
-        } and not task_type.startswith("dataflow")
+        } | STRUCTURE_MERGE_TASK_TYPES and not task_type.startswith("dataflow")
 
     async def handle_task(self) -> None:
         try:
@@ -237,21 +239,46 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                is_structure_merge_task,
+            )
+
             if task_type == "raptor":
                 await self._run_raptor(embedding_model, vector_size)
             elif task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
-            elif task_type == "artifact":
+            elif task_type == "wiki":
                 from rag.svr.task_executor_refactor.dataset_wiki_generator import (
-                    run_wiki,
+                    run_wiki_incremental,
                 )
 
-                await run_wiki(
+                # Parse the Wiki mode from the template config.
+                wiki_mode = None
+                try:
+                    from api.db.services.compilation_template_service import (
+                        CompilationTemplateService,
+                    )
+                    from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+                        _parser_config_compilation_template_ids,
+                    )
+
+                    pc = self._task_context.parser_config or {}
+                    for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
+                        tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
+                        cfg = (tpl.get("config") or {}) if tpl else {}
+                        if isinstance(cfg, dict) and cfg.get("mode") in ("entity", "topic"):
+                            wiki_mode = cfg["mode"]
+                            break
+                except Exception:
+                    pass
+
+                await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
+                    mode=wiki_mode,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (
@@ -263,6 +290,12 @@ class TaskHandler:
                     embedding_model,
                     self._load_chunks_for_doc,
                 )
+            elif is_structure_merge_task(task_type):
+                from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                    run_structure_merge,
+                )
+
+                await run_structure_merge(self._task_context)
             elif task_type == "evaluation":
                 await self._run_evaluation()
             elif task_type == "reembedding":
@@ -315,10 +348,39 @@ class TaskHandler:
         task_language = ctx.language
 
         try:
-            if task_embedding_id:
-                embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            if ctx.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
+                except LookupError:
+                    # The cached tenant-model binding may disappear after a task is queued; record the recovery context.
+                    logging.info(
+                        "Recovering stale embedding model binding for task %s in tenant %s with model %s",
+                        ctx.id,
+                        task_tenant_id,
+                        task_embedding_id or "tenant-default",
+                    )
+                    if task_embedding_id:
+                        embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                    else:
+                        embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+                else:
+                    if _embedding_config_has_missing_credentials(embd_model_config):
+                        logging.info(
+                            "Refreshing embedding model credentials for tenant %s with model %s",
+                            task_tenant_id,
+                            task_embedding_id or "tenant-default",
+                        )
+                        if task_embedding_id:
+                            embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                        else:
+                            # Queued tasks without a model name must follow the current tenant default.
+                            embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+            elif task_embedding_id:
+                embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+            if _embedding_config_has_missing_credentials(embd_model_config):
+                raise LookupError("Embedding model credentials are missing after resolving the current configuration")
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
             vts, _ = embedding_model.encode(["ok"])
             return embedding_model, len(vts[0])
@@ -351,14 +413,13 @@ class TaskHandler:
                 {
                     "raptor": {
                         "use_raptor": True,
-                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                        "max_token": 256,
-                        "threshold": 0.1,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
                         "max_cluster": 64,
                         "random_seed": 0,
                         "scope": "file",
-                        "clustering_method": "gmm",
-                        "tree_builder": "raptor",
                     },
                 }
             )
@@ -372,7 +433,7 @@ class TaskHandler:
                 return
 
         # Bind LLM for raptor
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         with LLMBundle(task_tenant_id, chat_model_config, lang=ctx.language) as chat_model:
             # Run RAPTOR
             raptor_service = RaptorService(ctx=ctx)
@@ -407,26 +468,6 @@ class TaskHandler:
 
                 if cleaned_chunks:
                     ctx.progress_cb(msg=f"Cleaned up {cleaned_chunks} stale RAPTOR chunks.")
-
-                # Build the per-doc RAPTOR tree graph from the just-
-                # inserted summaries. Each chunk in ``chunks`` carries
-                # the doc_id it was written under (real doc id for
-                # scope="file"; GRAPH_RAPTOR_FAKE_DOC_ID for the
-                # dataset-scope path). We materialize one graph row per
-                # distinct doc_id so the dataset structure-graph
-                # endpoint can surface a RAPTOR tab per document.
-                # Failure here is best-effort — the summaries are
-                # already persisted; the tab just won't render.
-                raptor_doc_ids = {str(c.get("doc_id")) for c in chunks if c.get("doc_id")}
-                for raptor_doc_id in raptor_doc_ids:
-                    try:
-                        await raptor_service._persist_raptor_graph_to_es(raptor_doc_id)
-                    except Exception:
-                        logging.exception(
-                            "raptor_graph: build failed for kb=%s doc=%s",
-                            task_dataset_id,
-                            raptor_doc_id,
-                        )
 
                 # Update document stats
                 if ctx.write_interceptor:
@@ -488,7 +529,7 @@ class TaskHandler:
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         with LLMBundle(task_tenant_id, chat_model_config, lang=task_language) as chat_model:
             with_resolution = graphrag_conf.get("resolution", False)
             with_community = graphrag_conf.get("community", False)
@@ -534,6 +575,11 @@ class TaskHandler:
         task_dataset_id = ctx.kb_id
         task_doc_id = ctx.doc_id
         task_start_ts = timer()
+
+        def on_chunking_start(wait_time):
+            nonlocal task_start_ts
+            task_start_ts += wait_time
+
         doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
         ctx.raw_task["llm_id"] = doc_task_llm_id
 
@@ -547,7 +593,7 @@ class TaskHandler:
         if binary is None:
             raise FileNotFoundError(f"Can not find file <{ctx.name}> from minio. Could you try it again.")
 
-        chunks = await chunk_service.build_chunks(binary)
+        chunks = await chunk_service.build_chunks(binary, on_chunking_start)
         ctx.recording_context.record("chunks", chunks)
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         ctx.recording_context.record("chunk_ids_count", len(chunk_ids))
@@ -721,8 +767,10 @@ class TaskHandler:
             "content_with_weight",
             "page_num_int",
             "top_int",
+            "compile_kwd",
         ]
         order_by = OrderByExpr()
+        order_by.asc("chunk_order_int")
         order_by.asc("page_num_int")
         order_by.asc("top_int")
 
@@ -733,7 +781,15 @@ class TaskHandler:
                     settings.docStoreConn.search,
                     select_fields,
                     [],
-                    {"doc_id": [doc_id], "available_int": 1},
+                    {
+                        "doc_id": [doc_id],
+                        "available_int": 1,
+                        # Compilation writes its output back to the same
+                        # document index. Exclude those rows in the query so
+                        # they cannot change offset pagination while this
+                        # task is still streaming source chunks.
+                        "must_not": {"exists": "compile_kwd"},
+                    },
                     [],
                     order_by,
                     offset,
@@ -746,6 +802,66 @@ class TaskHandler:
                 logging.exception("load_chunks_for_doc: failed to load chunks for doc=%s", doc_id)
                 return
             if not field_map:
+                # Recover rows damaged by the old doc-page-source upsert, which
+                # updated every row sharing ``doc_id`` and stamped source chunks
+                # with ``compile_kwd=wiki_doc_page_source``. Genuine tracking
+                # rows have no chunk body; MAP rows are unavailable. Source
+                # rows remain available and retain their content, so they can
+                # be identified without guessing from ids.
+                try:
+                    recovery_fields = [*select_fields, "available_int"]
+                    recovered_batch: List[Dict] = []
+                    recovery_offset = 0
+                    recovery_page_size = 1000
+                    while True:
+                        recovery_res = await thread_pool_exec(
+                            settings.docStoreConn.search,
+                            recovery_fields,
+                            [],
+                            {"doc_id": [doc_id], "available_int": 1},
+                            [],
+                            order_by,
+                            recovery_offset,
+                            recovery_page_size,
+                            index_nm,
+                            [kb_id],
+                        )
+                        recovery_rows = settings.docStoreConn.get_fields(recovery_res, recovery_fields) or {}
+                        for row_id, recovery_row in recovery_rows.items():
+                            marker = recovery_row.get("compile_kwd")
+                            if isinstance(marker, (list, tuple)):
+                                marker = marker[0] if marker else ""
+                            content = recovery_row.get("content_with_weight") or ""
+                            if marker != "wiki_doc_page_source" or not content:
+                                continue
+                            await thread_pool_exec(
+                                settings.docStoreConn.update,
+                                {"id": row_id},
+                                {"remove": "compile_kwd"},
+                                index_nm,
+                                kb_id,
+                            )
+                            recovered_batch.append(
+                                {
+                                    "id": row_id,
+                                    "doc_id": recovery_row.get("doc_id") or doc_id,
+                                    "content_with_weight": content,
+                                    "page_num_int": recovery_row.get("page_num_int", 0),
+                                    "top_int": recovery_row.get("top_int", 0),
+                                }
+                            )
+                        if len(recovery_rows) < recovery_page_size:
+                            break
+                        recovery_offset += recovery_page_size
+                    if recovered_batch:
+                        logging.warning(
+                            "load_chunks_for_doc: recovered %d source chunk(s) mislabeled as wiki_doc_page_source doc=%s",
+                            len(recovered_batch),
+                            doc_id,
+                        )
+                        yield recovered_batch
+                except Exception:
+                    logging.exception("load_chunks_for_doc: recovery query failed for doc=%s", doc_id)
                 return
 
             batch: List[Dict] = []
@@ -771,7 +887,7 @@ class TaskHandler:
     def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:
         """Build table of contents."""
         progress_cb(msg="Start to generate table of content ...")
-        chat_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
+        chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
         with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_mdl:
             docs = sorted(
                 docs,

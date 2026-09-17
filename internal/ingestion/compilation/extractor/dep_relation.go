@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-
 // Verb lemmatization — multi-language
 var verbLemma = map[string]string{
 	// English

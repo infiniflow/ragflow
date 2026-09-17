@@ -88,6 +88,7 @@ def _load_canvas_runtime(monkeypatch):
 
     llm_service = ModuleType("api.db.services.llm_service")
     llm_service.LLMBundle = object
+    llm_service.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service)
 
     task_service = ModuleType("api.db.services.task_service")
@@ -96,6 +97,7 @@ def _load_canvas_runtime(monkeypatch):
 
     tenant_model_service = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service.get_tenant_default_model_by_type = lambda *_a, **_kw: None
+    tenant_model_service.resolve_model_config = lambda *_a, **_kw: None
     monkeypatch.setitem(
         sys.modules,
         "api.db.joint_services.tenant_model_service",

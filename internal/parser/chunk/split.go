@@ -217,10 +217,7 @@ func (o *SplitOperator) splitByLength(text string) []ChunkData {
 		chunkSize = defaultLengthChunkSize
 	}
 
-	overlap := o.overlap
-	if overlap < 0 {
-		overlap = 0
-	}
+	overlap := max(o.overlap, 0)
 	if overlap >= chunkSize {
 		overlap = chunkSize - 1
 	}
@@ -233,10 +230,7 @@ func (o *SplitOperator) splitByLength(text string) []ChunkData {
 
 	var chunks []ChunkData
 	for start := 0; start < len(runes); start += step {
-		end := start + chunkSize
-		if end > len(runes) {
-			end = len(runes)
-		}
+		end := min(start+chunkSize, len(runes))
 
 		content := string(runes[start:end])
 		chunks = append(chunks, ChunkData{

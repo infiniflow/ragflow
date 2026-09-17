@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -84,12 +83,13 @@ func TestFileComponent_Registered(t *testing.T) {
 // even when explicit storage overrides are supplied.
 func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	ms := withMemoryStorage(t)
-	if err := ms.Put("bucketA", "path/to/file.txt", []byte("hello, ragflow")); err != nil {
+	ctx := t.Context()
+	if err := ms.Put(ctx, "bucketA", "path/to/file.txt", []byte("hello, ragflow")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"file":   []map[string]any{{"name": "file.txt"}},
 		"bucket": "bucketA",
 		"path":   "path/to/file.txt",
@@ -110,19 +110,14 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	if _, ok := out["binary"]; ok {
 		t.Fatalf("binary should not be emitted by File: %v", out["binary"])
 	}
-	if out["_elapsed_time"] == nil {
-		t.Error("_elapsed_time missing")
-	}
-	if out["_created_time"] == nil {
-		t.Error("_created_time missing")
-	}
 }
 
 func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 	ms := withMemoryStorage(t)
+	ctx := t.Context()
 	db := withFileComponentTestDB(t)
 	location := "docs/from-document.bin"
-	if err := ms.Put("kb-doc", location, []byte("doc-location")); err != nil {
+	if err := ms.Put(ctx, "kb-doc", location, []byte("doc-location")); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	docName := "report.pdf"
@@ -141,7 +136,7 @@ func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-loc"})
+	out, err := c.Invoke(t.Context(), db, map[string]any{"doc_id": "doc-loc"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -158,9 +153,10 @@ func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 
 func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
 	ms := withMemoryStorage(t)
+	ctx := t.Context()
 	db := withFileComponentTestDB(t)
 	location := "tenant-root/from-file.bin"
-	if err := ms.Put("folder-1", location, []byte("file-mapping")); err != nil {
+	if err := ms.Put(ctx, "folder-1", location, []byte("file-mapping")); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	docName := "deck.pptx"
@@ -198,7 +194,7 @@ func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-file"})
+	out, err := c.Invoke(t.Context(), db, map[string]any{"doc_id": "doc-file"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -229,7 +225,7 @@ func TestFileComponent_Invoke_DocIDWithoutStorageLocationStillSucceeds(t *testin
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-empty"})
+	out, err := c.Invoke(t.Context(), db, map[string]any{"doc_id": "doc-empty"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -243,7 +239,7 @@ func TestFileComponent_Invoke_DocIDWithoutStorageLocationStillSucceeds(t *testin
 func TestFileComponent_Invoke_MissingDoc(t *testing.T) {
 	withMemoryStorage(t)
 	c := &FileComponent{}
-	_, err := c.Invoke(context.Background(), map[string]any{})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err == nil {
 		t.Fatal("expected error for empty inputs, got nil")
 	}
@@ -256,12 +252,13 @@ func TestFileComponent_Invoke_MissingDoc(t *testing.T) {
 // bucket/path overrides still flow through for downstream Parser use.
 func TestFileComponent_Invoke_IncludesCheckpointPath(t *testing.T) {
 	ms := withMemoryStorage(t)
+	ctx := t.Context()
 	const wantPath = "checkpoint/expected/path.bin"
-	if err := ms.Put("b", wantPath, []byte("x")); err != nil {
+	if err := ms.Put(ctx, "b", wantPath, []byte("x")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"file":   []map[string]any{{"name": "checkpoint.bin"}},
 		"bucket": "b",
 		"path":   wantPath,
@@ -296,14 +293,5 @@ func TestFileComponent_InputsOutputs_NonEmpty(t *testing.T) {
 		if _, ok := outs[key]; !ok {
 			t.Errorf("Outputs() missing %q", key)
 		}
-	}
-}
-
-// TestFileComponent_Parallelism asserts the fan-out is locked to
-// 1 — File is metadata-only and intentionally non-fanned-out.
-func TestFileComponent_Parallelism(t *testing.T) {
-	c := &FileComponent{}
-	if got := c.Parallelism(); got != 1 {
-		t.Errorf("Parallelism() = %d, want 1", got)
 	}
 }

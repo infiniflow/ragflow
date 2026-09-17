@@ -18,6 +18,14 @@ package sandbox
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
+	"fmt"
+	"path/filepath"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"net"
 	"os"
 	"strconv"
@@ -101,12 +109,48 @@ func TestSSH_PrivateKeyInline(t *testing.T) {
 	}
 }
 
+func TestSSH_ConfigUsesCanonicalLowercaseKeys(t *testing.T) {
+	p := newSSHProviderFromConfig(map[string]any{
+		"host": "example.test", "username": "u", "password": "p",
+		"port": 2222, "timeout": 12, "private_key": "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----",
+	})
+	if p.host != "example.test" || p.port != 2222 || p.timeout != 12 {
+		t.Fatalf("lowercase config was not applied: %#v", p)
+	}
+	legacy := newSSHProviderFromConfig(map[string]any{"HOST": "legacy", "USERNAME": "u", "PASSWORD": "p"})
+	if legacy.host != "" {
+		t.Fatalf("uppercase configuration unexpectedly accepted: %q", legacy.host)
+	}
+}
+
+func TestSSH_PrivateKeyPathError(t *testing.T) {
+	p := newSSHProviderFromConfig(map[string]any{
+		"host": "h", "username": "u", "private_key": t.TempDir() + "/missing",
+	})
+	if err := p.Initialize(t.Context()); err == nil || !strings.Contains(err.Error(), "read private_key path") {
+		t.Fatalf("Initialize error = %v, want explicit private key path error", err)
+	}
+}
+
+func TestSSH_ConfigPrivateKeyPath(t *testing.T) {
+	keyPath := t.TempDir() + "/private_key"
+	key := "-----BEGIN OPENSSH PRIVATE KEY-----\ncontent\n-----END OPENSSH PRIVATE KEY-----\n"
+	if err := os.WriteFile(keyPath, []byte(key), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := newSSHProviderFromConfig(map[string]any{"host": "h", "username": "u", "private_key": keyPath})
+	if p.configError != nil || string(p.privateKey) != key {
+		t.Fatalf("private_key path was not loaded: %v", p.configError)
+	}
+}
+
 func TestSSH_Initialize_MissingHost(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with empty host: got nil error, want one")
 	} else if !strings.Contains(err.Error(), "SSH_HOST") {
 		t.Errorf("err = %v, want to mention SSH_HOST", err)
@@ -114,23 +158,25 @@ func TestSSH_Initialize_MissingHost(t *testing.T) {
 }
 
 func TestSSH_Initialize_MissingUsername(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with empty username: got nil error, want one")
 	}
 }
 
 func TestSSH_Initialize_MissingAuth(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "")
 	t.Setenv("SSH_PRIVATE_KEY", "")
 	t.Setenv("SSH_PRIVATE_KEY_PATH", "")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with no auth: got nil error, want one")
 	} else if !strings.Contains(err.Error(), "SSH_PASSWORD") {
 		t.Errorf("err = %v, want to mention SSH_PASSWORD", err)
@@ -139,31 +185,33 @@ func TestSSH_Initialize_MissingAuth(t *testing.T) {
 
 func TestSSH_AllOps_BeforeInit(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 	p := &SSHProvider{}
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderSSH}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(ctx, "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(ctx, inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck before init: got nil error, want one")
 	}
 }
 
 func TestSSH_CreateInstance_RejectsBadLanguage(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -172,6 +220,7 @@ func TestSSH_CreateInstance_RejectsBadLanguage(t *testing.T) {
 // a clear error when the host is unreachable. We bind then close
 // an ephemeral listener to obtain a guaranteed-closed port.
 func TestSSH_Dial_ConnectionRefused(t *testing.T) {
+	ctx := t.Context()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen for ephemeral port: %v", err)
@@ -185,22 +234,23 @@ func TestSSH_Dial_ConnectionRefused(t *testing.T) {
 	t.Setenv("SSH_PASSWORD", "p")
 	t.Setenv("SSH_TIMEOUT", "2")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	if err = p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	newCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if _, err := p.dial(ctx); err == nil {
+	if _, err = p.dial(newCtx); err == nil {
 		t.Errorf("dial: got nil error, want one")
 	}
 }
 
 func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -212,7 +262,7 @@ func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -221,7 +271,7 @@ func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -230,7 +280,7 @@ func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unknown instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "nope"}, "x", "python", 5, nil)
 				return err
 			},
@@ -277,5 +327,84 @@ func TestMinTimeout(t *testing.T) {
 	}
 	if got := minTimeout(0, 5); got != 1 {
 		t.Errorf("minTimeout(0, 5) = %d, want 1 (floor is 1)", got)
+	}
+}
+
+func TestSSHEncryptedKeyAndDefaultHostKeys(t *testing.T) {
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(key, "test", []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverConfig := &ssh.ServerConfig{PublicKeyCallback: func(_ ssh.ConnMetadata, presented ssh.PublicKey) (*ssh.Permissions, error) {
+		if string(presented.Marshal()) != string(signer.PublicKey().Marshal()) {
+			return nil, fmt.Errorf("unexpected authentication key")
+		}
+		return nil, nil
+	}}
+	serverConfig.AddHostKey(signer)
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		defer conn.Close()
+		server, _, _, err := ssh.NewServerConn(conn, serverConfig)
+		if err == nil {
+			defer server.Close()
+		}
+		serverErr <- err
+	}()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.Mkdir(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hostKeys := filepath.Join(home, ".ssh", "known_hosts")
+	if err := os.WriteFile(hostKeys, []byte(knownhosts.Line([]string{listener.Addr().String()}, signer.PublicKey())+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	host, port, _ := net.SplitHostPort(listener.Addr().String())
+	p := newSSHProviderFromConfig(map[string]any{"host": host, "port": port, "username": "test", "private_key": string(pem.EncodeToMemory(block)), "passphrase": "secret"})
+	client, err := p.dial(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Close()
+	if err := <-serverErr; err != nil {
+		t.Fatal(err)
+	}
+	p.passphrase = "incorrect"
+	if _, err := p.dial(t.Context()); err == nil || !strings.Contains(err.Error(), "parse private key") {
+		t.Fatalf("wrong passphrase: %v", err)
+	}
+	p.knownHosts = filepath.Join(home, "missing")
+	if _, err := p.hostKeyCallback(); err == nil {
+		t.Fatal("unreadable explicit trust store accepted")
+	}
+	p.knownHosts = ""
+	if err := os.Remove(hostKeys); err != nil {
+		t.Fatal(err)
+	}
+	callback, err := p.hostKeyCallback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callback(listener.Addr().String(), listener.Addr(), signer.PublicKey()); err == nil {
+		t.Fatal("unknown host accepted")
 	}
 }
