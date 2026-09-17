@@ -1156,7 +1156,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
-      quote: 'Show quote',
+      quote: 'Show citations',
       quoteTip: 'Whether to display the original text as a reference.',
       selfRag: 'Self-RAG',
       selfRagTip: 'Please refer to: https://huggingface.co/papers/2310.11511',

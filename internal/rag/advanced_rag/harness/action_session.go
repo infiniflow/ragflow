@@ -1295,12 +1295,16 @@ const (
 
 // Machine-readable ToolOutcome reasons. Only ReasonNoStructure is
 // DATASET-level and may disable a tool; ReasonNoDoc is QUERY-level and must not.
+// ReasonUnwired labels a call to a tool NAME this deployment has no binding for
+// (the model invented it): nothing ran, so it is reported as MISS and never
+// counts toward the strikes that disable a real tool.
 const (
 	ReasonNone        = ""
 	ReasonNoStructure = "no_structure"
 	ReasonNoDoc       = "no_doc"
 	ReasonInfra       = "infra"
 	ReasonBadArgs     = "bad_args"
+	ReasonUnwired     = "unwired"
 )
 
 // ToolOutcome is the result of ONE tool call. Every executor returns one so the
@@ -1318,6 +1322,12 @@ type ToolOutcome struct {
 	// probe ("华雄|颜良|蔡阳") is actionable rather than four passages whose
 	// missing member looks exactly like a member nobody asked for.
 	Note string
+	// Diagnostic is the tool's own explanation of a failure (Go-only: Python's
+	// ToolOutcome carries no such field). A bare Reason — "infra" — tells a
+	// reader nothing about what went wrong, so the underlying message rides
+	// along and is reported with the step. It is NEVER put in Payload: the model
+	// sees the status note, not the infrastructure detail.
+	Diagnostic string
 }
 
 // NewToolOutcome builds an OK outcome with an empty metric map.

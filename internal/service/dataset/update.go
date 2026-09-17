@@ -160,9 +160,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		if d.docEngine == nil {
 			return nil, common.CodeServerError, errors.New("document engine is not initialized")
 		}
-		if !d.docEngine.SupportsPageRank() {
-			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
-		}
 	}
 
 	requestedAnyUpdate := len(simpleUpdates) > 0 || connectorsProvided || parserIDProvided ||
@@ -253,15 +250,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				updates["parser_config"] = preserveDatasetParserConfigMetadata(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
-		if pagerankRequested {
+		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
+			if !d.docEngine.SupportsPageRank() {
+				txCode = common.CodeDataError
+				return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+			}
 			pagerankUpdate = &datasetPagerankUpdate{
 				value:     requestedPagerank,
 				index:     fmt.Sprintf("ragflow_%s", lockedKB.TenantID),
 				datasetID: lockedKB.ID,
 			}
-			if requestedPagerank != lockedKB.Pagerank {
-				updates["pagerank"] = requestedPagerank
-			}
+			updates["pagerank"] = requestedPagerank
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
