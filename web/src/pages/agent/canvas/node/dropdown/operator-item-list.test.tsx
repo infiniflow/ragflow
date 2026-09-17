@@ -1,9 +1,6 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Operator } from '@/constants/agent';
-import {
-  AgentInstanceContext,
-  HandleContext,
-} from '@/pages/agent/context';
+import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import { useIsPipeline } from '@/pages/agent/hooks/use-is-pipeline';
 import useGraphStore from '@/pages/agent/store';
 import { Position } from '@xyflow/react';
@@ -45,9 +42,7 @@ const handleContext = {
 function renderItemList(addCanvasNode: jest.Mock, hideModal: jest.Mock) {
   return render(
     <TooltipProvider>
-      <AgentInstanceContext.Provider
-        value={{ addCanvasNode } as any}
-      >
+      <AgentInstanceContext.Provider value={{ addCanvasNode } as any}>
         <HandleContext.Provider value={handleContext}>
           <HideModalContext.Provider value={hideModal}>
             <OperatorItemList
