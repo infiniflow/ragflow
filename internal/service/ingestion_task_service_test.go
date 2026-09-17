@@ -1061,6 +1061,52 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskServiceRemoveSettlesNumberedQueuedRun(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "numbered-open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "numbered-open-log").Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	if _, err := NewIngestionTaskService().Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "numbered-open-log").Error; err != nil {
+		t.Fatalf("numbered run was deleted: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("numbered run status = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "numbered-open-log", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("terminal event missing: %v", err)
+	}
+	if terminal.Message != "Task superseded by a new parse request." {
+		t.Fatalf("terminal message = %q, want supersede reason", terminal.Message)
+	}
+}
+
 func TestIngestionTaskServiceUpdateComponentTotalPersistsDenominator(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

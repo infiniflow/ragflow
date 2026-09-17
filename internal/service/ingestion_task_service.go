@@ -418,6 +418,25 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	if err != nil {
 		return nil, err
 	}
+	if userID != nil && task.UserID != *userID {
+		return nil, errors.New("task does not belong to the user")
+	}
+	// Numbered pipeline logs are immutable run ledgers. A queued run must be
+	// settled before its task row is deleted, otherwise no worker remains to
+	// write the cancellation terminal event and the log stays open forever.
+	if task.Status == common.CREATED || task.Status == common.SCHEDULED {
+		if task.PipelineLogID != nil && *task.PipelineLogID != "" {
+			run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
+			if runErr != nil {
+				return nil, runErr
+			}
+			if run.RunCount != nil && *run.RunCount > 0 {
+				if err := s.SupersedeUnstartedTask(ctx, taskID); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	info, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, userID)
 	if err != nil {
 		return nil, err
