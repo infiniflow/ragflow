@@ -19,6 +19,7 @@ package handler
 import (
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/observability"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 
@@ -53,6 +54,13 @@ func (h *SystemHandler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"status": "ok",
 	})
+}
+
+// Metrics exposes process-level Prometheus counters. Ingestion identifiers
+// are deliberately absent from metric labels; detailed per-run context stays
+// in structured logs.
+func (h *SystemHandler) Metrics(c *gin.Context) {
+	c.Data(http.StatusOK, "text/plain; version=0.0.4; charset=utf-8", []byte(observability.IngestionLogMetricsPrometheusText()))
 }
 
 // Healthz reports dependency health in the Python-compatible format.

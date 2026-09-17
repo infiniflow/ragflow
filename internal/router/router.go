@@ -152,6 +152,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
+	// Prometheus scrape endpoint. It is intentionally unauthenticated and only
+	// exposes bounded process counters; per-run identifiers remain in logs.
+	engine.GET("/metrics", r.systemHandler.Metrics)
 
 	apiNoAuth := engine.Group("/api/v1")
 	{
