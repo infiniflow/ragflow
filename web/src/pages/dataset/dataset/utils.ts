@@ -96,6 +96,15 @@ export const getDocumentRunningStatus = (
     python: document.run ?? RunningStatus.UNSTART,
   });
 
+/** Returns the backend-specific message shown for a document's current run. */
+export const getDocumentProgressMessage = (
+  document: Pick<IDocumentInfo, 'progress_msg' | 'latest_ingestion_event'>,
+) =>
+  pickByBackend({
+    go: document.latest_ingestion_event?.message,
+    python: document.progress_msg,
+  }) || '-';
+
 /**
  * Whether a cancel request is currently in flight for the document.
  * Only the Go backend reports STOPPING; Python always returns false.
