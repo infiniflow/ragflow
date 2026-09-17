@@ -688,6 +688,46 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 			input: "Just plain text without markdown block",
 			want:  "Just plain text without markdown block",
 		},
+		{
+			name:  "unwrapped python block",
+			input: "```python\nprint('hello')\n```",
+			want:  "```python\nprint('hello')\n```",
+		},
+		{
+			name:  "unwrapped JSON block",
+			input: "```json\n{\"value\": 1}\n```",
+			want:  "```json\n{\"value\": 1}\n```",
+		},
+		{
+			name:  "unlabeled code block",
+			input: "```\ncode without a language\n```",
+			want:  "```\ncode without a language\n```",
+		},
+		{
+			name:  "prose ending with code block",
+			input: "Example:\n```python\nprint('hello')\n```",
+			want:  "Example:\n```python\nprint('hello')\n```",
+		},
+		{
+			name:  "multiple unwrapped code blocks",
+			input: "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+			want:  "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+		},
+		{
+			name:  "unwrapped CRLF block",
+			input: "  ```python\r\nprint('hello')\r\n```  ",
+			want:  "```python\r\nprint('hello')\r\n```",
+		},
+		{
+			name:  "closing fence without markdown opener",
+			input: "Unopened block\n```",
+			want:  "Unopened block\n```",
+		},
+		{
+			name:  "markdown wrapper around code example",
+			input: "```markdown\nExample:\n```python\nprint('hello')\n```\n```",
+			want:  "Example:\n```python\nprint('hello')\n```",
+		},
 	}
 
 	for _, tc := range cases {
@@ -695,6 +735,10 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 			got := cleanMarkdownBlock(tc.input)
 			if got != tc.want {
 				t.Errorf("cleanMarkdownBlock(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+			resp := &modelModule.ChatResponse{Answer: &tc.input}
+			if got := extractVisionAnswer(resp); got != tc.want {
+				t.Errorf("extractVisionAnswer(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
 	}
