@@ -21,8 +21,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -1370,7 +1372,11 @@ func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one
 func (s *Service) SetVariable(ctx context.Context, varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
+	return s.setVariable(ctx, dao.DB, varName, varValue)
+}
+
+func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err
 	}
@@ -1381,7 +1387,7 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 			return err
 		}
 		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
+		return s.systemSettingsDAO.UpdateByName(ctx, db, varName, setting)
 	} else if len(settings) > 1 {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
@@ -1396,7 +1402,7 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
-	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
+	return s.systemSettingsDAO.Create(ctx, db, newSetting)
 }
 
 // Config methods
@@ -1483,40 +1489,108 @@ func (s *Service) GetVersion() (string, string) {
 
 // ListSandboxProviders list sandbox providers
 func (s *Service) ListSandboxProviders() ([]map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return []map[string]interface{}{}, nil
+	return sandbox.ListProviders(), nil
 }
 
 // GetSandboxProviderSchema get sandbox provider schema
 func (s *Service) GetSandboxProviderSchema(providerID string) (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{}, nil
+	schema, err := sandbox.ConfigSchema(providerID)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+	return schema, nil
 }
 
 // GetSandboxConfig get sandbox config
-func (s *Service) GetSandboxConfig() (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{}, nil
+func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, "sandbox.")
+	if err != nil {
+		return nil, err
+	}
+
+	providerType := "self_managed"
+	values := make(map[string]string, len(settings))
+	for _, setting := range settings {
+		if _, exists := values[setting.Name]; exists {
+			return nil, fmt.Errorf("duplicate sandbox setting: %s", setting.Name)
+		}
+		values[setting.Name] = setting.Value
+	}
+	if value, exists := values["sandbox.provider_type"]; exists {
+		providerType = value
+	}
+	schema, err := sandbox.ConfigSchema(providerType)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+
+	raw := values["sandbox."+providerType]
+	var config map[string]interface{}
+	if raw != "" {
+		var value interface{}
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			config = nil
+		} else if value == nil {
+			return nil, common.NewCodedError(common.CodeBadRequest,
+				fmt.Sprintf("sandbox.%s must contain a JSON object", providerType))
+		} else if object, ok := value.(map[string]interface{}); ok {
+			config = object
+		} else {
+			return nil, common.NewCodedError(common.CodeBadRequest,
+				fmt.Sprintf("sandbox.%s must contain a JSON object", providerType))
+		}
+	}
+	if len(config) == 0 {
+		config = make(map[string]interface{})
+		for name, field := range schema {
+			fieldSchema, ok := field.(map[string]any)
+			if !ok {
+				continue
+			}
+			if fieldSchema["readonly"] == true {
+				continue
+			}
+			if value, ok := fieldSchema["default"]; ok && value != nil {
+				config[name] = value
+			}
+		}
+	}
+	return map[string]interface{}{"provider_type": providerType, "config": config}, nil
 }
 
 // SetSandboxConfig set sandbox config
-func (s *Service) SetSandboxConfig(providerType string, config map[string]interface{}, setActive bool) (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{
-		"provider_type": providerType,
-		"config":        config,
-		"set_active":    setActive,
-	}, nil
+func (s *Service) SetSandboxConfig(ctx context.Context, providerType string, config map[string]interface{}, setActive bool) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, "config must be a JSON object")
+	}
+	if err := sandbox.ValidateConfig(providerType, config); err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, fmt.Sprintf("invalid sandbox configuration: %v", err))
+	}
+	err = s.systemSettingsDAO.Transaction(ctx, dao.DB, func(tx *gorm.DB) error {
+		if setActive {
+			if err := s.setVariable(ctx, tx, "sandbox.provider_type", providerType); err != nil {
+				return err
+			}
+		}
+		return s.setVariable(ctx, tx, "sandbox."+providerType, string(encoded))
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"provider_type": providerType, "config": config}, nil
 }
 
 // TestSandboxConnection test sandbox connection
-func (s *Service) TestSandboxConnection(providerType string, config map[string]interface{}) (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{
-		"provider_type": providerType,
-		"config":        config,
-		"connected":     true,
-	}, nil
+func (s *Service) TestSandboxConnection(ctx context.Context, providerType string, config map[string]interface{}) (map[string]interface{}, error) {
+	result, err := sandbox.TestConnection(ctx, providerType, config)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+	return result, nil
 }
 
 var heartBeatCount int64 = 0
