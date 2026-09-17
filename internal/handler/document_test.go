@@ -778,6 +778,44 @@ func TestUploadDocumentsHandler_AllowsDocumentTableColumnsBeforeParsing(t *testi
 	}
 }
 
+// Python's API boundary rejects a role its vocabulary does not know
+// (api/utils/validation_utils.py:430), so the Go upload path does too: the
+// value would otherwise be persisted and silently excluded at parse time.
+func TestUploadDocumentsHandler_RejectsUnknownTableColumnRole(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{uploadLocalData: []map[string]interface{}{{"id": "doc-1"}}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parser_config": `{"table_column_mode":"manual","table_column_roles":{"Name":"skip"}}`,
+	}, "table.csv", []byte("Name,City\nAlice,Beijing\n"))
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (error codes travel in the body), got %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != int(common.CodeArgumentError) {
+		t.Fatalf("code = %d, want CodeArgumentError; body=%s", body.Code, w.Body.String())
+	}
+	if !strings.Contains(body.Message, `table_column_roles["Name"]`) {
+		t.Fatalf("message %q does not name the offending role", body.Message)
+	}
+	if fake.uploadOverride != nil {
+		t.Fatalf("an invalid override must not reach the upload service: %#v", fake.uploadOverride)
+	}
+}
+
 func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB

@@ -17,6 +17,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -64,5 +65,81 @@ func TestNormalizeTableColumnMode(t *testing.T) {
 		if got := NormalizeTableColumnMode(tc.in); got != tc.want {
 			t.Errorf("NormalizeTableColumnMode(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// Validation mirrors Python's API boundary: a mode or role the runtime cannot
+// act on is rejected before it is persisted, while an unset value stays valid.
+func TestValidateTableColumnSettings(t *testing.T) {
+	valid := []struct {
+		name   string
+		config map[string]interface{}
+	}{
+		{"nil config", nil},
+		{"empty config", map[string]interface{}{}},
+		{"unset keys", map[string]interface{}{"chunk_token_num": float64(128)}},
+		{"mode auto", map[string]interface{}{"table_column_mode": "auto"}},
+		{"mode manual with roles", map[string]interface{}{
+			"table_column_mode":  "manual",
+			"table_column_roles": map[string]interface{}{"a": "indexing", "b": "metadata", "c": "both"},
+		}},
+		{"mode case-insensitive and trimmed", map[string]interface{}{"table_column_mode": "  MANUAL "}},
+		{"legacy vectorize alias", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "vectorize"}}},
+		{"empty role means default", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": ""}}},
+		{"empty mode means unset", map[string]interface{}{"table_column_mode": ""}},
+		{"nil values", map[string]interface{}{"table_column_mode": nil, "table_column_roles": nil}},
+		{"string-valued roles map", map[string]interface{}{"table_column_roles": map[string]string{"a": "both"}}},
+		{"component-shaped spreadsheet", map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"spreadsheet": map[string]interface{}{
+					"column_mode":  "manual",
+					"column_roles": map[string]interface{}{"a": "indexing"},
+				},
+			},
+		}},
+		{"unrelated component entry", map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{"pdf": map[string]interface{}{"pages": []interface{}{}}},
+		}},
+	}
+	for _, tc := range valid {
+		t.Run("valid/"+tc.name, func(t *testing.T) {
+			if err := ValidateTableColumnSettings(tc.config); err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name   string
+		config map[string]interface{}
+		substr string
+	}{
+		{"unknown mode", map[string]interface{}{"table_column_mode": "manul"}, "table_column_mode must be"},
+		{"non-string mode", map[string]interface{}{"table_column_mode": float64(1)}, "must be a string"},
+		{"unknown role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "skip"}}, `table_column_roles["a"]`},
+		{"non-string role", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": float64(1)}}, "must be a string"},
+		{"empty column name", map[string]interface{}{"table_column_roles": map[string]interface{}{"": "both"}}, "empty column name"},
+		{"roles not a map", map[string]interface{}{"table_column_roles": "indexing"}, "must be an object"},
+		{"unknown nested mode", map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"spreadsheet": map[string]interface{}{"column_mode": "manul"},
+			},
+		}, "Parser:HipSignsRhyme.spreadsheet: column_mode must be"},
+		{"unknown nested role", map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"spreadsheet": map[string]interface{}{"column_roles": map[string]interface{}{"a": "skip"}},
+			},
+		}, `Parser:HipSignsRhyme.spreadsheet: column_roles["a"]`},
+	}
+	for _, tc := range invalid {
+		t.Run("invalid/"+tc.name, func(t *testing.T) {
+			err := ValidateTableColumnSettings(tc.config)
+			if err == nil {
+				t.Fatalf("expected an error for %#v", tc.config)
+			}
+			if !strings.Contains(err.Error(), tc.substr) {
+				t.Fatalf("error %q does not mention %q", err, tc.substr)
+			}
+		})
 	}
 }

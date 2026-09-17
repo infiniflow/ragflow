@@ -152,6 +152,12 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
+		// A table column value the vocabulary does not know is rejected here, as
+		// Python's API does: the runtime would otherwise exclude the column and
+		// leave the caller with a silently different schema.
+		if err = common.ValidateTableColumnSettings(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 		var dslJSON []byte
 		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {

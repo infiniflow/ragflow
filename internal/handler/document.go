@@ -974,7 +974,8 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 
 	// Optional parser_config override — only the allow-listed table column keys.
 	// Python ignores malformed or non-object input here instead of failing the
-	// whole upload request.
+	// whole upload request, but it does reject values its role vocabulary does
+	// not know; so does the check below (common.ValidateTableColumnSettings).
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
@@ -984,6 +985,10 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 				if v, ok := parsed[k]; ok {
 					override[k] = v
 				}
+			}
+			if err := common.ValidateTableColumnSettings(override); err != nil {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+				return
 			}
 			if len(override) == 0 {
 				override = nil

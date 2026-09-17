@@ -270,6 +270,29 @@ func TestUpdateDatasetRejectsInvalidPages(t *testing.T) {
 	}
 }
 
+func TestUpdateDatasetRejectsUnknownTableColumnRole(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"table_column_mode":  "manual",
+			"table_column_roles": map[string]interface{}{"Name": "skip"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected the unknown table column role to be rejected")
+	}
+	if code != common.CodeArgumentError {
+		t.Fatalf("code = %v, want CodeArgumentError", code)
+	}
+	if !strings.Contains(err.Error(), `table_column_roles["Name"]`) {
+		t.Fatalf("err = %q does not name the offending role", err.Error())
+	}
+}
+
 func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)

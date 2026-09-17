@@ -133,6 +133,39 @@ func TestUpdateDatasetDocumentRejectsRunningParserConfig(t *testing.T) {
 		map[string]bool{"parser_config": true})
 }
 
+// The document parser dialog writes its table column settings inside the
+// Parser component entry (column_mode / column_roles under the spreadsheet
+// setup). A role value the vocabulary does not know is rejected here rather
+// than persisted and silently excluded at parse time — Python's API rejects it
+// the same way (api/utils/validation_utils.py:430).
+func TestUpdateDatasetDocumentRejectsUnknownTableColumnRole(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1",
+		&UpdateDatasetDocumentRequest{ParserConfig: map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"spreadsheet": map[string]any{
+					"column_mode":  "manual",
+					"column_roles": map[string]any{"Name": "skip"},
+				},
+			},
+		}}, map[string]bool{"parser_config": true})
+
+	if err == nil {
+		t.Fatal("expected the unknown table column role to be rejected")
+	}
+	if code != common.CodeArgumentError {
+		t.Fatalf("code = %v, want CodeArgumentError", code)
+	}
+	if !strings.Contains(err.Error(), `column_roles["Name"]`) {
+		t.Fatalf("err = %q does not name the offending role", err.Error())
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsRunningChunkMethod(t *testing.T) {
 	cm := "naive"
 	updateDatasetDocumentRejected(t, common.RUNNING,

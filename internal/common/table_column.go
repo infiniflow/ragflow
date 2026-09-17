@@ -16,7 +16,11 @@
 
 package common
 
-import "strings"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // The table column vocabulary below is the persisted contract of the
 // `table_column_mode` / `table_column_roles` keys in a dataset's or document's
@@ -78,4 +82,105 @@ func NormalizeTableColumnMode(mode string) TableColumnMode {
 		return TableColumnModeManual
 	}
 	return TableColumnModeAuto
+}
+
+// ValidateTableColumnSettings rejects table column values the runtime cannot
+// act on: a mode other than auto/manual and a role other than the three known
+// values (plus the legacy "vectorize" alias). An absent or empty value is
+// accepted — that is "unset", which the runtime reads as the default.
+//
+// Both shapes a request can use are covered: the root-level `table_column_mode`
+// / `table_column_roles` keys (upload override, dataset settings) and the
+// component-shaped `column_mode` / `column_roles` keys a parser dialog writes
+// under a `Parser:<id>` spreadsheet entry.
+//
+// Python validates the same contract at its API boundary
+// (api/utils/validation_utils.py:430 defines the role Literal, :456-459 the
+// fields), so an unknown value never reaches parsing there. This is the Go
+// equivalent: the runtime's "unknown role is excluded" rule stays a safety net
+// for legacy rows instead of the normal write path.
+func ValidateTableColumnSettings(config map[string]interface{}) error {
+	if config == nil {
+		return nil
+	}
+	if err := validateTableColumnKeys(config, "table_column_mode", "table_column_roles"); err != nil {
+		return err
+	}
+	for _, cpnID := range sortedKeys(config) {
+		if !strings.HasPrefix(cpnID, "Parser:") {
+			continue
+		}
+		component, ok := config[cpnID].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		spreadsheet, ok := component["spreadsheet"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if err := validateTableColumnKeys(spreadsheet, "column_mode", "column_roles"); err != nil {
+			return fmt.Errorf("%s.spreadsheet: %w", cpnID, err)
+		}
+	}
+	return nil
+}
+
+func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey string) error {
+	if raw, ok := config[modeKey]; ok && raw != nil {
+		mode, isString := raw.(string)
+		if !isString {
+			return fmt.Errorf("%s must be a string", modeKey)
+		}
+		trimmed := strings.TrimSpace(mode)
+		if trimmed != "" &&
+			!strings.EqualFold(trimmed, string(TableColumnModeAuto)) &&
+			!strings.EqualFold(trimmed, string(TableColumnModeManual)) {
+			return fmt.Errorf("%s must be %q or %q, got %q", modeKey, TableColumnModeAuto, TableColumnModeManual, mode)
+		}
+	}
+
+	raw, ok := config[rolesKey]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch roles := raw.(type) {
+	case map[string]interface{}:
+		return validateTableColumnRoles(rolesKey, roles)
+	case map[string]string:
+		converted := make(map[string]interface{}, len(roles))
+		for column, role := range roles {
+			converted[column] = role
+		}
+		return validateTableColumnRoles(rolesKey, converted)
+	default:
+		return fmt.Errorf("%s must be an object mapping column name to role", rolesKey)
+	}
+}
+
+func validateTableColumnRoles(rolesKey string, roles map[string]interface{}) error {
+	for _, column := range sortedKeys(roles) {
+		if strings.TrimSpace(column) == "" {
+			return fmt.Errorf("%s must not contain an empty column name", rolesKey)
+		}
+		role, isString := roles[column].(string)
+		if !isString {
+			return fmt.Errorf("%s[%q] must be a string", rolesKey, column)
+		}
+		if NormalizeColumnRole(role) == ColumnRoleNone {
+			return fmt.Errorf("%s[%q] must be one of %q, %q, %q or the legacy %q, got %q",
+				rolesKey, column, ColumnRoleIndexing, ColumnRoleMetadata, ColumnRoleBoth, "vectorize", role)
+		}
+	}
+	return nil
+}
+
+// sortedKeys returns the map's keys in ascending order so validation reports
+// the first offending entry deterministically.
+func sortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
