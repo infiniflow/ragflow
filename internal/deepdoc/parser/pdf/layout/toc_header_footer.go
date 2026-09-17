@@ -59,11 +59,19 @@ var (
 	// chapterEntryPattern uses for 第N章 numbering: the target corpus is largely
 	// CJK, and a full-width page-number column still has to confirm a TOC page.
 	pageNumberPattern = regexp.MustCompile(`^[.…]*[0-9０-９]+[.…]*$|^[.…]*[IVXLCDM]+[.…]*$|^\s*-\s*[0-9０-９]+\s*-\s*$`)
-	// tocTitlePattern matches an outline title that names the table of contents.
-	// It mirrors the section-level detector this pass replaces, which is why
-	// "致谢"/"acknowledge" are accepted as end-of-TOC markers alongside the
-	// heading itself.
-	tocTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
+	// tocStartPattern matches an outline title that names the table of contents,
+	// which is the only thing that starts a TOC page range. A heading that is
+	// merely adjacent to a TOC — acknowledgements, references — does not: the
+	// section-level detector this pass replaces accepted 致谢 here, so a book
+	// without a 目录 bookmark had its acknowledgements page claimed as a TOC.
+	tocStartPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents)$`)
+	// tocEndMarkerPattern matches the front/back-matter headings that are
+	// neither a TOC nor an entry, so they cannot bound a TOC range. The
+	// acknowledgements family is spelled out the way chapterEntryPattern spells
+	// it (singular and plural, both spellings), because the pattern this
+	// replaces only matched the bare word "acknowledge" and so never fired on
+	// the usual "Acknowledgements" bookmark.
+	tocEndMarkerPattern = regexp.MustCompile(`(?i)^(致谢|acknowledg(?:e|ements?|ments?))$`)
 	// tocEntryRunPattern matches one TOC entry's tail: a leader run (two or more
 	// dots, ellipses or middots, never wide spaces — those are too common in
 	// prose ending in a number), a page number and an optional roman-numeral
@@ -82,13 +90,21 @@ var (
 // to — excluding — the next entry at the same level. It returns nil when the
 // document carries no usable bookmark.
 //
+// Only an entry that names the TOC itself starts a range (tocStartPattern).
+// When a front/back-matter heading (tocEndMarkerPattern) is the next same-level
+// entry the range is abandoned rather than closed, because such a heading does
+// not say where the entries stop — it follows the TOC in some books and sits at
+// the back of others — so the extent is left to the box shape signal instead of
+// spanning the gap and deleting whatever lies inside it. Only the page the TOC
+// starts on is claimed.
+//
 // Outline page numbers are 1-based — pdfium adds one to the 0-based destination
 // index (internal/deepdoc/parser/pdf/pdfium/pdfium.go) — while
 // TextBox.PageNumber is 0-based, because ParseRaw enumerates pages from zero.
 // The conversion happens here, once, so no caller has to know about it.
 func TOCPageRangeFromOutlines(outlines []pdf.Outline) map[int]bool {
 	for i, o := range outlines {
-		if !tocTitlePattern.MatchString(outlineTitle(o.Title)) {
+		if !tocStartPattern.MatchString(outlineTitle(o.Title)) {
 			continue
 		}
 		first := o.PageNumber - 1
@@ -99,8 +115,8 @@ func TOCPageRangeFromOutlines(outlines []pdf.Outline) map[int]bool {
 			if next.Level != o.Level {
 				continue
 			}
-			if tocTitlePattern.MatchString(outlineTitle(next.Title)) {
-				continue
+			if tocEndMarkerPattern.MatchString(outlineTitle(next.Title)) {
+				break
 			}
 			pages := make(map[int]bool, 4)
 			for pg := first; pg < next.PageNumber-1; pg++ {
@@ -111,9 +127,9 @@ func TOCPageRangeFromOutlines(outlines []pdf.Outline) map[int]bool {
 			}
 			return pages
 		}
-		// No following entry at the same level: the TOC page is known but its
-		// extent is not, so claim only that page and leave the rest to the box
-		// shape signal.
+		// No usable following entry at the same level: the TOC page is known
+		// but its extent is not, so claim only that page and leave the rest to
+		// the box shape signal.
 		return map[int]bool{first: true}
 	}
 	return nil
@@ -140,6 +156,13 @@ func outlineTitle(title string) string {
 // geometry collapses into a section), so this MUST run before TextMerge (see
 // Parser.buildLayout).
 //
+// coversDocumentStart reports whether boxes cover the document's first page.
+// The shape signal reads a TOC out of a leading run, so it is skipped when the
+// parse began mid-document (Config.Pages): a TOC-shaped page at the start of a
+// page range says nothing about the document, and reading it as a document
+// prefix would delete content from the middle of the book. The outline signal
+// carries absolute page numbers and is unaffected.
+//
 // Two signals select pages and the union is dropped:
 //
 //  1. outlinePages — the pages the PDF bookmarks identify as TOC (see
@@ -150,14 +173,15 @@ func outlineTitle(title string) string {
 //     confirming markers (chapter markers or page numbers), or one long box
 //     that is itself tocMinMergedRuns leader+page-number runs, preceded only by
 //     pages without body text and spanning as many consecutive pages as keep
-//     satisfying that shape. Kept for documents that carry no usable bookmark.
+//     satisfying that shape. Kept for documents that carry no usable bookmark,
+//     and only consulted when coversDocumentStart.
 //
 // Both signals pass through one guard: a page carrying body text (more than
 // tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
 // document consisting only of TOC pages is left untouched. The detector stays
 // deliberately conservative — missing a TOC page costs noise chunks, deleting a
 // content page loses text.
-func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBox {
+func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, coversDocumentStart bool) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
@@ -187,7 +211,8 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBo
 	}
 
 	// Heuristic fallback, for documents that carry no usable bookmark. A TOC is
-	// a document prefix, so only the leading pages are candidates: pages without
+	// a document prefix, so only a parse that covers the document's first page
+	// is eligible, and then only the leading pages are candidates: pages without
 	// body text (a cover, copyright page) may be skipped, and the run continues
 	// while pages keep satisfying isTOC(). It ends on the first page that does
 	// not — in practice the first page carrying body text, which is what keeps
@@ -196,24 +221,26 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBo
 	// TOC can span more pages than any fixed cap would allow, and truncating it
 	// silently keeps the remaining TOC pages in the output. Length is bounded
 	// instead by isTOC() itself and by the all-TOC guard below.
-	inTOC, lead := false, 0
-	for _, pg := range pages {
-		if inTOC {
-			if !shapes[pg].isTOC() {
+	if coversDocumentStart {
+		inTOC, lead := false, 0
+		for _, pg := range pages {
+			if inTOC {
+				if !shapes[pg].isTOC() {
+					break
+				}
+				selected[pg] = true
+				continue
+			}
+			if shapes[pg].isTOC() {
+				inTOC = true
+				selected[pg] = true
+				continue
+			}
+			if shapes[pg].carriesProse() || lead >= tocMaxLeadPages {
 				break
 			}
-			selected[pg] = true
-			continue
+			lead++
 		}
-		if shapes[pg].isTOC() {
-			inTOC = true
-			selected[pg] = true
-			continue
-		}
-		if shapes[pg].carriesProse() || lead >= tocMaxLeadPages {
-			break
-		}
-		lead++
 	}
 
 	drop := make(map[int]struct{}, len(boxes))

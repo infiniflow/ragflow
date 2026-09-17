@@ -475,8 +475,11 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 		return result, nil
 	}
 
+	// A TOC is a document prefix, so the box-shape signal is only meaningful
+	// when this parse covers the document's first page.
+	coversDocumentStart := len(pages) > 0 && pages[0] == 0
 	if err := p.buildLayout(ctx, result, boxes, pageChars,
-		medianHeights, medianWidths, pageEnglish); err != nil {
+		medianHeights, medianWidths, pageEnglish, coversDocumentStart); err != nil {
 		return nil, fmt.Errorf("buildLayout: %w", err)
 	}
 	return result, nil
@@ -486,11 +489,15 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 // the global layout/table/figure pipeline. It is the only step that runs
 // AssignColumn, TextMerge, FinalReadingOrderMerge, NaiveVerticalMerge, table
 // merge, figure consolidation, BoxesToSections, and caption merge.
+//
+// coversDocumentStart reports whether `pages` started at the document's first
+// page, which is what the TOC box-shape signal requires (see RemoveTOCBoxes).
 func (p *Parser) buildLayout(ctx context.Context,
 	result *pdf.ParseResult,
 	boxes []pdf.TextBox, pageChars map[int][]pdf.TextChar,
 	medianHeights, medianWidths map[int]float64,
 	pageEnglish map[int]bool,
+	coversDocumentStart bool,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
 
@@ -522,9 +529,14 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// TextMerge: RemoveTOCBoxes relies on leader-dot boxes (which TextMerge
 	// folds into adjacent text) and RemoveHeaderFooterBoxes relies on header
 	// boxes that TextMerge would otherwise merge into the first body section.
+	//
+	// coversDocumentStart gates the TOC box-shape signal: a TOC is a document
+	// prefix, so a parse restricted to a later page range must not read its own
+	// first page as one. The outline signal uses absolute page numbers and needs
+	// no such gate.
 	boxesBefore := len(boxes)
 	if p.Config.RemoveTOC {
-		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines))
+		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), coversDocumentStart)
 		result.Metrics.BoxesTOCRemoved = boxesBefore - len(boxes)
 		boxesBefore = len(boxes)
 	}

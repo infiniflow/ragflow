@@ -58,7 +58,7 @@ func TestRemoveTOCBoxes_DropsDottedTOCPage(t *testing.T) {
 		tb("The named is the mother of ten thousand things. Ever desireless, one can see the mystery. Ever desiring, one can see the manifestations.", 1, 72, 500, 190, 210),
 		tb("These two spring from the same source but differ in name. This appears as darkness. Darkness within darkness. The gate to all mystery.", 1, 72, 500, 220, 240),
 	}
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	// Only the body paragraphs on page 1 should survive.
 	want := []string{
 		"The way that can be told of is not the eternal way; the name that can be named is not the eternal name. The nameless is the origin of heaven and earth.",
@@ -77,7 +77,7 @@ func TestRemoveTOCBoxes_KeepsBodyPage(t *testing.T) {
 		tb("This paragraph explains the background of the work in some detail so the reader can follow.", 0, 72, 500, 130, 150),
 		tb("It continues with more context and supporting material for the main argument.", 0, 72, 500, 160, 180),
 	}
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if len(got) != len(boxes) {
 		t.Fatalf("body page should be untouched, got %d boxes, want %d", len(got), len(boxes))
 	}
@@ -104,7 +104,7 @@ func TestRemoveTOCBoxes_ThresholdBoundary(t *testing.T) {
 		tb("Another paragraph of body text that is also quite long and exceeds the thirty rune threshold easily.", 1, 72, 400, 190, 210),
 		tb("A third paragraph of body text that ensures the book is not classified as compact by the detector.", 1, 72, 400, 220, 240),
 	)
-	if got := RemoveTOCBoxes(below, nil); len(got) != len(below) {
+	if got := RemoveTOCBoxes(below, nil, true); len(got) != len(below) {
 		t.Fatalf("2 entries should keep page: got %d boxes, want %d", len(got), len(below))
 	}
 	above := append(mkPage(3, 0),
@@ -112,7 +112,7 @@ func TestRemoveTOCBoxes_ThresholdBoundary(t *testing.T) {
 		tb("Another paragraph of body text that is also quite long and exceeds the thirty rune threshold easily.", 1, 72, 400, 190, 210),
 		tb("A third paragraph of body text that ensures the book is not classified as compact by the detector.", 1, 72, 400, 220, 240),
 	)
-	if got := RemoveTOCBoxes(above, nil); len(got) != 3 {
+	if got := RemoveTOCBoxes(above, nil, true); len(got) != 3 {
 		t.Fatalf("3 entries should drop the whole TOC page: got %d boxes, want 3", len(got))
 	}
 }
@@ -128,7 +128,7 @@ func TestRemoveTOCBoxes_LeaderMergedIntoBox(t *testing.T) {
 		tb("Body paragraph that must survive on page 1 and is definitely longer than thirty runes.", 1, 72, 400, 160, 180),
 		tb("Another body paragraph that ensures the book has enough long boxes to not be compact.", 1, 72, 400, 190, 210),
 	}
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	want := []string{
 		"Body paragraph that must survive on page 1 and is definitely longer than thirty runes.",
 		"Another body paragraph that ensures the book has enough long boxes to not be compact.",
@@ -155,7 +155,7 @@ func TestRemoveTOCBoxes_ChineseChapterMarkers(t *testing.T) {
 		tb("天下皆知美之为美，斯恶已。皆知善之为善，斯不善已。故有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。", 1, 72, 500, 190, 210),
 		tb("是以圣人处无为之事，行不言之教。万物作焉而不辞，生而不有，为而不恃，功成而弗居。夫唯弗居，是以不去。", 1, 72, 500, 220, 240),
 	}
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	want := []string{
 		"正文内容，道可道，非常道。名可名，非常名。无名天地之始，有名万物之母。故常无欲以观其妙，常有欲以观其徼。此两者同出而异名，同谓之玄。玄之又玄，众妙之门。",
 		"天下皆知美之为美，斯恶已。皆知善之为善，斯不善已。故有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。",
@@ -173,7 +173,7 @@ func TestRemoveTOCBoxes_BodyPageWithLongBoxIsNotTOC(t *testing.T) {
 		tb("This is a long body paragraph that clearly belongs to the main content of the document and should never be classified as a table of contents entry under any reasonable heuristic.", 0, 72, 500, 100, 120),
 		tb("Another sentence here to make the point clear and ensure the page is recognized as a body page.", 0, 72, 500, 130, 150),
 	}
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if len(got) != len(boxes) {
 		t.Fatalf("body page with long boxes must be kept, got %d, want %d", len(got), len(boxes))
 	}
@@ -243,6 +243,64 @@ func TestTOCPageRangeFromOutlines(t *testing.T) {
 	}
 }
 
+// TestTOCPageRangeFromOutlines_AcknowledgementsDoesNotStart: only an entry that
+// names the TOC starts a range. A book with an acknowledgements bookmark and no
+// contents bookmark used to have its acknowledgements page claimed and dropped.
+func TestTOCPageRangeFromOutlines_AcknowledgementsDoesNotStart(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []pdf.Outline
+	}{
+		{"chinese, followed by back matter", []pdf.Outline{
+			{Title: "致谢", Level: 0, PageNumber: 5},
+			{Title: "参考文献", Level: 0, PageNumber: 8},
+		}},
+		{"chinese, alone", []pdf.Outline{
+			{Title: "致谢", Level: 0, PageNumber: 5},
+		}},
+		{"english plural", []pdf.Outline{
+			{Title: "Acknowledgements", Level: 0, PageNumber: 5},
+			{Title: "References", Level: 0, PageNumber: 8},
+		}},
+	}
+	for _, c := range cases {
+		if got := TOCPageRangeFromOutlines(c.in); got != nil {
+			t.Errorf("%s: an acknowledgements bookmark must not open a TOC range, got %v", c.name, got)
+		}
+	}
+}
+
+// TestTOCPageRangeFromOutlines_EndMarkerAbandonsRange: a front/back-matter
+// heading sitting next to the TOC does not say where the entries stop, so the
+// range is abandoned rather than extended to whatever entry follows it.
+func TestTOCPageRangeFromOutlines_EndMarkerAbandonsRange(t *testing.T) {
+	// Before: 致谢 was skipped and the range ran to 参考文献, claiming printed
+	// pages 2-11 including the acknowledgements themselves.
+	if got := TOCPageRangeFromOutlines([]pdf.Outline{
+		{Title: "目录", Level: 0, PageNumber: 2},
+		{Title: "致谢", Level: 0, PageNumber: 10},
+		{Title: "参考文献", Level: 0, PageNumber: 12},
+	}); len(got) != 1 || !got[1] {
+		t.Fatalf("the acknowledgements entry must abandon the range, claiming printed page 2 only, got %v", got)
+	}
+	// The English heading now matches at all; before, it was treated as an
+	// ordinary boundary and claimed printed pages 2-9.
+	if got := TOCPageRangeFromOutlines([]pdf.Outline{
+		{Title: "Contents", Level: 0, PageNumber: 2},
+		{Title: "Acknowledgements", Level: 0, PageNumber: 10},
+	}); len(got) != 1 || !got[1] {
+		t.Fatalf("the english end marker must abandon the range too, got %v", got)
+	}
+	// A chapter entry is still a boundary: the range stops just before it.
+	if got := TOCPageRangeFromOutlines([]pdf.Outline{
+		{Title: "目录", Level: 0, PageNumber: 2},
+		{Title: "第一章", Level: 0, PageNumber: 5},
+		{Title: "致谢", Level: 0, PageNumber: 20},
+	}); len(got) != 3 || !got[1] || !got[2] || !got[3] || got[4] {
+		t.Fatalf("a chapter entry must still close the range at printed page 5, got %v", got)
+	}
+}
+
 // TestRemoveTOCBoxes_OutlineCoversLeaderlessMergedBlock: a TOC whose entries
 // were merged into one box with no leader runs left is invisible to the box
 // signal — neither short boxes nor leader runs survive — and is covered by the
@@ -256,10 +314,10 @@ func TestRemoveTOCBoxes_OutlineCoversLeaderlessMergedBlock(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	if got := RemoveTOCBoxes(boxes, nil); len(got) != len(boxes) {
+	if got := RemoveTOCBoxes(boxes, nil, true); len(got) != len(boxes) {
 		t.Fatalf("box shape alone cannot see a leaderless merged TOC block, got %d of %d", len(got), len(boxes))
 	}
-	got := RemoveTOCBoxes(boxes, map[int]bool{0: true})
+	got := RemoveTOCBoxes(boxes, map[int]bool{0: true}, true)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("an outline-selected page must be dropped, %d boxes survived", n)
 	}
@@ -278,7 +336,7 @@ func TestRemoveTOCBoxes_MergedBlockWithLeaders(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("a merged TOC block carrying leader runs must be dropped, %d boxes survived", n)
 	}
@@ -299,7 +357,7 @@ func TestRemoveTOCBoxes_MergedBlockNeedsThreeRuns(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	if got := RemoveTOCBoxes(boxes, nil); len(got) != len(boxes) {
+	if got := RemoveTOCBoxes(boxes, nil, true); len(got) != len(boxes) {
 		t.Fatalf("two leader runs are below the merged-block threshold, got %d of %d", len(got), len(boxes))
 	}
 }
@@ -316,7 +374,7 @@ func TestRemoveTOCBoxes_MergedBlockFullWidthPageNumbers(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("full-width page numbers in a merged TOC block must be counted, %d boxes survived", n)
 	}
@@ -337,7 +395,7 @@ func TestRemoveTOCBoxes_MergedBlockRespectsProseGuard(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 0); n != 4 {
 		t.Fatalf("a page carrying prose must never be dropped, %d of 4 boxes survived", n)
 	}
@@ -351,7 +409,7 @@ func TestRemoveTOCBoxes_OutlineRespectsProseGuard(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, map[int]bool{1: true})
+	got := RemoveTOCBoxes(boxes, map[int]bool{1: true}, true)
 	if n := countPage(got, 1); n != 3 {
 		t.Fatalf("a page carrying prose must never be dropped, %d of 3 boxes survived", n)
 	}
@@ -364,8 +422,34 @@ func TestRemoveTOCBoxes_OutlineRespectsProseGuard(t *testing.T) {
 // TOC page keeps it rather than being emptied.
 func TestRemoveTOCBoxes_KeepsTOCOnlyDocument(t *testing.T) {
 	boxes := tocPageBoxes(0, 3)
-	if got := RemoveTOCBoxes(boxes, nil); len(got) != len(boxes) {
+	if got := RemoveTOCBoxes(boxes, nil, true); len(got) != len(boxes) {
 		t.Fatalf("a document consisting only of a TOC must be left untouched, got %d of %d", len(got), len(boxes))
+	}
+}
+
+// TestRemoveTOCBoxes_MidDocumentParseSkipsShapeSignal: when the parse covers a
+// later page range, the first parsed page is not a document prefix. Reading it
+// as one deleted content from the middle of the book.
+func TestRemoveTOCBoxes_MidDocumentParseSkipsShapeSignal(t *testing.T) {
+	var boxes []pdf.TextBox
+	boxes = append(boxes, tocPageBoxes(10, 3)...)
+	boxes = append(boxes, bodyPageBoxes(11)...)
+
+	if got := RemoveTOCBoxes(boxes, nil, false); len(got) != len(boxes) {
+		t.Fatalf("a page range starting mid-document must not be read as a TOC prefix, dropped %d of %d",
+			len(boxes)-len(got), len(boxes))
+	}
+	if got := RemoveTOCBoxes(boxes, nil, true); len(got) == len(boxes) {
+		t.Fatalf("the same boxes as a document prefix must still drop the TOC page")
+	}
+	// The outline signal carries absolute page numbers, so the gate must not
+	// silence it.
+	got := RemoveTOCBoxes(boxes, map[int]bool{10: true}, false)
+	if n := countPage(got, 10); n != 0 {
+		t.Fatalf("an outline-selected page must be dropped even mid-document, %d boxes survived", n)
+	}
+	if n := countPage(got, 11); n != 3 {
+		t.Fatalf("the body page must survive, %d of 3 boxes", n)
 	}
 }
 
@@ -376,7 +460,7 @@ func TestRemoveTOCBoxes_MultiPageTOC(t *testing.T) {
 	boxes = append(boxes, tocPageBoxes(1, 3)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("TOC page 0 must be dropped, %d boxes survived", n)
 	}
@@ -400,7 +484,7 @@ func TestRemoveTOCBoxes_LongTOCRun(t *testing.T) {
 	}
 	boxes = append(boxes, bodyPageBoxes(tocPages)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	for pg := 0; pg < tocPages; pg++ {
 		if n := countPage(got, pg); n != 0 {
 			t.Fatalf("TOC page %d must be dropped, %d boxes survived", pg, n)
@@ -423,7 +507,7 @@ func TestRemoveTOCBoxes_TOCBehindCoverPage(t *testing.T) {
 	boxes := append(cover, tocPageBoxes(1, 3)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 0); n != 4 {
 		t.Fatalf("the cover page must be kept, %d of 4 boxes", n)
 	}
@@ -443,7 +527,7 @@ func TestRemoveTOCBoxes_StopsAtProsePage(t *testing.T) {
 	boxes = append(boxes, tocPageBoxes(2, 3)...)
 	boxes = append(boxes, bodyPageBoxes(3)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 2); n != 10 {
 		t.Fatalf("a TOC-shaped page behind a body page must be kept, %d of 10 boxes", n)
 	}
@@ -464,7 +548,7 @@ func TestRemoveTOCBoxes_BareCJKChapterTitles(t *testing.T) {
 	boxes = append(boxes, tb("第一章 绪论", 1, 72, 200, 160, 175))
 	boxes = append(boxes, bodyPageBoxes(1)...)
 
-	got := RemoveTOCBoxes(boxes, nil)
+	got := RemoveTOCBoxes(boxes, nil, true)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("the bare-title TOC page must be dropped, %d boxes survived", n)
 	}
