@@ -388,6 +388,10 @@ class LLM(ComponentBase):
     @staticmethod
     def _structured_output_validator(schema):
         schema = {key: value for key, value in schema.items() if key != "value"}
+        if "type" not in schema:
+            schema["type"] = "object"
+        elif schema["type"] != "object":
+            raise SchemaError("Structured output schema root type must be object")
         validator_cls = validator_for(schema, default=None) if "$schema" in schema else Draft202012Validator
         if validator_cls is None:
             raise SchemaError(f"Unsupported structured output schema version: {schema['$schema']}")

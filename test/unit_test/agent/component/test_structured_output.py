@@ -197,7 +197,25 @@ async def test_last_allowed_repair_can_succeed(component):
     assert len(provider.calls) == 3
 
 
-@pytest.mark.parametrize("schema", [{**SCHEMA, "required": "amount"}, {**SCHEMA, "$schema": "https://example.invalid/unknown-schema"}])
+async def test_missing_root_type_is_normalized_to_object(component):
+    schema = {key: value for key, value in SCHEMA.items() if key != "type"}
+    obj, provider = component(["null", json.dumps(VALID)], retries=1, schema=schema)
+    await obj.invoke_async()
+    assert obj.output("structured") == VALID
+    assert not obj.error()
+    assert len(provider.calls) == 2
+    assert '\\"type\\": \\"object\\"' in json.dumps(provider.calls[0])
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {**SCHEMA, "required": "amount"},
+        {**SCHEMA, "$schema": "https://example.invalid/unknown-schema"},
+        {**SCHEMA, "type": "array"},
+        {**SCHEMA, "type": ["object", "null"]},
+    ],
+)
 async def test_invalid_schema_fails_before_generation(component, schema):
     obj, provider = component([json.dumps(VALID)], schema=schema)
     await obj.invoke_async()
@@ -329,8 +347,9 @@ async def test_prompt_fit_failure_stops_before_model_call(component, monkeypatch
 
 @pytest.mark.parametrize("repair_succeeds", [False, True])
 async def test_canvas_only_schedules_downstream_after_valid_output(component, modules, monkeypatch, repair_succeeds):
-    responses = ['{"decision":"approve","amount":"invalid"}', json.dumps(VALID) if repair_succeeds else '{"amount":50}']
-    obj, provider = component(responses, retries=1)
+    responses = ["null", json.dumps(VALID) if repair_succeeds else "[]"]
+    schema = {key: value for key, value in SCHEMA.items() if key != "type"}
+    obj, provider = component(responses, retries=1, schema=schema)
     received = []
 
     class Param(modules.base.ComponentParamBase):
@@ -396,6 +415,6 @@ async def test_canvas_only_schedules_downstream_after_valid_output(component, mo
     else:
         assert received == []
         assert finished["outputs"]["structured"] is None
-        assert "decision" in finished["error"]
+        assert "object" in finished["error"]
         assert canvas.error
         assert not any(event["event"] == "node_started" and event["data"]["component_id"] == "sink" for event in events)
