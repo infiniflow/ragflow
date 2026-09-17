@@ -2444,8 +2444,6 @@ Example: Virtual Hosted Style`,
       topics: 'Topics',
       searchEntity: 'Search entity',
       graphEntityCount: '{{returned}} / {{total}} entities',
-      graphNodeStats: 'Total nodes: {{total}}',
-      graphNodeStatsWithMatch: 'Matched {{matched}} of {{total}} nodes',
       sourceDocuments: 'Source documents',
       clearWikiTitle: 'Clear wiki',
       clearWikiDescription:
