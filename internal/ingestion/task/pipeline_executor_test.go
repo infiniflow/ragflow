@@ -1444,9 +1444,9 @@ func TestProcessOutput_PersistsDiscoveredColumnsFromPayload(t *testing.T) {
 	output := map[string]any{
 		"chunks": []map[string]any{{"text": "- Name: Alice"}},
 		// The shape a real run produces: no top-level file map, the parser's
-		// file metadata under the run state snapshot.
-		"state": map[string]any{
-			"Parser:HipSignsRhyme": map[string]any{
+		// file metadata under the run state snapshot (CanvasState.Snapshot).
+		"state": map[string]map[string]any{
+			"Parser:HipSignsRhyme": {
 				"output_format": "json",
 				"file":          map[string]any{"name": "table.csv", "table_column_names": []string{"Name", "City"}},
 			},
@@ -1756,24 +1756,27 @@ func TestTableColumnNamesFromPayload(t *testing.T) {
 
 // The terminal payload of a real run carries no top-level file map: the chunker
 // and tokenizer emit only their own chunks, so the parser's file metadata has
-// to be read from the run state snapshot (finalizeResult attaches
-// output["state"][<cpnID>]). Reading only the top level silently disabled
-// column discovery — the parser's names never reached the document or the
-// dataset.
+// to be read from the run state snapshot (CanvasState.Snapshot, which
+// runPipelineWithDSL carries onto the payload). Reading only the top level
+// silently disabled column discovery — the parser's names never reached the
+// document or the dataset.
 func TestTableColumnNamesFromPayload_ReadsParserStateSnapshot(t *testing.T) {
+	// The snapshot type is what CanvasState.Snapshot returns, not a
+	// JSON-decoded map: asserting on map[string]any here would pass a reader
+	// that no real run can satisfy.
 	out := map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "- Title: Doc A"}},
-		"state": map[string]any{
-			"File": map[string]any{"name": "table.csv"},
-			"Parser:HipSignsRhyme": map[string]any{
+		"state": map[string]map[string]any{
+			"File": {"name": "table.csv"},
+			"Parser:HipSignsRhyme": {
 				"output_format": "json",
 				"file": map[string]any{
 					"name":               "table.csv",
 					"table_column_names": []interface{}{"Title", "Country"},
 				},
 			},
-			"TableChunker:FastFoxesJump": map[string]any{"output_format": "chunks"},
+			"TableChunker:FastFoxesJump": {"output_format": "chunks"},
 		},
 	}
 
@@ -1784,10 +1787,84 @@ func TestTableColumnNamesFromPayload_ReadsParserStateSnapshot(t *testing.T) {
 
 	// A state snapshot without parser file metadata (e.g. a non-spreadsheet
 	// parser) yields nothing rather than inventing columns.
-	bare := map[string]any{"state": map[string]any{"Parser:HipSignsRhyme": map[string]any{"output_format": "json"}}}
+	bare := map[string]any{"state": map[string]map[string]any{"Parser:HipSignsRhyme": {"output_format": "json"}}}
 	if got := tableColumnNamesFromPayload(bare); len(got) != 0 {
 		t.Errorf("got %q, want nil", got)
 	}
+}
+
+// The state snapshot must survive the narrowing to the terminal payload:
+// ExtractPayload returns the terminal component's own output only, so without
+// this hand-off processOutput never sees the parser's file metadata.
+func TestWithRunStateCarriesSnapshotToTerminalPayload(t *testing.T) {
+	snapshot := map[string]map[string]any{
+		"Parser:HipSignsRhyme": {"file": map[string]any{"table_column_names": []interface{}{"Title"}}},
+	}
+	output := map[string]any{"state": snapshot}
+	payload := map[string]any{"output_format": "chunks", "chunks": []map[string]any{{"text": "a"}}}
+
+	merged := withRunState(payload, output)
+	if len(merged) != 3 {
+		t.Fatalf("merged = %v, want the payload plus the state", merged)
+	}
+	if len(tableColumnNamesFromPayload(merged)) != 1 {
+		t.Fatalf("discovery lost the parser state through the payload narrowing: %v", merged["state"])
+	}
+	if _, ok := payload["state"]; ok {
+		t.Errorf("the run's own terminal payload must not be mutated")
+	}
+
+	// No run state (a payload a caller built by hand) stays as it is.
+	same := map[string]any{"chunks": []map[string]any{}}
+	if got := withRunState(same, map[string]any{}); len(got) != 1 {
+		t.Errorf("got %v, want the payload unchanged", got)
+	}
+}
+
+// tableColumnNamesFromPayload must work on the payload a REAL run produces, not
+// only on a hand-built one: the run state is what carries the columns an
+// upstream component discovered, and the terminal component emits its own
+// chunks alone. This is the shape processOutput actually receives.
+func TestTableColumnNamesFromPayload_RealRunPayload(t *testing.T) {
+	const (
+		compParser = "tablecolumns.RealStubParser"
+		compEnd    = "tablecolumns.RealStubEnd"
+	)
+	runtime.MustRegister(compParser, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return discoveredColumnsComponent{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(compEnd, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return traceChunkComponent{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	dsl := `{"dsl":{"components":{
+		"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["Parser:StubOnesHerald"]},
+		"Parser:StubOnesHerald":{"obj":{"component_name":"` + compParser + `","params":{}},"upstream":["begin"],"downstream":["Tokenizer:StubEnd"]},
+		"Tokenizer:StubEnd":{"obj":{"component_name":"` + compEnd + `","params":{}},"upstream":["Parser:StubOnesHerald"]}
+	},"path":["begin","Parser:StubOnesHerald","Tokenizer:StubEnd"],"graph":{"nodes":[]}}}`
+
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-table-columns", 0)
+	payload, _, err := svc.runPipelineWithDSL(t.Context(), dsl)
+	if err != nil {
+		t.Fatalf("runPipelineWithDSL: %v", err)
+	}
+	if got := tableColumnNamesFromPayload(payload); len(got) != 2 || got[0] != "Title" || got[1] != "Country" {
+		t.Fatalf("discovered columns lost through the real run: got %q, want [Title Country]", got)
+	}
+}
+
+// discoveredColumnsComponent publishes what the table parser publishes: the
+// columns it discovered on its file metadata, and no run-level passthrough.
+type discoveredColumnsComponent struct{}
+
+func (discoveredColumnsComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	return map[string]any{
+		"output_format": "json",
+		"file": map[string]any{
+			"name":               "table.csv",
+			"table_column_names": []any{"Title", "Country"},
+		},
+	}, nil
 }
 
 func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {

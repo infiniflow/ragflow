@@ -1418,7 +1418,30 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	if err != nil {
 		return nil, dsl, err
 	}
-	return payload, logDSL, nil
+	return withRunState(payload, output), logDSL, nil
+}
+
+// withRunState carries the run's per-component state snapshot onto the payload
+// a run hands to processOutput.
+//
+// ExtractPayload narrows the run result to the terminal component's own output
+// by construction, which drops the snapshot finalizeResult attaches at the top
+// level — and with it the only copy of what an upstream component discovered
+// mid-run (the Parser's discovered table columns). Copying rather than writing
+// into the payload keeps the run result itself unchanged.
+func withRunState(payload, output map[string]any) map[string]any {
+	if payload == nil || output["state"] == nil {
+		return payload
+	}
+	if _, ok := payload["state"]; ok {
+		return payload
+	}
+	merged := make(map[string]any, len(payload)+1)
+	for k, v := range payload {
+		merged[k] = v
+	}
+	merged["state"] = output["state"]
+	return merged
 }
 
 // buildLogDSL returns the DSL string recorded for a pipeline run. The PERSISTED
@@ -1505,15 +1528,15 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 }
 
 // tableColumnNamesFromPayload extracts the parser-discovered column names from
-// a run's terminal payload.
+// the payload a run hands to processOutput.
 //
 // The parser publishes them on its file metadata (file.table_column_names), but
 // a narrowing downstream component does not re-emit that map — the chunker and
 // tokenizer outputs carry only their own chunks (see
 // globals.GlobalMetadataKeys for why run-level fields live in CanvasState
 // instead of being threaded through every output). The parser's output is
-// therefore read from the run state snapshot, which finalizeResult attaches as
-// output["state"][<cpnID>] for every component. A payload that carries the file
+// therefore read from the run state snapshot, which runPipelineWithDSL carries
+// on the payload as payload["state"][<cpnID>]. A payload that carries the file
 // map directly (a caller driving processOutput without a run, e.g. a test) is
 // accepted too.
 func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
@@ -1523,30 +1546,25 @@ func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
 	if names := tableColumnNamesFromFileMap(pipelineOutput["file"]); len(names) > 0 {
 		return names
 	}
-	state, ok := pipelineOutput["state"].(map[string]any)
+	state, ok := pipelineOutput["state"].(map[string]map[string]any)
 	if !ok {
 		return nil
 	}
-	for _, cpnID := range sortedComponentIDs(state, component.ComponentNameParser+":") {
-		cpnState, _ := state[cpnID].(map[string]any)
-		if names := tableColumnNamesFromFileMap(cpnState["file"]); len(names) > 0 {
+	// Ascending component id, so a canvas with more than one Parser resolves to
+	// the same one on every run.
+	parserIDs := make([]string, 0, len(state))
+	for cpnID := range state {
+		if strings.HasPrefix(cpnID, component.ComponentNameParser+":") {
+			parserIDs = append(parserIDs, cpnID)
+		}
+	}
+	sort.Strings(parserIDs)
+	for _, cpnID := range parserIDs {
+		if names := tableColumnNamesFromFileMap(state[cpnID]["file"]); len(names) > 0 {
 			return names
 		}
 	}
 	return nil
-}
-
-// sortedComponentIDs returns the state-snapshot keys with the given prefix in
-// ascending order, so a read that picks one component's output is deterministic.
-func sortedComponentIDs(state map[string]any, prefix string) []string {
-	ids := make([]string, 0, len(state))
-	for id := range state {
-		if strings.HasPrefix(id, prefix) {
-			ids = append(ids, id)
-		}
-	}
-	sort.Strings(ids)
-	return ids
 }
 
 func tableColumnNamesFromFileMap(raw any) []string {
