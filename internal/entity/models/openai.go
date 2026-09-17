@@ -38,6 +38,10 @@ type OpenAIModel struct {
 	baseModel BaseModel
 }
 
+// openAITTSDefaultVoice mirrors Python's OpenAITTS.tts(text, voice="alloy")
+// default so chat TTS works without an explicit voice parameter.
+const openAITTSDefaultVoice = "alloy"
+
 // NewOpenAIModel creates a new OpenAI model instance.
 func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel {
 	return &OpenAIModel{
@@ -619,11 +623,9 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 
 	voice, ok := reqBody["voice"]
 	if !ok || voice == nil {
-		return nil, "", fmt.Errorf("voice is required")
-	}
-	voiceString, ok := voice.(string)
-	if !ok || strings.TrimSpace(voiceString) == "" {
-		return nil, "", fmt.Errorf("voice is required")
+		reqBody["voice"] = openAITTSDefaultVoice
+	} else if voiceString, isString := voice.(string); !isString || strings.TrimSpace(voiceString) == "" {
+		reqBody["voice"] = openAITTSDefaultVoice
 	}
 
 	streamFormat := ""

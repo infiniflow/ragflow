@@ -252,6 +252,15 @@ class OpenAITTS(HTTPBasedTTS):
         super().__init__(key, model_name, base_url)
 
 
+class OpenAIAPITTS(OpenAITTS):
+    _FACTORY_NAME = "OpenAI-API-Compatible"
+
+    def __init__(self, key, model_name, base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class SparkTTS(Base):
     _FACTORY_NAME = "XunFei Spark"
     STATUS_FIRST_FRAME = 0
