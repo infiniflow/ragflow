@@ -174,7 +174,7 @@ class Agent(LLM, ToolBase):
 
     async def _force_format_to_schema_async(self, text: str, schema_prompt: str, error: str) -> str:
         fmt_msgs, fit_error = self.fit_messages(
-            schema_prompt + "\n请修复答案并仅返回符合 Schema 的 JSON。",
+            schema_prompt + "\nFix the answer and return only JSON that conforms to the schema.",
             [{"role": "user", "content": json.dumps({"answer": text, "validation_error": error}, ensure_ascii=False)}],
             self.chat_mdl.max_length,
         )

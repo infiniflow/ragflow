@@ -1,7 +1,7 @@
 # Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""使用真实组件、模型分发和 JSON 库；隔离数据库、模型服务及无关导入。"""
+"""Exercise real components, model routing, and JSON libraries with external dependencies isolated."""
 
 import asyncio
 import importlib.util
@@ -58,7 +58,7 @@ def modules(monkeypatch):
         "rag.prompts.generator",
         citation_prompt=lambda *a: "",
         message_fit_in=lambda messages, budget: (0, deepcopy(messages)),
-        structured_output_prompt=lambda schema: f"\n按此 JSON Schema 输出：{schema}",
+        structured_output_prompt=lambda schema: f"\nReturn output that conforms to this JSON Schema: {schema}",
         tool_call_summary=lambda *a: "",
         citation_plus=lambda text: text,
         full_question=lambda *a, **k: "",
@@ -117,7 +117,7 @@ def component(request, modules):
     canvas = SimpleNamespace(canceled=False, globals={}, get_component=lambda _: {"downstream": []})
     canvas.is_canceled = lambda: canvas.canceled
     obj._canvas = canvas
-    obj._prepare_prompt_variables = lambda: ("系统提示", [{"role": "user", "content": "请审核订单"}], {})
+    obj._prepare_prompt_variables = lambda: ("System prompt", [{"role": "user", "content": "Review this order"}], {})
     obj._collect_tool_artifact_markdown = lambda **k: ""
 
     def configure(responses, retries=0, schema=None):
@@ -140,7 +140,7 @@ def component(request, modules):
 @pytest.mark.parametrize(
     ("answer", "error_field"),
     [
-        ({"decision": "approve", "amount": "很多"}, "amount"),
+        ({"decision": "approve", "amount": "many"}, "amount"),
         ({"decision": "approve"}, "amount"),
         ({"decision": "maybe", "amount": 50}, "decision"),
         ({"decision": "approve", "amount": 9999}, "amount"),
@@ -166,12 +166,14 @@ async def test_valid_and_repairable_json_is_preserved(component, answer):
 
 
 async def test_schema_error_is_repaired_with_feedback(component):
-    obj, provider = component(['{"decision":"approve","amount":"很多"}', json.dumps(VALID)], retries=1)
+    obj, provider = component(['{"decision":"approve","amount":"many"}', json.dumps(VALID)], retries=1)
     await obj.invoke_async()
     assert obj.output("structured") == VALID
     assert not obj.error()
     assert len(provider.calls) == 2
-    assert "amount" in json.dumps(provider.calls[1]["history"])
+    repair_request = json.dumps(provider.calls[1])
+    assert "Fix" in repair_request
+    assert "amount" in repair_request
     assert provider.calls[1]["history"] != provider.calls[0]["history"]
     assert provider.calls[1]["mode"] == "plain"
     assert provider.is_tools == bool(obj.tools)
@@ -214,7 +216,7 @@ async def test_local_schema_reference_is_validated(component):
 
 async def test_external_schema_reference_never_fetches_or_retries(component, monkeypatch):
     def forbid_network(*args, **kwargs):
-        pytest.fail("Schema 校验不得请求外部资源")
+        pytest.fail("Schema validation must not retrieve external resources")
 
     monkeypatch.setattr("urllib.request.urlopen", forbid_network)
     schema = {"type": "object", "properties": {"amount": {"$ref": "https://example.invalid/amount"}}}
@@ -260,10 +262,10 @@ async def test_provider_failure_during_repair_preserves_error(component, failure
 
 
 async def test_plain_output_path_is_unchanged(component):
-    obj, provider = component(["正常回答"])
+    obj, provider = component(["normal answer"])
     obj._param.outputs = {}
     await obj.invoke_async()
-    assert obj.output("content") == "正常回答"
+    assert obj.output("content") == "normal answer"
     assert not obj.error()
     assert len(provider.calls) == 1
 
@@ -379,7 +381,7 @@ async def test_canvas_only_schedules_downstream_after_valid_output(component, mo
     }
     canvas = canvas_module.Canvas(json.dumps(dsl), tenant_id="test-tenant", task_id="test-run")
     try:
-        events = [event async for event in canvas.run(query="请审核订单")]
+        events = [event async for event in canvas.run(query="Review this order")]
     finally:
         canvas._thread_pool.shutdown(wait=True)
 

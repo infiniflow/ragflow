@@ -390,9 +390,9 @@ class LLM(ComponentBase):
         schema = {key: value for key, value in schema.items() if key != "value"}
         validator_cls = validator_for(schema, default=None) if "$schema" in schema else Draft202012Validator
         if validator_cls is None:
-            raise SchemaError(f"不支持的结构化输出 Schema 版本：{schema['$schema']}")
+            raise SchemaError(f"Unsupported structured output schema version: {schema['$schema']}")
         validator_cls.check_schema(schema)
-        # 仅解析当前 Schema 内的引用，禁止自动读取网络或文件资源。
+        # Resolve only local schema references; never retrieve network or file resources.
         return validator_cls(schema, registry=Registry())
 
     @staticmethod
@@ -405,7 +405,7 @@ class LLM(ComponentBase):
         try:
             validator.validate(value)
         except ValidationError as error:
-            raise ValueError(f"结构化输出 {error.json_path}: {error.message}") from error
+            raise ValueError(f"Structured output {error.json_path}: {error.message}") from error
         return value
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str]:
@@ -488,7 +488,7 @@ class LLM(ComponentBase):
                     value = self._parse_structured_output(ans, validator)
                 except ValueError as exc:
                     error = str(exc)
-                    msg = [*msg, {"role": "assistant", "content": ans}, {"role": "user", "content": f"请修复以下错误并仅返回符合 Schema 的 JSON：{error}"}]
+                    msg = [*msg, {"role": "assistant", "content": ans}, {"role": "user", "content": f"Fix the following error and return only JSON that conforms to the schema: {error}"}]
                     continue
                 self.set_output("structured", value)
                 return
