@@ -553,6 +553,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		}
 		vec = embeddings[0]
 	}
+	contentLtks, err := tokenizer.Tokenize(in.Summary)
+	if err != nil || contentLtks == "" {
+		contentLtks = in.Summary
+	}
+	contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
+	if err != nil || contentSmLtks == "" {
+		contentSmLtks = contentLtks
+	}
 
 	// storeGet: skip if a nav_doc for this doc already exists with same summary.
 	existing, _, err := s.navSearch(ctx, in.TenantID, in.KbID,
@@ -572,8 +580,6 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 					if firstStringValue(existing[0]["content_ltks"]) != "" && firstStringValue(existing[0]["content_sm_ltks"]) != "" {
 						return nil // unchanged
 					}
-					searchText := map[string]interface{}{}
-					setNavSearchText(searchText, in.Summary)
 					return de.UpdateChunks(ctx,
 						map[string]interface{}{
 							"compile_kwd": []string{navCompileKwd},
@@ -581,7 +587,10 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 							"doc_id":      []string{in.DocID},
 							"kb_id":       in.KbID,
 						},
-						searchText, s.navIndexName(in.TenantID), in.KbID)
+						map[string]interface{}{
+							"content_ltks":    contentLtks,
+							"content_sm_ltks": contentSmLtks,
+						}, s.navIndexName(in.TenantID), in.KbID)
 				}
 			}
 		}
@@ -634,9 +643,10 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"doc_id":              in.DocID,
 			"doc_count_int":       1,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+			"content_ltks":        contentLtks,
+			"content_sm_ltks":     contentSmLtks,
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 		}
-		setNavSearchText(row, in.Summary)
 		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID)
 		return err
 	}
@@ -659,6 +669,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if summary == "" {
 		summary = in.Summary
 	}
+	clusterContentLtks, err := tokenizer.Tokenize(summary)
+	if err != nil || clusterContentLtks == "" {
+		clusterContentLtks = summary
+	}
+	clusterContentSmLtks, err := tokenizer.FineGrainedTokenize(clusterContentLtks)
+	if err != nil || clusterContentSmLtks == "" {
+		clusterContentSmLtks = clusterContentLtks
+	}
 	clusterRow := map[string]interface{}{
 		"id":                  navClusterID(in.TenantID, in.KbID, name),
 		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
@@ -671,9 +689,10 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_count_int":       1,
 		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
+		"content_ltks":        clusterContentLtks,
+		"content_sm_ltks":     clusterContentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 	}
-	setNavSearchText(clusterRow, summary)
 	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID)
 	if err != nil {
 		return err
@@ -694,9 +713,10 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_id":              in.DocID,
 		"doc_count_int":       1,
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+		"content_ltks":        contentLtks,
+		"content_sm_ltks":     contentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 	}
-	setNavSearchText(docRow, in.Summary)
 	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID)
 	return err
 }
@@ -991,6 +1011,14 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			}
 		}
 		description := "split of " + clusterName
+		contentLtks, err := tokenizer.Tokenize(description)
+		if err != nil || contentLtks == "" {
+			contentLtks = description
+		}
+		contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
+		if err != nil || contentSmLtks == "" {
+			contentSmLtks = contentLtks
+		}
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
 			"compile_kwd":         navCompileKwd,
@@ -1002,8 +1030,9 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			"doc_count_int":       spl.count,
 			"doc_ids_kwd":         spl.ids,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": description}),
+			"content_ltks":        contentLtks,
+			"content_sm_ltks":     contentSmLtks,
 		}
-		setNavSearchText(row, description)
 		// Representative vector: if any reparented child carried a vector, use it
 		// so the split cluster participates in KNN routing. This is a heuristic
 		// stand-in for Python's k-means centroid.
@@ -1364,22 +1393,6 @@ func payloadJSONNav(v map[string]interface{}) string {
 		return "{}"
 	}
 	return string(b)
-}
-
-// setNavSearchText stores the tokenized fields used by navigation keyword
-// search. content_with_weight is a stored display payload and is not indexed
-// by Elasticsearch, so it cannot serve the lexical search directly.
-func setNavSearchText(row map[string]interface{}, text string) {
-	coarse, err := tokenizer.Tokenize(text)
-	if err != nil || coarse == "" {
-		coarse = text
-	}
-	fine, err := tokenizer.FineGrainedTokenize(coarse)
-	if err != nil || fine == "" {
-		fine = coarse
-	}
-	row["content_ltks"] = coarse
-	row["content_sm_ltks"] = fine
 }
 
 // truncateString caps s to n runes (not bytes).
