@@ -24,9 +24,7 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
 // Compiled-structure rendering / normalization
-// ---------------------------------------------------------------------------
 
 func TestNormalizeKind(t *testing.T) {
 	cases := []struct {
@@ -54,9 +52,7 @@ func containsAll(s string, subs ...string) bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
 // navigate_tree routing
-// ---------------------------------------------------------------------------
 
 type stubRouter struct {
 	table       [][2]string
@@ -196,9 +192,9 @@ func TestNavigateTreePartialFailureIsInfra(t *testing.T) {
 	if got.EmptyReason != ReasonInfra {
 		t.Errorf("partial failure: reason = %q, want infra", got.EmptyReason)
 	}
-	// A failed descent has no Python counterpart to copy — Python lets the
-	// exception escape and navigation.py has no empty_reason for it — so this
-	// label is the port's own wording; only the XML shape must be Python's.
+	// A failed descent has no upstream counterpart to copy — the exception escapes upstream
+	// and there is no empty_reason for it — so this label is this file's own wording; only
+	// the XML shape is fixed.
 	if want := "<tree_navigation count=\"0\" error=\"nav tree descent failed\">\n</tree_navigation>"; got.Text != want {
 		t.Errorf("partial failure: text = %q, want %q", got.Text, want)
 	}
@@ -214,13 +210,11 @@ func TestNavigateTreePartialFailureIsInfra(t *testing.T) {
 	}
 }
 
-// TestNavigateTreeEmptyXMLMatchesPython pins the text each empty NavResult carries.
-// Python builds it in place: `count="0"` plus an `error="..."` attribute that is
-// OMITTED for a query-level miss (navigation.py:877 "no retriever", :880 "query is
-// required", :899 no attribute). The model does not read it — both sides replace
-// every empty_reason with their own note (action_session.py:869-876,
-// tool_executor.go:402) — but the NavResult value must match.
-func TestNavigateTreeEmptyXMLMatchesPython(t *testing.T) {
+// TestNavigateTreeEmptyXML pins the text each empty NavResult carries: `count="0"` plus an
+// `error="..."` attribute that is OMITTED for a query-level miss (present for "no retriever"
+// and "query is required"). The model does not read it — every empty_reason is replaced with
+// the tool's own note (tool_executor.go) — but the NavResult value must match.
+func TestNavigateTreeEmptyXML(t *testing.T) {
 	cases := []struct {
 		name string
 		got  NavResult
@@ -244,8 +238,8 @@ func TestNavigateTreeEmptyXMLMatchesPython(t *testing.T) {
 			"<tree_navigation count=\"0\">\n</tree_navigation>",
 		},
 		{
-			// Go-only state: Python's nav-tree route has no no_structure verdict,
-			// so this label is the port's own wording.
+			// A state with no upstream equivalent: the nav-tree route has no
+			// no_structure verdict, so this label is this file's own wording.
 			"no_structure",
 			NavigateTree(context.Background(), &stubRouter{nilResult: true}, NavTreeInput{
 				Query: "q", KbIDs: []string{"kb1"},
@@ -303,9 +297,7 @@ func TestNavigateTreeEscapesXML(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Compiled-structure parsing
-// ---------------------------------------------------------------------------
 
 func TestParseCompiledStructureGraphBlob(t *testing.T) {
 	rows := []StructureRow{{
@@ -373,9 +365,7 @@ func TestParseCompiledStructureEmptyKindsMatchesAll(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Knowledge-graph exploration
-// ---------------------------------------------------------------------------
 
 // TestExploreGraphShortCircuitsOnEmptyInput verifies the documented contract:
 // no query text or no bound datasets yields an empty ExploreResult (no engine
@@ -414,7 +404,7 @@ func (s stubTenantResolver) ResolveDocTenants(ctx context.Context, docIDs []stri
 	return out, nil
 }
 
-// TestResolveKGScopeGroupsByOwner mirrors Python _kg_scopes: documents are
+// TestResolveKGScopeGroupsByOwner: documents are
 // grouped by their real owning (kb, tenant) — which may be a KB outside the
 // caller's datasetIDs — rather than every bound dataset being searched with
 // the whole DocScope.
@@ -458,9 +448,8 @@ func TestResolveKGScopeGroupsByOwner(t *testing.T) {
 	}
 }
 
-// TestResolveKGScopeAppliesSessionDocScopeCeiling verifies Python's
-// scoped_doc_ids ceiling (exploration.py:_kg_scopes): the session doc_scope restricts
-// whatever scope the caller passed before ownership resolution.
+// TestResolveKGScopeAppliesSessionDocScopeCeiling verifies the session ceiling: the session
+// doc_scope restricts whatever scope the caller passed before ownership resolution.
 func TestResolveKGScopeAppliesSessionDocScopeCeiling(t *testing.T) {
 	got := resolveKGScope(SearchDeps{
 		TenantID:          "t1",
@@ -484,9 +473,7 @@ func TestResolveKGScopeNonNilEmptyExpandsNothing(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Knowledge-graph row parsing
-// ---------------------------------------------------------------------------
 
 func TestKgParseEntity_NameFallbacks(t *testing.T) {
 	// name wins.
@@ -564,9 +551,7 @@ func TestKgParseRelationEndpointsRequired(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // endpoint terms (original + lowercased, deduped)
-// ---------------------------------------------------------------------------
 
 func TestEndpointTerms(t *testing.T) {
 	got := endpointTerms([]string{"OmiyaSoft", "omiya", "", "Culdcept"})
@@ -583,9 +568,7 @@ func TestEndpointTerms(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Evidence collection: relevant entities + relations grouped by doc
-// ---------------------------------------------------------------------------
 
 func TestCollectEvidenceIDsByDocAndAlias(t *testing.T) {
 	entities := []kgEntity{
@@ -597,7 +580,7 @@ func TestCollectEvidenceIDsByDocAndAlias(t *testing.T) {
 	}
 	// Relevant set includes an alias ("Omiya") and the relation target ("Culdcept").
 	byDoc := collectEvidenceIDs(entities, relations, []string{"Omiya", "Culdcept"})
-	// Doc order is FIRST-SEEN — Python's dict insertion order (d1 before d2).
+	// Doc order is FIRST-SEEN (the order the docs were reached), d1 before d2.
 	if len(byDoc) != 2 || byDoc[0].DocID != "d1" || byDoc[1].DocID != "d2" {
 		t.Fatalf("doc order = %v, want [d1 d2]", byDoc)
 	}
@@ -634,9 +617,7 @@ func TestCollectEvidenceIDsDeduplicatesChunks(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // mention_count re-ranking (the dense-seed re-sort)
-// ---------------------------------------------------------------------------
 
 func TestMentionCountTypeCoercion(t *testing.T) {
 	cases := []struct {
@@ -669,9 +650,7 @@ func TestTopMentionCountSortsAndCaps(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // String-field helpers
-// ---------------------------------------------------------------------------
 
 func TestStrSliceField(t *testing.T) {
 	if got := strSliceField([]string{"a", "b"}); len(got) != 2 {
@@ -698,10 +677,9 @@ func TestStrOr(t *testing.T) {
 }
 
 // TestBuildTocTreeHierarchyFromRelations guards the navigate_structure relations
-// wiring: when relations are loaded (Python passes them into
-// _render_toc_drilldown / _build_toc_tree) the tree must expose the parent→child
-// hierarchy and a single root, instead of collapsing to isolated roots the way
-// an empty/nil relation list does. Mirrors Python _build_toc_tree.
+// wiring: when relations are loaded the tree must expose the parent→child hierarchy and a
+// single root, instead of collapsing to isolated roots the way an empty/nil relation list
+// does.
 func TestBuildTocTreeHierarchyFromRelations(t *testing.T) {
 	nodes := []structureNode{
 		{name: "root"},
@@ -746,11 +724,10 @@ func TestBuildTocTreeNoRelationsYieldsIsolatedRoots(t *testing.T) {
 
 // TestStructureGraphFromRawMissingFieldsStayEmpty pins the compiled-payload
 // defaults: a field a compiled row simply does not carry must read as absent, so
-// the renderers apply Python's defaults ("other" for a type, "related_to" for a
+// the renderers apply their defaults ("other" for a type, "related_to" for a
 // relation type) and a relation with a missing endpoint is DROPPED. fmt.Sprint(nil)
 // returns the non-empty string "<nil>", which defeated all three: the model read
-// "- Name (<nil>): <nil>" and the tree grew a phantom edge to "<nil>"
-// (navigation.py:1714-1715, 1783-1788).
+// "- Name (<nil>): <nil>" and the tree grew a phantom edge to "<nil>".
 func TestStructureGraphFromRawMissingFieldsStayEmpty(t *testing.T) {
 	rawEntities := []map[string]any{
 		{"name": "Bare"},                    // no type, no description
@@ -782,8 +759,8 @@ func TestStructureGraphFromRawMissingFieldsStayEmpty(t *testing.T) {
 		t.Errorf("relation type = %q, want empty so the renderer defaults it to \"related_to\"", rels[0].relType)
 	}
 
-	// End to end: the outline the model reads must show the Python defaults, not
-	// "<nil>" and not the dropped relations.
+	// End to end: the outline the model reads must show the defaults, not "<nil>" and not
+	// the dropped relations.
 	outline := renderOutline(structureNodesFromEntities(nodes), rels)
 	if strings.Contains(outline, "<nil>") {
 		t.Fatalf("outline leaks <nil>:\n%s", outline)
@@ -799,10 +776,9 @@ func TestStructureGraphFromRawMissingFieldsStayEmpty(t *testing.T) {
 	}
 }
 
-// TestStructureDocSegmentFormat locks the per-doc XML shape navigateStructures
-// renders for each routed/requested document, mirroring Python's
-// <doc rank doc_id doc_title="" entities relations> element (navigation.py
-// _navigate_structure_impl, where doc_title is always empty).
+// TestStructureDocSegmentFormat locks the per-doc XML shape navigateStructures renders for
+// each routed/requested document: the <doc rank doc_id doc_title="" entities relations>
+// element, where doc_title is always empty.
 func TestStructureDocSegmentFormat(t *testing.T) {
 	nodes := []structureNode{{name: "N1"}, {name: "N2"}}
 	rels := []structureRel{{from: "N0", to: "N1"}}
@@ -872,7 +848,7 @@ func TestHasDistinctNodeVectors(t *testing.T) {
 	}) {
 		t.Error("distinct per-node vectors -> distinct")
 	}
-	// One vector-bearing among several is treated as not-distinct (Python: <2 distinct).
+	// One vector-bearing among several is treated as not-distinct (fewer than two distinct).
 	if hasDistinctNodeVectors([]structureNode{
 		{name: "a", vec: []float64{1, 2}},
 		{name: "b"},
@@ -994,9 +970,9 @@ func assertKeptNodeOrder(t *testing.T, outline string) {
 // three selection strategies. kept drives the rendered outline, chunkPaths (first
 // writer wins for a chunk covered by several nodes) and the capped chunk list
 // whose snippets reach the model, so an arbitrary order hands back a different
-// outline AND a different chunk subset on every run. Python iterates a kept_names
-// SET (navigation.py:1660, 1673, 1594) — arbitrary, and hash-randomised per
-// process — so there is no canonical order to mirror; the port sorts the names.
+// outline AND a different chunk subset on every run. Iterating the kept set gives an
+// arbitrary order that is not even reproducible across runs (hash-randomised per process),
+// so there is no canonical order to inherit; the names are sorted instead.
 func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 	nodes := []structureNode{
 		{name: "Root", nodeType: "tree_node", desc: "root node", sourceChunkIDs: []string{"r1", "shared"}},
@@ -1028,7 +1004,7 @@ func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 		if !reflect.DeepEqual(got.chunkPaths, want) {
 			t.Errorf("chunkPaths = %v, want %v", got.chunkPaths, want)
 		}
-		// Snippets are capped at structMaxChunks (=4, Python _STRUCT_MAX_CHUNKS)
+		// Snippets are capped at structMaxChunks (=4)
 		// in kept order, so "g1" (Gamma) and "r1" (Root sorts last) sit outside
 		// the stable, repeatable window.
 		if !strings.Contains(got.outline, "[chunk a1]") || strings.Contains(got.outline, "[chunk g1]") || strings.Contains(got.outline, "[chunk r1]") {
@@ -1100,8 +1076,8 @@ func TestNavigationToolsReportEmptyWhenUncompiled(t *testing.T) {
 }
 
 func TestNavigateStructureDocRejectsForeignDocument(t *testing.T) {
-	// Python _load_compiled_structure: a doc_id outside the bound datasets
-	// yields no structure, so nothing from the other dataset is ever read.
+	// A doc_id outside the bound datasets yields no structure, so nothing from the other
+	// dataset is ever read.
 	res, _ := navigateStructures(context.Background(), "t", "q", []string{"foreign-doc"}, "catalog", nil, SearchDeps{
 		KbIDs:         []string{"kb"},
 		DocIDVerifier: stubVerifier{known: map[string]bool{"mine": true}},
@@ -1115,15 +1091,9 @@ func TestNavigateStructureDocRejectsForeignDocument(t *testing.T) {
 	}
 }
 
-// TestIndexNameForFallsBackToRagflowPrefix pins the index-name seam fix: Python
-// reads search.index_name (navigation.py:_navigate_structure_impl); the RAGFlow default is
-// "ragflow_<tenant_id>", so an empty configured name falls back to that, while a
-// tenant override is honoured verbatim.
-
-// TestIndexNameForFallsBackToRagflowPrefix pins the index-name seam fix: Python
-// reads search.index_name (navigation.py:_navigate_structure_impl); the RAGFlow default is
-// "ragflow_<tenant_id>", so an empty configured name falls back to that, while a
-// tenant override is honoured verbatim.
+// TestIndexNameForFallsBackToRagflowPrefix pins the index-name seam: the configured search
+// index name is used when set; otherwise the default is "ragflow_<tenant_id>", so an empty
+// configured name falls back to that, while a tenant override is honoured verbatim.
 func TestIndexNameForFallsBackToRagflowPrefix(t *testing.T) {
 	if got := indexNameFor("tenantA", ""); got != "ragflow_tenantA" {
 		t.Errorf("empty configured = %q, want ragflow_tenantA", got)
@@ -1133,22 +1103,15 @@ func TestIndexNameForFallsBackToRagflowPrefix(t *testing.T) {
 	}
 }
 
-// TestNavigateStructuresEmptyDocIDsRoutesViaRouter pins the empty-doc_id vector
-// routing fix: mirroring Python _navigate_structure_impl(:1012), a direct call
-// with no doc_ids routes through the NavTreeRouter first (search_dataset_layers)
-// instead of immediately returning MISS. The tool path still passes non-empty
-// doc_ids and must NOT consult the router.
-
-// TestNavigateStructuresEmptyDocIDsRoutesViaRouter pins the empty-doc_id vector
-// routing fix: mirroring Python _navigate_structure_impl(:1012), a direct call
-// with no doc_ids routes through the NavTreeRouter first (search_dataset_layers)
-// instead of immediately returning MISS. The tool path still passes non-empty
-// doc_ids and must NOT consult the router.
+// TestNavigateStructuresEmptyDocIDsRoutesViaRouter pins the empty-doc_id vector routing: a
+// direct call with no doc_ids routes through the NavTreeRouter first instead of immediately
+// returning MISS. The tool path still passes non-empty doc_ids and must NOT consult the
+// router.
 func TestNavigateStructuresEmptyDocIDsRoutesViaRouter(t *testing.T) {
 	router := &stubNavRouter{docs: [][2]string{{"d1", "summary"}}}
 	// Empty doc_ids + router => router consulted (it then returns ReasonNoDoc
 	// because no engine-backed structure surfaces in the test env, identical to
-	// the Python post-route empty result).
+	// the post-route empty result).
 	if _, _ = navigateStructures(context.Background(), "t", "q", []string{}, "catalog", router, SearchDeps{KbIDs: []string{"kb"}}); !router.called {
 		t.Fatal("empty docIDs should route via NavTreeRouter, but router was not called")
 	}
@@ -1165,10 +1128,9 @@ func TestNavigateStructuresEmptyDocIDsRoutesViaRouter(t *testing.T) {
 }
 
 // TestNavigateTreeRoutesWithinSessionDocScope pins that the nav-tree route runs
-// inside the session document scope. Python's _exec_navigate_tree does not thread
-// args["doc_scope"], but _navigate_tree_impl routes through _nav_search_titled,
-// which ceilings with tools.scoped_doc_ids(None) — i.e. the session doc_scope
-// (navigation.py:_nav_search_titled). Dropping it routed over the whole dataset.
+// inside the session document scope. args["doc_scope"] is not threaded into the tree route,
+// but the routing ceilings with the session doc_scope — dropping it routed over the whole
+// dataset.
 func TestNavigateTreeRoutesWithinSessionDocScope(t *testing.T) {
 	router := &stubNavRouter{docs: [][2]string{{"d1", "summary"}}}
 	NavigateTree(context.Background(), router, NavTreeInput{

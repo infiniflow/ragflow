@@ -66,8 +66,8 @@ func TestOuterStreamMuxRoutesThinkThenAnswer(t *testing.T) {
 	}
 }
 
-// Python drops outer text once the terminal tool fired, because what follows is
-// the aggregate tool result and the answer already streamed from inside.
+// Outer text is dropped once the terminal tool fired, because what follows is the aggregate
+// tool result and the answer already streamed from inside.
 func TestOuterStreamMuxDropsTextAfterTerminalFired(t *testing.T) {
 	mux, got := newTestMux()
 	mux.markTerminal()
@@ -142,8 +142,8 @@ func TestQuestionKeywordsSeparatesNumbers(t *testing.T) {
 }
 
 func TestCacheSimilarCollapsesReask(t *testing.T) {
-	// Python's observed re-ask: "legal population" → "estimated population of
-	// Paris in 2019" (overlap 0.75 while numbers match).
+	// An observed re-ask: "legal population" → "estimated population of Paris in 2019"
+	// (overlap 0.75 while numbers match).
 	a := questionKeywords("population of Paris 2019")
 	b := questionKeywords("legal population of Paris in 2019")
 
@@ -192,7 +192,7 @@ func TestCacheLookupMissesUnrelatedQuestion(t *testing.T) {
 }
 
 func TestCacheReuseBlockedAfterInsufficientRound(t *testing.T) {
-	// Python :848-852 — when the last round was not SUFFICIENT the caller is
+	// when the last round was not SUFFICIENT the caller is
 	// asking again for more evidence, so the cached answer must not be reused.
 	c := NewRAGCache()
 	c.Store("population of Paris 2019", "2.1 million")
@@ -209,10 +209,9 @@ func TestCacheReuseBlockedAfterInsufficientRound(t *testing.T) {
 }
 
 func TestRagDefaultsToPerTurnCache(t *testing.T) {
-	// Go mirrors Python's default-on, per-turn _rag_cache: Rag auto-builds a
-	// RAGCache when deps.Cache is nil, so caching is never off. Two independent
-	// instances never share, matching Python's per-turn RAGTools._rag_cache
-	// (rebuilt every turn).
+	// Caching is default-on and per-turn: Rag auto-builds a RAGCache when deps.Cache is nil, so
+	// caching is never off, and two independent instances never share (the cache is rebuilt
+	// every turn).
 	a := NewRAGCache()
 	b := NewRAGCache()
 	a.Store("population of Paris 2019", "2.1 million")
@@ -284,7 +283,7 @@ func TestResolveEffectiveQuestionHandlesEmpty(t *testing.T) {
 
 // TestResearchStatusTrailerStopsAfterTwoUnanswerable asserts that once the
 // shared counter has reached 2, Rag() appends the "STOP calling rag again"
-// trailing sentence (Python rag:902-929) for an INSUFFICIENT verdict — the
+// trailing sentence for an INSUFFICIENT verdict — the
 // visible effect of the consecutive-unanswerable guard across multiple outer
 // rag() calls.
 func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
@@ -442,8 +441,7 @@ func TestNilAnswerSinkIsInert(t *testing.T) {
 
 func TestGetCitationGuidelinesUsesDefaultWithoutOverride(t *testing.T) {
 	got := GetCitationGuidelines("")
-	// The default is the embedded citation_prompt.md (mirrors Python
-	// load_prompt("citation_prompt")). It must contain the citation-rules body.
+	// The default is the embedded citation_prompt.md. It must contain the citation-rules body.
 	if !strings.Contains(got, "# Citation Requirements:") ||
 		!strings.Contains(got, "Place citations at the end of sentences") {
 		t.Fatalf("got %q, want the default citation rules", got)
@@ -451,9 +449,8 @@ func TestGetCitationGuidelinesUsesDefaultWithoutOverride(t *testing.T) {
 }
 
 func TestGetCitationGuidelinesHonoursOverride(t *testing.T) {
-	// Python renders the user's template and STILL appends the
-	// illustrative-IDs caveat after it (generator.py:227-228 concatenates the
-	// suffix onto whatever template rendered).
+	// The user's template is rendered and the illustrative-IDs caveat is STILL appended after
+	// it.
 	got := GetCitationGuidelines("Cite as [n].")
 	if !strings.HasPrefix(got, "Cite as [n].") {
 		t.Fatalf("got %q, want the override first", got)
@@ -662,9 +659,8 @@ func TestRagFlightSharesConcurrentIdenticalCalls(t *testing.T) {
 // TestOuterReactSessionToolCallWaitsOnInFlightRag pins the ToolCall-level
 // behavior: a rag call whose question already has an in-progress execution
 // blocks and replays that execution's answer WITHOUT running its own graph —
-// no second publish, no second call record (Python's asyncio.gather runs both
-// duplicates fully and the terminal fold discards the loser; this wait is the
-// approved Go-side single-flight, see ragFlight).
+// no second publish, no second call record (running both duplicates fully and discarding the
+// loser is wasted work; this wait is the single-flight, see ragFlight).
 func TestOuterReactSessionToolCallWaitsOnInFlightRag(t *testing.T) {
 	spec := harness.GetMode("naive")
 	session := &outerReactSession{

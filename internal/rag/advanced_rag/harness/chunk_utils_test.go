@@ -18,8 +18,8 @@ package harness
 
 import "testing"
 
-// TestSnippet covers Python _snippet parity: trim both ends, cut to limit,
-// right-trim ALL trailing whitespace, then add "...".
+// TestSnippet: trim both ends, cut to limit, right-trim ALL trailing whitespace, then add
+// "...".
 func TestSnippet(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -40,8 +40,8 @@ func TestSnippet(t *testing.T) {
 		{"hello\n\nworld", 6, "hello..."},
 		// Mixed trailing whitespace after the cut.
 		{"hello \t\n world", 6, "hello..."},
-		// CJK chars are multibyte in UTF-8; the limit is in code points
-		// (Python str semantics), so no rune is ever split. "中文" (2 code
+		// CJK chars are multibyte in UTF-8; the limit is in code points, so no rune is ever
+		// split. "中文" (2 code
 		// points) fits within n=2 and stays intact.
 		{"  中文  ", 2, "中文"},
 		// Truncation lands on a code-point boundary: first 3 of 4 CJK chars.

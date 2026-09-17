@@ -22,8 +22,8 @@ func memChunk(content, docID, chunkID string) map[string]any {
 	return map[string]any{"content": content, "doc_id": docID, "chunk_id": chunkID}
 }
 
-// Python memory.search returns the chunks that share enough of the query's
-// significant terms; unrelated queries return nothing.
+// The memory search returns the chunks that share enough of the query's significant terms;
+// unrelated queries return nothing.
 func TestMemorySearchReturnsRelevant(t *testing.T) {
 	kb := &Kbinfos{Memory: []map[string]any{
 		memChunk("Rifampicin is an antibiotic used to treat tuberculosis.", "d1", "c1"),
@@ -48,7 +48,7 @@ func TestMemorySearchReturnsRelevant(t *testing.T) {
 }
 
 // The normalized overlap bar must drop a chunk that matches too few of a long
-// query's terms (mirrors Python's (hits/_n) >= min_ratio guard).
+// query's terms (the (hits/_n) >= min_ratio guard).
 func TestMemorySearchRatioBar(t *testing.T) {
 	kb := &Kbinfos{Memory: []map[string]any{
 		memChunk("Rifampicin is an antibiotic.", "d1", "c1"),
@@ -67,7 +67,7 @@ func TestMemorySearchRatioBar(t *testing.T) {
 	}
 }
 
-// CJK queries match via character 3-grams, just like the Python implementation.
+// CJK queries match via character 3-grams.
 func TestMemorySearchCJKTrigram(t *testing.T) {
 	kb := &Kbinfos{Memory: []map[string]any{
 		memChunk("利福平是一种抗生素，用于治疗结核病。", "d1", "c1"),
@@ -94,16 +94,15 @@ func TestMemorySearchRanking(t *testing.T) {
 	}
 }
 
-// chunkText must prefer "content_with_weight" over "content", mirroring Python
-// harness/chunk_utils._chunk_text (content_with_weight or content or text), so a
-// chunk carrying both yields the weighted text.
+// chunkText must prefer "content_with_weight" over "content" (content_with_weight or content
+// or text), so a chunk carrying both yields the weighted text.
 func TestChunkTextPrefersWeighted(t *testing.T) {
 	c := map[string]any{
 		"content":             "primary text",
 		"content_with_weight": "weighted text",
 	}
 	if got := chunkText(c); got != "weighted text" {
-		t.Errorf("chunkText = %q, want %q (Python prefers content_with_weight)", got, "weighted text")
+		t.Errorf("chunkText = %q, want %q (content_with_weight is preferred)", got, "weighted text")
 	}
 
 	// Falls back to content when content_with_weight is absent/empty.
@@ -133,13 +132,13 @@ func TestMemoryGrepLimitAppliesToShortChunks(t *testing.T) {
 		t.Errorf("hit content = %v, want the whole short chunk", hits[0]["content"])
 	}
 
-	// limit <= 0 is NOT normalized to the default: Python's grep has no such
-	// guard, so the `len(hits) >= limit` check fires on the first hit.
+	// limit <= 0 is NOT normalized to the default: there is no such guard, so the
+	// `len(hits) >= limit` check fires on the first hit.
 	if got := len(MemoryGrep(kb, []string{"rifampicin"}, 0)); got != 1 {
-		t.Errorf("limit=0 hits = %d, want 1 (Python grep does not normalize limit)", got)
+		t.Errorf("limit=0 hits = %d, want 1 (the limit is not normalized)", got)
 	}
 
-	// Python's default (6) is passed explicitly and caps at 6.
+	// The default (6) is passed explicitly and caps at 6.
 	if got := len(MemoryGrep(kb, []string{"rifampicin"}, grepMaxChunks)); got != grepMaxChunks {
 		t.Errorf("default-limit hits = %d, want %d", got, grepMaxChunks)
 	}

@@ -25,19 +25,16 @@ import (
 
 // Raw-chunk memory store.
 //
-// Mirrors Python harness/memory.py, which maintains the lossless store backing
-// the (lossy) kbinfos.Chunks list that feeds the LLM. Retrieval narrows chunks
-// to the sentences that answer the current query, so the raw text has to be
-// kept somewhere: a later gap query often needs a fact the earlier narrowing
-// already threw away.
+// The lossless store backing the (lossy) chunk list that feeds the LLM. Retrieval narrows
+// chunks to the sentences that answer the current query, so the raw text has to be kept
+// somewhere: a later gap query often needs a fact the earlier narrowing already threw away.
 //
 // The store lives on Kbinfos.Memory so it travels with the request.
 
 const (
-	// grepMaxChunks is Python memory.grep's default cap (_GREP_MAX_CHUNKS = 6).
-	// MemoryGrep takes the limit explicitly and does NOT substitute this for a
-	// non-positive value (Python has no such guard), so callers that want the
-	// Python default pass it.
+	// grepMaxChunks is the default cap for the memory grep. MemoryGrep takes the limit
+	// explicitly and does NOT substitute this for a non-positive value (there is no such
+	// guard), so callers that want the default pass it.
 	grepMaxChunks = 6
 	// grepMaxSentences caps sentences kept per chunk (hit + context).
 	grepMaxSentences = 4
@@ -47,12 +44,11 @@ const (
 	// answers often live in short chunks.
 	shortChunkChars = 200
 
-	// MemorySearch tuning — mirror Python memory.search defaults.
+	// MemorySearch tuning — the search defaults.
 	memoryDefaultTopN = 6
-	// memoryMinRatio: a chunk is relevant when it shares >= 1 term AND >= this
-	// fraction of the query's significant terms (normalized overlap bar so CN /
-	// EN queries behave alike). Python's min_overlap param is declared but
-	// unused in search(), so only the ratio matters.
+	// memoryMinRatio: a chunk is relevant when it shares >= 1 term AND >= this fraction of
+	// the query's significant terms (normalized overlap bar so CN / EN queries behave alike).
+	// Only the ratio matters; the absolute min_overlap parameter is not consulted.
 	memoryMinRatio = 0.12
 	// memoryMaxTerms caps how many significant terms we extract from a query.
 	memoryMaxTerms = 18
@@ -72,7 +68,7 @@ var (
 	reDigits = regexp.MustCompile(`\d+`)
 )
 
-// memoryStopwords mirrors Python memory._STOPWORDS: dropped from Latin query
+// memoryStopwords: dropped from Latin query
 // terms so "what / the / is" style words do not dominate the overlap score.
 var memoryStopwords = map[string]struct{}{
 	"what": {}, "which": {}, "how": {}, "many": {}, "much": {}, "does": {},
@@ -86,16 +82,15 @@ var memoryStopwords = map[string]struct{}{
 	"your": {},
 }
 
-// MemoryAdd mirrors Python memory.add: merges raw retrieved chunks into the
+// MemoryAdd: merges raw retrieved chunks into the
 // central store, losslessly, skipping chunks already present and those with no
 // text.
 func MemoryAdd(kb *Kbinfos, chunks []map[string]any) {
 	if kb == nil || len(chunks) == 0 {
 		return
 	}
-	// One critical section: memory.add is an await-free stretch in Python, so
-	// asyncio can never interleave two sessions' adds into it (the pool is shared
-	// across a round's concurrent sessions — see Kbinfos.Admit).
+	// One critical section: the add is a single stretch that cannot be interleaved (the pool
+	// is shared across a round's concurrent sessions — see Kbinfos.Admit).
 	kb.mu.Lock()
 	defer kb.mu.Unlock()
 	seen := make(map[string]struct{}, len(kb.Memory))
@@ -120,7 +115,7 @@ func MemoryAdd(kb *Kbinfos, chunks []map[string]any) {
 	}
 }
 
-// MemorySize mirrors Python memory.size.
+// MemorySize
 func MemorySize(kb *Kbinfos) int {
 	if kb == nil {
 		return 0
@@ -128,7 +123,7 @@ func MemorySize(kb *Kbinfos) int {
 	return len(kb.Memory)
 }
 
-// MemoryClear mirrors Python memory.clear.
+// MemoryClear
 func MemoryClear(kb *Kbinfos) {
 	if kb != nil {
 		kb.mu.Lock()
@@ -137,17 +132,16 @@ func MemoryClear(kb *Kbinfos) {
 	}
 }
 
-// MemoryGrep mirrors Python memory.grep: returns memory chunks containing any of
+// MemoryGrep: returns memory chunks containing any of
 // terms, narrowed to the matching sentence plus a small context window.
 //
 // terms are plain strings (entities / numbers / key phrases) as emitted by the
 // analysis LLM. Each returned chunk carries a narrowed "content" so the caller
 // can splice it straight into an evidence list. Empty on no-hit / no-memory.
 //
-// limit is the maximum number of chunks returned and is NOT normalized: Python's
-// grep has no such guard, so a limit <= 0 makes the `len(hits) >= limit` check
-// fire on the first hit (at most one chunk comes back). Callers wanting Python's
-// default pass grepMaxChunks.
+// limit is the maximum number of chunks returned and is NOT normalized: there is no such
+// guard, so a limit <= 0 makes the `len(hits) >= limit` check fire on the first hit (at most
+// one chunk comes back). Callers wanting the default pass grepMaxChunks.
 func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 	if kb == nil || len(kb.Memory) == 0 || len(terms) == 0 {
 		return nil
@@ -184,10 +178,8 @@ func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 					"doc_id":   c["doc_id"],
 					"chunk_id": c["chunk_id"],
 				})
-				// This branch continues past the shared cap below, so enforce the
-				// limit here too — otherwise a memory store full of matching short
-				// chunks comes back whole. Python's memory.grep enforces it in the
-				// same place.
+				// This branch continues past the shared cap below, so enforce the limit here too —
+				// otherwise a memory store full of matching short chunks comes back whole.
 				if len(hits) >= limit {
 					break
 				}
@@ -222,7 +214,7 @@ func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 	return hits
 }
 
-// compileTerms mirrors Python memory.grep's pattern construction: the escaped
+// compileTerms: pattern construction: the escaped
 // term (word-anchored when it is long enough and wholly alphanumeric) plus the
 // leading-stem prefix pattern used as a fallback.
 func compileTerms(terms []string) (patterns, prefixPatterns []*regexp.Regexp) {
@@ -246,7 +238,7 @@ func compileTerms(terms []string) (patterns, prefixPatterns []*regexp.Regexp) {
 	return patterns, prefixPatterns
 }
 
-// escapeTerm mirrors Python _escape_term: strip surrounding punctuation, escape
+// escapeTerm: strip surrounding punctuation, escape
 // regex metacharacters, then anchor on word boundaries — except for CJK, where
 // a \b anchor would never match.
 func escapeTerm(term string) string {
@@ -269,7 +261,7 @@ func escapeTerm(term string) string {
 	return escaped
 }
 
-// sentenceSpanWindow mirrors Python _sentence_span_window: the hit sentence plus
+// sentenceSpanWindow: the hit sentence plus
 // up to one neighbour on each side, clamped to a total length.
 func sentenceSpanWindow(sents []string, idx int) []string {
 	if idx < 0 || idx >= len(sents) {
@@ -304,13 +296,13 @@ func containsStr(ss []string, s string) bool {
 	return false
 }
 
-// MemorySearch mirrors Python memory.search: relevance-ranked retrieval over the
+// MemorySearch: relevance-ranked retrieval over the
 // raw-chunk memory store (a retrieval-reuse cache, NOT a noise-injection source).
 // Unlike MemoryGrep (loose keyword hit) it keeps only chunks whose overlap with the
 // query's SIGNIFICANT terms clears a normalized bar, so a fact retrieved earlier can
 // be reused instead of re-querying the index.
 //
-// Language-agnostic term extraction (mirrors Python _significant_terms):
+// Language-agnostic term extraction:
 //   - numbers kept verbatim;
 //   - CJK runs split into character 3-grams (no word boundaries exist);
 //   - Latin alphanumeric runs lowercased, stopword-filtered, len >= 3.
@@ -364,7 +356,7 @@ func MemorySearch(kb *Kbinfos, query string, topN int, minRatio float64) []map[s
 	if len(scored) == 0 {
 		return nil
 	}
-	// Rank by hit count desc, then text length desc (Python: (-hits, -len)).
+	// Rank by hit count desc, then text length desc.
 	sort.SliceStable(scored, func(i, j int) bool {
 		if scored[i].hits != scored[j].hits {
 			return scored[i].hits > scored[j].hits
@@ -391,7 +383,7 @@ func MemorySearch(kb *Kbinfos, query string, topN int, minRatio float64) []map[s
 	return out
 }
 
-// significantTerms mirrors Python memory._significant_terms: language-agnostic
+// significantTerms: language-agnostic
 // significant-term extraction, de-duplicated and capped at memoryMaxTerms.
 func significantTerms(text string) []string {
 	var out []string
@@ -494,10 +486,9 @@ func (m termMatcher) matches(text string) bool {
 	}
 }
 
-// IsStopword reports whether w is one of Python memory._STOPWORDS.
+// IsStopword reports whether w is one of the shared stopwords.
 //
-// Go's fan-out needs it because Python aliases the same set as
-// _FANOUT_STOPWORDS (agentic_rag_graph.py:_expand_fanouts) when filtering candidate terms.
+// The fan-out needs it because the same set filters candidate terms.
 func IsStopword(w string) bool {
 	_, ok := memoryStopwords[w]
 	return ok

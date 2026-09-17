@@ -18,16 +18,10 @@ package harness
 
 import "testing"
 
-// TestPorterStemMatchesNLTK pins porterStem against nltk.stem.porter's
-// NLTK_EXTENSIONS output (PorterStemmer().stem), collected with
-//
-//	from nltk.stem import PorterStemmer
-//	print(PorterStemmer().stem(word))
-//
-// in production's environment. Every pair below is ground truth, not
-// aspiration: the keyword-narrowing stem match (keywordForms/_sentence_stems)
-// must produce Python-identical stems or the narrow keeps different sentences
-// than Python does.
+// TestPorterStemMatchesNLTK pins porterStem against nltk.stem.porter's NLTK_EXTENSIONS output
+// (PorterStemmer().stem), collected in production's environment. Every pair below is ground
+// truth, not aspiration: the keyword-narrowing stem match (keywordForms/_sentence_stems) must
+// produce identical stems or the narrow keeps different sentences.
 func TestPorterStemMatchesNLTK(t *testing.T) {
 	cases := []struct{ word, want string }{
 		// Step-1a/1b regulars.
@@ -84,8 +78,7 @@ func TestPorterStemMatchesNLTK(t *testing.T) {
 }
 
 // TestStemUsesPorter pins the seam: the package's stem() (the one
-// keywordForms/_sentence_stems call) is the Porter stemmer, matching Python
-// text_processing._stem's nltk branch.
+// keywordForms/_sentence_stems call) is the Porter stemmer.
 func TestStemUsesPorter(t *testing.T) {
 	if stem("nominations") != "nomin" {
 		t.Errorf("stem(nominations) = %q, want the Porter stem \"nomin\"", stem("nominations"))

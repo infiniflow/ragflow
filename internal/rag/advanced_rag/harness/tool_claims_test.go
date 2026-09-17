@@ -74,10 +74,9 @@ func resetClaimCaches() {
 	compilationMu.Unlock()
 }
 
-// TestRecallDocClaimHitsFiltersAndMaps pins the store contract and the output
-// mapping of the per-document claim leg (Python navigation.py:_recall_claim_hits):
-// doc-scope + claim-row filters, sorted compile_kwd when kinds are given, and
-// hits shaped as {chunk_id, score, rank, name, description-or-name, evidence}.
+// TestRecallDocClaimHitsFiltersAndMaps pins the store contract and the output mapping of the
+// per-document claim leg: doc-scope + claim-row filters, sorted compile_kwd when kinds are
+// given, and hits shaped as {chunk_id, score, rank, name, description-or-name, evidence}.
 func TestRecallDocClaimHitsFiltersAndMaps(t *testing.T) {
 	resetClaimCaches()
 	de := &recordingClaimEngine{rows: []map[string]interface{}{
@@ -99,7 +98,7 @@ func TestRecallDocClaimHitsFiltersAndMaps(t *testing.T) {
 	if h.Name != "The tower opened in 1889" {
 		t.Errorf("Name = %q", h.Name)
 	}
-	// Python: description = h["description"] or h["name"].
+	// The description falls back to the name.
 	if h.Description != h.Name {
 		t.Errorf("Description = %q, want the name fallback", h.Description)
 	}
@@ -175,8 +174,8 @@ func TestRecallDocClaimHitsDenseLeg(t *testing.T) {
 
 // TestRecallDocClaimHitsMemo pins the (doc_id, query) memo: the drill re-issues
 // navigate_structure, so the same pair must not cost two more store
-// round-trips, while a different query or doc must miss. Empty results are NOT
-// cached (Python returns before the cache write).
+// round-trips, while a different query or doc must miss. Empty results are NOT cached (the
+// return happens before the cache write).
 func TestRecallDocClaimHitsMemo(t *testing.T) {
 	resetClaimCaches()
 	de := &recordingClaimEngine{rows: []map[string]interface{}{
@@ -252,10 +251,9 @@ func TestClaimAggRouterClaimsDecide(t *testing.T) {
 	}
 }
 
-// TestClaimAggRouterDocScope pins the doc_scope filter: out-of-scope documents
-// never surface, and a scope that empties the claim leg falls back to the
-// chunk leg (Python filters the store condition, so a scoped miss is an empty
-// leg, not a routing verdict).
+// TestClaimAggRouterDocScope pins the doc_scope filter: out-of-scope documents never surface,
+// and a scope that empties the claim leg falls back to the chunk leg (the store condition is
+// filtered, so a scoped miss is an empty leg, not a routing verdict).
 func TestClaimAggRouterDocScope(t *testing.T) {
 	resetClaimCaches()
 	de := &recordingClaimEngine{rows: []map[string]interface{}{
@@ -323,11 +321,10 @@ func (r *fallbackRouter) Route(_ context.Context, _, _, _ string, _ []string, _ 
 	return r.next, nil
 }
 
-// TestPublishClaimHits pins the evidence-pool publish (Python
-// _publish_claim_hits): one pseudo chunk per claim under the SAME
-// "claim_"+md5(doc:name) id the session prefetch writes, verbatim evidence
-// capped at ClaimEvidenceChars, the claim's own chunk pointer as
-// source_chunk_ids, deduped against the live pool.
+// TestPublishClaimHits pins the evidence-pool publish: one pseudo chunk per claim under the
+// SAME "claim_"+md5(doc:name) id the session prefetch writes, verbatim evidence capped at
+// ClaimEvidenceChars, the claim's own chunk pointer as source_chunk_ids, deduped against the
+// live pool.
 func TestPublishClaimHits(t *testing.T) {
 	kb := &Kbinfos{}
 	deps := SearchDeps{KB: kb}
@@ -372,9 +369,8 @@ func TestPublishClaimHits(t *testing.T) {
 	}
 }
 
-// TestLoadChunksForIDs pins the directed source-chunk fetch (Python
-// _load_chunks_for_ids): an id-filtered store read that maps rows back to
-// pool-shaped chunks.
+// TestLoadChunksForIDs pins the directed source-chunk fetch: an id-filtered store read that
+// maps rows back to pool-shaped chunks.
 func TestLoadChunksForIDs(t *testing.T) {
 	de := &recordingClaimEngine{rows: []map[string]interface{}{
 		{"id": "c1", "content_with_weight": "full text one", "doc_id": "doc-1", "docnm_kwd": "a.pdf"},

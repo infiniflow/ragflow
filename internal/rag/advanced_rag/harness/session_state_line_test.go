@@ -373,7 +373,7 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 	}
 }
 
-// TestSetShapedFollowsThePlannersDeclaration pins the half of the gate that reads the
+// TestCoverageFollowsThePlannersDeclaration pins the half of the gate that reads the
 // table: what the planner TYPED, never what a candidate looks like. A list-shaped
 // candidate under a scalar type is prose that happens to contain separators —
 // measured (2026-09-15, FRAMES) a slot typed "dataset" carried
@@ -381,99 +381,103 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 // reading of it is how a "how much shorter" record came to say "enumerated
 // members: 16" and how a `[count]` slot on a "how many times larger" question once
 // bought 24 continuation offers.
-func TestSetShapedFollowsThePlannersDeclaration(t *testing.T) {
+func TestCoverageFollowsThePlannersDeclaration(t *testing.T) {
 	value := State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}}
-	if SetShaped(value) {
+	if CoverageOf(value).Set {
 		t.Error("a single-value table asks for no set")
 	}
 	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}}
-	if !SetShaped(counted) {
+	if !CoverageOf(counted).Set {
 		t.Error("a count slot asks for a set")
 	}
 	quantity := State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("2452 feet")}}}
-	if SetShaped(quantity) {
+	if CoverageOf(quantity).Set {
 		t.Error("a number slot is a value, not a set")
 	}
 	prose := State{State: []Variable{{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls")}}}
-	if SetShaped(prose) {
+	if CoverageOf(prose).Set {
 		t.Error("the table must not be read through a candidate's separators")
+	}
+	// The actor's declared forms are what the corpus is read with, and the recall list is
+	// one entry per operand — never one per (actor, act) pair.
+	shaped := State{State: []Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩", "杀", "斩"}, Subject: "关羽|云长"},
+		{ID: 1, Type: "dataset"},
+	}}
+	cov := CoverageOf(shaped)
+	if !cov.Ok() {
+		t.Fatalf("coverage = %+v, want an enumeration", cov)
+	}
+	if actors := cov.Actors(); len(actors) != 2 || actors[0] != "关羽" || actors[1] != "云长" {
+		t.Errorf("actors = %v, want the two declared forms", actors)
+	}
+	if ops := cov.Operands(); len(ops) != 4 {
+		t.Errorf("operands = %v, want 2 actor forms + 2 deduped act words", ops)
 	}
 }
 
-// TestSetDirectionIsSeededWithTheMethod pins WHERE the enumeration method is delivered — in the
+// TestEnumerationIsSeededWithTheMethod pins WHERE the enumeration method is delivered — in the
 // seed, before the first turn — and, just as important, WHO gets it: only a table that declared the
-// whole ENUMERATION shape (see EnumerationShaped).
+// whole enumeration (a count/set/list slot, a NAME-carrying slot and the act words, see
+// Coverage.Ok).
 //
 // Its first instruction — propose more candidates than you expect — is a decision taken before the
 // first query: measured (2026-09-16, 三国/关羽) the same question answered eighteen members with the
 // method in the seed of its `[count]` table and fourteen when it arrived a turn later. But the same
 // instruction on a question whose answer is ONE value sends the session looking for members it does
-// not need: measured (2026-09-16, FRAMES — 4 questions in flight, 300s deadline) the SetShaped-only
+// not need: measured (2026-09-16, FRAMES — 4 questions in flight, 300s deadline) the shape-only
 // gate seeded the value questions that merely contain a count and the run finished 0.833 with two
 // timeouts against 0.875 with none.
-func TestSetDirectionIsSeededWithTheMethod(t *testing.T) {
+//
+// What the seed carries alongside the method is the windows the enumeration FOUND, never the
+// queries to make (see CoverageSet.Render): a query list is advice the model did not follow, a
+// window is evidence with the chunk id a member is cited by.
+func TestEnumerationIsSeededWithTheMethod(t *testing.T) {
 	loader := StringPromptLoader{"action_set": "SET / COUNT directions — the member list IS the work"}
+	method := "SET / COUNT directions — the member list IS the work"
 
-	// A table that declared count/set/list AND a NAME-carrying slot AND its act words: the
-	// enumeration strategy, seeded with the method and the corpus queries those words render into
-	// (see ScanPatterns) — the seed is where the session is told to ask the corpus for the act,
-	// which is the one thing its memory cannot do.
 	declared := State{State: []Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("18"), Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
 		{ID: 1, Type: "dataset"},
 	}}
-	got := setProtocolFor(declared, loader)
-	if !strings.Contains(got, "关羽.*斩|云长.*斩") {
-		t.Errorf("a direction with declared act words must be seeded with their queries, got %q", got)
+	seed := "## The enumeration already ran for this direction\n\n- chunk_id=c1  \"云长手起刀落，斩孔秀于马下\"\n"
+	got := enumerationSeed(declared, loader, seed)
+	if !strings.Contains(got, method) || !strings.Contains(got, "斩孔秀于马下") {
+		t.Errorf("seed = %q, want the method AND the windows the enumeration found", got)
 	}
-	if !strings.Contains(got, "SET / COUNT directions") {
-		t.Errorf("the method must travel with them, got %q", got)
+	if strings.Contains(got, "one call per line") {
+		t.Errorf("seed = %q still lists queries to make", got)
+	}
+	// No enumeration (no clock left, no executor): the method travels alone. The seed never
+	// carries queries to make.
+	if got := enumerationSeed(declared, loader, ""); got != method {
+		t.Errorf("seed without an enumeration = %q, want the method alone", got)
 	}
 
-	// And now the three ways a table FAILS to be an enumeration, each of which must leave a value
-	// question alone. A count with no names: a count of EVENTS, which the planner declares act
-	// words for as well ("how many times had Brazil won the World Cup").
-	countsOnly := State{State: []Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("5"), Terms: []string{"won", "trophy"}, Subject: "Brazil"},
-	}}
-	if got := setProtocolFor(countsOnly, loader); got != "" {
-		t.Errorf("a count of events must not be seeded with the member method, got %q", got)
+	// The ways a table FAILS to be an enumeration, each of which must leave a value question
+	// alone: a count of EVENTS (the planner declares act words for those too), one named thing
+	// with no count/set/list, a count with nothing declared to enumerate, a measured quantity, a
+	// list-shaped candidate under a scalar type, and a single value.
+	for _, tc := range []struct {
+		name  string
+		table State
+	}{
+		{"a count of events", State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("5"), Terms: []string{"won", "trophy"}, Subject: "Brazil"}}}},
+		{"one named thing", State{State: []Variable{{ID: 0, Type: "person", Terms: []string{"wrote"}, Subject: "the writer"}, {ID: 1, Type: "date"}}}},
+		{"a count with no act words", State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("18")}}}},
+		{"a measured quantity", State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("14")}}}},
+		{"a list-shaped candidate", State{State: []Variable{{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}}},
+		{"a single value", State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}},
+	} {
+		if got := enumerationSeed(tc.table, loader, seed); got != "" {
+			t.Errorf("%s must not be seeded with the member method, got %q", tc.name, got)
+		}
 	}
-	// Names with no count/set/list: a question about ONE named thing that also declared act words
-	// (the shape a multi-hop value question takes).
-	namesOnly := State{State: []Variable{
-		{ID: 0, Type: "person", Terms: []string{"wrote", "published"}, Subject: "the writer"},
-		{ID: 1, Type: "date"},
-	}}
-	if got := setProtocolFor(namesOnly, loader); got != "" {
-		t.Errorf("a value question holding one name must not be seeded with the member method, got %q", got)
-	}
-	// A count with no act words: nothing was declared to enumerate.
-	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("18")}}}
-	if got := setProtocolFor(counted, loader); got != "" {
-		t.Errorf("a count with no declared act words must not be seeded, got %q", got)
-	}
-	// `number` is the planner's label for a measured QUANTITY, and it typed the same
-	// question both ways on two runs of 2026-09-16: not a seed trigger, and exactly
-	// what the batch path exists for.
-	quantity := State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("14")}}}
-	if got := setProtocolFor(quantity, loader); got != "" {
-		t.Errorf("a number-typed table must not be seeded, got %q", got)
-	}
-	// Nor is a candidate's punctuation a declaration: a list-shaped candidate under a
-	// scalar type is how the permissive gate seeded 44 of 67 FRAMES sessions.
-	prose := State{State: []Variable{{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}}
-	if got := setProtocolFor(prose, loader); got != "" {
-		t.Errorf("a list-shaped candidate must not seed the method, got %q", got)
-	}
-	value := State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}
-	if got := setProtocolFor(value, loader); got != "" {
-		t.Errorf("a single-value direction must not be seeded, got %q", got)
-	}
-	// A loader that predates the template yields nothing rather than panicking (see
-	// loadOptionalPrompt): its sessions run exactly as they did before it existed.
-	if got := setProtocolFor(counted, StringPromptLoader{}); got != "" {
-		t.Errorf("a loader without action_set must yield nothing, got %q", got)
+
+	// A loader that predates the template still travels with the evidence rather than
+	// panicking (see loadOptionalPrompt): the windows are the part the model cannot get back.
+	if got := enumerationSeed(declared, StringPromptLoader{}, seed); got != strings.TrimSpace(seed) {
+		t.Errorf("a loader without action_set must yield the evidence alone, got %q", got)
 	}
 }
 

@@ -120,10 +120,9 @@ func (s *ownerRecordingStore) LoadChunks(ctx context.Context, kbID, tenantID str
 	return s.stubCompiledStore.LoadChunks(ctx, kbID, tenantID, chunkIDs)
 }
 
-// TestCompiledExpanderLoadsFromEachDocsOwnerAndSkipsUnresolvable mirrors Python
-// _load_chunks_for_doc: a neighbour row's source chunks are fetched from THAT
-// row's doc owner (not the searched scope), and a row whose doc id cannot be
-// resolved (empty / merged pseudo doc) contributes nothing.
+// TestCompiledExpanderLoadsFromEachDocsOwnerAndSkipsUnresolvable: a neighbour row's source
+// chunks are fetched from THAT row's doc owner (not the searched scope), and a row whose doc id
+// cannot be resolved (empty / merged pseudo doc) contributes nothing.
 func TestCompiledExpanderLoadsFromEachDocsOwnerAndSkipsUnresolvable(t *testing.T) {
 	store := &ownerRecordingStore{stubCompiledStore: &stubCompiledStore{
 		rows: []map[string]any{
@@ -134,8 +133,7 @@ func TestCompiledExpanderLoadsFromEachDocsOwnerAndSkipsUnresolvable(t *testing.T
 			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
 				"name_kwd": "OmiyaSoft", "content_with_weight": `{"name":"OmiyaSoft"}`,
 				"source_chunk_ids": []string{"s1"}, "doc_id": "docA"},
-			// No doc id -> Python's _resolve_doc_tenant fails, so its source
-			// chunks are dropped.
+			// No doc id -> the owner cannot be resolved, so its source chunks are dropped.
 			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
 				"name_kwd": "OmiyaSoft", "content_with_weight": `{"name":"OmiyaSoft"}`,
 				"source_chunk_ids": []string{"s2"}, "doc_id": ""},
@@ -184,9 +182,8 @@ func TestNewCompiledExpanderGuard(t *testing.T) {
 	}
 }
 
-// TestCompiledExpanderScansEachDatasetUnderItsOwnTenant mirrors Python
-// `[(kb.id, kb.tenant_id, None) for kb in tools.kbs]`: with no doc scope each
-// bound dataset is scanned under ITS OWN owner tenant, not the request tenant.
+// TestCompiledExpanderScansEachDatasetUnderItsOwnTenant: with no doc scope each bound dataset
+// is scanned under ITS OWN owner tenant, not the request tenant.
 func TestCompiledExpanderScansEachDatasetUnderItsOwnTenant(t *testing.T) {
 	store := &scopeRecordingStore{}
 	exp := NewCompiledExpander(store, CompiledScopeConfig{
@@ -218,9 +215,9 @@ func TestCompiledExpanderScansEachDatasetUnderItsOwnTenant(t *testing.T) {
 	}
 }
 
-// TestCompiledExpanderGroupsDocScopeByRealOwner mirrors the doc-scope branch of
-// Python _kg_scopes: documents are grouped by their real owning (kb, tenant) —
-// which may lie OUTSIDE the bound datasets — and the bound list is not scanned.
+// TestCompiledExpanderGroupsDocScopeByRealOwner covers the doc-scope branch: documents are
+// grouped by their real owning (kb, tenant) — which may lie OUTSIDE the bound datasets — and
+// the bound list is not scanned.
 func TestCompiledExpanderGroupsDocScopeByRealOwner(t *testing.T) {
 	store := &scopeRecordingStore{}
 	exp := NewCompiledExpander(store, CompiledScopeConfig{
@@ -273,7 +270,7 @@ func compiledIDs(chunks []map[string]any) []string {
 	return out
 }
 
-// TestSeedNameFromRowParsesContentWithWeight mirrors Python L293-300: the seed
+// TestSeedNameFromRowParsesContentWithWeight: 300: the seed
 // name comes from content_with_weight JSON (name, else title), never from name_kwd.
 func TestSeedNameFromRowParsesContentWithWeight(t *testing.T) {
 	if got := seedNameFromRow(map[string]any{"content_with_weight": `{"name":"Culdcept","title":"Game"}`}); got != "Culdcept" {
@@ -285,7 +282,7 @@ func TestSeedNameFromRowParsesContentWithWeight(t *testing.T) {
 	if got := seedNameFromRow(map[string]any{"content_with_weight": `not json`}); got != "" {
 		t.Errorf("bad json: got %q", got)
 	}
-	// name_kwd is not consulted — Python reads only the JSON payload.
+	// name_kwd is not consulted — only the JSON payload is read.
 	if got := seedNameFromRow(map[string]any{"content_with_weight": `{}`, "name_kwd": "X"}); got != "" {
 		t.Errorf("name_kwd must be ignored, got %q", got)
 	}
@@ -332,8 +329,8 @@ func TestExpandEntityStrategyOneHop(t *testing.T) {
 	}
 }
 
-// TestExpandBackwardRelation confirms the strategy also walks incoming
-// (to_entity_kwd) relations, mirroring Python's fwd+bwd merge.
+// TestExpandBackwardRelation confirms the strategy also walks incoming (to_entity_kwd)
+// relations — the forward + backward merge.
 func TestExpandBackwardRelation(t *testing.T) {
 	store := &stubCompiledStore{
 		rows: []map[string]any{
@@ -441,8 +438,8 @@ func TestExpandCapsMaxChunksAndSkipsSeen(t *testing.T) {
 	}
 }
 
-// mapTenantResolver resolves each doc id to its own owner and can fail the whole
-// batch, standing in for the batched DB lookup (a per-doc lookup in Python).
+// mapTenantResolver resolves each doc id to its own owner and can fail the whole batch,
+// standing in for the batched DB lookup.
 type mapTenantResolver struct {
 	owners map[string]DocTenant
 	err    error
@@ -461,11 +458,10 @@ func (m mapTenantResolver) ResolveDocTenants(_ context.Context, docIDs []string)
 	return out, nil
 }
 
-// TestCompiledExpanderReportsDocTenantResolutionFailure pins the two rules apart:
-// a row whose owner cannot be resolved is dropped silently (see the test above),
-// but a FAILED batched lookup is a transport error — Python lets it raise out of
-// _load_chunks_for_doc, so nothing is loaded and the failure is reported instead
-// of masquerading as "no row resolved".
+// TestCompiledExpanderReportsDocTenantResolutionFailure pins the two rules apart: a row whose
+// owner cannot be resolved is dropped silently (see the test above), but a FAILED batched
+// lookup is a transport error — nothing is loaded and the failure is reported instead of
+// masquerading as "no row resolved".
 func TestCompiledExpanderReportsDocTenantResolutionFailure(t *testing.T) {
 	store := &ownerRecordingStore{stubCompiledStore: &stubCompiledStore{
 		rows: []map[string]any{
@@ -502,9 +498,8 @@ func TestCompiledExpanderReportsDocTenantResolutionFailure(t *testing.T) {
 	}
 }
 
-// TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails mirrors Python's
-// per-doc load: the failing doc is logged (compiled_expansion.py:248) and
-// dropped, while the remaining docs still contribute.
+// TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails covers the per-doc load: the
+// failing doc is logged and dropped, while the remaining docs still contribute.
 func TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails(t *testing.T) {
 	var buf bytes.Buffer
 	prevLog := _LOG

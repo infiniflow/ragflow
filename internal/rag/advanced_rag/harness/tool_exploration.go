@@ -30,62 +30,55 @@ import (
 	"ragflow/internal/service/nlp"
 )
 
-// Exploration providers (Go equivalent of Python harness/tools/exploration.py):
-// knowledge-graph walks (graph_explore) and wiki page drill-downs (wiki_query),
-// plus the open-web search provider seam.
+// Exploration providers: knowledge-graph walks (graph_explore) and wiki page drill-downs
+// (wiki_query), plus the open-web search provider seam.
 //
-// graph_explore walks the compiled knowledge graph (see ExploreGraph): it seeds
-// entities by dense similarity, hops out over relations, then asks the model
-// whether the subgraph answers the question. wiki_query searches the compiled
-// wiki_page_draft rows. Together these mirror the exploration.py module, which
-// hosts both graph_explore and wiki_query.
+// graph_explore walks the compiled knowledge graph (see ExploreGraph): it seeds entities by
+// dense similarity, hops out over relations, then asks the model whether the subgraph
+// answers the question. wiki_query searches the compiled wiki_page_draft rows.
 //
 // Search seams stay independent of the search backend so the harness core is
 // testable without one; the bridge wires concrete implementations (wiki_page_draft
 // rows for SearchWiki, an HTTP client for WebSearcher).
 
-// WebSearcher runs an open-web search and returns result strings. It is the Go
-// equivalent of Python's web_search provider path wired into the action session.
+// WebSearcher runs an open-web search and returns result strings.
 type WebSearcher interface {
 	Search(ctx context.Context, queries []string) ([]string, error)
 }
 
-// WikiPage is one compiled wiki page returned by WikiRetriever, mirroring the
-// payload Python wiki_query emits per hit: the parsed page markdown plus the
+// WikiPage is one compiled wiki page returned by WikiRetriever: the parsed page markdown
+// plus the
 // originating row identity so the harness can cite/load it.
 type WikiPage struct {
 	ChunkID string
 	DocID   string
 	DocName string
 	Title   string
-	// Content is the synthesised page markdown (Python's page_content).
+	// Content is the synthesised page markdown.
 	Content string
 	// Score is the retrieval relevance (higher = better).
 	Score float64
 }
 
-// WikiRetriever searches the compiled wiki_page_draft rows for a question and
-// returns the most relevant pages. It is the Go equivalent of Python's
-// tools/exploration.py::wiki_query, kept as a seam so the harness core stays
-// independent of the search backend and remains testable without one.
+// WikiRetriever searches the compiled wiki_page_draft rows for a question and returns the
+// most relevant pages. It is a seam, so the harness core stays independent of the search
+// backend and remains testable without one.
 type WikiRetriever interface {
 	// SearchWiki returns up to topN compiled wiki pages for the question,
 	// biased toward the optional keywords.
 	SearchWiki(ctx context.Context, question string, keywords []string, topN int) ([]WikiPage, error)
 }
 
-// wikiQuery implements the `wiki_query` tool, mirroring Python
-// tools/exploration.py::wiki_query + action_session._exec_wiki_query.
+// wikiQuery implements the `wiki_query` tool.
 //
 // It searches the compiled "wiki_page_draft" rows for the question, parses each
 // hit's synthesised page markdown out of the row, and returns them in the same
-// payload shape Python's action layer consumes: per hit
+// payload shape the action layer consumes: per hit
 //
 //	{chunk_id, doc_id, docnm_kwd, title, content, query}
 //
-// plus n_hits in Metrics. When no wiki retriever is wired (or the dataset has no
-// wiki compilation), it returns a clean MISS so the model falls back to corpus
-// tools — mirroring Python's wiki gate.
+// plus n_hits in Metrics. When no wiki retriever is wired (or the dataset has no wiki
+// compilation), it returns a clean MISS so the model falls back to corpus tools.
 func (e *searchExecutor) wikiQuery(ctx context.Context, args map[string]any) (ToolOutcome, error) {
 	if e.deps.WikiRetriever == nil {
 		return ToolOutcome{
@@ -115,7 +108,7 @@ func (e *searchExecutor) wikiQuery(ctx context.Context, args map[string]any) (To
 
 	topN, _ := toInt(args["top_n"])
 	if topN <= 0 {
-		topN = 12 // Python _WIKI_QUERY_TOP_N = 12
+		topN = 12
 	}
 	if topN > 30 {
 		topN = 30
@@ -154,7 +147,7 @@ func (e *searchExecutor) wikiQuery(ctx context.Context, args map[string]any) (To
 }
 
 // splitComma splits a comma-separated keyword string into a clean slice,
-// tolerating spaces. Mirrors Python's kw.strip() loop after split(",").
+// tolerating spaces.
 func splitComma(s string) []string {
 	if s == "" {
 		return nil
@@ -169,28 +162,24 @@ func splitComma(s string) []string {
 	return out
 }
 
-// graphExplore caps, mirroring Python _exec_graph_explore
-// (action_session.py:execute_tool): chunks[:6] and str(content)[:1500].
+// graphExplore caps: at most 6 passages of 1500 chars.
 const (
 	graphExploreMaxChunks    = 6
 	graphExplorePassageChars = 1500
 )
 
-// graphExplore explores the compiled knowledge graph for a relational / multi-hop
-// answer (ultra only), delegating to ExploreGraph: seed entities for the query, hop
-// along their relations, and return either a direct answer or the source passages
-// behind the relevant entities. Mirrors Python exploration.py::graph_explore (paired
-// with wikiQuery).
+// graphExplore explores the compiled knowledge graph for a relational / multi-hop answer
+// (ultra only), delegating to ExploreGraph: seed entities for the query, hop along their
+// relations, and return either a direct answer or the source passages behind the relevant
+// entities.
 //
-// The outcome shape mirrors _exec_graph_explore: a
-// single-element payload tagged kind="graph_explore" whose body is exactly one of
-// answer / note / chunks, at most 6 passages of 1500 chars, and NO pool merge (Python
-// never calls _admit_evidence on this path).
+// The outcome shape: a single-element payload tagged kind="graph_explore" whose body is
+// exactly one of answer / note / chunks, at most 6 passages of 1500 chars, and NO pool
+// merge.
 //
-// Deliberate deviation: Python reads c["id"] / c["content"] while the producer
-// _load_chunks_by_ids emits chunk_id / content_with_weight,
-// so Python's snippet is always {"id": None, "content": ""} with zero evidence ids — a
-// key-mismatch bug. Go reads the keys the loader produces.
+// Deliberate deviation from the original design: reading c["id"] / c["content"] while the
+// loader emits chunk_id / content_with_weight yields an always-empty snippet with zero
+// evidence ids — a key-mismatch bug. This reads the keys the loader produces.
 func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) (ToolOutcome, error) {
 	query := argString(args, "query")
 	if query == "" {
@@ -199,19 +188,18 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 	if query == "" {
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
-	// No keywords: Python calls graph_explore(tools, query, doc_scope=...) with
-	// keywords defaulting to "" (action_session.py:_exec_graph_explore), so the graph's own
-	// narrowing is a no-op there. e.req.Keywords must not be injected.
+	// No keywords: graph_explore is called with keywords empty, so the graph's own
+	// narrowing is a no-op. e.req.Keywords must not be injected.
 	docScope := toolDocScope(args)
 	if docScope != nil && len(docScope) == 0 {
-		// An explicitly empty list is Python-falsy: graph_explore reads it as "no
-		// scope" and scans the bound datasets. (The non-nil empty "match nothing"
-		// signal only comes from resolveDocScope, downstream of here.)
+		// An explicitly empty list is falsy here: it reads as "no scope" and scans the
+		// bound datasets. (The non-nil empty "match nothing" signal only comes from
+		// resolveDocScope, downstream of here.)
 		docScope = nil
 	}
 	res, err := ExploreGraph(ctx, e.deps, e.deps.TenantID, e.deps.KbIDs, query, "", docScope)
 	if err != nil {
-		// Python :978-982 swallows the exception, sets res = {}, and falls into
+		// The failure is swallowed (res = {}) and falls into
 		// the empty branch below — an infra failure here is reported as a
 		// dataset-level EMPTY/no_structure, never an ERROR.
 		_LOG.Printf("[graph_explore] failed: %v", err)
@@ -219,7 +207,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 	}
 	answer := strings.TrimSpace(res.Answer)
 	if answer != "" {
-		// Python :985-986 — a direct answer short-circuits: no passages.
+		// a direct answer short-circuits: no passages.
 		return ToolOutcome{
 			Payload: []any{map[string]any{"kind": "graph_explore", "answer": answer}},
 			Status:  StatusOK,
@@ -228,7 +216,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 		}, nil
 	}
 	if len(res.Chunks) == 0 {
-		// Python :987-997 — no compiled KG in scope is a DATASET-level dead end
+		// no compiled KG in scope is a DATASET-level dead end
 		// (EMPTY/no_structure), the one class of failure that may disable the tool.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
@@ -251,8 +239,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 			"content": truncateRunes(ChunkTextOf(c), graphExplorePassageChars),
 		})
 	}
-	// No EvidenceIDs and no pool merge: Python returns ids=[] here (its c["id"]
-	// lookup misses every loaded chunk) and never admits the passages to kbinfos.
+	// No EvidenceIDs and no pool merge: the loaded passages are not admitted to kbinfos.
 	return ToolOutcome{
 		Payload: []any{map[string]any{"kind": "graph_explore", "chunks": snippet}},
 		Status:  StatusOK,
@@ -261,35 +248,31 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 	}, nil
 }
 
-// ---------------------------------------------------------------------------
 // graph_explore (knowledge-graph walk) — mirrors exploration.py::graph_explore
-// ---------------------------------------------------------------------------
 
 // ExploreGraph walks the compiled knowledge graph: seed entities for the query
 // by dense similarity, hop kgHops out over their relations, then ask the model
 // whether the resulting subgraph answers the question directly. When it does the
 // answer is returned; when it doesn't, the source passages behind the relevant
-// nodes are returned so the caller can keep researching. Mirrors Python
-// exploration.py::graph_explore (which lives beside wiki_query in exploration.py).
+// nodes are returned so the caller can keep researching.
 //
 // Seeds use the tenant embedding model via service.NavEmbedder (dense KNN,
-// similarity >= kgSeedSim, re-ranked by mention_count_int desc); when the
-// embedding model is unavailable it degrades to keyword match (mirrors Python
-// _kg_search's `embed_mdl is None` path).
+// similarity >= kgSeedSim, re-ranked by mention_count_int desc); when the embedding model
+// is unavailable it degrades to keyword match.
 const (
 	kgScopeDataset = "dataset"
 	kgScopeDoc     = "doc"
 
 	kgSeeds     = 2   // top-N entities matched directly to the question
 	kgSeedPool  = 64  // KNN candidate pool before the mention_count_int re-sort
-	kgSeedSim   = 0.8 // dense seed similarity floor (Python _KG_SEED_SIM)
+	kgSeedSim   = 0.8 // dense seed similarity floor
 	kgHops      = 2   // relation hops out from the seeds
 	kgNeighbors = 128 // cap on neighbour entity rows resolved per hop
 	kgRelLimit  = 32  // relations fetched per endpoint filter
 )
 
-// kgScope is one (kb, tenant, docs) search group, mirroring one entry of
-// Python _kg_scopes' return list. When Docs is non-empty the group searches
+// kgScope is one (kb, tenant, docs) search group. When Docs is non-empty the group
+// searches
 // within those documents (kgScopeDoc); when nil it searches the whole dataset
 // (kgScopeDataset).
 type kgScope struct {
@@ -298,9 +281,8 @@ type kgScope struct {
 	Docs     []string
 }
 
-// resolveKGScope builds the (kb, tenant, docs) search groups, mirroring
-// Python _kg_scopes. The session doc_scope ceilings the
-// caller's scope first (Python scoped_doc_ids; exploration.py:_kg_scopes). With no scope
+// resolveKGScope builds the (kb, tenant, docs) search groups. The session doc_scope
+// ceilings the caller's scope first. With no scope
 // it returns one group per bound dataset (docs=nil => whole-dataset search).
 // With a scope and a DocTenantResolver it groups documents by their real owning
 // (kb, tenant), which may surface knowledge bases outside datasetIDs; documents
@@ -308,8 +290,8 @@ type kgScope struct {
 // resolver it keeps the pre-existing behaviour: each bound dataset is searched
 // with the whole scope.
 func resolveKGScope(deps SearchDeps, docScope, datasetIDs []string) []kgScope {
-	// A non-nil empty scope is resolveDocScope's "match nothing" signal (the
-	// session ceiling removed every requested id). Python's falsy-empty check
+	// A non-nil empty scope is resolveDocScope's "match nothing" signal (the session
+	// ceiling removed every requested id). A falsy-empty check
 	// would fall through to whole-dataset scopes; Go keeps the ceiling absolute
 	// and expands nothing.
 	if docScope != nil && len(docScope) == 0 {
@@ -317,8 +299,7 @@ func resolveKGScope(deps SearchDeps, docScope, datasetIDs []string) []kgScope {
 	}
 	docScope = scopedDocIDs(deps.DocScope, docScope)
 
-	// Each bound dataset is scanned under its OWN owner tenant (Python
-	// `[(kb.id, kb.tenant_id, None) for kb in tools.kbs]`); the request tenant is
+	// Each bound dataset is scanned under its OWN owner tenant; the request tenant is
 	// only a fallback for a dataset that carries no tenant id.
 	tenantByKB := make(map[string]string, len(deps.KBs))
 	for _, kb := range deps.KBs {
@@ -358,9 +339,8 @@ func resolveKGScope(deps SearchDeps, docScope, datasetIDs []string) []kgScope {
 				byOwner[key] = append(byOwner[key], docID)
 			}
 		} else {
-			// Python's per-doc lookup raises here (exploration.py:68); Go degrades
-			// to the bound datasets below, so the lost owner grouping must not be
-			// silent.
+			// The per-doc lookup failed; the bound datasets are used instead, so the lost
+			// owner grouping must not be silent.
 			_LOG.Printf("[Graph explore] doc-tenant resolution failed for %d doc(s); falling back to the bound datasets: %v", len(docScope), err)
 		}
 	}
@@ -408,9 +388,8 @@ type kgRelation struct {
 	DocID          string   `json:"doc_id"`
 }
 
-// ExploreResult is the graph_explore output: exactly one of Answer / Chunks is
-// populated, and DocAggs always reflects the returned set. Mirrors Python's
-// {"answer", "chunks", "doc_aggs"} return dict.
+// ExploreResult is the graph_explore output: exactly one of Answer / Chunks is populated,
+// and DocAggs always reflects the returned set.
 type ExploreResult struct {
 	Answer  string
 	Chunks  []map[string]interface{}
@@ -429,8 +408,8 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 		return empty, fmt.Errorf("graph_explore: engine not configured")
 	}
 
-	// Build the (kb, tenant, docs) search groups, mirroring Python
-	// _kg_scopes: group documents by their real owner (which may include KBs
+	// Build the (kb, tenant, docs) search groups: group documents by their real owner
+	// (which may include KBs
 	// outside datasetIDs), or fall back to whole-dataset search.
 	scopes := resolveKGScope(deps, docScope, datasetIDs)
 
@@ -459,8 +438,7 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 
 	for _, sc := range scopes {
 		// A scope with Docs searches within those documents; one without
-		// searches the whole dataset (mirrors Python _kg_scopes returning
-		// (kb, tenant, docs) where docs is None for the whole-dataset case).
+		// searches the whole dataset (docs is nil for the whole-dataset case).
 		scopeKwd := kgScopeDataset
 		if len(sc.Docs) > 0 {
 			scopeKwd = kgScopeDoc
@@ -487,11 +465,10 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 				map[string]interface{}{"from_entity_kwd": terms}, "", 0, deps.IndexName)
 			relRows = append(relRows, kgSearch(ctx, de, sc.TenantID, sc.KBID, sc.Docs, "relation", "", kgRelLimit, scopeKwd,
 				map[string]interface{}{"to_entity_kwd": terms}, "", 0, deps.IndexName)...)
-			// Dedup keys: Python keeps a relation unless its source row id is
-			// already seen (rel_rows is a dict keyed by row id), so the same
-			// endpoint pair from *different* rows survives. Mirror that: prefer
-			// the row id; only fall back to the from|to|type triple when the
-			// engine returned no id (so we at least collapse exact duplicates).
+			// Dedup keys: a relation is kept unless its source row id is already seen, so the
+			// same endpoint pair from *different* rows survives. Prefer the row id; only fall
+			// back to the from|to|type triple when the engine returned no id (so exact
+			// duplicates still collapse).
 			seenRel := map[string]bool{}
 			var hopRelations []kgRelation
 			for _, r := range relRows {
@@ -555,23 +532,21 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 		return empty, nil
 	}
 
-	// (3) Does the subgraph answer the question? The request-scoped model
-	// (deps.Model, Python's tools.chat_mdl) is threaded through so the verdict is
-	// drawn by the same tenant model as the rest of the harness.
+	// (3) Does the subgraph answer the question? The request-scoped model (deps.Model) is
+	// threaded through so the verdict is drawn by the same tenant model as the rest of the
+	// harness.
 	answer, relevant := askStructureAnswer(ctx, deps.Model, query, entities, relations)
 	// (4a) Sufficient — return the answer, no chunks.
 	if answer != "" {
 		return ExploreResult{Answer: answer, DocAggs: []map[string]interface{}{}}, nil
 	}
 
-	// (4b) Insufficient — return source passages behind the relevant nodes,
-	// narrowed to the sentences that carry the keywords (mirror Python
-	// exploration.py L359-361). Python's _narrow_by_keywords keeps the whole set
-	// when keywords is empty (text_processing.py `if not kwds: return chunks`),
-	// so we gate the strict narrow on a non-empty keyword string to avoid
-	// emptying the evidence. doc_aggs is computed from the resulting set (L363).
-	// Iterate the evidence groups in FIRST-SEEN order (Python walks its dict's
-	// .items()), so the executor's chunks[:6] picks the same passages each run.
+	// (4b) Insufficient — return source passages behind the relevant nodes, narrowed to the
+	// sentences that carry the keywords. NarrowByKeywords keeps the whole set when keywords
+	// is empty, so the strict narrow is gated on a non-empty keyword string to avoid
+	// emptying the evidence. doc_aggs is computed from the resulting set. The evidence
+	// groups are iterated in FIRST-SEEN order (the order each doc was first reached), so
+	// the executor's chunks[:6] picks the same passages each run.
 	evidence := collectEvidenceIDs(entities, relations, relevant)
 	var chunks []map[string]interface{}
 	for _, ev := range evidence {
@@ -595,13 +570,12 @@ var seedEncoder = defaultSeedEncoder
 // encodeSeedVector encodes the seed text once for the whole ExploreGraph call.
 // Returns nil when the tenant embedding model is unavailable (or encoding fails).
 //
-// An embedder passed in via SearchDeps.Embedder (the external, Python-style
-// "tools.embed_mdl" handle) is used when present; otherwise the call falls back
-// to the package's internal resolver (defaultSeedEncoder), which needs a
-// database and therefore stays self-contained for callers that cannot or do not
-// want to supply one.
+// An embedder passed in via SearchDeps.Embedder (the external embed handle) is used when
+// present; otherwise the call falls back to the package's internal resolver
+// (defaultSeedEncoder), which needs a database and therefore stays self-contained for
+// callers that cannot or do not want to supply one.
 func encodeSeedVector(ctx context.Context, deps SearchDeps, tenantID, text string) []float64 {
-	// Mirror Python's "if getattr(tools, 'embed_mdl', None)" guard: without a
+	// Without a
 	// wired database there is no tenant default embedding model, so skip encoding
 	// and let the caller fall back to keyword matching rather than panicking.
 	if dao.GetDB() == nil {
@@ -609,8 +583,7 @@ func encodeSeedVector(ctx context.Context, deps SearchDeps, tenantID, text strin
 	}
 	if deps.Embedder != nil {
 		// The external handle may itself panic on a misconfigured model service
-		// (e.g. nil-DB); degrade to keyword matching like Python's
-		// `except Exception` around get_vector, never crash the request.
+		// (e.g. nil-DB); degrade to keyword matching, never crash the request.
 		vecs, err := safeEncodeEmbedder(deps.Embedder, ctx, tenantID, text)
 		if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
 			return nil
@@ -626,16 +599,15 @@ func encodeSeedVector(ctx context.Context, deps SearchDeps, tenantID, text strin
 
 // safeEncodeEmbedder calls the embedder and recovers from any panic so a
 // misconfigured embedding service degrades to keyword matching instead of
-// crashing the request. It mirrors Python's get_vector exception handling.
+// crashing the request.
 func safeEncodeEmbedder(emb nlp.NavEmbedder, ctx context.Context, tenantID, text string) ([][]float32, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			_LOG.Printf("[graph_explore] seed encode panicked; falling back to keyword: %v", r)
 		}
 	}()
-	// Seed encoding is a QUERY, not a document: Python's graph_explore and
-	// navigation seed through settings.retriever.get_vector → encode_queries.
-	// Prefer the asymmetric query encoding when the embedder exposes it.
+	// Seed encoding is a QUERY, not a document: graph_explore and navigation seed through
+	// query encoding. Prefer the asymmetric query encoding when the embedder exposes it.
 	if q, ok := emb.(nlp.NavQueryEmbedder); ok {
 		return q.EncodeQueries(ctx, tenantID, []string{text})
 	}
@@ -655,16 +627,14 @@ func SetSeedEncoder(fn func(ctx context.Context, tenantID, text string) []float6
 }
 
 func defaultSeedEncoder(ctx context.Context, tenantID, text string) []float64 {
-	// Mirror Python's "if getattr(tools, 'embed_mdl', None)" guard: when no
-	// database (and thus no tenant default embedding model) is wired up, skip
-	// encoding entirely and fall back to keyword matching rather than panicking
-	// on a nil DB inside the model-provider layer.
+	// With no database (and thus no tenant default embedding model) wired up, skip encoding
+	// entirely and fall back to keyword matching rather than panicking on a nil DB inside
+	// the model-provider layer.
 	if dao.GetDB() == nil {
 		return nil
 	}
 	embedder := service.NewNavEmbedder(service.NewModelProviderService(), "")
-	// Query-side encoding: the seed is the user's query (Python get_vector →
-	// encode_queries), not an indexed document.
+	// Query-side encoding: the seed is the user's query, not an indexed document.
 	vecs, err := embedder.EncodeQueries(ctx, tenantID, []string{text})
 	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
 		return nil
@@ -676,10 +646,9 @@ func defaultSeedEncoder(ctx context.Context, tenantID, text string) []float64 {
 	return vec
 }
 
-// kgSeedSearch searches the compiled KG entity rows for seeds (mirrors Python
-// _kg_search dense branch): dense KNN over name_kwd with similarity>=0.8,
-// re-ranked by mention_count_int desc, top kgSeeds. Falls back to keyword match
-// when seedVec is nil (embedding model unavailable). indexName is the caller's
+// kgSeedSearch searches the compiled KG entity rows for seeds: dense KNN over name_kwd with
+// similarity>=0.8, re-ranked by mention_count_int desc, top kgSeeds. Falls back to keyword
+// match when seedVec is nil (embedding model unavailable). indexName is the caller's
 // configured index override (deps.IndexName); empty keeps ragflow_<tenantID>.
 func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, text, scopeKwd string, seedVec []float64, indexName string) []map[string]interface{} {
 	if seedVec != nil {
@@ -694,7 +663,7 @@ func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID strin
 		rows := kgSearchRaw(ctx, de, tenantID, kbID, docIDs, "entity", scopeKwd, nil, []interface{}{dense}, "mention_count_int", kgSeedPool, indexName)
 		return topMentionCount(rows, kgSeeds)
 	}
-	// Text fallback (mirrors Python _kg_search `embed_mdl is None` path).
+	// Text fallback (no embedding model available).
 	return kgSearch(ctx, de, tenantID, kbID, docIDs, "entity", text, kgSeeds, scopeKwd, nil, "mention_count_int", kgSeedPool, indexName)
 }
 
@@ -731,7 +700,7 @@ func mentionCount(row map[string]interface{}) int {
 // its evidence with indexNameFor(deps.TenantID, deps.IndexName)), so a tenant
 // that overrides the name must have it honoured here too — otherwise the walk
 // queries one index and loads passages from another. Empty falls back to
-// ragflow_<tenantID>, which is what Python's search.index_name always returns.
+// ragflow_<tenantID>.
 func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, scopeKwd string, extra map[string]interface{}, matchExprs []interface{}, orderDesc string, limit int, indexName string) []map[string]interface{} {
 	idx := indexNameFor(tenantID, indexName)
 	condition := map[string]interface{}{"knowledge_graph_kwd": kind}
@@ -764,7 +733,7 @@ func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string
 	return res.Chunks
 }
 
-// kgSearch searches the compiled KG rows of one KB (mirrors Python _kg_search),
+// kgSearch searches the compiled KG rows of one KB,
 // using keyword match. It only builds the MatchTextExpr (with the pool-based
 // TopN) and delegates the request construction to kgSearchRaw.
 func kgSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, text string, topN int, scopeKwd string, extra map[string]interface{}, orderDesc string, pool int, indexName string) []map[string]interface{} {
@@ -842,7 +811,7 @@ func kgParseRelation(row map[string]interface{}) (kgRelation, bool) {
 	}, true
 }
 
-// endpointTerms mirrors Python _endpoint_terms: original + lowercased forms, so
+// endpointTerms: original + lowercased forms, so
 // hop queries match both merged (lowercased) and per-doc (original-case)
 // endpoint fields.
 func endpointTerms(names []string) []string {
@@ -864,18 +833,16 @@ func endpointTerms(names []string) []string {
 }
 
 // kgEvidence is one document's relevant source chunk ids, in FIRST-SEEN order.
-// Python's _collect_evidence_ids returns a dict and graph_explore iterates it with
-// `evidence.items()` — insertion-ordered, hence deterministic. A Go map would
-// randomise the order, and the executor caps the loaded passages at chunks[:6],
-// so the SAME query could surface different passages on every run.
+// Insertion-ordered, hence deterministic: a plain map would randomise the order, and the
+// executor caps the loaded passages at chunks[:6], so the SAME query could surface
+// different passages on every run.
 type kgEvidence struct {
 	DocID string
 	IDs   []string
 }
 
-// collectEvidenceIDs mirrors Python _collect_evidence_ids: group source chunk ids
-// of relevant entities AND relations by doc, preserving the doc order in which
-// each doc is first reached (Python's dict insertion order).
+// collectEvidenceIDs groups the source chunk ids of relevant entities AND relations by
+// doc, preserving the doc order in which each doc is first reached.
 func collectEvidenceIDs(entities []kgEntity, relations []kgRelation, relevantNames []string) []kgEvidence {
 	wanted := map[string]bool{}
 	for _, n := range relevantNames {
@@ -931,12 +898,10 @@ func intersects(a, b map[string]bool) bool {
 	return false
 }
 
-// askStructureAnswer asks the chat model whether the subgraph answers the query
-// (mirrors Python exploration.py::graph_explore calling _ask_structure),
-// returning (answer, relevant_names). Delegates to AskStructure
-// (structure_qa.go), the shared mirror of Python _ask_structure. `model` is the
-// request-scoped chat model (Python's tools.chat_mdl); a nil model simply skips
-// the verdict and yields no answer, matching Python's empty-verdict fallback.
+// askStructureAnswer asks the chat model whether the subgraph answers the query,
+// returning (answer, relevant_names). Delegates to AskStructure (structure_qa.go).
+// `model` is the request-scoped chat model; a nil model simply skips the verdict and
+// yields no answer.
 func askStructureAnswer(ctx context.Context, model SessionModel, query string, entities []kgEntity, relations []kgRelation) (string, []string) {
 	ems := make([]map[string]any, 0, len(entities))
 	for _, e := range entities {

@@ -18,17 +18,12 @@
 // retrieval backend, the action-session runtime, the tool executor, and the
 // compiled-structure / knowledge-graph navigation. These are the leaf building
 // blocks the RAGTools methods in the parent `agent` package (Run, ComposeAnswer,
-// ComposeNaiveAnswer, Formalize, ...) orchestrate. The split mirrors Python's
-// layout, where agentic_rag.py's RAGTools imports the helpers under
-// harness/ rather than inlining them.
+// ComposeNaiveAnswer, Formalize, ...) orchestrate.
 //
-// tool_executor.go is the Go-side tool-executor adapter: its
-// searchExecutor type and the Execute dispatch correspond to the _exec_* tool
-// methods in Python's harness/action_session.py (e.g. _exec_retrieve,
-// _exec_navigate_tree, _exec_navigate_structure, _exec_list_chunks,
-// _exec_calculate, _exec_web_search, _exec_wiki_query, _exec_graph_explore).
-// In Python those live inline inside action_session.py; in Go they are pulled
-// out into this file so the harness package need not import the advanced_rag package.
+// tool_executor.go is the tool-executor adapter: its searchExecutor type and the Execute
+// dispatch are the search / navigation / calculation / web tools the action session calls.
+// They are pulled out into this file so the harness package need not import the
+// advanced_rag package.
 package harness
 
 import (
@@ -49,7 +44,7 @@ type RunRequest struct {
 	// Question is the user's question.
 	Question string
 	// ThinkingMode selects the ModeSpec ("low"/"medium"/"high"/"ultra").
-	// An unrecognised value degrades to NAIVE, as in Python.
+	// An unrecognised value degrades to NAIVE.
 	ThinkingMode string
 	// Keywords narrow retrieved chunks to the sentences mentioning them.
 	Keywords string
@@ -63,23 +58,21 @@ type RunRequest struct {
 	TopN int
 	// DeadlineLeft is the wall-clock budget in seconds. <=0 selects the default.
 	DeadlineLeft float64
-	// MaxLength is the chat model's context window (Python
-	// tools.chat_mdl.max_length). It bounds evidence and document-level reads.
+	// MaxLength is the chat model's context window. It bounds evidence and document-level
+	// reads.
 	// <=0 selects the file-level defaults.
 	MaxLength int
 	// SessionID identifies the conversation this call belongs to. It is carried
 	// for plumbing (e.g. future session-scoped state) but is not read by the
-	// near-duplicate answer cache: that cache is per-request, mirroring Python's
-	// per-turn RAGTools._rag_cache.
+	// near-duplicate answer cache: that cache is per-request, i.e. per turn.
 	SessionID string
-	// Images are vision-gated base64 data URIs (Python image_attachments). The
+	// Images are vision-gated base64 data URIs. The
 	// outer react loop turns them into multimodal content blocks on the last
 	// user message so a vision model sees them (advanced_rag.Rag assembles the
 	// message from these).
 	Images []string
-	// TextAttachments is the joined text-file content (Python
-	// text_attachments_content); appended to the question so the model reads
-	// attached documents in the reasoning path.
+	// TextAttachments is the joined text-file content, appended to the question so the
+	// model reads attached documents in the reasoning path.
 	TextAttachments string
 }
 
@@ -99,33 +92,29 @@ func NewSearchExecutor(deps SearchDeps, req RunRequest) ToolExecutor {
 	return &searchExecutor{deps: deps, req: req}
 }
 
-// RunPattern executes ONE completeness pattern and returns the windows it matched, already
-// narrowed (see ScanPatterns / RunCompletenessPass).
+// CoverageRunner is the tool layer's enumeration seam: the runtime asks the EXECUTOR to
+// run the direction's own enumeration over the corpus, so the step belongs to the graph
+// rather than to a prompt.
 //
-// It goes through the same grep path a retrieve call uses, so a pattern is treated as a
-// pattern: its operands are recalled on their own (patternRecallTopN — a pattern's recall
-// must not stop at a ranking's head, see that constant's measurement), the pattern decides
-// which candidates are windows (matchGrepPattern), and the windows come back narrowed to
-// the match (GrepOutCharsPerChunk / GrepOutTotalChars). The runtime runs this itself
-// because the same queries handed to the model as a list went unrun (see
-// RunCompletenessPass).
-func (e *searchExecutor) RunPattern(ctx context.Context, pattern string) []map[string]any {
-	pattern = strings.TrimSpace(pattern)
-	if pattern == "" {
-		return nil
+// It is a runner rather than a caller-side helper for one reason: the runtime has to be
+// able to ask the corpus itself. The same queries handed to the model as a list went
+// unrun — measured (2026-09-16, 三国/关羽) a round rendered 2175 characters of act
+// patterns into the seed of every session and the run's query log holds zero of them —
+// so the enumeration is a step of the graph, and the only thing it needs from the tool
+// layer is a search.
+type CoverageRunner interface {
+	EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet
+}
+
+// EnumerateCoverage runs the direction's OWN enumeration over the corpus: one recall per
+// operand (the actor's declared forms and the act words), then the windows where the deed
+// is stated (see EnumerateCoverage in coverage_enumerate.go).
+func (e *searchExecutor) EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet {
+	deps := e.deps
+	if len(deps.KbIDs) == 0 && len(e.req.DatasetIDs) > 0 {
+		deps.KbIDs = e.req.DatasetIDs
 	}
-	chunks, _ := GrepSearch(ctx, e.deps, SearchParams{
-		Question: pattern,
-		// A pattern is an expression for the MATCHER, not for the engine (see
-		// GrepSearch): recall gets the operands, the pattern stays here and decides.
-		Keywords: strings.Join(GrepPatternOperands(pattern), " "),
-		TopN:     patternRecallTopN,
-		KbIDs:    e.req.DatasetIDs,
-		// The pass asks about the ACTOR and the ACT WORDS, never about candidate names
-		// (see SearchParams.SkipReachLedger).
-		SkipReachLedger: true,
-	})
-	return chunks
+	return EnumerateCoverage(ctx, deps, cov, kb)
 }
 
 // Execute implements ToolExecutor for the wired tools. Tools whose port has not
@@ -133,11 +122,9 @@ func (e *searchExecutor) RunPattern(ctx context.Context, pattern string) []map[s
 // call reached nothing) so the model falls back to a different tool instead of
 // stalling.
 func (e *searchExecutor) Execute(ctx context.Context, name string, args map[string]any) (ToolOutcome, error) {
-	// Mirror Python rag/llm/tool_decorator.py:tool "[Function tool] Running the
-	// {name} tool with: {args}", one of the three namespaces Python's
-	// _SCOPED_PREFIXES forwarded into the think block. Python emitted it from a
-	// root-logging handler; Go has no root logger, so it is logged through the
-	// wrapped deps.Logger, which thinkLogger forwards to the think block.
+	// "[Function tool] Running the {name} tool with: {args}", one of the three namespaces
+	// forwarded into the think block. It is logged through the wrapped deps.Logger, which
+	// thinkLogger forwards to the think block.
 	if logger := e.deps.Logger; logger != nil && name != "" {
 		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderToolArgs(args))
 	}
@@ -175,9 +162,8 @@ func (e *searchExecutor) Execute(ctx context.Context, name string, args map[stri
 }
 
 // renderToolArgs renders a tool's arguments for the "[Function tool]" think-log
-// line. Python interpolated the raw args dict; Go marshals to JSON so nested
-// values (scopes, tag maps) stay readable. Empty args render as "{}" to match
-// Python's look rather than an empty string.
+// line. The args dict is marshalled to JSON so nested values (scopes, tag maps) stay
+// readable. Empty args render as "{}" rather than an empty string.
 func renderToolArgs(args map[string]any) string {
 	if len(args) == 0 {
 		return "{}"
@@ -223,8 +209,8 @@ func (e *searchExecutor) fetchFullDocument(ctx context.Context, args map[string]
 	}, nil
 }
 
-// summarizeDocument mirrors Python's summarize_document tool: load the document
-// and hand the model the freshly rendered evidence blocks.
+// summarizeDocument loads the document and hands the model the freshly rendered evidence
+// blocks.
 func (e *searchExecutor) summarizeDocument(ctx context.Context, args map[string]any) (ToolOutcome, error) {
 	docID := argString(args, "doc_id")
 	if docID == "" {
@@ -272,17 +258,15 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
 	router := e.navRouter()
-	// The tool argument is NOT threaded (Python _exec_navigate_tree,
-	// action_session.py:_exec_navigate_tree, calls _navigate_tree_impl(query, keywords=...) with
-	// no doc_scope), but the SESSION scope still applies: the impl routes through
-	// _nav_search_titled, which ceilings its scope with tools.scoped_doc_ids(None)
-	// — the session doc_scope (navigation.py:_nav_search_titled). The router must therefore
-	// receive the session ceiling, never the tool argument.
+	// The tool argument is NOT threaded (navigate_tree takes query + keywords only), but
+	// the SESSION scope still applies: the router ceilings its scope with the session
+	// doc_scope. The router must therefore receive the session ceiling, never the tool
+	// argument.
 	res := NavigateTree(ctx, router, NavTreeInput{
 		Query: query,
-		// Python :985 threads ONLY the tool argument's keywords (usually absent,
-		// so "") — the run-level request keywords are a Go-only invention that
-		// re-biased every tree routing toward the original question keywords.
+		// threads ONLY the tool argument's keywords (usually absent, so "") — passing the
+		// run-level request keywords re-biased every tree routing toward the original
+		// question keywords.
 		Keywords: argString(args, "keywords"),
 		DocScope: e.deps.DocScope,
 		TenantID: e.deps.TenantID,
@@ -293,8 +277,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	case ReasonNoStructure:
 		return ToolOutcome{
 			Payload: []any{map[string]any{
-				// Python action_session.py:_exec_navigate_tree (dataset_has_compilation
-				// gate) — note text verbatim; the payload carries kind+note only.
+				// The dataset_has_compilation gate: the payload carries kind+note only.
 				"kind": "navigate_tree",
 				"note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead.",
 			}},
@@ -303,7 +286,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 		}, nil
 	case ReasonNoDoc:
 		// Structure exists, this query reached nothing — a MISS, not an EMPTY.
-		// Python :990 note verbatim; the payload carries kind+note only.
+		// note verbatim; the payload carries kind+note only.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
 				"kind": "navigate_tree",
@@ -320,8 +303,8 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 		}, nil
 	}
 
-	// Routed: expose the summary-bearing payload the ladder consumes. Python
-	// :995 caps the content at 8000 chars.
+	// Routed: expose the summary-bearing payload the ladder consumes, capped at 8000
+	// chars.
 	content := res.Text
 	if len(content) > 8000 {
 		content = content[:8000]
@@ -346,8 +329,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 // chunkAggRetrieveFrom adapts a harness Retriever into the chunk_agg retrieve
 // leg. It scopes the search to the dataset (kbID) and the caller's document
 // scope and pulls the wide pool chunk_agg needs; the backend is expected to
-// exclude compiled rows (the production retrieval filters available_int=1),
-// mirroring Python settings.retriever.retrieval under _search_layers_nav_chunk_agg.
+// exclude compiled rows (the production retrieval filters available_int=1).
 //
 // It stays in the harness package because it depends on the agentic Retriever /
 // RetrieveRequest; the routing algorithm itself lives in internal/service/nav.
@@ -378,10 +360,10 @@ func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
 // returns the underlying source chunks.
 //
 // NOTE on shapes: the Go reader (navigation.loadStructureEntities) currently
-// reads only the compact graph-blob rows, whereas Python merges BOTH row shapes
-// (graph blob AND per-entity/relation rows). ParseCompiledStructure in
-// navtools.go already implements the merged parsing; wiring it into the reader
-// is the remaining step for full parity.
+// reads only the compact graph-blob rows, whereas BOTH row shapes (graph blob AND
+// per-entity/relation rows) should be merged. ParseCompiledStructure in navtools.go
+// already implements the merged parsing; wiring it into the reader is the remaining
+// step.
 func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]any) (ToolOutcome, error) {
 	query := argString(args, "query")
 	docID := argString(args, "doc_id")
@@ -391,26 +373,23 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 	if query == "" {
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
-	// No scope-as-doc-pin: Python _exec_navigate_structure
-	// reads only args["doc_id"] — args["doc_scope"] is never consulted.
+	// No scope-as-doc-pin: only args["doc_id"] is read — args["doc_scope"] is never
+	// consulted.
 	kind := argString(args, "kind")
 	if kind == "" {
 		kind = "catalog"
 	}
 
-	// Resolve the document set. When the caller omits doc_id, mirror Python
-	// _navigate_structure_impl: route to the documents by descending the compiled
-	// navigation tree (the exact seam navigate_tree uses), not by refusing the
-	// call. Python's _nav_search_titled caps the routed set at _NAV_TREE_MAX_DOCS.
+	// Resolve the document set. When the caller omits doc_id, route to the documents by
+	// descending the compiled navigation tree (the exact seam navigate_tree uses), not by
+	// refusing the call. The routed set is capped at navTreeMaxDocs.
 	var docIDs []string
 	if docID != "" {
 		docIDs = []string{docID}
 	} else {
 		// DocScope is the session ceiling, not the tool argument (see the note in
-		// navigateTree): Python's _exec_navigate_structure never threads
-		// args["doc_scope"], but the routing it does when doc_id is absent goes
-		// through _nav_search_titled, which applies tools.scoped_doc_ids(None)
-		// (navigation.py:_nav_search_titled / :1012).
+		// navigateTree): args["doc_scope"] is never threaded, but the routing done when
+		// doc_id is absent applies the session document scope.
 		res := NavigateTree(ctx, e.navRouter(), NavTreeInput{
 			Query:    query,
 			Keywords: e.req.Keywords,
@@ -426,8 +405,8 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 			docIDs = docIDs[:navTreeMaxDocs]
 		}
 		if len(docIDs) == 0 {
-			// Routing reached no document (Python: empty_reason="no_doc"). Python
-			// :1037 emits the SAME note for every empty_reason — text verbatim.
+			// Routing reached no document (empty_reason="no_doc"). The SAME note is emitted
+			// for every empty_reason.
 			return ToolOutcome{
 				Payload: []any{map[string]any{
 					"kind":   "navigate_structure",
@@ -440,8 +419,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		}
 	}
 
-	// Zero-LLM vector-beam drill-down (mirrors Python _read_structures +
-	// _navigate_structure_impl): read each document's compiled structure of the
+	// Zero-LLM vector-beam drill-down: read each document's compiled structure of the
 	// requested kind, drill toward the query, and hand the model the merged
 	// <structure_navigation> outline with chunk-pointer anchors.
 	res, drill := navigateStructures(ctx, e.deps.TenantID, query, docIDs, kind, e.navRouter(), e.deps)
@@ -453,8 +431,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		"claim_hits":  drill.claimHits,
 	}
 	if res.EmptyReason != "" {
-		// Python :1037 — one note for every empty_reason; kind renders with
-		// Python repr() quoting (kind!r).
+		// one note for every empty_reason; kind renders quoted.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
 				"kind":   "navigate_structure",
@@ -492,10 +469,9 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 }
 
 // navRouter returns the navigation-tree router navigateTree and navigateStructure
-// share. It mirrors Python's agentic router choice: the navigation-tree route
-// asks for router="claim_agg" (dataset_api_service.search_dataset_layers) — the
-// claim leg runs first and decides the ranking when it hits, and raw-chunk
-// aggregation (chunk_agg) is the fallback. A nil retrieval backend degrades to
+// share. It follows the agentic router choice: the navigation-tree route asks for
+// router="claim_agg" — the claim leg runs first and decides the ranking when it hits, and
+// raw-chunk aggregation (chunk_agg) is the fallback. A nil retrieval backend degrades to
 // the nav-row router, which needs no backend.
 func (e *searchExecutor) navRouter() NavTreeRouter {
 	if e.deps.NavRouter != nil {
@@ -539,19 +515,16 @@ func argString(args map[string]any, key string) string {
 	return s
 }
 
-// evidencePoolCap is the hard cap on the shared evidence pool
-// (kbinfos["chunks"]). Mirrors Python _EVIDENCE_POOL_CAP (=120,
-// action_session.py:62): deliberately LARGER than _SCA_VIEW_CAP (=60) so
-// storage and review stay DECOUPLED — the pool accumulates while the SCA reads
-// a ranked top-60 view. Coupling them at 60 starved the raw-evidence channel in
-// 42% of rounds (every admit rejected -> status REDUNDANT -> the model
+// evidencePoolCap is the hard cap on the shared evidence pool. It is deliberately LARGER
+// than the SCA view cap (60) so storage and review stay DECOUPLED — the pool accumulates
+// while the SCA reads a ranked top-60 view. Coupling them at 60 starved the raw-evidence
+// channel in 42% of rounds (every admit rejected -> status REDUNDANT -> the model
 // re-searched for nothing).
 //
-// Claim pseudo-chunks BYPASS this cap: Python's _claim_prefetch appends them
-// directly to kbinfos["chunks"] (:755), and the cap check (:657) only guards
-// _admit_evidence's regular chunks.
+// Claim pseudo-chunks BYPASS this cap: they are appended directly to the pool, and the cap
+// only guards regular chunk admission.
 //
-// 200, not Python's 120. The 120 was sized for a consumer that no longer exists —
+// The cap is 200 (the old 120 was sized for a consumer that no longer exists) —
 // the round-level sweep that rendered the WHOLE pool into one prompt, where the cap
 // and that prompt's budget were the same number. Nothing renders the pool whole any
 // more (the SCA reads a ranked 60-chunk view, the session seed injects a bounded
@@ -636,15 +609,13 @@ func namedTermsOf(queries []string) []string {
 
 // search runs one retrieval call for a tool invocation.
 //
-// Python's retrieve/search_chunks both funnel into tools/search.py, differing
-// only in whether compiled expansion runs (search_chunks expands, retrieve does
-// not) and in the accepted query count.
+// The two retrieval tools share this body, differing only in whether compiled expansion
+// runs (search_chunks expands, retrieve does not) and in the accepted query count.
 func (e *searchExecutor) search(ctx context.Context, name string, args map[string]any) (ToolOutcome, error) {
 	queries := toolQueries(args)
 	if len(queries) == 0 {
-		// Python _arg_query_list yields [] for a missing/blank query and
-		// _run_search simply admits nothing: _search_outcome([], ...) is
-		// MISS/no_doc (action_session.py:_search_outcome), NOT a bad-args error.
+		// A missing/blank query yields no queries and simply admits nothing: the outcome is
+		// MISS/no_doc, NOT a bad-args error.
 		return ToolOutcome{
 			Payload:     []any{},
 			EvidenceIDs: nil,
@@ -653,18 +624,15 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			Metrics:     map[string]any{"hits": 0, "new_evidence": 0},
 		}, nil
 	}
-	// Python's retrieval tools run against tools.kbinfos, and _seed_evidence
-	// (action_session.py:_admit_evidence) CREATES it when absent — so every search has a
-	// (possibly empty) pool to admit into. Mirror that instead of bailing out:
-	// the search runs and its outcome is decided by what it actually admitted.
+	// The pool is CREATED when absent, so every search has a (possibly empty) pool to admit
+	// into: the search runs and its outcome is decided by what it actually admitted.
 	if e.deps.KB == nil {
 		e.deps.KB = &Kbinfos{}
 	}
 	logger := searchLogger(e.deps)
 
-	// Max queries per tool call mirrors Python action_session.execute_tool
-	// (_arg_query_list): retrieve=3, search_chunks=2. grep_search/grep_chunks
-	// are Go-internal tools (Python exposes no such session tool), so they are
+	// Max queries per tool call: retrieve=3, search_chunks=2. grep_search/grep_chunks are
+	// Go-internal tools, so they are
 	// left uncapped.
 	//
 	// A direction assembling a SET/COUNT raises the ceiling. There the call's
@@ -707,11 +675,10 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	var payload []any
 	var evidenceIDs []string
 	newChunks := 0
-	// Per-call admittance state, mirroring Python _run_search/_admit_evidence
-	// (action_session.py:_run_search): `seen` dedups chunks ACROSS the queries of
-	// this one call. The pool-side dedup is Kbinfos.Admit's job, against the LIVE
-	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
-	// nothing can interleave, and another session appending makes it stale.
+	// Per-call admittance state: `seen` dedups chunks ACROSS the queries of this one call.
+	// The pool-side dedup is Kbinfos.Admit's job, against the LIVE pool — a per-call
+	// snapshot of it is exact only while nothing can interleave, and another session
+	// appending makes it stale.
 	seen := map[string]bool{}
 	// reached accumulates every candidate the call's own searches returned. It is
 	// what the seat pass below asks "which of the named terms did this retrieval
@@ -722,24 +689,19 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// names is exactly where this matters — the passages alone cannot say whether
 	// a member was missing or simply never asked about.
 	var reachNotes []string
-	// Claim-first, MUTUALLY EXCLUSIVE (Python _run_search: _claim_prefetch +
-	// _CLAIM_PREFETCH_EXCLUSIVE): when claim rows hit, their verbatim evidence
-	// IS the answer material — chunk snippets on top would echo the same
-	// passages and burn tokens. Claims carry chunk pointers, so deep-reading
-	// stays one list_chunks away. No hits → the chunk search runs exactly as
-	// before. Applies to the whole retrieve family + search_chunks, matching
-	// Python's _exec_retrieve/_exec_search_chunks (both route through
-	// _run_search). Best effort: any failure falls through without claims.
+	// Claim-first, MUTUALLY EXCLUSIVE: when claim rows hit, their verbatim evidence IS the
+	// answer material — chunk snippets on top would echo the same passages and burn tokens.
+	// Claims carry chunk pointers, so deep-reading stays one list_chunks away. No hits →
+	// the chunk search runs exactly as before. Applies to the whole retrieve family +
+	// search_chunks. Best effort: any failure falls through without claims.
 	if name == "retrieve" || name == "search_chunks" || strings.HasPrefix(name, "grep") {
 		if len(queries) > 0 {
 			if claimPayload, _, claimPseudo, ok := ClaimPrefetch(ctx, e.deps, queries[0], seen); ok {
 				newEvidence := 0
 				e.deps.KB.Admit(func(p *PoolAdmitter) {
 					for _, pc := range claimPseudo {
-						// Claim pseudo-chunks BYPASS the pool cap: Python
-						// _claim_prefetch appends them directly to
-						// kbinfos["chunks"] (:755) and the cap check (:657)
-						// only guards regular chunk admits — the verbatim
+						// Claim pseudo-chunks BYPASS the pool cap: they are appended directly to the
+						// pool and the cap only guards regular chunk admits — the verbatim
 						// evidence must land in the pool even when it is FULL.
 						cid := ChunkIDOf(pc)
 						if seen[cid] {
@@ -768,25 +730,21 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		}
 	}
 	for _, q := range queries {
-		// Per-tool top_n (mirrors Python action_session: retrieve=10,
-		// search_chunks=20). They were previously collapsed onto e.req.TopN,
-		// so search_chunks returned far fewer candidates than Python.
+		// Per-tool top_n: retrieve=10, search_chunks=20. Collapsing both onto e.req.TopN
+		// made search_chunks return far fewer candidates.
 		topN := 10
 		if name == "search_chunks" {
 			topN = 20
 		}
-		// Python dispatches these tools to genuinely different search functions
-		// (action_session.py:_exec_retrieve :751): retrieve/grep_* → grep_search
-		// (keyword-only), search_chunks → hybrid_search (vector leg when an
-		// embedder is configured). Each is now its own Go function so a single
-		// global switch can no longer disable the semantic leg.
+		// These tools dispatch to genuinely different search functions: retrieve/grep_* →
+		// grep_search (keyword-only), search_chunks → hybrid_search (vector leg when an
+		// embedder is configured). Each is its own function so a single global switch can no
+		// longer disable the semantic leg.
 		//
-		// Python's search_chunks tool ALWAYS enables compiled-structure expansion
-		// in ALL modes, not just high (action_session.py:execute_tool passes
-		// use_compiled=True); retrieve/grep_search never do. So Go mirrors that:
-		// compiled is on for search_chunks and off for every other retrieve-family
-		// tool, independent of e.req.UseCompiled (which gates the L1 direct
-		// retrieve, not the action_session tool loop).
+		// search_chunks ALWAYS enables compiled-structure expansion, in ALL modes, not just
+		// high; retrieve/grep_search never do. So compiled is on for search_chunks and off for
+		// every other retrieve-family tool, independent of e.req.UseCompiled (which gates the
+		// L1 direct retrieve, not the action-session tool loop).
 		var searchFn func(context.Context, SearchDeps, SearchParams) ([]map[string]any, []map[string]any)
 		useCompiled := name == "search_chunks"
 		if useCompiled {
@@ -794,31 +752,27 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		} else {
 			searchFn = GrepSearch
 		}
-		// Keywords mirror the two Python executors exactly:
-		//   - retrieve → grep_search(keywords=nav_hint or None). In Python the
-		//     nav hint is an explicit PARAMETER of _exec_retrieve and is passed
-		//   ONLY by the navigation ladder (action_session.py:_run_drill_merge); the model's
-		//     own retrieve dispatch (:1022) passes none, in which case grep_search
-		//   falls back to the query's own extracted terms (search.py:grep_search) —
-		//     that fallback lives in GrepSearch, which turns them into the BM25
-		//     hint. The session run keywords (req.Keywords) are never forwarded.
-		//   - search_chunks → _exec_search_chunks (:751) takes no keywords at all,
-		//     so hybrid_search's _narrow_or_keep is a no-op.
+		// Keywords differ per tool:
+		//   - retrieve → grep_search(keywords=nav_hint or None). The nav hint is an explicit
+		//     PARAMETER, passed ONLY by the navigation ladder; the model's own retrieve
+		//     dispatch passes none, in which case GrepSearch falls back to the query's own
+		//     extracted terms and turns them into the BM25 hint. The session run keywords
+		//     (req.Keywords) are never forwarded.
+		//   - search_chunks takes no keywords at all, so hybrid_search's narrowing is a
+		//     no-op.
 		var kws string
 		if !useCompiled {
 			kws = argString(args, "nav_hint")
 		}
-		// doc_scope is honoured by the retrieve family only: Python's
-		// _exec_retrieve reads args["doc_scope"], while
-		// _exec_search_chunks (:751) takes no doc_scope at all and its
+		// doc_scope is honoured by the retrieve family only: retrieve reads
+		// args["doc_scope"], while search_chunks takes no doc_scope at all and its
 		// hybrid_search call is unscoped. Gating on useCompiled keeps that split.
 		var docScope []string
 		if !useCompiled {
 			docScope = toolDocScope(args)
 		}
-		// Python _run_search reads only res["chunks"], but the aggregations it
-		// drops are what the answer's document/reference list is built from —
-		// this tool is their only writer.
+		// The aggregations the search body would otherwise drop are what the answer's
+		// document/reference list is built from — this tool is their only writer.
 		chunks, aggs := searchFn(ctx, e.deps, SearchParams{
 			Question:    q,
 			Keywords:    kws,
@@ -837,7 +791,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			reachNotes = append(reachNotes, line)
 		}
 		// Only the first snippetsPerQueryFor(mode) hits of each query are considered
-		// (Python cands[:_SNIPPETS_PER_QUERY]) — EXCEPT for a query that NAMES
+		// — EXCEPT for a query that NAMES
 		// terms, which keeps one candidate per named term first. The locate step
 		// hands back one window per term, and a flat cut is what turns a six-name
 		// call into "the names that matched most": the rarest lose their seat to the
@@ -851,18 +805,16 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		}
 		reached = append(reached, chunks...)
 		// Admittance mirrors _admit_evidence exactly: per-call dedup by chunk
-		// id, the chunk ID as the evidence reference (Python's `ids` holds ids,
-		// not pool positions), and only chunks NEW to the shared pool appended
-		// to it — so REDUNDANT means "nothing new", not "nothing returned".
+		// id, the chunk ID as the evidence reference (ids, not pool positions), and only
+		// chunks NEW to the shared pool appended to it — so REDUNDANT means "nothing new",
+		// not "nothing returned".
 		//
-		// ONE query's batch is one critical section: Python's per-query loop has
-		// no await (the awaits sit in the outer query loop, :691-700), so asyncio
-		// cannot interleave two sessions' batches. Locking per chunk would let
-		// them interleave into pool orders Python can never produce.
+		// ONE query's batch is one critical section: the per-query loop has no await, so
+		// two sessions' batches cannot interleave. Locking per chunk would let them
+		// interleave into pool orders that should not happen.
 		e.deps.KB.Admit(func(p *PoolAdmitter) {
-			// Python _admit_evidence computes _claim_covered_ids(kbinfos) from the
-			// LIVE pool once per call; compute it once per batch under the same
-			// critical section.
+			// The claim-covered set is computed from the LIVE pool once per batch, under the
+			// same critical section.
 			covered := p.ClaimCoveredIDs()
 			// The cap exemption for this batch, derived from the probe's own terms
 			// (see probeTerms / PoolAdmitter.Novelty): a full pool still takes the
@@ -871,9 +823,9 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			// passage.
 			novel := p.Novelty(probeTerms(q))
 			for _, c := range chunks {
-				// Python _admit_evidence early-stops at the top once the shared pool
-				// reaches the cap, BEFORE the per-call dedup — except for the probe
-				// window above, which IS the answer the caller asked for.
+				// Admission early-stops once the shared pool reaches the cap, BEFORE the
+				// per-call dedup — except for the probe window above, which IS the answer the
+				// caller asked for.
 				if p.Full() && !novel.Admits(c) {
 					continue
 				}
@@ -881,7 +833,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 				if seen[cid] {
 					continue
 				}
-				// Python :672-676 — already quoted verbatim by a pooled claim →
+				// already quoted verbatim by a pooled claim →
 				// skip the full passage (table chunks exempt: their answer rows
 				// survive only in full text). Not pooled, not passed to the model.
 				if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
@@ -890,9 +842,8 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 				seen[cid] = true
 				evidenceIDs = append(evidenceIDs, cid)
 				payload = append(payload, passageFromChunk(c))
-				// Pool identity uses chunkKey (Go's stable key): Python's _chunk_key
-				// falls back to id(ck) — the dict's address — so an equivalent
-				// re-retrieved chunk never matches and is appended again.
+				// Pool identity uses chunkKey (a stable key): an address-based key would never
+				// match an equivalent re-retrieved chunk, and it would be appended again.
 				if p.Add(c) {
 					newChunks++
 				}
@@ -1008,12 +959,11 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		}, nil
 	}
 	// Zero new evidence (every hit was already in the pool) is REDUNDANT, not
-	// OK. Python _search_outcome still returns the
-	// FULL payload here — the model sees the passages AND a redundant status, so
-	// it knows the ground is already covered. The session tool node appends the
-	// "ALREADY in your evidence" note on StatusRedundant,
-	// which is what stops the re-issue; dropping the payload (as an earlier port
-	// did) hid the evidence the model needs and is the divergence from Python.
+	// OK. The FULL payload is still returned here — the model sees the passages AND a
+	// redundant status, so it knows the ground is already covered. The session tool node
+	// appends the "ALREADY in your evidence" note on StatusRedundant, which is what stops
+	// the re-issue; dropping the payload (as an earlier version did) hid the evidence the
+	// model needs.
 	if newChunks == 0 {
 		return ToolOutcome{
 			Payload:     payload,
@@ -1034,18 +984,18 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	}, nil
 }
 
-// calculate mirrors Python's calculate tool (action_session.py:_exec_calculate): derive a
-// number the evidence does not state outright, by having the model write ONE
+// calculate derives a number the evidence does not state outright, by having the model
+// write ONE
 // expression and evaluating it against the AST whitelist (see arithmetic.go).
 //
 // The computed value is returned as evidence, so a later answer step can cite it
 // without re-deriving. Nothing derivable is POOR/no_doc, not an error — the model
 // then answers from the facts it already has.
 func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (ToolOutcome, error) {
-	// Python validates NOTHING here: an absent question or fact list flows into
-	// compute_from_facts, whose own `if not question or not facts` guard returns
-	// None — a POOR/no_doc "nothing derivable", never a bad-args error. There is
-	// no fallback to the run question either.
+	// NOTHING is validated here: an absent question or fact list flows into
+	// compute_from_facts, whose own `if not question or not facts` guard returns None — a
+	// POOR/no_doc "nothing derivable", never a bad-args error. There is no fallback to the
+	// run question either.
 	question := argString(args, "question")
 	facts := make([]string, 0, 8)
 	for _, f := range toolStringList(args, "facts") {
@@ -1054,8 +1004,7 @@ func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (To
 		}
 	}
 	if e.deps.Model == nil {
-		// Python :946-948 — no chat model is an INFRA failure, checked BEFORE any
-		// derivation, with the payload Python emits verbatim.
+		// no chat model is an INFRA failure, checked BEFORE any derivation.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
 				"kind":  "calculate",
@@ -1068,7 +1017,7 @@ func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (To
 	}
 	cf := ComputeFromFacts(ctx, e.deps.Model, question, facts, 0)
 	if cf == nil {
-		// Nothing derivable is POOR/no_doc (Python :954-960), with Python's note.
+		// Nothing derivable is POOR/no_doc.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
 				"kind":       "calculate",
@@ -1080,7 +1029,7 @@ func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (To
 			Metrics: map[string]any{},
 		}, nil
 	}
-	// Python :961 — the success payload is exactly {"kind","expression","result"};
+	// the success payload is exactly {"kind","expression","result"};
 	// the label/uses the model returned are deliberately NOT echoed back.
 	return ToolOutcome{
 		Payload: []any{map[string]any{
@@ -1154,19 +1103,16 @@ func toolQueries(args map[string]any) []string {
 	return nil
 }
 
-// toolDocScope reads the optional doc_scope restriction — the tool argument
-// Python parses in exactly two dispatchers: retrieve (action_session.py:execute_tool)
-// and graph_explore (:977). Both do
+// toolDocScope reads the optional doc_scope restriction — parsed in exactly two
+// dispatchers: retrieve and graph_explore, as
 //
 //	[str(d) for d in (args.get("doc_scope") or []) if str(d).strip()]
 //
-// so ONLY the "doc_scope" key is honoured: there is deliberately NO "doc_ids"
-// alias and NO bare-string coercion (Python would iterate a string char-wise;
-// no tool schema advertises either key, so both cases are unreachable). The
-// other tools that used to call this — search_chunks, navigate_tree,
-// navigate_structure — must NOT read a scope: Python's _exec_search_chunks,
-// _exec_navigate_tree and _exec_navigate_structure never thread args["doc_scope"]
-// into their impls.
+// so ONLY the "doc_scope" key is honoured: there is deliberately NO "doc_ids" alias and
+// NO bare-string coercion (a string would be iterated char-wise; no tool schema advertises
+// either key, so both cases are unreachable). The other tools that used to call this —
+// search_chunks, navigate_tree, navigate_structure — must NOT read a scope: none of them
+// threads args["doc_scope"] into its impl.
 func toolDocScope(args map[string]any) []string {
 	raw, ok := args["doc_scope"]
 	if !ok {
@@ -1193,9 +1139,9 @@ func toolDocScope(args map[string]any) []string {
 	return out
 }
 
-// passageFromChunk renders one chunk as the passage dict the model sees: the keys
-// of Python _admit_evidence (:667-673) — {"id", "content", "doc_id"}, no title and
-// no query. The id must stay under "id": the drill merge reads it as entry["id"],
+// passageFromChunk renders one chunk as the passage dict the model sees: {"id",
+// "content", "doc_id"} — no title and no query. The id must stay under "id": the drill
+// merge reads it as entry["id"],
 // so a "chunk_id" key silently disables the drill's structure_path attachment.
 func passageFromChunk(c map[string]any) map[string]any {
 	// Table chunks pass through un-truncated: the 1200-char cap would hide rows
@@ -1204,8 +1150,7 @@ func passageFromChunk(c map[string]any) map[string]any {
 	if IsTableChunk(c) {
 		content = ChunkTextOf(c)
 	} else {
-		// Python _admit_evidence: content = _ct[:1200], a plain slice (no trim,
-		// no ellipsis).
+		// Content is a plain slice at 1200 chars (no trim, no ellipsis).
 		content = truncateRunes(ChunkTextOf(c), 1200)
 	}
 	return map[string]any{
@@ -1219,8 +1164,8 @@ func passageFromChunk(c map[string]any) map[string]any {
 // agent's post-stream citation grounding can read it.
 //
 // Chunk and aggregation shapes match runtime's referenceChunksFromRetrieval /
-// referenceDocAggsFromRetrieval (which dual-write both Python and Go field
-// names), so no translation is needed by the consumer. Exported because the
+// referenceDocAggsFromRetrieval (which dual-write both field-name styles), so no
+// translation is needed by the consumer. Exported because the
 // caller sits in the parent advanced_rag package (agentic_rag.go), not
 // inside harness.
 func PublishReferences(ctx context.Context, kb *Kbinfos) {
@@ -1259,12 +1204,11 @@ func PublishReferences(ctx context.Context, kb *Kbinfos) {
 // This is the only place in the harness that knows about internal/agent/runtime;
 // it lives in the harness root package (not a sub-package) so the runtime
 // dependency does not leak into the harness's testable core.
-// RuntimeRetriever is the production harness retriever. It mirrors Python's
-// settings.retriever: it runs the backend search and returns the normalised
-// chunks. Child-fragment promotion (retrieval_by_children) is NOT done here —
-// it is entry-point specific (only hybrid_search / RAGTools.retrieve do it in
-// Python, search.py:_normalize / agentic_rag.py:RAGTools.retrieve), so it lives in runSearch, gated
-// by searchOpts.promoteChildren, and this Backend stays caller-agnostic.
+// RuntimeRetriever is the production harness retriever: it runs the backend search and
+// returns the normalised chunks. Child-fragment promotion (retrieval_by_children) is NOT
+// done here — it is entry-point specific (only the hybrid and retrieve legs do it), so it
+// lives in runSearch, gated by searchOpts.promoteChildren, and this Backend stays
+// caller-agnostic.
 type RuntimeRetriever struct{}
 
 func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([]map[string]any, error) {
@@ -1285,9 +1229,8 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 		DisableVectorLeg:       req.DisableVectorLeg,
 		TenantID:               req.TenantID,
 		RankFeature:            req.RankFeature,
-		// ExcludeCompiled maps Python hybrid_search's
-		// must_not={"exists":"compile_kwd"} onto the runtime request's
-		// OnlyOriginalText (the "no compile_kwd" exclusion).
+		// ExcludeCompiled maps onto the runtime request's OnlyOriginalText (the
+		// "no compile_kwd" exclusion).
 		OnlyOriginalText: req.ExcludeCompiled,
 	})
 	if err != nil {

@@ -132,8 +132,7 @@ func TestChunkAggRetrievePropagatesError(t *testing.T) {
 
 // TestRuntimeRetrieverPromotesChildrenToParent verifies that
 // RuntimeRetriever.Retrieve threads child chunks through retrieval_by_children:
-// two child fragments sharing a mom_id collapse into the single parent chunk,
-// mirroring Python settings.retriever.retrieval_by_children.
+// two child fragments sharing a mom_id collapse into the single parent chunk.
 func TestRuntimeRetrieverPromotesChildrenToParent(t *testing.T) {
 	prev := runtime.GetRetrievalService()
 	runtime.SetRetrievalService(stubRetrievalService{chunks: []runtime.RetrievalChunk{
@@ -215,10 +214,9 @@ func TestHybridSearchSkipsWhenNoChildren(t *testing.T) {
 	}
 }
 
-// TestBM25SearchDoesPromoteChildren verifies that bm25_search (like every other
-// entry point) runs retrieval_by_children: a child fragment is lifted to its
-// parent chunk. This mirrors Python search.py:bm25_search, which routes
-// through _normalize (which calls retrieval_by_children).
+// TestBM25SearchDoesPromoteChildren verifies that bm25_search (like every other entry
+// point) runs retrieval_by_children: a child fragment is lifted to its parent chunk, because
+// the normaliser calls retrieval_by_children.
 func TestBM25SearchDoesPromoteChildren(t *testing.T) {
 	prev := runtime.GetRetrievalService()
 	runtime.SetRetrievalService(stubRetrievalService{chunks: []runtime.RetrievalChunk{
@@ -236,9 +234,8 @@ func TestBM25SearchDoesPromoteChildren(t *testing.T) {
 	}
 }
 
-// TestExecuteLogsFunctionToolLine covers the Python tool_decorator.py:tool_call_async line
-// "[Function tool] Running the {name} tool with: {args}", which Python's
-// _SCOPED_PREFIXES forwarded into the think block.
+// TestExecuteLogsFunctionToolLine covers the "[Function tool] Running the {name} tool
+// with: {args}" line, one of the namespaces forwarded into the think block.
 func TestExecuteLogsFunctionToolLine(t *testing.T) {
 	var buf bytes.Buffer
 	deps := SearchDeps{Logger: log.New(&buf, "", 0)}
@@ -265,10 +262,9 @@ func TestExecuteNoLoggerIsSafe(t *testing.T) {
 	}
 }
 
-// TestSearchChunksAlwaysUsesCompiled pins fix #2: Python's search_chunks tool
-// ALWAYS enables compiled-structure expansion (action_session.py:execute_tool passes
-// use_compiled=True); retrieve never does. The Go executor must mirror that and
-// NOT gate it on RunRequest.UseCompiled (which controls the L1 direct retrieve).
+// TestSearchChunksAlwaysUsesCompiled pins fix #2: the search_chunks tool ALWAYS enables
+// compiled-structure expansion; retrieve never does. The executor must NOT gate it on
+// RunRequest.UseCompiled (which controls the L1 direct retrieve).
 func TestSearchChunksAlwaysUsesCompiled(t *testing.T) {
 	// search_chunks must expand (independent of req.UseCompiled).
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
@@ -321,11 +317,10 @@ func TestRenderToolArgs(t *testing.T) {
 	}
 }
 
-// TestSearchNilKBIsSeeded pins the Python _seed_evidence semantics
-// (action_session.py:_admit_evidence): a nil deps.KB is not a caller mistake — the
-// executor creates the (empty) pool on first use, so the search RUNS and its
-// outcome is decided by what it admitted (OK here), never a forced MISS. The
-// executor must also not panic on the nil pool.
+// TestSearchNilKBIsSeeded pins the seed-on-demand semantics: a nil deps.KB is not a caller
+// mistake — the executor creates the (empty) pool on first use, so the search RUNS and its
+// outcome is decided by what it admitted (OK here), never a forced MISS. The executor must
+// also not panic on the nil pool.
 func TestSearchNilKBIsSeeded(t *testing.T) {
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
 	deps.KB = nil
@@ -342,10 +337,9 @@ func TestSearchNilKBIsSeeded(t *testing.T) {
 	}
 }
 
-// TestListChunksNilKBIsMiss pins the Python semantics: a nil deps.KB is seeded
-// by _seed_evidence, and with no doc-store reader wired the read yields nothing
-// — _search_outcome([]) is MISS/no_doc (there is no "graceful OK empty" branch in
-// Python). It must never error or panic.
+// TestListChunksNilKBIsMiss pins the semantics: a nil deps.KB is seeded on first use, and
+// with no doc-store reader wired the read yields nothing, which is MISS/no_doc (there is no
+// "graceful OK empty" branch). It must never error or panic.
 func TestListChunksNilKBIsMiss(t *testing.T) {
 	deps, _ := newTestSearchDeps(&stubRetriever{})
 	deps.KB = nil
@@ -362,10 +356,10 @@ func TestListChunksNilKBIsMiss(t *testing.T) {
 	}
 }
 
-// TestListChunksDeepReadsDocStore pins the Python-parity deep read: list_chunks
-// reads the document off the chunk store (deps.DocChunks, the same reader
-// fetch_full_document uses) even when NONE of its chunks are in the evidence
-// pool yet, and admits them into the shared pool the model can cite.
+// TestListChunksDeepReadsDocStore pins the deep read: list_chunks reads the document off the
+// chunk store (deps.DocChunks, the same reader fetch_full_document uses) even when NONE of
+// its chunks are in the evidence pool yet, and admits them into the shared pool the model can
+// cite.
 func TestListChunksDeepReadsDocStore(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.DocChunks = docChunksFor("doc-a", 2) // only doc-a is readable
@@ -400,10 +394,9 @@ func TestListChunksDeepReadsDocStore(t *testing.T) {
 	}
 }
 
-// TestListChunksCapsDeepReadAndOutput pins the Python parity: the deep read may
-// fetch up to listChunksMaxDeep (80) chunks, but _exec_list_chunks admits only
-// the first listChunksMaxOut (30) into the shared pool and shows the model the
-// same 30 — so the pool holds 30, not 80.
+// TestListChunksCapsDeepReadAndOutput pins the two caps: the deep read may fetch up to
+// listChunksMaxDeep (80) chunks, but list_chunks admits only the first listChunksMaxOut (30)
+// into the shared pool and shows the model the same 30 — so the pool holds 30, not 80.
 func TestListChunksCapsDeepReadAndOutput(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.DocChunks = docChunksFor("doc-a", 100)
@@ -414,7 +407,7 @@ func TestListChunksCapsDeepReadAndOutput(t *testing.T) {
 		t.Fatalf("list_chunks: %v", err)
 	}
 	if len(kb.Chunks) != listChunksMaxOut {
-		t.Errorf("kb.Chunks = %d, want admitted cap %d (Python _exec_list_chunks [:30])", len(kb.Chunks), listChunksMaxOut)
+		t.Errorf("kb.Chunks = %d, want admitted cap %d", len(kb.Chunks), listChunksMaxOut)
 	}
 	if len(oc.Payload) != listChunksMaxOut {
 		t.Errorf("payload = %d, want output cap %d", len(oc.Payload), listChunksMaxOut)
@@ -501,15 +494,13 @@ func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
 	}
 }
 
-// TestWebSearchAdmitsToPool pins the web_search parity fix: web results merge
-// into the SAME shared evidence pool as corpus hits (Python _exec_web_search →
-// _admit_evidence), so downstream formalize/compose can cite them, and the
-// outcome is REDUNDANT/OK/MISS like the corpus tools.
+// TestWebSearchAdmitsToPool pins the web_search parity fix: web results merge into the SAME
+// shared evidence pool as corpus hits, so downstream formalize/compose can cite them, and
+// the outcome is REDUNDANT/OK/MISS like the corpus tools.
 func TestWebSearchAdmitsToPool(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"web answer one", "web answer two", "web answer three"}}
-	// Python action_session.execute_tool reads the query list from
-	// args["query"] (_arg_query_list, :938-944, :1159).
+	// The query list is read from args["query"].
 	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
@@ -534,13 +525,12 @@ func TestWebSearchAdmitsToPool(t *testing.T) {
 	}
 }
 
-// TestWebSearchDedupsAcrossQueries pins the Python parity: a passage that both
-// queries return is admitted/shown only once (Python dedups by chunk_id across
-// the two queries via a shared `seen` set).
+// TestWebSearchDedupsAcrossQueries pins the dedup: a passage that both queries return is
+// admitted/shown only once (dedup by chunk_id across the queries via a shared `seen` set).
 func TestWebSearchDedupsAcrossQueries(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"dup passage", "unique one", "dup passage"}}
-	// Same args["query"] contract as above (Python _arg_query_list).
+	// Same args["query"] contract as above.
 	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
@@ -553,9 +543,8 @@ func TestWebSearchDedupsAcrossQueries(t *testing.T) {
 	}
 }
 
-// TestListChunksSkipsEmptyChunkID pins Python parity (L3): a deep-read chunk
-// with no chunk_id is skipped — neither admitted to the pool nor shown to the
-// model (Python _exec_list_chunks: `if not cid: continue`).
+// TestListChunksSkipsEmptyChunkID pins the empty-id skip: a deep-read chunk with no
+// chunk_id is skipped — neither admitted to the pool nor shown to the model.
 func TestListChunksSkipsEmptyChunkID(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.DocChunks = docChunksWithIDs("doc-a", []string{"", "c1"}) // first has empty chunk_id
@@ -634,10 +623,9 @@ func (s stubWebSearch) Search(_ context.Context, _ []string) ([]string, error) {
 	return s.results, nil
 }
 
-// TestSearchRedundantReturnsFullPayload pins fix #5: when every hit is already
-// in the evidence pool the result is StatusRedundant — but Python _search_outcome
-// still returns the FULL passages so the model sees what it already has. The Go
-// port must not drop the payload to empty (which hid the evidence).
+// TestSearchRedundantReturnsFullPayload pins fix #5: when every hit is already in the
+// evidence pool the result is StatusRedundant — but the FULL passages are still returned so
+// the model sees what it already has. Dropping the payload to empty hid the evidence.
 func TestSearchRedundantReturnsFullPayload(t *testing.T) {
 	chunk := map[string]any{"content": "already known passage", "chunk_id": "c1"}
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{chunk}})
@@ -687,7 +675,7 @@ func TestNavigateToolsRouteWithinSessionDocScope(t *testing.T) {
 // TestDocInDatasetsRejectsForeignDocumentViaSubsetVerifier reproduces the
 // production DocIDLookup.KnownDocIDs shape: a foreign doc is reported via an
 // EMPTY known map (not a false entry). docInDatasets must still reject it
-// (mirrors Python _resolve_doc_tenant returning None), not fail open.
+// (an unresolvable owner), not fail open.
 
 // End-to-end wiring tests: one Run call, with a stubbed retriever and a
 // scripted model, must move evidence from the backend into Kbinfos and (when a
@@ -730,9 +718,8 @@ func TestSearchExecutorReportsMissAndRedundancy(t *testing.T) {
 		t.Errorf("repeat call status = %s, want redundant", oc.Status)
 	}
 
-	// Missing query -> MISS/no_doc, NOT a bad-args error: Python
-	// _arg_query_list yields [] and _search_outcome([]) is a miss
-	// (action_session.py:_search_outcome).
+	// Missing query -> MISS/no_doc, NOT a bad-args error: an empty query list is simply a
+	// miss.
 	oc, _ = ex.Execute(context.Background(), "retrieve", map[string]any{})
 	if oc.Status != StatusMiss || oc.Reason != ReasonNoDoc {
 		t.Errorf("missing query: got (%s,%s), want (miss,no_doc)", oc.Status, oc.Reason)
@@ -783,8 +770,8 @@ func (f *fakeWikiRetriever) SearchWiki(_ context.Context, question string, keywo
 }
 
 func TestWikiQueryWiredReturnsPages(t *testing.T) {
-	// When a WikiRetriever is wired, wiki_query returns the parsed page payload
-	// in the same shape Python's action layer consumes.
+	// When a WikiRetriever is wired, wiki_query returns the parsed page payload in the shape
+	// the action layer consumes.
 	ex := &searchExecutor{deps: SearchDeps{WikiRetriever: &fakeWikiRetriever{}}, req: RunRequest{}}
 
 	oc, err := ex.Execute(context.Background(), "wiki_query", map[string]any{"query": "Culdcept overview"})
@@ -812,12 +799,10 @@ func TestWikiQueryWiredReturnsPages(t *testing.T) {
 }
 
 func TestWikiQuerySchemaIsUnplugged(t *testing.T) {
-	// wiki_query is ported as an UNPLUGGED extension seam: the handler exists
-	// (TestWikiQueryWiredReturnsPages), but it is NOT part of any mode's active
-	// tool set (removed from allTools) and no SearchWiki backend is wired in
-	// production, so it must never appear in the advertised surface — mirroring
-	// Python, which keeps tools/exploration.py::wiki_query but never registers it
-	// in the action session.
+	// wiki_query is an UNPLUGGED extension seam: the handler exists
+	// (TestWikiQueryWiredReturnsPages), but it is NOT part of any mode's active tool set
+	// (removed from allTools) and no SearchWiki backend is wired in production, so it must
+	// never appear in the advertised surface.
 	for _, mode := range []string{"medium", "high", "ultra"} {
 		ts := &Toolset{ThinkingMode: mode}
 		if spec, ok := findSpec(ts.ActiveToolSpecs(), "wiki_query"); ok {
@@ -837,10 +822,9 @@ func findSpec(specs []ToolSpec, name string) (ToolSpec, bool) {
 }
 
 func TestListChunksReadsFromEvidencePool(t *testing.T) {
-	// list_chunks deep-reads a document. With no doc-store reader wired it scans
-	// the accumulated evidence pool; an unknown/missing doc_id is a query-level
-	// MISS (mirroring Python list_chunks("") → _search_outcome), never a dataset
-	// EMPTY and never a hard error.
+	// list_chunks deep-reads a document. With no doc-store reader wired it scans the
+	// accumulated evidence pool; an unknown/missing doc_id is a query-level MISS, never a
+	// dataset EMPTY and never a hard error.
 	kb := &Kbinfos{Chunks: []map[string]any{
 		{"chunk_id": "c1", "doc_id": "doc-a", "content": "first"},
 		{"chunk_id": "c2", "doc_id": "doc-b", "content": "other"},
@@ -850,15 +834,14 @@ func TestListChunksReadsFromEvidencePool(t *testing.T) {
 
 	oc, _ := ex.Execute(context.Background(), "list_chunks", map[string]any{"doc_id": "doc-a"})
 	// Already in evidence → REDUNDANT (nothing new admitted), but the passages
-	// are still returned (mirrors Python _search_outcome).
+	// are still returned.
 	if oc.Status != StatusRedundant {
 		t.Fatalf("status = %s, want redundant", oc.Status)
 	}
 	if len(oc.Payload) != 2 {
 		t.Errorf("payload = %d, want 2 chunks of doc-a", len(oc.Payload))
 	}
-	// Evidence ids are the CHUNK ids — Python _admit_evidence does
-	// `ids.append(cid)`, not a pool position.
+	// Evidence ids are the CHUNK ids, not pool positions.
 	if len(oc.EvidenceIDs) != 2 || oc.EvidenceIDs[0] != "c1" || oc.EvidenceIDs[1] != "c3" {
 		t.Errorf("evidence ids = %v, want [c1 c3]", oc.EvidenceIDs)
 	}
@@ -867,7 +850,7 @@ func TestListChunksReadsFromEvidencePool(t *testing.T) {
 	if oc.Status != StatusMiss {
 		t.Errorf("unknown doc status = %s, want miss", oc.Status)
 	}
-	// Missing doc_id → MISS (Python list_chunks("") → empty → _search_outcome).
+	// Missing doc_id → MISS.
 	oc, _ = ex.Execute(context.Background(), "list_chunks", map[string]any{})
 	if oc.Status != StatusMiss {
 		t.Errorf("no doc_id: got %s, want miss", oc.Status)
@@ -907,15 +890,15 @@ func TestPassageFromChunkTruncatesContent(t *testing.T) {
 		"chunk_id": "c1", "doc_id": "d1", "docnm_kwd": "Title", "content": long,
 	})
 	content, _ := p["content"].(string)
-	// Non-table chunk is cut to 1200 code points (Python _admit_evidence's
-	// `_ct[:1200]`), a plain slice — so NO trailing ellipsis is added.
+	// Non-table chunk is cut to 1200 code points as a plain slice — so NO trailing ellipsis
+	// is added.
 	if n := len([]rune(content)); n != 1200 {
 		t.Errorf("content length = %d runes, want 1200", n)
 	}
 	if strings.HasSuffix(content, "...") {
-		t.Errorf("Python _ct[:1200] adds no ellipsis marker: %q", content)
+		t.Errorf("the 1200-code-point cut adds no ellipsis marker: %q", content)
 	}
-	// Keys mirror Python _admit_evidence exactly: {"id","content","doc_id"} — the
+	// Keys: exactly: {"id","content","doc_id"} — the
 	// id must live under "id", which is what the drill merge reads back.
 	if p["doc_id"] != "d1" || p["id"] != "c1" {
 		t.Errorf("passage = %v", p)

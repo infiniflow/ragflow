@@ -20,8 +20,8 @@ import "strings"
 
 // Thinking-mode configuration: the single authority for mode behaviour.
 //
-// Mirrors Python harness/config.py. Every mode-dependent decision in the
-// harness reads from this file instead of re-deriving it from a thinking_mode
+// Every mode-dependent decision in the harness reads from this file instead of re-deriving it
+// from a thinking_mode
 // string, so tuning a mode is a one-table edit.
 //
 // Unknown labels fall back to NAIVE rather than erroring: the label comes from
@@ -42,7 +42,7 @@ var allTools = []string{
 // GraphExploreTool is the relational exploration tool reserved for ultra.
 const GraphExploreTool = "graph_explore"
 
-// ModeSpec mirrors Python config.ModeSpec (a frozen dataclass). Everything that
+// ModeSpec: (a frozen dataclass). Everything that
 // varies between thinking modes lives here.
 //
 // Tools is the set of tool names visible to the model in this mode. An empty
@@ -66,7 +66,7 @@ type ModeSpec struct {
 	Tools            map[string]bool
 }
 
-// toolsOf builds the tool set from names (mirrors Python _tools()).
+// toolsOf builds the tool set from names.
 func toolsOf(names ...string) map[string]bool {
 	m := make(map[string]bool, len(names))
 	for _, n := range names {
@@ -75,12 +75,12 @@ func toolsOf(names ...string) map[string]bool {
 	return m
 }
 
-// allToolSet returns the default tool surface (mirrors Python _ALL_TOOLS).
+// allToolSet returns the default tool surface.
 func allToolSet() map[string]bool {
 	return toolsOf(allTools...)
 }
 
-// THINKING_MODES mirrors Python config.THINKING_MODES.
+// THINKING_MODES
 //
 //   - low: one hybrid-search pass through direct_search. No action session,
 //     so no tool loop — the model never sees tools in this mode.
@@ -140,7 +140,7 @@ func (m ModeSpec) ToolNames() []string {
 	return out
 }
 
-// GetMode mirrors Python get_mode(label): unknown labels fall back to NAIVE.
+// GetMode: (label): unknown labels fall back to NAIVE.
 // The label arrives from user input, so erroring here would fail the request.
 func GetMode(label string) ModeSpec {
 	m, ok := THINKING_MODES[strings.ToLower(strings.TrimSpace(label))]
@@ -151,14 +151,14 @@ func GetMode(label string) ModeSpec {
 }
 
 // ThinkingModeCarrier is implemented by the RAGTools-like object that owns the
-// request-scoped retrieval context (Python RAGTools.thinking_mode).
+// request-scoped retrieval context (its thinking mode).
 type ThinkingModeCarrier interface {
 	GetThinkingMode() string
 }
 
-// ResolveMode mirrors Python resolve_mode(tools): reads a RAGTools-like
+// ResolveMode: (tools): reads a RAGTools-like
 // object's thinking mode into its spec. Values that do not implement
-// ThinkingModeCarrier fall back to NAIVE, matching Python's getattr default.
+// ThinkingModeCarrier fall back to NAIVE.
 func ResolveMode(tools any) ModeSpec {
 	if c, ok := tools.(ThinkingModeCarrier); ok {
 		return GetMode(c.GetThinkingMode())

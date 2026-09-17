@@ -10,10 +10,10 @@ import (
 	"ragflow/internal/agent/chat"
 )
 
-// TestLogHierarchicalRounds verifies that Log mirrors Python LLMUsageStats.log:
-// the orchestrator phase expands into one "orchestrator round N" row per round,
-// with the in-loop sub-phases (claim_research / sufficiency) nested underneath,
-// while the out-of-loop phases (route / planner / finalize) stay flat.
+// TestLogHierarchicalRounds verifies the log shape: the orchestrator phase expands into one
+// "orchestrator round N" row per round, with the in-loop sub-phases (claim_research /
+// sufficiency) nested underneath, while the out-of-loop phases (route / planner / finalize)
+// stay flat.
 //
 // NOTE: this test cannot run while the unrelated pre-existing break in
 // internal/agent/tool/retrieval_nlp.go (RankFeature) blocks compilation of the
@@ -112,7 +112,7 @@ func TestProgressCtxRoundTrip(t *testing.T) {
 	}
 }
 
-// TestCountingInvokerCountsStreaming mirrors Python CountingChatModel
+// TestCountingInvokerCountsStreaming
 // async_chat_streamly / async_chat_streamly_delta: a wrapped invoker that DOES
 // stream must keep streaming AND be counted. Before CountingInvoker gained a
 // Stream method, StreamComplete's type assertion (m.Invoker.(chat.StreamingInvoker))
@@ -140,15 +140,10 @@ func TestCountingInvokerCountsStreaming(t *testing.T) {
 	}
 }
 
-// TestCountingInvokerStreamDeclinesWithoutStreamingInner mirrors Python's
-// invariant that the wrapper only streams when the inner model can: a non-
-// streaming inner returns an explicit error rather than silently downgrading to
-// a blocking Invoke (which would look like a one-shot call in the stats).
-
-// TestCountingInvokerStreamDeclinesWithoutStreamingInner mirrors Python's
-// invariant that the wrapper only streams when the inner model can: a non-
-// streaming inner returns an explicit error rather than silently downgrading to
-// a blocking Invoke (which would look like a one-shot call in the stats).
+// TestCountingInvokerStreamDeclinesWithoutStreamingInner pins the invariant that the wrapper
+// only streams when the inner model can: a non-streaming inner returns an explicit error rather
+// than silently downgrading to a blocking Invoke (which would look like a one-shot call in the
+// stats).
 func TestCountingInvokerStreamDeclinesWithoutStreamingInner(t *testing.T) {
 	wrapped := &CountingInvoker{Inner: &plainInvoker{}}
 	if _, err := wrapped.Stream(context.Background(), nil, chat.Request{}, nil); err == nil {
@@ -156,6 +151,6 @@ func TestCountingInvokerStreamDeclinesWithoutStreamingInner(t *testing.T) {
 	}
 }
 
-// capturingInvoker records the last Request and returns a native tool call so we
-// can verify the seam forwards the declared tools (Python native tools) and reads
-// the model's calls back out of the native tool_calls field.
+// capturingInvoker records the last Request and returns a native tool call so we can verify
+// the seam forwards the declared tools and reads the model's calls back out of the native
+// tool_calls field.

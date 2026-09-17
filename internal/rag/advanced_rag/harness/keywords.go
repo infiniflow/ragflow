@@ -29,8 +29,6 @@ import (
 
 // Four-aspect keyword extraction with entity weighting.
 //
-// Mirrors Python harness/keywords.py.
-//
 // A keyword search matches only the surface forms you give it, so a single flat
 // bag of terms is a poor retrieval driver: the model does not know how the corpus
 // phrases a fact. This extraction asks the LLM for FOUR aspects — `entity` (what
@@ -43,16 +41,13 @@ import (
 // retrieved chunks to their keyword-bearing sentences.
 
 const (
-	// keywordEntityRepeat is copies of each entity term in the query
-	// (Python: _KEYWORD_ENTITY_REPEAT).
+	// keywordEntityRepeat is copies of each entity term in the query.
 	keywordEntityRepeat = 3
-	// keywordQualifierRepeat is copies of each qualifier, weighted up like entity
-	// (Python: _KEYWORD_QUALIFIER_REPEAT).
+	// keywordQualifierRepeat is copies of each qualifier, weighted up like entity.
 	keywordQualifierRepeat = 3
-	// keywordMaxChars caps both strings (Python: _KEYWORD_MAX_CHARS).
+	// keywordMaxChars caps both strings.
 	keywordMaxChars = 400
-	// keywordExtractionTemperature pins Python keywords.py:141's
-	// {"temperature": 0.1} for the extraction call.
+	// keywordExtractionTemperature pins the temperature for the extraction call.
 	keywordExtractionTemperature = 0.1
 )
 
@@ -102,13 +97,13 @@ Output ONLY JSON, no prose, no code fences:
 {"entity": ["<term>", ...], "aliases": ["<term>", ...], "fact_type": ["<term>", ...], "qualifiers": ["<term>", ...]}
 Any category may be empty.`
 
-// normKeyword mirrors Python _norm_keyword: normalise a term for cross-category
+// normKeyword: normalise a term for cross-category
 // dedup (lowercase, whitespace-collapsed).
 func normKeyword(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
 }
 
-// parseAspects mirrors Python _parse_aspects: parse the LLM's JSON into one
+// parseAspects: parse the LLM's JSON into one
 // deduped list per aspect.
 //
 // ONE dedup set spans all four categories: a term the model emits as both an
@@ -168,7 +163,7 @@ func StripThinkAndFences(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// ExtractWeightedKeywords mirrors Python extract_weighted_keywords: extract the
+// ExtractWeightedKeywords: extract the
 // four aspects and return (query, keywords).
 //
 //   - query is the weighted search string: every entity term repeated x3 and
@@ -185,13 +180,10 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 	}
 	aspects := map[string][]string{}
 	if model != nil {
-		// Mirror Python keywords.py:extract_weighted_keywords — form_message(_KEYWORDS_SYSTEM,
-		// question) is run through message_fit_in(..., llm.max_length) before
-		// the call, so an over-long question is trimmed to the model context
-		// window exactly as in Python. The chat seam exposes llm.max_length via
-		// ContextLengthModel; when no context window is available the
-		// chat.EffectiveContextLength(0) default (8192) applies, exactly as
-		// Python's LLM.max_length default.
+		// The question is fitted to the model context window before the call, so an over-long
+		// question is trimmed rather than rejected. The context length is exposed via
+		// ContextLengthModel; when none is available the chat.EffectiveContextLength(0)
+		// default (8192) applies.
 		budget := 0
 		if cl, ok := model.(ContextLengthModel); ok {
 			budget = cl.ContextLength()
@@ -206,8 +198,7 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 			_LOG.Printf("[Keywords] prompt fitting failed: %s", fitErr)
 		}
 		// FitMessages may prepend/trim a system message; re-extract it so the
-		// model call is exactly [system, user...] as Python sends msg[0] then
-		// msg[1:].
+		// model call is exactly [system, user...].
 		systemPrompt := KeywordsSystem
 		if len(fitted) > 0 && fitted[0].Role == schema.System {
 			systemPrompt = fitted[0].Content
@@ -223,8 +214,8 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 			*schema.SystemMessage(systemPrompt),
 			*schema.UserMessage(userContent),
 		}
-		// Python hardcodes {"temperature": 0.1} (keywords.py:141) — a mechanical
-		// rewrite, not a reasoning task, so it must be stable. The value is a
+		// The temperature is pinned to 0.1 — a mechanical rewrite, not a reasoning task, so it
+		// must be stable. The value is a
 		// pinned constant: every production carrier implements TemperatureModel
 		// (compile-time assertion on InvokerSessionModel), so the temperature is
 		// always sent; a carrier without per-call temperature support falls back
@@ -234,7 +225,7 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 		if tm, ok := model.(TemperatureModel); ok {
 			reply, err = tm.CompleteWithTemperature(ctx, msgs, nil, keywordExtractionTemperature)
 		} else {
-			_LOG.Printf("[Keywords] model %T cannot carry per-call temperature; using its default (Python would send %v)", model, keywordExtractionTemperature)
+			_LOG.Printf("[Keywords] model %T cannot carry per-call temperature; using its default (wanted %v)", model, keywordExtractionTemperature)
 			reply, err = model.Complete(ctx, msgs, nil)
 		}
 		if err == nil {
@@ -274,9 +265,8 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 		query = keywords
 	}
 
-	// Python keywords.py has NO term-count cap — only the _KEYWORD_MAX_CHARS (400)
-	// hard cap on the final joined strings. We mirror exactly that: only the
-	// character cap is applied, never a per-term limit.
+	// There is NO term-count cap — only the keywordMaxChars (400) hard cap on the final joined
+	// strings: only the character cap is applied, never a per-term limit.
 	query = truncateRunes(query, keywordMaxChars)
 	keywords = truncateRunes(keywords, keywordMaxChars)
 

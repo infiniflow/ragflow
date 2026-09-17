@@ -30,23 +30,18 @@ import (
 // Compiled-structure navigation: ontology_navigate / mindmap_navigate /
 // navigate_tree / wiki_query.
 //
-// Mirrors Python harness/tools/navigation.py (the structure side of the module):
-// structure navigation, the nav-tree router, the compiled-structure reader and
-// dataset-tree LLM selection. The knowledge-graph walk (graph_explore) moved to
-// exploration.go to match Python's exploration.py, which hosts both graph_explore
-// and wiki_query; the shared seams (verdict struct, prompt, load helpers) stay
-// here and are reached by those files through the harness package. In Go these
-// were spread across several files (navigation / navtools / navservice /
-// datasetnav / kg_explore); they are consolidated here.
+// Structure navigation, the nav-tree router, the compiled-structure reader and
+// dataset-tree LLM selection. The knowledge-graph walk (graph_explore) lives in
+// exploration.go; the shared seams (verdict struct, prompt, load helpers) stay here and
+// are reached by those files through the harness package. These were previously spread
+// across several files (navigation / navtools / navservice / datasetnav / kg_explore);
+// they are consolidated here.
 
-// ---------------------------------------------------------------------------
 // Structure navigation (ontology_navigate / mindmap_navigate)
-// ---------------------------------------------------------------------------
 
-// Python _CATALOG_KINDS (navigation.py:49): {"tree", "timeline", "page_index",
-// "pageindex"} — raptor is NOT a catalog kind (its stale docstring comment
-// notwithstanding, the set itself excludes it; upper RAPTOR clusters carry no
-// per-node vectors and drill into them is the claim leg's job).
+// catalogKinds: {"tree", "timeline", "page_index", "pageindex"}. raptor is NOT a catalog
+// kind — upper RAPTOR clusters carry no per-node vectors and drilling into them is the
+// claim leg's job.
 var catalogKinds = map[string]bool{"tree": true, "timeline": true, "page_index": true, "pageindex": true}
 var mindmapKinds = map[string]bool{"mindmap": true, "mind_map": true}
 
@@ -83,19 +78,16 @@ type structureNavVerdict struct {
 	RelevantEntities []string `json:"relevant_entities"`
 }
 
-// shapeKwds are the knowledge_graph_kwd ROW SHAPES a compiled structure can be
-// written as. Reading BOTH the compact "graph" blob and the per-entity /
-// per-relation rows is what mirrors Python _load_compiled_structure (which
-// issues one query for the graph blob and a second for the per-entity rows and
-// merges them). Otherwise navigation silently returns EMPTY for datasets that
-// were compiled into per-entity/relation rows rather than a graph blob.
+// shapeKwds are the knowledge_graph_kwd ROW SHAPES a compiled structure can be written as.
+// Reading BOTH the compact "graph" blob and the per-entity / per-relation rows is
+// required: otherwise navigation silently returns EMPTY for datasets compiled into
+// per-entity/relation rows rather than a graph blob.
 var shapeKwds = []string{"graph", "entity", "relation"}
 
-// loadStructureGraph reads a document's compiled structure rows and splits them
-// into both the entity list and the parent->child relations. Python merges the
-// graph-blob and the per-entity/per-relation row shapes and feeds both entities
-// and relations into _render_toc_drilldown / _build_toc_tree; mirroring that,
-// navigation must carry relations through or the tree hierarchy (children,
+// loadStructureGraph reads a document's compiled structure rows and splits them into both
+// the entity list and the parent->child relations: the graph-blob and the
+// per-entity/per-relation row shapes are merged, and both entities and relations feed the
+// TOC builders. Navigation must carry relations through or the tree hierarchy (children,
 // parents, roots, ancestors) collapses.
 func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[string]bool, vecField string) ([]structureEntity, []structureRel) {
 	de := engine.Get()
@@ -147,13 +139,10 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 // A field the compiled payload omits must read as ABSENT, not as its Go
 // rendering: fmt.Sprint(nil) is the non-empty string "<nil>", which survives
 // navTypeOr's empty check and reaches the model as "- Name (<nil>): <nil>" with
-// a phantom edge to "<nil>". Python renders "- Name (other)" and no description,
-// because `(e.get("type") or "other")` / `(e.get("description") or "")` treat a
-// missing key as falsy (navigation.py:1714-1715), and it DROPS a relation with a
-// missing endpoint instead of keeping it (navigation.py:1783-1786). Leaving the
-// field empty is also what lets the renderers apply Python's defaults —
-// "other" for a type (navigation.py:1714), "related_to" for a relation type
-// (navigation.py:1788).
+// a phantom edge to "<nil>". The intended rendering is "- Name (other)" and no
+// description, because a missing key is falsy — and a relation with a missing endpoint is
+// DROPPED instead of kept. Leaving the field empty is also what lets the renderers apply
+// their defaults: "other" for a type, "related_to" for a relation type.
 func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureEntity, []structureRel) {
 	var out []structureEntity
 	for _, e := range rawEntities {
@@ -186,7 +175,7 @@ func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureEn
 		cRaw, _ := r["to"].(string)
 		p := strings.TrimSpace(pRaw)
 		c := strings.TrimSpace(cRaw)
-		// Python _build_toc_tree skips empty or self-loop relations.
+		// Empty or self-loop relations are skipped.
 		if p == "" || c == "" || p == c {
 			continue
 		}
@@ -284,10 +273,9 @@ func orStr(v, def string) string {
 	return v
 }
 
-// indexNameFor resolves the document/structure search index. Python reads it
-// from the dataset's search.index_name (navigation.py:_navigate_structure_impl); the RAGFlow default
-// is "ragflow_<tenant_id>", so an empty configured name falls back to that —
-// keeping Go behaviour identical unless a tenant overrides index_name.
+// indexNameFor resolves the document/structure search index: the dataset's configured
+// index name, or the RAGFlow default "ragflow_<tenant_id>" — behaviour is identical
+// unless a tenant overrides index_name.
 func indexNameFor(tenantID, configured string) string {
 	if configured != "" {
 		return configured
@@ -295,23 +283,17 @@ func indexNameFor(tenantID, configured string) string {
 	return "ragflow_" + tenantID
 }
 
-// ---------------------------------------------------------------------------
 // The routing seam + NavResult payload
-// ---------------------------------------------------------------------------
 
 // Compiled-navigation tools: locate (dataset tree routing) and drill
 // (in-document structure pinpointing).
 //
-// Mirrors Python harness/tools/navigation.py:
-//   - _navigate_tree_impl      (line 830)
-//   - _nav_search_titled       (line 659)
-//   - NavResult                (line 62)
-//   - _load_compiled_structure (line 111)
-//   - _normalize_kind          (line 101)
+// Covers the tree walk, the titled search, the NavResult payload, the compiled-structure
+// reader and the kind normalization.
 //
 // These are the payload builders; the tool dispatch lives in tool_executor.go.
 
-// Navigation constants (Python navigation.py:_NAV_SEARCH_MAX_DOCS, 656, 773).
+// Navigation constants.
 const (
 	// navSearchMaxDocs is how many documents the hybrid nav search routes to.
 	navSearchMaxDocs = 12
@@ -321,7 +303,7 @@ const (
 	navTreeMaxDocs = 8
 )
 
-// NavResult mirrors Python NavResult: the structured outcome of ONE
+// NavResult: the structured outcome of ONE
 // compiled-navigation call.
 //
 // Text is what the MODEL sees (XML, unchanged). The remaining fields are the
@@ -356,13 +338,13 @@ type NavResult struct {
 // A query-level miss is not a structure absence.
 func (n NavResult) HasStructure() bool { return n.EmptyReason != ReasonNoStructure }
 
-// navEmpty returns an empty NavResult carrying Python's <tree_navigation> text:
+// navEmpty returns an empty NavResult carrying the <tree_navigation> text:
 // count="0" plus an error="<label>" attribute, omitted when label is empty —
 // exactly the shapes navigation.py builds (:877 "no retriever", :880 "query is
 // required", :899 no attribute at all for a query-level miss). That text is not
 // what the model reads for an empty result — both sides substitute their own
-// note for every empty_reason (action_session.py:869-876, tool_executor.go:402)
-// — but the NavResult must still carry it. The status is derived from the reason
+// note for every empty_reason (, tool_executor.go:402)
+// but the NavResult must still carry it. The status is derived from the reason
 // by ReasonStatus.
 func navEmpty(reason, label string) NavResult {
 	attr := ""
@@ -375,16 +357,13 @@ func navEmpty(reason, label string) NavResult {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // The routing seam
-// ---------------------------------------------------------------------------
 
 // NavTreeRouter descends a dataset's compiled navigation tree and returns the
 // routed documents.
 //
-// Mirrors Python's `search_dataset_layers(kb.id, tenant_id, query,
-// "navigation_tree", top_k, doc_scope)` — a hybrid BFS beam descent (vector +
-// BM25) from the root clusters down to the nav_doc leaves.
+// A hybrid BFS beam descent (vector + BM25) from the root clusters down to the nav_doc
+// leaves.
 //
 // The Go side exposes this through internal/service/nav's NavService.Search,
 // which is the same KNN-over-nav-rows capability. It is an interface here (not a
@@ -408,7 +387,7 @@ type NavTreeInput struct {
 	KbIDs    []string
 }
 
-// NavigateTree mirrors Python _navigate_tree_impl: locate the document(s) most
+// NavigateTree: locate the document(s) most
 // likely to hold the answer by descending the compiled navigation tree.
 //
 // This tool ROUTES, it does not retrieve. It deliberately does NOT fetch
@@ -428,8 +407,8 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 		return navEmpty(ReasonBadArgs, "query is required")
 	}
 	if router == nil {
-		// Python's counterpart is a missing retriever, and the error label is its
-		// string verbatim (navigation.py:877): the router IS the retrieval backend.
+		// A missing retriever is the infra case: the router IS the retrieval backend, and
+		// the error label is verbatim.
 		return navEmpty(ReasonInfra, "no retriever")
 	}
 	// Descend on the topic + keywords: routing descends on similarity and does
@@ -473,17 +452,15 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 			// no read succeeded, so "this dataset has no tree" would be a verdict
 			// drawn from zero evidence — and Route() documents that contract
 			// itself ("(nil, nil) when the dataset has no compiled tree at all",
-			// so a non-nil error is a failure, not an absence). Python never
-			// reaches no_structure from a failed descent either: its nav-tree
-			// route yields only infra / bad_args / no_doc (navigation.py:877-899),
-			// while no_structure belongs to the STRUCTURE path, where a successful
-			// read found zero entities (:1046).
+			// so a non-nil error is a failure, not an absence). A failed descent never
+			// produces no_structure either: the nav-tree route yields only infra / bad_args /
+			// no_doc, while no_structure belongs to the STRUCTURE path, where a successful
+			// read found zero entities.
 			return navEmpty(ReasonInfra, "nav tree descent failed")
 		}
-		// No compiled tree is a DATASET-level fact: Python's nav-tree route
-		// deliberately has NO fallback here (navigation.py:902-912 — the generic
-		// retriever re-inventing dataset_nav's work was the most expensive thing
-		// that path could do). When routing misses, the CALLER falls back to
+		// No compiled tree is a DATASET-level fact: there is deliberately NO fallback here
+		// (re-inventing dataset_nav's work through the generic retriever was the most
+		// expensive thing that path could do). When routing misses, the CALLER falls back to
 		// retrieve/search_chunks — the same work, done once and owned by the
 		// orchestrator instead of hidden inside a "route" call. The tool's empty
 		// verdict lets the session disable the tool.
@@ -494,11 +471,10 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 	if len(ordered) == 0 {
 		// Structure exists but THIS query reached nothing: a query-level miss.
 		// The dataset may still have a tree a better-formed query would hit.
-		// Python deliberately does NOT back this miss with a retrieval fallback
-		// (navigation.py:902-912): it returns count="0" / no_doc and leaves the
-		// fallback to the caller's retrieve/search_chunks.
-		// No error attribute on the empty verdict: Python's query-level miss
-		// carries none (navigation.py:912), unlike infra/bad_args.
+		// This miss is deliberately NOT backed by a retrieval fallback: it returns
+		// count="0" / no_doc and leaves the fallback to the caller's retrieve/search_chunks.
+		// No error attribute on the empty verdict: a query-level miss carries none, unlike
+		// infra/bad_args.
 		return navEmpty(ReasonNoDoc, "")
 	}
 
@@ -532,12 +508,10 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Compiled-structure reading (in-document)
-// ---------------------------------------------------------------------------
 
-// StructureRow is one compiled-structure row, mirroring the doc-store fields
-// Python reads (navigation.py:_load_compiled_structure).
+// StructureRow is one compiled-structure row: the doc-store fields the structure reader
+// reads.
 type StructureRow struct {
 	// CompileKwd distinguishes the COMPILE TYPE (tree / page_index / timeline /
 	// ...). NOT knowledge_graph_kwd.
@@ -561,9 +535,8 @@ type StructureRow struct {
 
 // StructureReader reads a document's compiled structure rows.
 //
-// Mirrors Python _load_compiled_structure, which issues one doc-store query
-// over the per-entity/relation rows and merges the matching buckets (the
-// graph blob and the raptor_graph projection are gone from the storage
+// It issues one doc-store query over the per-entity/relation rows and merges the matching
+// buckets (the graph blob and the raptor_graph projection are gone from the storage
 // model).
 //
 // Go has no doc-store structured-query interface (see runtime.RetrievalService,
@@ -578,9 +551,8 @@ type StructureReader interface {
 	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]StructureRow, error)
 }
 
-// normalizeKind is defined above; rowKind projects a StructureRow into that
-// shape. It mirrors Python _normalize_kind: the API's kind normalization
-// (page_index / knowledge_graph → timeline).
+// normalizeKind is defined above; rowKind projects a StructureRow into that shape, applying
+// the API's kind normalization (page_index / knowledge_graph → timeline).
 func rowKind(row StructureRow) string {
 	return normalizeKind(map[string]any{
 		"compile_kwd":                   row.CompileKwd,
@@ -588,7 +560,7 @@ func rowKind(row StructureRow) string {
 	})
 }
 
-// ParseCompiledStructure mirrors Python _load_compiled_structure's merge step
+// ParseCompiledStructure: merge step
 // (navigation.py:_query): keep rows whose compile TYPE is in kinds, then split
 // by row shape into entities / relations.
 //
@@ -662,19 +634,14 @@ func objectList(v any) []map[string]any {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // In-document structure drill-down (mirrors navigation.py, distributed helpers)
-// ---------------------------------------------------------------------------
 //
-// These are the Go counterparts of the functions navigation.py DEFINES in its
-// own body. Like Python, they reuse primitives imported from elsewhere: cosine /
-// appendUnique (compiled_expansion.go, action_session.go), XMLEscape / Snippet /
-// ChunkTextOf (chunk_utils.go). They stay here so navigation.go owns the
-// navigate-tree / navigate-structure algorithm, mirroring how navigation.py owns
-// its orchestration while importing its primitives.
+// These functions reuse primitives imported from elsewhere: cosine / appendUnique
+// (compiled_expansion.go, action_session.go), XMLEscape / Snippet / ChunkTextOf
+// (chunk_utils.go). They stay here so navigation.go owns the navigate-tree /
+// navigate-structure algorithm while importing its primitives.
 
-// Structure drill-down bounds (mirror navigation.py's module-level limits,
-// navigation.py:1084-1097).
+// Structure drill-down bounds.
 const (
 	structMaxDepth     = 3                              // _STRUCT_MAX_DEPTH: max TOC levels drilled
 	structMaxNodes     = 10                             // _STRUCT_MAX_NODES: cap on nodes rendered in the outline
@@ -685,11 +652,9 @@ const (
 	structMaxChunks    = 4                              // _STRUCT_MAX_CHUNKS: cap on chunk snippets returned in the outline
 	structCatalogKinds = "tree_node|page_index|section" // kinds eligible for catalog outline
 
-	// structTocMaxDepth bounds the ancestor walk in renderTocDrilldown's
-	// chunk-retrieval and llm_toc branches (Python _STRUCT_TOC_MAX_DEPTH). The
-	// remaining _STRUCT_TOC_* limits gate the whole-TOC LLM pass, which Python
-	// leaves off by default; they are not mirrored (they would be unreachable in
-	// Go).
+	// structTocMaxDepth bounds the ancestor walk in renderTocDrilldown's chunk-retrieval and
+	// llm_toc branches. The remaining _STRUCT_TOC_* limits gate the whole-TOC LLM pass,
+	// which is off by default and not mirrored here (it would be unreachable).
 	structTocMaxDepth = 6
 
 	// Chunk-index selection bounds for structures that cannot score themselves
@@ -697,7 +662,7 @@ const (
 	structRecallTopN   = 24 // _STRUCT_RECALL_TOP_N: hybrid chunk hits recalled per document
 	structMaxChunkHits = 8  // _STRUCT_MAX_CHUNK_HITS: retrieved chunks shown per drilled doc
 
-	// Claim/evidence leg for the drill-down (Python navigation.py:1129-1146).
+	// Claim/evidence leg for the drill-down.
 	// Claim rows are scored FLAT against the query (hybrid BM25+KNN, RRF), so a
 	// bad early pick cannot prune the subtree holding the answer. Claim-first:
 	// when claims hit they REPLACE the drill-down — a claim is an atomic
@@ -707,20 +672,18 @@ const (
 	structClaimTopN         = 8    // _STRUCT_CLAIM_TOP_N: claims rendered per document
 	structClaimFirst        = true // _STRUCT_CLAIM_FIRST
 	structClaimFirstMinHits = 1    // _STRUCT_CLAIM_FIRST_MIN_HITS
-	// structClaimSufficientHits is _STRUCT_CLAIM_SUFFICIENT_HITS (Python
-	// navigation.py:1153): enough distinct claims matching the query means the
-	// model may cite them without deep-reading chunks. The drillout emits
-	// <claims_sufficient/> when a document's claim hits reach it.
+	// structClaimSufficientHits: enough distinct claims matching the query means the model
+	// may cite them without deep-reading chunks. The drillout emits <claims_sufficient/>
+	// when a document's claim hits reach it.
 	structClaimSufficientHits = 3
 
-	// Per-node-vector flat selection (Python navigation.py:1307-1315 +
-	// :1912-1936): page_index spreads facts across TOC levels, so descending
-	// level by level can prune the branch holding the answer before it is ever
-	// scored. Scoring EVERY node against the query at once costs nothing extra
-	// (their embeddings are already loaded) and cannot prune — this is the
-	// DEFAULT primary path for page_index structures.
-	structTocLLMSelect   = false // _STRUCT_TOC_LLM_SELECT (navigation.py:1111): the one-shot LLM TOC selection is OFF in Python — not ported
-	structFlatNodeSelect = true  // _STRUCT_FLAT_NODE_SELECT (navigation.py:1157)
+	// Per-node-vector flat selection: page_index spreads facts across TOC levels, so
+	// descending level by level can prune the branch holding the answer before it is ever
+	// scored. Scoring EVERY node against the query at once costs nothing extra (their
+	// embeddings are already loaded) and cannot prune — this is the DEFAULT primary path
+	// for page_index structures.
+	structTocLLMSelect   = false // the one-shot LLM TOC selection is OFF — not ported
+	structFlatNodeSelect = true  // flat per-node selection is the primary path
 	structFlatTopN       = 10    // _STRUCT_FLAT_TOP_N (navigation.py:1158)
 )
 
@@ -1143,8 +1106,7 @@ func outlineStats(nodes []structureNode) (nodeCount, ptrCount int) {
 	return count, ptrs
 }
 
-// navTypeOr returns a node type, defaulting to "other" as Python's
-// “(e.get("type") or "other")“ does.
+// navTypeOr returns a node type, defaulting to "other".
 func navTypeOr(t string) string {
 	if t == "" {
 		return "other"
@@ -1235,10 +1197,8 @@ type chunkWithText struct {
 	text string
 }
 
-// structureDrillout is the per-document result of the TOC drill-down, mirroring
-// what Python's _render_toc_drilldown returns and the per-doc stats
-// _navigate_structure_impl aggregates. selector records which strategy chose the
-// nodes: llm_toc / chunk_retrieval / beam (stats["selector"] in Python).
+// structureDrillout is the per-document result of the TOC drill-down. selector records
+// which strategy chose the nodes: llm_toc / chunk_retrieval / beam.
 type structureDrillout struct {
 	outline    string
 	nodes      int
@@ -1246,13 +1206,13 @@ type structureDrillout struct {
 	topScore   float64
 	chunkPaths map[string]string
 	selector   string
-	// claimHits is the count of claim rows that matched the query for this
-	// drill (Python stats["claim_hits"], set by the caller when non-empty).
+	// claimHits is the count of claim rows that matched the query for this drill, set by
+	// the caller when non-empty.
 	claimHits int
 }
 
-// chunkHit is a retrieved chunk id with its retrieval score, the input shape of
-// the chunk_retrieval strategy (Python chunk_hits: list[(chunk_id, score)]).
+// chunkHit is a retrieved chunk id with its retrieval score — the input shape of the
+// chunk_retrieval strategy.
 type chunkHit struct {
 	id    string
 	score float64
@@ -1264,12 +1224,11 @@ type chunkHit struct {
 // order-sensitive outputs are materialised from it: the rendered outline
 // (kept[:structMaxNodes]), chunkPaths (first writer wins for a chunk covered by
 // several nodes) and collectChunkIDs(kept, 32) — the chunk list whose snippets
-// reach the model. Python iterates the kept_names SET (navigation.py:1660, 1673 and
-// _drill_kept_nodes:1594), so its order is arbitrary and, because str hashing is
-// randomised per process, not even reproducible across runs: there is no
-// canonical order to mirror. Go randomises map iteration per range statement, so
-// leaving it to the map would vary those three outputs even between two calls in
-// one process; sorting gives a stable, machine-independent order instead.
+// reach the model. Iterating the kept set gives an arbitrary order that is not even
+// reproducible across runs (string hashing is randomised per process), so there is no
+// canonical order to inherit. Go randomises map iteration per range statement, so leaving
+// it to the map would vary those three outputs even between two calls in one process;
+// sorting gives a stable, machine-independent order instead.
 func sortedKeptNames(names map[string]bool) []string {
 	out := make([]string, 0, len(names))
 	for n := range names {
@@ -1285,7 +1244,7 @@ func drillWithAncestors(names map[string]bool, parents map[string]string) map[st
 	// Ranging a map while adding keys visits the new ones in an unspecified order,
 	// but the result is order-independent: every start walks up to the root (or the
 	// depth guard), so the SET is the same whatever order the names are visited in
-	// — the same closure Python builds from its `list(names)` snapshot (:1648).
+	// the same closure built from a `list(names)` snapshot.
 	for name := range names {
 		cur := parents[name]
 		guard := 0
@@ -1306,7 +1265,8 @@ func drillWithAncestors(names map[string]bool, parents map[string]string) map[st
 //     matched the query directly. They are rendered as statement + verbatim
 //     evidence and take over the selection outright — nothing is drilled, no
 //     chunk snippets are loaded, and the tree only labels where each claim sits
-//     — selector "claim".
+//
+// selector "claim".
 //   - selected (non-empty): node names picked by the whole-TOC LLM pass, kept
 //     whole with their ancestors — selector "llm_toc".
 //   - chunkHits (non-empty): [(id, score)] from chunk retrieval (RAPTOR blob path);
@@ -1345,7 +1305,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		// Claims already carry the answer material (statement + verbatim
 		// evidence), so nothing is drilled: the tree's only remaining job is to
 		// show where each claim sits. Descending would re-derive the same facts
-		// and risk pruning past them (Python navigation.py:2183-2193).
+		// and risk pruning past them.
 		var claimCIDs []string
 		for _, h := range claimHits {
 			if cid := strings.TrimSpace(h.ChunkID); cid != "" && !sliceContains(claimCIDs, cid) {
@@ -1419,7 +1379,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 	}
 	if len(kept) == 0 && len(selectedIDs) == 0 && !(structClaimFirst && len(claimHits) > 0) {
 		// A strategy was chosen but kept nothing; still report which one ran.
-		// Claim-first is the exception (Python navigation.py:2215-2219): upper
+		// Claim-first is the exception: upper
 		// RAPTOR clusters carry no source_chunk_ids, so no node may cover a hit
 		// claim — bailing out here would throw the claims away.
 		out := flat()
@@ -1480,9 +1440,9 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		indent := strings.Repeat("  ", depthOf[name])
 		lines = append(lines, navOutlineLine(indent, name, e.nodeType, e.desc, e.sourceChunkIDs))
 	}
-	// Claim/evidence lines come before the chunk snippets (Python
-	// navigation.py:2264-2283): a gated claim is a verified atomic fact carrying
-	// its verbatim quote, so it reads better than a truncated chunk and needs no
+	// Claim/evidence lines come before the chunk snippets: a gated claim is a verified
+	// atomic fact carrying its verbatim quote, so it reads better than a truncated chunk
+	// and needs no
 	// chunk load at all. Its chunk is dropped from the snippet list below so the
 	// same content is not sent twice.
 	claimed := map[string]bool{}
@@ -1502,7 +1462,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 	// A claim's chunk still deserves a structural label — annotate it from the
 	// node that covers it, falling back to nothing when no node does (upper
 	// RAPTOR clusters carry no source_chunk_ids, so this stays honest rather
-	// than inventing a path) (Python navigation.py:2285-2294).
+	// than inventing a path).
 	for cid := range claimed {
 		if _, ok := chunkPaths[cid]; ok {
 			continue
@@ -1516,7 +1476,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 	// covers); otherwise take the chunks behind the drilled nodes. Under
 	// claim-first a matched claim already renders its verbatim evidence, so
 	// nothing is loaded — loading the chunk behind it would echo the same
-	// passage a second time (Python navigation.py:2300-2303).
+	// passage a second time.
 	var wanted []string
 	if claimFirst {
 		wanted = nil
@@ -1576,9 +1536,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 	}
 }
 
-// ---------------------------------------------------------------------------
 // navigate_structure (zero-LLM vector-beam drill-down; mirrors _navigate_structure_impl)
-// ---------------------------------------------------------------------------
 
 // structureKindsFor maps a navigate_structure kind string to the compiled-kinds
 // set to read, mirroring navigation.py _structure_kinds_for. Defaults to catalog.
@@ -1659,8 +1617,7 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 	case docID == "":
 		return none, nil, nil, ReasonNoDoc
 	}
-	// Python _load_compiled_structure → _resolve_doc_tenant: a document that is
-	// not in the bound datasets yields an empty structure rather than an
+	// A document that is not in the bound datasets yields an empty structure rather than an
 	// unscoped read, so a stale doc_id cannot pull in another dataset's outline.
 	if belongs, verified := docInDatasets(ctx, deps, docID); verified && !belongs {
 		return none, nil, nil, ReasonNoStructure
@@ -1683,7 +1640,7 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 	}
 	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, indexName, ids) }
 
-	// Claim leg (Python _read_structures:1294-1306): flat hybrid claim recall
+	// Claim leg: flat hybrid claim recall
 	// for this document. Selection priority: claims when they hit, then
 	// whatever the tree's own shape supports.
 	var claimHits []DocClaimHit
@@ -1696,17 +1653,17 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 		claimHits = RecallDocClaimHits(ctx, deps, query, docID, kindList, qvec, structClaimTopN)
 	}
 	// Claim-first: the claims decide, so nothing is drilled and no chunks are
-	// recalled to choose (Python _read_structures:1303-1306).
+	// recalled to choose.
 	claimFirst := structClaimFirst && len(claimHits) >= structClaimFirstMinHits
 
 	// RAPTOR / shared-vector blobs cannot score their nodes against the query, so
-	// they defer to chunk retrieval for the drill (mirrors Python routing them to
-	// _recall_chunk_ids_in_doc). Per-node-vector structures take the FLAT node
-	// selection instead of the beam drill (Python navigation.py:1307-1315).
+	// they defer to chunk retrieval for the drill. Per-node-vector structures take the FLAT
+	// node
+	// selection instead of the beam drill.
 	var selected []string
 	var chunkHits []chunkHit
 	if !claimFirst && hasDistinctNodeVectors(nodes) {
-		// Python :1312-1315 — _STRUCT_TOC_LLM_SELECT is False (navigation.py:1111),
+		// _STRUCT_TOC_LLM_SELECT is False,
 		// so the one-shot LLM TOC selection never runs and the flat vector scoring
 		// is the default primary path. It renders under selector="llm_toc"
 		// (renderTocDrilldown's selected branch); an empty result (no query vector)
@@ -1719,19 +1676,17 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 	}
 	drill := renderTocDrilldown(query, qvec, nodes, rels, loader, chunkHits, selected, claimHits)
 	if len(claimHits) > 0 {
-		// Mirror the rendered claims into the shared evidence pool (Python
-		// _publish_claim_hits): the SCA, the slot prefill and the final compose
-		// all read ONLY the pool, so a claim that already states the fact must
-		// land there.
+		// Mirror the rendered claims into the shared evidence pool: the SCA, the slot prefill
+		// and the final compose all read ONLY the pool, so a claim that already states the
+		// fact must land there.
 		drill.claimHits = len(claimHits)
 		publishClaimHits(deps, claimHits, docID)
 	}
 	return drill, nodes, rels, ""
 }
 
-// structureDocSegment renders one <doc> element (doc_id / doc_title="" /
-// entities / relations plus the <structure> outline), mirroring Python
-// navigation._navigate_structure_impl where doc_title is always empty.
+// structureDocSegment renders one <doc> element (doc_id / doc_title="" / entities /
+// relations plus the <structure> outline); doc_title is always empty.
 func structureDocSegment(docID, query, kind string, rank int, nodes []structureNode, rels []structureRel, drill structureDrillout) string {
 	esc := func(s string) string { return XMLEscape(s) }
 	var b strings.Builder
@@ -1739,8 +1694,8 @@ func structureDocSegment(docID, query, kind string, rank int, nodes []structureN
 	if drill.outline != "" {
 		b.WriteString("\n    <structure>" + esc(drill.outline) + "</structure>")
 	}
-	// Python navigation.py:1052-1053 — enough matched claims mark the document's
-	// evidence as citable without a list_chunks deep-read.
+	// Enough matched claims mark the document's evidence as citable without a list_chunks
+	// deep-read.
 	if drill.claimHits >= structClaimSufficientHits {
 		b.WriteString("\n    <claims_sufficient/>")
 	}
@@ -1748,8 +1703,8 @@ func structureDocSegment(docID, query, kind string, rank int, nodes []structureN
 	return b.String()
 }
 
-// emptyReasonLabel maps an empty-reason constant to the XML error label Python
-// writes into <structure_navigation error="...">.
+// emptyReasonLabel maps an empty-reason constant to the XML error label written into
+// <structure_navigation error="...">.
 func emptyReasonLabel(reason string) string {
 	switch reason {
 	case ReasonBadArgs:
@@ -1761,31 +1716,27 @@ func emptyReasonLabel(reason string) string {
 	}
 }
 
-// navigateStructures renders the compiled structures of MULTIPLE documents into a
-// single <structure_navigation> with one <doc> per readable structure, mirroring
-// Python _read_structures + _navigate_structure_impl: each document is read and
-// drilled independently, documents without a compiled structure of the requested
-// kind are skipped, and the resulting outline(s) are merged with per-doc ranks.
+// navigateStructures renders the compiled structures of MULTIPLE documents into a single
+// <structure_navigation> with one <doc> per readable structure: each document is read and
+// drilled independently, documents without a compiled structure of the requested kind are
+// skipped, and the resulting outline(s) are merged with per-doc ranks.
 // The aggregate drillout carries summed node/pointer counts, the max top score,
 // and the union of chunk paths across the documents.
 // navigateStructures drills the requested compiled-structure kind across the
-// given documents. When docIDs is empty it mirrors Python _navigate_structure_impl
-// (:1012): with no doc_id it vector-routes the documents FIRST (search_dataset_layers /
-// the nav tree) and then drills those — so a direct call need not rely on its
-// caller pre-routing. The Go navigate_structure TOOL already routes before calling
-// this, so in the tool path docIDs is non-empty and routing here is a no-op.
+// given documents. When docIDs is empty it vector-routes the documents FIRST (the nav
+// tree) and then drills those — so a direct call need not rely on its caller pre-routing.
+// The navigate_structure TOOL already routes before calling this, so in the tool path
+// docIDs is non-empty and routing here is a no-op.
 func navigateStructures(ctx context.Context, tenantID, query string, docIDs []string, kind string, router NavTreeRouter, deps SearchDeps) (NavResult, structureDrillout) {
 	agg := structureDrillout{chunkPaths: map[string]string{}}
 	var segs []string
 	var docIDsSeen []string
 	var entities []map[string]any
 	if len(docIDs) == 0 {
-		// Python _navigate_structure_impl with an empty doc scope vector-routes
-		// the documents first; only if that also reaches nothing is it a MISS.
+		// With an empty doc scope the documents are vector-routed first; only if that also
+		// reaches nothing is it a MISS.
 		if router != nil {
-			// DocScope: the session ceiling, mirroring _nav_search_titled
-			// (navigation.py:_navigate_structure_impl), which _navigate_structure_impl routes
-			// through when doc_ids is empty (:1012).
+			// DocScope: the session ceiling applied when doc_ids is empty.
 			routed := NavigateTree(ctx, router, NavTreeInput{
 				Query:    query,
 				KbIDs:    deps.KbIDs,
@@ -1804,7 +1755,7 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 	for _, did := range docIDs {
 		drill, nodes, rels, empty := readStructureDocCore(ctx, tenantID, query, did, kind, deps)
 		if empty != "" {
-			// No compiled structure of this kind — Python's per-doc read skips it.
+			// No compiled structure of this kind — the per-doc read skips it.
 			continue
 		}
 		segs = append(segs, structureDocSegment(did, query, kind, len(segs)+1, nodes, rels, drill))
@@ -1823,10 +1774,9 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 		}
 	}
 	if len(segs) == 0 {
-		// doc_ids were given but none carried a compiled structure of this kind —
-		// Python _navigate_structure_impl sets empty_reason="no_structure" when
-		// total_entities == 0 (its count="0" <structure_navigation> carries no
-		// <doc> elements).
+		// doc_ids were given but none carried a compiled structure of this kind:
+		// empty_reason is "no_structure" when total_entities == 0 (the count="0"
+		// <structure_navigation> carries no <doc> elements).
 		return NavResult{
 			Text:        `<structure_navigation count="0" error="no structure">` + "\n</structure_navigation>",
 			EmptyReason: ReasonNoStructure,

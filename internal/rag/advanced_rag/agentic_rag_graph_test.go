@@ -23,9 +23,7 @@ import (
 	"ragflow/internal/rag/advanced_rag/slots"
 )
 
-// ---------------------------------------------------------------------------
 // Test doubles
-// ---------------------------------------------------------------------------
 
 // scriptedModel answers with a fixed set of canned replies, one per call,
 // looping on the last if exhausted. It satisfies harness.SessionModel. seen
@@ -146,9 +144,7 @@ func (r *countingRetriever) Retrieve(_ context.Context, req harness.RetrieveRequ
 	return []map[string]any{{"doc_id": "d1", "docnm_kwd": "doc1", "content": "Saint Lawrence River; 14 April 1865; 9 December 2019."}}, nil
 }
 
-// ---------------------------------------------------------------------------
 // Unit tests for the routing / helpers (no init() required).
-// ---------------------------------------------------------------------------
 
 func TestRouteSCAAlwaysCloseoutOnNoProgress(t *testing.T) {
 	// NoProgress is the hard stop: regardless of SCA enablement or verdict, the
@@ -414,10 +410,9 @@ func TestExpandFanoutsFallbackOnBadJSON(t *testing.T) {
 	mdl := &scriptedModel{}
 	mdl.push("I cannot break this down.")
 	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "single question")
-	// Bad JSON: the model answered in prose, so the loop line-splits the reply
-	// (yielding the reply itself, not the raw question). The loose path strips the
-	// Python `strip("-•0123456789. ")` cutset from both ends, so the trailing
-	// period is dropped exactly as `_parse_fanouts` would.
+	// Bad JSON: the model answered in prose, so the loop line-splits the reply (yielding
+	// the reply itself, not the raw question). The loose path strips the
+	// "-•0123456789. " cutset from both ends, so the trailing period is dropped.
 	if len(got) != 1 || got[0] != "I cannot break this down" {
 		t.Fatalf("expected line-split fallback without the trailing period, got %v", got)
 	}
@@ -430,9 +425,9 @@ func TestExpandFanoutsNilModelReturnsQuestion(t *testing.T) {
 	}
 }
 
-// TestExpandFanoutsRetriesWithStrictJSON covers Python's retry (:478-488): a
-// prose answer must not be line-split into fan-outs (it poisons the slot table),
-// so the prompt is re-sent with the strict JSON instruction instead.
+// TestExpandFanoutsRetriesWithStrictJSON covers the retry: a prose answer must not be
+// line-split into fan-outs (it poisons the slot table), so the prompt is re-sent with the
+// strict JSON instruction instead.
 func TestExpandFanoutsRetriesWithStrictJSON(t *testing.T) {
 	mdl := &scriptedModel{}
 	mdl.push("The woman was **Rocio Restrepo**.\nSupporting sources: https://example.com")
@@ -479,9 +474,9 @@ func TestFanoutLooksLikeQueryBounds(t *testing.T) {
 	}
 }
 
-// TestFanoutLooksLikeQueryCountsRunes pins Python len(): the 160-char cap counts
-// code points, so a CJK fan-out at the limit must survive even though it exceeds
-// 160 BYTES, and one over the limit must still be rejected.
+// TestFanoutLooksLikeQueryCountsRunes: the 160-char cap counts code points, so a CJK
+// fan-out at the limit must survive even though it exceeds 160 BYTES, and one over the
+// limit must still be rejected.
 func TestFanoutLooksLikeQueryCountsRunes(t *testing.T) {
 	atLimit := strings.Repeat("中", fanoutMaxChars) // 160 chars / 480 bytes
 	if !fanoutLooksLikeQuery(atLimit, false) {
@@ -492,9 +487,9 @@ func TestFanoutLooksLikeQueryCountsRunes(t *testing.T) {
 	}
 }
 
-// TestParseFanoutsLooseStripsBothEnds pins Python `ln.strip("-•0123456789. ")`:
-// the bullet/numbering cutset is stripped from BOTH ends, so a trailing period is
-// not carried into the retrieval query (the leading "1." already was not).
+// TestParseFanoutsLooseStripsBothEnds: the bullet/numbering cutset is stripped from BOTH
+// ends, so a trailing period is not carried into the retrieval query (the leading "1."
+// already was not).
 func TestParseFanoutsLooseStripsBothEnds(t *testing.T) {
 	got := parseFanouts("1. who opened the library.\n- when did it open?")
 	want := []string{"who opened the library", "when did it open?"}
@@ -508,9 +503,9 @@ func TestParseFanoutsLooseStripsBothEnds(t *testing.T) {
 	}
 }
 
-// TestParseFanoutsSplitsOnAllLineBreaks pins Python `text.splitlines()`: a
-// carry-return separated reply yields one fan-out per line, not a single fused
-// blob (splitting on "\n" alone would keep the lone "\r" inline).
+// TestParseFanoutsSplitsOnAllLineBreaks: a carriage-return separated reply yields one
+// fan-out per line, not a single fused blob (splitting on "\n" alone would keep the lone
+// "\r" inline).
 func TestParseFanoutsSplitsOnAllLineBreaks(t *testing.T) {
 	got := parseFanouts("who opened it\rwhen did it open?")
 	want := []string{"who opened it", "when did it open?"}
@@ -524,13 +519,12 @@ func TestParseFanoutsSplitsOnAllLineBreaks(t *testing.T) {
 	}
 }
 
-// TestRenderSlotDraftMatchesPythonFormat pins Python _render_slot_draft
-// (agentic_rag_graph.py:1278-1326) exactly: the collected answer leads with its
-// evidence metadata, a resolved slot carries strength + terminal + evidence ids +
+// TestRenderSlotDraftFormat pins the draft format exactly: the collected answer leads
+// with its evidence metadata, a resolved slot carries strength + terminal + evidence ids +
 // its discovered-clue tail, and an unresolved slot is rendered as
-// "NOT RESOLVED (<question clues>)". This text is the SCA's claim context, so a
-// different shape changes what the reviewer sees.
-func TestRenderSlotDraftMatchesPythonFormat(t *testing.T) {
+// "NOT RESOLVED (<question clues>)". This text is the SCA's claim context, so a different
+// shape changes what the reviewer sees.
+func TestRenderSlotDraftFormat(t *testing.T) {
 	strong := 0.9
 	st := harness.NewState([]harness.Variable{
 		{
@@ -556,10 +550,9 @@ func TestRenderSlotDraftMatchesPythonFormat(t *testing.T) {
 	}
 }
 
-// TestSelectSCAViewPrefersScoreWhenSimilarityIsZero pins Python
-// _select_sca_view:140 (`float(c.get("similarity") or c.get("score") or 0.0)`):
-// a similarity of 0.0 is FALSY, so the score must be used instead. The
-// presence-based read ranked such a chunk last instead of first.
+// TestSelectSCAViewPrefersScoreWhenSimilarityIsZero: a similarity of 0.0 is FALSY, so the
+// score must be used instead. The presence-based read ranked such a chunk last instead of
+// first.
 func TestSelectSCAViewPrefersScoreWhenSimilarityIsZero(t *testing.T) {
 	chunks := []map[string]any{
 		{"chunk_id": "zero-sim", "content": "irrelevant", "similarity": 0.0, "score": 0.9},
@@ -574,11 +567,10 @@ func TestSelectSCAViewPrefersScoreWhenSimilarityIsZero(t *testing.T) {
 	}
 }
 
-// TestComposeFallbackDraftMatchesPythonPrompt pins the draft prompt of Python
-// _compose_fallback_draft (:1585-1598) byte for byte: the FOUND/MISSING
-// instructions, the "Retrieved evidence:" label, the "\n"-joined numbered
-// snippets, and the language clause appended without a separator.
-func TestComposeFallbackDraftMatchesPythonPrompt(t *testing.T) {
+// TestComposeFallbackDraftPrompt pins the draft prompt byte for byte: the FOUND/MISSING
+// instructions, the "Retrieved evidence:" label, the "\n"-joined numbered snippets, and
+// the language clause appended without a separator.
+func TestComposeFallbackDraftPrompt(t *testing.T) {
 	mdl := &fakeModel{replies: []*harness.ModelReply{{Content: "FOUND: x\nMISSING: none"}}}
 	st := &AgenticState{
 		Question: "谁开的？",
@@ -608,26 +600,24 @@ func TestComposeFallbackDraftMatchesPythonPrompt(t *testing.T) {
 	}
 }
 
-// TestBuildSlotTableKeepsAllFanoutsOnFailure pins Python _build_slot_table's
-// exception branch (:1347-1350): when initialize_state fails, first_queries is
-// the FULL fan-out list — the [:3] cap only applies to the empty-root path
-// (:1360). Losing the list made the first prefetch narrower than Python's.
+// TestBuildSlotTableKeepsAllFanoutsOnFailure pins the failure path: when
+// initialize_state fails, first_queries is the FULL fan-out list — the [:3] cap only
+// applies to the empty-root path. Losing the list made the first prefetch narrower.
 func TestBuildSlotTableKeepsAllFanoutsOnFailure(t *testing.T) {
 	fanouts := []string{"q1", "q2", "q3", "q4", "q5"}
 	// No model → initialize_state cannot run, so the failure path is taken.
 	root, first := BuildSlotTable(context.Background(), harness.SessionDeps{}, "raw question", fanouts, 60)
 	if len(root.State) != 4 {
-		t.Fatalf("fallback slots = %d, want 4 (Python queries[:4])", len(root.State))
+		t.Fatalf("fallback slots = %d, want 4 (queries[:4])", len(root.State))
 	}
 	if len(first) != len(fanouts) {
 		t.Errorf("firstQueries = %v, want the full fan-out list on the failure path", first)
 	}
 }
 
-// TestBuildSlotTableFallsBackOnSpentBudget pins the planner's deadline
-// (Python agentic_rag_graph.py:917, `lambda: _remaining_s(state) - 15.0`): the
-// value is NOT floored, so once the round budget is spent the decomposition times
-// out at once and the table falls back to the planner fan-outs.
+// TestBuildSlotTableFallsBackOnSpentBudget pins the planner's deadline: the value is NOT
+// floored, so once the round budget is spent the decomposition times out at once and the
+// table falls back to the planner fan-outs.
 func TestBuildSlotTableFallsBackOnSpentBudget(t *testing.T) {
 	mdl := &fakeModel{replies: []*harness.ModelReply{
 		{Content: `{"slots":[{"id":0,"type":"aspect","clues":["a"]}]}`},
@@ -645,9 +635,9 @@ func TestBuildSlotTableFallsBackOnSpentBudget(t *testing.T) {
 	}
 }
 
-// TestBuildSlotTableFallsBackWhenIDIsNotAnInteger covers the end-to-end effect of
-// the strict parser: Python's int(s["id"]) raises, _build_slot_table catches it
-// and rebuilds the table from the planner fan-outs.
+// TestBuildSlotTableFallsBackWhenIDIsNotAnInteger covers the end-to-end effect of the
+// strict parser: a non-integer id fails the parse and the table is rebuilt from the
+// planner fan-outs.
 func TestBuildSlotTableFallsBackWhenIDIsNotAnInteger(t *testing.T) {
 	fanouts := []string{"q1", "q2"}
 	deps := harness.SessionDeps{Model: &fakeModel{replies: []*harness.ModelReply{
@@ -667,52 +657,6 @@ func TestBuildSlotTableFallsBackWhenIDIsNotAnInteger(t *testing.T) {
 	}
 }
 
-// TestPythonMessageListPrefixMatchesLangchain pins the ledger's q fallback
-// (Python _run_slot_research_pass:1446 `(r.found_answer or str(r.messages))[:80]`).
-// The expectation is the byte-exact output of the installed langchain_core:
-//
-//	>>> str([SystemMessage(content='You are a slot-filling research agent.\n'
-//	...                      'Direction: who opened it?')])[:80]
-//	"[SystemMessage(content='You are a slot-filling research agent.\\nDirection: who o"
-func TestPythonMessageListPrefixMatchesLangchain(t *testing.T) {
-	msgs := []schema.Message{
-		*schema.SystemMessage("You are a slot-filling research agent.\nDirection: who opened it?"),
-		*schema.UserMessage("Direction: who opened it?\n\nState:\n- slot 0 [aspect]: NOT RESOLVED"),
-	}
-	want := "[SystemMessage(content='You are a slot-filling research agent.\\nDirection: who o"
-	if got := pythonMessageListPrefix(msgs, 80); got != want {
-		t.Errorf("prefix = %q\nwant    %q", got, want)
-	}
-
-	// The full (untruncated) repr must match langchain's field list, including the
-	// normalized tool_call dict and the ToolMessage shape.
-	full := []schema.Message{
-		*schema.SystemMessage("sys"),
-		*schema.UserMessage("usr"),
-		*schema.AssistantMessage("", []schema.ToolCall{{
-			ID:   "call_0",
-			Type: "function",
-			Function: schema.FunctionCall{
-				Name:      "retrieve",
-				Arguments: `{"query":"who opened it?"}`,
-			},
-		}}),
-		*schema.ToolMessage(`{"passages": []}`, "call_0"),
-	}
-	wantFull := "[SystemMessage(content='sys', additional_kwargs={}, response_metadata={}), " +
-		"HumanMessage(content='usr', additional_kwargs={}, response_metadata={}), " +
-		"AIMessage(content='', additional_kwargs={}, response_metadata={}, " +
-		"tool_calls=[{'name': 'retrieve', 'args': {'query': 'who opened it?'}, 'id': 'call_0', 'type': 'tool_call'}], " +
-		"invalid_tool_calls=[]), " +
-		`ToolMessage(content='{"passages": []}', tool_call_id='call_0')]`
-	if got := pythonMessageListPrefix(full, 4096); got != wantFull {
-		t.Errorf("full repr = %q\nwant       %q", got, wantFull)
-	}
-	if got := pythonMessageListPrefix(nil, 80); got != "[]" {
-		t.Errorf("nil messages = %q, want []", got)
-	}
-}
-
 // sessionStubExec answers every tool call with a hit, so a session runs its turns
 // without a real retriever.
 type sessionStubExec struct{}
@@ -726,8 +670,12 @@ func (sessionStubExec) Execute(_ context.Context, name string, _ map[string]any)
 }
 
 // TestRunSlotResearchPassLedgerRecordsSessionHint drives a real round whose
-// session produces no terminal answer, and asserts the ledger row still carries a
-// query hint (the transcript digest) rather than an empty string.
+// session produces no terminal answer, and asserts the ledger row still carries the
+// QUERY of the pair (query, outcome): the direction this session was sent on.
+//
+// The row used to carry a langchain-style repr of the session's messages instead, and
+// that repr is a CONSTANT in production: every session's history opens with the same
+// system prompt, so its first 80 runes went into every row of every question.
 func TestRunSlotResearchPassLedgerRecordsSessionHint(t *testing.T) {
 	st := &AgenticState{
 		Question: "who opened it?",
@@ -750,12 +698,15 @@ func TestRunSlotResearchPassLedgerRecordsSessionHint(t *testing.T) {
 		t.Fatal("no ledger entry recorded")
 	}
 	q, _ := res.Attempted[len(res.Attempted)-1]["q"].(string)
-	if !strings.HasPrefix(q, "[SystemMessage(content='") {
-		t.Errorf("ledger q = %q, want the langchain repr prefix (Python :1446)", q)
+	if q != "who opened it?" {
+		t.Errorf("ledger q = %q, want the direction this session was sent on", q)
+	}
+	if strings.HasPrefix(q, "[SystemMessage(") {
+		t.Error("ledger q carries a message repr — that is the system prompt, not a query")
 	}
 }
 
-// TestRunSlotResearchPassLogsSlotEvidenceBound pins Python :1459-1463: the round
+// TestRunSlotResearchPassLogsSlotEvidenceBound pins: the round
 // reports how many passages each slot's session bound, so a slot whose session
 // retrieved nothing is visible in the run log.
 func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
@@ -930,10 +881,9 @@ func (e *claimTopUpEngine) Search(_ context.Context, req *types.SearchRequest) (
 	}}}, nil
 }
 
-// TestFanoutSearchEvidenceTopUp pins the channel-0 directional top-up (Python
-// _fanout_search:782-799): after a claim pseudo chunk is admitted, the source
-// chunk it cites is fetched by id and admitted too — the verbatim quote alone
-// does not carry the surrounding passage.
+// TestFanoutSearchEvidenceTopUp pins the channel-0 directional top-up: after a claim
+// pseudo chunk is admitted, the source chunk it cites is fetched by id and admitted too —
+// the verbatim quote alone does not carry the surrounding passage.
 func TestFanoutSearchEvidenceTopUp(t *testing.T) {
 	r := &channelRetriever{}
 	de := &claimTopUpEngine{}
@@ -1020,14 +970,14 @@ func TestComposeFallbackDraftUsesLLM(t *testing.T) {
 	if !strings.Contains(mdl.lastSys, "MISSING:") {
 		t.Errorf("system = %q, want it to require a MISSING: line", mdl.lastSys)
 	}
-	// Python :1479-1481: numbered "[i]" evidence, 1-indexed.
+	// numbered "[i]" evidence, 1-indexed.
 	if !strings.Contains(mdl.lastUser, "[1] It was built in 1874.") {
 		t.Errorf("user = %q, want '[1] <content>' evidence", mdl.lastUser)
 	}
 }
 
-// TestComposeFallbackDraftFallsBackToEvidence pins Python :1485-1486 and
-// :1512-1514: with no model, or when the call fails, the draft degrades to the
+// TestComposeFallbackDraftFallsBackToEvidence pins -1486 and
+// 1512-1514: with no model, or when the call fails, the draft degrades to the
 // raw evidence capped at 4000 chars.
 func TestComposeFallbackDraftFallsBackToEvidence(t *testing.T) {
 	st := &AgenticState{
@@ -1043,7 +993,7 @@ func TestComposeFallbackDraftFallsBackToEvidence(t *testing.T) {
 	}
 }
 
-// TestComposeFallbackDraftOrdersByRelevance pins Python :1478: the fixed 16-slot
+// TestComposeFallbackDraftOrdersByRelevance pins: the fixed 16-slot
 // budget is spent on the STRONGEST evidence, not on insertion order.
 func TestComposeFallbackDraftOrdersByRelevance(t *testing.T) {
 	st := &AgenticState{
@@ -1067,11 +1017,10 @@ func TestComposeFallbackDraftOrdersByRelevance(t *testing.T) {
 }
 
 // TestRagCollectsPerPhaseUsage pins the wiring that makes per-phase LLM usage
-// measurable: Python builds LLMUsageStats and wraps the chat model at
-// agentic_rag.py:266-267, then logs at :930. Without the Go equivalent the
-// counting machinery stays inert — CurrentStats(ctx) is nil, so the phase
-// markers already in the graph record nothing and even the explicit
-// deps.Stats.RecordCall sites are skipped by their nil guard.
+// measurable: the collector must be built and the chat model wrapped, otherwise the
+// counting machinery stays inert — CurrentStats(ctx) is nil, so the phase markers already
+// in the graph record nothing and even the explicit deps.Stats.RecordCall sites are
+// skipped by their nil guard.
 func TestRagCollectsPerPhaseUsage(t *testing.T) {
 	mdl := &countingModel{}
 	Rag(context.Background(), RAGTools{
@@ -1128,12 +1077,11 @@ func (m *countingModel) Complete(ctx context.Context, msgs []schema.Message, _ [
 	return &harness.ModelReply{Content: "ok"}, nil
 }
 
-// TestSCAFeedbackIsStatusOnly pins Python agentic_rag.py:902-929: the
-// "[Research status]" note is the status hint ALONE. Python's verdict dict
-// carries only a "status" key, so its missing_claims / hard_violations /
-// agent_confidence / feedback segments are always empty — a Go port that
-// rendered them (from the separate SCA payload) diverged from upstream and
-// invented a "0.00" confidence fallback Python never emits.
+// TestSCAFeedbackIsStatusOnly: the "[Research status]" note is the status hint ALONE.
+// The verdict dict carries only a "status" key, so its missing_claims / hard_violations /
+// agent_confidence / feedback segments are always empty — rendering them (from the
+// separate SCA payload) would invent a "0.00" confidence fallback that is never
+// emitted.
 func TestSCAFeedbackIsStatusOnly(t *testing.T) {
 	rich := map[string]any{
 		"contradictions": []any{"A says 1874, B says 1881"},
@@ -1158,7 +1106,7 @@ func TestSCAFeedbackIsStatusOnly(t *testing.T) {
 	}
 }
 
-// TestComposeFallbackDraftMirrorsLanguage pins Python :1505-1506: a non-English
+// TestComposeFallbackDraftMirrorsLanguage pins: a non-English
 // question gets an explicit same-language instruction.
 func TestComposeFallbackDraftMirrorsLanguage(t *testing.T) {
 	st := &AgenticState{
@@ -1244,10 +1192,9 @@ func TestRunReturnsNonNilState(t *testing.T) {
 	}
 }
 
-// TestAgenticGraphPushesPhaseProgress asserts that the agentic loop forwards
-// tagged engine-stage lines to the caller's Progress sink (Python think_log
-// counterpart) as it runs — planner, research round, SCA — so a streaming chat
-// can show live research progress in the reasoning block.
+// TestAgenticGraphPushesPhaseProgress asserts that the agentic loop forwards tagged
+// engine-stage lines to the caller's Progress sink as it runs — planner, research round,
+// SCA — so a streaming chat can show live research progress in the reasoning block.
 func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
@@ -1262,9 +1209,9 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 
 	var lines []string
 	// Mirror production: Rag wraps the run logger with thinkLogger using the
-	// same Progress sink. Python has no explicit "push" API at all — the think
-	// block is fed purely by intercepting tagged logger lines — so everything
-	// asserted here must come from a logger.Printf.
+	// same Progress sink. There is no explicit "push" API: the think block is fed purely by
+	// intercepting tagged logger lines, so everything asserted here must come from a
+	// logger.Printf.
 	sink := func(line string) { lines = append(lines, line) }
 	st, err := BuildAgenticGraph(ctx, RAGTools{
 		Model:    mdl,
@@ -1281,8 +1228,8 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 		t.Fatal("expected a non-nil AgenticState")
 	}
 	joined := strings.Join(lines, "\n")
-	// Each stage is announced by its node's own tagged log line (Python parity:
-	// no separate push), so assert on what the nodes actually log.
+	// Each stage is announced by its node's own tagged log line (no separate push), so
+	// assert on what the nodes actually log.
 	for _, want := range []string{
 		"[Agentic RAG] Starting research",
 		"[Planner] Decomposing",
@@ -1343,7 +1290,7 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 }
 
 // TestBuildLowGraphRunsFormalizeThenDirectSearch covers the low-mode graph
-// (Python build_low_graph:733). It has no planner and no SCA loop, so the only
+// . It has no planner and no SCA loop, so the only
 // observable contract is: formalize rewrites the question, then direct_search
 // merges retrieved evidence into the kbinfos.
 func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
@@ -1386,7 +1333,7 @@ func (c *lowGraphCountingExpander) Expand(context.Context, *harness.Kbinfos, str
 	return nil
 }
 
-// TestBuildLowGraphAlwaysExpandsCompiled mirrors Python low mode: direct.py
+// TestBuildLowGraphAlwaysExpandsCompiled: mode: direct.py
 // calls hybrid_search(..., use_compiled=True) unconditionally, so the low
 // graph's direct_search must expand even when the caller's RunRequest leaves
 // UseCompiled false — which production always does.
@@ -1403,16 +1350,15 @@ func TestBuildLowGraphAlwaysExpandsCompiled(t *testing.T) {
 		t.Fatalf("BuildLowGraph: %v", err)
 	}
 	if exp.calls == 0 {
-		t.Errorf("low mode's direct_search must expand compiled structure "+
-			"(Python direct.py use_compiled=True); log:\n%s", buf.String())
+		t.Errorf("low mode's direct_search must expand compiled structure; log:\n%s",
+			buf.String())
 	}
 }
 
-// TestFinalizeRunsOnceFromInsideTheGraph locks in the Python parity of the
-// terminal node: both graphs end in a formalize_answer node that composes
-// (:1214 / :834), so the composition happens INSIDE the graph — and exactly
-// once, even though Rag also has a post-graph call for runs that never reach
-// the last node. A double composition would overwrite the answer with the
+// TestFinalizeRunsOnceFromInsideTheGraph locks in the terminal node's contract: both
+// graphs end in a formalize_answer node that composes, so the composition happens INSIDE
+// the graph — and exactly once, even though Rag also has a post-graph call for runs that
+// never reach the last node. A double composition would overwrite the answer with the
 // model's next reply, which is what this test watches for.
 func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 	ctx := context.Background()
@@ -1436,7 +1382,7 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 		finalized++
 		// The low graph's formalize_answer must forward the FORMALIZED
 		// question the formalize_question node wrote into the RunRequest
-		// (Python state["question"], agentic_rag_graph.py:834) — composing
+		// composing
 		// from the outer tool argument collapses a multi-hop answer to its
 		// first sub-answer.
 		if question != "when was it made?" {
@@ -1459,7 +1405,7 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 	}
 }
 
-// TestSCAUnavailableMarksInsufficient pins Python :1096-1098: when the SCA
+// TestSCAUnavailableMarksInsufficient pins: when the SCA
 // produces no usable result (timeout, unparsable reply, no model) the verdict is
 // INSUFFICIENT so unresolved slots can drive another research round — NOT
 // SUFFICIENT, which would ship the unverified draft as if it had passed review.
@@ -1482,7 +1428,7 @@ func TestSCAUnavailableIsNotAVerdict(t *testing.T) {
 		t.Error("an unavailable review must not read as INSUFFICIENT: that is what marked the answer partial on no evidence and promised a research round the budget could not pay for")
 	}
 	if st.SCA == nil {
-		t.Error("SCA payload must stay an (empty) map, like Python's sca={}")
+		t.Error("SCA payload must stay an (empty) map")
 	}
 	// An un-run review must not make the answer PARTIAL either: with nothing
 	// unresolved and no stalled round, the deliverable is not dressed up as
@@ -1494,7 +1440,7 @@ func TestSCAUnavailableIsNotAVerdict(t *testing.T) {
 	}
 }
 
-// TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps pins Python :1114-1128: with
+// TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps pins: with
 // no structured SCA gaps, the unresolved slots' question_clues become the gaps,
 // so the loop keeps going instead of accepting an unresolved draft.
 func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
@@ -1514,7 +1460,7 @@ func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
 	}, st, log.New(&bytes.Buffer{}, "", 0))
 
 	if st.NoProgress {
-		t.Fatal("NoProgress = true; Python folds unresolved slot clues into the gaps and keeps researching")
+		t.Fatal("NoProgress = true; unresolved slot clues must be folded into the gaps and researched")
 	}
 	joined := strings.Join(st.CurrentQueries, "|")
 	if !strings.Contains(joined, "when opened") {
@@ -1522,11 +1468,11 @@ func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
 	}
 }
 
-// TestUnresolvedClueGapsCapsAtTwoClues mirrors Python's `[:2]` per slot.
+// TestUnresolvedClueGapsCapsAtTwoClues pins the [:2] per-slot cap.
 func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	st := &AgenticState{UnresolvedSlots: []map[string]any{
 		{"question_clues": []string{"a", "b", "c"}},
-		{"question_clues": []string{"a", "d"}}, // Python appends without dedupe
+		{"question_clues": []string{"a", "d"}}, // clues are appended without dedupe
 	}}
 	gaps := unresolvedClueGaps(st)
 	if len(gaps) != 4 {
@@ -1540,7 +1486,7 @@ func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	}
 }
 
-// TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim pins Python :1072-1073: with no
+// TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim pins: with no
 // draft and no slot evidence, the SCA still gets one claim carrying EVERY chunk
 // in the view, so it can judge the evidence instead of the node short-circuiting.
 func TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim(t *testing.T) {
@@ -1562,10 +1508,10 @@ func TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim(t *testing.T) {
 	}
 }
 
-// TestBuildSCAClaimsAppendsMissingSlotEvidence pins Python :1057-1071: a slot
+// TestBuildSCAClaimsAppendsMissingSlotEvidence pins: a slot
 // whose evidence chunk is NOT in the view has that chunk appended, and the claim
-// carries its new POSITION. Python appends to the same list and reviews against
-// it, so buildSCAClaims returns the grown view.
+// carries its new POSITION. It is appended to the same list and reviewed against, so
+// buildSCAClaims returns the grown view.
 func TestBuildSCAClaimsAppendsMissingSlotEvidence(t *testing.T) {
 	chunks := []map[string]any{
 		{"chunk_id": "c1", "content": "Built 1865."},
@@ -1612,11 +1558,9 @@ func TestResolveEvidenceChunkAcceptsBothIdSpaces(t *testing.T) {
 
 func TestAgenticNodeNameMapsRoutingToGraphKeys(t *testing.T) {
 	cases := map[agenticNode]string{
-		nodeQueryRewrite:      "query_rewrite",
-		nodeRagAgentFirst:     "rag_agent",
-		nodeRagAgentLoop:      "rag_agent",
-		nodeFormalizeAnswer:   "formalize_answer",
-		nodeFormalizeQuestion: "formalize_answer",
+		nodeQueryRewrite:    "query_rewrite",
+		nodeRagAgentLoop:    "rag_agent",
+		nodeFormalizeAnswer: "formalize_answer",
 	}
 	for n, want := range cases {
 		if got := agenticNodeName(n); got != want {
@@ -1625,11 +1569,8 @@ func TestAgenticNodeNameMapsRoutingToGraphKeys(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Explicit-wiring integration tests (replaces the old init()-based registration
-// checks). Activation is explicit, mirroring Python's dialog_service.py
-// instantiating RAGTools: the test registers the loop before calling Run.
-// ---------------------------------------------------------------------------
+// Explicit-wiring integration tests (replaces the old init()-based registration checks).
+// Activation is explicit: the test registers the loop before calling Run.
 
 // TestMain keeps the package's tests on in-memory doubles: graph exploration
 // otherwise seeds its dense search from the tenant embedding model, which
@@ -1701,20 +1642,18 @@ func (rfTagger) LabelQuestion(_ context.Context, _ string, _ []*entity.Knowledge
 	return map[string]float64{"location": 1.0}
 }
 
-// TestAgenticLoopRankFeaturePolicy pins the rank_feature policy: Python's
-// search.py legs (the fan-out channels, search_chunks, retrieve) call
-// retriever.retrieval WITHOUT rank_feature (:158-173/:223-238/:260-275), and
-// only RAGTools.retrieve — the low-mode direct pass — passes
-// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668). The
-// agentic loop's research retrievals must therefore carry NO tag boost, even
-// though the Tagger/KBs projection is wired through.
+// TestAgenticLoopRankFeaturePolicy pins the rank_feature policy: the search legs (the
+// fan-out channels, search_chunks, retrieve) call the retriever WITHOUT rank_feature, and
+// only the low-mode direct pass passes the question-type tag boost. The agentic loop's
+// research retrievals must therefore carry NO tag boost, even though the Tagger/KBs
+// projection is wired through.
 func TestAgenticLoopRankFeaturePolicy(t *testing.T) {
 	SetAgenticLoop(NewAgenticLoop())
 	defer SetAgenticLoop(nil)
 
 	mdl := &scriptedModel{}
-	// Call order: formalize (single-turn keyword extraction, Python
-	// agentic_rag.py:446) → planner fan-out → slot table → draft → SCA.
+	// Call order: formalize (single-turn keyword extraction) → planner fan-out → slot
+	// table → draft → SCA.
 	mdl.push(`{"entity": ["it"], "aliases": [], "fact_type": [], "qualifiers": []}`)
 	mdl.push(`{"fanouts": ["when was it opened"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when opened","clues":["1865"]}], "first_queries":["when opened"]}`)
@@ -1735,13 +1674,11 @@ func TestAgenticLoopRankFeaturePolicy(t *testing.T) {
 	if len(r.features) == 0 {
 		t.Fatal("the agentic loop performed no retrieval")
 	}
-	// Scope to the fan-out / slot research retrievals — the ones Python issues
-	// through search.py's hybrid/bm25 legs, none of which pass rank_feature.
+	// Scope to the fan-out / slot research retrievals — the hybrid/bm25 legs, none of
+	// which pass rank_feature.
 	//
-	// Also exempt: the navigation tools' own recalls (chunk-agg routing
-	// via chunkAggRetrieveFrom, and _recall_chunk_ids_in_doc) which mirror
-	// Python's _search_layers_nav_chunk_agg / _recall_chunk_ids_in_doc
-	// (navigation.py:1399) — neither passes rank_feature there either.
+	// Also exempt: the navigation tools' own recalls (chunk-agg routing via
+	// chunkAggRetrieveFrom) — neither passes rank_feature there either.
 	research := map[string]bool{"when was it opened": true, "when opened": true}
 	checked := 0
 	for i, q := range r.queries {
@@ -1927,12 +1864,11 @@ func TestRunUnknownModeFallsBackToNaive(t *testing.T) {
 	}
 }
 
-// TestNaiveUsesFlatEvidenceAndOwnComposition pins the semantics that separate
-// the naive path from low/direct. Python's _naive_rag (:1517) is NOT
-// "direct_search minus formalize": it does a plain retrieve with no weighted
-// keyword extraction (:1533) and composes under a short fixed system prompt
-// from flat "[i] content" evidence (:1555-1568), never FinalAnswerSystem /
-// kb_prompt. Routing naive through runDirect + composeFinalAnswer silently
+// TestNaiveUsesFlatEvidenceAndOwnComposition pins the semantics that separate the naive
+// path from low/direct. Naive is NOT "direct_search minus formalize": it does a plain
+// retrieve with no weighted keyword extraction and composes under a short fixed system
+// prompt from flat "[i] content" evidence, never FinalAnswerSystem / kb_prompt. Routing
+// naive through runDirect + composeFinalAnswer silently
 // substituted the agentic composition, which is what this test guards.
 func TestNaiveUsesFlatEvidenceAndOwnComposition(t *testing.T) {
 	mdl := &fakeModel{replies: []*harness.ModelReply{{Content: "OmiyaSoft [1]."}}}
@@ -1950,14 +1886,14 @@ func TestNaiveUsesFlatEvidenceAndOwnComposition(t *testing.T) {
 	if resp.EmptyResult || len(resp.Chunks) != 1 {
 		t.Fatalf("naive must retrieve evidence (chunks=%d, empty=%v)", len(resp.Chunks), resp.EmptyResult)
 	}
-	// Python 1533: one PLAIN retrieve — no ExtractWeightedKeywords, so the model
+	// one PLAIN retrieve — no ExtractWeightedKeywords, so the model
 	// is called exactly once. The old runDirect path spent a second call on
 	// keyword extraction before composing.
 	if mdl.calls != 1 {
 		t.Fatalf("model calls = %d, want 1 (naive composes without extracting keywords)", mdl.calls)
 	}
 
-	// Python 1555: flat "[i] content" evidence, not kb_prompt's "ID: n" blocks.
+	// flat "[i] content" evidence, not kb_prompt's "ID: n" blocks.
 	got := mdl.lastUserPrompt()
 	if !strings.Contains(got, "[1] Culdcept was created") {
 		t.Errorf("evidence = %q, want flat \"[1] <content>\"", got)
@@ -2027,9 +1963,8 @@ func TestRunNeverPanicsWithoutBackend(t *testing.T) {
 
 func TestRunLowReturnsComposedAnswer(t *testing.T) {
 	mdl := &fakeModel{replies: []*harness.ModelReply{
-		// formalize (single-turn keyword extraction, Python
-		// agentic_rag.py:446) and the low graph's direct search each extract
-		// keywords in their own call (Python direct.py:22 does the same), so
+		// formalize (single-turn keyword extraction) and the low graph's direct search each
+		// extract keywords in their own call, so
 		// the composed answer is the third reply.
 		{Content: `{"entity": ["Culdcept"], "aliases": [], "fact_type": [], "qualifiers": []}`},
 		{Content: `{"entity": ["Culdcept"], "aliases": [], "fact_type": [], "qualifiers": []}`},
@@ -2185,7 +2120,7 @@ func TestRunAgenticComposesFromResearchFindings(t *testing.T) {
 }
 
 // TestAnswerPromptCarriesTargetContract pins the EXTREME-SELECTION guardrail
-// (Python :643-652). Without it a "longest/shortest/most…" question tends to be
+// . Without it a "longest/shortest/most…" question tends to be
 // answered with the most common or first-listed candidate rather than the
 // extreme one, because nothing asks the model to compare.
 func TestAnswerPromptCarriesTargetContract(t *testing.T) {
@@ -2206,7 +2141,7 @@ func TestAnswerPromptCarriesTargetContract(t *testing.T) {
 	}
 }
 
-// TestAnswerPromptNoEvidenceInstructions pins Python :654-663: when the call is
+// TestAnswerPromptNoEvidenceInstructions pins: when the call is
 // not short-circuited by empty_response, the prompt must still tell the model how
 // to degrade — from the research summary if there is one, otherwise with an
 // explicit insufficiency statement.
@@ -2227,7 +2162,7 @@ func TestAnswerPromptNoEvidenceInstructions(t *testing.T) {
 	}
 }
 
-// TestAnswerPromptOrdersPartialPreamble pins Python :668-671: the partial
+// TestAnswerPromptOrdersPartialPreamble pins: the partial
 // preamble sits AFTER the research summary and BEFORE the evidence — not at the
 // front of the prompt, where it would precede the question.
 func TestAnswerPromptOrdersPartialPreamble(t *testing.T) {
@@ -2253,11 +2188,10 @@ func TestAnswerPromptOrdersPartialPreamble(t *testing.T) {
 }
 
 // TestComposeAnswerWithAttachesUserImages pins the non-outer path fix: when
-// AnswerDeps.UserImages carries vision-gated data URIs (Python image_attachments
-// surviving gateImageAttachments), the final-answer user message must be
-// multimodal — an image_url content block beside the text question — so the
-// compose model sees the images exactly like Python's direct async_chat
-// fallback (called with the original multimodal messages). Without this the
+// AnswerDeps.UserImages carries vision-gated data URIs surviving gateImageAttachments,
+// the final-answer user message must be multimodal — an image_url content block beside the
+// text question — so the compose model sees the images on the direct fallback (called with
+// the original multimodal messages). Without this the
 // direct (no-outer) path composed from a text-only prompt and silently dropped
 // the picture.
 func TestComposeAnswerWithAttachesUserImages(t *testing.T) {
@@ -2331,10 +2265,10 @@ func userTurnAt(m *scriptedModel, idx int) string {
 }
 
 // TestGenJSONUsesOutputNewlineUserTurn locks the contract that every JSONModel
-// round mirrors Python gen_json's "Output:\n" user turn. It was previously an
+// round: "Output:\n" user turn. It was previously an
 // invisible convention buried inside jsonModelAdapter.GenJSON — a second JSONModel
-// implementation could silently drop it and diverge from Python without any test
-// catching it. See query_rewriter.go parity note (diff ②).
+// implementation could silently drop it without any test catching it. See the
+// query_rewriter.go note (diff ②).
 func TestGenJSONUsesOutputNewlineUserTurn(t *testing.T) {
 	mdl := &scriptedModel{}
 	mdl.push("{\"ok\": true}")
@@ -2343,7 +2277,7 @@ func TestGenJSONUsesOutputNewlineUserTurn(t *testing.T) {
 		t.Fatalf("GenJSON failed: %v", err)
 	}
 	if got := userTurnAt(mdl, 0); got != "Output:\n" {
-		t.Errorf("first-round user turn = %q, want exactly %q (Python gen_json separator)", got, "Output:\n")
+		t.Errorf("first-round user turn = %q, want exactly %q (the gen_json separator)", got, "Output:\n")
 	}
 }
 
@@ -2396,10 +2330,9 @@ func TestGenJSONStripsThinkAndFenceOnFirstTry(t *testing.T) {
 	}
 }
 
-// TestGenJSONFitsPromptToContextWindow pins Python gen_json's
-// message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length):
-// an oversized system prompt must be trimmed to the model window BEFORE the
-// first call instead of being sent verbatim (the provider would reject it).
+// TestGenJSONFitsPromptToContextWindow: the fitted prompt is bounded by the model's
+// context window, so an oversized system prompt must be trimmed BEFORE the first call
+// instead of being sent verbatim (the provider would reject it).
 func TestGenJSONFitsPromptToContextWindow(t *testing.T) {
 	huge := strings.Repeat("token ", 40000) // far past any window
 	mdl := &scriptedModel{}
@@ -2644,8 +2577,8 @@ func BenchmarkCompileAgenticShape(b *testing.B) {
 	})
 }
 
-func TestGraphRecursionLimitMatchesPython(t *testing.T) {
-	// Python :1619 — 60 for the agentic graph, else max(25, max_loops*8).
+func TestGraphRecursionLimitBounds(t *testing.T) {
+	// 60 for the agentic graph, else max(25, max_loops*8).
 	if got := graphRecursionLimit(true, 3); got != 60 {
 		t.Fatalf("agentic limit = %d, want 60", got)
 	}
@@ -2658,16 +2591,16 @@ func TestGraphRecursionLimitMatchesPython(t *testing.T) {
 }
 
 func TestAgenticResearchRoundCostsThreeVisits(t *testing.T) {
-	// One research round is rag_agent → draft → sca. If the loop counted
-	// iterations instead of node visits, 20 rounds would cost 20 instead of 60
-	// and the guard would trip ~3x later than Python's.
+	// One research round is rag_agent → draft → sca. If the loop counted iterations
+	// instead of node visits, 20 rounds would cost 20 instead of 60 and the guard would
+	// trip ~3x later.
 	if got, want := agenticRoundVisits, 3; got != want {
 		t.Fatalf("round cost = %d, want %d", got, want)
 	}
 }
 
 func TestNewAgenticStateDoesNotArmBudget(t *testing.T) {
-	// Python :823 — the budget is armed in the formalize_question node's
+	// the budget is armed in the formalize_question node's
 	// return, not at state creation, so formalization is not charged to it.
 	st := NewAgenticState("q", "", 3, nil)
 
@@ -2678,23 +2611,22 @@ func TestNewAgenticStateDoesNotArmBudget(t *testing.T) {
 
 func TestFormalizeQuestionNodeArmsBudget(t *testing.T) {
 	st := NewAgenticState("when did it open?", "", 3, nil)
-	// No model: the node still arms the budget, mirroring Python :823.
+	// No model: the node still arms the budget, mirroring.
 	formalizeQuestionNode(context.Background(), RAGTools{}, st, nil)
 
 	if st.Deadline.IsZero() {
-		t.Fatal("formalize_question must arm the budget (Python :823)")
+		t.Fatal("formalize_question must arm the budget")
 	}
 	if st.Question != "when did it open?" {
 		t.Fatalf("Question = %q, want it unchanged without a model", st.Question)
 	}
 }
 
-// TestRecordConsecutiveUnanswerableAcrossOuterRagCalls mirrors the Python
-// outer react loop in dialog_service.rag_agent: the model may call rag()
-// several times within one user turn, and each unsatisfying verdict should
-// bump the shared _consecutive_unanswerable counter. Go keeps that counter on
-// the *RAGCache that Rag() now builds before the outer-react branch, so the
-// same cache is reused across the outer loop's multiple rag() calls. This test
+// TestRecordConsecutiveUnanswerableAcrossOuterRagCalls covers the outer react loop: the
+// model may call rag() several times within one user turn, and each unsatisfying verdict
+// should bump the shared consecutive-unanswerable counter. The counter lives on the
+// *RAGCache that Rag() builds before the outer-react branch, so the same cache is reused
+// across the outer loop's multiple rag() calls. This test
 // simulates two such outer rag() calls with INSUFFICIENT verdicts and asserts
 // the counter reaches 2 — the threshold at which Rag() tells the outer agent to
 // STOP calling rag again.
@@ -2702,7 +2634,7 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 	cache := NewRAGCache()
 
 	// First outer rag() call — unsatisfying verdict bumps the counter to 1.
-	recordConsecutiveUnanswerable(cache, VerdictInsufficient)
+	cache.NoteUnanswerable(VerdictInsufficient)
 	if cache.ConsecutiveUnanswerable() != 1 {
 		t.Fatalf("after 1st outer rag() call: ConsecutiveUnanswerable = %d, want 1",
 			cache.ConsecutiveUnanswerable())
@@ -2711,14 +2643,14 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 	// Second outer rag() call — still unsatisfying: counter must reach 2 so the
 	// STOP guard can fire (the state the pre-fix code could never reach on the
 	// outer path, because deps.Cache was nil and the increment was skipped).
-	recordConsecutiveUnanswerable(cache, VerdictInsufficient)
+	cache.NoteUnanswerable(VerdictInsufficient)
 	if cache.ConsecutiveUnanswerable() != 2 {
 		t.Fatalf("after 2nd outer rag() call: ConsecutiveUnanswerable = %d, want 2",
 			cache.ConsecutiveUnanswerable())
 	}
 
-	// A satisfying verdict resets the streak, matching Python rag (:921-924).
-	recordConsecutiveUnanswerable(cache, VerdictSufficient)
+	// A satisfying verdict resets the streak.
+	cache.NoteUnanswerable(VerdictSufficient)
 	if cache.ConsecutiveUnanswerable() != 0 {
 		t.Fatalf("after a SUFFICIENT verdict: ConsecutiveUnanswerable = %d, want 0",
 			cache.ConsecutiveUnanswerable())
@@ -2726,13 +2658,13 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 }
 
 // TestRecordConsecutiveUnanswerableNoCacheIsNoOp makes sure the guard is safe
-// when no cache is wired (nil deps.Cache): the helper must not panic and the
+// when no cache is wired (nil deps.Cache): the update must not panic and the
 // outer loop simply loses the cross-call STOP protection — which is exactly
 // why Rag() now auto-builds a cache before branching into the outer react loop.
 func TestRecordConsecutiveUnanswerableNoCacheIsNoOp(t *testing.T) {
 	// Must not panic with a nil cache.
-	recordConsecutiveUnanswerable(nil, VerdictInsufficient)
-	recordConsecutiveUnanswerable(nil, VerdictSufficient)
+	(*RAGCache)(nil).NoteUnanswerable(VerdictInsufficient)
+	(*RAGCache)(nil).NoteUnanswerable(VerdictSufficient)
 }
 
 // TestRewriteContextShowsThePassageBehindAConfirmedMember pins the input side of
@@ -3053,21 +2985,25 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	}
 }
 
-// TestReconcileCountSlotsTakesTheEnumeratedSize pins the other half of the same
+// TestSyncCountSlotsTakesTheEnumeratedSize pins the other half of the same
 // loss: the count slot and the list slots are written by different sessions and
-// nothing kept them in step. The slot takes the DERIVED number in both directions,
-// because a count is a claim the table can check.
+// nothing kept them in step. The slot takes the DERIVED number, because a count is a
+// claim the table can check.
 //
 // The direction that matters is the one an answer repeats: measured (2026-09-16) a
 // count slot left holding a session's 28 against thirteen enumerated members
 // produced "killed 28 named people" over a list of a handful. An over-claim is kept
 // as an alternate clue, so the record still shows what was claimed.
-func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
+//
+// A slot that does not CLAIM a number is left alone — a date, a phrase or a sentence
+// is nobody's count, and reading the slot's declared TYPE to guess otherwise was the
+// rule this replaces (see slots.Value.Number).
+func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
 		typedCountVar(0, "count", 10, 0),
 		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥"),
 	}, 0, nil)
-	raised := reconcileCountSlots(&table)
+	raised := syncCountSlots(&table)
 	if len(raised) != 1 || raised[0] != 0 {
 		t.Fatalf("raised = %v, want the count slot reconciled", raised)
 	}
@@ -3081,7 +3017,7 @@ func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 		typedCountVar(0, "count", 16, 0),
 		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
-	if changed := reconcileCountSlots(&bigger); len(changed) != 1 {
+	if changed := syncCountSlots(&bigger); len(changed) != 1 {
 		t.Fatalf("changed = %v, want the over-claim reconciled to the members", changed)
 	}
 	if got := *bigger.ByID(0).Candidate; got != "6" {
@@ -3097,23 +3033,20 @@ func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 		typedCountVar(0, "count", 6, 0),
 		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
-	if changed := reconcileCountSlots(&agreed); len(changed) != 0 {
+	if changed := syncCountSlots(&agreed); len(changed) != 0 {
 		t.Fatalf("changed = %v, want an agreeing count untouched", changed)
 	}
 
-	// A count slot that carries NO number at all is given the derived one: measured
-	// (2026-09-16, 三国/关羽) a session wrote "约 17-19 人" into it, the qualifiers and
-	// the digits ended up in neither a member nor a number, and the record was left
-	// with a count nobody could reconstruct.
+	// A count slot whose text is NOT a number is left alone: the slot made no checkable
+	// claim, so there is nothing here to correct — and the answer's count comes from the
+	// members either way (measured 2026-09-16, 三国/关羽: a session wrote "约 17-19 人"
+	// into the count slot, and the members beside it are what the answer must repeat).
 	unreadable := harness.NewState([]harness.Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
 		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
-	if changed := reconcileCountSlots(&unreadable); len(changed) != 1 {
-		t.Fatalf("changed = %v, want the unreadable count healed from the members", changed)
-	}
-	if got := *unreadable.ByID(0).Candidate; got != "6" {
-		t.Fatalf("count slot = %q, want 6 (the derived number)", got)
+	if changed := syncCountSlots(&unreadable); len(changed) != 0 {
+		t.Fatalf("changed = %v, want an unreadable claim left alone", changed)
 	}
 
 	// The count of a table whose member slot is TEXT is left alone: prose claims no
@@ -3122,7 +3055,7 @@ func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
 		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑")},
 	}, 0, nil)
-	if changed := reconcileCountSlots(&textOnly); len(changed) != 0 {
+	if changed := syncCountSlots(&textOnly); len(changed) != 0 {
 		t.Fatalf("changed = %v, want nothing derived from text", changed)
 	}
 }
@@ -3151,7 +3084,7 @@ func TestMemberCountIgnoresProseFragments(t *testing.T) {
 		t.Fatalf("enumerated size = %d, want 11 (the declared names, not the chapter prose)", got)
 	}
 	// And the count slot takes that number rather than the session's claim.
-	reconcileCountSlots(&table)
+	syncCountSlots(&table)
 	if got := *table.ByID(0).Candidate; got != "11" {
 		t.Fatalf("count slot = %q, want 11 (the enumerated members)", got)
 	}
@@ -3409,7 +3342,7 @@ func TestMemberUnionDropsPlaceAndEventPhrases(t *testing.T) {
 		typedMembersVar(2, "person", "孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪"),
 	}, 0, nil)
 
-	union := memberUnion(&table)
+	union := harness.MemberNames(&table)
 	if len(union) != 21 {
 		t.Fatalf("member count = %d, want the 21 names (place-qualified copies are not members): %v", len(union), union)
 	}
@@ -3530,21 +3463,21 @@ func TestMergeSlotPatchKeepsTheDeclaration(t *testing.T) {
 	if got := merged.State[0].Subject; got != "关羽|云长" {
 		t.Errorf("merged Subject = %q, want the declared actor", got)
 	}
-	// The declaration is what renders the completeness queries: a fold that drops it makes
-	// the next round's seed patternless, which is the measured failure above.
-	if patterns := harness.ScanPatterns(*merged); len(patterns) == 0 {
-		t.Error("the merged table renders no act patterns: the declaration was lost in the fold")
+	// The declaration is what the enumeration is built from: a fold that drops it leaves the
+	// next round with nothing to enumerate, which is the measured failure above.
+	if !harness.CoverageOf(*merged).Ok() {
+		t.Error("the merged table is no longer an enumeration: the declaration was lost in the fold")
 	}
 }
 
-// patternStubExec answers tool calls like sessionStubExec and is ALSO a
-// harness.PatternRunner, so a round's completeness pass runs without a retriever.
-type patternStubExec struct {
+// coverageStubExec answers tool calls like sessionStubExec and is ALSO a
+// harness.CoverageRunner, so a round's enumeration runs without a retriever.
+type coverageStubExec struct {
 	mu    sync.Mutex
-	calls []string
+	calls []harness.Coverage
 }
 
-func (e *patternStubExec) Execute(_ context.Context, name string, _ map[string]any) (harness.ToolOutcome, error) {
+func (e *coverageStubExec) Execute(_ context.Context, name string, _ map[string]any) (harness.ToolOutcome, error) {
 	return harness.ToolOutcome{
 		Status:      harness.StatusOK,
 		Payload:     []any{map[string]any{"kind": name, "content": "hit"}},
@@ -3552,32 +3485,45 @@ func (e *patternStubExec) Execute(_ context.Context, name string, _ map[string]a
 	}, nil
 }
 
-func (e *patternStubExec) RunPattern(_ context.Context, _ string) []map[string]any {
+// EnumerateCoverage stands in for the corpus: one window stating the deed.
+func (e *coverageStubExec) EnumerateCoverage(_ context.Context, cov harness.Coverage, kb *harness.Kbinfos) harness.CoverageSet {
 	e.mu.Lock()
-	e.calls = append(e.calls, "called")
+	e.calls = append(e.calls, cov)
 	e.mu.Unlock()
-	return []map[string]any{{"chunk_id": "w1", "content_with_weight": "云长手起刀落，斩孔秀于马下"}}
+	quote := "云长手起刀落，斩孔秀于马下"
+	if kb != nil {
+		kb.Admit(func(p *harness.PoolAdmitter) {
+			p.Add(map[string]any{"chunk_id": "w1", "content_with_weight": quote})
+		})
+	}
+	return harness.CoverageSet{
+		Operands: cov.Operands(),
+		Recalled: 1,
+		Windows:  []harness.CoverageWindow{{ChunkID: "w1", Quote: quote, Act: "斩"}},
+	}
 }
 
-func (e *patternStubExec) ran() int {
+func (e *coverageStubExec) ran() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return len(e.calls)
 }
 
-// TestRunSlotResearchPassRunsTheDeclaredPatterns pins the wiring, and the run-once rule.
+// TestRunSlotResearchPassEnumeratesOnce pins the wiring, and the run-once rule.
 //
-// The patterns used to be seeded as a list of queries TO MAKE, and a whole round ran
-// without a single one of them being made (see harness.RunCompletenessPass). Now the round
-// asks the corpus itself, admits what comes back, and seeds the sessions with it.
-func TestRunSlotResearchPassRunsTheDeclaredPatterns(t *testing.T) {
+// The act words used to be seeded as a list of queries TO MAKE, and a whole round ran
+// without a single one of them being made: measured (2026-09-16, 三国/关羽) 2175 characters
+// of patterns in every session's seed and zero `.*` queries in the run's log, with the
+// sessions re-probing names by hand in the next round. Now the round asks the corpus
+// itself — one call, one recall per operand — admits what comes back, and seeds it.
+func TestRunSlotResearchPassEnumeratesOnce(t *testing.T) {
 	table := func() harness.State {
 		return harness.NewState([]harness.Variable{
 			{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
 			{ID: 1, Type: "dataset", QuestionClues: []string{"who did he kill?"}},
 		}, 0, nil)
 	}
-	exec := &patternStubExec{}
+	exec := &coverageStubExec{}
 	kb := &harness.Kbinfos{}
 	st := &AgenticState{Question: "关羽杀了多少有姓名的人物？", KB: kb, SlotTable: table()}
 	deps := harness.SessionDeps{
@@ -3587,23 +3533,28 @@ func TestRunSlotResearchPassRunsTheDeclaredPatterns(t *testing.T) {
 	}
 	RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 60)
 
-	want := len(harness.ScanPatterns(table()))
-	if got := exec.ran(); got != want {
-		t.Fatalf("ran %d pattern(s), want every rendered one (%d)", got, want)
+	if got := exec.ran(); got != 1 {
+		t.Fatalf("ran %d enumeration(s), want exactly one per question", got)
 	}
-	block, done := kb.PatternFindings()
-	if !done || !strings.Contains(block, "w1") || !strings.Contains(block, "斩孔秀于马下") {
-		t.Fatalf("stored block = %q (done=%v), want the window the pass brought back", block, done)
+	if got := exec.calls[0].Operands(); len(got) != 4 {
+		t.Errorf("operands = %v, want one entry per actor form and act word", got)
+	}
+	set, done := kb.CoverageSet()
+	if !done || len(set.Windows) != 1 || set.Windows[0].ChunkID != "w1" {
+		t.Fatalf("stored set = %+v (done=%v), want the window the enumeration found", set, done)
+	}
+	if !strings.Contains(set.Render(), "斩孔秀于马下") {
+		t.Errorf("seed = %q, want the window with the chunk id a member is cited by", set.Render())
 	}
 	if kb.PoolSize() == 0 {
-		t.Error("the pass's window never reached the pool: the win cannot be cited")
+		t.Error("the enumeration's window never reached the pool: the win cannot be cited")
 	}
 
-	// A second round REUSES the block: the windows are in the pool under the same ids, so
-	// asking the same corpus the same questions again spends the store legs for nothing.
+	// A second round REUSES the set: the windows are in the pool under the same ids, so
+	// asking the corpus the same operand queries again spends the store legs for nothing.
 	second := &AgenticState{Question: st.Question, KB: kb, SlotTable: table()}
 	RunSlotResearchPass(context.Background(), context.Background(), deps, second.Question, second, 60)
-	if got := exec.ran(); got != want {
-		t.Errorf("second round ran %d pattern(s), want the stored block reused (still %d)", got, want)
+	if got := exec.ran(); got != 1 {
+		t.Errorf("second round ran the enumeration again (%d), want the stored set reused", got)
 	}
 }

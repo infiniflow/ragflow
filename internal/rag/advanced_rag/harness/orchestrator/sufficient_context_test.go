@@ -43,9 +43,7 @@ func (s *stubJSONModel) GenJSON(_ context.Context, prompt string) (any, error) {
 	return s.value, nil
 }
 
-// ---------------------------------------------------------------------------
 // SCA
-// ---------------------------------------------------------------------------
 
 func TestSCAReturnsNoSignalWithoutClaims(t *testing.T) {
 	mdl := &stubJSONModel{value: map[string]any{"is_sufficient": true}}
@@ -245,9 +243,7 @@ func TestSCABoostAdaptsVerdict(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Query rewriter
-// ---------------------------------------------------------------------------
 
 func TestClampCoercesNumericDrift(t *testing.T) {
 	if got := clamp(float64(1.5)); got != 1.0 {
@@ -260,7 +256,7 @@ func TestClampCoercesNumericDrift(t *testing.T) {
 	if got := clamp("0.4"); got != 0.4 {
 		t.Errorf("clamp(\"0.4\") = %v, want 0.4", got)
 	}
-	// Unparseable -> Python's default of 1.0.
+	// Unparseable -> the default of 1.0.
 	if got := clamp("not a number"); got != 1.0 {
 		t.Errorf("clamp(bad) = %v, want 1.0", got)
 	}
@@ -381,8 +377,8 @@ func TestSCAMissingInformationIgnoresAbsentFields(t *testing.T) {
 	}
 }
 
-// TestRenderOverallDraftTruncatesByRune pins that the cap is applied by code
-// point (Python's str[:N]), never mid-rune: a byte slice through a CJK rune
+// TestRenderOverallDraftTruncatesByRune pins that the cap is applied by code point, never
+// mid-rune: a byte slice through a CJK rune
 // would put invalid UTF-8 into the SCA prompt.
 func TestRenderOverallDraftTruncatesByRune(t *testing.T) {
 	draft := strings.Repeat("中", scaClaimsContextMax+50)
@@ -395,8 +391,8 @@ func TestRenderOverallDraftTruncatesByRune(t *testing.T) {
 	}
 }
 
-// TestRenderClaimContextBudgetIsRuneBased pins that the claim-context budget is
-// counted in code points (Python's len(str)), not bytes: two CJK blocks of 20k
+// TestRenderClaimContextBudgetIsRuneBased pins that the claim-context budget is counted in
+// code points, not bytes: two CJK blocks of 20k
 // runes are ~40k runes (under the 48k cap) but ~120KB bytes (far over it), so a
 // byte budget would stop after the FIRST block and silently starve the SCA.
 func TestRenderClaimContextBudgetIsRuneBased(t *testing.T) {

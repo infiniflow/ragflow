@@ -18,13 +18,11 @@ package harness
 
 import "strings"
 
-// Porter stemming, a faithful port of nltk.stem.porter.PorterStemmer in its
-// default NLTK_EXTENSIONS mode — the mode Python's text_processing.py:221
-// exercises in production (`PorterStemmer().stem`, no mode argument). Python's
-// _stem calls it for every stemmable keyword token, so the keyword narrowing in
-// this package must produce the SAME stems (the previous suffix-stripping
-// fallback diverged: "nominations"→"nominat" vs "nomin", "flies"→"fle" vs
-// "fli", "dies"→"dy" vs "die", ...).
+// Porter stemming, a faithful port of nltk.stem.porter.PorterStemmer in its default
+// NLTK_EXTENSIONS mode — the mode used in production (`PorterStemmer().stem`, no mode
+// argument). It is called for every stemmable keyword token, so the keyword narrowing in this
+// package must produce the SAME stems (a suffix-stripping fallback diverged:
+// "nominations"→"nominat" vs "nomin", "flies"→"fle" vs "fli", "dies"→"dy" vs "die", ...).
 //
 // The port follows the 1980 paper's five steps plus NLTK's extensions: the
 // irregular-form pool consulted first, the <=2-letter circuit breaker, the

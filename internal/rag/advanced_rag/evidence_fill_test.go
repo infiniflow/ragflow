@@ -28,9 +28,7 @@ import (
 	"ragflow/internal/rag/advanced_rag/harness"
 )
 
-// ---------------------------------------------------------------------------
 // Test doubles
-// ---------------------------------------------------------------------------
 
 // failingModel errors on every Complete call — the batched-answer LLM seam.
 type failingModel struct {
@@ -52,8 +50,8 @@ func (m *failingModel) Calls() int {
 	return m.calls
 }
 
-// claimRow builds one claim pseudo-chunk (Python "[evidence] <name> — <desc>"
-// row) the way the pool stores it.
+// claimRow builds one claim pseudo-chunk ("[evidence] <name> — <desc>") the way the pool
+// stores it.
 func claimRow(id, content string) map[string]any {
 	return map[string]any{
 		"chunk_id":            id,
@@ -62,13 +60,10 @@ func claimRow(id, content string) map[string]any {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// PrefillSlotsFromEvidence（Python _prefill_slots_from_evidence）
-// ---------------------------------------------------------------------------
+// PrefillSlotsFromEvidence
 
-// TestPrefillSlotsFromEvidence_CoverageBoundary pins the 0.6 word-coverage
-// gate（Python _EVIDENCE_PREFILL_COVERAGE=0.6, :1738）: exactly-at and above
-// prefill, below does not; the candidate is the de-prefixed first line and the
+// TestPrefillSlotsFromEvidence_CoverageBoundary pins the 0.6 word-coverage gate: exactly-at
+// and above prefill, below does not; the candidate is the de-prefixed first line and the
 // strength is the coverage itself.
 func TestPrefillSlotsFromEvidence_CoverageBoundary(t *testing.T) {
 	// Clue terms: {alpha, tower, opened, paris, 1889} (>=3 code points only).
@@ -107,8 +102,8 @@ func TestPrefillSlotsFromEvidence_CoverageBoundary(t *testing.T) {
 	}
 }
 
-// TestPrefillSlotsFromEvidence_Guards mirrors the skips（Python :1714-1728,
-// :1744）: no claim rows in the pool, already-filled slots, blank clues, and a
+// TestPrefillSlotsFromEvidence_Guards mirrors the skips（,
+// 1744）: no claim rows in the pool, already-filled slots, blank clues, and a
 // first line that strips to nothing.
 func TestPrefillSlotsFromEvidence_Guards(t *testing.T) {
 	st := harness.NewState([]harness.Variable{
@@ -142,9 +137,9 @@ func TestPrefillSlotsFromEvidence_Guards(t *testing.T) {
 	}
 }
 
-// TestRunSlotResearchPass_PrefilledSlotsSkipSession pins the wiring（Python
-// :1782-1790）: when the pooled evidence covers every slot at >= 0.6, the
-// pass fills them WITHOUT running a single action session (zero model calls).
+// TestRunSlotResearchPass_PrefilledSlotsSkipSession pins the wiring: when the pooled evidence
+// covers every slot at >= 0.6, the pass fills them WITHOUT running a single action session
+// (zero model calls).
 func TestRunSlotResearchPass_PrefilledSlotsSkipSession(t *testing.T) {
 	kb := &harness.Kbinfos{Chunks: []map[string]any{
 		claimRow("claim_a", "[evidence] Eiffel Tower — built in Paris by Gustave Eiffel, opened in 1889\nEvidence (verbatim): \"...\""),
@@ -180,9 +175,7 @@ func TestRunSlotResearchPass_PrefilledSlotsSkipSession(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// BatchFillSlots（Python _batch_fill_slots）
-// ---------------------------------------------------------------------------
+// BatchFillSlots
 
 // TestBatchFillSlots_ClustersOverlappingEvidence: two slots sharing >= 2
 // evidence ids with Jaccard >= 0.15 are answered in ONE call; a slot with
@@ -236,9 +229,9 @@ func TestBatchFillSlots_ClustersOverlappingEvidence(t *testing.T) {
 	}
 }
 
-// TestBatchFillSlots_ThresholdsBlockMerging pins both gates（Python
-// :1574-1575）: fewer than MIN_SHARED shared ids, or a Jaccard below
-// MIN_SIM, keeps the slots in separate size-1 clusters — no LLM call at all.
+// TestBatchFillSlots_ThresholdsBlockMerging pins both gates: fewer than MIN_SHARED shared ids,
+// or a Jaccard below MIN_SIM, keeps the slots in separate size-1 clusters — no LLM call at
+// all.
 func TestBatchFillSlots_ThresholdsBlockMerging(t *testing.T) {
 	mk := func(e1, e2 []string) (harness.State, map[string]SlotEvidence) {
 		st := harness.NewState([]harness.Variable{
@@ -285,7 +278,7 @@ func TestBatchFillSlots_ThresholdsBlockMerging(t *testing.T) {
 }
 
 // TestBatchFillSlots_MaxSlotsPerBatch pins _EVIDENCE_BATCH_MAX_SLOTS=4
-// （Python :1576, :1625）: the fifth identical-evidence slot cannot join the
+// （,:1625）: the fifth identical-evidence slot cannot join the
 // full batch and is left unfilled this round.
 func TestBatchFillSlots_MaxSlotsPerBatch(t *testing.T) {
 	vars := make([]harness.Variable, 0, 5)
@@ -319,7 +312,7 @@ func TestBatchFillSlots_MaxSlotsPerBatch(t *testing.T) {
 	}
 }
 
-// TestBatchFillSlots_LLMFailureBestEffort mirrors Python :1681-1683: a failed
+// TestBatchFillSlots_LLMFailureBestEffort mirrors: a failed
 // model call (or an unparsable reply, or no model at all) fills nothing and
 // never panics — the pass continues without the batch.
 func TestBatchFillSlots_LLMFailureBestEffort(t *testing.T) {
@@ -366,7 +359,7 @@ func TestBatchFillSlots_LLMFailureBestEffort(t *testing.T) {
 	})
 	t.Run("no-model", func(t *testing.T) {
 		st, ev := mk()
-		deps := harness.SessionDeps{KB: kb} // Model nil — Python :1674 `return filled`
+		deps := harness.SessionDeps{KB: kb} // Model nil — nothing can be filled
 		if got := BatchFillSlots(context.Background(), deps, &st, ev); got != 0 {
 			t.Fatalf("filled = %d, want 0", got)
 		}
@@ -374,7 +367,7 @@ func TestBatchFillSlots_LLMFailureBestEffort(t *testing.T) {
 }
 
 // TestBatchFillSlots_SkipDiagnostics pins the never-firing diagnostics
-// （Python :1606-1610）: fewer than two evidence-carrying unresolved slots
+// （）: fewer than two evidence-carrying unresolved slots
 // logs the skip line and short-circuits before any model call.
 func TestBatchFillSlots_SkipDiagnostics(t *testing.T) {
 	st := harness.NewState([]harness.Variable{

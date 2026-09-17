@@ -22,7 +22,7 @@ import (
 	"testing"
 )
 
-// entity map helper (mirrors Python structure_qa.py rendering inputs).
+// entity map helper (the rendering inputs).
 func saEntity(name, typ, desc string) map[string]any {
 	return map[string]any{"name": name, "type": typ, "description": desc}
 }
@@ -31,10 +31,9 @@ func saRelation(from, to, typ string) map[string]any {
 	return map[string]any{"from": from, "to": to, "type": typ}
 }
 
-// RenderStructure feeds the LLM prompt in graph_explore (via AskStructure); it
-// must render exactly "Name (Type): Description" for entities (Type defaulting
-// to "other") and "From -[Type]-> To" for relations (Type defaulting to
-// "related"), mirroring Python _render_structure.
+// RenderStructure feeds the LLM prompt in graph_explore (via AskStructure); it must render
+// exactly "Name (Type): Description" for entities (Type defaulting to "other") and
+// "From -[Type]-> To" for relations (Type defaulting to "related").
 func TestRenderStructure(t *testing.T) {
 	entities := []map[string]any{
 		saEntity("OmiyaSoft", "company", "game   dev"),
@@ -92,16 +91,15 @@ func TestRenderStructureCapsAtLimits(t *testing.T) {
 	}
 }
 
-// Python _render_structure joins an empty list, so both-empty input renders "".
+// An empty list is joined to "", so both-empty input renders "".
 func TestRenderStructureEmpty(t *testing.T) {
 	if out := RenderStructure(nil, nil); out != "" {
 		t.Errorf("empty structure must render empty string, got %q", out)
 	}
 }
 
-// capitalizeWord must mirror Python str.capitalize(): uppercase the first rune
-// AND lowercase every remaining rune. The previous Go version left the tail
-// untouched, so "hELLo" produced "HELLO" instead of Python's "Hello".
+// capitalizeWord: uppercase the first rune AND lowercase every remaining rune. Leaving the
+// tail untouched produced "HELLO" instead of "Hello".
 func TestCapitalizeWord(t *testing.T) {
 	cases := []struct {
 		in, want string
@@ -121,13 +119,10 @@ func TestCapitalizeWord(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// AskStructure: request-scoped model + temperature 0.2 (Python _ask_structure).
-// ---------------------------------------------------------------------------
+// AskStructure: request-scoped model + temperature 0.2.
 
-// TestAskStructureNilModelSkips verifies a nil model short-circuits to an empty
-// verdict instead of reaching the global invoker (mirrors Python's no-op when
-// tools.chat_mdl is absent).
+// TestAskStructureNilModelSkips verifies a nil model short-circuits to an empty verdict
+// instead of reaching the global invoker (no model is available).
 func TestAskStructureNilModelSkips(t *testing.T) {
 	answer, relevant := AskStructure(context.Background(), nil, "Q", "knowledge graph", "Graph exploration", nil, nil)
 	if answer != "" || len(relevant) != 0 {
@@ -136,7 +131,7 @@ func TestAskStructureNilModelSkips(t *testing.T) {
 }
 
 // TestAskStructureUsesTemperatureTwoTenths verifies the structure verdict is a
-// mechanical rewrite drawn at 0.2, matching Python {"temperature": 0.2}.
+// mechanical rewrite drawn at 0.2.
 func TestAskStructureUsesTemperatureTwoTenths(t *testing.T) {
 	mdl := &tempRecordingModel{replies: []*ModelReply{{
 		Content: `{"is_sufficient": true, "answer": "founded in 1984", "relevant_entities": ["OmiyaSoft"]}`,

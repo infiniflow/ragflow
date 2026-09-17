@@ -27,8 +27,6 @@ import (
 
 // In-memory grep+sed narrowing engine (term-driven, zero extra LLM rounds).
 //
-// Mirrors Python harness/grep_sed_narrow.py.
-//
 // It mirrors the Claude Code / Codex ``grep`` + ``sed`` workflow over chunks held in
 // memory: terms already produced by the main-analysis LLM (entities, numbers, key
 // phrases) become word-boundary regexes for locating (grep), and string transforms
@@ -46,28 +44,25 @@ import (
 
 // Cost / safety caps. Mirrors grep_sed_narrow.py's module constants.
 const (
-	// maxGrepTerms caps the terms compiled (Python _MAX_GREP_TERMS).
+	// maxGrepTerms caps the terms compiled.
 	maxGrepTerms = 16
-	// maxContext is the +/- window of lines kept around a hit (Python _MAX_CONTEXT).
+	// maxContext is the +/- window of lines kept around a hit.
 	maxContext = 2
-	// defaultOutCharsPerChunk caps output per chunk (Python _DEFAULT_OUT_CHARS_PER_CHUNK).
+	// defaultOutCharsPerChunk caps output per chunk.
 	defaultOutCharsPerChunk = 1200
-	// defaultOutTotalChars caps the total narrowed output (Python _DEFAULT_OUT_TOTAL_CHARS).
+	// defaultOutTotalChars caps the total narrowed output.
 	defaultOutTotalChars = 16000
-	// headFallbackChars is the head kept per chunk when there is no match
-	// (Python _HEAD_FALLBACK_CHARS).
+	// headFallbackChars is the head kept per chunk when there is no match.
 	headFallbackChars = 400
-	// contextCharBudget is the absolute per-side char budget during context
-	// expansion (Python _CONTEXT_CHAR_BUDGET).
+	// contextCharBudget is the absolute per-side char budget during context expansion.
 	contextCharBudget = 600
-	// minNarrowChars: chunks at or below this length are NOT narrowed — they are
-	// already 1-2 lines, and answers often live in short chunks (Python _MIN_NARROW_CHARS).
+	// minNarrowChars: chunks at or below this length are NOT narrowed — they are already
+	// 1-2 lines, and answers often live in short chunks.
 	minNarrowChars = 200
 )
 
 var (
-	// reTermEdgePunct strips leading/trailing punctuation from a term (Python
-	// `re.sub(r"^[\s.,:;!?'\"()\[\]{}]+|...$", "", t)`).
+	// reTermEdgePunct strips leading/trailing punctuation from a term.
 	reTermEdgePunct = regexp.MustCompile(`^[\s.,:;!?'"()\[\]{}]+|[\s.,:;!?'"()\[\]{}]+$`)
 	// reCJKTerm detects CJK / kana / hangul, which must NOT be wrapped in \b —
 	// a word boundary never matches between CJK characters.
@@ -75,8 +70,8 @@ var (
 )
 
 // EscapeTerm escapes a plain grep term into a safe, word-boundary regex fragment.
-// Mirrors Python _escape_term: numbers/entities matched literally; 3+ char terms
-// with alphanumeric edges get \b; CJK terms stay bare (never wrapped in \b).
+// Numbers/entities are matched literally; 3+ char terms with alphanumeric edges get \b;
+// CJK terms stay bare (never wrapped in \b).
 func EscapeTerm(term string) string {
 	t := strings.TrimSpace(term)
 	if t == "" {
@@ -102,7 +97,7 @@ func isAlphaNumRune(r rune) bool {
 }
 
 // TermsToPatterns turns grep terms into a list of compiled regexes (one per
-// term), capped at maxGrepTerms. Mirrors Python _terms_to_patterns.
+// term), capped at maxGrepTerms.
 func TermsToPatterns(terms []string) []*regexp.Regexp {
 	out := make([]*regexp.Regexp, 0, len(terms))
 	for _, term := range terms {
@@ -122,7 +117,7 @@ func TermsToPatterns(terms []string) []*regexp.Regexp {
 	return out
 }
 
-// GrepTermsMax caps the terms extracted from a query (Python _GREP_TERMS_MAX).
+// GrepTermsMax caps the terms extracted from a query.
 const GrepTermsMax = 10
 
 // cjkPhraseRunes is the length at which a CJK token stops being a term and
@@ -130,32 +125,30 @@ const GrepTermsMax = 10
 // name that is still read as one token (成吉思汗), so a longer run is prose.
 const cjkPhraseRunes = 4
 
-// GrepOutCharsPerChunk is the grep narrow's per-chunk output cap (Python
-// _GREP_OUT_CHARS_PER_CHUNK).
+// GrepOutCharsPerChunk is the grep narrow's per-chunk output cap.
 const GrepOutCharsPerChunk = 700
 
-// GrepOutTotalChars is the grep narrow's total output cap (Python
-// _GREP_OUT_TOTAL_CHARS).
+// GrepOutTotalChars is the grep narrow's total output cap.
 const GrepOutTotalChars = 8000
 
-// GrepTermsFromQuery mirrors Python _grep_terms_from_query — bare alnum words of
+// GrepTermsFromQuery: bare alnum words of
 // length>=2, deduped (order-preserving) and capped — and extends it to CJK.
 //
-// The Python original is ALNUM-ONLY, so a Chinese query yields no term at all and
-// GrepSearch's own guard (`if not chunks or not terms: return res`) returns whole
-// chunks instead of located windows. Measured on a Chinese question: the
+// An ALNUM-ONLY tokenizer yields no term at all for a Chinese query, and the grep leg's
+// own guard returns whole chunks instead of located windows. Measured on a Chinese
+// question: the
 // "Keyword-first locate" line was logged, a narrowed line never was, and every
 // hit was a ~1200-char chunk. That is expensive (a name lives in one clause of
 // those 1200 chars) and it is what made an enumeration unreadable to the model,
 // which cannot see WHICH clause a name sits in.
 //
-// The derivation keeps Python's shape and adds CJK, with no regex:
+// The derivation adds CJK support, with no regex:
 //
 //   - an ALTERNATION is the caller's own term list — "颜良|文丑|荀正" is how the
 //     count protocol tells a session to batch its probes — so it is split on "|"
 //     and its pieces are kept at any length ("关羽|斩": the predicate is a term);
 //   - otherwise the query is split on whitespace and punctuation, Latin tokens
-//     keep Python's two-character floor, and CJK tokens keep a two-CJK-rune
+//     keep the two-character floor, and CJK tokens keep a two-CJK-rune
 //     floor (a lone Chinese character is a particle, not a term);
 //   - an unbroken CJK clause (a question written without separators) yields no
 //     token either way, so its two-rune windows are used, left to right: the
@@ -296,15 +289,15 @@ func grepTermsFromQuery(query string, windows bool) []string {
 	return cjkWindowsOf(q, GrepTermsMax)
 }
 
-// trimTermEdges strips the punctuation a token can carry instead of the regex
-// Python uses for the same job (reTermEdgePunct).
+// trimTermEdges strips the punctuation a token can carry (the regex equivalent is
+// reTermEdgePunct).
 func trimTermEdges(t string) string {
 	return strings.Trim(t, " \t\r\n.,:;!?'\"()[]{}<>“”‘’（）【】《》「」〈〉—…·_-")
 }
 
 // isTermSeparator reports whether a rune separates terms. "." and "," do;
-// "-", "_" and "." INSIDE a Latin token do not (Python keeps
-// [A-Za-z0-9_.-] as token material), so they are not listed here.
+// "-", "_" and "." INSIDE a Latin token do not ([A-Za-z0-9_.-] is token material), so they
+// are not listed here.
 func isTermSeparator(r rune) bool {
 	switch r {
 	case ' ', '\t', '\r', '\n', '\v', '\f',
@@ -373,9 +366,9 @@ func cjkWindowsOf(query string, limit int) []string {
 	return out
 }
 
-// lineSpans returns line (start,end) spans, boundaries at "\n" (grep semantics).
-// Mirrors Python _line_spans: line boundaries are exact (unlike lossy sentence
-// splitting); start of line i is after the i-th "\n".
+// lineSpans returns line (start,end) spans, boundaries at "\n" (grep semantics): line
+// boundaries are exact (unlike lossy sentence splitting); start of line i is after the
+// i-th "\n".
 func lineSpans(content string) [][2]int {
 	var spans [][2]int
 	start := 0
@@ -394,15 +387,14 @@ func lineSpans(content string) [][2]int {
 	return spans
 }
 
-// NarrowContext is the +/- line-context window greed by term-grep (Python
-// narrow_by_terms' `context` dict).
+// NarrowContext is the +/- line-context window used by term-grep.
 type NarrowContext struct {
 	Before int
 	After  int
 }
 
 // execOnText runs term-grep + line-context expansion against one chunk's text.
-// Mirrors Python _exec_on_text:
+// Runs:
 //
 //   - locate matches exactly (match.start()/end());
 //   - merge overlapping/adjacent ranges, expand to whole lines, add before/after
@@ -424,8 +416,8 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		}
 	}
 	if len(hitRanges) == 0 {
-		// Keep fact-dense sentences to avoid dropping numbers/entities (Python's
-		// no-hit path keeps dense sentences, else the raw head).
+		// Keep fact-dense sentences to avoid dropping numbers/entities; with none, the raw
+		// head is kept.
 		var kept []string
 		for _, s := range SplitSentences(content) {
 			if IsFactDenseSentence(s) {
@@ -544,8 +536,7 @@ func isSentenceTerminator(r rune) bool {
 	return false
 }
 
-// NarrowStats carries the accounting Python narrow_by_terms returns in its
-// "stats" dict.
+// NarrowStats carries the narrowing accounting.
 type NarrowStats struct {
 	ChunksIn  int
 	ChunksKpt int
@@ -555,8 +546,7 @@ type NarrowStats struct {
 	UsedTerms int
 }
 
-// NarrowResult is the outcome of NarrowByTerms / GrepSedNarrow, mirroring
-// Python's {"kept": [...], "stats": {...}} dict.
+// NarrowResult is the outcome of NarrowByTerms / GrepSedNarrow.
 type NarrowResult struct {
 	Kept  []map[string]any
 	Stats NarrowStats
@@ -752,8 +742,7 @@ func ReachTermsOf(query string) []string {
 	return GrepTermsFromQuery(query)
 }
 
-// NarrowByTerms narrows retrieval chunks by locating grep terms, mirroring
-// Python narrow_by_terms:
+// NarrowByTerms narrows retrieval chunks by locating grep terms:
 //
 //   - terms are plain strings (entities / numbers / key phrases);
 //   - no usable terms -> keyword narrowing (zero LLM);
@@ -794,8 +783,8 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 			raw := ChunkTextOf(c)
 			if charLen(raw) <= minNarrowChars {
 				// Short chunk: kept whole. Flagged as matched so it still
-				// participates in the total-budget distribution; Python
-				// overwrites with the identical text and pops "highlight".
+				// participates in the total-budget distribution; the text is unchanged and
+				// "highlight" is popped.
 				kept = append(kept, withNarrowedText(c, raw))
 				flags = append(flags, true)
 				continue
@@ -806,7 +795,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 				kept = append(kept, withNarrowedText(c, text))
 			} else {
 				// No match: keep the original chunk untouched (full text and any
-				// "highlight" preserved) — mirrors Python _apply_narrow's else.
+				// "highlight" preserved.
 				kept = append(kept, cloneMap(c))
 			}
 			flags = append(flags, ok)
@@ -867,7 +856,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 }
 
 // NarrowWithFallbackKeyword applies keyword narrowing (zero LLM), returning the
-// originals when keyword narrowing yields nothing (Python _fallback_narrow_by_keywords).
+// originals when keyword narrowing yields nothing.
 func NarrowWithFallbackKeyword(chunks []map[string]any, keywords string) []map[string]any {
 	if narrowed := NarrowByKeywords(chunks, keywords); len(narrowed) > 0 {
 		return narrowed
@@ -875,7 +864,7 @@ func NarrowWithFallbackKeyword(chunks []map[string]any, keywords string) []map[s
 	return chunks
 }
 
-// fallbackStopwords mirrors Python _FALLBACK_STOPWORDS.
+// fallbackStopwords
 var fallbackStopwords = map[string]bool{
 	"what": true, "which": true, "who": true, "where": true, "when": true, "how": true,
 	"the": true, "a": true, "an": true, "of": true, "in": true, "on": true,
@@ -888,8 +877,8 @@ var fallbackStopwords = map[string]bool{
 }
 
 // SplitFallbackTerms splits free text into fallback grep terms (zero LLM),
-// mirroring Python split_fallback_terms: splits on sentence/comma boundaries,
-// drops short/stopword tokens, keeps numbers and multi-word phrases.
+// splitting on sentence/comma boundaries, dropping short/stopword tokens, keeping numbers
+// and multi-word phrases.
 func SplitFallbackTerms(texts ...string) []string {
 	var terms []string
 	seen := map[string]bool{}
@@ -918,8 +907,8 @@ func SplitFallbackTerms(texts ...string) []string {
 var reFallbackSplit = regexp.MustCompile(`[\n。；;,.?!?]+`)
 
 // GrepSedNarrow narrows chunks by grepping terms extracted directly from the
-// claim (zero LLM), mirroring Python grep_sed_narrow. Terms are derived from the
-// claim text via SplitFallbackTerms; no extra LLM call. Never raises.
+// claim (zero LLM). Terms are derived from the claim text via SplitFallbackTerms; no extra
+// LLM call. Never raises.
 func GrepSedNarrow(chunks []map[string]any, claimSources []string, maxOutCharsPerChunk, maxOutTotalChars int) NarrowResult {
 	if len(chunks) == 0 {
 		return NarrowResult{Kept: chunks, Stats: NarrowStats{ChunksIn: 0}}
@@ -928,7 +917,7 @@ func GrepSedNarrow(chunks []map[string]any, claimSources []string, maxOutCharsPe
 	return NarrowByTerms(chunks, terms, nil, strings.Join(claimSources, " "), NarrowContext{}, maxOutCharsPerChunk, maxOutTotalChars)
 }
 
-// GrepSummaryFromClaims mirrors Python grep_sed_narrow's public convenience: given
+// GrepSummaryFromClaims: public convenience: given
 // claim/question texts, produce a compact narrowed evidence string (used by the
 // compiled-structure grepper in search.go). Returns "" when nothing was kept.
 func GrepSummaryFromClaims(chunks []map[string]any, claimSources []string) string {
@@ -951,9 +940,7 @@ func logGrepSed(s NarrowStats) {
 		s.ChunksIn, s.ChunksKpt, s.CharsIn, s.CharsOut, s.Matched, s.UsedTerms)
 }
 
-// ---------------------------------------------------------------------------
 // Local helpers shared with the narrowing paths
-// ---------------------------------------------------------------------------
 
 func cloneMap(c map[string]any) map[string]any {
 	cp := make(map[string]any, len(c))
@@ -963,9 +950,8 @@ func cloneMap(c map[string]any) map[string]any {
 	return cp
 }
 
-// withNarrowedText returns a copy of the chunk with its narrowed text applied.
-// Mirrors Python _apply_narrow's matched branch: it overwrites
-// "content_with_weight", mirrors "content" only when that key already exists,
+// withNarrowedText returns a copy of the chunk with its narrowed text applied: it
+// overwrites "content_with_weight", mirrors "content" only when that key already exists,
 // and drops "highlight" (the pre-narrow highlight spans no longer apply).
 func withNarrowedText(c map[string]any, narrowed string) map[string]any {
 	cp := cloneMap(c)
@@ -977,13 +963,13 @@ func withNarrowedText(c map[string]any, narrowed string) map[string]any {
 	return cp
 }
 
-// charLen is the codepoint length, matching Python's len(str). Go's len(string)
-// is bytes, which diverges for CJK; the narrowing caps are codepoint budgets.
+// charLen is the codepoint length. Go's len(string) is bytes, which diverges for CJK; the
+// narrowing caps are codepoint budgets.
 func charLen(s string) int { return utf8.RuneCountInString(s) }
 
-// truncHead keeps the first n codepoints (not bytes) of s, mirroring Python's
-// s[:n]. Byte slicing would corrupt multi-byte CJK and mis-size output; rune
-// slicing keeps it faithful to the Python engine.
+// truncHead keeps the first n codepoints (not bytes) of s. Byte slicing would corrupt
+// multi-byte CJK and mis-size output; rune slicing is faithful to the engine's codepoint
+// budgets.
 func truncHead(s string, n int) string {
 	if charLen(s) <= n {
 		return s

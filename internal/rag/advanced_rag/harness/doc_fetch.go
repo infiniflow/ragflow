@@ -24,20 +24,20 @@ import (
 )
 
 const (
-	// docFetchPageSize is Python's 128-chunk page.
+	// docFetchPageSize is the 128-chunk page size.
 	docFetchPageSize = 128
-	// docFetchMaxChunks is Python's hard 10000-chunk cap (max_count > 10000).
+	// docFetchMaxChunks is the hard 10000-chunk cap.
 	docFetchMaxChunks = 10000
 	// docFetchFallbackTokens bounds the fetch when the caller supplies no model
-	// window. Python always passes one, so this only guards a Go-only caller.
+	// window. Callers usually pass one, so this only guards a caller that does not.
 	docFetchFallbackTokens = 8192
 	// estimateCharsPerToken approximates the tokenizer when no model encoder is
 	// loaded; estimateTokens falls back to it only when tokenizer.NumTokensFromString
-	// returns 0 (encoder unavailable). Python uses num_tokens_from_string directly.
+	// returns 0 (encoder unavailable).
 	estimateCharsPerToken = 4
 )
 
-// fetchFullDocument mirrors Python RAGTools.fetch_full_document
+// fetchFullDocument
 // (agentic_rag.py:fetch_full_document): read a document end-to-end in reading order, in pages,
 // stopping before the model window would overflow.
 //
@@ -48,12 +48,12 @@ func fetchFullDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 		_LOG.Printf("[Fetch full document] skipped (doc_id=%q, datasets=%d)", docID, len(deps.KbIDs))
 		return nil, nil
 	}
-	// Python :765 — a session-wide document scope is authoritative.
+	// a session-wide document scope is authoritative.
 	if len(deps.DocScope) > 0 && !containsStr(deps.DocScope, docID) {
 		_LOG.Printf("[Fetch full document] doc_id %q is outside the session document scope", docID)
 		return nil, nil
 	}
-	// Python :768 — never read a document that is not in the bound datasets.
+	// never read a document that is not in the bound datasets.
 	if belongs, verified := docInDatasets(ctx, deps, docID); verified && !belongs {
 		_LOG.Printf("[Fetch full document] doc_id %q is not in any bound dataset — refusing to fetch", docID)
 		return nil, nil
@@ -67,7 +67,7 @@ func fetchFullDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 	var chunks []map[string]any
 	tokens := 0
 	budgetHit := false
-	// Python :769-776 — NOTE: the budget check breaks the OUTER loop, so a page
+	// NOTE: the budget check breaks the OUTER loop, so a page
 	// that overruns the window stops paging entirely. Kept as-is: the budget is
 	// a hard stop, and continuing would only add chunks that get dropped.
 	for offset := 0; offset < docFetchMaxChunks && !budgetHit; offset += docFetchPageSize {
@@ -116,7 +116,7 @@ func fetchFullDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 	return chunks, aggs
 }
 
-// summarizeDocument mirrors Python RAGTools.summarize_document
+// summarizeDocument
 // (agentic_rag.py:rag): load the whole document, fold it into the evidence the
 // citation rules refer to, and return the newly rendered blocks.
 func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTokens int) []string {
@@ -129,15 +129,15 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 		budget = docFetchFallbackTokens
 	}
 
-	// Python :942-948 — the document becomes part of the evidence set, so its
+	// the document becomes part of the evidence set, so its
 	// [ID]s stay citable; only the blocks of the chunks read here are returned.
 	//
 	// The blocks are picked by the SOURCE CHUNK, not by the pre-merge chunk
 	// count: KBPrompt skips a chunk with no content and stops when the token
 	// budget is exhausted, so block N is not chunk N — a slice taken at the
 	// pre-merge count can drop readable blocks, or point past the end and return
-	// nil for a document that was read fine (Python's `blocks[start_idx:]` has the
-	// same flaw; Go hits it more often because Merge deduplicates a document
+	// nil for a document that was read fine — and this is easy to hit, because Merge
+	// deduplicates a document
 	// chunk that is already pooled, so the pre-merge count can even equal the
 	// post-merge count). Merge reports the pool position of every chunk this
 	// fetch contributed — deduplicated ones included — which makes the mapping
@@ -174,7 +174,7 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 		return nil
 	}
 
-	// Python :952-959 — without do_refer the model is told not to cite, so the
+	// without do_refer the model is told not to cite, so the
 	// rules must not be handed to it.
 	if !deps.DoRefer {
 		return fresh
@@ -184,12 +184,11 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 	return append([]string{header}, fresh...)
 }
 
-// SummarizeDocument is the exported, Python-RAGTools.summarize_document
-// equivalent used by the outer react loop (rag_agent) as a non-terminal tool.
-// It reads the whole document identified by docID into the evidence set and
-// returns the prompt blocks to feed back to the model. do_refer is taken from
-// deps.DoRefer (Python lets the RAGTools context decide whether the model may
-// cite the freshly read document), so callers control citation behavior.
+// SummarizeDocument is the exported summarize_document tool used by the outer react loop
+// (rag_agent) as a non-terminal tool. It reads the whole document identified by docID into the
+// evidence set and returns the prompt blocks to feed back to the model. do_refer is taken from
+// deps.DoRefer (the run config decides whether the model may cite the freshly read document),
+// so callers control citation behavior.
 // Returns nil when the document has no readable chunks (deps.DocChunks unset
 // or the doc is unavailable).
 func SummarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTokens int) []string {
@@ -200,8 +199,7 @@ func SummarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 }
 
 // estimateTokens returns the token count of s. It prefers the precise
-// tokenizer (tokenizer.NumTokensFromString, mirroring Python's
-// num_tokens_from_string); when no encoder is loaded that returns 0, so we
+// tokenizer (tokenizer.NumTokensFromString); when no encoder is loaded that returns 0, so we
 // fall back to a character/estimateCharsPerToken approximation for a rough
 // budget, like the previous Go-only behavior.
 func estimateTokens(s string) int {

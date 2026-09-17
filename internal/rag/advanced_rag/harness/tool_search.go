@@ -34,58 +34,48 @@ import (
 
 // Search tools: the retrieval legs plus the narrowing that runs on top.
 //
-// Mirrors Python harness/tools/search.py::hybrid_search (with the vector /
-// BM25 legs expressed as a weight on the same call, as the Python module does
-// for its three entry points).
+// One call carries both legs — the vector / BM25 split is a weight on the same call —
+// so the three entry points below differ only in the defaults they pass.
 
-// Retrieval defaults. Mirrors Python search.py's _DEFAULT_* constants; callers
-// that supply no configuration get exactly these values.
+// Retrieval defaults: callers that supply no configuration get exactly these values.
 const (
 	DefaultSimilarityThreshold   = 0.2
 	DefaultTopN                  = 12
 	DefaultRerankCandidatesCount = 64
 	DefaultTopK                  = 1024
-	// maxEffectiveQueryChars caps the expanded query in CODE POINTS: Python
-	// slices a str with `[:400]` (search.py:129/216/254), which counts code
-	// points. A byte cap would cut a multi-byte rune in half and, for CJK, would
-	// apply a ~133-character cap instead of 400.
+	// maxEffectiveQueryChars caps the expanded query in CODE POINTS. A byte cap would cut
+	// a multi-byte rune in half and, for CJK, would apply a ~133-character cap instead of
+	// 400.
 	maxEffectiveQueryChars = 400
-	// maxQueryTerms caps the terms derived from a query (Python
-	// _query_to_terms: [:16]).
+	// maxQueryTerms caps the terms derived from a query.
 	maxQueryTerms = 16
 )
 
-// Term-splitting pattern for QueryToTerms (Python _query_to_terms).
+// Term-splitting pattern for QueryToTerms.
 var (
-	// queryMetaRe matches the regex metacharacters Python blanks out before
-	// splitting a query into its literal terms (search.py:_query_to_terms). The split that
-	// follows is on WHITE SPACE, never on \w+: Go's RE2 \w is ASCII-only, so
-	// tokenizing "关羽 斩杀" with it yields nothing at all and the fan-out BM25
-	// leg loses the keyed terms it needs to weight the discriminating entity
-	// (agentic_rag_graph.py:_search_one).
+	// queryMetaRe matches the regex metacharacters blanked out before splitting a query
+	// into its literal terms. The split that follows is on WHITE SPACE, never on \w+:
+	// Go's RE2 \w is ASCII-only, so tokenizing "关羽 斩杀" with it yields nothing at all
+	// and the fan-out BM25 leg loses the keyed terms it needs to weight the
+	// discriminating entity.
 	queryMetaRe = regexp.MustCompile(`[.*+?^$()\[\]{}]`)
 
 	// DefaultAgenticVectorWeight is the vector leg's weight when agentic
 	// retrieval runs keyword-only: zero.
 	//
-	// This mirrors Python's RAGTools.retrieve, which takes
-	// `using_embedding: bool = False` (agentic_rag.py:retrieve) and where no caller
-	// passes True, so `embd_mdl` stays None and the weight it forwards is 0.0
-	// (agentic_rag.py:retrieve). The agentic loop therefore runs on keyword
-	// matches plus reranking; matching that is what keeps Go's recall aligned
-	// with Python's. SearchDeps.UsingEmbedding is the Go spelling of that flag.
+	// The agentic loop runs on keyword matches plus reranking, and nothing turns the
+	// embedded leg on: SearchDeps.UsingEmbedding defaults to false, so the weight
+	// forwarded is 0.0. Keeping that default is what keeps recall on keyword matches.
 	DefaultAgenticVectorWeight = 0.0
 
-	// DefaultHybridVectorWeight is the vector leg's weight when embedding IS
-	// used (Python RAGTools.retrieve with using_embedding=True). Python reads it
-	// from `_setting(self, "vector_similarity_weight", 0.7)` (agentic_rag.py:retrieve);
-	// 0.7 is the configured default when a caller turns embedding on.
+	// DefaultHybridVectorWeight is the vector leg's weight when embedding IS used
+	// (SearchDeps.UsingEmbedding true): 0.7, the configured default when a caller turns
+	// embedding on.
 	DefaultHybridVectorWeight = 0.7
 
-	// HybridSearchDefaultVectorWeight is the vector leg's weight for the
-	// standalone hybrid_search tool (Python search_chunks → hybrid_search). It
-	// defaults to _DEFAULT_HYBRID_VECTOR_WEIGHT = 0.3 — NOT 0.7 —
-	// because the tool reads `_setting(tools, "vector_similarity_weight", 0.3)`.
+	// HybridSearchDefaultVectorWeight is the vector leg's weight for the standalone
+	// hybrid_search tool: 0.3 — NOT 0.7 — because that tool reads its own configured
+	// default rather than the retrieve channel's.
 	HybridSearchDefaultVectorWeight = 0.3
 
 	// VectorSearchDefaultSimilarityThreshold is the engine similarity floor for
@@ -98,11 +88,9 @@ var (
 
 // Retriever is the retrieval backend the harness searches through.
 //
-// Mirrors Python's `settings.retriever.retrieval(...)`, which the harness calls
-// as a module-level singleton. The Go version takes it as an interface so the
-// session and the orchestrator can be tested without a search backend, and so
-// the concrete adapter (the harness root package's RuntimeRetriever) stays the
-// only place that knows about the runtime.
+// It is an interface so the session and the orchestrator can be tested without a search
+// backend, and so the concrete adapter (the harness root package's RuntimeRetriever)
+// stays the only place that knows about the runtime.
 type Retriever interface {
 	// Retrieve runs one search and returns raw chunk maps. The chunks carry at
 	// least chunk_id / content / doc_id / docnm_kwd so the harness accessors
@@ -110,9 +98,8 @@ type Retriever interface {
 	Retrieve(ctx context.Context, req RetrieveRequest) ([]map[string]any, error)
 }
 
-// DocChunkLister returns a document's chunks in reading order, which is what
-// the document-level tools need (Python settings.retriever.chunk_list with
-// sort_by_position=True, rag/nlp/search.py:_only_strings).
+// DocChunkLister returns a document's chunks in reading order, which is what the
+// document-level tools need (position-sorted, strings only).
 //
 // Retrieval cannot express it: RetrieveRequest ranks by relevance to a query,
 // while these tools want every chunk of one document, page-ordered, paged.
@@ -133,9 +120,8 @@ type DocChunksRequest struct {
 	Limit      int
 }
 
-// DocIDVerifier reports which of a candidate document id set are known to the
-// session's datasets. Mirrors Python RAGTools._filter_known_doc_ids, whose
-// lookup is deliberately left to the caller so this package stays free of a
+// DocIDVerifier reports which of a candidate document id set are known to the session's
+// datasets. The lookup is deliberately left to the caller so this package stays free of a
 // database dependency.
 type DocIDVerifier interface {
 	// KnownDocIDs returns the subset of candidates that exist in the given
@@ -144,16 +130,14 @@ type DocIDVerifier interface {
 	KnownDocIDs(ctx context.Context, datasetIDs, candidates []string) (map[string]bool, error)
 }
 
-// DocTenant is the owning (knowledge base, tenant) pair for one document, as
-// returned by DocTenantResolver. Mirrors Python tools._resolve_doc_tenant,
-// which yields (kb, tenant) for a document id.
+// DocTenant is the owning (knowledge base, tenant) pair for one document, as returned by
+// DocTenantResolver.
 type DocTenant struct {
 	KBID     string
 	TenantID string
 }
 
-// DocTenantResolver maps document ids to their owning (kb, tenant), mirroring
-// Python tools._resolve_doc_tenant (exploration.py:_kg_scopes). Unlike
+// DocTenantResolver maps document ids to their owning (kb, tenant). Unlike
 // DocIDVerifier, the returned KB/tenant may lie OUTSIDE the caller's
 // datasetIDs, so graph_explore can group documents by their real owner and
 // search knowledge bases that were not in the original search set. The lookup
@@ -167,8 +151,7 @@ type DocTenantResolver interface {
 // RetrieveRequest is one retrieval call.
 //
 // Weight is the vector-similarity weight: 0.3 hybrid (default), 1.0 vector-only,
-// 0.0 keyword-only (BM25). This is how Python's three search entry points
-// (hybrid_search / vector_search / bm25_search) differ.
+// 0.0 keyword-only (BM25). That is how the three search entry points below differ.
 type RetrieveRequest struct {
 	Query                 string
 	DatasetIDs            []string
@@ -180,8 +163,8 @@ type RetrieveRequest struct {
 	// (threshold 0 = no floor); nil means "not supplied", so the retriever keeps
 	// its own default instead of being handed a zero override.
 	SimilarityThreshold *float64
-	// VectorSimilarityWeight carries the VECTOR leg's weight directly (Python
-	// vector_similarity_weight): 0.3 hybrid, 1.0 vector-only, 0.0 keyword-only.
+	// VectorSimilarityWeight carries the VECTOR leg's weight directly: 0.3 hybrid, 1.0
+	// vector-only, 0.0 keyword-only.
 	// It is forwarded verbatim to the retrieval backend — NO inversion. The
 	// canvas-facing adapter field of the same name family
 	// (agent/tool RetrievalRequest.KeywordsSimilarityWeight) means the KEYWORD
@@ -189,28 +172,28 @@ type RetrieveRequest struct {
 	// agentic hybrid leg vector-dominant (0.3 -> 0.7) and the BM25 legs into
 	// pure-vector searches.
 	VectorSimilarityWeight *float64
-	// DisableVectorLeg mirrors Python passing embd_mdl=None: bm25_search /
-	// grep_search (search.py:260-275) and RAGTools.retrieve with
+	// DisableVectorLeg: embd_mdl=None: bm25_search /
+	// grep_search and RAGTools.retrieve with
 	// using_embedding=False (agentic_rag.py:retrieve) run NO dense leg at all —
 	// not even a weight-0 one, which would still constrain the candidate pool
 	// through the KNN similarity option.
 	DisableVectorLeg bool
 	TenantID         string
 	// MetaDataFilter restricts retrieval to chunks whose metadata matches
-	// (Python tools.meta_data_filter). Nil means no filtering.
+	// Nil means no filtering.
 	MetaDataFilter map[string]any
-	// RankFeature mirrors Python RAGTools.retrieve's `rank_feature` argument
+	// RankFeature: `rank_feature` argument
 	// (agentic_rag.py:retrieve): question-type tags produced by
 	// label_question(question, self.kbs) that the retriever uses to boost
 	// matching chunks. The Go engine consumes it as a tag → weight map (matching
 	// internal/engine/types and the chat pipeline), so it is map[string]float64,
-	// not a bare list. Nil means no rank feature (Python passes None).
+	// not a bare list. Nil means no rank feature.
 	RankFeature map[string]float64
-	// ExcludeCompiled excludes compiled-product rows from plain retrieval
-	// (Python hybrid_search passes must_not={"exists": "compile_kwd"},
-	// search.py:hybrid_search). Compiled products have their own expansion step, so the
-	// base retrieval here should surface ordinary document chunks only. False
-	// matches Python RAGTools.retrieve, which does not exclude them.
+	// ExcludeCompiled excludes compiled-product rows from plain retrieval (the
+	// must_not={"exists": "compile_kwd"} filter the hybrid leg applies). Compiled products
+	// have their own expansion step, so the base retrieval here should surface ordinary
+	// document chunks only. False is what the retrieve channel passes: it does not exclude
+	// them.
 	ExcludeCompiled bool
 }
 
@@ -240,50 +223,42 @@ func floatPtrOrDef(v *float64, fallback float64) float64 {
 	return fallback
 }
 
-// SearchChannel identifies which Python search entry point a call mirrors. Python
-// has three genuinely different search functions rather than one with a flag;
-// collapsing them let a single global UsingEmbedding switch silently disable the
-// vector leg for a tool that never consulted using_embedding.
+// SearchChannel identifies which search entry point a call mirrors. The three channels
+// are genuinely different search functions rather than one with a flag; collapsing them
+// let a single global UsingEmbedding switch silently disable the vector leg for a tool
+// that never consulted it.
 type SearchChannel int
 
 const (
-	// ChannelGrep mirrors Python grep_search — the `retrieve`, `grep_search`
-	// and `grep_chunks` session tools (action_session.py:_exec_retrieve :737-741). It is
-	// keyword-only: grep_search has NO vector leg at all, so the weight is
+	// ChannelGrep: the `retrieve`, `grep_search` and `grep_chunks` session tools. It is
+	// keyword-only: the grep leg has NO vector leg at all, so the weight is
 	// unconditionally 0 and UsingEmbedding must not be consulted.
 	ChannelGrep SearchChannel = iota
-	// ChannelHybrid mirrors the standalone hybrid_search — the `search_chunks`
-	// session tool (action_session.py:_exec_search_chunks, search.py:hybrid_search). Its vector
-	// leg is gated on `tools.embed_mdl` being set
-	// (`vector_weight = _setting(...) if embd_mdl else 0`), NOT on
-	// using_embedding; production always supplies an embed model, so it runs.
-	// Default weight 0.3 (search.py:_DEFAULT_HYBRID_VECTOR_WEIGHT).
+	// ChannelHybrid is the standalone hybrid search — the `search_chunks` session tool.
+	// Its vector leg is gated on an embedder being available (the configured weight when
+	// one is, else 0), NOT on UsingEmbedding; production always supplies an embed model,
+	// so it runs. Default weight 0.3.
 	ChannelHybrid
-	// ChannelRetrieve mirrors Python RAGTools.retrieve,
-	// used by the low/naive direct passes. THIS is the only function that
-	// honours `using_embedding: bool = False` (:600, :643), which is what
-	// UsingEmbedding spells. Default weight 0.7 when embedding is on.
+	// ChannelRetrieve is used by the low/naive direct passes. THIS is the only channel
+	// that honours UsingEmbedding (false by default). Default weight 0.7 when embedding is
+	// on.
 	ChannelRetrieve
 )
 
-// resolveVectorWeight mirrors the weight each Python entry point computes. The
-// gate differs per channel — that is the whole point:
+// resolveVectorWeight is the weight each channel computes. The gate differs per channel
+// — that is the whole point:
 //
-//   - ChannelGrep: always 0 (grep_search has no vector leg).
-//   - ChannelHybrid: 0 when no embedder is configured (Python's `if embd_mdl`),
-//     otherwise VectorSimilarityWeight ?? 0.3. UsingEmbedding is IRRELEVANT
-//     here: Python's hybrid_search has no such parameter.
-//   - ChannelRetrieve: 0 unless UsingEmbedding (Python's using_embedding),
-//     otherwise VectorSimilarityWeight ?? 0.7.
+//   - ChannelGrep: always 0 (the grep leg has no vector leg).
+//   - ChannelHybrid: 0 when no embedder is available, otherwise VectorSimilarityWeight
+//     ?? 0.3. UsingEmbedding is IRRELEVANT here: this channel has no such parameter.
+//   - ChannelRetrieve: 0 unless UsingEmbedding, otherwise VectorSimilarityWeight ?? 0.7.
 func resolveVectorWeight(deps SearchDeps, ch SearchChannel) float64 {
 	switch ch {
 	case ChannelGrep:
 		return 0
 	case ChannelHybrid:
-		// Python: vector_weight = _setting(...) if embd_mdl else 0.
-		// HasEmbedder is the Go spelling of `tools.embed_mdl`; the runtime
-		// retrieval service resolves the actual model, as Python's retriever
-		// does from embd_mdl.
+		// The configured weight when an embedder is available, else 0. HasEmbedder says
+		// only that one is available — the retrieval service resolves the actual model.
 		if !deps.HasEmbedder {
 			return 0
 		}
@@ -300,19 +275,18 @@ func resolveVectorWeight(deps SearchDeps, ch SearchChannel) float64 {
 type SearchDeps struct {
 	// Backend is the retrieval service.
 	Backend Retriever
-	// KbIDs are the session's bound dataset ids (Python tools.kb_ids).
+	// KbIDs are the session's bound dataset ids.
 	KbIDs []string
-	// SQLKBs are the session's structured (SQL-backed) datasets (Python
-	// tools.sql_kbs). Python hybrid_search merges them into the target id list
-	// (search.py:hybrid_search: `tools.kb_ids + [kb.id for kb in tools.sql_kbs]`), so the
-	// keyword/vector search spans the structured tables too. Go keeps them
-	// separate on SearchDeps and folds them into targetIDs in runSearch.
+	// SQLKBs are the session's structured (SQL-backed) datasets. The hybrid channel
+	// merges them into the target id list (the bound KB ids plus every SQL-KB id), so the
+	// keyword/vector search spans the structured tables too. They stay separate on
+	// SearchDeps and are folded into targetIDs in runSearch.
 	SQLKBs []string
 	// TenantID scopes the retrieval.
 	TenantID string
-	// IndexName is the search index that holds the dataset's document/structure
-	// rows (Python search.index_name; navigation.py:_navigate_structure_impl routes the compiled
-	// structure read through it). Empty falls back to "ragflow_<TenantID>", the
+	// IndexName is the search index that holds the dataset's document/structure rows (the
+	// compiled-structure read is routed through it). Empty falls back to
+	// "ragflow_<TenantID>", the
 	// RAGFlow default — but a tenant that overrides index_name must surface it
 	// here or structure/doc reads would hit the wrong index. The earlier Go port
 	// hardcoded "ragflow_<tenantID>" and ignored per-tenant overrides.
@@ -333,18 +307,16 @@ type SearchDeps struct {
 	// navigate_tree tool. Nil falls back to nav.NewNavServiceRouter() (the
 	// internal/service/nav singleton).
 	NavRouter NavTreeRouter
-	// Model is the request-scoped chat model (Python tools.chat_mdl). It drives
+	// Model is the request-scoped chat model. It drives
 	// the calculate tool's expression-writing call and the graph_explore
 	// structure verdict (AskStructure). Required for `calculate`; nil makes the
 	// model-backed tools report a miss.
 	Model SessionModel
 	// Logger is optional; nil uses the default logger.
 	Logger *log.Logger
-	// DocIDVerifier resolves which of the caller-supplied document ids actually
-	// belong to the session's datasets (Python
-	// RAGTools._filter_known_doc_ids). Nil means "no verification available":
-	// the doc scope is passed through to the retriever unchanged, which is the
-	// pre-existing behaviour.
+	// DocIDVerifier resolves which of the caller-supplied document ids actually belong to
+	// the session's datasets. Nil means "no verification available": the doc scope is
+	// passed through to the retriever unchanged, which is the pre-existing behaviour.
 	//
 	// It is injected rather than queried here because resolving document
 	// ownership is a database lookup this package deliberately does not depend
@@ -354,104 +326,86 @@ type SearchDeps struct {
 	// tools (fetch_full_document / summarize_document). Nil leaves both
 	// unavailable.
 	DocChunks DocChunkLister
-	// Embedder is the external embedding handle used by graph/structure seed
-	// encoding (Python tools.embed_mdl). Nil falls back to this package's
-	// internal tenant-default resolver, which needs a database and therefore
-	// stays self-contained for callers that cannot or do not want to supply one.
+	// Embedder is the external embedding handle used by graph/structure seed encoding.
+	// Nil falls back to this package's internal tenant-default resolver, which needs a
+	// database and therefore stays self-contained for callers that cannot or do not want
+	// to supply one.
 	Embedder nlp.NavEmbedder
-	// Retrieval tuning (Python RAGTools.retrieve: _setting(self, "top_n"),
-	// similarity_threshold, vector_similarity_weight, rerank_candidates_count,
-	// top_k). Zero falls back to this package's Default* constants.
+	// Retrieval tuning: top_n, similarity threshold, vector similarity weight, rerank
+	// candidates and top_k. Zero falls back to this package's Default* constants.
 	TopN                int
 	SimilarityThreshold float64
 	// VectorSimilarityWeight is a pointer so an explicit 0 (keyword-only, the
 	// agentic default) is distinguishable from "not configured", which falls
 	// back to DefaultAgenticVectorWeight.
 	VectorSimilarityWeight *float64
-	// UsingEmbedding is the Go spelling of Python RAGTools.retrieve's
-	// `using_embedding: bool = False` (agentic_rag.py:retrieve). When false (the
-	// agentic default), the vector leg is disabled and retrieval is keyword-only
-	// (vector weight 0) — exactly Python's `embd_mdl = None; vector_weight = 0`.
-	// When true, the embedder is engaged and the vector weight is applied:
-	// VectorSimilarityWeight if set, else DefaultHybridVectorWeight (0.7, Python
-	// `_setting(self, "vector_similarity_weight", 0.7)`). Unlike Python, the
-	// query embedder is supplied by the runtime retrieval service, so Go carries
-	// the flag rather than an embd_mdl handle on the retrieve call itself.
+	// UsingEmbedding turns the embedded leg of the RETRIEVE channel on. When false (the
+	// agentic default) the vector leg is disabled and retrieval is keyword-only (vector
+	// weight 0). When true the embedder is engaged and the vector weight is applied:
+	// VectorSimilarityWeight if set, else DefaultHybridVectorWeight. The query embedder
+	// itself is supplied by the runtime retrieval service, so this carries the flag
+	// rather than a handle.
 	//
-	// SCOPE: this flag governs ChannelRetrieve ONLY. Python's using_embedding
-	// lives on RAGTools.retrieve and nowhere else — hybrid_search (search_chunks)
-	// has no such parameter, so gating it here is what silently disabled the
-	// semantic leg.
+	// SCOPE: this flag governs ChannelRetrieve ONLY. The hybrid channel (search_chunks)
+	// has no such parameter, so gating it here is what silently disabled the semantic
+	// leg.
 	UsingEmbedding bool
-	// HasEmbedder is the Go spelling of Python `tools.embed_mdl` being set —
-	// the gate hybrid_search applies to its vector leg
-	// (search.py:_setting: `vector_weight = _setting(...) if embd_mdl else 0`).
-	// Production always supplies one (dialog_service.py:rag_agent embed_mdl=embd_mdl),
-	// so the semantic leg of search_chunks runs. False keeps callers that have no
-	// embedding model on keyword-only retrieval, as Python does.
+	// HasEmbedder reports whether an embedding handle is available — the gate the hybrid
+	// channel applies to its vector leg (the configured weight when one is, else 0).
+	// Production always supplies one, so the semantic leg of search_chunks runs. False
+	// keeps callers that have no embedding model on keyword-only retrieval.
 	HasEmbedder           bool
 	RerankCandidatesCount int
 	TopK                  int
-	// MetaDataFilter restricts retrieval to matching chunk metadata (Python
-	// tools.meta_data_filter). Nil means no filtering.
+	// MetaDataFilter restricts retrieval to matching chunk metadata. Nil means no
+	// filtering.
 	MetaDataFilter map[string]any
-	// DocScope is the session-wide document restriction (Python
-	// RAGTools.doc_scope). It is a CEILING applied by scopedDocIDs before any
-	// search: an explicit caller scope is intersected with it. Empty means
-	// "search everything".
+	// DocScope is the session-wide document restriction. It is a CEILING applied by
+	// scopedDocIDs before any search: an explicit caller scope is intersected with it.
+	// Empty means "search everything".
 	DocScope []string
-	// DocTenantResolver maps document ids to their owning (kb, tenant),
-	// mirroring Python tools._resolve_doc_tenant. Unlike DocIDVerifier (which
-	// only answers "belongs to the bound datasets?"), this may return KB/tenant
-	// pairs OUTSIDE the caller's datasetIDs, so graph_explore can search
-	// documents that belong to other knowledge bases. Nil falls back to the
-	// pre-existing behaviour: each bound dataset is searched with the whole
-	// DocScope (no per-document re-grouping).
+	// DocTenantResolver maps document ids to their owning (kb, tenant). Unlike
+	// DocIDVerifier (which only answers "belongs to the bound datasets?"), this may
+	// return KB/tenant pairs OUTSIDE the caller's datasetIDs, so graph_explore can search
+	// documents that belong to other knowledge bases. Nil falls back to the pre-existing
+	// behaviour: each bound dataset is searched with the whole DocScope (no per-document
+	// re-grouping).
 	DocTenantResolver DocTenantResolver
-	// DoRefer mirrors Python RAGTools.do_refer: when true, summarize_document
+	// DoRefer: when true, summarize_document
 	// prefixes the citation rules so the model cites the blocks it summarises.
 	DoRefer bool
-	// CiteRules is the optional user-defined citation template. Empty falls back
-	// to the embedded citation_prompt.md (mirrors Python user_defined_prompts).
-	// summarize_document passes it to the citation header verbatim.
+	// CiteRules is the optional user-defined citation template. Empty falls back to the
+	// embedded citation_prompt.md. summarize_document passes it to the citation header
+	// verbatim.
 	CiteRules string
-	// WebSearch is the optional open-web provider for the `web_search` tool. Nil
-	// HIDES the tool from the session surface — Toolset.HasWebSearch is set from
-	// mode.HasTool("web_search") && WebSearch != nil, mirroring Python's
-	// provider gate (action_session.py:_disable_tool). Should a call reach the handler
+	// WebSearch is the optional open-web provider for the `web_search` tool. Nil HIDES
+	// the tool from the session surface — Toolset.HasWebSearch is set from
+	// mode.HasTool("web_search") && WebSearch != nil. Should a call reach the handler
 	// anyway, it reports StatusError/ReasonInfra with a do-not-retry note, never a
-	// query-level MISS (WebSearchTool:826).
+	// query-level MISS.
 	WebSearch WebSearcher
 	// WikiRetriever is the optional provider for the `wiki_query` tool. The tool is
-	// advertised in NO mode: its spec was dropped from ToolMap to match Python,
-	// which never registers wiki_query either (see action_session.go). The
-	// handler is kept as an unplugged seam and reports a clean MISS
-	// (StatusMiss/ReasonNoDoc) when no retriever is wired.
+	// advertised in NO mode: its spec is not in the tool map either (see
+	// action_session.go). The handler is kept as an unplugged seam and reports a clean
+	// MISS (StatusMiss/ReasonNoDoc) when no retriever is wired.
 	WikiRetriever WikiRetriever
-	// KBs mirrors Python RAGTools' self.kbs — the resolved
-	// Knowledgebase objects (carrying parser_config / tenant_id) the agentic
-	// tools run over. The rank feature is derived from these, exactly as
-	// Python's retrieve calls label_question(question, self.kbs). Projected
-	// from RAGTools.KBs when the search deps are built.
+	// KBs: the resolved Knowledgebase objects (carrying parser_config / tenant_id) the
+	// agentic tools run over. The rank feature is derived from these — the retrieve
+	// channel labels the question against them. Projected from RAGTools.KBs when the
+	// search deps are built.
 	KBs []*entity.Knowledgebase
-	// Tagger mirrors Python RAGTools.retrieve's
-	// `rank_feature=label_question(question, self.kbs)` (agentic_rag.py:retrieve): it
-	// classifies the query into question-type tags the retriever boosts on. Nil
-	// means no tag boost (Python's label_question returning None). The Go
-	// implementation lives in internal/service (MetadataService.LabelQuestion),
-	// matching Python's rag.app.tag.label_question which queries the tag service.
+	// Tagger classifies the query into question-type tags the retriever boosts on. Nil
+	// means no tag boost. The implementation lives in internal/service
+	// (MetadataService.LabelQuestion), which queries the tag service.
 	Tagger QuestionLabeler
 }
 
-// QuestionLabeler mirrors Python rag.app.tag.label_question(question, kbs)
-// (agentic_rag.py:retrieve → tag.py). Given the query and the KB objects, it
-// returns a map of question-type tag → weight the retriever uses to rank
-// results. The Go extractor (extractor_tag.go) writes tag_kwd (the tag-name
-// list) and tag_feas (per-tag weights) onto each chunk; the labeler aggregates
-// tag_kwd to build the vocabulary and the retriever ranks with tag_feas. It
-// does not rely on a separate Python-only tag-library dataset. The production
-// implementation is internal/service.MetadataService.LabelQuestion; tests
-// supply a stub.
+// QuestionLabeler labels a question against the KB objects: given the query and the KBs
+// it returns a map of question-type tag → weight the retriever uses to rank results. The
+// extractor (extractor_tag.go) writes tag_kwd (the tag-name list) and tag_feas (per-tag
+// weights) onto each chunk; the labeler aggregates tag_kwd to build the vocabulary and the
+// retriever ranks with tag_feas. No separate tag-library dataset is needed. The production
+// implementation is internal/service.MetadataService.LabelQuestion; tests supply a stub.
 type QuestionLabeler interface {
 	LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
@@ -459,32 +413,30 @@ type QuestionLabeler interface {
 // CompiledExpander enriches a search result with the dataset's compiled
 // structure (page index / tree / knowledge graph / wiki synthesis pages).
 //
-// Mirrors Python tools/compiled_expansion.py::_expand_with_compiled, which
-// hybrid_search calls when use_compiled is set. It is a seam rather than a
-// direct call so the search leg stays independent of the compiled-structure
+// The compiled expansion the hybrid leg runs when use_compiled is set. It is a seam
+// rather than a direct call so the search leg stays independent of the compiled-structure
 // machinery (and testable without a knowledge graph).
 type CompiledExpander interface {
 	Expand(ctx context.Context, kb *Kbinfos, query, keywords string, docScope []string) error
 }
 
-// QueryToTerms mirrors Python _query_to_terms: derive the
+// QueryToTerms: derive the
 // literal terms a query carries. The alternation's segments are split out (capped
 // at maxQueryTerms) so the regex locate and the term-based context window fire on
 // the same broad set of names; a plain query simply splits on white space. Terms
 // shorter than two characters and duplicates are dropped.
 //
-// Case is PRESERVED, as in Python (it never lowercases): the downstream consumers
-// are case-insensitive — NarrowByTerms compiles with "(?i)"
-// (grep_sed_narrow.go, Python re.IGNORECASE) and the BM25 keyword leg is
-// tokenized server-side — so lowercasing here would only change the text handed
-// to them.
+// Case is PRESERVED (it is never lowercased): the downstream consumers are
+// case-insensitive — NarrowByTerms compiles with "(?i)" (grep_sed_narrow.go) and the
+// BM25 keyword leg is tokenized server-side — so lowercasing here would only change the
+// text handed to them.
 func QueryToTerms(query string) []string {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil
 	}
-	// Strip the regex decorations Python removes (search.py:_query_to_terms): an inline
-	// flag prefix plus \b and (?i) markers.
+	// Strip the regex decorations an inline query may carry: a flag prefix plus \b and
+	// (?i) markers.
 	q = strings.TrimPrefix(q, "(?i)")
 	q = strings.ReplaceAll(q, `\b`, "")
 	q = strings.ReplaceAll(q, "(?i)", "")
@@ -515,17 +467,15 @@ func QueryToTerms(query string) []string {
 	return out
 }
 
-// FanoutKeyedTerms mirrors Python's fan-out term filter
-// (agentic_rag_graph.py:_fanout_search): the subset of terms worth keying a BM25 round on.
-// Short stopwords and bare numbers are dropped, but a long number (a year, a
+// FanoutKeyedTerms is the fan-out term filter: the subset of terms worth keying a BM25
+// round on. Short stopwords and bare numbers are dropped, but a long number (a year, a
 // specimen ID) is discriminative and survives.
 func FanoutKeyedTerms(terms []string) []string {
 	var out []string
 	for _, t := range terms {
 		digits := isAllDigits(t)
-		// Python compares t.lower() against the (lowercase) stopword set while the
-		// terms themselves keep their case (agentic_rag_graph.py:_search_one), so "The"
-		// must be dropped like "the".
+		// The stopword set is lowercase while the terms themselves keep their case, so
+		// "The" must be dropped like "the".
 		if (utf8.RuneCountInString(t) >= 3 && !IsStopword(strings.ToLower(t)) && !digits) ||
 			(utf8.RuneCountInString(t) >= 4 && digits) {
 			out = append(out, t)
@@ -534,83 +484,68 @@ func FanoutKeyedTerms(terms []string) []string {
 	return out
 }
 
-// searchOpts carries the per-entry-point differences that in Python live in
-// separate functions (hybrid_search / vector_search / bm25_search / grep_search /
-// RAGTools.retrieve). In Go each entry point is its own function that builds a
-// searchOpts and delegates to runSearch, so the vector-weight gate, similarity
-// threshold and compiled-row exclusion are chosen by the CALLER, never by a
+// searchOpts carries the per-entry-point differences. Each entry point is its own
+// function that builds a searchOpts and delegates to runSearch, so the vector-weight gate,
+// similarity threshold and compiled-row exclusion are chosen by the CALLER, never by a
 // single shared "channel flag" that a global switch could silently corrupt.
 type searchOpts struct {
-	// weight is the VECTOR similarity weight (Python vector_similarity_weight).
+	// weight is the VECTOR similarity weight.
 	weight float64
 	// threshold is the engine similarity floor.
 	threshold float64
-	// excludeCompiled mirrors Python hybrid_search's must_not={"exists":"compile_kwd"}.
+	// excludeCompiled: must_not={"exists":"compile_kwd"}.
 	excludeCompiled bool
-	// promoteChildren mirrors Python calling settings.retriever.retrieval_by_children
-	// after search (search.py:_normalize): child fragments are lifted to their
-	// parent chunk. In Python EVERY entry point does this — hybrid_search (L106),
-	// vector_search (L239) and bm25_search (L276) all route through _normalize, and
-	// grep_search builds on bm25_search. So ALL entry points set promoteChildren:
-	// true (including vector/bm25/grep); only a future non-promoting path would
-	// leave it false. An empty tenant_id still skips promotion, mirroring Python
-	// _normalize.
+	// promoteChildren lifts child fragments to their parent chunk after search. EVERY
+	// entry point sets it true (hybrid, vector, bm25 and grep — the grep leg builds on the
+	// bm25 leg); only a future non-promoting path would leave it false. An empty tenant_id
+	// still skips promotion.
 	promoteChildren bool
-	// logLabel / logVerb / logKeywords describe the entry point's own
-	// "searching" line, Python-exact:
+	// logLabel / logVerb / logKeywords describe the entry point's own "searching" line:
 	//
-	//	hybrid → [Hybrid search] Searching the knowledge base for "q" (keywords: k) (search.py:hybrid_search)
-	//	vector → [Vector search] Searching by meaning for "q" (keywords: k)          (:215)
-	//	bm25   → [BM25 search] Searching by keyword for "q" (keywords: k)            (:252)
-	//	grep   → [Grep search] Keyword-first locate for "q"      (NO keywords)       (:418)
+	//	hybrid → [Hybrid search] Searching the knowledge base for "q" (keywords: k)
+	//	vector → [Vector search] Searching by meaning for "q" (keywords: k)
+	//	bm25   → [BM25 search] Searching by keyword for "q" (keywords: k)
+	//	grep   → [Grep search] Keyword-first locate for "q"      (NO keywords)
 	//
-	// Python prints the "(keywords: …)" suffix unconditionally on the three legs
-	// that carry it; Go prints it only when non-empty (a keyword-less leg is a
-	// deliberate state — see the fan-out's narrow bypass —
-	// agentic_rag_graph.py:_search_one — and search_chunks takes no keywords at all,
-	// action_session.py:execute_tool — so a bare "(keywords: )" reads like a dropped
-	// argument). logKeywords also keeps grep from growing a suffix Python never
-	// prints on that leg.
+	// The "(keywords: …)" suffix is printed only when non-empty: a keyword-less leg is a
+	// deliberate state (see the fan-out's narrow bypass) and search_chunks takes no keywords
+	// at all, so a bare "(keywords: )" would read like a dropped argument. logKeywords also
+	// keeps the grep leg from growing a suffix it never carries.
 	logLabel    string
 	logVerb     string
 	logKeywords bool
-	// logExtra enables the dedup / compiled-expansion / progress lines. Python
-	// emits those ONLY inside hybrid_search (:140 / :192 / :203); vector_search
-	// and bm25_search log nothing but their searching line (plus a debug line Go
-	// has no equivalent for), and grep_search has its own two lines instead.
+	// logExtra enables the dedup / compiled-expansion / progress lines. They belong to the
+	// hybrid leg alone; the vector and bm25 legs log nothing but their searching line, and
+	// the grep leg has its own two lines instead.
 	logExtra bool
-	// cache enables the per-request search cache (SearchCacheLoad/Store). Python
-	// keeps that cache on `tools.search_cache` and touches it ONLY inside
-	// hybrid_search (:136-141 read, :207 write); vector_search / bm25_search /
-	// grep_search / RAGTools.retrieve never consult it. Go's cache lives on the
-	// shared deps.KB, so without this gate a keyword-only leg could be served a
+	// cache enables the per-request search cache (SearchCacheLoad/Store). Only the hybrid
+	// leg touches that cache; the vector / bm25 / grep / retrieve legs never consult it.
+	// The cache lives on the shared deps.KB, so without this gate a keyword-only leg could
+	// be served a
 	// hybrid result (different vector weight, threshold and compiled policy)
 	// and vice versa — Go's "enhanced" typing did not make it hybrid-scoped.
 	cache bool
-	// narrowLabel tags the narrowing line. Python is NOT self-consistent here:
-	// hybrid_search passes the snake_case "hybrid_search", while
-	// vector_search / bm25_search pass their display labels "Vector search"
-	// (:248) / "BM25 search" (:288). Both forms are reproduced verbatim.
+	// narrowLabel tags the narrowing line. The forms are deliberately UNEVEN: the hybrid
+	// leg passes the snake_case "hybrid_search", while the vector and bm25 legs pass their
+	// display labels "Vector search" / "BM25 search". Both forms are reproduced verbatim.
 	narrowLabel string
-	// disableVector mirrors Python passing embd_mdl=None: when set the request
+	// disableVector: embd_mdl=None: when set the request
 	// carries DisableVectorLeg and the backend runs the keyword-only branch.
 	// Grep (bm25_search) always sets it; hybrid/retrieve set it from their own
 	// embedder gates (HasEmbedder / UsingEmbedding).
 	disableVector bool
 	// rankFeature opts the entry point into the question-type tag boost
-	// (rank_feature). Python: ONLY RAGTools.retrieve passes
-	// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668);
-	// search.py's three legs call retriever.retrieval WITHOUT rank_feature
-	// (:158-173 hybrid, :223-238 vector, :260-275 bm25 — grep_search delegates
-	// to bm25_search, :428). Before this gate every Go leg shipped the boost,
-	// re-ranking search_chunks/retrieve results differently from Python.
+	// (rank_feature). ONLY the retrieve channel passes the question-type tags; the three
+	// search legs call the retriever WITHOUT them (the grep leg delegates to bm25). Before
+	// this gate every leg shipped the boost, which re-ranked search_chunks and retrieve
+	// results the same way.
 	rankFeature bool
 }
 
 // searchLogLine renders a per-leg "searching" line (search.py:hybrid_search/215/252/418):
 // both the bracket label and the verb vary by entry point. The keywords suffix
-// is appended by the caller, because Python prints it on hybrid/vector/bm25
-// only — grep_search's locate line never carries one.
+// is appended by the caller, because only the hybrid/vector/bm25 lines carry it — the
+// grep leg's locate line never does.
 func searchLogLine(label, verb, question string) string {
 	return fmt.Sprintf("[%s] %s %q", label, verb, question)
 }
@@ -623,13 +558,13 @@ func searchLogger(deps SearchDeps) *log.Logger {
 	return _LOG
 }
 
-// runSearch is the shared body of every search entry point. It is deliberately
-// dumb about WHICH Python function it mirrors: that is encoded by opts, supplied
-// by the calling entry-point function.
+// runSearch is the shared body of every search entry point. It is deliberately dumb
+// about WHICH entry point it is serving: that is encoded by opts, supplied by the
+// calling function.
 func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts searchOpts) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
-	// Python retrieve:614-646 — an explicit argument wins, then the caller's
-	// configuration, then this package's own defaults.
+	// An explicit argument wins, then the caller's configuration, then this package's own
+	// defaults.
 	topN := p.TopN
 	if topN <= 0 {
 		topN = deps.TopN
@@ -637,16 +572,13 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	if topN <= 0 {
 		topN = DefaultTopN
 	}
-	// Python hybrid_search:117 folds the structured (SQL) datasets into the
-	// target id list: `kb_ids or tools.kb_ids + [kb.id for kb in tools.sql_kbs]`.
-	// The explicit argument still wins; otherwise the session's kb_ids and
-	// sql_kbs are merged so the vector/keyword search spans the structured tables.
+	// The structured (SQL) datasets are folded into the target id list. The explicit
+	// argument still wins; otherwise the session's kb ids and sql ids are merged, so the
+	// vector/keyword search spans the structured tables.
 	targetIDs := p.KbIDs
 	if len(targetIDs) == 0 {
-		// Python hybrid_search:117 folds sql_kbs into the id list via
-		// `dict.fromkeys(kb_ids + [kb.id for kb in sql_kbs])` — dict.fromkeys
-		// de-duplicates. Mirror that here so a KB present in both KbIDs and
-		// SQLKBs is not searched twice (and likewise dedup KbIDs themselves).
+		// The merge DE-DUPLICATES, so a KB present in both KbIDs and SQLKBs is not searched
+		// twice (and the KbIDs themselves are deduped the same way).
 		merged := append(append([]string{}, deps.KbIDs...), deps.SQLKBs...)
 		seen := make(map[string]struct{}, len(merged))
 		targetIDs = targetIDs[:0]
@@ -668,17 +600,15 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 
 	// 2. Effective query.
 	//
-	// Mirrors Python search.py:hybrid_search/216/254 — the 400-char cap applies ONLY to the
-	// retrieval_query branch (entity-weighted expansion appended to the question).
-	// The keywords and bare-question branches are NOT truncated, matching Python's
-	// `f"{query} {keywords}".strip()` / `query` forms, which carry no [:400].
+	// The 400-char cap applies ONLY to the retrieval_query branch (the entity-weighted
+	// expansion appended to the question). The keywords and bare-question branches are NOT
+	// truncated.
 	var effectiveQuery string
 	if strings.TrimSpace(p.RetrievalQuery) != "" {
-		// Python's cap slices code points (`f"{query} {retrieval_query}".strip()[:400]`,
-		// search.py:129/216/254): a byte slice would both cut a multi-byte rune in
-		// half — handing the retriever invalid UTF-8 — and, for CJK, stop at
-		// ~133 characters, silently dropping two thirds of the expansion terms
-		// the fan-out leg weighs on.
+		// The cap slices code points: a byte slice would both cut a multi-byte rune in
+		// half — handing the retriever invalid UTF-8 — and, for CJK, stop at ~133
+		// characters, silently dropping two thirds of the expansion terms the fan-out leg
+		// weighs on.
 		effectiveQuery = truncateRunes(strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery)), maxEffectiveQueryChars)
 	} else if strings.TrimSpace(p.Keywords) != "" {
 		effectiveQuery = strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.Keywords))
@@ -686,17 +616,14 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		effectiveQuery = p.Question
 	}
 
-	// Python's per-leg searching line (search.py:hybrid_search/215/252/418): BOTH the
-	// bracket label and the verb vary by entry point — "[Hybrid search]
-	// Searching the knowledge base for", "[Vector search] Searching by meaning
-	// for", "[BM25 search] Searching by keyword for", "[Grep search]
-	// Keyword-first locate for" — and only the three keyword-carrying legs
-	// append the keywords (see searchOpts.logLabel / logVerb / logKeywords).
-	// The suffix is printed only when non-empty: a keyword-less leg is a
-	// deliberate state (fan-out Channel B is a narrow bypass,
-	// agentic_rag_graph.py:_search_one; search_chunks takes no keywords at all,
-	// action_session.py:execute_tool), so a bare "(keywords: )" reads like a dropped
-	// argument rather than an intentional empty.
+	// The per-leg searching line: BOTH the bracket label and the verb vary by entry point
+	// — "[Hybrid search] Searching the knowledge base for", "[Vector search] Searching by
+	// meaning for", "[BM25 search] Searching by keyword for", "[Grep search]
+	// Keyword-first locate for" — and only the three keyword-carrying legs append the
+	// keywords (see searchOpts.logLabel / logVerb / logKeywords). The suffix is printed
+	// only when non-empty: a keyword-less leg is a deliberate state (fan-out Channel B is
+	// a narrow bypass; search_chunks takes no keywords at all), so a bare "(keywords: )"
+	// would read like a dropped argument rather than an intentional empty.
 	searchLine := searchLogLine(opts.logLabel, opts.logVerb, p.Question)
 	if kws := strings.TrimSpace(p.Keywords); opts.logKeywords && kws != "" {
 		searchLine += fmt.Sprintf(" (keywords: %s)", kws)
@@ -705,9 +632,8 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 
 	// 3. Per-request dedup: an identical query+scope is retrieved at most once,
 	// so e.g. pre_search and a claim search asking the same question do not
-	// repeat the round-trip, child fetch and narrowing. Python's cache is
-	// hybrid-only — both the lookup (:136-141) and the store (:207) sit inside
-	// hybrid_search — hence opts.cache.
+	// repeat the round-trip, child fetch and narrowing. The cache is hybrid-only — both the
+	// lookup and the store belong to that leg — hence opts.cache.
 	if deps.KB != nil && opts.cache {
 		if chunks, aggs, ok := deps.KB.SearchCacheLoad(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope)); ok {
 			logger.Printf("[%s] Already searched this — reusing the %d passage(s) found earlier.", opts.logLabel, len(chunks))
@@ -716,12 +642,9 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	}
 
 	// 4. Retrieve.
-	// rank_feature ONLY on the retrieve leg (Python RAGTools.retrieve:
-	// rank_feature=label_question(question, self.kbs), agentic_rag.py:668).
-	// search.py's hybrid/vector/bm25 legs never pass it (:158-173/:223-238/
-	// :260-275), so the other entry points leave the request's RankFeature nil.
-	// Go computes it from the KB objects via the injected Tagger; nil Tagger ⇒
-	// no boost (Python's label_question returns None).
+	// rank_feature ONLY on the retrieve leg. The hybrid/vector/bm25 legs never pass it, so
+	// the other entry points leave the request's RankFeature nil. It is computed from the
+	// KB objects via the injected Tagger; a nil Tagger ⇒ no boost.
 	var rankFeature map[string]float64
 	if opts.rankFeature && deps.Tagger != nil {
 		rankFeature = deps.Tagger.LabelQuestion(ctx, effectiveQuery, deps.KBs)
@@ -746,10 +669,9 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 			TopK:                  intOrDef(deps.TopK, DefaultTopK),
 			RerankCandidatesCount: max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
 			SimilarityThreshold:   &opts.threshold,
-			// VectorSimilarityWeight carries the VECTOR weight verbatim (Python
-			// vector_similarity_weight); the canvas adapter's keyword-weight
-			// inversion does NOT apply to this field. DisableVectorLeg mirrors
-			// Python passing embd_mdl=None (no dense leg at all).
+			// VectorSimilarityWeight carries the VECTOR weight verbatim; the canvas
+			// adapter's keyword-weight inversion does NOT apply to this field.
+			// DisableVectorLeg is the hard switch: no dense leg at all.
 			VectorSimilarityWeight: &opts.weight,
 			DisableVectorLeg:       opts.disableVector,
 			TenantID:               deps.TenantID,
@@ -760,7 +682,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	}
 	chunks, err := retrieve()
 	if err != nil {
-		// Go-only line: Python lets the retriever's exception propagate untagged.
+		// Go-only line: the retriever's failure is reported here instead of propagating.
 		logger.Printf("[%s] retrieval failed: %v — retrying once.", opts.logLabel, err)
 		chunks, err = retrieve()
 	}
@@ -769,14 +691,11 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		return nil, nil
 	}
 
-	// 4b. retrieval_by_children: Python promotes child fragments to their parent
-	// chunk right after retrieval through _normalize (, also reached
-	// by vector_search L239 and bm25_search L276; grep_search rides on bm25_search;
-	// RAGTools.retrieve does the same at). ALL entry points do
-	// this, so every runSearch caller sets promoteChildren: true. The promotion
-	// lives here (gated by opts.promoteChildren) rather than in the shared Backend
-	// so a future non-promoting path can opt out; an empty tenant_id skips it,
-	// mirroring Python _normalize.
+	// 4b. retrieval_by_children: child fragments are promoted to their parent chunk right
+	// after retrieval. ALL entry points do this, so every runSearch caller sets
+	// promoteChildren: true. The promotion lives here (gated by opts.promoteChildren)
+	// rather than in the shared Backend so a future non-promoting path can opt out; an
+	// empty tenant_id skips it.
 	if opts.promoteChildren {
 		de := deps.DocEngine
 		if de == nil {
@@ -787,10 +706,9 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		}
 	}
 
-	// 5. doc_aggs from the FULL retrieved candidate set, computed here and left
-	// untouched by the narrowing / compiled-expansion steps below — mirroring
-	// Python, where `_normalize` takes doc_aggs straight from the retriever and
-	// _narrow_or_keep / _expand_with_compiled only ever replace kbinfos["chunks"].
+	// 5. doc_aggs from the FULL retrieved candidate set: computed here and left untouched
+	// by the narrowing / compiled-expansion steps below, which only ever replace the chunk
+	// list.
 	aggs := DocAggs(chunks)
 
 	// Memory BEFORE narrowing: the raw corpus may hold a fact the narrowing
@@ -810,50 +728,44 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		}
 	}
 
-	// Python prints this progress line inside hybrid_search only (:203): the
-	// bm25/vector legs log nothing but their searching line, and grep_search
-	// has its own two lines (see GrepSearch). Gated so a log diff against
-	// Python lines up line for line.
+	// The progress line belongs to the hybrid leg only: the bm25/vector legs log nothing
+	// but their searching line, and the grep leg has its own two lines (see GrepSearch).
+	// Gated so a log diff stays readable line for line.
 	if len(chunks) > 0 && opts.logExtra {
 		logger.Printf("[%s] %q -> %d chunk(s): %s", opts.logLabel, trunc(p.Question, 80), len(chunks), docStatsLine(chunks))
 	}
 
-	// 8. Cache the result — hybrid leg only, mirroring Python search.py:hybrid_search.
+	// 8. Cache the result — hybrid leg only.
 	if deps.KB != nil && opts.cache {
 		deps.KB.SearchCacheStore(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope), chunks, aggs)
 	}
 	return chunks, aggs
 }
 
-// HybridSearch mirrors Python hybrid_search. The vector leg is
-// gated on an embedder being configured (Python: vector_weight = _setting(...)
-// if embd_mdl else 0); default weight 0.3. Compiled rows are excluded.
+// HybridSearch: the vector leg is gated on an embedder being configured (the configured
+// weight when one is, else 0); default weight 0.3. Compiled rows are excluded.
 func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
 		weight:          resolveVectorWeight(deps, ChannelHybrid),
 		threshold:       floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
 		excludeCompiled: true,
 		promoteChildren: true,
-		// Python hybrid_search passes the real embd_mdl even at weight 0; the
-		// dense leg is dropped only when no embedder is configured
-		// (search.py:143-145 `vector_weight = ... if embd_mdl else 0`).
+		// The real embedder is passed even at weight 0; the dense leg is dropped only when
+		// none is configured.
 		disableVector: !deps.HasEmbedder,
 		logLabel:      "Hybrid search",
 		logVerb:       "Searching the knowledge base for",
 		logKeywords:   true,
-		logExtra:      true, // Python's dedup/compiled/progress lines live here only
-		cache:         true, // Python's search_cache is read/written here only (:136/:207)
-		// Python passes the SNAKE_CASE tag to _narrow_or_keep on this leg
-		// (search.py:hybrid_search) although its own lines say "Hybrid search" — the
-		// inconsistency is Python's and is reproduced verbatim.
+		logExtra:      true, // the dedup/compiled/progress lines belong to this leg
+		cache:         true, // the search cache is read/written here only
+		// The SNAKE_CASE tag goes to the narrowing step on this leg although the log lines
+		// say "Hybrid search" — the inconsistency is reproduced verbatim.
 		narrowLabel: "hybrid_search",
 	})
 }
 
-// VectorSearch mirrors Python vector_search. It is the pure
-// vector entry point: with no embedder it returns nothing (Python bails when
-// embd_mdl is unset), otherwise the vector weight is 1.0 and compiled rows are
-// excluded.
+// VectorSearch: the pure vector entry point. With no embedder it returns nothing,
+// otherwise the vector weight is 1.0 and compiled rows are excluded.
 func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	if !deps.HasEmbedder {
 		return nil, nil
@@ -866,12 +778,12 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 		logLabel:        "Vector search",
 		logVerb:         "Searching by meaning for",
 		logKeywords:     true,
-		logExtra:        false, // Python vector_search logs nothing but its searching line (:215)
+		logExtra:        false, // the vector leg logs nothing but its searching line
 		narrowLabel:     "Vector search",
 	})
 }
 
-// BM25Search mirrors Python bm25_search. Keyword-only: the
+// BM25Search: Keyword-only: the
 // vector weight is unconditionally 0, the similarity floor is 0.0, and compiled
 // rows are excluded.
 func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
@@ -880,13 +792,12 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		threshold:       BM25SearchDefaultSimilarityThreshold,
 		excludeCompiled: true,
 		promoteChildren: true,
-		// Python bm25_search passes embd_mdl=None (search.py:260-275): keyword
-		// only, NO dense leg at all — not even a weight-0 one.
+		// Keyword only, NO dense leg at all — not even a weight-0 one.
 		disableVector: true,
 		logLabel:      "BM25 search",
 		logVerb:       "Searching by keyword for",
 		logKeywords:   true,
-		logExtra:      false, // Python bm25_search logs nothing but its searching line (:252)
+		logExtra:      false, // the bm25 leg logs nothing but its searching line
 		narrowLabel:   "BM25 search",
 	})
 }
@@ -1121,13 +1032,12 @@ func TermSeat(ctx context.Context, deps SearchDeps, base SearchParams, term stri
 	return nil, false
 }
 
-// GrepSearch mirrors Python grep_search: a keyword-first locate
-// that runs bm25_search and then narrows the prose candidates to the term-grep
-// window (regex locate + short line-context, like Python's _narrow_by_terms).
+// GrepSearch: a keyword-first locate that runs the bm25 leg and then narrows the prose
+// candidates to the term-grep window (regex locate + short line-context).
 //
-// Behaviour, faithful to Python:
-//   - BM25 candidate pool built from the query's extracted terms — or the
-//     explicit keywords hint when one is supplied (search.py:grep_search) — never a
+// Behaviour:
+//   - BM25 candidate pool built from the query's extracted terms — or the explicit
+//     keywords hint when one is supplied — never a
 //     hard filter: the pool still spans the corpus.
 //   - Table chunks pass through UN-narrowed (full text): the grep window would
 //     truncate them to a header-only snippet and hide mid/late-table answer rows.
@@ -1138,8 +1048,8 @@ func TermSeat(ctx context.Context, deps SearchDeps, base SearchParams, term stri
 func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
 	query := strings.TrimSpace(p.Question)
-	// Python logs the locate line BEFORE extracting the terms and before the
-	// empty-query bail-out (search.py:grep_search).
+	// The locate line is logged BEFORE the terms are extracted and before the
+	// empty-query bail-out.
 	logger.Printf("%s", searchLogLine("Grep search", "Keyword-first locate for", query))
 	if query == "" {
 		return nil, nil
@@ -1171,14 +1081,13 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	if pattern == nil {
 		weave = GrepWordsFromQuery(query)
 	}
-	// Python then delegates to bm25_search with an explicit keywords hint
-	// (search.py:grep_search): `hint = keywords if keywords else " ".join(terms)`.
-	// A long question buries its proper nouns under stopwords; without the hint
-	// the noun chunk never enters the candidate pool and grep has nothing to
-	// locate. It is a SOFT boost — the pool still spans the corpus. Delegating
-	// (rather than calling runSearch) also reproduces Python's log sequence:
-	// bm25_search logs "[BM25 search] Searching by keyword for …" and narrows
-	// under that same tag (:252 / :288), then GrepSearch logs its own two lines.
+	// The grep leg then delegates to the bm25 leg with an explicit keywords hint: the
+	// caller's keywords when supplied, else the extracted terms joined. A long question
+	// buries its proper nouns under stopwords; without the hint the noun chunk never enters
+	// the candidate pool and grep has nothing to locate. It is a SOFT boost — the pool
+	// still spans the corpus. Delegating (rather than calling runSearch) is also what
+	// produces the log sequence: the bm25 leg logs its searching line and narrows under
+	// that tag, then this leg logs its own two lines.
 	hint := strings.TrimSpace(p.Keywords)
 	if hint == "" {
 		hint = strings.Join(terms, " ")
@@ -1198,7 +1107,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		bp.Keywords = hint
 	}
 	chunks, docAggs := retrieveGrepCandidates(ctx, deps, bp, query, weave)
-	// Python: `if not chunks or not terms: return res` (search.py:grep_search).
+	// No candidates or no terms: there is nothing to locate.
 	if len(chunks) == 0 || len(terms) == 0 {
 		return chunks, docAggs
 	}
@@ -1255,9 +1164,9 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	out := make([]map[string]any, 0, len(table)+len(kept))
 	out = append(out, table...)
 	out = append(out, kept...)
-	// Python logs the post-narrow size and the per-doc breakdown for the
-	// combined table+prose set (search.py:grep_search / :469) — the grep leg's own two
-	// lines, which is why runSearch keeps logExtra off for it.
+	// The post-narrow size and the per-doc breakdown are logged for the combined
+	// table+prose set — the grep leg's own two lines, which is why runSearch keeps
+	// logExtra off for it.
 	chars := 0
 	for _, c := range out {
 		chars += len(ChunkTextOf(c))
@@ -1267,50 +1176,41 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	return out, docAggs
 }
 
-// RetrieveSearch mirrors Python RAGTools.retrieve, the
-// low/naive direct pass. Unlike HybridSearch it honours UsingEmbedding and does
-// NOT exclude compiled rows (Python's retrieve has no must_not compile_kwd).
+// RetrieveSearch: the low/naive direct pass. Unlike HybridSearch it honours
+// UsingEmbedding and does NOT exclude compiled rows.
 func RetrieveSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
 		weight:          resolveVectorWeight(deps, ChannelRetrieve),
 		threshold:       floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
 		excludeCompiled: false,
 		promoteChildren: true,
-		// Python RAGTools.retrieve: embd_mdl = self.embed_mdl if using_embedding
-		// else None (agentic_rag.py:retrieve) — no dense leg without the flag.
+		// No dense leg without the flag.
 		disableVector: !deps.UsingEmbedding,
-		// Go-only identity: Python's L1 RAGTools.retrieve
-		// logs nothing of its own, so there is no Python string to mirror. The
-		// tag stays human-readable and the extra lines stay on, because this is
-		// the only trace the low-mode direct pass leaves.
+		// This pass has its own identity line: the tag stays human-readable and the extra
+		// lines stay on, because this is the only trace the low-mode direct pass leaves.
 		logLabel:    "Retrieve",
 		logVerb:     "Searching the knowledge base for",
 		logKeywords: true,
 		logExtra:    true,
 		narrowLabel: "retrieve",
-		// Python RAGTools.retrieve is the ONLY entry point that passes
-		// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668).
+		// The ONLY entry point that passes the question-type tag boost.
 		rankFeature: true,
 	})
 }
 
-// webSearchMaxChunks is the hard ceiling on admitted web passages per call:
-// Python action_session._exec_web_search caps each query's chunks at [:8] and
-// runs at most two queries, so 16 is the maximum.
+// webSearchMaxChunks is the hard ceiling on admitted web passages per call: each query
+// is capped at 8 chunks and at most two queries run, so 16 is the maximum.
 const webSearchMaxChunks = 16
 
-// WebSearchTool mirrors Python web_search / _exec_web_search
-// (action_session.py:_exec_web_search): the `web_search` tool. The web_search tool schema
-// takes a 1-2 element array of query strings (see webSearchToolSpec), so args is
-// the positional query list, not a key/value object. Results share the RAGFlow
-// chunk shape so they merge into the SAME shared evidence pool as corpus hits
-// (Python _exec_web_search admits every web chunk via _admit_evidence), and the
-// model sees the same REDUNDANT/OK/MISS outcome as the corpus tools.
+// WebSearchTool: the `web_search` tool. Its schema takes a 1-2 element array of query
+// strings (see webSearchToolSpec), so args is the positional query list, not a key/value
+// object. Results share the RAGFlow chunk shape so they merge into the SAME shared
+// evidence pool as corpus hits, and the model sees the same REDUNDANT/OK/MISS outcome as
+// the corpus tools.
 func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (ToolOutcome, error) {
 	if deps.WebSearch == nil {
-		// Mirror Python action_session._exec_web_search: an absent provider is
-		// an infra ERROR with an explicit do-not-retry note (returning MISS
-		// would let the model retry the same dead tool and burn turns), never a
+		// An absent provider is an infra ERROR with an explicit do-not-retry note (returning
+		// MISS would let the model retry the same dead tool and burn turns), never a
 		// query-level miss.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
@@ -1322,16 +1222,13 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			Metrics: map[string]any{},
 		}, nil
 	}
-	// Python execute_tool (:1159) — _exec_web_search(tools, _arg_query_list(args, 2)):
-	// the query list is read from args["query"] (_arg_query_list, :938-944). The
-	// old ""-key read never found anything, so every call with a proper
-	// {"query": [...]} payload was rejected as bad_args.
+	// The query list is read from args["query"]. The old ""-key read never found anything,
+	// so every call with a proper {"query": [...]} payload was rejected as bad_args.
 	queries := toolStringList(args, "query")
 	if len(queries) == 0 {
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
-	// Cap at two queries (Python action_session.execute_tool passes
-	// _arg_query_list(args, 2) for web_search).
+	// Cap at two queries.
 	if len(queries) > 2 {
 		queries = queries[:2]
 	}
@@ -1347,34 +1244,32 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			Metrics: map[string]any{},
 		}, nil
 	}
-	// Python caps each query's chunks at [:8]; with up to two queries that is a
-	// hard ceiling of 16 web passages per tool call.
+	// Each query's chunks are capped at 8; with up to two queries that is a hard ceiling of
+	// 16 web passages per tool call.
 	if len(results) > webSearchMaxChunks {
 		results = results[:webSearchMaxChunks]
 	}
 
-	// Build RAGFlow-shaped chunk maps and admit them to the shared evidence pool
-	// (Python _admit_evidence), mirroring the corpus tools' merge + outcome.
-	// Python de-duplicates web passages across the (up to two) queries by
-	// chunk_id; the Go provider surfaces raw strings, so de-dup by content to
-	// keep the same "each distinct passage appears once" behaviour.
+	// Build RAGFlow-shaped chunk maps and admit them to the shared evidence pool, mirroring
+	// the corpus tools' merge + outcome. Corpus passages are de-duplicated across the (up to
+	// two) queries by chunk_id; the web provider surfaces raw strings, so de-dup by content
+	// to keep the same "each distinct passage appears once" behaviour.
 	var payload []any
 	var evidenceIDs []string
 	newChunks := 0
 	seen := make(map[string]bool, len(results))
-	// The whole batch is ONE critical section (Kbinfos.Admit): Python's admit loop
-	// has no await (the retrieval itself is awaited above it), so two sessions can
-	// never interleave here.
+	// The whole batch is ONE critical section (Kbinfos.Admit): the admit loop has no await
+	// (the retrieval itself is awaited above it), so two sessions can never interleave
+	// here.
 	deps.KB.Admit(func(p *PoolAdmitter) {
-		// Python's claim-coverage skip (:672-676) is provably unreachable here:
-		// web passages carry synthetic "web_N" ids, which no claim's
-		// source_chunk_ids can reference.
+		// The claim-coverage skip is provably unreachable here: web passages carry synthetic
+		// "web_N" ids, which no claim's source_chunk_ids can reference.
 		for i, r := range results {
 			if r == "" || seen[r] {
 				continue
 			}
-			// Python _admit_evidence early-stops at the pool cap, BEFORE it records
-			// the chunk as seen, so a rejected passage is retried once room frees.
+			// Admission early-stops at the pool cap, BEFORE the chunk is recorded as seen, so
+			// a rejected passage is retried once room frees.
 			if p.Full() {
 				continue
 			}
@@ -1392,11 +1287,10 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			if p.Add(c) {
 				newChunks++
 			}
-			// Evidence references the chunk id (Python ids.append(cid)), not a pool
-			// position.
+			// Evidence references the chunk id, not a pool position.
 			evidenceIDs = append(evidenceIDs, chunkID)
-			// Passage shape from _admit_evidence(include_doc_id=False): {"id","content"},
-			// non-table text cut to 1200 code points (plain slice, no ellipsis).
+			// Passage shape: {"id","content"} (no doc_id), non-table text cut to 1200 code
+			// points (plain slice, no ellipsis).
 			content := r
 			if !IsTableChunk(c) {
 				content = truncateRunes(content, 1200)
@@ -1420,19 +1314,16 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 	}, nil
 }
 
-// list_chunks deep-read caps (mirror Python action_session.py / tools/search.py).
+// list_chunks deep-read caps.
 const (
-	// listChunksMaxDeep caps the deep-read pool admission (Python
-	// tools/search.py _LIST_CHUNKS_MAX_CHUNKS = 80).
+	// listChunksMaxDeep caps the deep-read pool admission.
 	listChunksMaxDeep = 80
-	// listChunksMaxOut caps the model-facing passage list (Python
-	// action_session.py _exec_list_chunks [:30]).
+	// listChunksMaxOut caps the model-facing passage list.
 	listChunksMaxOut = 30
 )
 
-// listChunks deep-reads one document's FULL text and admits it to the shared
-// evidence pool — the mirror of Python _exec_list_chunks
-// → tools.list_chunks → tools.fetch_full_document.
+// listChunks deep-reads one document's FULL text and admits it to the shared evidence
+// pool.
 //
 // The read goes through deps.DocChunks (the same reader fetch_full_document /
 // summarize_document use), not the evidence pool, so navigate_tree can route a
@@ -1446,14 +1337,13 @@ const (
 func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (ToolOutcome, error) {
 	docID := argString(args, "doc_id")
 	if docID == "" {
-		// Mirror Python list_chunks("") → empty → _search_outcome → MISS.
+		// An empty doc_id is a query-level MISS.
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0}}, nil
 	}
 
 	var chunks []map[string]any
 	if e.deps.DocChunks != nil {
-		// Real doc-store deep read (Python fetch_full_document), budgeted by the
-		// model window like Python's max_length gate.
+		// Real doc-store deep read, budgeted by the model window.
 		deep, _ := fetchFullDocument(ctx, e.deps, docID, e.req.MaxLength)
 		if len(deep) > listChunksMaxDeep {
 			deep = deep[:listChunksMaxDeep]
@@ -1469,22 +1359,20 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	}
 
 	if len(chunks) == 0 {
-		// Unknown doc_id / out-of-scope doc, or nothing readable: a query-level
-		// MISS (Python list_chunks returns {"chunks": []} and _search_outcome
-		// turns that into MISS/no_doc — there is no "graceful OK empty" branch).
+		// Unknown doc_id / out-of-scope doc, or nothing readable: a query-level MISS. There
+		// is no "graceful OK empty" branch.
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0, "new_evidence": 0}}, nil
 	}
 
-	// Python _seed_evidence CREATES the pool when it
-	// is absent, so the admittance below always has somewhere to write.
+	// The pool is CREATED when absent, so the admittance below always has somewhere to
+	// write.
 	if e.deps.KB == nil {
 		e.deps.KB = &Kbinfos{}
 	}
 
-	// Python _exec_list_chunks (:809-833) admits only the first listChunksMaxOut
-	// (30) of the listChunksMaxDeep (80) fetched passages: no-id chunks and in-call
-	// duplicates are skipped, evidence references the chunk id, and only chunks new
-	// to the shared pool are appended.
+	// Only the first listChunksMaxOut (30) of the listChunksMaxDeep (80) fetched passages
+	// are admitted: no-id chunks and in-call duplicates are skipped, evidence references
+	// the chunk id, and only chunks new to the shared pool are appended.
 	admit := chunks
 	if len(admit) > listChunksMaxOut {
 		admit = admit[:listChunksMaxOut]
@@ -1493,35 +1381,33 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	var payload []any
 	var evidenceIDs []string
 	newChunks := 0
-	// The batch is ONE critical section (Kbinfos.Admit): Python's admit stretch
-	// has no await, so two sessions can never interleave here, and the pool-side
-	// dedup must see the LIVE pool rather than a snapshot taken upfront.
+	// The batch is ONE critical section (Kbinfos.Admit): the admit stretch has no await, so
+	// two sessions can never interleave here, and the pool-side dedup must see the LIVE
+	// pool rather than a snapshot taken upfront.
 	e.deps.KB.Admit(func(p *PoolAdmitter) {
 		covered := p.ClaimCoveredIDs()
 		for _, c := range admit {
 			cid := ChunkIDOf(c)
 			if cid == "" {
-				// Python _exec_list_chunks skips a blank cid in the caller, BEFORE
-				// _admit_evidence.
+				// A blank cid is skipped in the caller, BEFORE admission.
 				continue
 			}
-			// Python _admit_evidence early-stops at the pool cap, BEFORE the
-			// per-call dedup.
+			// Admission early-stops at the pool cap, BEFORE the per-call dedup.
 			if p.Full() {
 				continue
 			}
 			if seen[cid] {
 				continue
 			}
-			// Python :672-676 — already quoted verbatim by a pooled claim →
+			// already quoted verbatim by a pooled claim →
 			// skip the full passage (table chunks exempt).
 			if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
 				continue
 			}
 			seen[cid] = true
 			evidenceIDs = append(evidenceIDs, cid)
-			// Shape like _admit_evidence(include_doc_id=False): {"id","content"} with
-			// non-table text cut to 1200 code points (a plain slice, no ellipsis).
+			// Pool shape: {"id","content"} (no doc_id), with non-table text cut to 1200 code
+			// points (a plain slice, no ellipsis).
 			content := ChunkTextOf(c)
 			if !IsTableChunk(c) {
 				content = truncateRunes(content, 1200)
@@ -1536,10 +1422,9 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	if len(payload) == 0 {
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0, "new_evidence": 0}}, nil
 	}
-	// Python _exec_list_chunks (:928-934) — a deep read COVERS its claims: once
-	// the full chunk text is in the pool, the claim's 1200-char quote of the
-	// same passage is duplicated tokens in every later prompt. Retire claim
-	// pseudo-chunks whose source chunk was just read.
+	// A deep read COVERS its claims: once the full chunk text is in the pool, the claim's
+	// 1200-char quote of the same passage is duplicated tokens in every later prompt.
+	// Retire claim pseudo-chunks whose source chunk was just read.
 	if retired := e.deps.KB.RetireClaimsCoveredBy(evidenceIDs); retired > 0 {
 		searchLogger(e.deps).Printf("[list_chunks] retired %d covered claim(s) from the evidence pool", retired)
 	}
@@ -1556,7 +1441,7 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	}, nil
 }
 
-// SearchCacheKey mirrors Python _search_cache_key: the tuple of what actually
+// SearchCacheKey: the tuple of what actually
 // determines a retrieval result. Scope and limits are part of the key so only a
 // genuinely identical query is served from cache.
 func SearchCacheKey(effectiveQuery string, targetIDs []string, topN int, docScope []string) string {
@@ -1572,17 +1457,14 @@ func normalizeSpace(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
-// docInDatasets reports whether docID belongs to the datasets being searched,
-// mirroring the `kb_id.in_(self.kb_ids)` guard of Python
-// RAGTools._resolve_doc_tenant.
+// docInDatasets reports whether docID belongs to the datasets being searched.
 //
 // The second result is false only when ownership could NOT be determined — no
 // verifier injected, or the lookup errored. It is true when the lookup
 // completed, including the "document absent from the bound datasets" case:
 // KnownDocIDs returns a known-subset map, so a foreign/stale doc_id yields an
-// empty map (never an error), and is reported as belongs=false / verified=true
-// so the caller rejects it instead of reading it unscoped — exactly as Python
-// returns None from _resolve_doc_tenant and refuses to fetch.
+// empty map (never an error), and is reported as belongs=false / verified=true so the
+// caller rejects it rather than fetching it unscoped.
 func docInDatasets(ctx context.Context, deps SearchDeps, docID string) (belongs, verified bool) {
 	if deps.DocIDVerifier == nil || docID == "" {
 		return true, false
@@ -1595,7 +1477,7 @@ func docInDatasets(ctx context.Context, deps SearchDeps, docID string) (belongs,
 	return known[docID], true
 }
 
-// scopedDocIDs mirrors Python RAGTools.scoped_doc_ids,
+// scopedDocIDs
 // the ceiling every search entry point applies before touching the doc store:
 // with no session scope the caller's scope passes through; with a session scope
 // an absent caller scope falls back to it and an explicit one is INTERSECTED
@@ -1621,26 +1503,23 @@ func scopedDocIDs(sessionScope, scope []string) []string {
 	return out
 }
 
-// resolveDocScope mirrors Python retrieve:620-635 — apply the session doc_scope
-// ceiling, then keep only the requested document ids that actually belong to the
-// session's datasets.
+// resolveDocScope: apply the session doc_scope ceiling, then keep only the requested
+// document ids that actually belong to the session's datasets.
 //
-// The ceiling is Python's scoped_doc_ids: a None request scope falls back to the
-// session's fixed doc_scope (deps.DocScope), and an explicit request scope is
-// intersected with it, so a session bound to a fixed document set keeps
-// searching within it whichever scope the tool passes.
+// The ceiling: a None request scope falls back to the session's fixed doc_scope
+// (deps.DocScope), and an explicit request scope is intersected with it, so a session
+// bound to a fixed document set keeps searching within it whichever scope the tool
+// passes.
 //
-// Three outcomes are tuned to match Python, because the document scope is
-// supplied by model-generated tool arguments and must never silently change what
-// is searched:
+// Three outcomes are deliberate, because the document scope is supplied by
+// model-generated tool arguments and must never silently change what is searched:
 //
-//   - verification unavailable (no verifier injected, or it errored): the scope
-//     is passed through unchanged (fail open);
-//   - every candidate unknown AND a fixed session base scope (self.doc_scope is
-//     not None): return an EMPTY result (Python retrieve:631-632 returns
-//     {"chunks": [], "doc_aggs": []}), never unfiltered retrieval;
-//   - every candidate unknown with NO session base scope: drop the scope and
-//     search UNFILTERED (Python retrieve:633-635 — doc_scope = None).
+//   - verification unavailable (no verifier injected, or it errored): the scope is
+//     passed through unchanged (fail open);
+//   - every candidate unknown AND a fixed session base scope: return an EMPTY result,
+//     never unfiltered retrieval;
+//   - every candidate unknown with NO session base scope: drop the scope and search
+//     UNFILTERED.
 //
 // The empty-vs-unfiltered distinction is encoded as a non-nil empty slice vs
 // nil: the backend treats a nil DocScope as "search everything" and a non-nil
@@ -1648,10 +1527,9 @@ func scopedDocIDs(sessionScope, scope []string) []string {
 func resolveDocScope(ctx context.Context, deps SearchDeps, scope, kbIDs []string, logger *log.Logger) []string {
 	scope = scopedDocIDs(deps.DocScope, scope)
 	if len(scope) == 0 && len(deps.DocScope) > 0 {
-		// The session ceiling removed every requested id. Python's scoped_doc_ids
-		// yields an empty list here, which its downstream `if doc_scope:` reads as
-		// "no filter" and searches unfiltered; Go deliberately keeps the safer
-		// "match nothing" instead of letting a model-supplied scope escape the
+		// The session ceiling removed every requested id. Passing the empty scope through
+		// would be read as "no filter" and search unfiltered; Go deliberately keeps the
+		// safer "match nothing" instead of letting a model-supplied scope escape the
 		// session's document restriction.
 		return []string{}
 	}
@@ -1666,10 +1544,9 @@ func resolveDocScope(ctx context.Context, deps SearchDeps, scope, kbIDs []string
 		}
 	}
 	if len(candidates) == 0 {
-		// No usable candidate ids (request scope None and no session base scope,
-		// or only empty strings): Python leaves doc_scope = None and searches
-		// unfiltered. Return nil, not an empty set, so the backend does not filter
-		// to zero documents.
+		// No usable candidate ids (request scope None and no session base scope, or only
+		// empty strings): search unfiltered. Return nil, not an empty set, so the backend
+		// does not filter to zero documents.
 		return nil
 	}
 	known, err := deps.DocIDVerifier.KnownDocIDs(ctx, kbIDs, candidates)
@@ -1684,11 +1561,10 @@ func resolveDocScope(ctx context.Context, deps SearchDeps, scope, kbIDs []string
 		}
 	}
 	if len(valid) == 0 {
-		// Every candidate is unknown. Python retrieve:631-635 distinguishes two
-		// outcomes by the SESSION base scope:
-		//   - a fixed session doc_scope (self.doc_scope is not None) → return an
-		//     empty result (no documents match);
-		//   - no session base scope → fall back to UNFILTERED retrieval (None).
+		// Every candidate is unknown. Two outcomes are distinguished by the SESSION base
+		// scope:
+		//   - a fixed session doc_scope → return an empty result (no documents match);
+		//   - no session base scope → fall back to UNFILTERED retrieval.
 		if len(deps.DocScope) > 0 {
 			return []string{}
 		}
@@ -1698,10 +1574,9 @@ func resolveDocScope(ctx context.Context, deps SearchDeps, scope, kbIDs []string
 	return valid
 }
 
-// DocAggs builds the per-document aggregation from a chunk list: each entry
-// carries doc_id (the key direct.py dedups on) plus the counts the reporting layer
-// reads. Python gets these from the retriever (retrieval(..., aggs=True)); the Go
-// Retriever interface returns only chunks, so they are derived here.
+// DocAggs builds the per-document aggregation from a chunk list: each entry carries
+// doc_id (the key the reporting layer dedups on) plus the counts it reads. The Retriever
+// interface returns only chunks, so the aggregations are derived here.
 func DocAggs(chunks []map[string]any) []map[string]any {
 	if len(chunks) == 0 {
 		return nil
@@ -1761,8 +1636,8 @@ func docStatsLine(chunks []map[string]any) string {
 
 // Normalisation of web-search payloads.
 //
-// Mirrors the shaping the Python harness applies to _exec_web_search results so
-// they enter kbinfos with the same field names every other chunk carries.
+// Web results are shaped so they enter kbinfos with the same field names every other
+// chunk carries.
 
 // normalizeWebResults converts a raw web-search JSON payload into chunk maps.
 // Accepts either {"chunks": [...]} or {"results": [...]}; entries without both a
@@ -1820,31 +1695,27 @@ func firstNonEmpty(ss ...string) string {
 	return ""
 }
 
-// ---------------------------------------------------------------------------
-// Per-request retrieval cache (Python tools.search_cache).
+// Per-request retrieval cache.
 //
-// The Python side keeps a dict on the tools object keyed by the search
-// parameters; an identical (query, scope, limits) search is served from cache
-// instead of hitting the retriever again. Go attaches the same cache to
-// Kbinfos and exposes it as methods here so the search tool and its cache live
-// in one file, mirroring tools/search.py.
-// ---------------------------------------------------------------------------
+// The cache is keyed by the search parameters; an identical (query, scope, limits)
+// search is served from cache instead of hitting the retriever again. It is attached to
+// Kbinfos and exposed as methods here, so the search tool and its cache live in one
+// file.
 
-// searchCache is the per-request retrieval cache. Mirrors Python
-// tools.search_cache (a dict on the tools object).
+// searchCache is the per-request retrieval cache.
 type searchCache struct {
 	mu      sync.Mutex
 	entries map[string]cachedSearch
 }
 
-// cachedSearch is one cache entry. Mirrors a Python tools.search_cache value.
+// cachedSearch is one cache entry.
 type cachedSearch struct {
 	chunks []map[string]any
 	aggs   []map[string]any
 }
 
 // SearchCacheLoad returns a cached retrieval for key, or (nil, nil, false) when
-// the key is absent. Mirrors Python `if cache_key in cache: return cache[cache_key]`.
+// the key is absent.
 func (k *Kbinfos) SearchCacheLoad(key string) ([]map[string]any, []map[string]any, bool) {
 	c := k.ensureCache()
 	c.mu.Lock()
@@ -1856,8 +1727,7 @@ func (k *Kbinfos) SearchCacheLoad(key string) ([]map[string]any, []map[string]an
 	return e.chunks, e.aggs, true
 }
 
-// SearchCacheStore records a retrieval under key. Mirrors Python
-// `cache[cache_key] = {...}`.
+// SearchCacheStore records a retrieval under key.
 func (k *Kbinfos) SearchCacheStore(key string, chunks, aggs []map[string]any) {
 	c := k.ensureCache()
 	c.mu.Lock()

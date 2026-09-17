@@ -31,28 +31,23 @@ import (
 
 // LLM-call instrumentation for the harness.
 //
-// Mirrors Python harness/stats.py. Every phase of the pipeline (route /
-// planner / orchestrator / direct / sufficiency / finalize, ...) drives the LLM,
-// and each call is attributed to the phase that was executing. Phase wall-clock
-// is measured here rather than summing LLM latency, which is meaningless when
-// calls run in parallel.
+// Every phase of the pipeline (route / planner / orchestrator / direct / sufficiency /
+// finalize, ...) drives the LLM, and each call is attributed to the phase that was
+// executing. Phase wall-clock is measured here rather than summing LLM latency, which is
+// meaningless when calls run in parallel.
 //
-// Python stores the current phase and the active stats in ContextVars so
-// parallel asyncio tasks get independent accounting. Go has no ContextVars; the
-// same isolation is achieved by carrying both on the context.Context, which is
-// already per-request (and per-goroutine when a phase fans out).
+// The current phase and the active stats are carried on the context.Context, which is
+// already per-request (and per-goroutine when a phase fans out) — that is what gives
+// parallel work independent accounting.
 
 // Canonical pipeline order for the per-phase usage table. Phases are listed in
 // execution order so the log reads top-to-bottom like the actual flow,
 // regardless of which phase first touched the counters. Phases not in this list
 // are appended afterwards, alphabetically.
-// This list matches Python _PHASE_ORDER (harness/stats.py) EXACTLY, so a Go run
-// and a Python run emit comparable usage tables. Python's _PHASE_ORDER omits
-// dynamic/draft/sca/rewrite (they are real @in_phase phases in Python too, but
-// not in its canonical list, so Python appends them alphabetically at the end);
-// compute is a Go-only phase (arithmetic.Compute). The snapshot/Log logic below
-// re-appends any phase not present here alphabetically, mirroring Python, so all
-// of them still appear in both runs in the same relative position.
+// This list is the canonical order: it omits dynamic/draft/sca/rewrite (real phases, but
+// not part of the canonical list) and compute is a this-file-only phase
+// (arithmetic.Compute). The snapshot/Log logic below re-appends any phase not present here
+// alphabetically, so all of them still appear in the same relative position.
 var phaseOrder = []string{
 	"formalize",
 	"route",
@@ -66,7 +61,7 @@ var phaseOrder = []string{
 	"finalize",
 }
 
-// Phase names used by the harness (Python @in_phase labels).
+// Phase names used by the harness.
 const (
 	PhaseFormalize     = "formalize"
 	PhaseRoute         = "route"
@@ -139,12 +134,11 @@ func NewLLMUsageStats() *LLMUsageStats {
 	}
 }
 
-// elapsedMs returns a monotonic-aware wall duration in milliseconds. Python's
-// stats use time.perf_counter() (a monotonic clock); Go's time.Time carries a
-// monotonic reading too as long as we keep the struct (time.Now().UnixNano()
-// would strip it and expose wall-clock step-backs), so we subtract the stored
-// start time directly. This matches perf_counter's guarantee that phase/round
-// durations never go negative when the system clock is stepped backwards.
+// elapsedMs returns a monotonic-aware wall duration in milliseconds. Go's time.Time carries
+// a monotonic reading as long as the struct is kept (time.Now().UnixNano() would strip it
+// and expose wall-clock step-backs), so the stored start time is subtracted directly. That
+// guarantees phase/round durations never go negative when the system clock is stepped
+// backwards.
 func elapsedMs(now, start time.Time) float64 {
 	return now.Sub(start).Seconds() * 1000.0
 }
@@ -208,9 +202,8 @@ func (s *LLMUsageStats) RecordRoundClaims(phaseName string, count int) {
 	s.roundClaimCounts[phaseName] = counts
 }
 
-// notePhaseEnter / notePhaseExit implement the re-entrancy rule from Python:
-// the same phase may be wrapped several times along one call path, and only the
-// outermost interval is timed.
+// notePhaseEnter / notePhaseExit implement the re-entrancy rule: the same phase may be
+// wrapped several times along one call path, and only the outermost interval is timed.
 func (s *LLMUsageStats) notePhaseEnter(phaseName string, entryRound int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -282,7 +275,7 @@ func (s *LLMUsageStats) notePhaseExit(phaseName string, entryRound int) {
 	}
 }
 
-// Snapshot mirrors Python LLMUsageStats.snapshot: rows keyed by phase in
+// Snapshot: rows keyed by phase in
 // canonical pipeline order.
 func (s *LLMUsageStats) Snapshot() map[string]map[string]any {
 	s.mu.Lock()
@@ -338,9 +331,7 @@ func (s *LLMUsageStats) Snapshot() map[string]map[string]any {
 	return rows
 }
 
-// ---------------------------------------------------------------------------
 // Context plumbing
-// ---------------------------------------------------------------------------
 
 type statsCtxKey struct{}
 type phaseCtxKey struct{}
@@ -359,9 +350,9 @@ func CurrentStats(ctx context.Context) *LLMUsageStats {
 	return nil
 }
 
-// WithProgress binds a per-request progress sink to ctx so every engine stage and
-// every search beneath it can forward tagged lines (Python think_log counterpart)
-// to the caller's live reasoning block. progress may be nil to disable.
+// WithProgress binds a per-request progress sink to ctx so every engine stage and every
+// search beneath it can forward tagged lines to the caller's live reasoning block. progress
+// may be nil to disable.
 func WithProgress(ctx context.Context, progress func(string)) context.Context {
 	return context.WithValue(ctx, progressCtxKey{}, progress)
 }
@@ -382,8 +373,8 @@ func CurrentPhase(ctx context.Context) string {
 	return "unknown"
 }
 
-// Phase mirrors Python's phase() context manager: it marks the enclosed block
-// as executing `name` and accrues its wall-clock into the bound stats.
+// Phase marks the enclosed block as executing `name` and accrues its wall-clock into the
+// bound stats.
 //
 // The returned func MUST be called when the block ends (defer it). Nesting the
 // same phase name is supported: only the outermost interval is timed, so the
@@ -403,14 +394,14 @@ func Phase(ctx context.Context, name string) (context.Context, func()) {
 	}
 }
 
-// InPhase mirrors Python's in_phase decorator: it runs fn inside Phase(name).
+// InPhase runs fn inside Phase(name).
 func InPhase(ctx context.Context, name string, fn func(context.Context) error) error {
 	ctx, done := Phase(ctx, name)
 	defer done()
 	return fn(ctx)
 }
 
-// RecordExternalResponse mirrors Python record_external_response: records a raw
+// RecordExternalResponse: records a raw
 // completion response that bypasses CountingInvoker, including token usage.
 // action_session calls this for the two raw model calls it makes directly
 // (action_session.py:_acompletion/1086).
@@ -438,26 +429,25 @@ func recordResponseUsage(stats *LLMUsageStats, phase string, usage *chat.Usage, 
 	}
 }
 
-// RecordRound mirrors Python record_round.
+// RecordRound
 func RecordRound(ctx context.Context, name string) {
 	if s := CurrentStats(ctx); s != nil {
 		s.RecordRound(name)
 	}
 }
 
-// RecordRoundClaims mirrors Python record_round_claims.
+// RecordRoundClaims
 func RecordRoundClaims(ctx context.Context, name string, count int) {
 	if s := CurrentStats(ctx); s != nil {
 		s.RecordRoundClaims(name, count)
 	}
 }
 
-// Log emits the per-phase usage table. Mirrors Python LLMUsageStats.log.
+// Log emits the per-phase usage table.
 //
-// With orchestrator-round data it expands hierarchically: each round repeats
-// its "orchestrator" row with the nested sub-phases (claim_research /
-// sufficiency / grounded) indented underneath, matching the Python rendering.
-// Phases outside the loop (route / planner / finalize) are listed flat.
+// With orchestrator-round data it expands hierarchically: each round repeats its
+// "orchestrator" row with the nested sub-phases (claim_research / sufficiency / grounded)
+// indented underneath. Phases outside the loop (route / planner / finalize) are listed flat.
 func (s *LLMUsageStats) Log(logger *log.Logger) {
 	rows := s.Snapshot()
 	if len(rows) == 0 {
@@ -492,8 +482,7 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 	sort.Strings(rest)
 	phases = append(phases, rest...)
 
-	// Per-round structure, read from the locked snapshot (Python reads
-	// self.round_phase_times_ms / self.round_times directly).
+	// Per-round structure, read from the locked snapshot.
 	orchRT := []float64{}
 	if orchRow, ok := rows[PhaseOrchestrator]; ok {
 		if v, ok := orchRow["round_times"].([]float64); ok {
@@ -518,8 +507,8 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 		fmt.Sprintf("  %-16s %7s %10s %12s %10s %10s", "phase", "llm_calls", "prompt_tok", "output_tok", "total_tok", "time(s)"),
 	}
 
-	// phaseLabel mirrors Python's phase_label: claim_research gets a
-	// "(N)" suffix with the round's claim count when known.
+	// phaseLabel: claim_research gets a "(N)" suffix with the round's claim count when
+	// known.
 	phaseLabel := func(p string, r map[string]any, roundIdx int) string {
 		label := p
 		if p == PhaseClaimResearch {
@@ -529,9 +518,8 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 		}
 		return label
 	}
-	// row mirrors Python's custom_row / row: the label is printed verbatim
-	// (orchestrator round headers pass a custom label), token columns come
-	// from rows[p]).
+	// row: the label is printed verbatim (orchestrator round headers pass a custom label),
+	// token columns come from rows[p].
 	row := func(indent, label, p string, tMs float64) string {
 		r := rows[p]
 		return fmt.Sprintf("%s%-16s %7d %10d %12d %10d %10.1f",
@@ -588,12 +576,11 @@ func joinLines(lines []string) string {
 	return out
 }
 
-// CountingInvoker mirrors Python CountingChatModel: it wraps a chat.Invoker and
+// CountingInvoker: it wraps a chat.Invoker and
 // records calls / failures / token usage against the phase carried on ctx.
 //
-// Unlike the Python proxy (which falls back to a bundle-wide stats object), the
-// Go version records only when stats are bound to the context — matching how
-// Python's _CURRENT_STATS resolution behaves for the innermost active stats.
+// Unlike a bundle-wide fallback, this records only when stats are bound to the context,
+// which is what gives the innermost active stats their accounting.
 type CountingInvoker struct {
 	Inner chat.Invoker
 	Stats *LLMUsageStats
@@ -626,13 +613,10 @@ func (c *CountingInvoker) Invoke(ctx context.Context, db *gorm.DB, req chat.Requ
 // AND is counted. Without this, StreamComplete's type assertion
 // (m.Invoker.(chat.StreamingInvoker)) fails on the wrapper and the caller falls
 // back to a one-shot (non-streaming) Invoke — losing both the stream and the
-// accounting. Mirrors Python CountingChatModel.async_chat_streamly /
-// async_chat_streamly_delta, which record usage in a finally block so the call
-// is counted even when the inner model raised (last_usage is None then, so
-// record_usage is a no-op — the same outcome as the success-only branch below).
+// accounting. Usage is recorded even when the inner model raised (no usage is reported
+// then, so the record step is a no-op — the same outcome as the success-only branch below).
 //
-// record_usage is taken from the returned *Response, mirroring Python's
-// _last_usage(self._chat_mdl). If the inner invoker is not itself a
+// Usage is taken from the returned *Response. If the inner invoker is not itself a
 // StreamingInvoker, we decline rather than silently downgrade to a blocking
 // Invoke, so callers keep their existing "fall back to the one-shot call"
 // behaviour.

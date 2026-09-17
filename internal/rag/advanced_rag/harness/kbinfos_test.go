@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// TestMergeSkipsAllWhenNoChunks mirrors Python _merge_kbinfos's early return:
+// TestMergeSkipsAllWhenNoChunks: early return:
 // `if not result or not result.get("chunks"): return`. When the incoming chunk
 // list is empty, neither chunks nor doc_aggs are merged, and the call returns
 // nil (no global indices contributed).
@@ -25,9 +25,9 @@ func TestMergeSkipsAllWhenNoChunks(t *testing.T) {
 	}
 }
 
-// TestMergeCollapsesEmptyDocIDAggs mirrors Python's doc_agg dedup: the dseen set
-// is built from the raw doc_id value, so a missing/None doc_id still enters the
-// set and a second empty-doc_id agg is dropped. Only the first is kept.
+// TestMergeCollapsesEmptyDocIDAggs: the dedup set is built from the raw doc_id value, so a
+// missing/empty doc_id still enters the set and a second empty-doc_id agg is dropped. Only the
+// first is kept.
 func TestMergeCollapsesEmptyDocIDAggs(t *testing.T) {
 	kb := &Kbinfos{}
 	added := kb.Merge(
@@ -45,8 +45,8 @@ func TestMergeCollapsesEmptyDocIDAggs(t *testing.T) {
 	}
 }
 
-// TestMergeDedupsSameDocID mirrors Python's exact-match dedup for real doc_ids,
-// independent of the empty bucket above.
+// TestMergeDedupsSameDocID covers the exact-match dedup for real doc_ids, independent of the
+// empty bucket above.
 func TestMergeDedupsSameDocID(t *testing.T) {
 	kb := &Kbinfos{}
 	kb.Merge([]map[string]any{{"id": "c1"}}, []map[string]any{{"doc_id": "x"}, {"doc_id": "x"}})
@@ -117,9 +117,8 @@ func TestMemoryAddKeepsDistinctTextOnlyChunks(t *testing.T) {
 // pool actually sees: one round's sessions run at the same time and share ONE
 // Kbinfos (SessionDeps.KB; RunSlotResearchPass starts them as goroutines).
 //
-// Python gets both invariants for free — asyncio never preempts the await-free
-// admit stretch (_admit_evidence is a plain def, action_session.py:615, and the
-// per-query loop has no await, :691-700) — so Go has to lock the same stretch.
+// Both invariants used to come for free from cooperative scheduling — an await-free admit
+// stretch cannot be preempted — so the same stretch has to be locked here.
 //
 // The pool starts one chunk short of the cap, and both sessions offer the SAME
 // first chunk. Whichever batch wins the lock pools it — once — and the cap then
@@ -175,8 +174,7 @@ func TestKbinfosAdmitIsAtomic(t *testing.T) {
 }
 
 // TestToolCacheIsConcurrencySafe exercises the cache the way a round does: the
-// SAME instance handed to concurrent sessions (Python builds one dict per round,
-// agentic_rag_graph.py:1407, and passes it to every session, action_session.py:2030).
+// SAME instance handed to concurrent sessions (one cache per round, passed to every session).
 // Run under -race this is what a bare map cannot survive — concurrent map writes
 // are a fatal error in Go, not merely a race report.
 func TestToolCacheIsConcurrencySafe(t *testing.T) {

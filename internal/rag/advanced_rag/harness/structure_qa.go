@@ -29,22 +29,20 @@ import (
 
 // Ask the chat model to answer a question from a compiled-structure outline.
 //
-// Mirrors Python harness/structure_qa.py. Both Go navigation paths that read
-// compiled rows render entities + relations into the same compact outline, ask
-// the model whether that outline alone answers the question, and use the
-// returned relevant_entities to pull the underlying source chunks even when the
-// outline is NOT sufficient (so evidence still flows back to the caller).
+// Both navigation paths that read compiled rows render entities + relations into the same
+// compact outline, ask the model whether that outline alone answers the question, and use the
+// returned relevant_entities to pull the underlying source chunks even when the outline is NOT
+// sufficient (so evidence still flows back to the caller).
 //
 // Lives apart from navigation.go because it is pure prompt/render work with no
 // store access, and because both callers would otherwise import it from a file
 // that in turn imports them.
 
-// structureQATemperature pins Python structure_qa.py:79's
-// {"temperature": 0.2} for the outline-verdict call.
+// structureQATemperature pins the temperature for the outline-verdict call.
 const structureQATemperature = 0.2
 
 // RenderStructure renders a compiled structure (entities + relations) as a
-// compact outline for the prompt. Mirrors Python _render_structure:
+// compact outline for the prompt:
 //
 //	Entities:
 //	  - name (type): description
@@ -98,15 +96,13 @@ func RenderStructure(entities, relations []map[string]any) string {
 
 // AskStructure asks the chat model to answer `topic` from the rendered outline.
 //
-// Mirrors Python _ask_structure. Returns (answer, relevant_entity_names):
-// answer is empty unless the model judged the outline sufficient; the names are
-// always returned so the caller can pull the underlying source chunks. `noun`
+// Returns (answer, relevant_entity_names): answer is empty unless the model judged the
+// outline sufficient; the names are always returned so the caller can pull the underlying
+// source chunks. `noun`
 // is the display noun ("catalog" / "mindmap" / "knowledge graph"); `label` is
-// the log tag. `model` is the request-scoped chat model (Python passes
-// tools.chat_mdl); a nil model means no model is available and the call skips,
-// mirroring Python's no-op when tools.chat_mdl is absent. Never raises: on any
-// chat/parse failure both results are empty, matching Python's except-return of
-// an empty verdict.
+// the log tag. `model` is the request-scoped chat model; a nil model means no model is
+// available and the call skips. Never raises: on any chat/parse failure both results are
+// empty.
 func AskStructure(ctx context.Context, model SessionModel, topic, noun, label string, entities, relations []map[string]any) (string, []string) {
 	if model == nil {
 		_LOG.Printf("[%s] structure QA skipped (no chat model)", label)
@@ -116,11 +112,8 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	rendered := RenderStructure(entities, relations)
 	user := fmt.Sprintf("Question:\n%s\n\n%s:\n%s\n\nOutput JSON:", topic, capitalizeWord(noun), rendered)
 
-	// Mirror Python _ask_structure:
-	//   message_fit_in(form_message(system, user), tools.chat_mdl.max_length)
-	// tools.chat_mdl.max_length is exposed via ContextLengthModel; when absent,
-	// the 8192 default (chat EffectiveContextLength) applies, matching Python's
-	// LLM.max_length defaulting when the model config omits max_tokens.
+	// The context length is exposed via ContextLengthModel; when absent, the 8192 default
+	// (chat.EffectiveContextLength) applies, i.e. when the model config omits it.
 	budget := 0
 	if cl, ok := model.(ContextLengthModel); ok {
 		budget = cl.ContextLength()
@@ -136,7 +129,7 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 		return "", nil
 	}
 	// FitMessages may prepend/trim a system message; re-extract it so the model
-	// call is exactly [system, user...] as Python sends msg[0] then msg[1:].
+	// call is exactly [system, user...].
 	if len(fitted) > 0 && fitted[0].Role == schema.System {
 		system = fitted[0].Content
 		fitted = fitted[1:]
@@ -144,8 +137,8 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	msgs := make([]schema.Message, 0, 1+len(fitted))
 	msgs = append(msgs, *schema.SystemMessage(system))
 	msgs = append(msgs, fitted...)
-	// Python hardcodes {"temperature": 0.2} for this node (structure_qa.py:79)
-	// — a stable verdict on a mechanical render, so it must not sample hot. The
+	// The temperature is pinned to 0.2 for this node: a stable verdict on a mechanical
+	// render, so it must not sample hot. The
 	// value is a pinned constant: every production carrier implements
 	// TemperatureModel (compile-time assertion on InvokerSessionModel), so the
 	// temperature is always sent; a carrier without per-call temperature
@@ -155,7 +148,7 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	if tm, ok := model.(TemperatureModel); ok {
 		resp, err = tm.CompleteWithTemperature(ctx, msgs, nil, structureQATemperature)
 	} else {
-		_LOG.Printf("[%s] model %T cannot carry per-call temperature; using its default (Python would send %v)", label, model, structureQATemperature)
+		_LOG.Printf("[%s] model %T cannot carry per-call temperature; using its default (wanted %v)", label, model, structureQATemperature)
 		resp, err = model.Complete(ctx, msgs, nil)
 	}
 	if err != nil {
@@ -201,10 +194,8 @@ func strAny(v any) string {
 	}
 }
 
-// capitalizeWord mirrors Python str.capitalize(): uppercase the first rune and
-// lowercase every remaining rune. Python lowercases the rest, so e.g.
-// "hELLo".capitalize() -> "Hello"; the previous Go version left the tail
-// untouched ("HELLO"), which diverged.
+// capitalizeWord uppercases the first rune and lowercases every remaining rune, so e.g.
+// "hELLo" -> "Hello"; leaving the tail untouched produced "HELLO", which diverged.
 func capitalizeWord(s string) string {
 	if s == "" {
 		return s

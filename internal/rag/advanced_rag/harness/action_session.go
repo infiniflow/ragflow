@@ -42,31 +42,37 @@ import (
 	"ragflow/internal/common"
 )
 
-// action_session.go consolidates the Go port of Python harness/action_session.py
-// that was previously split across sessiontypes.go, extract.go, toolschema.go,
-// run.go, navchain.go, and session.go. The split is preserved as clearly marked
-// section banners below; every symbol keeps its original name and behavior so
-// tool_executor.go and the tests are unaffected.
+// action_session.go consolidates what was previously split across sessiontypes.go,
+// extract.go, toolschema.go, run.go, navchain.go, and session.go. The split is preserved
+// as clearly marked section banners below; every symbol keeps its original name and
+// behavior so tool_executor.go and the tests are unaffected.
 //
-// The section ORDER mirrors Python action_session.py's source order
-// (helpers → classes → tool specs → executors → model seam → _SessionState →
-// nodes → nav prefix → entry points at the end), not a Go dependency order.
+// The section ORDER follows the stages of a session (helpers → classes → tool specs →
+// executors → model seam → session state → nodes → nav prefix → entry points at the end),
+// not a Go dependency order.
 
 // ===================== sessiontypes.go =====================
 // Slot-table models and the unified tool-result
 //
-// Mirrors Python harness/action_session.py:
-//   - Variable / State / Result  (lines 80-149)
-//   - tool status constants      (lines 157-162)
-//   - ToolOutcome                (lines 165-183)
-//   - apply_patch                (line 574)
+// The slot-table models and the unified tool result:
+//   - Variable / State / Result
+//   - tool status constants
+//   - ToolOutcome
+//   - ApplyPatch
 
 // Variable is one unknown entity to resolve. ID is immutable across patches.
 type Variable struct {
-	ID                int
-	Type              string
-	QuestionClues     []string
-	DiscoveredClues   []string
+	ID              int
+	Type            string
+	QuestionClues   []string
+	DiscoveredClues []string
+	// Alternates are claims this slot LOST a comparison to (see MergeSlotPatch) and
+	// keeps so they are not silently discarded: one slot holds one candidate, and the
+	// framework does not decide which claim is true — it stops throwing the other away.
+	// They are a FIELD and not a prefix inside DiscoveredClues because the record, the
+	// ledger and the merge all read them, and a fact three readers parse out of a
+	// string is a fact three parsers can disagree about.
+	Alternates        []string
 	Candidate         *string
 	CandidateStrength *float64
 	// Value is the TYPED candidate (see package slots): what this slot holds, as
@@ -84,10 +90,9 @@ type Variable struct {
 	//
 	// They exist because an enumeration cannot be bounded by what the model can
 	// recall: the corpus holds the truth, and the words the source uses are what
-	// reaches it. The runtime renders them into completeness queries and RUNS them
-	// (see ScanPatterns / RunCompletenessPass), and the sessions read what came back,
-	// so the tail of the list is a property of the corpus rather than of the model's
-	// memory.
+	// reaches it. The runtime asks the corpus with them and RUNS the enumeration
+	// (see Coverage / EnumerateCoverage), and the sessions read what came back, so the
+	// tail of the list is a property of the corpus rather than of the model's memory.
 	Terms []string
 	// Subject is WHO the act is about, declared next to the act words ("关羽"). The
 	// pattern asks for subject AND act together, because an act word on its own has a
@@ -108,7 +113,7 @@ func (v Variable) Typed() slots.Value {
 	return slots.Value{}
 }
 
-// Brief mirrors Python Variable.brief: one-line rendering for prompts.
+// Brief: one-line rendering for prompts.
 func (v Variable) Brief() string {
 	if v.Candidate != nil && *v.Candidate != "" {
 		cs := "?"
@@ -120,7 +125,7 @@ func (v Variable) Brief() string {
 	return fmt.Sprintf("[%d] %s: EMPTY", v.ID, v.Type)
 }
 
-// Filled mirrors Python Variable.filled.
+// Filled
 func (v Variable) Filled() bool { return v.Candidate != nil && *v.Candidate != "" }
 
 // State is the slot table carried through one action session.
@@ -131,8 +136,8 @@ type State struct {
 	RetrievedEvidenceIDs []string
 }
 
-// NewState builds a State, generating its ID the way Python's
-// __post_init__ does: "<depth:03x>_<millis%1e8:08x><1 random byte:02x>".
+// NewState builds a State, generating its ID as
+// "<depth:03x>_<millis%1e8:08x><1 random byte:02x>".
 func NewState(vars []Variable, depth int, evidenceIDs []string) State {
 	s := State{
 		State:                vars,
@@ -145,7 +150,7 @@ func NewState(vars []Variable, depth int, evidenceIDs []string) State {
 	return s
 }
 
-// newStateID mirrors Python State.__post_init__'s id scheme.
+// newStateID: id scheme.
 func newStateID(depth int) string {
 	ms := time.Now().UnixMilli() % 100000000
 	var b [1]byte
@@ -153,7 +158,7 @@ func newStateID(depth int) string {
 	return fmt.Sprintf("%03x_%08x%02x", depth, ms, b[0])
 }
 
-// Unresolved mirrors Python State.unresolved: slots still missing a candidate.
+// Unresolved: slots still missing a candidate.
 func (s State) Unresolved() []Variable {
 	out := make([]Variable, 0, len(s.State))
 	for _, v := range s.State {
@@ -164,7 +169,7 @@ func (s State) Unresolved() []Variable {
 	return out
 }
 
-// ByID mirrors Python State.by_id. Returns nil when no slot carries vid.
+// ByID: Returns nil when no slot carries vid.
 func (s *State) ByID(vid int) *Variable {
 	for i := range s.State {
 		if s.State[i].ID == vid {
@@ -174,7 +179,7 @@ func (s *State) ByID(vid int) *Variable {
 	return nil
 }
 
-// Brief mirrors Python State.brief: e.g. "d0(++. )".
+// Brief: e.g. "d0(++.)".
 func (s State) Brief() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("d%d(", s.Depth))
@@ -189,7 +194,7 @@ func (s State) Brief() string {
 	return b.String()
 }
 
-// RenderSlots mirrors Python State.render_slots: the multi-line prompt block
+// RenderSlots: the multi-line prompt block
 // listing every slot, its clues, and any candidate found so far.
 func (s State) RenderSlots() string {
 	var lines []string
@@ -220,9 +225,9 @@ func (s State) RenderSlots() string {
 // Result is the outcome of ONE run_action session (one of NewStates /
 // FoundAnswer).
 //
-// Messages is typed as []schema.Message rather than Python's untyped list: the
-// session builds them through the eino constructors, and a typed slice keeps
-// the conversation inspectable (and testable) without type assertions.
+// Messages is typed as []schema.Message: the session builds them through the eino
+// constructors, and a typed slice keeps the conversation inspectable (and testable)
+// without type assertions.
 type Result struct {
 	Messages             []schema.Message
 	NewStates            []State
@@ -232,12 +237,12 @@ type Result struct {
 	TerminalPayload      map[string]any
 }
 
-// ApplyPatch mirrors Python apply_patch: ONLY existing
+// ApplyPatch: ONLY existing
 // ids are patchable; the mutable fields are candidate / candidate_strength /
 // discovered_clues. ID is immutable, so patches may not add variables.
 //
-// Returns nil when a patch entry is malformed (not a map, or missing "id") or
-// when nothing actually changed — both mirror Python's early returns.
+// Returns nil when a patch entry is malformed (not a map, or missing "id") or when
+// nothing actually changed.
 func ApplyPatch(base State, branchPatches []map[string]any) *State {
 	newVars := make([]Variable, 0, len(base.State))
 	for _, v := range base.State {
@@ -246,6 +251,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 			Type:              v.Type,
 			QuestionClues:     append([]string(nil), v.QuestionClues...),
 			DiscoveredClues:   append([]string(nil), v.DiscoveredClues...),
+			Alternates:        append([]string(nil), v.Alternates...),
 			Candidate:         v.Candidate,
 			CandidateStrength: v.CandidateStrength,
 			Value:             v.Value,
@@ -262,10 +268,10 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 		if !ok {
 			return nil
 		}
-		// Python compares `nv.id == pv["id"]` with ints, so a JSON string id
-		// ("1") simply matches no slot and is skipped. Only JSON numbers match,
-		// which decode as float64 — accept those, and reject anything else so the
-		// behaviour is identical rather than silently more permissive.
+		// The comparison is integer-only, so a JSON string id ("1") simply matches no slot
+		// and is skipped. Only JSON numbers match, which decode as float64 — accept those,
+		// and reject anything else so the behaviour is strict rather than silently more
+		// permissive.
 		want, ok := toIntStrict(rawID)
 		if !ok {
 			continue
@@ -294,10 +300,8 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 			nv.Candidate = &rendered
 			changed = true
 		} else if raw, has := pv["candidate"]; has {
-			// Mirror Python apply_patch: `str(x) if x else None` — any falsy
-			// value (0, 0.0, False, "", [], {}, None) becomes None, NOT its
-			// string form. fmt.Sprint would otherwise turn 0/False into
-			// "0"/"false", which Python drops.
+			// Any falsy value (0, 0.0, False, "", [], {}, None) becomes None, NOT its string
+			// form. fmt.Sprint would otherwise turn 0/False into "0"/"false".
 			if !isTruthy(raw) {
 				nv.Candidate = nil
 				nv.Value = nil
@@ -317,7 +321,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 				nv.CandidateStrength = &v
 				changed = true
 			}
-			// Unparseable strengths are ignored, mirroring Python's except/pass.
+			// Unparseable strengths are ignored.
 		}
 		if raw, has := pv["discovered_clues"]; has {
 			if list, ok := raw.([]any); ok {
@@ -344,8 +348,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 	return &out
 }
 
-// truncateRunes cuts s to at most n characters (runes, not bytes), matching
-// Python's str slicing semantics.
+// truncateRunes cuts s to at most n characters (runes, not bytes).
 func truncateRunes(s string, n int) string {
 	if len([]rune(s)) <= n {
 		return s
@@ -375,9 +378,8 @@ func toInt(v any) (int, bool) {
 	return 0, false
 }
 
-// toIntStrict converts JSON NUMBER types only, mirroring Python's strict
-// integer comparison. Unlike toInt it does NOT parse strings: a patch whose id
-// is "1" must match nothing, exactly as in Python.
+// toIntStrict converts JSON NUMBER types only. Unlike toInt it does NOT parse strings: a
+// patch whose id is "1" must match nothing.
 func toIntStrict(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
@@ -424,10 +426,9 @@ func ParseFloat(s string) (float64, bool) {
 	return f, true
 }
 
-// isTruthy mirrors Python's bool() truthiness for the JSON-decoded values that
-// reach apply_patch: None/nil, empty string/collection, zero number, and False
-// are falsy; everything else (including non-empty objects and any other type) is
-// truthy. Used so `str(x) if x else None` behaves identically in Go.
+// isTruthy applies bool() truthiness to the JSON-decoded values that reach ApplyPatch:
+// None/nil, empty string/collection, zero number, and False are falsy; everything else
+// (including non-empty objects and any other type) is truthy.
 func isTruthy(v any) bool {
 	switch x := v.(type) {
 	case nil:
@@ -457,23 +458,23 @@ func isTruthy(v any) bool {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Python value coercion (str / int / repr)
+// Slot-table value coercion (text / int / literal)
 //
-// initialize_state parses the model's slot-table reply with Python semantics:
-// `int(s.get("id", i))`, `str(s.get("type") or "entity")` and
-// `[str(c) for c in (s.get("clues") or [])]`. A value Python cannot convert
-// RAISES, and _build_slot_table catches that and falls back to the planner
-// fan-outs — so these helpers report failure instead of guessing, and the caller
-// discards the whole decomposition. PyStringRepr/PyValueRepr are also the single
-// implementation of Python's repr() (used by the research ledger's
-// `str(messages)[:80]` emulation in the advanced_rag package).
-// ---------------------------------------------------------------------------
+// initialize_state reads the model's slot-table reply strictly: an id that is not an
+// integer, a type that is not text, or clues that are not a list are FAILURES, not
+// guesses — the caller discards the whole decomposition and falls back to the planner's
+// fan-outs (see buildSlotTableFrom). So these helpers report failure instead of inventing
+// a value: `int(s.get("id", i))`, `str(s.get("type") or "entity")` and
+// `[str(c) for c in (s.get("clues") or [])]` are the three questions they answer.
+//
+// quoteLiteral/formatLiteral render the LITERAL SYNTAX this protocol is written in —
+// single-quoted strings, None/True/False, [...] and {...} — which is the format the
+// prompts teach the model and the format its replies come back in.
 
-// PyStringRepr mirrors Python's repr() for str: single quotes unless the text
-// contains ' but no ", with the standard escapes (\\, \n, \r, \t, \xNN for other
-// control characters). Printable non-ASCII is kept verbatim, as in Python 3.
-func PyStringRepr(s string) string {
+// quoteLiteral renders s as the protocol's quoted string literal: single quotes unless
+// the text contains ' but no ", with the standard escapes (\\, \n, \r, \t, \xNN for other
+// control characters). Printable non-ASCII is kept verbatim.
+func quoteLiteral(s string) string {
 	quote := '\''
 	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
 		quote = '"'
@@ -503,10 +504,11 @@ func PyStringRepr(s string) string {
 	return b.String()
 }
 
-// PyValueRepr mirrors Python's repr() for a JSON-decoded value. Map keys are
-// rendered in sorted order: Go's maps do not preserve the JSON text's insertion
-// order, which is the one thing this cannot reproduce.
-func PyValueRepr(v any) string {
+// formatLiteral renders a JSON-decoded value in the protocol's literal syntax:
+// None/True/False, quoted strings, numbers, [...] and {...}. Map keys come out SORTED —
+// Go's maps do not preserve the JSON text's insertion order, which is the one thing this
+// cannot reproduce.
+func formatLiteral(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return "None"
@@ -516,7 +518,7 @@ func PyValueRepr(v any) string {
 		}
 		return "False"
 	case string:
-		return PyStringRepr(t)
+		return quoteLiteral(t)
 	case float64:
 		return strconv.FormatFloat(t, 'g', -1, 64)
 	case float32:
@@ -530,7 +532,7 @@ func PyValueRepr(v any) string {
 	case []any:
 		parts := make([]string, 0, len(t))
 		for _, item := range t {
-			parts = append(parts, PyValueRepr(item))
+			parts = append(parts, formatLiteral(item))
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case map[string]any:
@@ -541,27 +543,27 @@ func PyValueRepr(v any) string {
 		sort.Strings(keys)
 		parts := make([]string, 0, len(keys))
 		for _, k := range keys {
-			parts = append(parts, PyStringRepr(k)+": "+PyValueRepr(t[k]))
+			parts = append(parts, quoteLiteral(k)+": "+formatLiteral(t[k]))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	default:
-		return PyStringRepr(fmt.Sprint(v))
+		return quoteLiteral(fmt.Sprint(v))
 	}
 }
 
-// PyStr mirrors Python's str(): a string is itself; every other value renders as
-// its repr (which is how str() prints containers and scalars).
-func PyStr(v any) string {
+// displayText is the text of a value: a string is itself, every other value comes back as
+// its literal (containers and scalars included).
+func displayText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return PyValueRepr(v)
+	return formatLiteral(v)
 }
 
-// pyInt mirrors Python's int() for the values a slot table can carry. ok=false
-// where Python raises ValueError/TypeError: a string that is not a plain integer
-// (int("5.5") fails), None, or a container.
-func pyInt(v any) (int, bool) {
+// asInt converts the values a slot table can carry, and reports ok=false where the
+// conversion is impossible: a string that is not a plain integer ("5.5" fails), None, or a
+// container.
+func asInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
 		return n, true
@@ -573,20 +575,20 @@ func pyInt(v any) (int, bool) {
 		if math.IsNaN(float64(n)) || math.IsInf(float64(n), 0) {
 			return 0, false
 		}
-		return int(n), true // Python int() truncates toward zero
+		return int(n), true // truncates toward zero
 	case float64:
 		if math.IsNaN(n) || math.IsInf(n, 0) {
 			return 0, false
 		}
 		return int(n), true
 	case bool:
-		// Python's bool is an int subclass: int(True) == 1.
+		// A bool IS an integer here, the way the protocol's literals treat it: true == 1.
 		if n {
 			return 1, true
 		}
 		return 0, true
 	case string:
-		// Python int(str) tolerates surrounding whitespace and "_" separators.
+		// A quoted integer may carry surrounding whitespace and "_" separators.
 		s := strings.ReplaceAll(strings.TrimSpace(n), "_", "")
 		if s == "" {
 			return 0, false
@@ -600,10 +602,10 @@ func pyInt(v any) (int, bool) {
 	return 0, false
 }
 
-// pyStringList mirrors Python's `[str(c) for c in (value or [])]`: a falsy value
-// yields nothing, a list yields its items, a string its characters and a map its
-// keys. ok=false when the value is not iterable (Python raises TypeError there).
-func pyStringList(v any) ([]string, bool) {
+// asStringList reads a list-ish value as text: a falsy value yields nothing, a list yields
+// its items rendered as text, a string yields its characters, and a map yields its keys
+// (sorted). ok=false when the value cannot be read as a list at all.
+func asStringList(v any) ([]string, bool) {
 	if !isTruthy(v) {
 		return nil, true
 	}
@@ -611,7 +613,7 @@ func pyStringList(v any) ([]string, bool) {
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {
-			out = append(out, PyStr(item))
+			out = append(out, displayText(item))
 		}
 		return out, true
 	case []string:
@@ -637,15 +639,10 @@ func pyStringList(v any) ([]string, bool) {
 // ===================== extract.go =====================
 // JSON / terminal-block extraction from model output.
 //
-// Mirrors Python action_session.py::extract_json (line 512) and extract_tag
-// (line 551). Models wrap JSON in thinking preamble and Markdown fences, and
-// often emit a second object after the first — a greedy regex over-captures
-// there and the parse then fails with "Extra data", so the extractor
-// brace-matches to isolate ONE complete object and walks to the next "{" when
-// that one is invalid.
-
-// JSON / terminal-block extraction from model output (mirrors Python
-// action_session.py::extract_json / extract_tag).
+// Models wrap JSON in thinking preamble and Markdown fences, and often emit a second
+// object after the first — a greedy regex over-captures there and the parse then fails
+// with "Extra data", so the extractor brace-matches to isolate ONE complete object and
+// walks to the next "{" when that one is invalid.
 
 // ExtractJSON returns the first parseable JSON value found in text, or nil.
 func ExtractJSON(text string) any {
@@ -672,9 +669,8 @@ func ExtractJSON(text string) any {
 					if err := json.Unmarshal([]byte(candidate), &out); err == nil {
 						return out
 					}
-					// Python extract_json first tries json.loads(strict=False),
-					// then json_repair.loads(candidate); only if BOTH fail does it
-					// break to the next "{". Mirror that leniency here.
+					// First try a lenient parse, then the repair pass; only if BOTH fail
+					// does the scan move on to the next opening brace.
 					if v := repairJSONObject(candidate); v != nil {
 						return v
 					}
@@ -687,9 +683,8 @@ func ExtractJSON(text string) any {
 		}
 		i = start + 1
 	}
-	// All brace-matched candidates failed strict and shallow repair. Python's
-	// extract_json ultimately falls back to json_repair.loads(text) over the WHOLE
-	// text, which can salvage deformities (unquoted keys, dropped separators, a
+	// All brace-matched candidates failed strict and shallow repair. The last resort is a
+	// whole-text repair, which can salvage deformities (unquoted keys, dropped separators, a
 	// lost outer brace) that no single brace-matched candidate can. Mirror it.
 	return repairJSONWhole(text)
 }
@@ -739,13 +734,11 @@ func ExtractJSONObject(text string) any {
 	return nil
 }
 
-// repairJSONObject is a conservative stand-in for Python's json_repair.loads,
-// applied only after a candidate fails strict json.Unmarshal. It walks cheap,
-// idempotent normalizations that models commonly emit and re-validates after
-// each: trailing commas, single-quoted strings, NaN/Infinity numeric literals,
-// and illegal control characters inside string literals (which Python's
-// json.loads(strict=False) and json_repair both tolerate). It never rewrites
-// already-valid JSON and returns nil when no transform yields a parse.
+// repairJSONObject is a conservative repair pass applied only after a candidate fails
+// strict json.Unmarshal. It walks cheap, idempotent normalizations that models commonly
+// emit and re-validates after each: trailing commas, single-quoted strings, NaN/Infinity
+// numeric literals, and illegal control characters inside string literals. It never
+// rewrites already-valid JSON and returns nil when no transform yields a parse.
 func repairJSONObject(candidate string) any {
 	steps := []struct {
 		name  string
@@ -818,8 +811,8 @@ func normalizeSingleQuotes(s string) string {
 	return b.String()
 }
 
-// nullNonFiniteLiterals rewrites bare NaN / Infinity / -Infinity tokens (which
-// Python's json_repair normalizes) into JSON null so the object can parse.
+// nullNonFiniteLiterals rewrites bare NaN / Infinity / -Infinity tokens into JSON null so
+// the object can parse.
 func nullNonFiniteLiterals(s string) string {
 	s = strings.ReplaceAll(s, ": NaN", ": null")
 	s = strings.ReplaceAll(s, ": Infinity", ": null")
@@ -827,9 +820,8 @@ func nullNonFiniteLiterals(s string) string {
 	return s
 }
 
-// stripRawControlChars removes raw ASCII control characters (other than tab,
-// newline and carriage-return) that would otherwise make Go's json.Unmarshal
-// reject a string literal; Python's json.loads(strict=False) accepts them.
+// stripRawControlChars removes raw ASCII control characters (other than tab, newline and
+// carriage-return) that would otherwise make Go's json.Unmarshal reject a string literal.
 func stripRawControlChars(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
@@ -839,16 +831,13 @@ func stripRawControlChars(s string) string {
 	}, s)
 }
 
-// repairJSONWhole is the deep fallback that mirrors Python's json_repair.loads
-// on the WHOLE text (not just one brace-matched candidate). ExtractJSON first
-// tries the brace-matched object and the shallow repairJSONObject steps; only
-// when BOTH fail does it reach here. This salvages structural deformities that
-// the single-object path cannot — unquoted object keys ({a: 1}), missing
-// separators between adjacent values ({"a":1} {"b":2} or "x" "y"), bare string
-// values ({name: foo}), and any combination the model emits across the full
-// output. It delegates to github.com/kaptinlin/jsonrepair, which repairs
-// malformed JSON returned by LLMs. It returns nil when nothing parses, exactly
-// as json_repair would yield a parse error.
+// repairJSONWhole is the deep fallback applied to the WHOLE text (not just one
+// brace-matched candidate). ExtractJSON first tries the brace-matched object and the
+// shallow repairJSONObject steps; only when BOTH fail does it reach here. This salvages
+// structural deformities the single-object path cannot — unquoted object keys ({a: 1}),
+// missing separators between adjacent values ({"a":1} {"b":2} or "x" "y"), bare string
+// values ({name: foo}), and any combination the model emits across the full output. It
+// delegates to github.com/kaptinlin/jsonrepair. It returns nil when nothing parses.
 func repairJSONWhole(text string) any {
 	cleaned := reThinkWrap.ReplaceAllString(text, "")
 	cleaned = reFencedJSON.ReplaceAllString(cleaned, "$1")
@@ -857,10 +846,9 @@ func repairJSONWhole(text string) any {
 		return nil
 	}
 	// Pre-normalize unquoted object keys (e.g. {entity: "x"} -> {"entity": "x"}).
-	// The underlying json-repair library (Go port) handles unquoted keys with
-	// unquoted values well but mangles a key that precedes an already-quoted
-	// value; quoting keys first sidesteps that and matches what Python's
-	// json_repair does internally. Already-valid JSON is left untouched.
+	// The repair library handles unquoted keys with unquoted values well but mangles a key
+	// that precedes an already-quoted value; quoting keys first sidesteps that.
+	// Already-valid JSON is left untouched.
 	normalized := quoteUnquotedKeys(cleaned)
 	repaired, err := jsonrepair.Repair(normalized)
 	if err != nil {
@@ -903,7 +891,7 @@ func tryUnmarshal(s string) any {
 
 var reFencedJSON = regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\}|\\[.*?\\])\\s*```")
 
-// ExtractTag mirrors Python extract_tag: exact-tag extraction first, then
+// ExtractTag: exact-tag extraction first, then
 // lenient fallbacks for models that wrap the JSON in code fences or emit bare
 // objects (observed with DeepSeek-class models ignoring the XML protocol).
 //
@@ -949,12 +937,12 @@ func ExtractTag(text, tag string) string {
 // Tool schemas, the per-session tool object, and the two seams the action
 // session depends on.
 //
-// Mirrors Python harness/action_session.py:
-//   - tool specs        (lines 187-437)
-//   - _TOOL_MAP         (line 428)
-//   - _active_tool_specs(line 440)
-//   - _disable_tool     (line 472)
-//   - _reason_status    (line 495)
+// What the session depends on:
+//   - tool specs
+//   - ToolMap (the dispatch registry)
+//   - the active tool surface
+//   - tool disabling
+//   - reason → status mapping
 //   - execute_tool      (line 1003)
 
 func arrayParam(desc string, minItems, maxItems int) map[string]any {
@@ -972,9 +960,8 @@ func arrayParam(desc string, minItems, maxItems int) map[string]any {
 	}
 }
 
-// Tool schemas. Descriptions are copied verbatim from Python: they are the
-// model's only guide for when to pick which tool, and rephrasing them changes
-// routing behaviour.
+// Tool schemas. The descriptions are the model's only guide for when to pick which tool,
+// and rephrasing them changes routing behaviour.
 var (
 	retrieveToolSpec = ToolSpec{
 		Type: "function",
@@ -1042,11 +1029,9 @@ var (
 		},
 	}
 
-	// wikiQueryToolSpec previously mirrored Python tools/exploration.py wiki_query,
-	// but that function is never registered in Python's _TOOL_MAP (the action
-	// session dispatch registry), so it has been removed from Go's ToolMap to keep
-	// the two registries identical. The wiki_query handler still lives in
-	// tool_exploration.go as an unplugged extension seam.
+	// wikiQueryToolSpec is deliberately absent from ToolMap: wiki_query has no caller and is
+	// not part of the action session's dispatch registry, so it stays unregistered. The
+	// handler still lives in tool_exploration.go as an unplugged extension seam.
 
 	navigateTreeToolSpec = ToolSpec{
 		Type: "function",
@@ -1155,7 +1140,7 @@ func paramEnum(desc string, values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": values, "description": desc}
 }
 
-// ToolMap is the multi-tool registry, mirroring Python _TOOL_MAP.
+// ToolMap is the multi-tool registry.
 // executeTool dispatches by name; add a tool by registering its schema here.
 var ToolMap = map[string]ToolSpec{
 	"retrieve":           retrieveToolSpec,
@@ -1178,9 +1163,7 @@ func ToolMapNames() []string {
 	return names
 }
 
-// ---------------------------------------------------------------------------
 // The per-session tool object
-// ---------------------------------------------------------------------------
 
 // ToolExecutor runs one tool call by name and reports what happened.
 //
@@ -1191,12 +1174,11 @@ type ToolExecutor interface {
 	Execute(ctx context.Context, name string, args map[string]any) (ToolOutcome, error)
 }
 
-// Toolset is the per-session tool object, mirroring the Python RAGTools
-// surface the session reads: thinking mode, web provider availability, the
+// Toolset is the per-session tool object: thinking mode, web provider availability, the
 // runtime-disabled tool set, and the executor.
 //
-// Python mutates `tools._disabled_tools` on the request object; Go keeps that
-// state here so a session cannot leak it into another request.
+// The disabled-tool state lives here rather than on the request object, so a session
+// cannot leak it into another request.
 type Toolset struct {
 	// ThinkingMode selects the ModeSpec (see config.go).
 	ThinkingMode string
@@ -1222,7 +1204,7 @@ func (t *Toolset) GetThinkingMode() string {
 	return t.ThinkingMode
 }
 
-// ActiveToolSpecs mirrors Python _active_tool_specs: the tool schemas exposed
+// ActiveToolSpecs: the tool schemas exposed
 // to the model for THIS mode.
 //
 // Visibility rules:
@@ -1252,7 +1234,7 @@ func (t *Toolset) ActiveToolSpecs() []ToolSpec {
 	return out
 }
 
-// DisableTool mirrors Python _disable_tool: mark a compile-only tool
+// DisableTool: mark a compile-only tool
 // unavailable for the REST of this session, so ActiveToolSpecs stops
 // advertising it and ExecuteTool short-circuits it.
 func (t *Toolset) DisableTool(name string) {
@@ -1274,16 +1256,12 @@ func (t *Toolset) IsDisabled(name string) bool {
 	return t.DisabledTools[name]
 }
 
-// ReasonStatus mirrors Python _reason_status: single source of truth for the
-// cause→status mapping, so a tool cannot disagree with itself about what its
-// own reason means.
-// The unified tool-result contract shared by the session and the tool
-// implementations (mirrors Python action_session.py's ToolOutcome and the
-// OK/EMPTY/MISS/POOR/REDUNDANT/ERROR statuses — which Python also defines in
-// action_session.py, so they live here in its Go mirror).
+// ReasonStatus: single source of truth for the cause→status mapping, so a tool cannot
+// disagree with itself about what its own reason means.
+// The unified tool-result contract shared by the session and the tool implementations
+// (ToolOutcome plus the OK/EMPTY/MISS/POOR/REDUNDANT/ERROR statuses).
 
-// Tool-result statuses. Mirrors Python OK/EMPTY/MISS/POOR/REDUNDANT/ERROR.
-// These are the signal the session's tool node acts on.
+// Tool-result statuses: the signal the session's tool node acts on.
 const (
 	StatusOK        = "ok"        // normal hit
 	StatusEmpty     = "empty"     // dataset-level: no such compiled structure exists here
@@ -1331,8 +1309,7 @@ func NewToolOutcome(payload []any, evidenceIDs []string) ToolOutcome {
 	}
 }
 
-// ReasonStatus maps a ToolOutcome reason to the Status it implies, mirroring
-// Python action_session._reason_status.
+// ReasonStatus maps a ToolOutcome reason to the Status it implies.
 func ReasonStatus(reason string) string {
 	switch reason {
 	case ReasonNoStructure:
@@ -1346,19 +1323,16 @@ func ReasonStatus(reason string) string {
 
 // ===================== session.go (model seam, _SessionState, nodes, routing) =====================
 // The graph-edge action session: one bounded ReAct loop pursuing ONE direction.
-// Mirrors Python harness/action_session.py.
+// THIS FILE USES AN EXPLICIT LOOP, NOT A COMPILED GRAPH: the graph is small and fixed
+// (see sessionLoop), so three functions and a switch buy more than compiling one. The node
+// bodies, routing predicates and their ordering follow the same design; only the driver
+// differs.
 //
-// PYTHON USES LANGGRAPH; THIS FILE USES AN EXPLICIT LOOP: the graph is small and fixed
-// (see sessionLoop), so three functions and a switch buy more than compiling one. The
-// node bodies, routing predicates and their ordering are ported verbatim; only the
-// driver differs.
-//
-// ONE structural difference, isolated to one seam: Python calls the provider's native
-// tool-calling API (`tools=[...]`, `tool_choice="auto"`) and parses
-// `message.tool_calls`; the Go chat seam exposes the same capability
-// (chat.Request.Tools / Response.ToolCalls), and the SessionModel implementation
-// (InvokerSessionModel) forwards the harness ToolSpec surface through it. There is
-// no prompt-based fallback: downstream session logic is identical either way.
+// The provider seam calls the native tool-calling API (`tools=[...]`,
+// `tool_choice="auto"`) and parses `message.tool_calls`: the chat seam exposes that as
+// chat.Request.Tools / Response.ToolCalls, and the SessionModel implementation
+// (InvokerSessionModel) forwards the harness ToolSpec surface through it. There is no
+// prompt-based fallback: downstream session logic is identical either way.
 
 const (
 	// initTimeoutS bounds the slot-table decomposition call.
@@ -1385,7 +1359,7 @@ const (
 	// the digest never shows a session LESS of a chunk than the same chunk would carry
 	// as a tool result.
 	//
-	// The previous 300-code-point cut (Python's `[:300]`) ended mid-sentence on
+	// The previous 300-code-point cut ended mid-sentence on
 	// narrative passages — and the model, told to answer only from what it was shown,
 	// excluded the people whose kill clause fell outside the window. Measured
 	// (2026-09-14, on the fixrecall line): with the cut at 1200 an enumeration run
@@ -1456,9 +1430,8 @@ func snippetsPerQueryFor(mode string) int {
 	return snippetsPerQuery
 }
 
-// retrievalTools: near-duplicate suppression applies to these (Python
-// _RETRIEVAL_TOOLS). grep_chunks / grep_search are legacy names kept so a
-// model emitting them is still deduped rather than executed.
+// retrievalTools: near-duplicate suppression applies to these. grep_chunks / grep_search
+// are legacy names kept so a model emitting them is still deduped rather than executed.
 var retrievalTools = map[string]bool{
 	"search_chunks": true,
 	"grep_chunks":   true,
@@ -1469,7 +1442,7 @@ var _LOG = common.StdLogger()
 
 var reSearchToken = regexp.MustCompile(`[a-z0-9]{2,}`)
 
-// searchTokens mirrors Python _search_tokens: lowercased alphanumeric tokens
+// searchTokens: lowercased alphanumeric tokens
 // of a query, for near-duplicate detection.
 func searchTokens(q string) map[string]struct{} {
 	out := map[string]struct{}{}
@@ -1479,11 +1452,10 @@ func searchTokens(q string) map[string]struct{} {
 	return out
 }
 
-// argQueryString mirrors Python `str(args.get("query") or "").strip()`
-// (action_session.py:1430): a string passes through, a nil/empty value yields
-// "", and any other value — typically the []any query list retrieve accepts —
-// is stringified so it still participates in near-dup detection and the
-// seen_queries ledger.
+// argQueryString coerces a tool argument to a trimmed query string: a string passes
+// through, a nil/empty value yields "", and any other value — typically the []any query
+// list retrieve accepts — is stringified so it still participates in near-dup detection
+// and the seen_queries ledger.
 func argQueryString(v any) string {
 	switch t := v.(type) {
 	case nil:
@@ -1507,7 +1479,7 @@ func argQueryString(v any) string {
 	}
 }
 
-// IsNearDup mirrors Python _is_near_dup: true when q shares >=
+// IsNearDup: true when q shares >=
 // nearDupJaccard of its tokens with any query in seen.
 func IsNearDup(q string, seen []string) bool {
 	if strings.TrimSpace(q) == "" || len(seen) == 0 {
@@ -1538,13 +1510,11 @@ func IsNearDup(q string, seen []string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // The model seam
-// ---------------------------------------------------------------------------
 
-// The production carrier always supports per-call temperatures: the pinned
-// Python temperatures (keywords 0.1 / structure_qa 0.2 / compute 0.0) must
-// never silently fall back to a model default.
+// The production carrier always supports per-call temperatures: the pinned per-node
+// temperatures (keywords 0.1 / structure_qa 0.2 / compute 0.0) must never silently fall
+// back to a model default.
 var _ TemperatureModel = (*InvokerSessionModel)(nil)
 
 // CompleteWithTemperature implements TemperatureModel.
@@ -1552,10 +1522,9 @@ func (m *InvokerSessionModel) CompleteWithTemperature(ctx context.Context, messa
 	if m == nil || m.Invoker == nil {
 		return nil, fmt.Errorf("harness: no chat invoker configured")
 	}
-	// Python binds the tools natively (action_session.py:_acompletion native tools /
-	// :1083 tool_choice="auto") and reads the result out of msg.tool_calls
-	// (:1101-1114). There is no prompt-based fallback: a provider that cannot
-	// express native tools simply has no tool capability.
+	// The tools are bound natively (tool_choice="auto") and the result is read out of
+	// msg.tool_calls. There is no prompt-based fallback: a provider that cannot express
+	// native tools simply has no tool capability.
 	req := chat.Request{Messages: messages, Temperature: &temp}
 	if chatTools := toChatTools(tools); chatTools != nil {
 		req.Tools = chatTools
@@ -1574,26 +1543,24 @@ func (m *InvokerSessionModel) CompleteWithTemperature(ctx context.Context, messa
 	return reply, nil
 }
 
-// InvokerSessionModel adapts chat.Invoker to SessionModel using the provider's
-// NATIVE tool calling, mirroring Python (action_session.py:_acompletion native tools,
-// :1083 tool_choice="auto", :1101-1114 reading msg.tool_calls).
+// InvokerSessionModel adapts chat.Invoker to SessionModel using the provider's NATIVE
+// tool calling (native tools with tool_choice="auto", reading back msg.tool_calls).
 //
-// There is no prompt-based fallback: Python has none, so a provider that cannot
-// express native tools simply has no tool capability. A reply with no tool_calls
-// is a no-call turn, which the session nudges — the same path Python takes.
+// There is no prompt-based fallback: a provider that cannot express native tools simply
+// has no tool capability. A reply with no tool_calls is a no-call turn, which the session
+// nudges.
 type InvokerSessionModel struct {
 	Invoker chat.Invoker
 	DB      *gorm.DB
-	// MaxLength is the resolved chat model's context window in tokens
-	// (Python LLMBundle.max_length / tools.chat_mdl.max_length). Used by
-	// ContextLength to size message_fit_in. <= 0 means "unknown", in which case
+	// MaxLength is the resolved chat model's context window in tokens. Used by
+	// ContextLength to size the prompt fit. <= 0 means "unknown", in which case
 	// ContextLength reports chat.EffectiveContextLength's 8192 fallback.
 	MaxLength int
 }
 
 // ContextLength implements ContextLengthModel. It returns the model's context
-// window in tokens when known, otherwise the 8192 default that mirrors
-// Python's LLM.max_length falling back when the config omits max_tokens.
+// window in tokens when known, otherwise the 8192 default used when the config omits a
+// context length.
 func (m *InvokerSessionModel) ContextLength() int {
 	if m == nil {
 		return chat.EffectiveContextLength(0)
@@ -1671,10 +1638,9 @@ func totalOf(resp *chat.Response) int {
 	return resp.Tokens
 }
 
-// toChatTools converts the harness ToolSpec surface into the chat seam's native
-// Tool declarations, mirroring Python's native tool list (action_session.py:_acompletion).
-// The chat seam forwards them to the provider as native tools; Python has no
-// prompt-based fallback, and neither does this port.
+// toChatTools converts the harness ToolSpec surface into the chat seam's native Tool
+// declarations. The chat seam forwards them to the provider as native tools; there is no
+// prompt-based fallback.
 func toChatTools(tools []ToolSpec) []chat.Tool {
 	if len(tools) == 0 {
 		return nil
@@ -1699,9 +1665,8 @@ func toChatTools(tools []ToolSpec) []chat.Tool {
 	return out
 }
 
-// knownTool reports whether name is a real tool, judged against the STATIC full
-// set (ToolMap) — mirroring Python `if name not in _TOOL_MAP`
-// (action_session.py:_parse_tool_calls).
+// knownTool reports whether name is a real tool, judged against the STATIC full set
+// (ToolMap).
 //
 // It deliberately does NOT consult the active surface. Disabled or web-hidden
 // tools are real tools that this session has stopped advertising; a model that
@@ -1717,8 +1682,7 @@ func knownTool(name string) bool {
 // nativeToHarnessCalls maps chat-seam native tool calls into the harness ToolCall
 // shape, preserving the Unknown flag for names outside the static tool map.
 //
-// Python synthesizes `call_{i}` when a provider omits the id
-// (action_session.py:_parse_terminal, :1136) — without it the assistant message and its
+// A missing id is synthesized as `call_{i}` — without it the assistant message and its
 // tool responses cannot be paired and the next request is rejected with
 // "tool call result does not follow tool call".
 func nativeToHarnessCalls(calls []chat.ToolCall) []ToolCall {
@@ -1753,8 +1717,8 @@ func ensureToolCallIDs(calls []ToolCall) {
 }
 
 // assistantToolCalls renders harness tool calls as the schema assistant message's
-// tool_calls, mirroring Python action_session.py:_run_action_node which passes the
-// model's native tool_calls through verbatim so they pair with the tool
+// tool_calls: the model's native tool_calls are passed through verbatim so they pair with
+// the tool
 // responses. Passing nil here leaves a dangling tool_call and the next request
 // is rejected.
 func assistantToolCalls(calls []ToolCall) []schema.ToolCall {
@@ -1776,11 +1740,9 @@ func assistantToolCalls(calls []ToolCall) []schema.ToolCall {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Session state
-// ---------------------------------------------------------------------------
 
-// SessionState mirrors Python _SessionState (the LangGraph TypedDict).
+// SessionState: (the LangGraph TypedDict).
 type SessionState struct {
 	// Messages is the running conversation (system + user + assistant + tool).
 	Messages []schema.Message
@@ -1802,8 +1764,8 @@ type SessionState struct {
 
 	// CtxBudget is the cumulative tool-payload char ceiling for the session.
 	CtxBudget int
-	// ToolChars is the running total of tool-payload chars emitted so far
-	// (O(1) accounting; Python tracks the same counter as _tool_chars).
+	// ToolChars is the running total of tool-payload chars emitted so far (O(1)
+	// accounting).
 	ToolChars int
 	// ToolCache avoids re-executing an identical (name, args) call. It is the
 	// per-round cache shared with the round's other sessions, so it is a guarded
@@ -1865,11 +1827,9 @@ type SessionState struct {
 
 // appendMessages is the single place a session grows its message list.
 //
-// Mirrors Python's `messages: Annotated[list, add_messages]` reducer
-// (action_session.py:_SessionState), which degenerates to a plain append: Python never sets a
-// message id (LangChain assigns a fresh uuid per message, so ids never collide) and
-// nothing in action_session.py reads one — its `.id` uses are tool-call and
-// slot/nav-rule ids.
+// The message list only ever grows by appending: no message id is set (a fresh uuid per
+// message means ids never collide) and nothing here reads one — the `.id` fields in play
+// are tool-call and slot/nav-rule ids.
 //
 // Deliberately NOT a tool_call_id dedupe: fallback ids are per-turn
 // (`ensureToolCallIDs` assigns call_0, call_1… to unnamed calls), so two turns can both
@@ -1883,14 +1843,12 @@ func appendMessages(dst []schema.Message, msgs ...schema.Message) []schema.Messa
 	return append(dst, msgs...)
 }
 
-// ---------------------------------------------------------------------------
 // Tool dispatch
-// ---------------------------------------------------------------------------
 
-// ExecuteTool mirrors Python execute_tool: dispatch ONE tool call by name.
+// ExecuteTool: dispatch ONE tool call by name.
 //
 // Returns a ToolOutcome whose status/reason let the caller act on WHAT happened
-// — empty payload, query miss, infra failure, or a run that added no new
+// empty payload, query miss, infra failure, or a run that added no new
 // evidence — instead of only counting characters.
 func ExecuteTool(ctx context.Context, tools *Toolset, name string, args map[string]any) ToolOutcome {
 	// Short-circuit a tool already proven unavailable this session (no compiled
@@ -1917,31 +1875,25 @@ func ExecuteTool(ctx context.Context, tools *Toolset, name string, args map[stri
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Nodes
-// ---------------------------------------------------------------------------
 
-// runActionNode mirrors Python _run_action_node: ONE model turn with tools.
+// runActionNode: ONE model turn with tools.
 // It appends the assistant message and records any tool calls as pending.
 func (s *SessionState) runActionNode(ctx context.Context) error {
 	s.Attempts++
-	// Per-turn wall budget (mirrors Python _run_action_node:1207-1210):
-	// max(15, min(75, deadline_left)). Without this a single turn can eat the
-	// entire session budget, starving the salvage/finalize steps.
+	// Per-turn wall budget: max(15, min(75, deadline_left)). Without this a single turn can
+	// eat the entire session budget, starving the salvage/finalize steps.
 	wall := max(15.0, min(75.0, s.DeadlineLeft))
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(wall*float64(time.Second)))
 	defer cancel()
 	reply, err := s.Model.Complete(callCtx, s.Messages, s.Tools.ActiveToolSpecs())
 	if err != nil {
-		// Python _run_action_node:1215-1220 — a timed-out or failed turn
-		// CONVERGES the session empty instead of aborting it: the node returns
-		// {"_done": True, "new_states": [], "found_answer": None}, _route sees
-		// _done and ends the graph, and run_action_session hands back the
-		// messages/evidence gathered so far. Returning the error here aborted the
-		// whole eino run, which RunActionSession reports as a failed session and
-		// answers with an empty Result — losing the nav prefix's evidence ids and
-		// every tool outcome, i.e. Python's graph-level failure branch instead of
-		// its node-level convergence branch.
+		// A timed-out or failed turn CONVERGES the session empty instead of aborting it: the
+		// node marks itself done with no new states and no answer, routing ends the graph,
+		// and the entry point hands back the messages/evidence gathered so far. Returning
+		// the error here aborts the whole eino run, which is reported as a failed session and
+		// answered with an empty Result — losing the nav prefix's evidence ids and every tool
+		// outcome.
 		if callCtx.Err() == context.DeadlineExceeded {
 			_LOG.Printf("[Action Session] turn timed out after %.0fs", wall)
 		} else {
@@ -1952,10 +1904,10 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 		s.FoundAnswer = nil
 		return nil
 	}
-	// Python passes the model's tool_calls through verbatim on the assistant
-	// message (action_session.py:_run_action_node) so the tool responses that follow can
-	// be paired by id. Passing nil leaves a dangling tool_call and the next
-	// request is rejected with "tool call result does not follow tool call".
+	// The model's tool_calls are passed through verbatim on the assistant message so the
+	// tool responses that follow can be paired by id. Passing nil leaves a dangling
+	// tool_call and the next request is rejected with "tool call result does not follow
+	// tool call".
 	ensureToolCallIDs(reply.ToolCalls)
 	s.Messages = append(s.Messages,
 		*schema.AssistantMessage(reply.Content, assistantToolCalls(reply.ToolCalls)))
@@ -1981,7 +1933,7 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 	return nil
 }
 
-// toolNode mirrors Python _tool_node: execute pending tool calls, append tool
+// toolNode: execute pending tool calls, append tool
 // responses, and apply the per-outcome policies.
 func (s *SessionState) toolNode(ctx context.Context) error {
 	if s.Tools == nil {
@@ -2010,7 +1962,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	// a call only advances its own rung, and a later ladder continuation must
 	// continue from the SAME resting point.
 	//
-	// The continuation is ported (Python :1406-1444) but currently UNREACHABLE:
+	// The continuation is ported but currently UNREACHABLE:
 	// it only runs once a rung leaves the chain in ModeLLM, and every rule in
 	// NavRules is ModeAuto, so the chain always runs to completion in the prefix
 	// and PendingRule is "" by the time control reaches here. Adding an LLM rung
@@ -2021,7 +1973,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		// Near-duplicate retrieval suppression: if the model re-issues the same
 		// intent as an earlier search (paraphrase), do NOT re-run the index —
 		// return a nudge so it patches / reframes instead of burning turns.
-		// Python :1430 — q = str(args.get("query") or "").strip(): the query may
+		// q = str(args.get("query") or "").strip: the query may
 		// be a LIST (retrieve takes up to 3), and its string form still counts
 		// for near-dup detection and the seen_queries ledger. A type assertion
 		// here degrades every array query to "" — seen_queries stays empty, and
@@ -2101,7 +2053,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, trunc(oc.Note, 280))
 		}
 		// If the session is already heavy, cut this payload proportionally.
-		// Python :1509-1514 counts len() of a str — CODE POINTS, not bytes — so
+		// -1514 counts len of a str — CODE POINTS, not bytes — so
 		// the budget and the cut must be rune-based too; a byte cap would hit
 		// CJK payloads ~3x early and shrink the evidence the model sees.
 		if used+utf8.RuneCountInString(payload) > budgetChars {
@@ -2114,8 +2066,8 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		used += utf8.RuneCountInString(payload)
 		s.Messages = appendMessages(s.Messages, *schema.ToolMessage(payload, c.ID))
 
-		// Ladder continuation (Python action_session.py:_tool_node): when the
-		// model's rung came back weak, keep advancing the ladder IN CODE so one
+		// Ladder continuation: when the model's rung came back weak, keep advancing the
+		// ladder IN CODE so one
 		// weak step cascades through the remaining (cheaper, wider) rungs instead
 		// of leaving the model to rediscover the fallback one turn at a time.
 		//
@@ -2128,9 +2080,9 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			if ok {
 				nxt := rule.Next[oc.Status]
 				if nxt != "" {
-					// Python rebuilds _NavContext(direction, known_docs) from
-					// the live state — the ladder runs against the CURRENT
-					// routed scope, not the one captured at prefix time.
+					// The nav context is rebuilt (direction, known docs) from the live state —
+					// the ladder runs against the CURRENT routed scope, not the one captured at
+					// prefix time.
 					ladderNav := &NavContext{
 						Direction: s.Direction,
 						KnownDocs: append([]string(nil), s.RoutedDocs...),
@@ -2141,8 +2093,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 					}
 					// Respect the session's remaining context budget: the ladder
 					// pairs are appended outside this node's own accounting
-					// (Python passes max_chars=max(800, budget_chars - used),
-					// action_session.py:_tool_node).
+					// (max_chars = max(800, budget_chars - used).)
 					ex := RunNavChain(ctx, s.Tools, ladderNav, nxt, ladderBudget, "ladder",
 						max(800, budgetChars-used))
 					// The ladder keeps advancing: a later tool_call in the SAME
@@ -2152,7 +2103,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 					pendingRule = ex.PendingRule
 					for _, m := range ex.Messages {
 						if m.Role == schema.Tool {
-							// Python :1556 counts len() of a str — code points.
+							// counts len of a str — code points.
 							used += utf8.RuneCountInString(m.Content)
 						}
 						s.Messages = appendMessages(s.Messages, m)
@@ -2225,8 +2176,7 @@ func (s *SessionState) appendBatchProtocol(ranAny bool) {
 // computed here anyway — it was simply never shown.
 //
 // It rides on the last tool message instead of a message of its own: one line,
-// same turn, no extra role in the conversation, and nothing to do with Python's
-// message shape (which never had this feedback to begin with).
+// same turn, no extra role in the conversation.
 //
 // The line is appended ONLY when this node ran at least one tool call, so a turn
 // with no calls cannot accumulate duplicates of the previous line.
@@ -2326,10 +2276,9 @@ func (s *SessionState) offerContinuation() bool {
 	return true
 }
 
-// parentSetShaped reports whether the direction this session was sent on ASKS FOR
-// A SET — what the planner DECLARED, never what a candidate looks like (see
-// SetShaped).
-func (s *SessionState) parentSetShaped() bool { return SetShaped(s.ParentState) }
+// parentSet reports whether the direction this session was sent on ASKS FOR A SET —
+// what the planner DECLARED, never what a candidate looks like (see CoverageOf).
+func (s *SessionState) parentSet() bool { return CoverageOf(s.ParentState).Set }
 
 // wroteBatch reports whether the CALLER wrote a batch of terms in one query — the
 // signal that it is enumerating rather than asking a question.
@@ -2359,28 +2308,7 @@ func (s *SessionState) wroteBatch() bool {
 // one 20-question FRAMES run it opened once (a sentence written into a count-typed
 // slot); the batch half opened zero times.
 func (s *SessionState) enumerating() bool {
-	return s.wroteBatch() || s.parentSetShaped()
-}
-
-// SetShaped reports whether the table ASKS FOR A SET, and nothing broader: a slot
-// the planner typed count / set / list.
-//
-// This — not enumerates — is what the RUNTIME gates on (the per-turn line, the pool
-// excerpt, the continuation offer). A question can hold a list-shaped CANDIDATE
-// without asking for a set: measured (2026-09-15, FRAMES) a slot typed "dataset"
-// carried `Grace's、High、Falls、Colonial、Creek` — ONE waterfall's name cut at its
-// separators — and the permissive test read that as five members, rendering
-// "enumerated members across the slots above: 16" into the answer's record of a
-// "how much shorter" question. A false positive here is paid on every turn of every
-// session on that question, so the runtime asks only what the planner declared.
-func SetShaped(table State) bool {
-	for _, v := range table.State {
-		switch strings.ToLower(strings.TrimSpace(v.Type)) {
-		case "count", "set", "list":
-			return true
-		}
-	}
-	return false
+	return s.wroteBatch() || s.parentSet()
 }
 
 // SessionWallS is the wall clock a session on this direction is given: the
@@ -2398,93 +2326,66 @@ func SetShaped(table State) bool {
 // the round's own clock is fixed before the table — and therefore the shape — is
 // known).
 func SessionWallS(parent State) float64 {
-	if SetShaped(parent) {
+	// The enumeration clock is for a direction that IS one — a set of named members whose
+	// deed the planner wrote the words for (Coverage.Ok) — not for every direction that
+	// happens to contain a count: an enumeration session is mid-batch when its clock runs
+	// out and a batch that is cut loses the members it had reached (see setActionTimeoutS
+	// for the measurement), while a value session has no such work in flight and keeps the
+	// tighter clock with the shorter latency.
+	if CoverageOf(parent).Ok() {
 		return setActionTimeoutS
 	}
 	return actionTimeoutS
 }
 
-// setProtocolFor returns the method a session sent on this direction is SEEDED with,
-// or "" when the direction is not assembling a set.
+// setMethodFor returns the enumeration METHOD, or "" when the direction is not an
+// enumeration.
 //
-// The method is `action_set`, and both halves of when it is delivered are measured:
-// its FIRST instruction — propose more candidates than you expect — is a decision
-// taken before the first query, so a direction that has declared itself a set is
-// seeded (measured 2026-09-16, 三国/关羽: eighteen members with the method in the seed
-// of a `[count]` table, fourteen when it arrived a turn later); and a direction that
-// has not is handed it after the first batch it writes (see appendBatchProtocol),
-// which is the signal with no measured false positives.
+// The method is `action_set`, and both halves of when it is delivered are measured: its
+// FIRST instruction — propose more candidates than you expect — is a decision taken
+// before the first query, so a direction that has declared itself an enumeration is
+// seeded (measured 2026-09-16, 三国/关羽: eighteen members with the method in the seed of
+// a `[count]` table, fourteen when it arrived a turn later); and a direction that has not
+// is handed it after the first batch it writes (see appendBatchProtocol), which is the
+// signal with no measured false positives.
 //
-// The gate is EnumerationShaped — the planner's own three statements about the answer
-// (count/set/list, a NAME-carrying slot, act words) — and never a reading of a
-// candidate. Measured (2026-09-16, FRAMES): the permissive version seeded 44 of 67
-// sessions, 2777 characters of set strategy each, on questions that assemble nothing
-// (named-term seats 0, batch weaving 0); the SetShaped-only version still seeded the
-// handful of value questions that merely contain a count, and that run — 4 questions in
-// flight, 300s deadline — finished 0.833 with two timeouts against 0.875 with none.
-func setProtocolFor(table State, prompts PromptLoader) string {
-	method := setMethodFor(table, prompts)
-	if method == "" {
-		return ""
-	}
-	// The pattern list belongs to the enumeration strategy alone (see EnumerationShaped): the
-	// planner declares act words for "a count of things someone DID" too, and a list of corpus
-	// queries is neither useful nor free on a question whose answer is a number (measured
-	// 2026-09-16, FRAMES — see EnumerationShaped for the run that paid for it).
-	if !EnumerationShaped(table) {
-		return method
-	}
-	patterns := ScanPatterns(table)
-	if len(patterns) == 0 {
-		return method
-	}
-	// The corpus queries the direction's own declaration allows, rendered next to the method
-	// that uses them (see ScanPatterns): completeness belongs to the corpus, and this is the
-	// question that makes it answer — actor and act together, once per act word.
-	//
-	// This is the FALLBACK shape: when the runtime already ran them, enumerationSeed seeds
-	// what came back instead (see RunCompletenessPass).
-	var b strings.Builder
-	b.WriteString(method)
-	b.WriteString("\n## The act patterns this direction declared — one call per line\n\n")
-	for _, p := range patterns {
-		fmt.Fprintf(&b, "- %s\n", p)
-	}
-	return b.String()
-}
-
-// setMethodFor returns the enumeration METHOD alone (see setProtocolFor), or "" when the
-// direction is not assembling a set. Its gate is SetShaped — what the planner declared
-// (count/set/list) — and nothing else: measured (2026-09-16, FRAMES), the permissive
-// reading of a candidate seeded 44 of 67 sessions with 2777 characters of set strategy each
-// on questions that assemble nothing.
+// The gate is the enumeration itself (see Coverage): the method tells a session to
+// enumerate NAMED members, and a single-value question that merely contains a count must
+// not be told to assemble anything. Measured (2026-09-16, FRAMES): the permissive version
+// seeded 44 of 67 sessions with 2777 characters of set strategy each on questions that
+// assemble nothing; the shape-only version still seeded the value questions that contain a
+// count, and that run finished 0.833 with two timeouts against 0.875 with none.
 func setMethodFor(table State, prompts PromptLoader) string {
-	// The gate is the whole shape of the question, not just "a count appears in it" (see
-	// EnumerationShaped): the method tells a session to enumerate NAMED members, and a single-value
-	// question that merely contains a number must not be told to assemble anything.
-	if !EnumerationShaped(table) {
+	if !CoverageOf(table).Ok() {
 		return ""
 	}
 	return loadOptionalPrompt(prompts, "action_set")
 }
 
-// enumerationSeed builds the enumeration text a session is seeded with.
+// enumerationSeed builds the text a session sent on this direction is seeded with: the
+// method, and — when the runtime has already run the enumeration — the windows it found
+// (see CoverageSet.Render).
 //
-// findings is the completeness pass's output (see RunCompletenessPass): the windows the
-// direction's own act patterns brought back, already in the pool. When it is present the
-// seed carries IT and not the list of patterns to make — measured (2026-09-16, 三国/关羽) a
-// round rendered 2175 characters of patterns into the seed of every session and not one
-// session ran a single one of them (the run's query log holds zero `.*` queries), while a
-// window is evidence that cannot be unread. The pattern list stays the fallback for a run
-// where nothing could be run (no runner, an exhausted context, a patternless table).
-func enumerationSeed(table State, prompts PromptLoader, findings string) string {
-	if f := strings.TrimSpace(findings); f != "" {
-		if method := setMethodFor(table, prompts); method != "" {
-			return method + "\n\n" + f
-		}
-		return f
+// A list of queries in a prompt is ADVICE: measured (2026-09-16, 三国/关羽) a round
+// rendered 2175 characters of act patterns into the seed of every session and not one
+// session ran a single one of them (the run's query log holds zero `.*` queries). A
+// window is evidence — it carries the chunk id a member is cited by — so the session's
+// job becomes reading what came back. When no enumeration ran (no clock, no executor),
+// the method travels alone: the seed never carries queries to make.
+func enumerationSeed(table State, prompts PromptLoader, seed string) string {
+	if !CoverageOf(table).Ok() {
+		// Not an enumeration: nothing to assemble, so neither the method nor a window has
+		// any business in this session's seed.
+		return ""
 	}
-	return setProtocolFor(table, prompts)
+	method := setMethodFor(table, prompts)
+	if s := strings.TrimSpace(seed); s != "" {
+		if method != "" {
+			return method + "\n\n" + s
+		}
+		return s
+	}
+	return method
 }
 
 // continuationAsk is the offer the model decides on: it names the hard bound, the
@@ -2501,7 +2402,7 @@ func continuationAsk(taken, cap int, record string) string {
 		taken, cap, cap-taken, record)
 }
 
-// finalizeNode mirrors Python _finalize_node: tool budget spent — ONE last call
+// finalizeNode: tool budget spent — ONE last call
 // WITHOUT tools, demanding the terminal JSON to salvage whatever was learned.
 func (s *SessionState) finalizeNode(ctx context.Context) error {
 	budgetPrompt := ("TOOL BUDGET EXHAUSTED. Based ONLY on the passages retrieved above, output now — no prose outside the block:\n" +
@@ -2545,11 +2446,10 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 
 	reply, err := s.Model.Complete(callCtx, msgs, nil)
 	if err != nil {
-		// Python _finalize_node:1494-1495 — a failed salvage call is logged and
-		// the node CONTINUES to the deterministic loose-clue harvest below.
-		// Returning early here dropped the last-narration breadcrumb exactly when
-		// the salvage model was unavailable, which is the case the harvest exists
-		// for.
+		// A failed salvage call is logged and the node CONTINUES to the deterministic
+		// loose-clue harvest below. Returning early here drops the last-narration
+		// breadcrumb exactly when the salvage model is unavailable, which is the case the
+		// harvest exists for.
 		_LOG.Printf("[Action Session] salvage call failed: %v", err)
 	} else {
 		newStates, foundAnswer, terminalType, payload := ParseTerminal(reply.Content, s.ParentState)
@@ -2564,9 +2464,8 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		}
 	}
 
-	// Loose-clue harvest (deterministic, zero-LLM; mirrors Python
-	// action_session._finalize_node:1497-1518): when the salvage produced no
-	// branches AND no answer, the last AI narration often still carries a fact
+	// Loose-clue harvest (deterministic, zero-LLM): when the salvage produced no branches
+	// AND no answer, the last AI narration often still carries a fact
 	// worth keeping as a breadcrumb in the first unresolved slot.
 	if len(s.NewStates) == 0 && s.FoundAnswer == nil {
 		if txt := lastNarration(s.Messages); len(txt) >= 24 {
@@ -2581,8 +2480,8 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 			}
 			if targetID >= 0 {
 				// discovered_clues must be []any: ApplyPatch type-switches on the
-				// JSON-decoded shape (like Python's list), so a []string is
-				// silently ignored and the whole patch no-ops.
+				// JSON-decoded shape, so a []string is silently ignored and the whole patch
+				// no-ops.
 				if patched := ApplyPatch(s.ParentState, []map[string]any{
 					{"id": targetID, "discovered_clues": []any{"narrative: " + txt[:min(len(txt), 220)]}},
 				}); patched != nil {
@@ -2596,9 +2495,8 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 	return nil
 }
 
-// lastNarration returns the content of the last assistant message that carries
-// non-empty text, scanning newest-first (mirrors Python's reversed(message) ai
-// lookup in _finalize_node).
+// lastNarration returns the content of the last assistant message that carries non-empty
+// text, scanning newest-first.
 func lastNarration(msgs []schema.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		m := msgs[i]
@@ -2614,9 +2512,7 @@ func lastNarration(msgs []schema.Message) string {
 	return ""
 }
 
-// ---------------------------------------------------------------------------
 // Routing
-// ---------------------------------------------------------------------------
 
 type routeTarget int
 
@@ -2627,7 +2523,7 @@ const (
 	routeRunAction
 )
 
-// actionMaxTurns mirrors Python _action_max_turns: the mode's turn budget.
+// actionMaxTurns: the mode's turn budget.
 //
 // The mode's number is a FLOOR, and it is billed to every turn of every session on
 // the question, so it is paid only by the shape it was raised for: the deeper modes
@@ -2653,7 +2549,7 @@ func (s *SessionState) actionMaxTurns() int {
 	return floor
 }
 
-// route mirrors Python _route.
+// route
 func (s *SessionState) route() routeTarget {
 	if s.Done {
 		return routeEnd
@@ -2682,7 +2578,7 @@ func (s *SessionState) route() routeTarget {
 	return routeRunAction
 }
 
-// routeAfterTool mirrors Python _route_after_tool: the turn budget is checked
+// routeAfterTool: the turn budget is checked
 // AFTER the tool responses are appended. A pending tool_call must always
 // receive its matching tool response, but once the budget is spent we must NOT
 // go back to run_action — that was the Q86 infinite-loop: the model kept
@@ -2702,10 +2598,9 @@ func (s *SessionState) routeAfterTool() routeTarget {
 }
 
 // Session-node adapters: unlike method values (s.runActionNode) these take the
-// state from the graph payload instead of capturing an instance, which is what
-// lets ONE compiled graph serve every session — Python's _SESSION_GRAPH (:1936)
-// is compiled the same way, with the session's tools/model arriving in the
-// state (SessionState.Tools / .Model) rather than in a closure.
+// state from the graph payload instead of capturing an instance, which is what lets ONE
+// compiled graph serve every session: the session's tools/model arrive in the state
+// (SessionState.Tools / .Model) rather than in a closure.
 func runActionNodeFn(ctx context.Context, st *SessionState) (*SessionState, error) {
 	return st, st.runActionNode(ctx)
 }
@@ -2724,10 +2619,9 @@ var (
 	sessionGraphErr  error
 )
 
-// sessionGraph declares the action-session graph and compiles it ONCE per process,
-// mirroring Python's module-level _SESSION_GRAPH (:1936): every session invokes the
-// same runnable with its own state, so the compile (and any structural error) happens
-// once instead of once per session.
+// sessionGraph declares the action-session graph and compiles it ONCE per process: every
+// session invokes the same runnable with its own state, so the compile (and any structural
+// error) happens once instead of once per session.
 //
 // RunSlotResearchPass runs sessions in parallel, so the runnable is invoked
 // concurrently by design. That is safe under three preconditions — break any and the
@@ -2796,13 +2690,11 @@ func sessionGraph() (compose.Runnable[*SessionState, *SessionState], error) {
 	return sessionGraphRun, sessionGraphErr
 }
 
-// maxSessionRunSteps bounds one session's Eino steps. Python has no equivalent
-// knob (LangGraph's recursion_limit is passed per invocation), so this is a
-// Go-only safety net sized well above what the turn budget can reach.
+// maxSessionRunSteps bounds one session's Eino steps: a safety net sized well above what
+// the turn budget can reach.
 const maxSessionRunSteps = 256
 
-// sessionLoop invokes the compiled action-session graph, mirroring Python's
-// compiled LangGraph edge for edge:
+// sessionLoop invokes the compiled action-session graph, edge for edge:
 //
 //	START → run_action
 //	run_action → route → {END | tool | finalize | run_action}
@@ -2831,11 +2723,9 @@ func routeNodeName(t routeTarget) string {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Terminal parsing
-// ---------------------------------------------------------------------------
 
-// ParseTerminal mirrors Python _parse_terminal: parse the two terminal blocks
+// ParseTerminal: parse the two terminal blocks
 // (<state> patches → new-state branches; <answer> → final answer).
 //
 // Returns (newStates, foundAnswer, terminalType, payload) — exactly one of
@@ -2894,10 +2784,9 @@ func ParseTerminal(content string, parent State) ([]State, *string, *string, map
 		if data == nil {
 			data = map[string]any{}
 		}
-		// Python _parse_terminal:1282 — `answer = str(data.get("answer",
-		// "")).strip() or None`: an empty/whitespace answer is NOT a found
-		// answer. Returning a non-nil empty string here terminated the session
-		// with FoundAnswer="" — the slot research pass then reported
+		// An empty/whitespace answer is NOT a found answer. Returning a non-nil empty
+		// string here would terminate the session with FoundAnswer="" — the slot research
+		// pass then reported
 		// collected_answer=false for a session that never answered, and the
 		// model never got the chance to re-emit a proper patch/answer.
 		ans := ""
@@ -2930,9 +2819,7 @@ func toPatchList(v any) []map[string]any {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func toolMessage(id string, passages []any) schema.Message {
 	return *schema.ToolMessage(marshalPassages(passages), id)
@@ -2949,7 +2836,7 @@ func marshalPassages(passages []any) string {
 	return string(raw)
 }
 
-// callCacheKey mirrors Python's `(name, json.dumps(args, sort_keys=True))` key.
+// callCacheKey keys a call by name plus a canonical JSON encoding of its arguments.
 func callCacheKey(c ToolCall) string {
 	raw, err := json.Marshal(c.Args)
 	if err != nil {
@@ -2958,11 +2845,9 @@ func callCacheKey(c ToolCall) string {
 	return c.Name + "|" + string(raw)
 }
 
-// ToolCache is the per-round tool-outcome cache. One instance is shared by a
-// round's CONCURRENT sessions: Python builds a single dict per round
-// (agentic_rag_graph.py:1407) and hands it to every session (:2030), and only
-// asyncio's cooperative scheduling keeps that safe. Go's sessions are goroutines
-// and concurrent map access is a FATAL error there, so the map is guarded.
+// ToolCache is the per-round tool-outcome cache. One instance is shared by a round's
+// CONCURRENT sessions, and Go's sessions are goroutines: concurrent map access is a FATAL
+// error, so the map is guarded.
 type ToolCache struct {
 	mu sync.Mutex
 	m  map[string]ToolOutcome
@@ -2983,9 +2868,8 @@ func (c *ToolCache) Get(key string) (ToolOutcome, bool) {
 	return oc, ok
 }
 
-// Put stores the outcome for key. Two identical calls that lose the race both
-// compute and both store — Python's dict behaves the same way under asyncio (the
-// cache avoids re-executing DELIBERATE repeats, not simultaneous ones).
+// Put stores the outcome for key. Two identical calls that lose the race both compute and
+// both store: the cache avoids re-executing DELIBERATE repeats, not simultaneous ones.
 func (c *ToolCache) Put(key string, oc ToolOutcome) {
 	if c == nil {
 		return
@@ -3046,8 +2930,6 @@ func sortKeys[V any](m map[string]V) []string {
 // ===================== navchain.go =====================
 // Deterministic navigation prefix: a code-driven tool chain.
 //
-// Mirrors Python harness/action_session.py:_build_session_graph.
-//
 // WHY THIS EXISTS: the ReAct loop lets the MODEL decide which tool to call
 // next, so ordering rules ("route with navigate_tree first, then drill with
 // navigate_structure, fall back to retrieve when the drill is weak") can only
@@ -3078,14 +2960,13 @@ const (
 	navPrefixCallTimeoutS = 25.0
 	// navHintChars caps the nav-hint text fed back into retrieval as keywords.
 	navHintChars = 600
-	// navPrefixMinBudgetS floors the prefix budget (Python: max(5.0, ...)).
+	// navPrefixMinBudgetS floors the prefix budget.
 	navPrefixMinBudgetS = 5.0
-	// navMinStepBudgetS floors a single step's budget (Python: max(5.0,
-	// remaining)).
+	// navMinStepBudgetS floors a single step's budget.
 	navMinStepBudgetS = 5.0
 )
 
-// NavRulesEnabled mirrors Python _NAV_RULES_ENABLED.
+// NavRulesEnabled
 const NavRulesEnabled = true
 
 // NavContext is the mutable state threaded through the navigation chain.
@@ -3141,7 +3022,7 @@ var NavRules = []NavRule{
 		Mode: ModeAuto,
 		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": nav.Direction} },
 		// Tree missed => no routed hints to merge against; the only useful step
-		// is an unscoped search. Python :1895 — {OK, MISS, EMPTY, POOR, ERROR};
+		// is an unscoped search. — {OK, MISS, EMPTY, POOR, ERROR};
 		// REDUNDANT is deliberately absent: a redundant locate changed nothing,
 		// and widening it to global would re-run the same corpus search that
 		// produced the duplicates.
@@ -3161,7 +3042,7 @@ var NavRules = []NavRule{
 		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": nav.Direction} },
 		// drill returns OK with the merged, re-ranked evidence; only an empty
 		// whole-corpus result (MISS) or an infra failure falls through to global.
-		// Python :1905 — {OK, MISS, EMPTY, ERROR}; no POOR and no REDUNDANT.
+		// {OK, MISS, EMPTY, ERROR}; no POOR and no REDUNDANT.
 		Next: map[string]string{
 			StatusOK:    "",
 			StatusMiss:  "global",
@@ -3205,11 +3086,9 @@ func runDrillMerge(ctx context.Context, ts *Toolset, nav *NavContext, available 
 	seenIDs := map[string]bool{}
 
 	// 1. Skeleton A: whole-corpus retrieval, softly boosted by the nav hints.
-	// Python _run_drill_merge calls _exec_retrieve(..., nav_hint=ctx.nav_hint)
-	// (action_session.py:_run_drill_merge): the hint is an explicit PARAMETER there, so it is
-	// passed explicitly here too instead of being parked on the shared executor
-	// (that made the model's own retrieve calls carry a hint Python never gives
-	// them).
+	// The hint is an explicit PARAMETER, passed explicitly here instead of being parked on
+	// the shared executor (which would make the model's own retrieve calls carry a hint they
+	// were never given).
 	retOC := ExecuteTool(ctx, ts, "retrieve", map[string]any{
 		"query":    []string{nav.Direction},
 		"nav_hint": nav.NavHint,
@@ -3319,7 +3198,7 @@ func navRankOf(v any) int {
 	return 1
 }
 
-// stepBudget applies the per-step floor (Python: max(5.0, remaining)).
+// stepBudget applies the per-step floor to the remaining budget.
 func stepBudget(remaining float64) time.Duration {
 	if remaining < navMinStepBudgetS {
 		remaining = navMinStepBudgetS
@@ -3367,18 +3246,17 @@ type NavExchange struct {
 	BudgetLeft float64
 }
 
-// RunNavChain mirrors Python _run_nav_chain: run NavRules from startID, stopping
+// RunNavChain: run NavRules from startID, stopping
 // at the first LLM step.
 //
 // AUTO steps execute here; an LLM step is returned without being run, because
 // only the model can supply its arguments (e.g. which routed document to drill).
 // Shared by the pre-session prefix and the in-session fallback, so both consume
 // exactly the same ladder.
-// idPrefix tags every tool_call id produced by a chain run so two chains sharing
-// the same rule ids never collide. Python's _run_nav_chain(id_prefix="nav"|"ladder")
-// does the same: the prefix case emits "nav_<rule_id>" and the in-session ladder
+// idPrefix tags every tool_call id produced by a chain run so two chains sharing the same
+// rule ids never collide: the prefix case emits "nav_<rule_id>" and the in-session ladder
 // fallback emits "ladder_<rule_id>", and the provider rejects a history where two
-// tool_calls share an id. Go uses the same scheme.
+// tool_calls share an id.
 func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID string, budgetS float64, idPrefix string, maxChars int) NavExchange {
 	var out NavExchange
 	if !NavRulesEnabled {
@@ -3450,10 +3328,9 @@ func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID stri
 // The pair MUST be well formed — every tool_call needs its tool response, or
 // the provider rejects the history (the reason stripUnpairedToolCalls exists).
 //
-// maxChars caps the serialized payload, mirroring Python _emit_nav_pair
-// (action_session.py:_emit_nav_pair): the in-session ladder continuation appends
-// these pairs OUTSIDE the tool node's own accounting, so it passes the
-// session's remaining context budget down. 0 means uncapped (the prefix path).
+// maxChars caps the serialized payload: the in-session ladder continuation appends these
+// pairs OUTSIDE the tool node's own accounting, so it passes the session's remaining
+// context budget down. 0 means uncapped (the prefix path).
 func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, oc ToolOutcome, idPrefix string, maxChars int) {
 	callID := fmt.Sprintf("%s_%s", idPrefix, ruleID)
 	rawArgs, err := json.Marshal(args)
@@ -3461,7 +3338,7 @@ func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, 
 		rawArgs = []byte("{}")
 	}
 	payload := marshalPassages(oc.Payload)
-	// Python :1948 slices a str — CODE POINTS, not bytes — so the cap must be
+	// slices a str — CODE POINTS, not bytes — so the cap must be
 	// rune-based too; a byte cut would hit CJK payloads ~3x early AND could
 	// split a UTF-8 sequence, corrupting the JSON tool response.
 	if maxChars > 0 && utf8.RuneCountInString(payload) > maxChars {
@@ -3480,7 +3357,7 @@ func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, 
 	)
 }
 
-// RunNavPrefix mirrors Python run_nav_prefix: run the navigation ladder up to
+// RunNavPrefix: run the navigation ladder up to
 // the first model-driven step.
 //
 // The returned messages are completed assistant/tool pairs ready to seed the
@@ -3504,14 +3381,11 @@ func RunNavPrefix(ctx context.Context, ts *Toolset, direction string, deadlineLe
 	if budget < navPrefixMinBudgetS {
 		budget = navPrefixMinBudgetS
 	}
-	// maxChars 0: the prefix runs before the session's context accounting starts
-	// (Python's run_nav_prefix also leaves _run_nav_chain's max_chars at 0).
+	// maxChars 0: the prefix runs before the session's context accounting starts.
 	return RunNavChain(ctx, ts, nav, NavStartRule, budget, "nav", 0)
 }
 
-// ---------------------------------------------------------------------------
 // Payload helpers
-// ---------------------------------------------------------------------------
 
 // docIDsFromPayload reads payload[0]["doc_ids"] from a navigate_tree result.
 func docIDsFromPayload(payload []any) []string {
@@ -3607,19 +3481,14 @@ func minDuration(a, b time.Duration) time.Duration {
 	return b
 }
 
-// ===================== run.go (entry points, LAST to mirror Python) =====================
-// The two public entry points of the action session — placed at the END of the
-// file, mirroring Python action_session.py::run_action_session (line 1967) and
-// initialize_state (line 2080) being the final definitions.
-//
-// Mirrors Python harness/action_session.py:
-//   - run_action_session (line 1967)
-//   - initialize_state   (line 2080)
+// ===================== run.go (entry points) =====================
+// The two public entry points of the action session, placed at the END of the file:
+//   - RunActionSession
+//   - InitializeState
 
 // PromptLoader loads a named prompt template (e.g. "action_run",
-// "action_initialize_state"). Python resolves these from rag/prompts/*.md via
-// load_prompt; the Go harness takes the seam as an interface so the templates
-// can come from the same files, from embedded assets, or from a test double.
+// "action_initialize_state"). The harness takes this as an interface so the templates can
+// come from the repository's prompt files, from embedded assets, or from a test double.
 type PromptLoader interface {
 	Load(name string) (string, error)
 }
@@ -3646,38 +3515,34 @@ type SessionDeps struct {
 	// KB is the shared evidence pool accumulated across the research so far.
 	// When non-nil, its chunks are injected into the seed user prompt as
 	// "ALREADY RETRIEVED" so the model does not re-retrieve evidence it already
-	// has (mirrors Python run_action_session:1982-1984). Nil skips the injection.
+	// has. Nil skips the injection.
 	KB *Kbinfos
-	// PatternFindings is the completeness pass's output for this direction (see
-	// RunCompletenessPass): its act patterns were already RUN over the corpus and these
-	// are the windows that came back, each with the chunk id it is cited by. When
-	// non-empty it replaces the seed's list of patterns to make — a query list is
-	// advice, a window is evidence.
-	PatternFindings string
+	// CoverageSeed is what this question's enumeration already brought back (see
+	// EnumerateCoverage / CoverageSet.Render): the windows where the deed is stated, each
+	// with the chunk id a member is cited by. When non-empty it travels in this
+	// session's seed — a window is evidence, where a list of queries to make is advice.
+	CoverageSeed string
 }
 
-// RunActionSession mirrors Python run_action_session: a bounded session
+// RunActionSession: a bounded session
 // pursuing ONE direction.
 //
-// Returns an empty Result (no states) when no model is configured or the
-// session fails — mirroring Python, which logs and returns
-// Result(messages=[], new_states=[]) rather than propagating.
+// Returns an empty Result (no states) when no model is configured or the session fails:
+// the failure is logged and an empty Result returned rather than propagating.
 func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache *ToolCache, sharedSearchQueries []string) Result {
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
-	// A direction whose table DECLARED a set is seeded WITH THE METHOD, before its
-	// first turn.
+	// A direction that IS an enumeration is seeded WITH THE METHOD, before its first turn.
 	//
-	// The method's first instruction is to propose more candidates than you expect,
-	// which is a decision taken BEFORE the first query — measured (2026-09-16,
-	// 三国/关羽): eighteen members with the method in the seed of a `[count]` table,
-	// fourteen when it arrived one turn later. The gate is what the planner declared
-	// (SetShaped) and not a reading of the candidates (see setProtocolFor for the
-	// forty-four-of-sixty-seven measurement that reverted the permissive version). A
-	// set direction whose table was NOT typed that way gets the method from
-	// appendBatchProtocol, on the first batch it writes.
-	seededMethod := enumerationSeed(parent, deps.Prompts, deps.PatternFindings)
+	// The method's first instruction is to propose more candidates than you expect, which
+	// is a decision taken BEFORE the first query — measured (2026-09-16, 三国/关羽):
+	// eighteen members with the method in the seed of a `[count]` table, fourteen when it
+	// arrived one turn later. The gate is the enumeration itself (see Coverage) and not a
+	// reading of the candidates (see setMethodFor for the forty-four-of-sixty-seven
+	// measurement that reverted the permissive version). A set direction that is not an
+	// enumeration gets the method from appendBatchProtocol, on the first batch it writes.
+	seededMethod := enumerationSeed(parent, deps.Prompts, deps.CoverageSeed)
 	if seededMethod != "" {
 		seedUser += "\n\n" + seededMethod
 		// The seeded direction also widens the retrieval budget (see
@@ -3687,19 +3552,18 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// Logged because a seeded method is text inside a prompt: without this line
 		// nothing distinguishes "the gate opened for the direction that needed it" from
 		// "the gate opened for every direction", which is the failure mode to watch.
-		_LOG.Printf("[Action Session] set-shaped direction — enumeration method added to the seed (%d char(s))", len(seededMethod))
-		if findings := strings.TrimSpace(deps.PatternFindings); findings != "" {
+		_LOG.Printf("[Action Session] enumeration direction — method (and any evidence it brought back) added to the seed (%d char(s))", len(seededMethod))
+		if seed := strings.TrimSpace(deps.CoverageSeed); seed != "" {
 			// Said separately from the line above, because the difference is the whole
-			// point: the seed carries what the declared patterns BROUGHT BACK, not the
-			// patterns themselves (see enumerationSeed).
-			_LOG.Printf("[Action Session] completeness pass's windows in the seed (%d char(s)) — the act patterns were RUN, not listed.", len(findings))
+			// point: the seed carries what the enumeration FOUND, not queries to make
+			// (see enumerationSeed).
+			_LOG.Printf("[Action Session] enumeration windows in the seed (%d char(s)) — the corpus was asked, not the model.", len(seed))
 		}
 	}
 
-	// ALREADY RETRIEVED (mirrors Python run_action_session:1982-1984):
-	// surface the evidence already in the shared pool so the model fills slots
-	// from it instead of re-retrieving the same ground. Without this the ReAct
-	// loop repeatedly searches evidence it already holds.
+	// ALREADY RETRIEVED: surface the evidence already in the shared pool so the model fills
+	// slots from it instead of re-retrieving the same ground. Without this the ReAct loop
+	// repeatedly searches evidence it already holds.
 	if existing := extractRelevantEvidence(deps.KB, direction, 4); existing != "" {
 		seedUser += "\n\nALREADY RETRIEVED (do NOT re-retrieve these — use them to fill slots or identify gaps):\n" + existing
 	}
@@ -3771,10 +3635,9 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	nav := &NavContext{Direction: direction}
 	prefixStarted := time.Now()
 	prefix := RunNavPrefix(runCtx, deps.Tools, direction, budgetLeft, nav)
-	// Python run_action_session:2021/2034 — the prefix's elapsed time is charged
-	// to the session with a 10s floor, so prefix + loop stay inside the caller's
-	// deadline. Leaving DeadlineLeft at budgetLeft let one action session run a
-	// whole prefix longer than Python's.
+	// The prefix's elapsed time is charged to the session with a 10s floor, so prefix + loop
+	// stay inside the caller's deadline. Leaving DeadlineLeft at budgetLeft let one action
+	// session run a whole prefix too long.
 	st.DeadlineLeft = max(10.0, budgetLeft-time.Since(prefixStarted).Seconds())
 	if len(prefix.Messages) > 0 {
 		st.Messages = append(st.Messages, prefix.Messages...)
@@ -3801,19 +3664,18 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	}
 }
 
-// InitResult mirrors Python initialize_state's tuple return: the root slot
+// InitResult: tuple return: the root slot
 // table plus the queries for the first round.
 type InitResult struct {
 	Root         State
 	FirstQueries []string
 }
 
-// InitializeState mirrors Python initialize_state: ask the model to decompose
+// InitializeState: ask the model to decompose
 // the question into a slot table, with a deterministic fallback when the call
 // fails.
 //
-// deadlineLeft bounds the decomposition call (Python: min(_INIT_TIMEOUT_S,
-// deadline_left or _INIT_TIMEOUT_S)).
+// deadlineLeft bounds the decomposition call.
 func InitializeState(ctx context.Context, deps SessionDeps, question string, fanoutHint []string, deadlineLeft float64) InitResult {
 	system := loadPrompt(deps.Prompts, "action_initialize_state")
 	user := "Question: " + question
@@ -3822,10 +3684,10 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 		for _, h := range fanoutHint {
 			lines = append(lines, "- "+h)
 		}
-		// Python :2225 — "\n".join(...), so the block has NO trailing newline.
+		// "\n".join(...), so the block has NO trailing newline.
 		user += "\n\nCandidate aspects already identified:\n" + strings.Join(lines, "\n")
 	}
-	// Python :2106 — `min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)`:
+	// `min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)`:
 	// 0 means "unset" (falls back to the full budget) while a NEGATIVE deadline —
 	// an already-exhausted round — is used as-is and times the call out at once.
 	tmo := initTimeoutS
@@ -3836,32 +3698,30 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 	raw := initChat(ctx, deps, system, user, tmo)
 	data, _ := ExtractJSON(raw).(map[string]any)
 	if len(data) == 0 {
-		// One quick retry — transient provider stalls were observed (45s with
-		// zero bytes); a second attempt succeeded in production logs. Python
-		// gives the retry a LONGER budget (_init_retry_timeout, :2080-2096): on
-		// slow models a 45s bound times out both times and the table degrades to
+		// One quick retry — transient provider stalls were observed (45s with zero bytes); a
+		// second attempt succeeded in production logs. The retry gets a LONGER budget: on slow
+		// models a 45s bound times out both times and the table degrades to
 		// a single answer slot, losing the second hop of a multi-hop question.
 		raw = initChat(ctx, deps, system, user, initRetryTimeout(tmo, deadlineLeft))
 		data, _ = ExtractJSON(raw).(map[string]any)
 	}
 
-	// Python :2121-2129 parses the reply with int()/str()/list-comprehension
-	// semantics; a value it cannot convert RAISES, which _build_slot_table
-	// catches by discarding the whole decomposition and falling back to the
-	// planner fan-outs. An empty root reproduces that here.
+	// A value the reply cannot convert is a hard failure: the whole decomposition is
+	// discarded and the planner fan-outs are used instead. An empty root reproduces that
+	// here.
 	var slots []Variable
 	if rawList, ok := data["slots"].([]any); ok {
 		for i, s := range rawList {
 			m, ok := s.(map[string]any)
 			if !ok {
-				// Python only builds a Variable for dict entries.
+				// Only dict entries become Variables.
 				continue
 			}
 			rawID, hasID := m["id"]
 			if !hasID {
 				rawID = i
 			}
-			id, ok := pyInt(rawID)
+			id, ok := asInt(rawID)
 			if !ok {
 				_LOG.Printf("[Action Session:init] slot %d has a non-integer id (%v); discarding the decomposition", i, rawID)
 				return InitResult{}
@@ -3870,9 +3730,9 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			// other value is STRINGIFIED (never rejected).
 			vType := "entity"
 			if rawType, hasType := m["type"]; hasType && isTruthy(rawType) {
-				vType = PyStr(rawType)
+				vType = displayText(rawType)
 			}
-			clues, ok := pyStringList(m["clues"])
+			clues, ok := asStringList(m["clues"])
 			if !ok {
 				_LOG.Printf("[Action Session:init] slot %d has non-iterable clues (%v); discarding the decomposition", i, m["clues"])
 				return InitResult{}
@@ -3883,9 +3743,9 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			// The slot may DECLARE the act words its enumeration must cover (see
 			// Variable.Terms): a missing or malformed list is simply no declaration,
 			// never a reason to discard the decomposition.
-			terms, _ := pyStringList(m["scan"])
-			if len(terms) > scanTermsMax {
-				terms = terms[:scanTermsMax]
+			terms, _ := asStringList(m["scan"])
+			if len(terms) > CoverageActWordsMax {
+				terms = terms[:CoverageActWordsMax]
 			}
 			kept := make([]string, 0, len(terms))
 			for _, t := range terms {
@@ -3893,15 +3753,15 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 					kept = append(kept, t)
 				}
 			}
-			subject := strings.TrimSpace(PyStr(m["subject"]))
+			subject := strings.TrimSpace(displayText(m["subject"]))
 			slots = append(slots, Variable{ID: id, Type: vType, QuestionClues: clues, Terms: kept, Subject: subject})
 		}
 	}
-	// Python :2130 — `[str(q).strip() for q in (data.get("first_queries") or [])][:3]`:
+	// `[str(q).strip for q in (data.get("first_queries") or [])][:3]`:
 	// the first three entries are stripped and KEPT even when they end up empty
 	// (the filter that used to live here made Go pick later entries instead), and
 	// a non-iterable value raises exactly like the slot parsing above.
-	rawFirst, ok := pyStringList(data["first_queries"])
+	rawFirst, ok := asStringList(data["first_queries"])
 	if !ok {
 		_LOG.Printf("[Action Session:init] first_queries is not iterable (%v); discarding the decomposition", data["first_queries"])
 		return InitResult{}
@@ -3949,7 +3809,7 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 	return InitResult{Root: root, FirstQueries: firstQueries}
 }
 
-// initRetryTimeout mirrors Python _init_retry_timeout (:2080-2096): the
+// initRetryTimeout: the
 // slot-table decomposition retry gets a longer window than the first attempt,
 // because on slow models the 45s bound times out both times and the table
 // degrades to a single answer slot.
@@ -3964,14 +3824,14 @@ func initRetryTimeout(firstTmo, deadlineLeft float64) float64 {
 	return max(firstTmo, min(min(2*firstTmo, 90.0), deadlineLeft-5.0))
 }
 
-// initChat mirrors Python _init_chat: ONE bounded LLM turn for the slot-table
+// initChat: ONE bounded LLM turn for the slot-table
 // decomposition. Returns "" on timeout or failure — the caller falls back.
 func initChat(ctx context.Context, deps SessionDeps, system, user string, tmo float64) string {
 	if deps.Model == nil {
 		return ""
 	}
 	if tmo <= 0 {
-		// Python :2070-2074 — `asyncio.timeout(tmo)` with a spent budget fires on
+		// `asyncio.timeout(tmo)` with a spent budget fires on
 		// the next tick, so the turn is abandoned before it starts. Going through
 		// deadlineToDuration would silently hand it the full ACTION_TIMEOUT
 		// instead, spending a budget the round no longer has.
@@ -3991,10 +3851,7 @@ func initChat(ctx context.Context, deps SessionDeps, system, user string, tmo fl
 	return reply.Content
 }
 
-// ---------------------------------------------------------------------------
-// Model / tool-calling seam (mirrors Python action_session.py's tool specs +
-// _parse_tool_calls output + _llm_once_with_tools → _acompletion).
-// ---------------------------------------------------------------------------
+// Model / tool-calling seam: tool specs, parsed tool calls, and the completion call.
 
 // ToolFunction is the OpenAI-style function descriptor.
 type ToolFunction struct {
@@ -4003,8 +3860,7 @@ type ToolFunction struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
-// ToolSpec is an OpenAI-style tool schema, byte-compatible with the Python
-// dicts so a provider accepting either sees the same surface.
+// ToolSpec is an OpenAI-style tool schema.
 type ToolSpec struct {
 	Type     string       `json:"type"`
 	Function ToolFunction `json:"function"`
@@ -4031,61 +3887,55 @@ type ModelReply struct {
 // TemperatureModel is an OPTIONAL extension of SessionModel: models that can
 // vary the sampling temperature per call implement it.
 //
-// Python sets a per-node temperature (keyword extraction uses 0.1, the answer
-// composition uses the default). The Go seam originally had no temperature at
-// all, so every node ran at whatever the invoker defaulted to. Callers that
-// need a specific temperature type-assert to this interface and fall back to
-// Complete when it is not implemented.
+// Temperatures are set per node (keyword extraction uses 0.1, the answer composition uses
+// the default). Without this seam every node would run at whatever the invoker defaulted
+// to. Callers that need a specific temperature type-assert to this interface and fall back
+// to Complete when it is not implemented.
 type TemperatureModel interface {
 	CompleteWithTemperature(ctx context.Context, messages []schema.Message, tools []ToolSpec, temp float64) (*ModelReply, error)
 }
 
-// ContextLengthModel is implemented by models that can report their context
-// window in tokens (Python LLMBundle.max_length), which message-fitting nodes
-// use as the budget for chat.FitMessages. Callers type-assert for it and fall
-// back to chat.EffectiveContextLength's 8192 default when it is absent, exactly
-// mirroring Python's LLM.max_length defaulting when the model config omits
-// max_tokens. This is the message_fit_in counterpart to the TemperatureModel
-// seam.
+// ContextLengthModel is implemented by models that can report their context window in
+// tokens, which message-fitting nodes use as the budget for chat.FitMessages. Callers
+// type-assert for it and fall back to chat.EffectiveContextLength's 8192 default when it
+// is absent, i.e. when the model config omits a context length. This is the fitting
+// counterpart to the TemperatureModel seam.
 type ContextLengthModel interface {
 	ContextLength() int
 }
 
 // SessionModel is ONE model turn with THIS mode's tool surface.
 //
-// Python calls this via _llm_once_with_tools → _acompletion. The production
-// implementation (InvokerSessionModel) binds the tool schemas natively through
-// the chat seam (chat.Request.Tools + ToolChoiceAuto) and reads the calls back
-// from Response.ToolCalls — the same protocol Python uses.
+// The production implementation (InvokerSessionModel) binds the tool schemas natively
+// through the chat seam (chat.Request.Tools + ToolChoiceAuto) and reads the calls back from
+// Response.ToolCalls.
 type SessionModel interface {
 	Complete(ctx context.Context, messages []schema.Message, tools []ToolSpec) (*ModelReply, error)
 }
 
 // StreamingSessionModel is implemented by models that can emit the answer
 // incrementally. Callers type-assert for it and fall back to the one-shot
-// Complete when it is absent, so streaming is strictly an enhancement (Python
-// tools.answer_sink, fed by the graph's token stream).
+// Complete when it is absent, so streaming is strictly an enhancement (fed by the graph's
+// token stream).
 type StreamingSessionModel interface {
 	SessionModel
 	// StreamComplete sends the reply in pieces. onDelta receives each piece and
 	// isThink tells whether it belongs to a hidden reasoning block; both are
-	// forwarded, matching Python's answer_sink(delta, kind == "think").
+	// forwarded to the sink.
 	StreamComplete(ctx context.Context, messages []schema.Message, tools []ToolSpec, onDelta func(delta string, isThink bool) error) (*ModelReply, error)
 }
 
 // Parsing of model output.
 //
 // Every LLM call in the harness asks for JSON, and models wrap that JSON in
-// thinking preamble and Markdown fences. Python leans on json_repair for
-// leniency; the Go equivalent is to strip the wrappers first and let
-// encoding/json handle the rest. This mirrors Python's extract_json
-// (action_session.py:extract_json), kept in the same file for parity.
+// thinking preamble and Markdown fences. The approach here is to strip the wrappers first,
+// then repair, and let encoding/json handle the rest.
 
 var reFence = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
 
-// UnmarshalModelJSON mirrors Python's extract_json: strip any thinking
-// preamble and Markdown fences, then parse JSON. An empty result parses as an
-// empty object so callers can index into `out` without a nil check.
+// UnmarshalModelJSON strips any thinking preamble and Markdown fences, then parses JSON.
+// An empty result parses as an empty object so callers can index into `out` without a nil
+// check.
 func UnmarshalModelJSON(text string, out any) error {
 	text = common.StripThinkTrailing(text)
 	text = reFence.ReplaceAllString(text, "")
@@ -4097,10 +3947,8 @@ func UnmarshalModelJSON(text string, out any) error {
 }
 
 // resolveLoader returns the configured PromptLoader, or the embedded
-// Markdown-backed loader when none is wired. Mirrors Python, where
-// rag/prompts/template.load_prompt always reads the .md files from rag/prompts/ —
-// the harness defaults to the same authoritative templates instead of the terse Go
-// fallback constants.
+// Markdown-backed loader when none is wired. The harness defaults to the repository's
+// authoritative templates instead of the terse Go fallback constants.
 func resolveLoader(p PromptLoader) PromptLoader {
 	if p != nil {
 		return p
@@ -4111,10 +3959,8 @@ func resolveLoader(p PromptLoader) PromptLoader {
 // loadPrompt resolves the prompt loader (defaulting to prompts.EmbeddedPromptLoader
 // when none is wired on SessionDeps) and loads name. The canonical templates are
 // the Markdown files action_run.md and action_initialize_state.md under
-// internal/rag/prompts (a copy of rag/prompts/*.md on the Python side, embedded
-// into the binary via //go:embed so they are never absent at runtime). This
-// mirrors Python's rag/prompts/template.py::load_prompt: a missing template is an
-// error, not a silent fallback to a stale string.
+// internal/rag/prompts, embedded into the binary via //go:embed so they are never absent
+// at runtime. A missing template is an error, not a silent fallback to a stale string.
 func loadPrompt(p PromptLoader, name string) string {
 	t, err := resolveLoader(p).Load(name)
 	if err != nil {
@@ -4147,13 +3993,10 @@ func deadlineToDuration(seconds float64) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
-// extractRelevantEvidence mirrors Python action_session._extract_relevant_evidence
-// (action_session.py:_extract_relevant_evidence — placed here, just before the entry points, to match
-// Python's source order): flatten the shared evidence pool into a compact,
-// line-delimited digest the model can read without re-retrieving. Chunks are
-// ranked by relevance to the direction tokens (mirroring Python's token-match
-// count sort), then the top maxChunks are surfaced, each truncated at 300 chars
-// so the seed prompt stays bounded.
+// extractRelevantEvidence flattens the shared evidence pool into a compact, line-delimited
+// digest the model can read without re-retrieving. Chunks are ranked by the number of
+// direction tokens they contain, then the top maxChunks are surfaced so the seed prompt
+// stays bounded.
 func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) string {
 	if kb == nil || maxChunks <= 0 {
 		return ""
@@ -4163,12 +4006,12 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 		return ""
 	}
 
-	// Build the set of direction tokens (>=2 chars, alnum or CJK) exactly as
-	// Python does, then rank chunks by how many tokens appear in their text.
+	// Build the set of direction tokens (>=2 chars, alnum or CJK), then rank chunks by how
+	// many tokens appear in their text.
 	dirTokens := tokenizeDirection(direction)
 	var ranked []map[string]any
 	if len(dirTokens) == 0 {
-		// No usable direction: mirror Python's chunks[-max_chunks:] fallback.
+		// No usable direction: fall back to the tail of the pool.
 		if len(chunks) > maxChunks {
 			ranked = chunks[len(chunks)-maxChunks:]
 		} else {
@@ -4201,13 +4044,12 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 			continue
 		}
 		// Cap each chunk at evidenceDigestChars and flatten newlines so the digest
-		// stays single-line per chunk. The cap used to mirror Python's hard `[:300]`
-		// cut; it is 1200 now because a 300-code-point window is shorter than the
-		// sentence a kill is reported in (see evidenceDigestChars for the runs that
-		// measured it).
+		// stays single-line per chunk. The cap is evidenceDigestChars (1200): a
+		// 300-code-point window is shorter than the sentence a kill is reported in (see
+		// evidenceDigestChars for the runs that measured it).
 		content = truncateRunes(content, evidenceDigestChars)
 		content = strings.ReplaceAll(content, "\n", " ")
-		// Mirror Python f"[{cid}] {text}" so the model can cite the chunk id.
+		// "[cid] text" so the model can cite the chunk id.
 		b.WriteString("[")
 		b.WriteString(ChunkIDOf(c))
 		b.WriteString("] ")
@@ -4217,8 +4059,7 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// tokenizeDirection splits a direction string into the same >=2-char alnum/CJK
-// tokens Python's re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]{2,}") produces.
+// tokenizeDirection splits a direction string into >=2-char alnum/CJK tokens.
 func tokenizeDirection(direction string) []string {
 	if direction == "" {
 		return nil
@@ -4248,8 +4089,7 @@ func tokenizeDirection(direction string) []string {
 	return tokens
 }
 
-// directionRelevance counts how many direction tokens appear in a chunk's text,
-// mirroring Python's _rel() token-match sum.
+// directionRelevance counts how many direction tokens appear in a chunk's text.
 func directionRelevance(chunk map[string]any, dirTokens []string) int {
 	text := strings.ToLower(ChunkTextOf(chunk))
 	if text == "" {

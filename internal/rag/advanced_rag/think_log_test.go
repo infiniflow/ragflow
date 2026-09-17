@@ -44,8 +44,8 @@ func TestThinkLoggerForwardsTaggedLines(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("forwarded %d line(s), want 2: %#v", len(got), got)
 	}
-	// The think block is HTML, so each line must end with ThinkLineBreak
-	// (Python's "<br>"); a bare newline collapses into a space and the stages
+	// The think block is HTML, so each line must end with ThinkLineBreak ("<br>"); a bare
+	// newline collapses into a space and the stages
 	// run together.
 	if got[0] != "[Planner] Splitting the research question into tasks"+ThinkLineBreak {
 		t.Errorf("line 0 = %q, want a ThinkLineBreak-terminated stage line", got[0])
@@ -77,8 +77,8 @@ func TestThinkLoggerNilSinkIsPassThrough(t *testing.T) {
 	}
 }
 
-// TestThinkLoggerSurvivesPanickingSink mirrors Python's bare try/except around
-// the sink call: a broken sink must never break logging or the request.
+// TestThinkLoggerSurvivesPanickingSink: the sink call is guarded, so a broken sink must never
+// break logging or the request.
 func TestThinkLoggerSurvivesPanickingSink(t *testing.T) {
 	var logged bytes.Buffer
 	orig := log.New(&logged, "", 0)

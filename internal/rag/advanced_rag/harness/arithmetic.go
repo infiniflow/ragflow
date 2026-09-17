@@ -32,8 +32,6 @@ import (
 
 // Deterministic arithmetic over retrieved evidence.
 //
-// Mirrors Python harness/arithmetic.py.
-//
 // Some questions ask for a number no single source states — the combined population of
 // three counties, how many listed films won an award, the years between two dates. Every
 // input is in the evidence by then and only the arithmetic is missing, which an LLM does
@@ -41,10 +39,10 @@ import (
 // writes ONE expression and we evaluate it.
 //
 // The expression is model-written and NOT trusted: Go has no eval and the model writes
-// PYTHON syntax (`**`, `x if y else z`, list literals) that go/parser cannot read, so
-// this file ships a small parser for a deliberately tiny Python subset and rejects
-// everything outside the whitelist BEFORE evaluation. No reflection, no name lookup, no
-// property access: an unlisted construct is a parse error, not a sandbox escape.
+// syntax (`**`, `x if y else z`, list literals) that go/parser cannot read, so this file
+// ships a small parser for a deliberately tiny expression language and rejects everything
+// outside the whitelist BEFORE evaluation. No reflection, no name lookup, no property
+// access: an unlisted construct is a parse error, not a sandbox escape.
 //
 // Public interface
 //
@@ -55,11 +53,11 @@ import (
 
 const (
 	// computeMaxChars caps the whole expression; every figure is inline, none
-	// is long (Python: _COMPUTE_MAX_CHARS).
+	// is long.
 	computeMaxChars = 400
-	// maxStringLiteral caps a string literal argument (Python: 256).
+	// maxStringLiteral caps a string literal argument.
 	maxStringLiteral = 256
-	// maxPowExponent caps `**` (Python: abs(exponent) > 64 is refused).
+	// maxPowExponent caps `**` at abs(exponent) > 64.
 	maxPowExponent = 64
 )
 
@@ -104,7 +102,7 @@ func Compute(expression string) (string, string) {
 	return "", fmt.Sprintf("result is %T, not a number", value)
 }
 
-// formatNumber mirrors Python _format_number: render a computed number without
+// formatNumber: render a computed number without
 // float noise ("3.0" -> "3", 0.1+0.2 -> "0.3").
 func formatNumber(value float64) string {
 	if value == math.Trunc(value) && math.Abs(value) < 1e15 {
@@ -115,9 +113,7 @@ func formatNumber(value float64) string {
 	return strings.TrimRight(s, ".")
 }
 
-// ---------------------------------------------------------------------------
 // AST
-// ---------------------------------------------------------------------------
 
 type node interface{ pos() int }
 
@@ -153,7 +149,7 @@ type binaryNode struct {
 
 func (n *binaryNode) pos() int { return n.p }
 
-// chainNode mirrors Python ast.Compare, which is an N-ary node: `a < b < c` is
+// chainNode: which is an N-ary node: `a < b < c` is
 // `(a < b) and (b < c)`, with each operand evaluated exactly ONCE and the chain
 // short-circuiting on the first false comparison.
 //
@@ -192,9 +188,7 @@ type seqNode struct {
 
 func (n *seqNode) pos() int { return n.p }
 
-// ---------------------------------------------------------------------------
-// Lexer + Pratt parser for a tiny Python subset
-// ---------------------------------------------------------------------------
+// Lexer + Pratt parser for a tiny expression language
 
 // Supported: numeric and string literals, True/False/None, list/tuple/set
 // literals, unary + - not, binary + - * / // % ** and comparison chains, `and`
@@ -293,9 +287,9 @@ func (p *parser) parseNot() (node, error) {
 
 var cmpOps = []string{"==", "!=", "<=", ">=", "<", ">"}
 
-// parseComparison collects the WHOLE comparison chain into one chainNode,
-// mirroring Python's ast.Compare. Two or more operators are what make Python's
-// chaining observable; a single comparison is just a one-op chain.
+// parseComparison collects the WHOLE comparison chain into one chainNode. Two or more
+// operators are what make chaining observable; a single comparison is just a one-op
+// chain.
 func (p *parser) parseComparison() (node, error) {
 	start := p.i
 	first, err := p.parseSum()
@@ -415,8 +409,8 @@ func (p *parser) parseUnary() (node, error) {
 	return p.parsePower()
 }
 
-// parsePower binds tighter than unary on the right and is right-associative,
-// matching Python: `2 ** 3 ** 2` is 512 and `-2 ** 2` is -4.
+// parsePower binds tighter than unary on the right and is right-associative:
+// `2 ** 3 ** 2` is 512 and `-2 ** 2` is -4.
 func (p *parser) parsePower() (node, error) {
 	base, err := p.parseAtom()
 	if err != nil {
@@ -453,11 +447,10 @@ func (p *parser) parseAtom() (node, error) {
 		if p.i >= len(p.src) {
 			return nil, p.errf("unclosed '('")
 		}
-		// A trailing (or interior) comma turns this into a TUPLE literal, which
-		// Python whitelists as ast.Tuple and uses as the default sequence in
-		// sum((1,2,3)) / len((1,2,3)) / min((1,2,3)) / letters((...)). A single
-		// element with no comma is a plain parenthesised expression (not a
-		// one-tuple) — Python's `(1+2)` == 3 vs `(1,)` == (1,).
+		// A trailing (or interior) comma turns this into a TUPLE literal — the sequence form
+		// used by sum((1,2,3)) / len((1,2,3)) / min((1,2,3)) / letters((...)). A single
+		// element with no comma is a plain parenthesised expression (not a one-tuple):
+		// `(1+2)` == 3 vs `(1,)` == (1,).
 		if p.src[p.i] == ',' {
 			items := []node{inner}
 			for {
@@ -652,18 +645,16 @@ func isIdentChar(c byte) bool {
 	return isIdentStart(c) || (c >= '0' && c <= '9')
 }
 
-// ---------------------------------------------------------------------------
 // Whitelist check — runs BEFORE evaluation
-// ---------------------------------------------------------------------------
 
-// computeFunctions mirrors Python _COMPUTE_FUNCTIONS.
+// computeFunctions
 var computeFunctions = map[string]bool{
 	"abs": true, "round": true, "min": true, "max": true, "sum": true,
 	"len": true, "int": true, "float": true, "sorted": true,
 	"letters": true, "digit_sum": true, "date_diff": true,
 }
 
-// computeAlwaysNumeric mirrors Python _COMPUTE_ALWAYS_NUMERIC: functions whose
+// computeAlwaysNumeric: functions whose
 // result is a number whatever they are handed. `min`/`max`/`sum` are absent on
 // purpose — min("b","a") is a string — and `sorted` returns a list, so neither
 // may stand where a number is required.
@@ -672,7 +663,7 @@ var computeAlwaysNumeric = map[string]bool{
 	"letters": true, "digit_sum": true, "date_diff": true,
 }
 
-// checkExpression mirrors Python _check_expression: reject anything outside the
+// checkExpression: reject anything outside the
 // arithmetic whitelist. Returns "" when clean.
 func checkExpression(n node) string {
 	switch t := n.(type) {
@@ -755,7 +746,7 @@ func checkExpression(n node) string {
 	return "unsupported expression"
 }
 
-// isNumeric mirrors Python _is_numeric: true when the node can ONLY evaluate to
+// isNumeric: true when the node can ONLY evaluate to
 // a number.
 func isNumeric(n node) bool {
 	switch t := n.(type) {
@@ -772,7 +763,7 @@ func isNumeric(n node) bool {
 		}
 		return false
 	case *chainNode:
-		return true // Python _is_numeric: a comparison is a bool, and a bool is an int
+		return true // a comparison is a bool, and a bool is an int
 	case *ifExpNode:
 		return isNumeric(t.body) && isNumeric(t.orelse)
 	case *callNode:
@@ -792,7 +783,7 @@ func isNumeric(n node) bool {
 	return false
 }
 
-// isNumericSequence mirrors Python _is_numeric_sequence: a literal sequence whose
+// isNumericSequence: a literal sequence whose
 // every element is provably numeric.
 func isNumericSequence(n node) bool {
 	seq, ok := n.(*seqNode)
@@ -807,16 +798,13 @@ func isNumericSequence(n node) bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
 // Evaluation — no builtins, no reflection
-// ---------------------------------------------------------------------------
 
 // evalSafe evaluates n, converting a panic into an error.
 //
-// The helper functions (letters / digit_sum) reject bad argument types by
-// panicking, mirroring Python's TypeError. Python catches those at the top of
-// `compute` (`except Exception`); without a recover here the same input would
-// crash the whole request instead of being a normal, logged refusal.
+// The helper functions (letters / digit_sum) reject bad argument types by panicking. The
+// panic is caught at the top; without a recover here the same input would crash the whole
+// request instead of being a normal, logged refusal.
 func evalSafe(n node) (value any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -888,9 +876,8 @@ func evalNode(n node) (any, error) {
 			out = append(out, v)
 		}
 		if t.kind == "set" {
-			// Python set literals deduplicate members: len({1,1,2}) == 2.
-			// Without this, len/min/max/sorted on a set literal would count
-			// duplicates, diverging from Python.
+			// Set literals deduplicate members: len({1,1,2}) == 2. Without this,
+			// len/min/max/sorted on a set literal would count duplicates.
 			out = dedupSequence(out)
 		}
 		return out, nil
@@ -904,10 +891,9 @@ func evalNode(n node) (any, error) {
 	return nil, fmt.Errorf("unsupported node")
 }
 
-// evalChain evaluates a comparison chain the way Python's ast.Compare does:
-// each comparison is applied to ADJACENT operands, results are combined with
-// `and`, and each operand is evaluated exactly once. It short-circuits on the
-// first false comparison.
+// evalChain evaluates a comparison chain: each comparison is applied to ADJACENT operands,
+// results are combined with `and`, and each operand is evaluated exactly once. It
+// short-circuits on the first false comparison.
 func evalChain(t *chainNode) (any, error) {
 	left, err := evalNode(t.operands[0])
 	if err != nil {
@@ -932,7 +918,7 @@ func evalChain(t *chainNode) (any, error) {
 }
 
 func evalBinary(t *binaryNode) (any, error) {
-	// `and` / `or` short-circuit, as in Python.
+	// `and` / `or` short-circuit.
 	if t.op == "and" || t.op == "or" {
 		left, err := evalNode(t.left)
 		if err != nil {
@@ -1007,7 +993,7 @@ func evalBinary(t *binaryNode) (any, error) {
 			if rf == 0 {
 				return nil, fmt.Errorf("modulo by zero")
 			}
-			// Python's % returns a value with the SIGN OF THE DIVISOR
+			// % returns a value with the SIGN OF THE DIVISOR
 			// (a - (b * floor(a / b))): -3 % 2 == 1, 3 % -2 == -1.
 			// math.Mod returns a value with the sign of the dividend
 			// (math.Mod(-3, 2) == -1), so adjust when signs disagree.
@@ -1057,13 +1043,13 @@ func evalCall(t *callNode) (any, error) {
 			scale := math.Pow(10, nd)
 			return math.RoundToEven(f*scale) / scale, nil
 		}
-		// Python's builtin round() is round-half-to-even (banker's rounding):
-		// round(2.5) == 2, round(3.5) == 4. math.Round rounds half away from
-		// zero (round(2.5) == 3), so RoundToEven mirrors Python.
+		// round() is round-half-to-even (banker's rounding): round(2.5) == 2, round(3.5) ==
+		// 4. math.Round rounds half away from zero (round(2.5) == 3), so RoundToEven is the
+		// right primitive.
 		return math.RoundToEven(f), nil
 	case "int":
-		// Python's int() accepts a number (truncating toward zero) or a
-		// whole-number string; int("1.5") is a ValueError, so reject decimals.
+		// int() accepts a number (truncating toward zero) or a whole-number string;
+		// int("1.5") is invalid, so reject decimals.
 		v := single(args)
 		switch n := v.(type) {
 		case int64, float64, bool:
@@ -1082,7 +1068,7 @@ func evalCall(t *callNode) (any, error) {
 			return nil, fmt.Errorf("int() expects a number or numeric string, got %T", v)
 		}
 	case "float":
-		// Python's float() accepts a number or any numeric string.
+		// float() accepts a number or any numeric string.
 		v := single(args)
 		switch n := v.(type) {
 		case int64, float64, bool:
@@ -1148,7 +1134,7 @@ func single(args []any) any {
 	return args[0]
 }
 
-// flattenArgs mirrors Python's "any number of args, or a single list of them".
+// flattenArgs accepts "any number of args, or a single list of them".
 func flattenArgs(args []any) []any {
 	if len(args) == 1 {
 		if list, ok := args[0].([]any); ok {
@@ -1201,11 +1187,10 @@ func sequenceLen(v any) int {
 	return 0
 }
 
-// dedupSequence mirrors Python set semantics for {a, b, c} literals: repeated
+// dedupSequence: semantics for {a, b, c} literals: repeated
 // members collapse to one. The key is a stable, panic-free rendering so
 // unhashable elements (nested lists) never crash the evaluator; numeric
-// int64/float64 compare by value, so {1, 1.0} dedups to one element, matching
-// Python.
+// int64/float64 compare by value, so {1, 1.0} dedups to one element.
 func dedupSequence(in []any) []any {
 	seen := make(map[string]bool, len(in))
 	out := make([]any, 0, len(in))
@@ -1274,11 +1259,10 @@ func compareValues(op string, a, b any) (bool, error) {
 }
 
 func extrema(op string, values []any) (any, error) {
-	// Mirrors Python min()/max(): elements are ordered with the same comparison
-	// semantics as the rest of the evaluator (compareValues), so strings compare
-	// lexicographically and the result keeps its original type. The final numeric
-	// gate then rejects a non-numeric result, exactly as Python's
-	// isinstance(value, (int, float)) check does.
+	// min()/max() order elements with the same comparison semantics as the rest of the
+	// evaluator (compareValues), so strings compare lexicographically and the result keeps
+	// its original type. The final numeric gate then rejects a non-numeric result, matching
+	// the numeric-type check.
 	best := values[0]
 	for _, v := range values[1:] {
 		// Keep v when it is the smaller (min) or larger (max) element.
@@ -1294,10 +1278,9 @@ func extrema(op string, values []any) (any, error) {
 }
 
 func sortValues(values []any) ([]any, error) {
-	// Mirrors Python sorted(): order elements with the evaluator's comparison
-	// semantics (compareValues), so strings sort lexicographically. The result is
-	// a list, which the final numeric gate rejects — exactly as Python's
-	// isinstance(value, (int, float)) check refuses a list result.
+	// sorted() orders elements with the evaluator's comparison semantics (compareValues), so
+	// strings sort lexicographically. The result is a list, which the final numeric gate
+	// rejects — the numeric-type check refuses a list result.
 	out := append([]any{}, values...)
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0; {
@@ -1315,7 +1298,7 @@ func sortValues(values []any) ([]any, error) {
 	return out, nil
 }
 
-// letters mirrors Python _letters: count alphabetic characters across the given
+// letters: count alphabetic characters across the given
 // names. Spaces, hyphens, apostrophes, digits and punctuation do NOT count;
 // letters carrying diacritics DO ("José" is 4).
 //
@@ -1338,7 +1321,7 @@ func letters(items []any) int {
 	return total
 }
 
-// digitSum mirrors Python _digit_sum: add up the decimal digits inside the
+// digitSum: add up the decimal digits inside the
 // given values. Every digit is added SEPARATELY: digit_sum("L7 7BN") is 14 and
 // digit_sum("2020") is 4. Only ASCII digits count.
 func digitSum(items []any) int {
@@ -1364,7 +1347,7 @@ func digitSum(items []any) int {
 	return total
 }
 
-// dateDiff mirrors Python _date_diff: days between two ISO dates (inclusive of
+// dateDiff: days between two ISO dates (inclusive of
 // the earlier, exclusive of the later — a calendar span).
 func dateDiff(a, b any) (int64, error) {
 	as, okA := a.(string)
@@ -1406,32 +1389,27 @@ func parseISODate(s string) (time.Time, error) {
 	}
 	t := time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC)
 	// time.Date silently normalizes out-of-range days (Feb 30 -> Mar 1, month 13
-	// -> next Jan). Python date() raises ValueError, so reject any date that does
-	// not survive the round trip unchanged.
+	// -> next Jan). A date that does not survive the round trip unchanged is rejected.
 	if t.Year() != y || int(t.Month()) != mo || t.Day() != d {
 		return time.Time{}, fmt.Errorf("day %d out of range for %q", d, s)
 	}
 	return t, nil
 }
 
-// ---------------------------------------------------------------------------
-// ComputeFromFacts: decide whether the question asks for a derivable number and,
-// if so, compute it. Mirrors Python arithmetic.compute_from_facts (line 356) and
-// the _COMPUTE_SYSTEM prompt (line 267). The evaluator side of this lives above
-// (Compute / the parser); the two together form the Go port of arithmetic.py.
-// ---------------------------------------------------------------------------
+// ComputeFromFacts decides whether the question asks for a derivable number and, if so,
+// computes it. The evaluator side of this lives above (Compute / the parser); the two
+// together form the compute tool.
 
-// ComputeSystem mirrors arithmetic.py::_COMPUTE_SYSTEM verbatim in intent. It is
-// inlined (rather than loaded from rag/prompts) because the Go harness has no
-// Jinja env and the template carries no variables.
+// ComputeSystem is the compute prompt. It is inlined (rather than loaded from rag/prompts)
+// because the harness has no template env and the text carries no variables.
 //
-// IMPORTANT: the prompt asks for a PYTHON expression, and the parser in
-// arithmetic.go implements exactly the Python subset the prompt promises
-// (`**`, `x if y else z`, list literals, the listed functions). Changing one
-// without the other will silently refuse every model-written expression.
+// IMPORTANT: the prompt asks for an arithmetic expression, and the parser in
+// arithmetic.go implements exactly the expression subset the prompt promises
+// (`**`, `x if y else z`, list literals, the listed functions). Changing one without the
+// other will silently refuse every model-written expression.
 const ComputeSystem = `You are given the ORIGINAL question and every fact discovered so far. Decide whether that question asks for a NUMBER that NO fact states outright but that FOLLOWS ARITHMETICALLY from figures the facts DO state — a sum, a difference, a count, an average, a percentage, a unit conversion, an elapsed span.
 
-If it does, compute it by writing ONE Python expression with every figure substituted as a literal. The expression is evaluated on its own: no variables, no assignments, no imports, no attributes, no subscripts. The only functions available are abs, round, min, max, sum, len, int, float, sorted, letters, digit_sum and date_diff.
+If it does, compute it by writing ONE arithmetic expression with every figure substituted as a literal. The expression is evaluated on its own: no variables, no assignments, no imports, no attributes, no subscripts. The only functions available are abs, round, min, max, sum, len, int, float, sorted, letters, digit_sum and date_diff.
   combined population of three  -> 12345 + 6789 + 101112
   how many of the listed items  -> len(["Alpha", "Beta", "Gamma"])
   what percentage one figure is -> 100 * 4523 / 18092
@@ -1468,9 +1446,9 @@ Return "needed": false, with an empty expression, ONLY when:
 "label" names what the number IS, as a short noun phrase ("combined population of the three counties"), so a later step can use the result without re-deriving it.
 "uses" lists the INDEX NUMBERS of the facts whose figures you substituted.
 Output ONLY JSON, no prose, no code fences:
-{"needed": true/false, "expression": "<one Python expression, or empty>", "label": "<short noun phrase>", "uses": [<index number>, ...]}`
+{"needed": true/false, "expression": "<one arithmetic expression, or empty>", "label": "<short noun phrase>", "uses": [<index number>, ...]}`
 
-// ComputedFact mirrors Python compute_from_facts' return dict.
+// ComputedFact: return dict.
 type ComputedFact struct {
 	Needed     bool
 	Label      string
@@ -1495,12 +1473,10 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 	user := fmt.Sprintf("Facts discovered so far:\n%s\n\nOriginal question:\n%s\n\nOutput JSON:",
 		renderFacts(facts), question)
 
-	// Mirror Python compute_from_facts: budget = fit_budget or llm.max_length,
-	// then message_fit_in(form_message(system, user), budget). The chat seam now
-	// exposes llm.max_length via ContextLengthModel; when neither an explicit
-	// fitBudget nor a model context window is available the 8192 default (chat
-	// EffectiveContextLength) applies, exactly as Python's LLM.max_length
-	// defaults when the model config omits max_tokens.
+	// Budget = fit_budget or the model's context length, then the prompt is fitted to it.
+	// The chat seam exposes the context length via ContextLengthModel; when neither an
+	// explicit fitBudget nor a model context window is available the 8192 default
+	// (chat.EffectiveContextLength) applies, i.e. when the model config omits it.
 	budget := fitBudget
 	if budget <= 0 {
 		if cl, ok := model.(ContextLengthModel); ok {
@@ -1518,7 +1494,7 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 		return nil
 	}
 	// FitMessages may prepend/trim a system message; re-extract it so the model
-	// call is exactly [system, user...] as Python sends msg[0] then msg[1:].
+	// call is exactly [system, user...].
 	systemPrompt := ComputeSystem
 	history := fitted
 	if len(fitted) > 0 && fitted[0].Role == schema.System {
@@ -1528,8 +1504,8 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 	msgs := make([]schema.Message, 0, 1+len(history))
 	msgs = append(msgs, *schema.SystemMessage(systemPrompt))
 	msgs = append(msgs, history...)
-	// Python hardcodes {"temperature": 0.0} for this node — a mechanical rewrite,
-	// so it must be deterministic. When the model supports per-call temperature we
+	// The temperature is pinned to 0.0 for this node — a mechanical rewrite, so it must be
+	// deterministic. When the model supports per-call temperature we
 	// pass 0.0 exactly; otherwise we fall back to the plain Complete (it then runs
 	// at the model's default), the same documented seam as ExtractWeightedKeywords
 	// (which uses 0.1).
@@ -1549,9 +1525,9 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 		_LOG.Printf("[Compute] could not parse LLM JSON")
 		return nil
 	}
-	// Python evaluates `not data.get("needed")`, i.e. builtin bool(): a truthy
-	// non-bool (1, "true", a non-empty list) counts as needed. A strict bool
-	// assertion would reject those and wrongly report "nothing derivable".
+	// A truthy non-bool (1, "true", a non-empty list) counts as needed — i.e. builtin bool()
+	// semantics. A strict bool assertion would reject those and wrongly report "nothing
+	// derivable".
 	if !truthy(data["needed"]) {
 		return nil
 	}
@@ -1592,7 +1568,7 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 	}
 }
 
-// renderFacts mirrors Python _render_facts: one fact per line, prefixed with its
+// renderFacts: one fact per line, prefixed with its
 // index — the index is what "uses" refers back to.
 func renderFacts(facts []string) string {
 	lines := make([]string, 0, len(facts))

@@ -83,8 +83,8 @@ func TestExtractWeightedKeywordsWeighting(t *testing.T) {
 
 	// query: entity x3, qualifiers x3, then aliases + fact_type once each.
 	// NOTE: the alias "Brown County, Kansas" itself contains a comma, so a naive
-	// split on ", " over-counts — Python joins the same way and BM25 tokenises
-	// on whitespace, so this is expected. Assert by prefix/containment.
+	// split on ", " over-counts — the join works the same way and BM25 tokenises on
+	// whitespace, so this is expected. Assert by prefix/containment.
 	if !strings.HasPrefix(query, "Brown County, Brown County, Brown County, ") {
 		t.Errorf("query = %q, want the entity repeated x3 first", query)
 	}
@@ -148,9 +148,8 @@ func TestExtractWeightedKeywordsCapsLength(t *testing.T) {
 }
 
 func TestTemperatureModelExtension(t *testing.T) {
-	// Keyword extraction runs at 0.1 in Python. The Go seam exposes temperature
-	// through an OPTIONAL interface so existing SessionModel implementations
-	// keep working unchanged.
+	// Keyword extraction runs at 0.1. The seam exposes temperature through an OPTIONAL
+	// interface so existing SessionModel implementations keep working unchanged.
 	im := &InvokerSessionModel{}
 	var _ TemperatureModel = im // must implement the extension
 

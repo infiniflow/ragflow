@@ -27,8 +27,6 @@ import (
 
 // Query rewriter (Phase 4 of the pipeline).
 //
-// Mirrors Python orchestrator/query_rewriter.py::rewrite_gap_to_query.
-//
 
 // RewriteDeps are the dependencies of RewriteGapToQuery.
 type RewriteDeps struct {
@@ -48,7 +46,7 @@ type RewriteDeps struct {
 	ResearchContext string
 }
 
-// RewriteGapToQuery mirrors Python rewrite_gap_to_query.
+// RewriteGapToQuery
 //
 // gaps are (what, search_hint) tuples — the forward gaps the SCA identified.
 //
@@ -59,7 +57,7 @@ func RewriteGapToQuery(ctx context.Context, deps RewriteDeps, question string, g
 	if deps.Model == nil || len(gaps) == 0 {
 		return nil
 	}
-	// Python wraps the call in @in_phase("rewrite").
+	// The call runs inside the "rewrite" phase.
 	ctx, done := harness.Phase(ctx, harness.PhaseRewrite)
 	defer done()
 

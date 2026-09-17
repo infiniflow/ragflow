@@ -38,10 +38,10 @@ func (e *ladderExec) Execute(_ context.Context, name string, _ map[string]any) (
 	}, nil
 }
 
-// TestConsumeExchangeUsesIdPrefix pins Python _run_nav_chain(id_prefix=...): the
-// prefix and the in-session ladder fallback share rule ids, so their tool_call
-// ids must be tagged differently ("nav_<rule>" vs "ladder_<rule>") or the
-// provider rejects the history as a duplicate id.
+// TestConsumeExchangeUsesIdPrefix pins the id-prefix tagging: the prefix and the
+// in-session ladder fallback share rule ids, so their tool_call ids must be tagged
+// differently ("nav_<rule>" vs "ladder_<rule>") or the provider rejects the history as a
+// duplicate id.
 func TestConsumeExchangeUsesIdPrefix(t *testing.T) {
 	cases := []struct {
 		idPrefix string
@@ -65,16 +65,16 @@ func TestConsumeExchangeUsesIdPrefix(t *testing.T) {
 	}
 }
 
-// TestToolNodeContinuesLadderInCode pins Python action_session.py:_tool_node:
-// when the rung the model just ran came back weak, the ladder keeps advancing IN
-// CODE through the remaining (cheaper, wider) rungs, instead of leaving the model
-// to rediscover the fallback one turn at a time. The continuation must also
-// update where the ladder rests, so a later call in the SAME batch resumes from
-// there rather than from the original resting point.
+// TestToolNodeContinuesLadderInCode pins the in-code ladder continuation: when the rung
+// the model just ran came back weak, the ladder keeps advancing IN CODE through the
+// remaining (cheaper, wider) rungs, instead of leaving the model to rediscover the
+// fallback one turn at a time. The continuation must also update where the ladder rests,
+// so a later call in the SAME batch resumes from there rather than from the original
+// resting point.
 //
-// Unreachable with the shipped NavRules (all ModeAuto), so this test installs an
-// LLM rung to exercise it — the ported code is what makes a future LLM rung
-// work without another change.
+// Unreachable with the shipped NavRules (all ModeAuto), so this test installs an LLM rung
+// to exercise it — the continuation code is what makes a future LLM rung work without
+// another change.
 func TestToolNodeContinuesLadderInCode(t *testing.T) {
 	// Install an LLM rung that falls through to "global" (retrieve) on an empty
 	// result, and remove it afterwards.
@@ -169,9 +169,9 @@ func TestToolNodeLeavesLadderAloneWithNoPendingRule(t *testing.T) {
 	}
 }
 
-// TestSessionGraphCompilesOnce pins the Python shape: _SESSION_GRAPH is built
-// at import (:1936) and every session invokes THAT graph, so repeated calls must
-// hand back the same runnable instead of compiling a fresh one per session.
+// TestSessionGraphCompilesOnce pins the compile-once contract: the session graph is built
+// once and every session invokes THAT graph, so repeated calls must hand back the same
+// runnable instead of compiling a fresh one per session.
 func TestSessionGraphCompilesOnce(t *testing.T) {
 	first, err := sessionGraph()
 	if err != nil {
@@ -290,19 +290,18 @@ func TestSessionGraphIsSharedAcrossConcurrentSessions(t *testing.T) {
 	}
 }
 
-// failingModel fails every Complete call, standing in for Python's
-// TimeoutError / provider-exception branch of _run_action_node.
+// failingModel fails every Complete call, standing in for the timeout /
+// provider-exception branch of runActionNode.
 type failingModel struct{ err error }
 
 func (m *failingModel) Complete(_ context.Context, _ []schema.Message, _ []ToolSpec) (*ModelReply, error) {
 	return nil, m.err
 }
 
-// TestRunActionNodeConvergesOnLLMError pins Python _run_action_node:1215-1220:
-// a timed-out or failed turn converges the session EMPTY ({"_done": True,
-// "new_states": [], "found_answer": None}) so the graph ends through _route/END
-// and run_action_session still returns the messages/evidence gathered so far.
-// Returning the error instead aborted the whole eino run, which RunActionSession
+// TestRunActionNodeConvergesOnLLMError pins the convergence contract: a timed-out or
+// failed turn converges the session EMPTY (done, no new states, no found answer) so the
+// graph ends through the router and the run still returns the messages/evidence gathered so
+// far. Returning the error instead aborted the whole eino run, which RunActionSession
 // reports as a failed session and answers with an empty Result.
 func TestRunActionNodeConvergesOnLLMError(t *testing.T) {
 	s := &SessionState{
@@ -313,7 +312,7 @@ func TestRunActionNodeConvergesOnLLMError(t *testing.T) {
 		ParentState:  State{State: []Variable{{ID: 0, Type: "aspect"}}},
 	}
 	if err := s.runActionNode(context.Background()); err != nil {
-		t.Fatalf("runActionNode = %v; Python converges the session instead of aborting the graph", err)
+		t.Fatalf("runActionNode = %v; the session must converge instead of aborting the graph", err)
 	}
 	if !s.Done {
 		t.Error("Done = false; the session must converge so _route returns END")
@@ -330,10 +329,9 @@ func TestRunActionNodeConvergesOnLLMError(t *testing.T) {
 	}
 }
 
-// TestFinalizeNodeHarvestsNarrativeWhenSalvageFails pins Python
-// _finalize_node:1494-1518: a failed salvage call is logged and the node still
-// runs the deterministic loose-clue harvest, so the last narration survives as a
-// breadcrumb on the first unresolved slot.
+// TestFinalizeNodeHarvestsNarrativeWhenSalvageFails pins the finalize behaviour: a failed
+// salvage call is logged and the node still runs the deterministic loose-clue harvest, so
+// the last narration survives as a breadcrumb on the first unresolved slot.
 func TestFinalizeNodeHarvestsNarrativeWhenSalvageFails(t *testing.T) {
 	const narration = "The entity was founded in 1865 by a consortium of local merchants."
 	s := &SessionState{
@@ -361,9 +359,9 @@ func TestFinalizeNodeHarvestsNarrativeWhenSalvageFails(t *testing.T) {
 	}
 }
 
-// TestInitRetryTimeout pins Python _init_retry_timeout (:2080-2096): the slot
-// table decomposition retry gets a longer window than the first attempt, floored
-// at the first attempt's budget and clamped by the round deadline.
+// TestInitRetryTimeout pins the retry window: the slot table decomposition retry gets a
+// longer window than the first attempt, floored at the first attempt's budget and clamped
+// by the round deadline.
 func TestInitRetryTimeout(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -383,10 +381,9 @@ func TestInitRetryTimeout(t *testing.T) {
 	}
 }
 
-// TestInitializeStateKeepsEmptyFirstQueries pins Python initialize_state:2130
-// (`[str(q).strip() for q in (...)] [:3]`): the first three entries are taken
-// and stripped, and an entry that strips to "" is KEPT — filtering it made Go
-// pick a later entry instead.
+// TestInitializeStateKeepsEmptyFirstQueries pins the first_queries handling: the first
+// three entries are taken and stripped, and an entry that strips to "" is KEPT — filtering
+// it made Go pick a later entry instead.
 func TestInitializeStateKeepsEmptyFirstQueries(t *testing.T) {
 	mdl := &fixedReplyModel{reply: &ModelReply{
 		Content: `{"slots":[{"id":0,"type":"aspect","clues":["a"]}],"first_queries":["  ", "b", "c", "d"]}`,
@@ -403,11 +400,11 @@ func TestInitializeStateKeepsEmptyFirstQueries(t *testing.T) {
 	}
 }
 
-// TestPyIntMatchesPython pins Python's int() semantics: bool is an int subclass,
-// floats truncate toward zero, strings may carry whitespace/underscores, and
-// anything Python cannot convert reports failure (which discards the whole
-// decomposition in initialize_state).
-func TestPyIntMatchesPython(t *testing.T) {
+// TestAsIntConvertsSlotValues pins the conversion a slot table needs: a bool is an integer,
+// floats truncate toward zero, a quoted integer may carry whitespace/underscores, and
+// anything that cannot be converted reports failure — which discards the whole
+// decomposition in initialize_state rather than guessing an id.
+func TestAsIntConvertsSlotValues(t *testing.T) {
 	ok := []struct {
 		in   any
 		want int
@@ -424,23 +421,24 @@ func TestPyIntMatchesPython(t *testing.T) {
 		{"1_000", 1000},
 	}
 	for _, c := range ok {
-		got, converted := pyInt(c.in)
+		got, converted := asInt(c.in)
 		if !converted || got != c.want {
-			t.Errorf("pyInt(%#v) = %d, %v; want %d, true", c.in, got, converted, c.want)
+			t.Errorf("asInt(%#v) = %d, %v; want %d, true", c.in, got, converted, c.want)
 		}
 	}
-	// Python raises for these: int("5.5") is a ValueError, int(None) a TypeError.
+	// These are hard failures, not coercions: a decimal string, a bare word, nil, and
+	// non-scalar containers.
 	for _, bad := range []any{"5.5", "abc", "", nil, []any{1}, map[string]any{}} {
-		if _, converted := pyInt(bad); converted {
-			t.Errorf("pyInt(%#v) reported success; Python raises", bad)
+		if _, converted := asInt(bad); converted {
+			t.Errorf("asInt(%#v) reported success; it must be refused", bad)
 		}
 	}
 }
 
-// TestPyStringListMatchesPython pins `[str(c) for c in (value or [])]`: falsy
-// values yield nothing, a string yields its characters, a map its keys, and a
-// non-iterable value is an error (TypeError in Python).
-func TestPyStringListMatchesPython(t *testing.T) {
+// TestAsStringListReadsListShapes pins the coercion of a list-ish slot value: a falsy value
+// yields nothing, a list yields its items as text, a string yields its characters, a map its
+// keys (sorted), and a value that is not list-like is an error rather than a guess.
+func TestAsStringListReadsListShapes(t *testing.T) {
 	cases := []struct {
 		name string
 		in   any
@@ -457,7 +455,7 @@ func TestPyStringListMatchesPython(t *testing.T) {
 		{"true is not iterable", true, nil, false},
 	}
 	for _, c := range cases {
-		got, converted := pyStringList(c.in)
+		got, converted := asStringList(c.in)
 		if converted != c.ok {
 			t.Errorf("%s: ok = %v, want %v", c.name, converted, c.ok)
 			continue
@@ -478,10 +476,9 @@ func TestPyStringListMatchesPython(t *testing.T) {
 	}
 }
 
-// TestInitializeStateDiscardsOnUnconvertibleValues pins Python's exception path:
-// int(s["id"]) and the clues comprehension raise on bad values, _build_slot_table
-// catches it, and the whole decomposition is dropped in favour of the planner
-// fan-outs. Go signals the same by returning an empty root.
+// TestInitializeStateDiscardsOnUnconvertibleValues pins the failure path: a bad id or a
+// non-iterable clues list fails the parse, and the whole decomposition is dropped in favour
+// of the planner fan-outs. Go signals that by returning an empty root.
 func TestInitializeStateDiscardsOnUnconvertibleValues(t *testing.T) {
 	cases := []struct {
 		name string
@@ -496,7 +493,7 @@ func TestInitializeStateDiscardsOnUnconvertibleValues(t *testing.T) {
 		mdl := &fixedReplyModel{reply: &ModelReply{Content: c.body}}
 		res := InitializeState(context.Background(), SessionDeps{Model: mdl}, "q", nil, 60)
 		if len(res.Root.State) != 0 {
-			t.Errorf("%s: root has %d slot(s); Python discards the decomposition", c.name, len(res.Root.State))
+			t.Errorf("%s: root has %d slot(s); the decomposition must be discarded", c.name, len(res.Root.State))
 		}
 	}
 }
@@ -513,18 +510,17 @@ func TestInitializeStateStringifiesType(t *testing.T) {
 		t.Fatalf("slots = %d, want 2", len(res.Root.State))
 	}
 	if got := res.Root.State[0].Type; got != "7" {
-		t.Errorf("type = %q, want %q (Python str(7))", got, "7")
+		t.Errorf("type = %q, want %q (a non-string type is stringified)", got, "7")
 	}
 	if got := res.Root.State[1].Type; got != "entity" {
 		t.Errorf("type = %q, want %q (falsy -> entity)", got, "entity")
 	}
 }
 
-// TestInitializeStateSpentBudgetTimesOutImmediately pins Python
-// initialize_state:2106 (`min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)`):
-// 0 means "unset", but a NEGATIVE deadline is used as-is, so asyncio.timeout fires
-// on the next tick and NEITHER attempt reaches the provider — the caller then
-// falls back to the planner fan-outs.
+// TestInitializeStateSpentBudgetTimesOutImmediately pins the deadline semantics: 0 means
+// "unset", but a NEGATIVE deadline is used as-is, so the timeout fires on the next tick and
+// NEITHER attempt reaches the provider — the caller then falls back to the planner
+// fan-outs.
 func TestInitializeStateSpentBudgetTimesOutImmediately(t *testing.T) {
 	mdl := &fixedReplyModel{reply: &ModelReply{
 		Content: `{"slots":[{"id":0,"type":"aspect","clues":["a"]}]}`,
@@ -557,9 +553,9 @@ func TestInitializeStateZeroDeadlineUsesFullBudget(t *testing.T) {
 	}
 }
 
-// TestConsumeExchangeCapsPayload pins Python _emit_nav_pair:1815-1828 — the
-// in-session ladder passes its remaining context budget down, so the emitted
-// tool payload is truncated; 0 keeps the prefix path uncapped.
+// TestConsumeExchangeCapsPayload pins the payload cap: the in-session ladder passes its
+// remaining context budget down, so the emitted tool payload is truncated; 0 keeps the
+// prefix path uncapped.
 func TestConsumeExchangeCapsPayload(t *testing.T) {
 	big := strings.Repeat("x", 5000)
 	payload := []any{map[string]any{"kind": "navigate_tree", "content": big}}
@@ -577,7 +573,7 @@ func TestConsumeExchangeCapsPayload(t *testing.T) {
 	}
 }
 
-// TestExtractJSONLenient mirrors Python action_session.extract_json's fallback
+// TestExtractJSONLenient: fallback
 // through json.loads(strict=False) and json_repair.loads: models routinely emit
 // trailing commas, single-quoted strings, bare NaN/Infinity and stray control
 // characters. ExtractJSON should salvage these instead of dropping the whole
@@ -618,10 +614,9 @@ func TestExtractJSONLenient(t *testing.T) {
 }
 
 func TestExtractJSONLenientUnrecoverable(t *testing.T) {
-	// The brace-matched loop tries each "{" candidate; the deep json_repair
-	// fallback salvages the FIRST candidate even when it is malformed (mirroring
-	// Python, where json_repair.loads({"a":}) yields {"a": null}). It must not
-	// panic, hang, or return nil for a salvageable object.
+	// The brace-matched loop tries each "{" candidate; the deep repair fallback salvages
+	// the FIRST candidate even when it is malformed (a deformed object yields null for the
+	// incomplete key). It must not panic, hang, or return nil for a salvageable object.
 	v := ExtractJSON(`{"a":} {"b": 2}`)
 	if v == nil {
 		t.Fatalf("first candidate should be salvaged, got nil")
@@ -632,15 +627,15 @@ func TestExtractJSONLenientUnrecoverable(t *testing.T) {
 	}
 }
 
-// TestExtractJSONWholeTextRepair mirrors Python json_repair.loads(text) on the
-// WHOLE text — deformities that no single brace-matched candidate can fix.
+// TestExtractJSONWholeTextRepair repairs the WHOLE text — deformities that no single
+// brace-matched candidate can fix.
 func TestExtractJSONWholeTextRepair(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
 		want map[string]any
 	}{
-		// Unquoted object keys (Python json_repair quotes them).
+		// Unquoted object keys.
 		{"unquoted key", `{a: 1}`, map[string]any{"a": float64(1)}},
 		{"unquoted keys multiple", `{name: foo, age: 3}`, map[string]any{"name": "foo", "age": float64(3)}},
 		// Dropped separator between adjacent values.
@@ -700,11 +695,10 @@ func declaredTools() []ToolSpec {
 	}}
 }
 
-// TestNoPromptBasedToolInstruction pins the alignment with Python: Python has NO
-// tool-call instruction of any kind — it binds tools natively
-// (action_session.py:_acompletion) and reads msg.tool_calls (:1101-1114). A prompt-based
-// protocol is a Go-only addition and must not be sent, least of all one whose
-// "at most one tool per reply" clause contradicts the native tool list.
+// TestNoPromptBasedToolInstruction pins the contract: there is NO prompt-based tool-call
+// instruction of any kind — tools are bound natively and the reply's tool_calls are read
+// directly. Such a protocol must not be sent, least of all one whose "at most one tool per
+// reply" clause contradicts the native tool list.
 func TestNoPromptBasedToolInstruction(t *testing.T) {
 	inv := &recordingInvoker{}
 	m := &InvokerSessionModel{Invoker: inv}
@@ -729,11 +723,10 @@ func TestNoPromptBasedToolInstruction(t *testing.T) {
 	}
 }
 
-// TestAssistantMessageCarriesToolCalls pins Python action_session.py:_run_action_node:
-// the assistant message carries the model's tool_calls verbatim so the tool
-// responses that follow can be paired by id. Passing nil leaves a dangling
-// tool_call, and the next request is rejected with "tool call result does not
-// follow tool call".
+// TestAssistantMessageCarriesToolCalls pins the pairing contract: the assistant message
+// carries the model's tool_calls verbatim so the tool responses that follow can be paired by
+// id. Passing nil leaves a dangling tool_call, and the next request is rejected with "tool
+// call result does not follow tool call".
 func TestAssistantMessageCarriesToolCalls(t *testing.T) {
 	st := &SessionState{
 		Messages: []schema.Message{*schema.SystemMessage("s")},
@@ -759,8 +752,8 @@ func TestAssistantMessageCarriesToolCalls(t *testing.T) {
 	if len(assistant.ToolCalls) != 2 {
 		t.Fatalf("assistant tool_calls = %d, want 2 (pass-through, and both kept)", len(assistant.ToolCalls))
 	}
-	// Python synthesizes call_{i} when the provider omits the id
-	// (:1134/:1136); the tool responses reference the same ids.
+	// A call_{i} id is synthesized when the provider omits one, so the tool responses have
+	// ids to reference.
 	if assistant.ToolCalls[0].ID != "call_0" || assistant.ToolCalls[1].ID != "call_1" {
 		t.Errorf("ids = %q, %q; want call_0, call_1", assistant.ToolCalls[0].ID, assistant.ToolCalls[1].ID)
 	}
@@ -775,11 +768,10 @@ func TestAssistantMessageCarriesToolCalls(t *testing.T) {
 	}
 }
 
-// TestDisabledToolIsNotUnknown pins Python action_session.py:_parse_tool_calls —
-// `if name not in _TOOL_MAP`. The check is against the STATIC full set, not the
-// active surface, so a tool this session disabled (or hid for lack of a web
-// provider) is still a known tool: the model must get the "unavailable, use
-// this instead" note from ExecuteTool, not an "unknown tool" correction.
+// TestDisabledToolIsNotUnknown pins the known-tool check: it is against the STATIC full
+// set, not the active surface, so a tool this session disabled (or hid for lack of a web
+// provider) is still a known tool: the model must get the "unavailable, use this instead"
+// note from ExecuteTool, not an "unknown tool" correction.
 func TestDisabledToolIsNotUnknown(t *testing.T) {
 	// Sanity: the name must be a real tool for the test to mean anything.
 	if _, ok := ToolMap["graph_explore"]; !ok {
@@ -798,14 +790,13 @@ func TestDisabledToolIsNotUnknown(t *testing.T) {
 		t.Fatalf("calls = %d, want 1", len(calls))
 	}
 	if calls[0].Unknown {
-		t.Error("a disabled tool must NOT be Unknown: Python judges against _TOOL_MAP, " +
-			"so the call gets the 'unavailable, use this instead' note")
+		t.Error("a disabled tool must NOT be Unknown: the check judges against the static " +
+			"tool map, so the call gets the 'unavailable, use this instead' note")
 	}
 }
 
-// TestUnknownToolStillFlagged pins the other side of :1124 — a name that is not
-// a real tool at all IS flagged Unknown, so it is answered with a correction
-// instead of being executed.
+// TestUnknownToolStillFlagged pins the other side — a name that is not a real tool at all
+// IS flagged Unknown, so it is answered with a correction instead of being executed.
 func TestUnknownToolStillFlagged(t *testing.T) {
 	calls := nativeToHarnessCalls([]chat.ToolCall{{Name: "definitely_not_a_tool"}})
 	if len(calls) != 1 || !calls[0].Unknown {
@@ -813,9 +804,8 @@ func TestUnknownToolStillFlagged(t *testing.T) {
 	}
 }
 
-// TestNativeToolCallsPreserveAll pins the execution contract: every native tool
-// call is mapped, not just the first — Python executes all of them
-// (action_session.py:_tool_node `for c in pending`).
+// TestNativeToolCallsPreserveAll pins the execution contract: every native tool call is
+// mapped, not just the first — all of them are executed.
 func TestNativeToolCallsPreserveAll(t *testing.T) {
 	calls := nativeToHarnessCalls([]chat.ToolCall{
 		{ID: "1", Name: "retrieve"},
@@ -977,9 +967,9 @@ func TestCompleteReportsNoCallWhenModelSendsNoNativeCall(t *testing.T) {
 		Function: ToolFunction{Name: "search", Description: "d", Parameters: map[string]any{}},
 	}}
 
-	// No native tool_calls => the reply stays tool-less. This confirms the
-	// harness still declares tools on the request (verified above) but does not
-	// hallucinate a call, matching Python, which has no other parsing path.
+	// No native tool_calls => the reply stays tool-less. This confirms the harness still
+	// declares tools on the request (verified above) but does not hallucinate a call: there
+	// is no other parsing path.
 	reply, err := m.Complete(context.Background(), []schema.Message{*schema.UserMessage("q")}, tools)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1046,8 +1036,8 @@ func TestStreamCompleteIgnoresFencedBlockInContent(t *testing.T) {
 		Type:     "function",
 		Function: ToolFunction{Name: "search", Description: "d", Parameters: map[string]any{}},
 	}}
-	// A fenced block in the content is NOT a tool call: Python only reads
-	// msg.tool_calls, and this port has no prompt-based parsing path.
+	// A fenced block in the content is NOT a tool call: only the reply's tool_calls are
+	// read, and there is no prompt-based parsing path.
 	inv := &streamingCapturingInvoker{
 		capturingInvoker: capturingInvoker{
 			hasTool: false,
@@ -1071,8 +1061,8 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 	if got := prompts.Render(loader, "tpl", "", map[string]string{"name": "world"}); got != "hello world!" {
 		t.Errorf("prompts.Render = %q", got)
 	}
-	// Unknown template with empty fallback -> empty (Python has no degraded
-	// constant; a missing template fails fast rather than degrading).
+	// Unknown template with empty fallback -> empty (there is no degraded constant; a
+	// missing template fails fast rather than degrading).
 	if got := prompts.Render(loader, "missing", "", nil); got != "" {
 		t.Errorf("unknown template with empty fallback = %q", got)
 	}
@@ -1087,16 +1077,11 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
 // Tool spec / schema contract (moved here from action_session_schema_test.go)
-// ---------------------------------------------------------------------------
 
-// playbookAnchors are the 5-section contract every tool description must carry
-// (mirrors PLAYBOOK_ANCHORS in the Python action-session schema test).
+// playbookAnchors are the 5-section contract every tool description must carry.
 var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTPUT", "IF IT FAILS"}
 
 // executorSupportedParams lists the params the executor actually consumes per
@@ -1189,12 +1174,10 @@ func TestActionRunPromptHasPlaybook(t *testing.T) {
 	}
 }
 
-// TestParseTerminalEmptyAnswerNotFound pins Python _parse_terminal:1282:
-// `answer = str(data.get("answer", "")).strip() or None` — an empty or
-// whitespace <answer> payload is NOT a found answer. Python's _run_action_node
-// then only ends the session when the <answer> carried a new_state patch; with
-// neither an answer nor a patch it NUDGES and the session continues, so a bare
-// <answer> block can never end a session with collected_answer="".
+// TestParseTerminalEmptyAnswerNotFound pins the empty-answer rule: an empty or whitespace
+// <answer> payload is NOT a found answer. The session then only ends when the <answer>
+// carried a new_state patch; with neither an answer nor a patch it NUDGES and continues, so
+// a bare <answer> block can never end a session with an empty collected answer..
 func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 	parent := NewState([]Variable{{ID: 0, Type: "answer"}}, 0, nil)
 
@@ -1223,8 +1206,8 @@ func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 		t.Errorf("real answer: FoundAnswer = %v, want 74 (stripped)", found)
 	}
 
-	// Empty answer WITH a new_state patch: the patch is returned (Python
-	// :1283-1288 final_state), terminal type stays "answer", found stays nil.
+	// Empty answer WITH a new_state patch: the patch is returned as the final state,
+	// terminal type stays "answer", found stays nil.
 	states, found, _, _ = ParseTerminal(
 		"<answer>{\"answer\": \"\", \"new_state\": [{\"id\": 0, \"candidate\": \"74\", \"candidate_strength\": 0.9}]}</answer>",
 		parent)
@@ -1345,18 +1328,30 @@ func TestTurnFloorIsPaidOnlyByASetSession(t *testing.T) {
 	}
 }
 
-// TestSessionWallFollowsTheShape pins the clock an enumeration session gets.
+// TestSessionWallFollowsTheEnumeration pins the clock an enumeration session gets.
 //
-// The wall clock is spent differently by the two shapes: an enumeration session is
+// The wall clock is spent differently by the two strategies: an enumeration session is
 // midway through a batch when its clock runs out, and a batch that is cut loses the
 // members it had already reached — measured (2026-09-16, 三国/关羽) a session was
 // cancelled one millisecond before the patch that recorded 管亥, a member it had
 // already found and whose passages were already in the shared pool. A value session
 // has no work in flight at its deadline, so it keeps the tighter clock.
-func TestSessionWallFollowsTheShape(t *testing.T) {
-	set := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("13")}}}
+//
+// The clock follows the ENUMERATION (a set of named members whose deed the planner wrote
+// the words for), not every table that contains a count: a count of events has no batch in
+// flight either, and buying it the enumeration clock is a cost with nothing to spend it on.
+func TestSessionWallFollowsTheEnumeration(t *testing.T) {
+	set := State{State: []Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("13"), Terms: []string{"斩", "杀"}, Subject: "关羽"},
+		{ID: 1, Type: "person"},
+	}}
 	if got := SessionWallS(set); got != setActionTimeoutS {
-		t.Errorf("set-shaped direction wall = %.0f, want %.0f", got, setActionTimeoutS)
+		t.Errorf("enumeration direction wall = %.0f, want %.0f", got, setActionTimeoutS)
+	}
+	// A count of EVENTS: set-shaped, no names to enumerate.
+	countOnly := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("13"), Terms: []string{"won"}, Subject: "Brazil"}}}
+	if got := SessionWallS(countOnly); got != actionTimeoutS {
+		t.Errorf("count-of-events direction wall = %.0f, want %.0f", got, actionTimeoutS)
 	}
 	value := State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}
 	if got := SessionWallS(value); got != actionTimeoutS {
@@ -1370,11 +1365,11 @@ func TestSessionWallFollowsTheShape(t *testing.T) {
 // TestDigestShowsAPassageWholeEnoughToNameSomeone pins the seed digest's per-chunk
 // cap.
 //
-// The digest is how a session SEES the pool without re-querying it, and its cap used
-// to mirror Python's hard `[:300]` cut. A 300-code-point window is shorter than the
-// sentence a deed is reported in: the passage names the actor early and the person at
-// the end, so the cut removed exactly the clause that makes a member a member — and a
-// model told to answer only from what it was shown then excluded them.
+// The digest is how a session SEES the pool without re-querying it, and its cap used to
+// be a hard 300-code-point cut. A 300-code-point window is shorter than the sentence a deed
+// is reported in: the passage names the actor early and the person at the end, so the cut
+// removed exactly the clause that makes a member a member — and a model told to answer only
+// from what it was shown then excluded them.
 //
 // Measured (2026-09-14, fixrecall): with the cap at 1200 an enumeration reached
 // seventeen members. Measured here (2026-09-16, 三国/关羽): 管亥 / 杨龄 / 程远志

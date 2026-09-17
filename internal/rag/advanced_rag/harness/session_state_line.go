@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"ragflow/internal/rag/advanced_rag/slots"
 	"ragflow/internal/tokenizer"
 )
 
@@ -66,20 +65,9 @@ func CollectSessionRecord(table State, kb *Kbinfos) SessionRecord {
 	// sentence, a date or a count contributes no members, and the text is never
 	// inspected to find out whether it might have been a list (see package slots for
 	// the measurement that made this fail closed).
-	seen := map[string]bool{}
-	for _, v := range table.State {
-		if v.Typed().Kind != slots.KindMembers {
-			continue
-		}
-		for _, name := range v.Typed().Names() {
-			key := strings.ToLower(name)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			r.Members = append(r.Members, name)
-		}
-	}
+	// ONE definition of the table's members (see MemberNames): the count the answer
+	// reports and the list this line shows read the same fact.
+	r.Members = MemberNames(&table)
 	joined := strings.ToLower(strings.Join(r.Members, "\x00"))
 	for _, term := range r.Reached {
 		// Substring containment, not equality: a candidate is often a clause

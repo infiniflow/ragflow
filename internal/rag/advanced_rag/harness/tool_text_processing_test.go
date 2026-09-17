@@ -150,13 +150,12 @@ func TestIsFactDenseSentence(t *testing.T) {
 		{"A 3.14 version was shipped.", true},                               // decimal number
 		{"The project spans over two million users.", true},                 // magnitude word (case-insensitive)
 		{"Culdcept was released by OmiyaSoft.", true},                       // proper noun
-		// A quoted span or a ≥6-token clause is NOT a fact signal on its own
-		// (Python _is_fact_dense_sentence has no such rules).
+		// A quoted span or a ≥6-token clause is NOT a fact signal on its own.
 		{"He said \"hello\" to the group about the meeting.", false},      // quoted only
 		{"the cat sat on the mat and looked at the bird outside.", false}, // >=6 tokens only
 		{"the cat sat", false}, // short, no signal
 		// Abbreviation guard: a proper noun right after ".", "!" or "?" followed by
-		// a dot is not counted (Python's (?<![.!?]\.) lookbehind). The lead "It" is
+		// a dot is not counted (the abbreviation guard). The lead "It" is
 		// only one lowercase letter so it is not a proper noun either; Atlas is the
 		// sole candidate and it is excluded.
 		{"It was wonderful!!..Atlas shrugged", false},
@@ -175,10 +174,8 @@ func TestNarrowByTermsNilInput(t *testing.T) {
 	}
 }
 
-// TestNarrowByKeywordsEmptyReturnsChunks pins the divergence from Python
-// _narrow_by_keywords: `if not kwds or not chunks: return chunks`. An empty
-// keyword string must return the input chunks unchanged, NOT an empty/nil
-// slice that would wipe the whole evidence pool.
+// TestNarrowByKeywordsEmptyReturnsChunks: with nothing to narrow on, the input chunks are
+// returned unchanged — NOT an empty/nil slice that would wipe the whole evidence pool.
 func TestNarrowByKeywordsEmptyReturnsChunks(t *testing.T) {
 	chunks := []map[string]any{
 		{"content": "some passage"},
@@ -192,10 +189,10 @@ func TestNarrowByKeywordsEmptyReturnsChunks(t *testing.T) {
 	}
 }
 
-// TestNarrowByKeywordsMirrorsContentOnlyWhenPresent pins the two text-writing
-// rules of Python _narrow_by_keywords: content_with_weight is always overwritten
-// with the narrowed text, "content" is mirrored ONLY when the chunk already had
-// a "content" key, and a pre-narrow "highlight" key is dropped (no longer valid).
+// TestNarrowByKeywordsMirrorsContentOnlyWhenPresent pins the two text-writing rules:
+// content_with_weight is always overwritten with the narrowed text, "content" is mirrored ONLY
+// when the chunk already had a "content" key, and a pre-narrow "highlight" key is dropped (no
+// longer valid).
 func TestNarrowByKeywordsMirrorsContentOnlyWhenPresent(t *testing.T) {
 	// Chunk with only content_with_weight (no "content"): narrowing keeps
 	// content_with_weight, and must NOT invent a "content" key.
@@ -234,8 +231,7 @@ func TestNarrowByKeywordsMirrorsContentOnlyWhenPresent(t *testing.T) {
 
 func TestNarrowByTermsNoMatchKeepsOriginalUntouched(t *testing.T) {
 	// A long chunk that the grep terms never hit must be returned verbatim
-	// (full text, no head-truncation), exactly like Python _apply_narrow's
-	// else branch. This guards against the old bug where unmatched evidence
+	// (full text, no head-truncation). This guards against the old bug where unmatched evidence
 	// was clobbered with a head-truncated copy.
 	long := "The weather was calm and the birds were singing while the river flowed gently past the old stone bridge under a pale morning sky that promised a quiet day for the villagers who had risen early to tend their small gardens and fields. " +
 		"The old mill stood silent at the edge of the wood where the children used to play among the ferns and the brook that chattered over smooth grey stones all through the long golden afternoons of a summer that nobody wanted to end."

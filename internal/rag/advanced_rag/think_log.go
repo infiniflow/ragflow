@@ -24,51 +24,35 @@ import (
 
 // Surface selected internal stage logs to the client as thinking content.
 //
-// Mirrors Python rag/advanced_rag/think_log.py, which installs a root
-// logging.Handler that forwards bracket-tagged INFO records such as
-// "[Agentic RAG]", "[Planner]", "[Orchestrator]", "[Hybrid search]" and
-// "[Composing the answer]" to a per-request sink, so the front end shows live
-// reasoning WITHOUT instrumenting every call site. The tags double as
-// human-readable stage labels, so one message serves both the backend log and
+// Bracket-tagged lines such as "[Agentic RAG]", "[Planner]", "[Orchestrator]",
+// "[Hybrid search]" and "[Composing the answer]" are forwarded to a per-request sink, so
+// the front end shows live reasoning WITHOUT instrumenting every call site. The tags
+// double as human-readable stage labels, so one message serves both the backend log and
 // the thinking stream.
 //
-// Go has no per-record handler hook on *log.Logger, so the same filtering is
-// applied at the writer the run's logger is rebuilt on top of. That logger is
-// threaded into SearchDeps and every graph node, so wrapping it once in Rag
-// covers the whole pipeline.
+// The interception happens at the WRITER the run's logger is rebuilt on top of, because
+// the log package has no per-record handler hook. That logger is threaded into SearchDeps
+// and every graph node, so wrapping it once in Rag covers the whole pipeline.
 //
-// MECHANISM DIFFERENCE vs Python. Python installed its handler on the ROOT
-// logger ("logging.getLogger().addHandler"), then narrowed by
-// _SCOPED_PREFIXES = ("rag.advanced_rag", "rag.llm.chat_model",
-// "rag.llm.tool_decorator"). Go's log package has no root logger, so nothing
-// can be intercepted globally; only the *log.Logger explicitly threaded
-// through advanced_rag (deps.Logger) is wrapped here.
+// Two consequences of filtering on the tag SHAPE alone:
+//   - numbered evidence markers ("[1] chunk text") have to be rejected: they are chunk
+//     listings, not stage tags (see isEvidenceMarker);
+//   - the tool narration ("[Function tool] Running the {name} tool with: …") reaches the
+//     block by itself, because harness/tool_executor.go logs through the same wrapped
+//     logger. The line around a single harness invocation comes from
+//     internal/service/chat_pipeline.go (toolLoopLine), which has no model-authored loop
+//     to instrument.
 //
-// Both remaining namespaces are covered by other means:
-//   - rag.llm.tool_decorator: "[Function tool] Running the {name} tool with:
-//     {args}" (tool_decorator.py:311) is emitted directly by
-//     harness/tool_executor.go, which logs through the same wrapped
-//     deps.Logger and therefore reaches the think block.
-//   - rag.llm.chat_model: "[Tool loop] ..." (chat_model.py:689/782/799) has no
-//     Go equivalent loop to instrument — Go's chat pipeline calls Rag()
-//     directly instead of an outer model choosing to call it as a tool. The
-//     equivalent narration is emitted by internal/service/chat_pipeline.go
-//     (toolLoopLine) around the single harness invocation.
-//
-// Two smaller divergences:
-//   - Go additionally rejects numbered evidence markers ("[1] chunk text"),
-//     which compensates for the missing namespace filter.
-//   - The think block is HTML, so one stage line ends with ThinkLineBreak
-//     ("<br>") rather than "\n" — Python think_log.py:69 did the same.
+// The think block is HTML, so a stage line ends with ThinkLineBreak rather than "\n" (see
+// ThinkLineBreak).
 
 // ThinkLineBreak separates two lines inside the think block.
 //
 // The block is delivered to the client as inline HTML (the chat UI wraps it in
-// <details class="think"> and renders the message as markdown), where a newline
-// is just whitespace. Python think_log.py:69 emitted "<br>" for the same
-// reason; every think-line producer in Go (thinkWriter, the outer react loop's
-// progress routing, chat_pipeline's tool-loop narration) must use this so
-// consecutive stage lines do not merge into one sentence.
+// <details class="think"> and renders the message as markdown), where a newline is just
+// whitespace — so every think-line producer (thinkWriter, the outer react loop's progress
+// routing, chat_pipeline's tool-loop narration) must use this marker, or consecutive
+// stage lines merge into one sentence.
 const ThinkLineBreak = "<br>"
 
 // thinkWriter mirrors one log line onto the real logger while forwarding
@@ -84,9 +68,8 @@ func (w thinkWriter) Write(p []byte) (int, error) {
 	if line == "" {
 		return len(p), nil
 	}
-	// Python filters on the record's logger namespace plus a leading "["; Go
-	// filters on the tag shape alone, so numbered evidence markers such as
-	// "[1] ..." must be rejected, since those are chunk listings, not stage tags.
+	// The filter is the tag SHAPE: a leading "[" that is not a numbered evidence marker
+	// such as "[1] ...", which is a chunk listing rather than a stage tag.
 	if trimmed := strings.TrimSpace(line); strings.HasPrefix(trimmed, "[") && !isEvidenceMarker(trimmed) {
 		w.forward(trimmed)
 	}
@@ -101,22 +84,19 @@ func (w thinkWriter) Write(p []byte) (int, error) {
 
 // forward delivers one line to the sink.
 //
-// The separator is "<br>", exactly like Python think_log.py:69
-// (`sink("<br>" + msg.strip())`): the thinking block reaches the client as the
-// inline "<think>...<details class="think">" HTML that the markdown renderer
-// passes through, and a bare "\n" collapses into a space there — every stage
-// line then runs together into one unreadable sentence.
+// The separator is ThinkLineBreak: the thinking block reaches the client as the inline
+// "<think>...<details class="think">" HTML that the markdown renderer passes through,
+// where a bare "\n" collapses into a space — every stage line would then run together
+// into one unreadable sentence.
 //
-// Python wrapped the sink call in a bare try/except; the recover() here plays
-// the same role, so think-log forwarding can never break the request or the
-// logging subsystem itself.
+// The recover() guards the sink: forwarding a think line must never break the request or
+// the logging subsystem itself.
 func (w thinkWriter) forward(line string) {
 	defer func() { _ = recover() }()
 	if w.sink == nil {
 		return
 	}
-	// Python prefixes the break (sink("<br>" + msg)); a trailing one keeps the
-	// block from opening with a blank line.
+	// The break is TRAILING here: prefixing it would open the block with a blank line.
 	w.sink(line + ThinkLineBreak)
 }
 
@@ -135,9 +115,8 @@ func isEvidenceMarker(line string) bool {
 }
 
 // thinkLogger returns a *log.Logger that logs through orig while additionally
-// forwarding bracket-tagged stage lines to sink. It is the Go counterpart of
-// Python's install_think_log_handler + set_think_log_sink pair: the sink is per
-// request, so concurrent requests stay isolated.
+// forwarding bracket-tagged stage lines to sink. The sink is per REQUEST, so concurrent
+// requests stay isolated.
 //
 // sink may be nil, in which case orig is returned unchanged.
 func thinkLogger(orig *log.Logger, sink func(string)) *log.Logger {

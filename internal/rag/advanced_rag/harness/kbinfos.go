@@ -25,20 +25,16 @@ import (
 
 // The shared accumulation store and the retrieval abstraction.
 //
-// In Python this is not a harness module: it is the plain dict
-// `self.kbinfos = {"chunks": [], "doc_aggs": [], "memory": []}` carried by the
-// RAGTools instance in, threaded through retrieval, the
-// action session, SCA, and the final answer via tools.kbinfos. The Go port
-// reifies that dict into the typed Kbinfos struct (with the Merge helper) and
-// keeps it in the harness package because chunkKey/chunkText and Merge are
+// The accumulation store is the typed Kbinfos struct (with the Merge helper), which holds
+// the chunks / doc_aggs / memory that retrieval, the action session, SCA and the final answer
+// all share. It lives in the harness package because chunkKey/chunkText and Merge are
 // unexported helpers shared by tool_search.go, tool_exploration.go, and
-// tool_compiled_expansion.go — a reification, not a 1:1 file mirror.
+// tool_compiled_expansion.go.
 //
 // This file also owns the chunk identity helpers (chunkKey/chunkText) that the
 // merge logic depends on.
 
-// SearchParams mirrors Python tools/search.py::hybrid_search(tools, query,
-// kb_ids, top_n, doc_scope, keywords, retrieval_query, use_compiled).
+// SearchParams are the inputs of one search.
 //
 // Question is the search query; Keywords is used ONLY to narrow retrieved
 // chunks (never to build the query) unless RetrievalQuery is empty.
@@ -74,27 +70,24 @@ type SearchParams struct {
 	SkipReachLedger bool
 	// Channel is retained for backward compatibility with callers that still
 	// poke the unified HybridSearch with an explicit channel. It is DEPRECATED:
-	// each Python entry point is now its own function (HybridSearch /
-	// VectorSearch / BM25Search / GrepSearch / RetrieveSearch) and selects its
-	// vector weight, similarity threshold and compiled-row exclusion
-	// internally. New code should call the specific function instead of setting
-	// Channel on HybridSearch. runSearch does NOT read this field.
+	// each entry point is now its own function (HybridSearch / VectorSearch /
+	// BM25Search / GrepSearch / RetrieveSearch) and selects its vector weight,
+	// similarity threshold and compiled-row exclusion internally. New code should
+	// call the specific function instead of setting Channel on HybridSearch.
+	// runSearch does NOT read this field.
 	Channel SearchChannel
 }
 
 // SearchFn performs one hybrid search and returns chunks + doc aggs, so the
 // harness is decoupled from the concrete retrieval backend.
-// Mirrors the Python side's settings.retriever.retrieval call.
+// It abstracts the concrete retrieval backend.
 type SearchFn func(ctx context.Context, p SearchParams) ([]map[string]any, []map[string]any)
 
 // Kbinfos is the shared accumulation store.
 //
 // ONE Kbinfos is shared by a round's CONCURRENT sessions (SessionDeps.KB; see
-// RunSlotResearchPass), so its mutable state is guarded by mu. Python needs no
-// lock — its sessions are coroutines and every admission stretch is await-free
-// (action_session.py:691-700), so asyncio cannot interleave two sessions'
-// batches. Go runs the same sessions on goroutines, so the critical sections
-// Python gets for free have to be locked explicitly: see Admit.
+// RunSlotResearchPass), so its mutable state is guarded by mu. The sessions run on
+// goroutines, so the critical sections have to be locked explicitly: see Admit.
 type Kbinfos struct {
 	mu      sync.Mutex
 	Chunks  []map[string]any
@@ -113,8 +106,7 @@ type Kbinfos struct {
 	// that run inside an admit batch (see Admit) are the only place the two nest.
 	ledgerMu sync.Mutex
 	// Memory is the lossless store of raw retrieved chunks backing the (lossy)
-	// Chunks list that feeds the LLM. Mirrors Python kbinfos["memory"], which
-	// memory.add/grep maintain.
+	// Chunks list that feeds the LLM; the memory add/grep helpers maintain it.
 	Memory []map[string]any
 	// PreSummary is the merged claim-report summary produced by the action
 	// session; the final-answer call reads it when set.
@@ -146,20 +138,20 @@ type Kbinfos struct {
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
-	// patternFindings is the completeness pass's block for this QUESTION, and
-	// patternPassed records that it ran (see StorePatternFindings): the windows the
-	// pass admits stay in the pool, so a later round reuses the block rather than
-	// asking the same corpus the same questions and putting back what is already
-	// there. Guarded by ledgerMu.
-	patternFindings string
-	patternPassed   bool
-	// cache is the per-request retrieval cache (Python tools.search_cache). It
-	// is initialised lazily via cacheOnce so a zero-value Kbinfos is usable.
+	// coverageSet is what this QUESTION's enumeration found, and coverageReady records
+	// that it ran at all (see StoreCoverageSet): the windows it admits stay in the pool
+	// under the same chunk ids, so a later round reuses the same evidence rather than
+	// asking the corpus the same operand queries and putting back what is already there.
+	// Guarded by ledgerMu.
+	coverageSet   CoverageSet
+	coverageReady bool
+	// cache is the per-request retrieval cache. It is initialised lazily via
+	// cacheOnce so a zero-value Kbinfos is usable.
 	cache     *searchCache
 	cacheOnce sync.Once
 }
 
-// HasChunks mirrors Python `bool(kbinfos.get("chunks"))`.
+// HasChunks reports whether the pool holds any chunk.
 func (k *Kbinfos) HasChunks() bool { return len(k.Chunks) > 0 }
 
 // PoolSize is how many chunks the shared pool holds.
@@ -176,14 +168,6 @@ func (k *Kbinfos) PoolSize() int {
 	return len(k.Chunks)
 }
 
-// ChunksFrom returns up to limit chunks starting at from, as a copy of the slice
-// header.
-//
-// It exists so a READER can walk the pool the round has already paid for without
-// holding the pool lock (chunks are only ever appended, never rewritten in place,
-// so the header it copies is stable). The maps themselves stay shared and must be
-// read only. Readers are also why this is a copy of the header and not the pool:
-// the pool keeps growing under them while they scan.
 // ChunkByID returns the pool chunk carrying this id, or nil.
 //
 // It takes the pool lock, so it must NOT be called from inside an Admit callback
@@ -202,6 +186,14 @@ func (k *Kbinfos) ChunkByID(id string) map[string]any {
 	return nil
 }
 
+// ChunksFrom returns up to limit chunks starting at from, as a copy of the slice
+// header.
+//
+// It exists so a READER can walk the pool the round has already paid for without
+// holding the pool lock (chunks are only ever appended, never rewritten in place,
+// so the header it copies is stable). The maps themselves stay shared and must be
+// read only. Readers are also why this is a copy of the header and not the pool:
+// the pool keeps growing under them while they scan.
 func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 	if k == nil || limit <= 0 {
 		return nil
@@ -217,15 +209,13 @@ func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 
 // Admit runs fn as ONE critical section over the evidence pool.
 //
-// The granularity is the caller's, and it must span the stretch Python leaves
-// await-free: ONE query's candidate batch, because the awaits sit in the OUTER
-// query loop (action_session.py:691-700). Locking per chunk would let two
-// sessions' batches interleave into pool orders Python cannot produce, and the
-// pool order is observable — it drives the rendered prompt order and the `ID: n`
-// numbering, extractRelevantEvidence's first-4 pick, and which chunks make it in
-// under the cap.
+// The granularity is the caller's, and it must span ONE query's candidate batch,
+// because the awaits sit in the OUTER query loop. Locking per chunk would let two
+// sessions' batches interleave into unsupported pool orders, and the pool order is
+// observable — it drives the rendered prompt order and the `ID: n` numbering,
+// extractRelevantEvidence's first-4 pick, and which chunks make it in under the cap.
 //
-// Inside fn do, per chunk, exactly what _admit_evidence does, in its order:
+// Inside fn do, per chunk, exactly the admission steps, in this order:
 //
 //	p.Full()   → skip the chunk. The cap check precedes the per-call dedup
 //	             (:638-646), so a rejected chunk is NOT marked seen and is
@@ -260,13 +250,10 @@ func (k *Kbinfos) Admit(fn func(p *PoolAdmitter)) {
 // PoolAdmitter is the pool handle, valid only inside Kbinfos.Admit's callback.
 type PoolAdmitter struct{ k *Kbinfos }
 
-// Full mirrors the early stop at the top of _admit_evidence: at the cap the
-// chunk is skipped, and nothing about it is recorded (so a rejected chunk is
-// retried once room frees).
+// Full is the early stop at the top of admission: at the cap the chunk is skipped, and
+// nothing about it is recorded (so a rejected chunk is retried once room frees).
 //
-// The "pool FULL" line belongs here for the same reason it lives inside
-// _admit_evidence (:639-645), and it is emitted once per PROCESS — Python
-// documents _EVIDENCE_POOL_STATE as a "Per-process flag" (:62-64). sync.Once
+// The "pool FULL" line belongs here, and it is emitted once per PROCESS. sync.Once
 // because concurrent sessions call this under their own pool lock.
 func (p *PoolAdmitter) Full() bool {
 	if p.k == nil || len(p.k.Chunks) < evidencePoolCap {
@@ -278,8 +265,8 @@ func (p *PoolAdmitter) Full() bool {
 	return true
 }
 
-// evidencePoolFullLogged mirrors Python _EVIDENCE_POOL_STATE["full_logged"]: a
-// PER-PROCESS flag (action_session.py:62-64), so the line is emitted once per
+// evidencePoolFullLogged: ["full_logged"]: a
+// PER-PROCESS flag, so the line is emitted once per
 // process — not once per rejected chunk, and NOT once per session. The pool never
 // shrinks mid-process, so no reset is needed.
 var evidencePoolFullLogged sync.Once
@@ -426,32 +413,33 @@ func (k *Kbinfos) IsSetDirection() bool {
 	return k.setDirection
 }
 
-// StorePatternFindings records the completeness pass's block for this question (see
-// RunCompletenessPass / PatternFindings).
-func (k *Kbinfos) StorePatternFindings(block string) {
+// StoreCoverageSet records what this question's enumeration found (see
+// EnumerateCoverage / CoverageSet).
+func (k *Kbinfos) StoreCoverageSet(set CoverageSet) {
 	if k == nil {
 		return
 	}
 	k.ledgerMu.Lock()
-	k.patternFindings = block
-	k.patternPassed = true
+	k.coverageSet = set
+	k.coverageReady = true
 	k.ledgerMu.Unlock()
 }
 
-// PatternFindings returns the block a previous round's completeness pass produced, and
-// whether the pass has run at all.
+// CoverageSet returns the enumeration a previous round ran for this question, and whether
+// it ran at all.
 //
-// The unit is the REQUEST, not the round: the windows the pass admitted are in the pool
-// under the same chunk ids, so a second round asking the same corpus the same questions
-// would spend the same store legs to re-admit what is already there, and the seed would
-// show the same windows it already showed (see StorePatternFindings).
-func (k *Kbinfos) PatternFindings() (string, bool) {
+// The unit is the REQUEST, not the round: the windows the enumeration admitted are in the
+// pool under the same chunk ids, so a second round asking the corpus the same operand
+// queries would spend the same store legs to re-admit what is already there, and the seed
+// would show the same windows it already showed (see StoreCoverageSet). The SET is kept
+// rather than its rendering because the last node resolves the windows themselves.
+func (k *Kbinfos) CoverageSet() (CoverageSet, bool) {
 	if k == nil {
-		return "", false
+		return CoverageSet{}, false
 	}
 	k.ledgerMu.Lock()
 	defer k.ledgerMu.Unlock()
-	return k.patternFindings, k.patternPassed
+	return k.coverageSet, k.coverageReady
 }
 
 // ReachedTerms returns a copy of the confirmed members and the chunk that carries
@@ -606,17 +594,16 @@ func (n *Novelty) Admits(c map[string]any) bool {
 	return false
 }
 
-// Add appends c unless the LIVE pool already holds it, reporting whether it
-// appended — Python's "new to the shared pool" return.
+// Add appends c unless the LIVE pool already holds it, reporting whether it appended —
+// i.e. whether the chunk was new to the shared pool.
 //
-// The test is against the live pool, not a snapshot taken when the call started
-// (Python's `kb_seen`, :690). That snapshot is exact only because nothing can
-// interleave with it; under Go's parallelism it would re-append a chunk another
-// session just pooled, which Python can never do.
+// The test is against the live pool, not a snapshot taken when the call started. A snapshot
+// would re-append a chunk another session just pooled, which must not happen under
+// parallelism.
 //
-// There is deliberately NO cap check here: the compiled-expansion path appends
-// uncapped in Python too, which is what pushes the pool past _EVIDENCE_POOL_CAP
-// (see the comment on evidencePoolCap). Callers that admit user-facing search
+// There is deliberately NO cap check here: the compiled-expansion path appends uncapped,
+// which is what pushes the pool past evidencePoolCap (see the comment on evidencePoolCap).
+// Callers that admit user-facing search
 // hits check Full() first.
 func (p *PoolAdmitter) Add(c map[string]any) bool {
 	if p.k == nil {
@@ -639,13 +626,11 @@ func (p *PoolAdmitter) Index(c map[string]any) int {
 	return indexOfChunk(p.k.Chunks, chunkKey(c))
 }
 
-// ClaimCoveredIDs returns the chunk ids already represented VERBATIM by a claim
-// pseudo-chunk in the LIVE pool (Python _claim_covered_ids,
-// action_session.py:619-631): a claim carries its own verbatim quote plus the
-// ids of the chunks it was distilled from, so admitting those passages again
-// is duplicate payload — the answer material is already in the pool at a
-// fraction of the size. Call it ONCE per Admit batch and test each chunk's id
-// against the result (Python computes the set once per _admit_evidence call).
+// ClaimCoveredIDs returns the chunk ids already represented VERBATIM by a claim pseudo-chunk
+// in the LIVE pool: a claim carries its own verbatim quote plus the ids of the chunks it was
+// distilled from, so admitting those passages again is duplicate payload — the answer material
+// is already in the pool at a fraction of the size. Call it ONCE per Admit batch and test each
+// chunk's id against the result (the set is computed once per admission call).
 func (p *PoolAdmitter) ClaimCoveredIDs() map[string]bool {
 	if p.k == nil {
 		return nil
@@ -664,7 +649,7 @@ func (p *PoolAdmitter) ClaimCoveredIDs() map[string]bool {
 	return covered
 }
 
-// CoveredByClaim mirrors the _admit_evidence skip (action_session.py:672-676):
+// CoveredByClaim mirrors the _admit_evidence skip:
 // a non-table chunk whose id a pooled claim already quotes verbatim must NOT
 // enter the pool again. Table chunks are exempt: their answer rows survive
 // only in full text.
@@ -697,12 +682,12 @@ func (k *Kbinfos) Merge(chunks, aggs []map[string]any) []int {
 }
 
 // RetireClaimsCoveredBy removes claim pseudo-chunks whose source_chunk_ids
-// intersect the given read ids (Python _exec_list_chunks:928-934): a deep read
+// intersect the given read ids: a deep read
 // COVERS its claims — once the full chunk text is in the pool, the claim's
 // 1200-char quote of the same passage is duplicated tokens in every later
 // prompt. The claim already did its job (it pointed here). Returns how many
 // entries were retired. The claim_ prefix and the "source_chunk_ids listed
-// under the read ids" test mirror Python verbatim.
+// under the read ids" test are exact.
 func (k *Kbinfos) RetireClaimsCoveredBy(readIDs []string) int {
 	if k == nil || len(readIDs) == 0 {
 		return 0
@@ -741,7 +726,7 @@ func (k *Kbinfos) RetireClaimsCoveredBy(readIDs []string) int {
 }
 
 // MergeDocAggs appends doc aggregations, deduplicating by doc_id: the first agg
-// per doc_id wins (Python _merge_kbinfos' dseen set).
+// per doc_id wins.
 //
 // Separate from Merge, whose early return on an empty chunk list would skip them:
 // the search tool must record a search's aggregations even when every chunk it
@@ -766,8 +751,8 @@ func (k *Kbinfos) MergeDocAggs(aggs []map[string]any) {
 	}
 }
 
-// docAggKey mirrors Python's dedup key for doc_aggs: the raw doc_id, with a
-// missing/empty doc_id mapping to "" (so only the first such agg is kept).
+// docAggKey is the dedup key for doc_aggs: the raw doc_id, with a missing/empty doc_id
+// mapping to "" (so only the first such agg is kept).
 func docAggKey(d map[string]any) string {
 	if id, ok := d["doc_id"].(string); ok {
 		return id
@@ -785,12 +770,10 @@ func indexOfChunk(chunks []map[string]any, kk string) int {
 	return -1
 }
 
-// chunkText mirrors Python harness/chunk_utils._chunk_text: the searchable
-// text of a chunk, preferring the weighted (reranked) "content_with_weight"
-// over the raw "content", then falling back to "text". Python's root
-// chunk_utils._chunk_text and grep_sed_narrow._chunk_text both read in this
-// order; memory._chunk_text is a two-level variant (no "text") and is NOT what
-// this mirrors.
+// chunkText is the searchable text of a chunk, preferring the weighted (reranked)
+// "content_with_weight" over the raw "content", then falling back to "text". Both the
+// chunk-utils and grep-sed-narrow readers use this order; the memory variant is two-level
+// (no "text") and is deliberately NOT what this mirrors.
 func chunkText(c map[string]any) string {
 	if t, ok := c["content_with_weight"].(string); ok && t != "" {
 		return t
@@ -814,11 +797,10 @@ func chunkText(c map[string]any) string {
 // doc-level fallback and share one key, so Merge/MemoryAdd discarded distinct
 // evidence.
 //
-// This diverges from Python _chunk_key (`chunk_id or id or id(ck)`): Python's
-// final fallback is `id(ck)` — the dict object's memory address — which means
-// two equivalent chunks returned as distinct objects never share a key, so
-// deduplication silently fails for id-less chunks. Go instead keys on the chunk
-// text, so identical content still merges across retrieval calls.
+// A memory-address fallback is the alternative: with `id(ck)` as the final key, two
+// equivalent chunks returned as distinct objects never share a key, so deduplication silently
+// fails for id-less chunks. Keying on the chunk text instead means identical content still
+// merges across retrieval calls.
 func chunkKey(c map[string]any) string {
 	if id, ok := c["chunk_id"].(string); ok && id != "" {
 		return "cid:" + id

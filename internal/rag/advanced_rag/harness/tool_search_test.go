@@ -58,7 +58,7 @@ func newTestSearchDeps(r Retriever) (SearchDeps, *Kbinfos) {
 }
 
 func TestHybridSearchBailsWithoutDatasetsOrBackend(t *testing.T) {
-	// No bound datasets -> no search at all (Python returns empty kbinfos).
+	// No bound datasets -> no search at all (empty kbinfos).
 	got, aggs := HybridSearch(context.Background(), SearchDeps{
 		Backend: &stubRetriever{chunks: []map[string]any{{"content": "x"}}},
 	}, SearchParams{Question: "q"})
@@ -108,12 +108,10 @@ func TestHybridSearchBuildsEffectiveQuery(t *testing.T) {
 	}
 }
 
-// TestHybridSearchEffectiveQueryCapsCodePoints pins the expanded-query cap to
-// code points, not bytes.  Python slices a str with `[:400]` (search.py:129/216/254),
-// so the cap counts code points: a byte slice both splits a multi-byte rune —
-// handing the retriever invalid UTF-8 — and caps a CJK query at ~133 characters,
-// dropping expansion terms the fan-out leg weighs on.  The ASCII case above
-// cannot tell the two apart (bytes == runes there).
+// TestHybridSearchEffectiveQueryCapsCodePoints pins the expanded-query cap to code points,
+// not bytes: a byte slice both splits a multi-byte rune — handing the retriever invalid
+// UTF-8 — and caps a CJK query at ~133 characters, dropping expansion terms the fan-out
+// leg weighs on. The ASCII case above cannot tell the two apart (bytes == runes there).
 func TestHybridSearchEffectiveQueryCapsCodePoints(t *testing.T) {
 	// "who made it" + " " is 12 bytes, so byte 400 lands one byte inside a CJK
 	// rune (400-12 = 388 = 3*129 + 1): the byte slice is not even valid UTF-8.
@@ -146,11 +144,9 @@ func TestHybridSearchEffectiveQueryCapsCodePoints(t *testing.T) {
 }
 
 func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
-	// Python passes rank_feature ONLY from RAGTools.retrieve
-	// (agentic_rag.py:668 rank_feature=label_question(question, self.kbs)).
-	// search.py's three legs call retriever.retrieval WITHOUT rank_feature
-	// (:158-173 hybrid, :223-238 vector, :260-275 bm25; grep_search delegates to
-	// bm25_search, :428), so those requests must stay nil even with a Tagger.
+	// rank_feature is passed ONLY by the retrieve channel; the three search legs call the
+	// retriever WITHOUT it (the grep leg delegates to bm25), so those requests must stay
+	// nil even with a Tagger.
 	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.KBs = []*entity.Knowledgebase{{}}
@@ -182,8 +178,7 @@ func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
 		t.Errorf("RetrieveSearch RankFeature = %v, want %v", got, want)
 	}
 
-	// Nil Tagger -> empty rank feature even on the retrieve leg (Python
-	// label_question returning None).
+	// Nil Tagger -> empty rank feature even on the retrieve leg.
 	r3 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps3, _ := newTestSearchDeps(r3)
 	deps3.UsingEmbedding = true
@@ -266,9 +261,7 @@ func TestHybridSearchReturnsEmptyOnBackendError(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Narrowing
-// ---------------------------------------------------------------------------
 
 func TestNarrowOrKeepIsAllOrNothing(t *testing.T) {
 	chunks := []map[string]any{
@@ -335,8 +328,7 @@ func TestSplitKeywordsFallsBackToBigrams(t *testing.T) {
 func TestHighlightKeywordsPrefersLongestTerm(t *testing.T) {
 	// "new york" must win over "york" so the shorter term cannot split it.
 	got := HighlightKeywords("welcome to New York city", []string{"york", "new york"})
-	// Python's star marker, and ONE span for the multi-word entity
-	// (text_processing.py:391-394) — never "*New* *York*".
+	// The star marker, and ONE span for the multi-word entity — never "*New* *York*".
 	if !strings.Contains(got, "*New York*") {
 		t.Errorf("highlight = %q, want the longest term applied", got)
 	}
@@ -346,9 +338,9 @@ func TestHighlightKeywordsPrefersLongestTerm(t *testing.T) {
 }
 
 // TestHighlightKeywordsFoldsWithoutByteOffsets pins the matching to rune space.
-// `strings.ToLower` is not byte-length-preserving: "İ" (U+0130) is 2 bytes and
-// folds to the 1-byte "i" (Go applies the simple 1:1 case mapping, the opposite
-// direction from Python's full fold, which expands it to 3 bytes). So a byte
+// `strings.ToLower` is not byte-length-preserving: "İ" (U+0130) is 2 bytes and folds to
+// the 1-byte "i" (Go applies the simple 1:1 case mapping, the opposite direction from a
+// full Unicode fold, which expands it to 3 bytes). So a byte
 // offset taken from the original indexes the folded string at a different
 // position: the loop then runs past its end (panic: slice bounds out of range
 // [10:9]) or cuts a rune in half (invalid UTF-8). Corpus text reaches this via
@@ -372,9 +364,9 @@ func TestHighlightKeywordsFoldsWithoutByteOffsets(t *testing.T) {
 }
 
 // TestHighlightKeywordsFoldsUppercaseKeywords pins that a keyword's OWN casing is
-// folded the way the haystack is: terms are matched against the lowercased text
-// (`lows`), and Python builds its phrase list with `(kw or "").strip().lower()`
-// (text_processing.py:396) plus re.IGNORECASE (:411). A caller-supplied "Rocket"
+// folded the way the haystack is: terms are matched against the lowercased text (`lows`),
+// and the phrase list is built with a strip+lower pass plus case-insensitive matching. A
+// caller-supplied "Rocket"
 // used to be compared verbatim, so a capitalised keyword never matched and the
 // span was silently left unstarred.
 func TestHighlightKeywordsFoldsUppercaseKeywords(t *testing.T) {
@@ -397,9 +389,9 @@ func TestHighlightKeywordsFoldsUppercaseKeywords(t *testing.T) {
 	}
 }
 
-// TestHighlightKeywordsKeepsPhrasePartsWhole pins Python's phrase guard
-// (text_processing.py:405): a stem-matched word that already occurs inside a
-// keyword phrase is NOT added as a term of its own, so a standalone "Braves" is
+// TestHighlightKeywordsKeepsPhrasePartsWhole pins the phrase guard: a stem-matched word
+// that already occurs inside a keyword phrase is NOT added as a term of its own, so a
+// standalone "Braves" is
 // left alone and only the "Atlanta Braves" span is starred.
 func TestHighlightKeywordsKeepsPhrasePartsWhole(t *testing.T) {
 	got := HighlightKeywords("Braves lost. Atlanta Braves won.", []string{"Atlanta Braves"})
@@ -408,9 +400,9 @@ func TestHighlightKeywordsKeepsPhrasePartsWhole(t *testing.T) {
 	}
 }
 
-// TestHighlightKeywordsStemMatchesCapitalisedWords pins the word scan: Python
-// stems every `[A-Za-z]+` word (:403), so a capitalised inflected word still
-// contributes its stem term. The shared lowercase pattern matched only the
+// TestHighlightKeywordsStemMatchesCapitalisedWords pins the word scan: every `[A-Za-z]+`
+// word is stemmed, so a capitalised inflected word still contributes its stem term. The
+// shared lowercase pattern matched only the
 // fragment after the capital ("Nominated" -> "ominated"), so nothing was starred.
 func TestHighlightKeywordsStemMatchesCapitalisedWords(t *testing.T) {
 	got := HighlightKeywords("Nominated twice.", []string{"nominations"})
@@ -419,9 +411,7 @@ func TestHighlightKeywordsStemMatchesCapitalisedWords(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Doc aggregations
-// ---------------------------------------------------------------------------
 
 func TestDocAggsGroupsByDocument(t *testing.T) {
 	chunks := []map[string]any{
@@ -473,9 +463,9 @@ func TestHybridSearchAggregatesAndRespectsScope(t *testing.T) {
 }
 
 func TestHybridSearchAggsCoverFullRetrievedBeforeNarrowing(t *testing.T) {
-	// doc_aggs must reflect the FULL pre-narrow retrieved set, mirroring Python
-	// where _normalize takes doc_aggs from the retriever and _narrow_or_keep only
-	// replaces kbinfos["chunks"]. Here the keyword narrows the chunks to doc d1,
+	// doc_aggs must reflect the FULL pre-narrow retrieved set: the aggregations come
+	// straight from the retriever and narrowing only replaces the chunk list. Here the
+	// keyword narrows the chunks to doc d1,
 	// but the aggregation still counts both retrieved documents.
 	r := &stubRetriever{chunks: []map[string]any{
 		{"doc_id": "d1", "docnm_kwd": "one", "content": "needle buried here", "id": "c1"},
@@ -538,8 +528,7 @@ func ptrFloat(t *testing.T, p *float64) float64 {
 	return *p
 }
 
-// TestVectorSearchBailsWithoutEmbedder mirrors Python vector_search: with no
-// embedder configured it returns nothing (Python bails when embd_mdl is unset),
+// TestVectorSearchBailsWithoutEmbedder: with no embedder configured it returns nothing,
 // and must NOT even hit the backend.
 func TestVectorSearchBailsWithoutEmbedder(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
@@ -552,7 +541,7 @@ func TestVectorSearchBailsWithoutEmbedder(t *testing.T) {
 	}
 }
 
-// TestVectorSearchWeightIsOne mirrors Python vector_search: the pure-vector leg
+// TestVectorSearchWeightIsOne: the pure-vector leg
 // carries weight 1.0 and excludes compiled rows.
 func TestVectorSearchWeightIsOne(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
@@ -568,7 +557,7 @@ func TestVectorSearchWeightIsOne(t *testing.T) {
 	}
 }
 
-// TestBM25SearchUsesZeroWeight mirrors Python bm25_search: keyword-only, vector
+// TestBM25SearchUsesZeroWeight: keyword-only, vector
 // weight unconditionally 0, threshold 0.0, excludes compiled rows.
 func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
@@ -578,9 +567,9 @@ func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
 		t.Errorf("bm25 search weight = %v, want 0", got)
 	}
-	// Python bm25_search passes embd_mdl=None: no dense leg at all.
+	// No dense leg at all.
 	if !req.DisableVectorLeg {
-		t.Error("bm25 search must disable the vector leg (embd_mdl=None)")
+		t.Error("bm25 search must disable the vector leg")
 	}
 	if got := ptrFloat(t, req.SimilarityThreshold); got != 0 {
 		t.Errorf("bm25 search threshold = %v, want 0", got)
@@ -590,7 +579,7 @@ func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	}
 }
 
-// TestGrepSearchDelegatesToBM25 mirrors Python grep_search: it is bm25_search
+// TestGrepSearchDelegatesToBM25: it is bm25_search
 // with a keyword-only (weight 0) leg and compiled-row exclusion.
 func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
@@ -608,7 +597,7 @@ func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	}
 }
 
-// TestGrepTermsFromQuery mirrors Python _grep_terms_from_query:
+// TestGrepTermsFromQuery
 // bare alnum words of length>=2, deduped (order-preserving) and capped at 10.
 func TestGrepTermsFromQuery(t *testing.T) {
 	// Proper nouns preserved; stopwords/dupes dropped; bare single chars skipped.
@@ -633,7 +622,7 @@ func TestGrepTermsFromQuery(t *testing.T) {
 	}
 }
 
-// TestGrepSearchNarrowsProseViaTermWindow mirrors Python grep_search's two
+// TestGrepSearchNarrowsProseViaTermWindow: two
 // narrowing stages: bm25_search narrows by the keywords hint first
 // (search.py:grep_search via _narrow_or_keep), then the prose candidates alone are
 // narrowed to the term-grep window (search.py:grep_search) while table chunks pass
@@ -658,21 +647,20 @@ func TestGrepSearchNarrowsProseViaTermWindow(t *testing.T) {
 	// so the prose only survives the FIRST stage if it carries those terms:
 	// "Culdcept was made" yields the bigrams "culdcept was"/"was made", which
 	// the prose sentence does. (With "who made Culdcept?" the hint matches the
-	// table alone and Python drops the prose outright — pinned by
+	// table alone and the prose is dropped outright — pinned by
 	// TestGrepSearchDerivesKeywordsHint.)
 	chunks, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "Culdcept was made"})
 
-	// Order: table chunks first, then narrowed prose (Python keeps table+kept).
+	// Order: table chunks first, then narrowed prose (table + kept prose).
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %d, want 2 (table + narrowed prose)", len(chunks))
 	}
 	if chunks[0]["chunk_id"] != "t1" {
 		t.Errorf("first chunk = %v, want table chunk t1", chunks[0]["chunk_id"])
 	}
-	// The table chunk must be returned WHOLE, every row intact: Python's
-	// pipe-table branch returns "..." + _highlight_keywords(content) + "..."
-	// (text_processing.py _narrow_content), so the body is unchanged and only
-	// the wrapper differs from the raw chunk.
+	// The table chunk must be returned WHOLE, every row intact: the pipe-table branch wraps
+	// the highlighted content, so the body is unchanged and only the wrapper differs from the
+	// raw chunk.
 	if got := ChunkTextOf(chunks[0]); !strings.Contains(got, "team | pts | rank") || !strings.Contains(got, "D | 2 | 4") {
 		t.Errorf("table chunk was truncated; got %q", got)
 	}
@@ -689,7 +677,7 @@ func TestGrepSearchNarrowsProseViaTermWindow(t *testing.T) {
 	}
 }
 
-// TestGrepSearchKeepsRawCandidatesWhenNoMatch mirrors Python grep_search: when
+// TestGrepSearchKeepsRawCandidatesWhenNoMatch: when
 // the term-grep matches nothing, the raw BM25 candidates are returned unchanged
 // so evidence is never dropped.
 func TestGrepSearchKeepsRawCandidatesWhenNoMatch(t *testing.T) {
@@ -708,7 +696,7 @@ func TestGrepSearchKeepsRawCandidatesWhenNoMatch(t *testing.T) {
 	}
 }
 
-// TestGrepSearchDerivesKeywordsHint mirrors Python grep_search:421-424: with no
+// TestGrepSearchDerivesKeywordsHint: with no
 // explicit hint the BM25 pool is built from "query + the query's own extracted
 // terms", so a long question's proper nouns stop hiding under stopwords and the
 // keyword-narrowing stage runs even without a nav hint. An explicit hint (the
@@ -726,7 +714,7 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	}
 	// The derived hint also drives the narrowing stage: a prose candidate whose
 	// sentences miss those terms is dropped, while a >=3-row pipe table is kept
-	// whole (Python _narrow_by_keywords + _narrow_content's table branch).
+	// whole (the narrowing's table branch).
 	prose := map[string]any{"chunk_id": "p1", "content": "Unrelated sentence about weather."}
 	table := map[string]any{"chunk_id": "t1", "content": "a | b | c\nd | e | f\ng | h | i"}
 	r2 := &stubRetriever{chunks: []map[string]any{prose, table}}
@@ -745,10 +733,9 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	}
 }
 
-// TestSearchCacheIsHybridOnly mirrors Python: tools.search_cache is read and
-// written by hybrid_search alone (/ :207). A keyword-only leg
-// must neither serve nor be served by it — the key carries no weight,
-// threshold or compiled policy, so a shared cache would hand a hybrid result
+// TestSearchCacheIsHybridOnly: the search cache is read and written by the hybrid leg
+// alone. A keyword-only leg must neither serve nor be served by it — the key carries no
+// weight, threshold or compiled policy, so a shared cache would hand a hybrid result
 // (vector weight 0.3) to a BM25/grep call and vice versa.
 func TestSearchCacheIsHybridOnly(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
@@ -767,9 +754,8 @@ func TestSearchCacheIsHybridOnly(t *testing.T) {
 	}
 }
 
-// TestHybridSearchExcludesCompiledAndWeightsThreeTenths mirrors Python
-// hybrid_search: vector weight 0.3 when an embedder is configured, compiled
-// rows excluded.
+// TestHybridSearchExcludesCompiledAndWeightsThreeTenths: vector weight 0.3 when an
+// embedder is configured, compiled rows excluded.
 func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
@@ -779,8 +765,8 @@ func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
 	if got := ptrFloat(t, req.VectorSimilarityWeight); got != HybridSearchDefaultVectorWeight {
 		t.Errorf("hybrid search weight = %v, want %v", got, HybridSearchDefaultVectorWeight)
 	}
-	// With an embedder configured Python hybrid_search passes the real
-	// embd_mdl: the dense leg RUNS at weight 0.3.
+	// With an embedder configured the real handle is passed: the dense leg RUNS at
+	// weight 0.3.
 	if req.DisableVectorLeg {
 		t.Error("hybrid search with an embedder must keep the vector leg")
 	}
@@ -789,7 +775,7 @@ func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
 	}
 }
 
-// TestRetrieveSearchDoesNotExcludeCompiled mirrors Python RAGTools.retrieve:
+// TestRetrieveSearchDoesNotExcludeCompiled
 // unlike hybrid_search it does NOT exclude compiled rows, and honours
 // UsingEmbedding (weight 0.7 when on).
 func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
@@ -806,9 +792,8 @@ func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
 	}
 }
 
-// TestHybridSearchMergesSQLKBs verifies that hybrid_search folds the session's
-// structured (SQL) datasets into the target id list, mirroring Python
-// search.py:hybrid_search (`tools.kb_ids + [kb.id for kb in tools.sql_kbs]`).
+// TestHybridSearchMergesSQLKBs verifies that the hybrid leg folds the session's structured
+// (SQL) datasets into the target id list.
 func TestHybridSearchMergesSQLKBs(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
@@ -873,12 +858,11 @@ func TestNormalizeWebResults(t *testing.T) {
 	}
 }
 
-// TestQueryToTerms pins Python _query_to_terms on the shapes the
-// fan-out prefetch feeds it. The CJK case is the
-// regression guard: Go's RE2 \w is ASCII-only, so tokenizing a Chinese fan-out
-// with \w+ produced NO terms, leaving the BM25 leg of the fan-out without the
-// keyed terms that give the discriminating entity its own score mass
-// (agentic_rag_graph.py:_search_one) — the log line then read "keywords: ".
+// TestQueryToTerms pins the tokenizer on the shapes the fan-out prefetch feeds it. The CJK
+// case is the regression guard: Go's RE2 \w is ASCII-only, so tokenizing a Chinese
+// fan-out with \w+ produced NO terms, leaving the BM25 leg without the keyed terms that
+// give the discriminating entity its own score mass — the log line then read
+// "keywords: ".
 func TestQueryToTerms(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -886,9 +870,9 @@ func TestQueryToTerms(t *testing.T) {
 		want []string
 	}{
 		{"cjk sentence", "关羽 斩杀 有姓名 人物 名单", []string{"关羽", "斩杀", "有姓名", "人物", "名单"}},
-		// Case is preserved, as in Python (downstream matching is (?i)).
+		// Case is preserved (downstream matching is case-insensitive).
 		{"ascii sentence", "Culdcept Saga release date", []string{"Culdcept", "Saga", "release", "date"}},
-		// Python dedups case-sensitively (tok not in terms), so both survive.
+		// Dedup is case-sensitive, so both survive.
 		{"case-sensitive dedup", "Saga saga", []string{"Saga", "saga"}},
 		{"regex alternation", `(?i)\b关羽|张飞\b`, []string{"关羽", "张飞"}},
 		{"tokens below two runes dropped", "a b cd", []string{"cd"}},
@@ -913,10 +897,10 @@ func TestQueryToTerms(t *testing.T) {
 	}
 
 	// The exact fan-out queries of a real high-mode run ("关羽杀了多少有姓名的人？"),
-	// with the keywords Python's implementation produces for them (verified by
+	// with the keywords the implementation produces for them (verified by
 	// running rag.advanced_rag.harness.tools.search._query_to_terms plus the keyed
 	// filter of agentic_rag_graph.py:_search_one). Note the surviving term is a generic
-	// long word, not the entity: Python's len>=3 rule drops every two-character
+	// long word, not the entity: the len>=3 rule drops every two-character
 	// Chinese name (关羽/华雄/颜良/文丑/蔡阳), so this is parity, not a Go bug.
 	for _, c := range []struct{ in, want string }{
 		{"关羽 斩杀 有姓名 人物 名单", "有姓名"},
@@ -924,17 +908,17 @@ func TestQueryToTerms(t *testing.T) {
 		{"关羽 杀 将领 三国志", "三国志"},
 	} {
 		if got := strings.Join(FanoutKeyedTerms(QueryToTerms(c.in)), " "); got != c.want {
-			t.Errorf("fan-out keywords for %q = %q, want %q (Python parity)", c.in, got, c.want)
+			t.Errorf("fan-out keywords for %q = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
 
 func TestAgenticVectorWeightDefaultsToZero(t *testing.T) {
-	// Python's agentic retrieve runs keyword-only: using_embedding defaults to
+	// The agentic retrieve runs keyword-only: UsingEmbedding defaults to
 	// False and no caller passes True (agentic_rag.py:retrieve, 643-646).
 	got := floatPtrOrDef(nil, DefaultAgenticVectorWeight)
 	if got != 0 {
-		t.Fatalf("default vector weight = %v, want 0 (keyword-only, as in Python)", got)
+		t.Fatalf("default vector weight = %v, want 0 (keyword-only)", got)
 	}
 	if DefaultAgenticVectorWeight != 0 {
 		t.Fatalf("DefaultAgenticVectorWeight = %v, want 0", DefaultAgenticVectorWeight)
@@ -951,7 +935,7 @@ func TestVectorWeightHonoursExplicitZero(t *testing.T) {
 
 	// Fallback must apply only when unset.
 	if DefaultAgenticVectorWeight != 0 {
-		t.Fatal("the fallback itself must stay 0 to match Python")
+		t.Fatal("the fallback itself must stay 0")
 	}
 }
 
@@ -973,8 +957,8 @@ func TestRetrievalDefaultsUseIntOrDef(t *testing.T) {
 }
 
 func TestResolveVectorWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
-	// Python RAGTools.retrieve(using_embedding: bool = False).
-	// Off → keyword-only (weight 0); on → 0.7 default or the configured override.
+	// UsingEmbedding off → keyword-only (weight 0); on → 0.7 default or the configured
+	// override.
 	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 0 {
 		t.Fatalf("using_embedding=false → %v, want 0 (keyword-only)", got)
 	}
@@ -988,21 +972,19 @@ func TestResolveVectorWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
 }
 
 func TestResolveVectorWeightHybridDefaultsToThreeTenths(t *testing.T) {
-	// Python hybrid_search defaults the vector weight to 0.3
-	// (_DEFAULT_HYBRID_VECTOR_WEIGHT,), unlike RAGTools.retrieve's 0.7.
+	// The hybrid leg defaults the vector weight to 0.3, unlike the retrieve channel's 0.7.
 	if got := resolveVectorWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid → %v, want %v", got, HybridSearchDefaultVectorWeight)
 	}
 	if got := resolveVectorWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 0 {
-		t.Fatalf("hybrid with no embedder → %v, want 0 (Python: `if embd_mdl`)", got)
+		t.Fatalf("hybrid with no embedder → %v, want 0", got)
 	}
 }
 
-// TestResolveVectorWeightHybridIgnoresUsingEmbedding is the regression guard for
-// the channel-granularity bug: Python's hybrid_search has NO using_embedding
-// parameter (search.py:hybrid_search, :143-145), so gating it on that flag disabled the
-// semantic leg for search_chunks — losing recall of passages sharing no surface
-// words. The gate for this channel is the embedder, nothing else.
+// TestResolveVectorWeightHybridIgnoresUsingEmbedding is the regression guard for the
+// channel-granularity bug: the hybrid leg has NO using_embedding parameter, so gating it
+// on that flag disabled the semantic leg for search_chunks — losing recall of passages
+// sharing no surface words. The gate for this channel is the embedder, nothing else.
 func TestResolveVectorWeightHybridIgnoresUsingEmbedding(t *testing.T) {
 	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid with using_embedding=false → %v, want %v: the vector leg "+
@@ -1010,9 +992,9 @@ func TestResolveVectorWeightHybridIgnoresUsingEmbedding(t *testing.T) {
 	}
 }
 
-// TestResolveVectorWeightGrepIsAlwaysZero pins Python grep_search: the retrieve
-// and grep_* session tools are keyword-only and have no vector leg at all, so no
-// flag can turn one on.
+// TestResolveVectorWeightGrepIsAlwaysZero: the grep channel and the retrieve / grep_*
+// session tools are keyword-only and have no vector leg at all, so no flag can turn one
+// on.
 func TestResolveVectorWeightGrepIsAlwaysZero(t *testing.T) {
 	override := 0.9
 	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 0 {
@@ -1063,8 +1045,8 @@ func TestResolveDocScopeKeepsKnownIDs(t *testing.T) {
 }
 
 func TestResolveDocScopeDropsScopeWhenAllUnknown(t *testing.T) {
-	// Python retrieve:633-635 — an entirely bogus scope falls back to
-	// unfiltered retrieval instead of returning nothing.
+	// An entirely bogus scope falls back to unfiltered retrieval instead of returning
+	// nothing.
 	got := resolveDocScope(context.Background(), SearchDeps{
 		DocIDVerifier: stubVerifier{known: map[string]bool{"z": true}},
 	}, []string{"a", "b"}, []string{"kb"}, _LOG)
@@ -1160,8 +1142,8 @@ func TestDocInDatasetsRejectsForeignDocumentViaSubsetVerifier(t *testing.T) {
 
 // TestResolveDocScopeDropsScopeWhenAllUnknownViaSubsetVerifier exercises the
 // production empty-map path: when every candidate is foreign the verifier
-// returns an empty map (no error). The scope must be dropped (unfiltered
-// retrieval, mirroring Python retrieve's fall-back), not passed through.
+// returns an empty map (no error). The scope must be dropped (unfiltered retrieval), not
+// passed through.
 func TestResolveDocScopeDropsScopeWhenAllUnknownViaSubsetVerifier(t *testing.T) {
 	got := resolveDocScope(context.Background(), SearchDeps{
 		DocIDVerifier: subsetVerifier{knownDocs: map[string]bool{"z": true}},
@@ -1175,9 +1157,8 @@ func TestResolveDocScopeDropsScopeWhenAllUnknownViaSubsetVerifier(t *testing.T) 
 
 // TestResolveDocScopeEmptyWhenCeilingRemovesEveryID pins the ceiling's hard
 // edge: when the session doc_scope removes every requested id the result is
-// EMPTY (match nothing), never unfiltered. Python's falsy-empty quirk would fall
-// through to unfiltered retrieval here; Go deliberately keeps the ceiling
-// absolute.
+// EMPTY (match nothing), never unfiltered. A falsy-empty check would fall through to
+// unfiltered retrieval here; the ceiling is deliberately kept absolute.
 func TestResolveDocScopeEmptyWhenCeilingRemovesEveryID(t *testing.T) {
 	got := resolveDocScope(context.Background(), SearchDeps{
 		DocIDVerifier: subsetVerifier{knownDocs: map[string]bool{"sess1": true}},
@@ -1190,8 +1171,8 @@ func TestResolveDocScopeEmptyWhenCeilingRemovesEveryID(t *testing.T) {
 	}
 }
 
-// TestResolveDocScopeEmptyWhenSessionScopeSetAndAllUnknown pins Python
-// retrieve:631-632 — when the session has a fixed base doc_scope and the
+// TestResolveDocScopeEmptyWhenSessionScopeSetAndAllUnknown: when the session has a fixed
+// base doc_scope and the
 // requested ids survive the ceiling but do not resolve, the result is EMPTY,
 // never unfiltered. Encoded as a non-nil empty slice.
 func TestResolveDocScopeEmptyWhenSessionScopeSetAndAllUnknown(t *testing.T) {
@@ -1202,12 +1183,12 @@ func TestResolveDocScopeEmptyWhenSessionScopeSetAndAllUnknown(t *testing.T) {
 	}, []string{"sess1", "sess2"}, []string{"kb"}, _LOG)
 
 	if got == nil || len(got) != 0 {
-		t.Fatalf("scope = %v, want non-nil empty (Python returns empty result, not unfiltered)", got)
+		t.Fatalf("scope = %v, want non-nil empty (match nothing, not unfiltered)", got)
 	}
 }
 
-// TestResolveDocScopeFallsBackToSessionScopeWhenRequestNone pins Python's
-// scoped_doc_ids fallback (retrieve:620): a None request scope falls back to the
+// TestResolveDocScopeFallsBackToSessionScopeWhenRequestNone: a nil request scope falls
+// back to the
 // session's fixed doc_scope before ownership verification.
 func TestResolveDocScopeFallsBackToSessionScopeWhenRequestNone(t *testing.T) {
 	got := resolveDocScope(context.Background(), SearchDeps{
@@ -1236,11 +1217,9 @@ func TestResolveDocScopeUnfilteredWhenNoScopeAtAll(t *testing.T) {
 	}
 }
 
-// TestScopedDocIDsMirrorsPythonCeiling pins RAGTools.scoped_doc_ids
-// (agentic_rag.py:scoped_doc_ids): no session scope → the caller's scope as-is; a
-// session scope with no caller scope → the session scope; both → the
-// intersection.
-func TestScopedDocIDsMirrorsPythonCeiling(t *testing.T) {
+// TestScopedDocIDsCeiling: no session scope → the caller's scope as-is; a session scope
+// with no caller scope → the session scope; both → the intersection.
+func TestScopedDocIDsCeiling(t *testing.T) {
 	cases := []struct {
 		name    string
 		session []string

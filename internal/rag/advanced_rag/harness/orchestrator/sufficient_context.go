@@ -29,8 +29,6 @@ import (
 
 // Unified Sufficient Context Agent.
 //
-// Mirrors Python orchestrator/sufficient_context.py.
-//
 // The SCA performs ONE review pass over (1) each claim's intermediate draft and
 // (2) the overall draft assembled from them, and returns a unified verdict:
 // is_sufficient / confidence / contradictions / reasoning / claims / sub_queries.
@@ -53,7 +51,7 @@ const (
 	// evidence anchor, so the SCA can verify a draft against real retrieved text
 	// without a token blow-up.
 	scaEvidenceAnchorChars = 300
-	// scaMaxAnchorsPerClaim bounds anchors per claim (Python: `if len(anchors) >= 3`).
+	// scaMaxAnchorsPerClaim bounds anchors per claim.
 	scaMaxAnchorsPerClaim = 3
 	// feedbackMax bounds the missing pieces folded into the boost feedback string.
 	feedbackMax = 4
@@ -84,7 +82,7 @@ type SubQuery struct {
 	SearchHint  string
 }
 
-// MissingPiece mirrors Python's {"what", "search_hint"}.
+// MissingPiece is one gap: what is missing and a hint for searching for it.
 type MissingPiece struct {
 	What       string
 	SearchHint string
@@ -117,7 +115,7 @@ type SCADeps struct {
 	Prompts harness.PromptLoader
 }
 
-// SufficientContextAgent mirrors Python sufficient_context_agent.
+// SufficientContextAgent
 //
 // claims carries per-claim evidence (not the global union): rendering only the
 // snippets each claim cited keeps the prompt small (~1-3 chunks per claim) so
@@ -130,7 +128,7 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 	if len(claims) == 0 || deps.Model == nil {
 		return SCAResult{}
 	}
-	// Python wraps the review in @in_phase("sca").
+	// The review runs inside the "sca" phase.
 	ctx, done := harness.Phase(ctx, harness.PhaseSCA)
 	defer done()
 
@@ -244,7 +242,7 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 	}
 }
 
-// Boost mirrors Python to_boost: adapt the unified verdict into the
+// Boost: adapt the unified verdict into the
 // decision-ladder boost dict, preserving the contract
 // (is_sufficient / confidence / missing / contradictions / feedback /
 // followups) that the existing ladder consumes unchanged.
@@ -286,16 +284,14 @@ type Boost struct {
 	SubQueries []SubQuery
 }
 
-// ToGrounded mirrors Python to_grounded: adapt the unified verdict into the
+// ToGrounded: adapt the unified verdict into the
 // `grounded` dict consumed by replan and the ungrounded-veto path
 // ({claim_id: {grounded, ungrounded, missing_information}}).
 func (s SCAResult) ToGrounded() map[string]ClaimVerdict { return s.Claims }
 
-// ---------------------------------------------------------------------------
 // Rendering helpers
-// ---------------------------------------------------------------------------
 
-// renderClaimContext mirrors Python _render_claim_context: each claim's report
+// renderClaimContext: each claim's report
 // PLUS a brief evidence anchor (the first line of each cited snippet), so the
 // SCA can verify the draft is grounded in real retrieved text.
 func renderClaimContext(claims []ClaimDraft, kb *harness.Kbinfos) string {
@@ -342,8 +338,8 @@ func renderClaimContext(claims []ClaimDraft, kb *harness.Kbinfos) string {
 		// Apply the budget to the COMPLETE block before appending it, trimming it
 		// to what remains: accounting the block only AFTER appending let a single
 		// oversized claim blow straight past scaClaimsContextMax (the cap the
-		// comment claims bounds the whole rendered context). Cut by rune
-		// (Python's str[:N]) so the trim never splits a multibyte character.
+		// comment claims bounds the whole rendered context). Cut by rune so the trim never
+		// splits a multibyte character.
 		remaining := scaClaimsContextMax - used
 		if remaining <= 0 {
 			break
@@ -364,7 +360,7 @@ func renderClaimContext(claims []ClaimDraft, kb *harness.Kbinfos) string {
 	return strings.Join(blocks, "\n\n")
 }
 
-// renderOverallDraft mirrors Python _render_overall_draft: assemble the
+// renderOverallDraft: assemble the
 // problem-level "rough draft" by concatenating each claim's report, so the SCA
 // can judge whether the context lets the model answer end-to-end — including
 // cross-claim synthesis that per-claim review would miss.
@@ -382,20 +378,18 @@ func renderOverallDraft(claims []ClaimDraft) string {
 		return "(no overall draft)"
 	}
 	draft := strings.Join(parts, "\n")
-	// Truncate by RUNE, not byte: Python slices str[:N] by code point, and a byte
-	// slice through a multibyte (e.g. CJK) rune would emit invalid UTF-8 (or
-	// replacement characters) into the SCA prompt.
+	// Truncate by RUNE, not byte: a byte slice through a multibyte (e.g. CJK) rune would emit
+	// invalid UTF-8 (or replacement characters) into the SCA prompt.
 	if r := []rune(draft); len(r) > scaClaimsContextMax {
 		draft = string(r[:scaClaimsContextMax])
 	}
 	return draft
 }
 
-// scaChunkText mirrors Python sufficient_context.py:_render_claim_context: prefer the reranked
-// "content_with_weight" over the raw "content", then fall back to "chunk". This
-// differs from harness.chunkText (which prefers content and keeps a Go-only
-// "text" fallback): the SCA evidence anchor must read the SAME text Python did
-// so the groundedness guard resolves the same snippets.
+// scaChunkText: _render_claim_context: prefer the reranked
+// "content_with_weight" over the raw "content", then fall back to "chunk". This differs from
+// harness.chunkText (which prefers content and keeps a "text" fallback): the SCA evidence anchor
+// must read the SAME text so the groundedness guard resolves the same snippets.
 func scaChunkText(c map[string]any) string {
 	if v, ok := c["content_with_weight"]; ok && v != nil {
 		if s := fmt.Sprint(v); s != "" {
@@ -413,7 +407,7 @@ func scaChunkText(c map[string]any) string {
 	return ""
 }
 
-// boundedExcerpt mirrors Python _bounded_excerpt: a bounded window around a
+// boundedExcerpt: a bounded window around a
 // term from the draft. Table text is returned whole.
 func boundedExcerpt(text, hints string, maxChars int) string {
 	text = strings.TrimSpace(text)
@@ -426,9 +420,8 @@ func boundedExcerpt(text, hints string, maxChars int) string {
 	if maxChars < 80 {
 		maxChars = 80
 	}
-	// Work in runes (code points), exactly like Python's str[:] / len() / find():
-	// a byte-based slice would mis-count and split a multibyte (e.g. CJK) rune,
-	// emitting invalid UTF-8.
+	// Work in runes (code points): a byte-based slice would mis-count and split a multibyte
+	// (e.g. CJK) rune, emitting invalid UTF-8.
 	r := []rune(text)
 	lower := strings.ToLower(text)
 	start := -1
@@ -461,7 +454,7 @@ func boundedExcerpt(text, hints string, maxChars int) string {
 	return prefix + string(r[left:right]) + suffix
 }
 
-// isTableText mirrors Python _is_table_text: a corpus-neutral table detector —
+// isTableText: a corpus-neutral table detector —
 // HTML table markup, or >=3 pipe rows.
 func isTableText(text string) bool {
 	t := strings.ToLower(text)
@@ -477,11 +470,9 @@ func isTableText(text string) bool {
 	return pipeRows >= 3
 }
 
-// ---------------------------------------------------------------------------
 // Coercion helpers
-// ---------------------------------------------------------------------------
 
-// coerceDict mirrors Python _coerce_dict: tolerate model format drift. The
+// coerceDict: tolerate model format drift. The
 // reviewer occasionally replies with a bare array or a JSON string; previously
 // any non-dict response was dropped, so the SCA produced NO signal on those
 // rounds and replan/rewrite silently stopped.
@@ -505,7 +496,7 @@ func coerceDict(v any) map[string]any {
 	return nil
 }
 
-// clamp mirrors Python _clamp: coerce to [0,1], defaulting to 1.0 on failure.
+// clamp: coerce to [0,1], defaulting to 1.0 on failure.
 func clamp(v any) float64 {
 	f, ok := toFloat(v)
 	if !ok {
@@ -522,8 +513,8 @@ func clamp(v any) float64 {
 
 // coerceBool reads an LLM-reported boolean, tolerating the string serialisations
 // a drifted model reply may carry. It deliberately does NOT use raw truthiness:
-// a non-empty string is truthy in both Go and Python, so bool("false") and
-// bool("0") are TRUE — which would silently INVERT a verdict, marking
+// a non-empty string is truthy in Go, so bool("false") and bool("0") are TRUE — which would
+// silently INVERT a verdict, marking
 // insufficient context sufficient or an ungrounded claim grounded.
 //
 // The recognised true/false spellings are mapped explicitly; an empty or

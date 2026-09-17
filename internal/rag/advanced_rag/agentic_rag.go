@@ -16,19 +16,16 @@
 
 // Package advanced_rag is the outer agentic-search loop (medium / high / ultra).
 //
-// This file mirrors Python rag/advanced_rag/agentic_rag.py — the RAGTools
-// methods: the run configuration (RAGTools), the rag entry point (Rag)
-// and question formalization (Formalize). In Python, RAGTools is the shared
-// capability carrier that the agentic graph (agentic_rag_graph.py) and the
-// harness action session both read from and write to. In Go the equivalent
-// carrier is harness.Toolset (see harness/action_session.go), while this file
-// holds the RAGTools-side logic.
+// This file holds the run's configuration and entry-point logic: the run
+// configuration (RAGTools), the rag entry point (Rag) and question formalization
+// (Formalize). The shared capability carrier that the agentic graph and the harness
+// action session both read from and write to is harness.Toolset (see
+// harness/action_session.go); this file holds the RAGTools-side logic.
 //
-// The graph driver itself lives in agentic_rag_graph.go (mirroring
-// agentic_rag_graph.py), so this package replicates the Python layout:
-//   - agentic_rag.go      ↔ Python agentic_rag.py            (RAGTools methods)
-//   - agentic_rag_graph.go ↔ Python agentic_rag_graph.py      (the pipeline)
-//   - harness/            ↔ Python harness/                   (primitives)
+// The package is laid out in three layers:
+//   - agentic_rag.go       the run configuration and entry points
+//   - agentic_rag_graph.go the pipeline (nodes, routing, assembly)
+//   - harness/             the leaf primitives
 package advanced_rag
 
 import (
@@ -50,65 +47,54 @@ import (
 	"ragflow/internal/service/nlp"
 )
 
-// RAGTools method map — where each Python method lives in Go.
+// Capability map — where each part of the run lives.
 //
-// Python's RAGTools is one object exposing every capability. Go keeps the same
-// shape: the RAGTools methods live in this package (agentic_rag_graph.go and
-// this file), while harness/ stays the
-// leaf capability library they orchestrate (retrieval, sessions, tools). Nothing
-// below is re-implemented as a forwarding shim — the Go column IS the
-// implementation:
+// The RAGTools methods live in this package (this file and
+// agentic_rag_graph.go), while harness/ stays the leaf capability library they
+// orchestrate (retrieval, sessions, tools). Nothing below is a forwarding shim —
+// the right-hand side IS the implementation:
 //
-//	__init__                221 → RAGTools (below)
-//	has_*                   340 → harness.Toolset            (action_session.go)
-//	_fit_messages           360 → chat.FitMessages           (chat/message_fit.go)
-//	get_citation_guidelines 367 → GetCitationGuidelines      (below)
-//	sys_prompt              371 → SysPrompt                  (below)
-//	formalize               412 → Formalize                  (below)
-//	retrieve                593 → HybridSearch               (harness/tools/search.go)
-//	_extract_keywords_weighted 571 → ExtractWeightedKeywords (harness/keywords.go)
-//	extract_keywords        581 → ExtractWeightedKeywords (harness/keywords.go) + CompactKeywords (harness/tool_text_processing.go)
-//	web_retrieve            676 → searchExecutor.webSearch   (harness/tool_executor.go)
-//	_compose_answer_from_evidence 604 → ComposeAnswer        (agentic_rag_graph.go)
-//	_naive_rag                   1517 → ComposeNaiveAnswer   (agentic_rag_graph.go)
-//	_fit_evidence           716 → FitEvidence                (below)
-//	judge_sufficiency       734 → SCA review                 (harness/orchestrator/sufficient_context.go)
-//	gen_followups           750 → SCA gap rewrite            (harness/orchestrator/sufficient_context.go)
-//	rag                     817 → Rag                       (below)
+//	run configuration   → RAGTools                 (below)
+//	tool surface        → harness.Toolset          (harness/action_session.go)
+//	message fitting     → chat.FitMessages         (agent/chat/message_fit.go)
+//	citation guidelines → GetCitationGuidelines    (below)
+//	system prompt       → SysPrompt                (below)
+//	formalization       → Formalize                (below)
+//	retrieval           → HybridSearch             (harness/tool_search.go)
+//	keyword extraction  → ExtractWeightedKeywords  (harness/keywords.go)
+//	keyword compaction  → CompactKeywords          (harness/tool_text_processing.go)
+//	web retrieval       → searchExecutor.webSearch (harness/tool_executor.go)
+//	answer composition  → ComposeAnswer            (agentic_rag_graph.go)
+//	naive answer        → ComposeNaiveAnswer       (agentic_rag_graph.go)
+//	evidence fitting    → FitEvidence              (below)
+//	sufficiency review  → SCA review               (harness/orchestrator/sufficient_context.go)
+//	gap rewrite         → SCA gap rewrite          (harness/orchestrator/sufficient_context.go)
+//	entry point         → Rag                      (below)
 //
-// Also mirrored, outside this file:
+//	document scope      → toolDocScope          (harness/tool_executor.go)
+//	doc-id verification → DocIDLookup           (below)
+//	tenant resolution   → docInDatasets         (harness/tool_search.go)
+//	full document fetch → fetchFullDocument     (harness/doc_fetch.go)
+//	document summary    → summarizeDocument     (harness/doc_fetch.go)
 //
-//	scoped_doc_ids           352 → toolDocScope          (harness/tool_executor.go)
-//	_filter_known_doc_ids    981 → DocIDLookup           (below)
-//	_resolve_doc_tenant      987 → docInDatasets         (harness/search.go)
-//	fetch_full_document      761 → fetchFullDocument     (harness/doc_fetch.go)
-//	summarize_document       934 → summarizeDocument     (harness/doc_fetch.go)
+// Usage is counted through an explicit *harness.LLMUsageStats collector (RAGTools.Stats)
+// passed to the calls the run makes, rather than through a ContextVar and a wrapper chat
+// model; per-round metrics derived from the round list are not tracked.
 //
-// All live Python methods now have a Go counterpart, including
-// harness.LLMUsageStats (Python harness/stats.py::LLMUsageStats) — Python counts
-// usage through a ContextVar and a wrapper chat model, so Go instead passes an
-// explicit *harness.LLMUsageStats collector (RAGTools.Stats) to the calls it
-// makes; the per-round metrics Python derives from RAGTools.rounds are not
-// tracked.
+// Deliberately not implemented — dead code upstream: the document-picking helpers return
+// nil on their first statement and are never called, so the title/metadata selectors are
+// unreachable too, and structured_retrieve has neither a @tool decorator nor a caller.
 //
-// Deliberately not ported — dead code in Python: pick_documents returns None on
-// its first statement (agentic_rag.py:500) and is never called, so
-// _select_by_titles, _filter_by_metadata, _get_cached_metas and
-// _collect_doc_titles are unreachable too; structured_retrieve has neither a
-// @tool decorator nor a caller.
-//
-// RAGTools configures one agentic-search run. It is the single Go mirror of
-// Python RAGTools.__init__: every capability the run needs (retriever, model,
-// prompts, embedder, kb accumulation, retrieval tuning, answer composition) is
-// carried on this one object — there is no second dependency struct. The
-// harness layer keeps narrow per-call views (harness.SearchDeps /
-// harness.SessionDeps) that are projected from a RAGTools at call time, mirroring
-// how Python methods receive self plus extra per-call arguments. Construct it directly
+// RAGTools configures one agentic-search run: every capability the run needs (retriever,
+// model, prompts, embedder, kb accumulation, retrieval tuning, answer composition) is
+// carried on this one object — there is no second dependency struct. The harness layer
+// keeps narrow per-call views (harness.SearchDeps / harness.SessionDeps) projected from a
+// RAGTools at call time. Construct it directly
 // (RAGTools{...}); its zero value is a valid starting point for the narrower call sites
 // that only set a subset of fields.
 type RAGTools struct {
-	// Tools is the shared capability carrier (Python RAGTools instance). The
-	// graph and the action session both reach retrieval through it.
+	// Tools is the shared capability carrier. The graph and the action session both
+	// reach retrieval through it.
 	Tools *harness.Toolset
 	// Search is the fully-projected retrieval configuration for this run. The
 	// graph's DUAL-CHANNEL fan-out needs it directly: unlike the action session
@@ -122,15 +108,13 @@ type RAGTools struct {
 	// Model drives the LLM turns. Required for agentic modes; low/naive never
 	// call it.
 	Model harness.SessionModel
-	// ModelName is the RESOLVED chat model identity (Python chat_mdl.llm_name,
-	// e.g. "gpt-4o"), one component of the gen_json reply-cache key. Empty
-	// disables that cache: keying on an empty name would collapse every model
-	// onto one bucket and serve a reply produced by another model.
+	// ModelName is the RESOLVED chat model identity (e.g. "gpt-4o"), one component of the
+	// gen_json reply-cache key. Empty disables that cache: keying on an empty name would
+	// collapse every model onto one bucket and serve a reply produced by another model.
 	ModelName string
-	// Embedder is the external embedding handle used by graph/structure seed
-	// encoding (Python tools.embed_mdl). Nil falls back to this package's
-	// internal tenant-default resolver, which additionally degrades to keyword
-	// matching when the DB is uninitialised or encoding panics.
+	// Embedder is the external embedding handle used by graph/structure seed encoding.
+	// Nil falls back to this package's internal tenant-default resolver, which additionally
+	// degrades to keyword matching when the DB is uninitialised or encoding panics.
 	Embedder nlp.NavEmbedder
 	// Keywords extracts the entity-weighted retrieval query. Optional.
 	Keywords KeywordExtractorFn
@@ -142,36 +126,34 @@ type RAGTools struct {
 	SCAPrompts harness.PromptLoader
 	// RewritePrompts overrides Prompts for the gap→query rewrite call.
 	RewritePrompts harness.PromptLoader
-	// KB is the in-flight retrieval accumulation (Python RAGTools.kbinfos).
+	// KB is the in-flight retrieval accumulation.
 	KB *harness.Kbinfos
 	// Logger is optional; nil uses the default logger.
 	Logger *log.Logger
-	// Answer-composition configuration (see AnswerDeps). All optional; the
-	// defaults match Python's configured behaviour.
+	// Answer-composition configuration (see AnswerDeps). All optional; the defaults are
+	// the configured behaviour.
 	// CiteRules overrides the default citation rules.
 	CiteRules string
 	// SystemPrompt is the dialog-level UI configuration appended after the
 	// agentic contract (language/tone/style may override; evidence contract may not).
 	SystemPrompt string
-	// EmptyResponse is returned verbatim when no evidence was found, skipping
-	// the composition call entirely (Python tools.empty_response).
+	// EmptyResponse is returned verbatim when no evidence was found, skipping the
+	// composition call entirely.
 	EmptyResponse string
 	// EvidenceMaxTokens caps the evidence block. <=0 uses evidenceBudgetTokens.
 	EvidenceMaxTokens int
-	// MaxLength is the chat model's context window (Python
-	// tools.chat_mdl.max_length). It bounds message_fit_in for prompt
+	// MaxLength is the chat model's context window. It bounds message fitting for prompt
 	// assembly; <=0 falls back to chat.EffectiveContextLength's 8192 default.
 	MaxLength int
 	// ComposeAnswer enables the terminal composition node. Defaults to true
 	// when a model is configured; set false to receive raw evidence only.
 	ComposeAnswer *bool
-	// Finalize runs the terminal composition (Python _compose_answer_from_evidence).
-	// It is wired by Rag so the graph can invoke it FROM INSIDE its last node —
-	// Python's agentic and low graphs both end in a formalize_answer node that
-	// composes and streams the answer. The graph forwards the node's state
-	// values the compose prompt reads: partialAnswer and emptyResult (Python
-	// agentic_rag_graph.py:1397-1400 / orchestrator/direct.py) plus question —
-	// the graph state's FORMALIZED question (Python :834
+	// Finalize runs the terminal composition. It is wired by Rag so the graph can invoke
+	// it FROM INSIDE its last node — the agentic and low graphs both end in a
+	// formalize_answer node that composes and streams the answer. The graph forwards the
+	// node's state values the compose prompt reads: partialAnswer and emptyResult
+	// (orchestrator/direct.go) plus question —
+	// the graph state's FORMALIZED question (
 	// `question = state.get("question")`), which the formalize_question node
 	// wrote. The compose prompt must be built from the formalized question,
 	// not the outer tool argument: the graph researched the formalized
@@ -183,127 +165,97 @@ type RAGTools struct {
 	Finalize func(ctx context.Context, partialAnswer, emptyResult bool, question string)
 	// Messages is the conversation history used by Formalize to resolve
 	// pronouns/ellipses into a standalone question. The agentic and low graphs
-	// formalize it as their first node (Python build_agentic_graph and
-	// build_low_graph); naive retrieval does not formalize.
+	// formalize it as their first node; naive retrieval does not formalize.
 	Messages []schema.Message
-	// WebSearch is the optional open-web provider backing the `web_search` tool
-	// (Python RAGTools.web_search). Nil HIDES the tool from the mode's surface —
+	// WebSearch is the optional open-web provider backing the `web_search` tool.
+	// Nil HIDES the tool from the mode's surface —
 	// sessionDeps sets HasWebSearch = mode.HasTool("web_search") && WebSearch != nil
 	// and ActiveToolSpecs drops the spec — so the model is never shown a dead tool.
 	// Should a call reach the executor anyway (stale spec, direct invocation), it
 	// answers StatusError/ReasonInfra with a do-not-retry note, NOT a query-level
-	// MISS: WebSearchTool returns the same infra error Python's _exec_web_search
-	// does for an absent provider (tool_search.go:826).
+	// MISS: WebSearchTool returns the same infra error for an absent provider.
 	WebSearch harness.WebSearcher
-	// DocIDVerifier checks which requested document ids really belong to the
-	// datasets being searched (Python RAGTools._filter_known_doc_ids). Nil
-	// disables the check and leaves the requested scope untouched.
+	// DocIDVerifier checks which requested document ids really belong to the datasets
+	// being searched. Nil disables the check and leaves the requested scope untouched.
 	DocIDVerifier harness.DocIDVerifier
 	// DocChunks pages through a single document's chunks in reading order
-	// (Python settings.retriever.chunk_list, sort_by_position=True). It backs
-	// the whole-document-reading path (summarize_document / fetch_full_document)
-	// mirroring Python's chunk-list reads. Nil disables whole-document reading:
-	// the document-level tools report that it is unavailable.
+	// (sort_by_position). It backs the whole-document-reading path
+	// (summarize_document / fetch_full_document)
+	// Nil disables it: the document-level tools report that reading is unavailable.
 	DocChunks harness.DocChunkLister
-	// Outer is the outer-layer chat model that drives the Python-style
-	// rag_agent react loop (Python RAGTools.chat_mdl, used by
-	// dialog_service.rag_agent via chat_mdl.async_chat_with_tools with
-	// tools=[rag, summarize_document] and terminal_tools={"rag"}). When non-nil,
-	// Rag runs that outer loop: the model may call `rag` (terminal — runs the
-	// inner agentic graph and returns the cited answer) or `summarize_document`
-	// (non-terminal — reads a whole document into evidence and lets the model
-	// answer from it on the next round); with no tool call it answers directly.
-	// When nil, Rag falls back to the existing direct RunAgenticRAG path, so
-	// callers that don't wire an outer model see unchanged behaviour.
+	// Outer is the outer-layer chat model that drives the rag_agent react loop
+	// (dialog_service.rag_agent): it binds tools=[rag, summarize_document] with
+	// terminal_tools={"rag"}. When non-nil, Rag runs that outer loop: the model may call
+	// `rag` (terminal — runs the inner agentic graph and returns the cited answer) or
+	// `summarize_document` (non-terminal — reads a whole document into evidence and lets
+	// the model answer from it on the next round); with no tool call it answers directly.
+	// When nil, Rag falls back to the direct RunAgenticRAG path, so callers that don't wire
+	// an outer model see unchanged behaviour.
 	Outer *models.ChatModel
-	// OuterSupportsTools mirrors Python dialog_service.rag_agent's
-	// `if not getattr(chat_mdl, "is_tools", False)` gate: when the outer model
-	// exists but cannot emit tool calls, the outer react loop must be skipped
-	// (it would otherwise bind tools and, producing no tool_call, return a
-	// retrieval-less direct answer). Callers set it from
+	// OuterSupportsTools gates the outer react loop: when the outer model exists but
+	// cannot emit tool calls, the loop must be skipped (it would otherwise bind tools and,
+	// producing no tool_call, return a retrieval-less direct answer). Callers set it from
 	// ModelProviderService.ResolveModelToolSupport.
 	OuterSupportsTools bool
-	// Cache answers near-identical re-asks from an earlier answer (Python
-	// RAGTools._rag_cache). Rag builds a fresh per-turn RAGCache when this is
-	// nil, so caching is ON by default (matching Python's always-present
-	// _rag_cache). To share one cache across multiple Rag() calls within a
-	// single turn (Python's concurrent tool_call case), pass the same *RAGCache
-	// here instead of relying on the auto-built one.
+	// Cache answers near-identical re-asks from an earlier answer. Rag builds a fresh
+	// per-turn RAGCache when this is nil, so caching is ON by default. To share one cache
+	// across multiple Rag() calls within a single turn (the concurrent tool_call case),
+	// pass the same *RAGCache here instead of relying on the auto-built one.
 	Cache *RAGCache
-	// OriginalQuestion is the user's own, unrewritten question (Python
-	// tools.original_user_question). When the outer caller passes a compressed
-	// rewrite as Question, the original is preferred if both clearly describe
-	// the same turn.
+	// OriginalQuestion is the user's own, unrewritten question. When the outer caller
+	// passes a compressed rewrite as Question, the original is preferred if both clearly
+	// describe the same turn.
 	OriginalQuestion string
-	// TextAttachments is appended to the question and bypasses the re-ask cache
-	// (Python tools.text_attachments_content).
+	// TextAttachments is appended to the question and bypasses the re-ask cache.
 	TextAttachments string
-	// AnswerSink receives the answer as it is produced (Python
-	// tools.answer_sink). Nil disables streaming; the answer is still returned
-	// in full. Requires a model implementing harness.StreamingSessionModel,
-	// otherwise the run falls back to one-shot composition.
+	// AnswerSink receives the answer as it is produced. Nil disables streaming; the answer
+	// is still returned in full. Requires a model implementing
+	// harness.StreamingSessionModel, otherwise the run falls back to one-shot composition.
 	AnswerSink *AnswerSink
-	// ToolStarted is called once research begins, before any retrieval, so the
-	// caller can show progress (Python tools.tool_started_sink).
+	// ToolStarted is called once research begins, before any retrieval, so the caller can
+	// show progress.
 	ToolStarted func()
-	// Progress receives engine-stage progress lines tagged like Python's
-	// think-log entries (e.g. "[Planner] Splitting the research question into
-	// tasks", "[Hybrid search] Searching for answers in the knowledge base") as
-	// the agentic loop runs. It is the Go counterpart of Python's
-	// rag/advanced_rag/think_log.py — those tagged lines used to be fished out of
-	// the log stream and forwarded into the <think> block of the chat UI. Nil
-	// disables streaming progress; the pipeline still completes with the answer.
-	// A caller that also sets AnswerSink typically routes each line as a
-	// isThink=true delta so the reasoning block shows live research progress.
+	// Progress receives engine-stage progress lines tagged with their source (e.g.
+	// "[Planner] Splitting the research question into tasks", "[Hybrid search] Searching
+	// for answers in the knowledge base") as the agentic loop runs; see think_log.go. Those
+	// tagged lines are forwarded into the <think> block of the chat UI. Nil disables
+	// streaming progress; the pipeline still completes with the answer. A caller that also
+	// sets AnswerSink typically routes each line as a isThink=true delta so the reasoning
+	// block shows live research progress.
 	Progress func(line string)
-	// Retrieval tuning, mirroring Python RAGTools.retrieve: an explicit tool
-	// argument still wins over these, and zero selects the harness defaults.
+	// Retrieval tuning: an explicit tool argument still wins over these, and zero selects
+	// the harness defaults.
 	TopN                int
 	SimilarityThreshold float64
-	// VectorSimilarityWeight is the vector leg's weight (Python
-	// tools.vector_similarity_weight). A pointer so an explicit 0 — keyword-only,
-	// which is what Python's agentic retrieve uses — is distinguishable from
-	// "not configured". Nil selects DefaultAgenticVectorWeight (0).
+	// VectorSimilarityWeight is the vector leg's weight. A pointer so an explicit 0 —
+	// keyword-only, which is what the agentic retrieve channel uses — is distinguishable
+	// from "not configured". Nil selects DefaultAgenticVectorWeight (0).
 	VectorSimilarityWeight *float64
-	// UsingEmbedding is the Go spelling of Python RAGTools.retrieve's
-	// `using_embedding: bool = False` (agentic_rag.py:599). When false (the
-	// agentic default) retrieval is keyword-only (vector weight 0); when true
-	// the embedder is engaged and VectorSimilarityWeight (default 0.7) applies.
+	// UsingEmbedding: when false (the agentic default) retrieval is keyword-only (vector
+	// weight 0); when true the embedder is engaged and VectorSimilarityWeight (default 0.7)
+	// applies.
 	//
-	// SCOPE: only the RAGTools.retrieve channel honours it — Python's
-	// using_embedding lives on that function alone.
+	// SCOPE: only the retrieve channel honours it.
 	UsingEmbedding bool
-	// HasEmbedder is the Go spelling of Python `tools.embed_mdl` being set
-	// (dialog_service.py:2075). It gates hybrid_search's vector leg
-	// (search.py:143 `vector_weight = _setting(...) if embd_mdl else 0`), i.e.
-	// the semantic recall of the search_chunks tool.
+	// HasEmbedder: whether an embedder is configured. It gates the hybrid leg's vector
+	// weight, i.e. the semantic recall of the search_chunks tool.
 	HasEmbedder           bool
 	RerankCandidatesCount int
 	TopK                  int
-	// DocScope is the session-wide document restriction (Python
-	// tools.doc_scope). Nil means "search everything".
+	// DocScope is the session-wide document restriction. Nil means "search everything".
 	DocScope []string
-	// MetaDataFilter restricts retrieval by chunk metadata (Python
-	// tools.meta_data_filter).
+	// MetaDataFilter restricts retrieval by chunk metadata.
 	MetaDataFilter map[string]any
-	// KBs mirrors Python RAGTools' self.kbs (agentic_rag.py:283) — the full
-	// Knowledgebase objects (carrying parser_config / tenant_id) the agentic
-	// tools run over. Python loads these via
-	// KnowledgebaseService.get_by_ids(kb_ids) in __init__; Go receives the
-	// already-resolved objects from the caller (this package stays DB-free) and
-	// feeds them to the Tagger, mirroring retrieve's
-	// `rank_feature=label_question(question, self.kbs)`.
+	// KBs is the full set of Knowledgebase objects (carrying parser_config / tenant_id)
+	// the agentic tools run over. They arrive already resolved from the caller (this
+	// package stays DB-free) and are fed to the Tagger for the question-type tag boost.
 	KBs []*entity.Knowledgebase
-	// Tagger mirrors Python RAGTools.retrieve's
-	// `rank_feature=label_question(question, self.kbs)` (agentic_rag.py:668): it
-	// classifies the query into question-type tags the retriever uses to boost
-	// matching chunks. It is the Go equivalent of rag.app.tag.label_question,
-	// implemented by internal/service.MetadataService.LabelQuestion. Nil means
-	// no tag boost (Python's label_question returning None).
+	// Tagger classifies the query into question-type tags the retriever uses to boost
+	// matching chunks (implemented by internal/service.MetadataService.LabelQuestion).
+	// Nil means no tag boost.
 	Tagger harness.QuestionLabeler
-	// Stats receives per-phase LLM usage for this run (Python
-	// RAGTools.llm_stats, mirrored by harness.LLMUsageStats). Nil disables
-	// collection.
+	// Stats receives per-phase LLM usage for this run (harness.LLMUsageStats). Nil
+	// disables collection.
 	Stats *harness.LLMUsageStats
 }
 
@@ -334,9 +286,8 @@ func (d RAGTools) logger() *log.Logger {
 
 // Question formalization (the graph's first node).
 //
-// Mirrors Python agentic_rag.RAGTools.formalize (line 412): rewrite the latest
-// user message into a standalone question AND derive its search keywords, in one
-// LLM call.
+// Rewrite the latest user message into a standalone question AND derive its search
+// keywords, in one LLM call.
 //
 // Single-turn shortcut: when there is nothing to resolve, the question is kept
 // VERBATIM (no rewrite) and only keywords are extracted. Rewriting a
@@ -349,8 +300,7 @@ func (d RAGTools) logger() *log.Logger {
 const (
 	// formalizeTimeoutS bounds the formalize call.
 	formalizeTimeoutS = 45.0
-	// formalizeTemperature mirrors Python's chat conf at agentic_rag.py:471:
-	// formalization is a mechanical rewrite, so it must be stable.
+	// formalizeTemperature: formalization is a mechanical rewrite, so it must be stable.
 	formalizeTemperature = 0.1
 )
 
@@ -363,15 +313,15 @@ var formalizePrompt = (`You are given a conversation. Do BOTH of the following a
 
 Output ONLY JSON, no prose, no code fences: {"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}`)
 
-// Formalize mirrors Python RAGTools.formalize: return (question, keywords) for
+// Formalize: return (question, keywords) for
 // the given conversation.
 //
 // messages may be []schema.Message (preferred) or pre-formatted "Speaker: text"
 // strings. On any failure it degrades to (last user message, "") — formalization
 // is an optimization, never a precondition for answering.
 //
-// maxLength is the chat model's context window (Python tools.chat_mdl.max_length);
-// it bounds the prompt fit. <=0 falls back to chat.EffectiveContextLength's 8192.
+// maxLength is the chat model's context window; it bounds the prompt fit. <=0 falls back
+// to chat.EffectiveContextLength's 8192.
 func Formalize(ctx context.Context, deps harness.SessionDeps, messages []schema.Message, maxLength int) (string, string) {
 	lastUser, transcript := transcriptOf(messages)
 	if lastUser == "" {
@@ -384,8 +334,8 @@ func Formalize(ctx context.Context, deps harness.SessionDeps, messages []schema.
 	}
 
 	// Single-turn: nothing to resolve — keep the question VERBATIM (rewriting a
-	// self-contained question risks silently changing its meaning), and extract
-	// only the search keywords (Python: tools.extract_keywords).
+	// self-contained question risks silently changing its meaning), and extract only the
+	// search keywords.
 	if !isMultiTurn(messages) {
 		_LOG.Printf("[Formalize] Single-turn self-contained question — kept verbatim (no rewrite): %s", trunc(lastUser, 120))
 		_, kw := harness.ExtractWeightedKeywords(ctx, deps.Model, lastUser)
@@ -400,7 +350,7 @@ func Formalize(ctx context.Context, deps harness.SessionDeps, messages []schema.
 	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(formalizeTimeoutS))
 	defer cancel()
 
-	// Python 470: message_fit_in(form_message(system, user), chat_mdl.max_length).
+	// Fit the prompt to the model's context window.
 	fitted, fitErr := chat.FitMessages(formalizePrompt, []schema.Message{
 		*schema.UserMessage("Conversation:\n" + transcript + "\n\nOutput JSON:"),
 	}, maxLength)
@@ -418,7 +368,7 @@ func Formalize(ctx context.Context, deps harness.SessionDeps, messages []schema.
 	msgs = append(msgs, *schema.SystemMessage(system))
 	msgs = append(msgs, history...)
 
-	// Python 471: async_chat(system, history, {"temperature": 0.1}).
+	// async_chat(system, history, {"temperature": 0.1}).
 	reply, err := modelWithTemperature(deps.Model, formalizeTemperature).Complete(callCtx, msgs, nil)
 	if err != nil {
 		_LOG.Printf("[Formalize] failed; keeping the raw question: %v", err)
@@ -475,7 +425,6 @@ func transcriptOf(messages []schema.Message) (lastUser, transcript string) {
 }
 
 // isMultiTurn reports whether the conversation has more than one user turn.
-// Mirrors Python's `multi_turn = len(user_msgs) > 1`.
 func isMultiTurn(messages []schema.Message) bool {
 	n := 0
 	for _, m := range messages {
@@ -486,23 +435,22 @@ func isMultiTurn(messages []schema.Message) bool {
 	return n > 1
 }
 
-// stripThinkAndFences mirrors Python agentic_rag.py:474-475: drop a leading
-// thinking preamble, then strip Markdown fences. Python's fence regex removes
-// the delimiters wherever they appear, so a truncated or inline fence leaves no
-// residue either.
+// stripThinkAndFences: drop a leading thinking preamble, then strip Markdown fences. The
+// fence regex removes the delimiters wherever they appear, so a truncated or inline fence
+// leaves no residue either.
 func stripThinkAndFences(s string) string {
 	s = reFormalizeThink.ReplaceAllString(s, "")
 	s = reFenceDelimiters.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
 }
 
-// reFenceDelimiters mirrors Python's `re.sub(r"```(?:json)?\s*|\s*```", "", s)`.
+// reFenceDelimiters removes ```json / ``` delimiters wherever they appear.
 var reFenceDelimiters = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
 
 // End-to-end entry point: one call that runs the harness and publishes the
 // evidence it collected.
 //
-// Rag mirrors Python RAGTools.rag (agentic_rag.py:817) — the RAGTools method
+// Rag: the RAGTools method
 // that drives the research pipeline. It owns the conversation-level concerns
 // (re-ask cache, the effective question, attachments, composing the final
 // answer) and delegates the mode dispatch to RunAgenticRAG, which mirrors
@@ -542,9 +490,8 @@ type RunResponse struct {
 	Chunks []map[string]any
 	// DocAggs is the per-document aggregation of Chunks.
 	DocAggs []map[string]any
-	// EmptyResult is true when nothing was retrieved, which the caller turns
-	// into an "I don't have enough information" answer (Python direct_search's
-	// empty_result).
+	// EmptyResult is true when nothing was retrieved, which the caller turns into an
+	// "I don't have enough information" answer.
 	EmptyResult bool
 	// Mode is the resolved spec, for logging.
 	Mode harness.ModeSpec
@@ -554,17 +501,16 @@ type RunResponse struct {
 	// SearchRounds is the number of completed SCA→rewrite iterations (0 for the
 	// non-agentic paths).
 	SearchRounds int
-	// GraphFailed is true when the research graph itself errored. Python pairs it
-	// with "produced nothing" before falling back to an internal-error message
-	// (run_agentic_rag); an empty result on its own is not a failure.
+	// GraphFailed is true when the research graph itself errored. It is paired with
+	// "produced nothing" before falling back to an internal-error message; an empty result
+	// on its own is not a failure.
 	GraphFailed bool
 	// Verdict is the final sufficiency verdict ("SUFFICIENT"/"INSUFFICIENT").
 	Verdict string
-	// SCAFeedback is the body of the SCA feedback note — agentic_rag.py:902-929's
-	// string, which is the sufficiency status hint alone (the verdict dict carries
-	// only "status"; see scaFeedback). Rag() appends it as the "[Research status]"
-	// note for every INSUFFICIENT verdict, adding the trailing "STOP" vs "call rag
-	// again" sentence based on the consecutive-unanswerable count.
+	// SCAFeedback is the body of the SCA feedback note — the sufficiency status hint alone
+	// (the verdict dict carries only "status"; see scaFeedback). Rag() appends it as the
+	// "[Research status]" note for every INSUFFICIENT verdict, adding the trailing "STOP"
+	// vs "call rag again" sentence based on the consecutive-unanswerable count.
 	SCAFeedback string
 	// CollectedAnswer is the research draft (SCA-reviewed) produced by the
 	// agentic loop. It feeds the final composition; prefer Answer for display.
@@ -580,16 +526,14 @@ type RunResponse struct {
 	SlotCitations map[string][]string
 }
 
-// AnswerSink forwards a partially produced answer while the model is still
-// writing it (Python tools.answer_sink). Nil disables streaming; the answer is
-// still returned in full.
+// AnswerSink forwards a partially produced answer while the model is still writing it.
+// Nil disables streaming; the answer is still returned in full.
 //
 // Requires a model implementing harness.StreamingSessionModel; otherwise the run
 // falls back to a single completion.
 type AnswerSink struct {
-	// OnDelta receives each successive piece of the answer. isThink marks pieces
-	// of a hidden reasoning block, which must not be shown as part of the answer
-	// (Python answer_sink(delta, kind == "think")).
+	// OnDelta receives each successive piece of the answer. isThink marks pieces of a
+	// hidden reasoning block, which must not be shown as part of the answer.
 	OnDelta func(delta string, isThink bool)
 	// OnReset drops what has been forwarded so far. It is called before a
 	// fallback re-sends the answer from scratch, so a partially streamed answer
@@ -622,23 +566,23 @@ type KeywordExtractorFn func(ctx context.Context, question string) (retrievalQue
 // read it.
 //
 // It never fails for a recoverable reason: a missing component degrades to
-// "no evidence" rather than erroring, matching Python's behaviour of logging
-// and returning an empty kbinfos.
-// ragCacheMinOverlap is the word-overlap ratio at which a new question counts
-// as a re-ask of a cached one (Python _RAG_CACHE_MIN_OVERLAP).
+// "no evidence" rather than erroring: the failure is logged and an empty kbinfos is
+// returned.
+// ragCacheMinOverlap is the word-overlap ratio at which a new question counts as a
+// re-ask of a cached one.
 const ragCacheMinOverlap = 0.6
 
-// ragCacheMinShared is the minimum number of shared significant words before a
-// cached answer may be reused (Python _RAG_CACHE_MIN_SHARED).
+// ragCacheMinShared is the minimum number of shared significant words before a cached
+// answer may be reused.
 const ragCacheMinShared = 2
 
-// effectiveQuestionMinShared is the overlap _resolve_effective_question needs
-// before trusting the original question over the outer rewrite. Python uses the
-// literal 2 here, independent of _RAG_CACHE_MIN_SHARED.
+// effectiveQuestionMinShared is the overlap the effective-question resolution needs before
+// trusting the original question over the outer rewrite. It is deliberately independent of
+// ragCacheMinShared.
 const effectiveQuestionMinShared = 2
 
-// ragCacheStopwords is Python _RAG_CACHE_STOPWORDS: for cross-`rag`-call dedup
-// only, never for retrieval or answer quality.
+// ragCacheStopwords: for cross-`rag`-call dedup only, never for retrieval or answer
+// quality.
 var ragCacheStopwords = map[string]bool{
 	"the": true, "a": true, "an": true, "is": true, "was": true, "were": true,
 	"what": true, "which": true, "when": true, "where": true, "who": true,
@@ -653,18 +597,17 @@ var ragCacheStopwords = map[string]bool{
 	"more": true, "most": true, "some": true, "any": true,
 }
 
-// reQuestionTokens mirrors Python's `re.findall(r"[a-zA-Z0-9一-鿿]+", ...)`.
+// reQuestionTokens splits a question into words and CJK runs.
 var reQuestionTokens = regexp.MustCompile(`[a-zA-Z0-9\x{4e00}-\x{9fff}]+`)
 
-// questionGram is Python _question_keywords' return value: the significant
-// words plus the numeric tokens kept apart, so questions naming different
-// numbers are never treated as the same question.
+// questionGram is the significant words plus the numeric tokens kept apart, so questions
+// naming different numbers are never treated as the same question.
 type questionGram struct {
 	words   map[string]bool
 	numbers map[string]bool
 }
 
-// questionKeywords mirrors Python _question_keywords. For English, plain
+// questionKeywords: For English, plain
 // tokenisation suffices; CJK tokens survive as whole significant units.
 func questionKeywords(question string) questionGram {
 	gram := questionGram{words: map[string]bool{}, numbers: map[string]bool{}}
@@ -680,8 +623,8 @@ func questionKeywords(question string) questionGram {
 		}
 	}
 	if len(gram.words) == 0 {
-		// Python falls back to every non-numeric token, so an all-stopword
-		// question still has something to compare.
+		// Fall back to every non-numeric token, so an all-stopword question still has
+		// something to compare.
 		for _, t := range tokens {
 			if len([]rune(t)) > 1 && !isDigitToken(t) {
 				gram.words[t] = true
@@ -703,7 +646,7 @@ func isDigitToken(s string) bool {
 	return true
 }
 
-// cacheSimilar mirrors Python _cache_similar: significant-word overlap
+// cacheSimilar: significant-word overlap
 // (shared / min cardinality), and numbers must be both empty or identical.
 func cacheSimilar(a, b questionGram) bool {
 	if len(a.words) == 0 || len(b.words) == 0 {
@@ -742,7 +685,7 @@ func sameTokens(a, b map[string]bool) bool {
 	return true
 }
 
-// FitEvidence mirrors Python RAGTools._fit_evidence (agentic_rag.py:716): trim
+// FitEvidence: trim
 // evidence so question + evidence + the template stay inside a FIXED budget.
 //
 // The budget is deliberately not the model's full context: a large retrieval
@@ -764,9 +707,8 @@ func FitEvidence(question, evidence string) string {
 	return fitted[len(fitted)-1].Content
 }
 
-// routerPromptBody is Python's router_prompt (agentic_rag.py:383-403) with the
-// summarize_document line left as %s: that line is only included when
-// unstructured retrieval is available (Python has_unstructured).
+// routerPromptBody is the rag_agent router prompt, with the summarize_document line left
+// as %s: that line is only included when unstructured retrieval is available.
 const routerPromptBody = "You are a smart agent. For any question that needs " +
 	"evidence from the knowledge bases or the web, call the `rag` tool " +
 	"with a self-contained question — it runs the full search-and-answer " +
@@ -787,18 +729,15 @@ const routerPromptBody = "You are a smart agent. For any question that needs " +
 	"%s" +
 	"Do not invent facts and do not fabricate document IDs."
 
-// routerSummarizeLine is the conditional summarize_document instruction
-// (Python agentic_rag.py:378-381).
+// routerSummarizeLine is the conditional summarize_document instruction.
 const routerSummarizeLine = "- Call `summarize_document` ONLY when the user explicitly asks to summarise a specific document ('summarise the security audit', 'tldr the onboarding guide'). It needs a document ID.\n"
 
-// SysPrompt mirrors Python RAGTools.sys_prompt (agentic_rag.py:371): the thin
-// router prompt for callers that bind the tool set. The workflow itself lives in
-// the rag graph; the outer model only chooses between retrieval and an explicit
-// single-document summary.
+// SysPrompt: the thin router prompt for callers that bind the tool set. The workflow
+// itself lives in the rag graph; the outer model only chooses between retrieval and an
+// explicit single-document summary.
 //
-// hasUnstructured mirrors Python has_unstructured(): when false the
-// summarize_document instruction is omitted. systemPrompt is the dialog-level UI
-// configuration, prepended when set (Python :404-405).
+// hasUnstructured: when false the summarize_document instruction is omitted. systemPrompt
+// is the dialog-level UI configuration, prepended when set.
 func SysPrompt(systemPrompt string, hasUnstructured bool) string {
 	summarizeLine := ""
 	if hasUnstructured {
@@ -811,20 +750,16 @@ func SysPrompt(systemPrompt string, hasUnstructured bool) string {
 	return router
 }
 
-// GetCitationGuidelines mirrors Python RAGTools.get_citation_guidelines
-// (agentic_rag.py:367): the citation rules the final answer must follow, with
-// an optional user-defined override.
-//
-// Python renders `citation_prompt(self.user_defined_prompts)`; Go loads the same
-// citation_prompt.md via prompts.CitationPrompt and takes a non-empty override
-// verbatim — exactly as Python returns citation_prompt(self.user_defined_prompts).
+// GetCitationGuidelines returns the citation rules the final answer must follow, with an
+// optional user-defined override. The citation_prompt.md template is loaded via
+// prompts.CitationPrompt, and a non-empty override is taken verbatim.
 func GetCitationGuidelines(userDefined string) string {
 	return prompts.CitationPrompt(userDefined)
 }
 
-// resolveEffectiveQuestion mirrors Python _resolve_effective_question: prefer
-// the user's ORIGINAL, complete question over the outer model's rewrite, but
-// only when both clearly describe the same user turn. The outer rewrite often
+// resolveEffectiveQuestion: prefer the user's ORIGINAL, complete question over the outer
+// model's rewrite, but only when both clearly describe the same user turn. The outer
+// rewrite often
 // drops the final target of a multi-hop question, and no later stage can
 // recover a deleted answer-attribute.
 func resolveEffectiveQuestion(question, originalUserQuestion string) string {
@@ -852,32 +787,28 @@ func resolveEffectiveQuestion(question, originalUserQuestion string) string {
 	return question
 }
 
-// RAGCache mirrors Python RAGTools._rag_cache (agentic_rag.py:837-889): it
+// RAGCache: it
 // answers a near-identical re-ask from a previous answer instead of re-running
 // the whole graph.
 //
-// Lifetime: Python keeps _rag_cache on the RAGTools instance, which is rebuilt
-// for every dialog turn, so caching is per-turn by construction and is ON by
-// default. Go mirrors that default-on, per-turn behavior: Rag builds a fresh
-// RAGCache when deps.Cache is nil, so caching is never off, and the auto-built
-// cache lives only for that call (the per-turn degenerate case under the
-// current single-Rag()-per-turn path), so it can never serve a stale cross-turn
-// hit. A caller that wants to share one cache across multiple Rag() calls within
-// a single turn (Python's concurrent tool_call case) injects the same *RAGCache
-// via RAGTools.Cache instead of relying on the auto-built one. This matches
-// Python, where _rag_cache lives on the per-turn RAGTools instance.
+// Lifetime: the cache is per-turn by construction and is ON by default. Rag builds a
+// fresh RAGCache when deps.Cache is nil, so caching is never off, and the auto-built cache
+// lives only for that call (the per-turn degenerate case under the current
+// single-Rag()-per-turn path), so it can never serve a stale cross-turn hit. A caller that
+// wants to share one cache across multiple Rag() calls within a single turn (the concurrent
+// tool_call case) injects the same *RAGCache via RAGTools.Cache instead of relying on the
+// auto-built one.
 type RAGCache struct {
 	mu          sync.Mutex
 	entries     map[string]ragCacheEntry
 	lastVerdict string
-	// consecutiveUnanswerable mirrors Python RAGTools._consecutive_unanswerable
-	// (agentic_rag.py:818): how many consecutive rag() calls ended without a
+	// consecutiveUnanswerable
+	// how many consecutive rag calls ended without a
 	// satisfying verdict. After two in a row, RAGTools.rag appends a
 	// "[Research status] … STOP calling rag again" note to the answer so the
-	// outer agent stops re-asking. Python resets it on every RAGTools instance
-	// (rebuilt per turn), so it counts consecutive insufficient rounds within a
-	// single request; it is not persisted across turns unless a caller injects a
-	// long-lived *RAGCache via RAGTools.Cache.
+	// outer agent stops re-asking. The counter is reset per turn, so it counts consecutive
+	// insufficient rounds within a single request; it is not persisted across turns unless a
+	// caller injects a long-lived *RAGCache via RAGTools.Cache.
 	//
 	// Private and guarded by mu: a turn's concurrent rag() calls share ONE
 	// *RAGCache (Rag builds/stores it on deps.Cache before the outer react
@@ -964,11 +895,9 @@ func (c *RAGCache) noteVerdict(verdict string) {
 	c.lastVerdict = verdict
 }
 
-// researchStatusTrailer mirrors Python rag (:902-929): for every non-SUFFICIENT
-// verdict it returns the trailing sentence folded into the "[Research status]"
-// note — worded exactly as agentic_rag.py:927/:929. After two consecutive
-// unsatisfying rag() calls (ConsecutiveUnanswerable >= 2 on the shared
-// *RAGCache, Python _consecutive_unanswerable >= _GUA=2) it tells the outer
+// researchStatusTrailer: for every non-SUFFICIENT verdict it returns the trailing sentence
+// folded into the "[Research status]" note. After two consecutive unsatisfying rag() calls
+// (ConsecutiveUnanswerable >= 2 on the shared *RAGCache) it tells the outer
 // agent to STOP calling rag again; otherwise it invites a focused re-ask. It
 // returns "" when there is nothing to annotate — a SUFFICIENT verdict, an empty
 // answer, or no SCA feedback.
@@ -982,8 +911,7 @@ func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
 	return " If these gaps are material, call rag again with a question focused on them."
 }
 
-// reuseAllowed mirrors Python's `_cache_ok = not last_status or last_status ==
-// "SUFFICIENT"`.
+// reuseAllowed reports whether a cached answer may be reused for the next question.
 func (c *RAGCache) reuseAllowed() bool {
 	if c == nil {
 		return false
@@ -997,10 +925,9 @@ func (c *RAGCache) reuseAllowed() bool {
 // counted per phase. It reports false when the model carries no chat.Invoker,
 // in which case the caller leaves it untouched.
 //
-// Python achieves the same by handing a CountingChatModel proxy to the tools
-// (agentic_rag.py:267); Go's SessionModel does not expose its invoker in a
-// uniform way, so only the known carrier is wrapped. Callers that go through
-// other session models still get counted when they record via CurrentStats(ctx).
+// A counter can only be installed on the known carrier: SessionModel does not expose its
+// invoker in a uniform way, so only the carrier that does is wrapped. Callers that go
+// through other session models still get counted when they record via CurrentStats(ctx).
 func wrapModelForStats(model harness.SessionModel, stats *harness.LLMUsageStats) (harness.SessionModel, bool) {
 	src, ok := model.(*harness.InvokerSessionModel)
 	if !ok || src == nil || src.Invoker == nil {
@@ -1017,8 +944,8 @@ func wrapModelForStats(model harness.SessionModel, stats *harness.LLMUsageStats)
 // view for one request, including tenant/dataset resolution and the nil-backend
 // fallback. Projecting here rather than at each call site keeps the retrieval paths
 // (Rag's low/naive pass, the agentic fan-out and action session, the no-model
-// fallback) from drifting — a partial copy silently drops tuning such as
-// rank_feature (Python's `rank_feature=label_question(question, self.kbs)`, :668).
+// fallback) from drifting — a partial copy silently drops tuning such as the
+// question-type tag boost.
 func searchDepsFor(ctx context.Context, deps RAGTools, req harness.RunRequest, datasetIDs []string, tenantID string, kb *harness.Kbinfos, logger *log.Logger) harness.SearchDeps {
 	if tenantID == "" {
 		tenantID = harness.TenantIDFromContext(ctx)
@@ -1039,8 +966,8 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req harness.RunRequest, d
 		DocTenantResolver: dbDocTenantResolver{},
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
-		// Python retrieve:614-646 — configuration is the middle precedence
-		// level, between an explicit tool argument and the module defaults.
+		// Configuration is the middle precedence level, between an explicit tool argument
+		// and the module defaults.
 		TopN:                   deps.TopN,
 		SimilarityThreshold:    deps.SimilarityThreshold,
 		VectorSimilarityWeight: deps.VectorSimilarityWeight,
@@ -1049,21 +976,21 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req harness.RunRequest, d
 		RerankCandidatesCount:  deps.RerankCandidatesCount,
 		TopK:                   deps.TopK,
 		MetaDataFilter:         deps.MetaDataFilter,
-		// rank_feature (Python retrieve:668): RAGTools carries the KB objects
-		// and a tagger, mirroring rank_feature=label_question(question, self.kbs).
+		// RAGTools carries the KB objects and a tagger, so the tag boost can be
+		// computed.
 		KBs:    deps.KBs,
 		Tagger: deps.Tagger,
-		// External embedding handle (Python tools.embed_mdl). When the caller
-		// supplied one on RAGTools it is used directly; nil keeps the package's
-		// internal tenant-default resolver as a fallback (which itself degrades
-		// to keyword matching when the DB is uninitialised or encoding panics).
+		// External embedding handle. When the caller supplied one on RAGTools it is used
+		// directly; nil keeps the package's internal tenant-default resolver as a fallback
+		// (which itself degrades to keyword matching when the DB is uninitialised or
+		// encoding panics).
 		Embedder: deps.Embedder,
 	}
 }
 
-// NewDocTenantResolver returns the DB-backed doc→(kb, tenant) resolver used to
-// group a document scope by its real owner (Python tools._resolve_doc_tenant).
-// It is the same resolver graph_explore uses; the compiled expander takes it too
+// NewDocTenantResolver returns the DB-backed doc→(kb, tenant) resolver used to group a
+// document scope by its real owner. It is the same resolver graph_explore uses; the
+// compiled expander takes it too
 // so a doc scope is scanned per owning dataset instead of being attached to
 // every bound one.
 func NewDocTenantResolver() harness.DocTenantResolver { return dbDocTenantResolver{} }
@@ -1071,8 +998,8 @@ func NewDocTenantResolver() harness.DocTenantResolver { return dbDocTenantResolv
 // dbDocTenantResolver implements harness.DocTenantResolver against the database: it
 // maps each document id to its real owning (kb, tenant) so graph_explore can group
 // documents by owner and search knowledge bases outside the caller's datasetIDs.
-// Mirrors Python tools._resolve_doc_tenant (exploration.py:_kg_scopes); the lookup is
-// tenant-unscoped on purpose — DocScope is already constrained to the user's authorized
+// The lookup is tenant-unscoped on purpose — DocScope is already constrained to the
+// user's authorized
 // documents — so a document may legitimately resolve to a KB not in the search set.
 type dbDocTenantResolver struct{}
 
@@ -1130,7 +1057,7 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 		logger.Printf("[Agentic RAG] unrecognised thinking mode %q; falling back to naive (non-agentic) retrieval", req.ThinkingMode)
 	}
 
-	// Python :266-267 — build the per-call usage counters and bind them to the
+	// build the per-call usage counters and bind them to the
 	// context so every LLM call beneath is attributed to its phase. Without this
 	// the counting machinery is inert: CurrentStats(ctx) would stay nil and the
 	// phase markers already sprinkled through the graph would record nothing.
@@ -1140,24 +1067,22 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 		deps.Stats = stats
 	}
 	ctx = harness.WithStats(ctx, stats)
-	// Bind the caller's per-request progress sink (Python think_log counterpart)
+	// Bind the caller's per-request progress sink
 	// so engine stages and every search beneath can forward tagged lines to the
 	// live reasoning block. It flows through the whole RunAgenticRAG ctx lineage,
 	// which runSearch / CurrentProgress read.
 	if deps.Progress != nil {
 		ctx = harness.WithProgress(ctx, deps.Progress)
 	}
-	// Mirror Python think_log (rag/advanced_rag/think_log.py): rebuild the run's
-	// logger on top of the progress sink so every bracket-tagged stage line
-	// streams into the chat <think> block. Python did this with a root
-	// logging.Handler; Go has no per-record hook on *log.Logger, so the same
+	// Rebuild the run's logger on top of the progress sink so every bracket-tagged stage
+	// line streams into the chat <think> block. *log.Logger has no per-record hook, so the
 	// filtering happens at the writer instead. This logger is threaded into
 	// SearchDeps below and into every graph node by RunAgenticRAG, so one wrap
 	// here covers the whole pipeline without touching individual call sites.
 	if deps.Progress != nil {
 		logger = thinkLogger(logger, deps.Progress)
 	}
-	// Python :267 wraps the chat model in CountingChatModel(chat_mdl.clone(),
+	// wraps the chat model in CountingChatModel(chat_mdl.clone,
 	// self.llm_stats). Go wraps the session model's invoker the same way, so
 	// calls made through deps.Model are counted per phase too.
 	if wrapped, ok := wrapModelForStats(deps.Model, stats); ok {
@@ -1165,30 +1090,23 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	}
 	defer stats.Log(logger)
 
-	// Python :831 — tell the caller research is starting, before any retrieval
+	// tell the caller research is starting, before any retrieval
 	// work, so it can show progress for the (potentially long) graph run.
 	if deps.ToolStarted != nil {
 		deps.ToolStarted()
 	}
 
-	// Python dialog_service.rag_agent: when an outer chat model is wired
-	// (RAGTools.chat_mdl), the request is driven by the outer react loop that
-	// binds [rag, summarize_document] and treats `rag` as a terminal tool —
-	// mirroring chat_mdl.async_chat_with_tools(tools=rag_tools.tools,
-	// terminal_tools={"rag"}). The inner graph runs only when the model decides
-	// to call `rag`; otherwise the model answers directly (or calls
-	// summarize_document to read a whole document first). When no outer model is
-	// configured, or the outer model cannot emit tool calls (mirroring Python
-	// dialog_service.rag_agent's `if not chat_mdl.is_tools` fallback to
-	// async_chat), we fall through to the existing direct RunAgenticRAG path so
-	// behaviour is unchanged for every current caller.
-	// Mirror Python dialog_service.rag_agent: the last user message
-	// carries the question, text attachments, and — for vision models — image
-	// content blocks. In Go these reach the outer react loop's history
-	// (prepareOuterReact) so a vision model actually sees the images instead of
-	// silently dropping them. Assembled here (not in the caller) so the
-	// multimodal construction stays in the advanced_rag package beside the
-	// schema import.
+	// When an outer chat model is wired, the request is driven by the outer react loop
+	// that binds [rag, summarize_document] and treats `rag` as a terminal tool. The inner
+	// graph runs only when the model decides to call `rag`; otherwise the model answers
+	// directly (or calls summarize_document to read a whole document first). When no outer
+	// model is configured, or it cannot emit tool calls, we fall through to the direct
+	// RunAgenticRAG path so behaviour is unchanged for every current caller.
+	// The last user message carries the question, text attachments, and — for vision
+	// models — image content blocks. These reach the outer react loop's history
+	// (prepareOuterReact) so a vision model actually sees the images instead of silently
+	// dropping them. Assembled here (not in the caller) so the multimodal construction
+	// stays in the advanced_rag package beside the schema import.
 	if len(deps.Messages) == 0 {
 		deps.Messages = multimodalUserMessage(req.Question, req.TextAttachments, req.Images)
 	} else if req.TextAttachments != "" || len(req.Images) > 0 {
@@ -1198,9 +1116,8 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 			deps.Messages[last] = multimodalUserMessage(deps.Messages[last].Content, req.TextAttachments, req.Images)[0]
 		}
 	}
-	// Text attachments also feed the direct (non-outer) path, which appends them
-	// to the question (Python text_attachments_content handling); attachments
-	// bypass the near-duplicate cache (see cacheable above).
+	// Text attachments also feed the direct (non-outer) path, which appends them to the
+	// question; attachments bypass the near-duplicate cache (see cacheable above).
 	if deps.TextAttachments == "" {
 		deps.TextAttachments = req.TextAttachments
 	}
@@ -1208,12 +1125,11 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// Build the per-request RAGCache up-front so the outer react loop (below)
 	// reuses the SAME cache across its multiple rag() calls within one turn.
 	// Keeping deps.Cache non-nil here is what makes the _consecutive_unanswerable
-	// guard (Python rag:921-924) live: ConsecutiveUnanswerable is incremented
+	// guard live: ConsecutiveUnanswerable is incremented
 	// inside RunAgenticRAG and gated on deps.Cache != nil, so without a shared
 	// cache the outer loop would never reach the "STOP calling rag again" verdict.
-	// Python keeps the counter on the persistent RAGTools instance, which the
-	// outer loop naturally shares; Go mirrors that by setting deps.Cache before
-	// any branch rather than only on the direct path.
+	// The outer loop must share the counter, so deps.Cache is set before any branch rather
+	// than only on the direct path.
 	if deps.Cache == nil {
 		deps.Cache = NewRAGCache()
 	}
@@ -1225,21 +1141,16 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 		return runOuterReact(ctx, deps, req, logger)
 	}
 
-	// Re-ask guard: reuse a near-identical question's cached answer instead of
-	// re-running the graph (Python rag:837-858). Attachments bypass it, since
-	// their content is appended to the question below and is not part of the key.
-	// Python keeps _rag_cache on the RAGTools instance, which is rebuilt for
-	// every turn, so the cache is per-turn by construction. Go mirrors that
-	// Go mirrors Python's default-on caching: deps.Cache is guaranteed non-nil
-	// here (built above, before the outer-react branch, so it is shared across
-	// the outer loop's multiple rag() calls). Python keeps _rag_cache on the
-	// RAGTools instance, which is rebuilt for every turn, so the cache is
-	// per-turn by construction. The auto-built cache lives only for this call
-	// (the per-turn degenerate case, since the current reasoning path issues a
-	// single Rag() per turn), so it can never serve a stale cross-turn hit. A
-	// caller that wants to share one cache across multiple Rag() calls within a
-	// single turn (Python's concurrent tool_call case) injects the same
-	// *RAGCache via deps.Cache instead of relying on the auto-built one.
+	// Re-ask guard: reuse a near-identical question's cached answer instead of re-running
+	// the graph. Attachments bypass it, since their content is appended to the question
+	// below and is not part of the key. Caching is on by default: deps.Cache is guaranteed
+	// non-nil here (built above, before the outer-react branch, so it is shared across the
+	// outer loop's multiple rag() calls), and the auto-built cache lives only for this call
+	// (the per-turn degenerate case, since the current reasoning path issues a single Rag()
+	// per turn), so it can never serve a stale cross-turn hit. A caller that wants to share
+	// one cache across multiple Rag() calls within a single turn (the concurrent tool_call
+	// case) injects the same *RAGCache via deps.Cache instead of relying on the auto-built
+	// one.
 	cache := deps.Cache
 	cacheable := deps.TextAttachments == ""
 	if cacheable && cache != nil {
@@ -1250,7 +1161,7 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	}
 
 	// Prefer the user's ORIGINAL, complete question over the outer rewrite
-	// (Python rag:865). The outer rewrite often drops the final target of a
+	// . The outer rewrite often drops the final target of a
 	// multi-hop question, and no later stage can recover it.
 	if deps.OriginalQuestion != "" {
 		if effective := resolveEffectiveQuestion(req.Question, deps.OriginalQuestion); effective != req.Question {
@@ -1274,16 +1185,14 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 
 	resp := &RunResponse{Mode: spec, Kbinfos: kb}
 
-	// Python :877 — hand over to the graph driver, which owns the mode dispatch
+	// hand over to the graph driver, which owns the mode dispatch
 	// (agentic graph vs. direct/naive retrieval) and formalization.
 	//
 	// The terminal composition is handed to the graph instead of being run here:
-	// Python composes inside the last node of both graphs (agentic
-	// formalize_answer, low formalize_answer). The closure is
-	// idempotent so the post-graph call below is a no-op once the graph has
-	// composed — a graph that never reaches its last node (or the naive path,
-	// which Python composes under naiveAnswerSystem instead) still gets an
-	// answer here.
+	// The graph composes inside the last node of both graphs (agentic and low
+	// formalize_answer). The closure is idempotent so the post-graph call below is a no-op
+	// once the graph has composed — a graph that never reaches its last node (or the naive
+	// path, which composes under naiveAnswerSystem instead) still gets an answer here.
 	composed := false
 	compose := func(ctx context.Context, partialAnswer, emptyResult bool, question string) {
 		if composed {
@@ -1314,29 +1223,28 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// FinalAnswerSystem / kb_prompt answer.
 	if spec.Label != "naive" {
 		// A run that never reached the graph's last node produced neither a
-		// partial answer nor empty-result state flags (Python's fallback
-		// compose reads the same defaults: no partial preamble, no-evidence
-		// hedge only when the pool is actually empty). The question is empty —
+		// partial answer nor empty-result state flags (the fallback compose reads the same
+		// defaults: no partial preamble, no-evidence hedge only when the pool is actually
+		// empty). The question is empty —
 		// the graph never formalized, so compose falls back to req.Question.
 		compose(ctx, false, false, "")
 	}
 
-	// Python rag (:902-929) appends a "[Research status]" note for EVERY
-	// non-SUFFICIENT verdict. When research has stayed unsatisfying for two
+	// A "[Research status]" note is appended for EVERY non-SUFFICIENT verdict. When
+	// research has stayed unsatisfying for two
 	// consecutive turns it tells the outer agent to STOP calling rag again;
 	// otherwise it invites a focused re-ask. The counter lives on the
 	// conversation-scoped cache; it was incremented back in NewAgenticLoop once
 	// the SCA verdict was known. Skip the naive/sufficient paths: an empty
 	// answer or a SUFFICIENT verdict has nothing to annotate.
 	if t := researchStatusTrailer(deps.Cache, resp); t != "" {
-		// Python: f"...[Research status] {status_hint}{...}. {trailer}" — the
-		// period closes the hint clause before the trailer sentence.
+		// The period closes the hint clause before the trailer sentence.
 		resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
 	}
 
 	// Cache the freshly produced answer for later near-identical questions, and
 	// remember the verdict so a following re-ask is not answered from an
-	// admittedly incomplete one (Python rag:888-889 and :848-852).
+	// admittedly incomplete one.
 	if cacheable && cache != nil {
 		cache.Store(req.Question, resp.Answer)
 		cache.noteVerdict(resp.Verdict)
@@ -1347,34 +1255,30 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 // composeFinalAnswer runs the graph's terminal node and writes the result onto
 // the response.
 //
-// When no model is configured this is a no-op: the caller still receives the
-// evidence and can answer with it, matching Python's behaviour of returning an
-// empty kbinfos rather than failing.
+// When no model is configured this is a no-op: the caller still receives the evidence and
+// can answer with it, rather than failing.
 //
-// partialAnswer / emptyResult are the compose prompt inputs Python reads off
-// the graph state (_compose_answer_from_evidence: `partial_answer` drives the
-// partial-information preamble, `empty_result` is the always-true-in-graph
-// term of `no_evidence = abstain or empty_result or not chunks`). question is
-// the graph state's FORMALIZED question the last node forwarded (Python :834
-// `question = state.get("question")`); empty falls back to req.Question —
-// only the post-graph fallback composes after a run that never formalized.
+// partialAnswer / emptyResult are the compose prompt inputs read off the graph state:
+// `partial_answer` drives the partial-information preamble, `empty_result` is the
+// always-true-in-graph term of `no_evidence = abstain or empty_result or not chunks`.
+// question is the graph state's FORMALIZED question the last node forwarded; empty falls
+// back to req.Question — only the post-graph fallback composes after a run that never
+// formalized.
 // The graph's Finalize forwards the formalize_answer node's own state values;
 // the Go-only post-graph fallback passes the response flags instead.
 func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunRequest, kb *harness.Kbinfos, resp *RunResponse, logger *log.Logger, partialAnswer, emptyResult bool, question string) {
 	if deps.Model == nil {
 		return
 	}
-	// Python composes from the graph state's formalized question
-	// (agentic_rag_graph.py:834): the graph researched the full multi-hop
-	// question, so the compose prompt must carry it — not the outer tool
-	// argument, which compresses multi-hop questions to their first hop and
-	// collapses the final answer to the first completed sub-answer.
+	// Compose from the graph state's formalized question: the graph researched the full
+	// multi-hop question, so the compose prompt must carry it — not the outer tool argument,
+	// which compresses multi-hop questions to their first hop and collapses the final answer
+	// to the first completed sub-answer.
 	composeQuestion := question
 	if composeQuestion == "" {
 		composeQuestion = req.Question
 	}
-	// Python tags the terminal node @in_phase("finalize")
-	// (formalize_answer); without it every call made here is
+	// The terminal node runs in the "finalize" phase; without it every call made here is
 	// attributed to "unknown" in the usage table.
 	ctx, done := harness.Phase(ctx, harness.PhaseFinalize)
 	defer done()
@@ -1389,10 +1293,9 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 		MaxTokens:     deps.EvidenceMaxTokens,
 		MaxLength:     deps.MaxLength,
 		Logger:        logger,
-		// UserImages mirrors Python's direct async_chat fallback receiving the
-		// original multimodal messages: the non-outer compose model sees the
-		// vision-gated images too. The outer react path clears these in the rag
-		// terminal tool (Python inner _compose_answer_from_evidence is text-only).
+		// The direct fallback receives the original multimodal messages, so the non-outer
+		// compose model sees the vision-gated images too. The outer react path clears these
+		// in the rag terminal tool (the inner compose is text-only).
 		UserImages: req.Images,
 	}
 	// Stream the answer when the model and the caller both support it, so the
@@ -1418,8 +1321,8 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 		}
 	}
 	// No manual RecordCall here: the call is attributed to the "finalize" phase
-	// by the wrapped invoker above (Python relies on @in_phase alone).
-	// empty_result is Python's third no-evidence term (_compose_answer_from_evidence) — the loop's own
+	// by the wrapped invoker above.
+	// empty_result is the third no-evidence term — the loop's own
 	// "nothing was found" signal, distinct from abstain and from an empty pool.
 	res := ComposeAnswerWith(ctx, adeps, kb, composeQuestion, partialAnswer, false, emptyResult)
 	if deps.Stats != nil && res.Failed {
@@ -1427,9 +1330,8 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 	}
 	resp.Answer = res.Answer
 	if res.Partial || partialAnswer {
-		// Reflect the graph state's partial flag back on the response even when
-		// the composed text itself predates the flag (Python reads
-		// partial_answer straight from the compose-time state).
+		// Reflect the graph state's partial flag back on the response even when the
+		// composed text itself predates the flag.
 		resp.Partial = true
 	}
 	if deps.AnswerSink != nil {
@@ -1437,8 +1339,8 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 	}
 }
 
-// outerReactParts holds the pieces shared by the streaming and non-streaming
-// outer react loops (Python rag_agent's agent_messages + rag_tools.tools).
+// outerReactParts holds the pieces shared by the streaming and non-streaming outer react
+// loops.
 type outerReactParts struct {
 	kb      *harness.Kbinfos
 	sd      harness.SearchDeps
@@ -1449,21 +1351,18 @@ type outerReactParts struct {
 	system  string
 }
 
-// multimodalUserMessage mirrors Python dialog_service.rag_agent's assembly of
-// agent_messages[-1]: a user turn whose text is the question plus any text
-// attachments, augmented with image content blocks for vision-capable models.
+// multimodalUserMessage assembles the last user turn: its text is the question plus any
+// text attachments, augmented with image content blocks for vision-capable models.
 // imageFiles are vision-gated base64 data URIs (data:...); textAttachments is
 // joined file content. When there is nothing to carry (no question, no
 // attachments, no images) it returns an empty slice so callers can skip it.
 //
-// The multimodal part list is used ONLY when images are attached, mirroring
-// Python dialog_service.rag_agent: the text (question +
-// attachments) stays a plain string, and the message is converted to content
-// blocks just for image attachments. Sending a content-block array for a
-// text-only question is not harmless — text-only providers silently drop it
-// (Zhipu GLM answers an empty user turn with "Hello! How can I assist you
-// today?" instead of calling the `rag` tool), and Python explicitly avoids it
-// for that reason.
+// The multimodal part list is used ONLY when images are attached: the text (question +
+// attachments) stays a plain string, and the message is converted to content blocks just
+// for image attachments. Sending a content-block array for a text-only question is not
+// harmless — text-only providers silently drop it (Zhipu GLM answers an empty user turn
+// with "Hello! How can I assist you today?" instead of calling the `rag` tool), which is
+// why it is avoided here.
 func multimodalUserMessage(question, textAttachments string, imageFiles []string) []schema.Message {
 	text := question
 	if textAttachments != "" {
@@ -1597,10 +1496,9 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req harness.RunReques
 	}
 }
 
-// outerStreamMux merges the outer model's stream with the inner rag stream into
-// one sink, mirroring Python rag_agent's event-queue state machine
-// (dialog_service.py:2212-2274): the outer model's reasoning, the inner
-// research log and the inner answer all share a single think/answer block.
+// outerStreamMux merges the outer model's stream with the inner rag stream into one sink,
+// so the outer model's reasoning, the inner research log and the inner answer all share a
+// single think/answer block.
 //
 // The models layer hands the outer stream down as (delta, reason) text that may
 // carry literal <think>/</think> markers, while the sink takes an explicit
@@ -1611,10 +1509,9 @@ type outerStreamMux struct {
 	sink          *AnswerSink
 	inThink       bool
 	terminalFired bool
-	// outerText accumulates the outer model's OWN non-think text. Python
-	// rag_agent treats a tool-less reply as the answer, so the streaming loop
-	// must be able to hand it back to the caller instead of dropping it (the
-	// inner `rag` stream arrives through deliver, never through here).
+	// outerText accumulates the outer model's OWN non-think text. A tool-less reply is the
+	// answer, so the streaming loop must be able to hand it back to the caller instead of
+	// dropping it (the inner `rag` stream arrives through deliver, never through here).
 	outerText strings.Builder
 }
 
@@ -1655,9 +1552,9 @@ func (m *outerStreamMux) sender(delta, reason *string) error {
 		if chunk == "" {
 			continue
 		}
-		// Python drops non-think outer text once the terminal tool has fired:
-		// what follows is the aggregate tool result, and the answer has already
-		// been streamed from inside the tool.
+		// Non-think outer text is dropped once the terminal tool has fired: what follows is
+		// the aggregate tool result, and the answer has already been streamed from inside
+		// the tool.
 		if m.terminalFired && !m.inThink {
 			continue
 		}
@@ -1681,8 +1578,8 @@ func (m *outerStreamMux) deliver(delta string, isThink bool) {
 	m.emit(delta, isThink)
 }
 
-// markTerminal records that the terminal `rag` tool ran, so later outer text is
-// treated as the aggregate tool result and dropped (Python outer_tool_started).
+// markTerminal records that the terminal `rag` tool ran, so later outer text is treated
+// as the aggregate tool result and dropped.
 func (m *outerStreamMux) markTerminal() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1697,10 +1594,8 @@ func (m *outerStreamMux) emit(chunk string, isThink bool) {
 	m.sink.OnDelta(chunk, isThink)
 }
 
-// runOuterReact drives the Python-style rag_agent outer loop (Python
-// dialog_service.rag_agent + RAGTools.tools=[rag, summarize_document] under
-// chat_mdl.async_chat_with_tools with terminal_tools={"rag"}). The outer chat
-// model decides whether to:
+// runOuterReact drives the rag_agent outer loop (tools=[rag, summarize_document], with
+// `rag` terminal). The outer chat model decides whether to:
 //   - call `rag` (terminal): run the full inner agentic graph and return the
 //     cited answer, which the terminal short-circuit turns into the final answer;
 //   - call `summarize_document` (non-terminal): read a whole document into the
@@ -1732,9 +1627,9 @@ func runOuterReact(ctx context.Context, deps RAGTools, req harness.RunRequest, l
 	if err != nil {
 		logger.Printf("[Agentic RAG] outer react failed: %v; falling back to direct graph", err)
 		// Fall back to the inner graph directly so the user still gets an
-		// answer. The graph composes inside its last node with the FORMALIZED
-		// question (Python formalize_answer reads state["question"]); the
-		// guarded direct call below only fires when the graph never composed.
+		// answer. The graph composes inside its last node with the FORMALIZED question
+		// (read from the graph state); the guarded direct call below only fires when the
+		// graph never composed.
 		composed := false
 		deps.Finalize = func(fctx context.Context, partial, empty bool, question string) {
 			if composed {
@@ -1759,17 +1654,16 @@ func runOuterReact(ctx context.Context, deps RAGTools, req harness.RunRequest, l
 	return p.resp
 }
 
-// runOuterReactStream is the streaming counterpart of runOuterReact: it drives
-// the same [rag, summarize_document] react loop but merges two live streams
-// into the single sink the caller supplied, mirroring Python rag_agent's
-// event-queue state machine (dialog_service.py:2212-2274):
+// runOuterReactStream is the streaming counterpart of runOuterReact: it drives the same
+// [rag, summarize_document] react loop but merges two live streams into the single sink
+// the caller supplied:
 //   - the outer model's own reasoning/text, arriving through the models layer;
 //   - the inner rag run's research log (think) and composed answer (answer),
 //     produced while the terminal `rag` tool executes.
 //
-// `rag` streams its answer itself and returns "", so the terminal short-circuit
-// stops the loop without re-streaming it (Python ignores the terminal result
-// once the inner answer_sink has streamed).
+// `rag` streams its answer itself and returns "", so the terminal short-circuit stops the
+// loop without re-streaming it (the terminal result is ignored once the inner sink has
+// streamed it).
 func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequest, logger *log.Logger) *RunResponse {
 	p := prepareOuterReact(ctx, deps, req, logger)
 	mux := &outerStreamMux{sink: deps.AnswerSink}
@@ -1819,10 +1713,10 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 		}
 		return p.resp
 	}
-	// A tool-less reply is the answer (Python rag_agent returns the model's
-	// text verbatim when it decides not to call a tool). The stream already
-	// delivered it to the caller's sink; recording it on the response is what
-	// lets the chat pipeline short-circuit instead of composing a second,
+	// A tool-less reply is the answer (the outer model's text is returned verbatim when it
+	// decides not to call a tool). The stream already delivered it to the caller's sink;
+	// recording it on the response is what lets the chat pipeline short-circuit instead of
+	// composing a second,
 	// contradicting answer from the (empty) evidence set. When the terminal
 	// `rag` tool fired, composeFinalAnswer already owns resp.Answer.
 	if p.resp.Answer == "" && !mux.terminalFired {
@@ -1867,13 +1761,11 @@ type outerReactSession struct {
 	inflight map[string]*ragFlight
 }
 
-// ragFlight is ONE in-progress rag execution shared by every concurrent
-// identical tool call. Go-only robustness (Python has no single-flight): the
-// outer model sometimes emits the SAME rag call 2-3 times in one round
-// (observed with MiniMax-M3 in frame_benchmark 20260912_091520 — two graph
-// runs started at the same millisecond, three planner runs for one question),
-// and both Python (asyncio.gather, chat_model.py:682) and Go
-// (models.appendToolResults) execute them all concurrently while the terminal
+// ragFlight is ONE in-progress rag execution shared by every concurrent identical tool
+// call — Go-only robustness, since the outer model sometimes emits the SAME rag call 2-3
+// times in one round (observed with MiniMax-M3 in frame_benchmark 20260912_091520 — two
+// graph runs started at the same millisecond, three planner runs for one question). The
+// tool layer (models.appendToolResults) executes them all concurrently while the terminal
 // fold keeps only the FIRST result. The duplicates each burn a full graph run
 // (double provider load → the SCA deadline overruns in the same log) and
 // their — sometimes better — answers are discarded. The first caller executes
@@ -1883,11 +1775,10 @@ type ragFlight struct {
 	answer string
 }
 
-// beginRagFlight registers the caller as the OWNER of question's execution, or
-// returns the existing flight to wait on (owner=nil, wait!=nil). The key is
-// the literal question argument — Python's own cache key
-// (agentic_rag.py:889); near-identical NON-identical re-asks stay on the
-// RAGCache similarity path (Rag's Lookup), exactly as in Python.
+// beginRagFlight registers the caller as the OWNER of question's execution, or returns
+// the existing flight to wait on (owner=nil, wait!=nil). The key is the literal question
+// argument; near-identical (but not identical) re-asks stay on the RAGCache similarity
+// path (Rag's Lookup).
 func (s *outerReactSession) beginRagFlight(question string) (owner, wait *ragFlight) {
 	s.flightMu.Lock()
 	defer s.flightMu.Unlock()
@@ -1915,9 +1806,8 @@ func (s *outerReactSession) endRagFlight(question string, flight *ragFlight) {
 
 // ToolCall routes the two outer tools to their Go implementations.
 //
-// A round's tool calls arrive CONCURRENTLY — models.appendToolResults runs one
-// goroutine per call — exactly as Python gathers them (asyncio.gather over the
-// round's tool_calls, chat_model.py:670/:2555). Each rag call therefore runs on
+// A round's tool calls arrive CONCURRENTLY — models.appendToolResults runs one goroutine
+// per call. Each rag call therefore runs on
 // its own request/evidence/response and publishes the outcome under mu; sharing
 // the session's would let two calls mix questions, evidence and answers.
 func (s *outerReactSession) ToolCall(name string, arguments map[string]interface{}) (string, error) {
@@ -1929,22 +1819,21 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		if q, ok := arguments["question"].(string); ok && q != "" {
 			req.Question = q
 		}
-		// Python agentic_rag.py:865 — prefer the user's ORIGINAL, complete
+		// Prefer the user's ORIGINAL, complete
 		// question over the outer model's rewritten `question` argument when
 		// both clearly describe the same turn. The outer rewrite often drops
 		// the final target of a multi-hop question, and no later stage can
-		// recover a deleted answer-attribute. This is the Python defense line's
-		// position: inside the `rag` tool itself, i.e. per outer tool call.
+		// recover a deleted answer-attribute. The defense line sits inside the `rag` tool
+		// itself, i.e. per outer tool call.
 		if effective := resolveEffectiveQuestion(req.Question, s.deps.OriginalQuestion); effective != req.Question {
 			s.logger.Printf("[Agentic RAG] using original user question over outer rewrite (original=%q → rewrite=%q)",
 				trunc(s.deps.OriginalQuestion, 80), trunc(req.Question, 80))
 			req.Question = effective
 		}
-		// Python's inner _compose_answer_from_evidence is text-only: the outer
-		// model already saw the images via multimodal history, and the rephrased
-		// question carries no images. Drop the original images so the inner
-		// compose model (ComposeAnswerWith via composeFinalAnswer) does not
-		// receive them — matching Python's inner compose.
+		// The inner compose is text-only: the outer model already saw the images via
+		// multimodal history, and the rephrased question carries no images. Drop the original
+		// images so the inner compose model (ComposeAnswerWith via composeFinalAnswer) does
+		// not receive them.
 		req.Images = nil
 
 		// Single-flight (see ragFlight): the FIRST caller owns the execution;
@@ -1957,9 +1846,8 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		}
 		defer s.endRagFlight(req.Question, flight)
 
-		// Per-call evidence, response and the projections that point at them:
-		// Python gives every rag() invocation its own graph state and shares only
-		// the tools object (agentic_rag.py:877 run_agentic_rag(self, messages)).
+		// Per-call evidence, response and the projections that point at them: every rag()
+		// invocation gets its own graph state and shares only the tools object.
 		kb := &harness.Kbinfos{}
 		resp := &RunResponse{Mode: s.spec, Kbinfos: kb}
 		sd := s.sd
@@ -1967,11 +1855,10 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		inner := s.deps
 		inner.KB = kb
 
-		// Python composes INSIDE the graph with the formalize_answer state
-		// (partial_answer from the node, empty_result always true there, and
-		// question = state["question"], the FORMALIZED multi-hop question —
-		// agentic_rag_graph.py:834). Wire the per-call Finalize so the graph's
-		// last node composes itself; the guarded direct call below only fires
+		// Composition happens INSIDE the graph, from the formalize_answer node's state:
+		// partial_answer from the node, empty_result always true there, and question =
+		// state["question"], the FORMALIZED multi-hop question. Wire the per-call Finalize
+		// so the graph's last node composes itself; the guarded direct call below only fires
 		// when the graph never reached that node.
 		composed := false
 		inner.Finalize = func(fctx context.Context, partial, empty bool, question string) {
@@ -1998,11 +1885,11 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		if !composed {
 			composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger, resp.Partial, true, "")
 		}
-		// Python rag (:902-929) appends a "[Research status]" note to the TOOL
-		// RESULT for every non-SUFFICIENT verdict, so the outer model can
-		// decide whether to re-run `rag` from the reported gaps. It does NOT
-		// change the streamed answer (the compose already streamed); after two
-		// consecutive unsatisfying rounds it tells the outer agent to STOP.
+		// A "[Research status]" note is appended to the TOOL RESULT for every
+		// non-SUFFICIENT verdict, so the outer model can decide whether to re-run `rag` from
+		// the reported gaps. It does NOT change the streamed answer (the compose already
+		// streamed); after two consecutive unsatisfying rounds it tells the outer agent to
+		// STOP.
 		if t := researchStatusTrailer(s.deps.Cache, resp); t != "" {
 			// Same fold as Rag's direct path: the period closes the hint
 			// clause before the trailer sentence.
@@ -2026,10 +1913,8 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		if docID == "" {
 			return "Error: missing doc_id argument.", nil
 		}
-		// Python budgets the document read and its kb_prompt at
-		// chat_mdl.max_length — the FULL window, not a fixed cap
-		// (agentic_rag.py:952). No citation header: Python's dialog path
-		// constructs RAGTools with do_refer=False (dialog_service.py:2081), so
+		// The document read and its prompt are budgeted at the model's FULL context window,
+		// not a fixed cap. No citation header: this dialog path runs with do_refer=false, so
 		// summarize_document returns bare blocks there.
 		blocks := harness.SummarizeDocument(s.ctx, s.sd, docID, s.deps.MaxLength)
 		if len(blocks) == 0 {
@@ -2116,11 +2001,10 @@ func (s *outerReactSession) selectEvidence(answer string) {
 
 // runDirect is the low/naive path: one hybrid search, no tool loop.
 //
-// It is the ONE Go implementation of Python orchestrator/direct.py::direct_search
-// (called from the low graph node) — there is deliberately no harness-level
-// duplicate in harness/orchestrator. It lives here rather than there because the
-// step reads the full RAGTools config; the graph node that calls it forces
-// UseCompiled=true, which Python's direct_search hardcodes.
+// It is the ONE implementation of the direct search (called from the low graph node) —
+// there is deliberately no harness-level duplicate in harness/orchestrator. It lives here
+// rather than there because the step reads the full RAGTools config; the graph node that
+// calls it forces UseCompiled=true.
 func runDirect(ctx context.Context, deps RAGTools, req harness.RunRequest, sd harness.SearchDeps, kb *harness.Kbinfos, resp *RunResponse, logger *log.Logger) {
 	ctx, done := harness.Phase(ctx, harness.PhaseDirect)
 	retrievalQuery := ""
@@ -2132,9 +2016,8 @@ func runDirect(ctx context.Context, deps RAGTools, req harness.RunRequest, sd ha
 			retrievalQuery = rq
 		}
 	} else if deps.Model != nil {
-		// Default: the four-aspect weighted extraction (Python
-		// tools.extract_keywords / harness/keywords.py). It gives BM25 both the
-		// discriminating entity and the surface variants the corpus may use.
+		// Default: the four-aspect weighted extraction (harness/keywords.go). It gives BM25
+		// both the discriminating entity and the surface variants the corpus may use.
 		rq, kw := harness.ExtractWeightedKeywords(ctx, deps.Model, req.Question)
 		retrievalQuery = rq
 		if req.Keywords == "" {
@@ -2149,8 +2032,7 @@ func runDirect(ctx context.Context, deps RAGTools, req harness.RunRequest, sd ha
 		RetrievalQuery: retrievalQuery,
 		UseCompiled:    req.UseCompiled,
 		TopN:           req.TopN,
-		// Mirrors Python RAGTools.retrieve — the only function honouring
-		// using_embedding.
+		// The only channel honouring UsingEmbedding.
 		Channel: harness.ChannelRetrieve,
 	})
 	kb.Merge(chunks, aggs)
@@ -2186,8 +2068,8 @@ func SetAgenticLoop(fn AgenticLoop) { agenticLoop = fn }
 // keeps `Run` usable without the planner, at the cost of the
 // planner/fan-out/SCA iteration.
 func runAgentic(ctx context.Context, deps RAGTools, req harness.RunRequest, sd harness.SearchDeps, kb *harness.Kbinfos, resp *RunResponse, logger *log.Logger) {
-	// Formalization happens inside the graph: Python wires it as the
-	// build_agentic_graph entry node (add_edge(START, "formalize_question")).
+	// Formalization happens inside the graph: it is the graph's entry node
+	// (START → formalize_question).
 	if agenticLoop != nil {
 		agenticLoop(ctx, deps, req, kb, resp, logger)
 		return
@@ -2211,8 +2093,8 @@ func runSingleSession(ctx context.Context, deps RAGTools, req harness.RunRequest
 	sessionDeps := harness.SessionDeps{
 		Tools: &harness.Toolset{
 			ThinkingMode: resp.Mode.Label,
-			// Provider gate, mirroring Python action_session.py:463: without a
-			// wired provider the tool is hidden rather than advertised dead.
+			// Provider gate: without a wired provider the tool is hidden rather than
+			// advertised dead.
 			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
 			DisabledTools: map[string]bool{},
 			Exec:          harness.NewSearchExecutor(sd, req),
@@ -2259,13 +2141,13 @@ func IsKnownMode(label string) bool {
 	return ok
 }
 
-// DocIDLookup mirrors Python RAGTools._filter_known_doc_ids (agentic_rag.py:981):
+// DocIDLookup
 // it resolves which of a candidate document id set exist within the given
 // datasets.
 //
-// Like Python, it reads the document table directly; the harness package takes
-// it through the harness.DocIDVerifier interface so the retrieval path stays
-// free of a database dependency.
+// It reads the document table directly; the harness package takes it through the
+// harness.DocIDVerifier interface so the retrieval path stays free of a database
+// dependency.
 type DocIDLookup struct {
 	docs *dao.DocumentDAO
 }

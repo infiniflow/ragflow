@@ -183,11 +183,10 @@ func Union(a, b Value) (union, dropped Value, ok bool) {
 	}
 	switch {
 	case a.Kind == KindMembers && b.Kind == KindMembers:
-		merged, added := mergeMembers(a.Items, b.Items)
-		if !added {
-			// A subset union is still a resolution: the union IS the base.
-			return Value{Kind: KindMembers, Items: merged}, Value{}, true
-		}
+		// Two member lists never produce a LOSER: the union is the resolution, and a
+		// subset union (this side added nothing) is a resolution too — the base is
+		// already the answer, so nothing is reported as dropped.
+		merged, _ := mergeMembers(a.Items, b.Items)
 		return Value{Kind: KindMembers, Items: merged}, Value{}, true
 	case a.Kind == KindMembers && isNumeric(b.Kind):
 		return a, b, true
@@ -199,7 +198,13 @@ func Union(a, b Value) (union, dropped Value, ok bool) {
 		if bn > an {
 			return b, a, true
 		}
-		return a, b, true
+		if bn < an {
+			return a, b, true
+		}
+		// Equal claims: there is no loser to keep. Recording one put "alternate
+		// (claimed by another session, not adopted): 13" beside a slot saying 13 —
+		// a dropped claim identical to the one that won.
+		return a, Value{}, true
 	}
 	return Value{}, Value{}, false
 }
@@ -288,7 +293,7 @@ func Parse(patch map[string]any) Value {
 }
 
 // candidateText reads the legacy free-text field. A null candidate is an empty value
-// (Python's "set candidate null" — an eliminated claim).
+// (a null candidate — an eliminated claim).
 func candidateText(patch map[string]any) string {
 	raw, ok := patch["candidate"]
 	if !ok || raw == nil {

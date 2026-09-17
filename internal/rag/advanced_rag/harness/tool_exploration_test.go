@@ -40,7 +40,7 @@ func (e *kgIndexCapturingEngine) Search(_ context.Context, req *types.SearchRequ
 // with indexNameFor(deps.TenantID, deps.IndexName), so a tenant that overrides
 // the index name must have it honoured by the KG rows too. Hardcoding
 // ragflow_<tenantID> made the walk query one index and return passages loaded
-// from another. Empty keeps the default, matching Python's search.index_name.
+// from another. Empty keeps the default index name.
 func TestKGSearchUsesConfiguredIndexName(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {

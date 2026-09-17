@@ -18,11 +18,10 @@
 // action session: the Sufficient Context Agent (SCA) review and the gap→query
 // rewriter.
 //
-// Mirrors Python rag/advanced_rag/harness/orchestrator/{sufficient_context,
-// query_rewriter}.py.
+// Covers the Sufficient Context Agent (SCA) review and the gap→query rewriter.
 //
-// Python's orchestrator/direct.py — the low-mode direct search — deliberately
-// has no counterpart in this package: its Go implementation is runDirect
+// The low-mode direct search deliberately has no counterpart in this package: its Go
+// implementation is runDirect
 // (agentic_rag.go, called from the low graph's direct_search node), the low graph
 // node's body, because that step needs the full RAGTools config rather than a
 // harness-level dependency bundle. One implementation only; its contract is
@@ -40,9 +39,8 @@ var _LOG = common.StdLogger()
 
 // JSONModel generates one JSON object from a rendered prompt.
 //
-// Mirrors Python rag.prompts.generator.gen_json(prompt, "Output:\n", chat_mdl),
-// which sends the prompt as the system turn, "Output:\n" as the user turn, and
-// parses the first JSON value out of the reply.
+// The prompt is sent as the system turn, "Output:\n" as the user turn, and the first JSON
+// value is parsed out of the reply.
 type JSONModel interface {
 	GenJSON(ctx context.Context, prompt string) (any, error)
 }

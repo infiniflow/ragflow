@@ -25,8 +25,7 @@ import (
 	"ragflow/internal/service/nav"
 )
 
-// The claim_agg navigation-tree router: the Go mirror of Python
-// dataset_api_service.py `_search_layers_navigation_tree(router="claim_agg")`.
+// The claim_agg navigation-tree router.
 //
 // The claim leg runs first and decides the ranking outright when it hits — a
 // claim is an atomic proposition carrying its own vector and verbatim
@@ -38,7 +37,7 @@ import (
 // claim-recall capability through the NavTreeRouter interface and keeps the
 // summarizer injected, so the harness stays free of the service layer.
 
-// claimAggPool mirrors Python _NAV_CLAIM_POOL: the per-leg store limit for the
+// claimAggPool: the per-leg store limit for the
 // claim routing leg, wide enough for a document to collect several claim hits
 // before the per-document roll-up (the aggregation rewards multi-hit docs).
 const claimAggPool = 256
@@ -60,13 +59,11 @@ type ClaimAggRouter struct {
 	Deps SearchDeps
 	// Fallback is the chunk_agg router used when the claim leg is empty.
 	Fallback NavTreeRouter
-	// Summarize loads the nav_doc summary per routed document (Python
-	// _nav_doc_summaries). Nil leaves the summaries empty.
+	// Summarize loads the nav_doc summary per routed document. Nil leaves the summaries empty.
 	Summarize nav.DocSummarizer
 }
 
-// claimAggBucket is the per-document roll-up of claim hits (Python
-// _nav_bucket_compiled_rows): total, best and hit count per doc.
+// claimAggBucket is the per-document roll-up of claim hits: total, best and hit count per doc.
 type claimAggBucket struct {
 	docID string
 	total float64
@@ -90,21 +87,20 @@ func (r *ClaimAggRouter) Route(ctx context.Context, tenantID, kbID, query string
 	deps := r.Deps
 	deps.TenantID = tenantID
 	deps.KbIDs = []string{kbID}
-	// Python queries the two compilers SEPARATELY, never as one mixed
-	// condition (:4230-4239): tree first — it is the compiled benchmark path —
-	// then page_index only when the tree pass came back empty. Each pass pins
-	// compile_kwd and row_types=("claim",).
+	// The two compilers are queried SEPARATELY, never as one mixed condition: tree first — it is
+	// the compiled benchmark path — then page_index only when the tree pass came back empty. Each
+	// pass pins compile_kwd and row_types=("claim",).
 	claims := recallDatasetClaimsFiltered(ctx, deps, query, claimAggPool, []string{"tree"}, []string{"claim"})
 	if len(claims) == 0 {
 		claims = recallDatasetClaimsFiltered(ctx, deps, query, claimAggPool, []string{"page_index", "pageindex"}, []string{"claim"})
 	}
 	if len(claims) == 0 {
 		// No claim rows (or the recall failed): a legitimate empty leg — the
-		// chunk leg decides (Python _search_layers_navigation_tree:4053-4057).
+		// chunk leg decides.
 		return fallback()
 	}
 
-	// Roll the claim hits up per document (Python _nav_bucket_compiled_rows):
+	// Roll the claim hits up per document:
 	// the doc score lives on each claim's similarity.
 	agg := map[string]*claimAggBucket{}
 	for _, c := range claims {
@@ -124,9 +120,8 @@ func (r *ClaimAggRouter) Route(ctx context.Context, tenantID, kbID, query string
 		}
 	}
 
-	// doc_scope: Python filters the store condition before the recall
-	// (:4186-4187); post-filtering the rolled-up buckets is equivalent here
-	// because the recall is threshold-free.
+	// doc_scope: the store condition is filtered before the recall; post-filtering the rolled-up
+	// buckets is equivalent here because the recall is threshold-free.
 	scope := make(map[string]bool, len(docScope))
 	for _, d := range docScope {
 		if d = strings.TrimSpace(d); d != "" {
@@ -145,8 +140,7 @@ func (r *ClaimAggRouter) Route(ctx context.Context, tenantID, kbID, query string
 		// chunk leg (which applies the same scope) may reach further.
 		return fallback()
 	}
-	// Order by the damped DocScore (Python _nav_rank_compiled_buckets), best
-	// similarity as the tie-break.
+	// Order by the damped DocScore, best similarity as the tie-break.
 	sort.SliceStable(ranked, func(i, j int) bool {
 		si := claimDocScore(ranked[i].total, ranked[i].hits)
 		sj := claimDocScore(ranked[j].total, ranked[j].hits)
@@ -158,7 +152,7 @@ func (r *ClaimAggRouter) Route(ctx context.Context, tenantID, kbID, query string
 	if topK > 0 && len(ranked) > topK {
 		ranked = ranked[:topK]
 	}
-	// Same focus cap as the sibling routers (Python _NAV_DOC_FOCUS_LIMIT = 3):
+	// Same focus cap as the sibling routers (3):
 	// routing to many documents makes the agent carry that many times the
 	// evidence in every later round.
 	const navDocFocusLimit = 3
