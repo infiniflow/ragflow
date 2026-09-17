@@ -823,6 +823,25 @@ func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentFullStopsWhenCleanupClaimIsFenced(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	engine := &claimFencingDocEngine{db: db}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
+		t.Fatalf("deleteDocumentFull error = %v, want cleanup claim lost", err)
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted after cleanup claim loss: %v", err)
+	}
+}
+
 func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
