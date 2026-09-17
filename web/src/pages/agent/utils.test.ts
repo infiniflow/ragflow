@@ -4,6 +4,7 @@ import {
   generateNodeNamesWithIncreasingIndex,
   getEmptyMessageNodeNames,
   isEmptyMessageContent,
+  receiveMessageError,
   transformTokenChunkerParams,
 } from './utils';
 
@@ -49,6 +50,25 @@ describe('transformTokenChunkerParams', () => {
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
     expect(result.image_context_size).toBe(81);
+  });
+});
+
+describe('receiveMessageError', () => {
+  it('accepts successful SSE events without an application code', () => {
+    expect(
+      receiveMessageError({
+        response: { status: 200 },
+        data: { event: 'workflow_finished' },
+      }),
+    ).toBe(false);
+  });
+  it('rejects application errors returned with HTTP 200', () => {
+    expect(
+      receiveMessageError({ response: { status: 200 }, data: { code: 102 } }),
+    ).toBe(true);
+    expect(
+      receiveMessageError({ response: { status: 200 }, data: { code: 0 } }),
+    ).toBe(false);
   });
 });
 
