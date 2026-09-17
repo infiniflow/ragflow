@@ -227,7 +227,6 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *ser
 		"progress":               log.Progress,
 		"process_begin_at":       log.ProcessBeginAt,
 		"process_duration":       log.ProcessDuration,
-		"progress_msg":           log.ProgressMsg,
 		"dsl":                    log.DSL,
 		"avatar":                 log.Avatar,
 		"create_time":            log.CreateTime,
@@ -238,9 +237,6 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *ser
 	}
 	if log.PipelineID != nil {
 		m["pipeline_id"] = *log.PipelineID
-	}
-	if log.ProgressMsg != nil {
-		m["progress_msg"] = *log.ProgressMsg
 	}
 	if log.Status != nil {
 		m["status"] = *log.Status
@@ -262,7 +258,6 @@ func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *servic
 		"document_type":          log.DocumentType,
 		"source_from":            log.SourceFrom,
 		"progress":               log.Progress,
-		"progress_msg":           stringPointerValue(log.ProgressMsg),
 		"process_begin_at":       timePointerValue(log.ProcessBeginAt),
 		"process_duration":       log.ProcessDuration,
 		"dsl":                    jsonMapValue(log.DSL),

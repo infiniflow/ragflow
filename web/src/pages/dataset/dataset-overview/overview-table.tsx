@@ -370,7 +370,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
       ),
-      details: row.original.progress_msg,
+      details: row.original.progress_msg ?? '',
     } as ILogInfo;
     setLogInfo(logDetail);
     setSelectedLogID(row.original.id);

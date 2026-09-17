@@ -37,7 +37,6 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -71,7 +70,6 @@ type PipelineExecutor struct {
 	docBulkSize int
 
 	indexWriter     *chunkIndexWriter
-	logCreateFunc   func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
@@ -122,7 +120,6 @@ func NewPipelineExecutor(
 			taskCtx.Doc.KbID,
 			docBulkSize,
 		),
-		logCreateFunc: dao.NewPipelineOperationLogDAO().Create,
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
@@ -131,11 +128,6 @@ func NewPipelineExecutor(
 
 func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	s.indexWriter.insertFunc = f
-	return s
-}
-
-func (s *PipelineExecutor) WithLogCreateFunc(f func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error) *PipelineExecutor {
-	s.logCreateFunc = f
 	return s
 }
 
@@ -790,16 +782,18 @@ func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput)
 	if strings.TrimSpace(input.PipelineLogID) == "" {
 		return ErrMissingRunIdentity
 	}
-	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
+	return recordPipelineLog(ctx, db, input)
 }
 
 func recordPipelineLog(
 	ctx context.Context,
 	db *gorm.DB,
 	input PipelineLogInput,
-	createFunc func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error,
 ) error {
-	if db == nil && strings.TrimSpace(input.PipelineLogID) != "" {
+	if strings.TrimSpace(input.PipelineLogID) == "" {
+		return ErrMissingRunIdentity
+	}
+	if db == nil {
 		return errors.New("pipeline log database is required")
 	}
 	var dslMap entity.JSONMap
@@ -869,49 +863,15 @@ func recordPipelineLog(
 	if doc.Status != nil && *doc.Status != "" {
 		statusValue = *doc.Status
 	}
-	if input.PipelineLogID != "" {
-		if handled, err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
-			return fmt.Errorf("advance pipeline log for document %s: %w", input.DocumentID, err)
-		} else if handled {
-			return nil
-		}
+	if err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
+		return fmt.Errorf("advance pipeline log for document %s: %w", input.DocumentID, err)
 	}
-	sourceFrom := doc.SourceType
-	if parts := strings.SplitN(sourceFrom, "/", 2); len(parts) > 0 {
-		sourceFrom = parts[0]
-	}
-	documentName := ""
-	if doc.Name != nil {
-		documentName = *doc.Name
-	}
-	log := &entity.PipelineOperationLog{
-		ID:              utility.GenerateUUID(),
-		TenantID:        input.TenantID,
-		KbID:            input.KbID,
-		DocumentID:      input.DocumentID,
-		PipelineID:      pipelineID,
-		PipelineTitle:   &pipelineTitle,
-		TaskType:        string(entity.PipelineTaskTypeParse),
-		DSL:             dslMap,
-		ParserID:        doc.ParserID,
-		DocumentName:    documentName,
-		DocumentSuffix:  doc.Suffix,
-		DocumentType:    doc.Type,
-		SourceFrom:      sourceFrom,
-		Progress:        doc.Progress,
-		ProcessBeginAt:  doc.ProcessBeginAt,
-		ProcessDuration: doc.ProcessDuration,
-		OperationStatus: operationStatus,
-		Avatar:          pipelineAvatar,
-		Status:          &statusValue,
-	}
-	return createFunc(ctx, db, log)
+	return nil
 }
 
 // updateOpenLogRow advances the row this run already owns to its terminal
 // state, filling in the DSL, the pipeline identity, and the final progress
-// snapshot. It reports whether the caller must stop (true) or insert a new row
-// (false).
+// snapshot.
 //
 // The row is targeted by PipelineLogID, so a superseded run whose row was
 // deleted with the task can never reach into the replacement run's row.
@@ -919,7 +879,7 @@ func recordPipelineLog(
 // known, the write is final — a lost CAS means another writer already finalized
 // this run or the row was dropped with a superseded run, and neither may
 // produce a second entry.
-func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
+func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) error {
 	targetID := input.PipelineLogID
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
@@ -948,7 +908,7 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 		Where("id = ? AND operation_status IN ?", targetID, dao.OpenPipelineOperationStatuses()).
 		Updates(updates)
 	if result.Error != nil {
-		return false, result.Error
+		return result.Error
 	}
 	// No second entry is created for a known target, so a row that is gone or
 	// already finalized means this run's outcome is not recorded anywhere. That
@@ -957,7 +917,7 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 	if result.RowsAffected == 0 {
 		common.Warn(fmt.Sprintf("pipeline log %s for document %s is gone or already terminal; %s entry dropped", targetID, input.DocumentID, operationStatus))
 	}
-	return true, nil
+	return nil
 }
 
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
@@ -978,7 +938,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		Status:        status,
 		Document:      s.taskCtx.Doc,
 		PipelineLogID: pipelineLogID,
-	}, s.logCreateFunc); err != nil {
+	}); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }

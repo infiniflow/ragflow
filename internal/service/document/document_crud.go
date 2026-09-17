@@ -340,6 +340,13 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 			common.Warn(fmt.Sprintf("release cleanup claim for document %s: %v", docID, releaseErr))
 		}
 	}()
+	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(cleanupCtx, kb.TenantID, kb.ID, docID)
+	if typeErr != nil {
+		if errors.Is(typeErr, dao.ErrDocumentCleanupClaimLost) {
+			return typeErr
+		}
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
+	}
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(cleanupCtx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
@@ -351,10 +358,6 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		if _, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, nil); err != nil {
 			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
 		}
-	}
-	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(cleanupCtx, kb.TenantID, kb.ID, docID)
-	if typeErr != nil {
-		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(cleanupCtx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
@@ -459,6 +462,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	if err := s.finishCleanupBatch(ctx, docID, claimToken); err != nil {
 		return err
+	}
+	if delErr != nil {
+		return fmt.Errorf("delete chunks for document %s: %w", docID, delErr)
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's
 	// source + per-doc compiled chunks are gone. The consumer removes the

@@ -302,10 +302,8 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 				return fmt.Errorf("add pipeline_operation_log.run_count: %w", err)
 			}
 		}
-		if !migrator.HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run") {
-			if err := migrator.CreateIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run"); err != nil {
-				return fmt.Errorf("add pipeline_operation_log document/run index: %w", err)
-			}
+		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
+			return err
 		}
 	}
 
@@ -324,17 +322,40 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 				return fmt.Errorf("add ingestion_task_log.event_type: %w", err)
 			}
 		}
-		if !migrator.HasIndex(&entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id") {
-			if err := migrator.CreateIndex(&entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id"); err != nil {
-				return fmt.Errorf("add ingestion_task_log pipeline index: %w", err)
-			}
+		if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
+			return err
 		}
 	}
 
-	if !migrator.HasTable(&entity.DocumentCleanupClaim{}) {
-		if err := migrator.CreateTable(&entity.DocumentCleanupClaim{}); err != nil {
-			return fmt.Errorf("create document_cleanup_claim: %w", err)
-		}
+	if err := createIngestionLogTableIfMissing(migrator, &entity.DocumentCleanupClaim{}, "create document_cleanup_claim"); err != nil {
+		return err
+	}
+	return nil
+}
+
+type ingestionLogSchemaMigrator interface {
+	HasIndex(any, string) bool
+	CreateIndex(any, string) error
+	HasTable(any) bool
+	CreateTable(...any) error
+}
+
+func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model any, name, operation string) error {
+	if migrator.HasIndex(model, name) {
+		return nil
+	}
+	if err := migrator.CreateIndex(model, name); err != nil && !migrator.HasIndex(model, name) {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	return nil
+}
+
+func createIngestionLogTableIfMissing(migrator ingestionLogSchemaMigrator, model any, operation string) error {
+	if migrator.HasTable(model) {
+		return nil
+	}
+	if err := migrator.CreateTable(model); err != nil && !migrator.HasTable(model) {
+		return fmt.Errorf("%s: %w", operation, err)
 	}
 	return nil
 }

@@ -141,9 +141,6 @@ func TestIngestionTaskServiceCreateForDocumentsRejectsMissingRunMetadata(t *test
 func TestIngestionTaskServiceCreateForDocumentsRejectsForeignCleanupClaim(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := db.AutoMigrate(&entity.DocumentCleanupClaim{}); err != nil {
-		t.Fatalf("migrate cleanup claim: %v", err)
-	}
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	if _, err := dao.NewDocumentCleanupClaimDAO().Acquire(t.Context(), db, "doc-1", "api-a", time.Now().Unix(), 120, 45); err != nil {

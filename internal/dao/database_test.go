@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -219,6 +220,39 @@ func TestMigrateIngestionLogRunIdentity(t *testing.T) {
 
 	if err := migrateIngestionLogRunIdentity(ctx, db); err != nil {
 		t.Fatalf("second migrateIngestionLogRunIdentity: %v", err)
+	}
+}
+
+type ingestionLogSchemaMigratorStub struct {
+	indexExistsAfterCreate bool
+	tableExistsAfterCreate bool
+}
+
+func (s *ingestionLogSchemaMigratorStub) HasIndex(any, string) bool {
+	return s.indexExistsAfterCreate
+}
+
+func (s *ingestionLogSchemaMigratorStub) CreateIndex(any, string) error {
+	s.indexExistsAfterCreate = true
+	return errors.New("connection closed after index creation")
+}
+
+func (s *ingestionLogSchemaMigratorStub) HasTable(any) bool {
+	return s.tableExistsAfterCreate
+}
+
+func (s *ingestionLogSchemaMigratorStub) CreateTable(...any) error {
+	s.tableExistsAfterCreate = true
+	return errors.New("connection closed after table creation")
+}
+
+func TestCreateIngestionLogSchemaObjectsRechecksAfterCreateError(t *testing.T) {
+	migrator := &ingestionLogSchemaMigratorStub{}
+	if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
+		t.Fatalf("createIngestionLogIndexIfMissing: %v", err)
+	}
+	if err := createIngestionLogTableIfMissing(migrator, &entity.DocumentCleanupClaim{}, "create document_cleanup_claim"); err != nil {
+		t.Fatalf("createIngestionLogTableIfMissing: %v", err)
 	}
 }
 

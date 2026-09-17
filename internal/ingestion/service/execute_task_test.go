@@ -93,7 +93,6 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 		testutil.WithPipelineID("flow-1"),
 		testutil.WithTenantID("tenant-1"),
 	)
-
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocumentTaskCalled bool
 	var gotTaskID string
@@ -151,6 +150,10 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		testutil.WithPipelineID("flow-1"),
 		testutil.WithTenantID("tenant-1"),
 	)
+	const progressMessage = "Queued before cancellation"
+	if err := db.Model(&entity.Document{}).Where("id = ?", docID).Update("progress_msg", progressMessage).Error; err != nil {
+		t.Fatalf("seed document progress message: %v", err)
+	}
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool { return true }
@@ -179,7 +182,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	if doc.Progress != -1 {
 		t.Fatalf("document.progress = %v, want -1 (cancelled)", doc.Progress)
 	}
-	if doc.ProgressMsg != nil && *doc.ProgressMsg != "" {
-		t.Fatalf("document.progress_msg was rewritten on cancel: %q", *doc.ProgressMsg)
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != progressMessage {
+		t.Fatalf("document.progress_msg = %v, want preserved %q", doc.ProgressMsg, progressMessage)
 	}
 }

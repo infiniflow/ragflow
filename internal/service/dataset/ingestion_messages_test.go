@@ -93,6 +93,9 @@ func TestListIngestionLogsEmbedsLatestRunEventWithoutRewritingLegacyMessage(t *t
 	insertCompilationOwnerKB(t, "kb-1", "user-1")
 	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
 	insertMessageRun(t, "run-2", "kb-1", "doc-2", entity.TaskStatusDone, 1)
+	if err := db.Model(&entity.PipelineOperationLog{}).Where("id IN ?", []string{"run-1", "run-2"}).Update("progress_msg", "obsolete snapshot").Error; err != nil {
+		t.Fatalf("seed obsolete progress message: %v", err)
+	}
 	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, "first")
 	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeTerminal, "latest first")
 	insertMessageEvent(t, db, "run-2", "task-2", dao.EventTypeMessage, "latest second")
@@ -111,6 +114,11 @@ func TestListIngestionLogsEmbedsLatestRunEventWithoutRewritingLegacyMessage(t *t
 	}
 	assertLatestEventMap(t, byID["run-1"], 2, "latest first")
 	assertLatestEventMap(t, byID["run-2"], 3, "latest second")
+	for runID, log := range byID {
+		if _, ok := log["progress_msg"]; ok {
+			t.Fatalf("%s exposes obsolete progress_msg: %#v", runID, log["progress_msg"])
+		}
+	}
 }
 
 func TestGetIngestionLogEmbedsLatestRunEvent(t *testing.T) {
