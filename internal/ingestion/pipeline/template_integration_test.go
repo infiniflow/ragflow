@@ -36,6 +36,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/ingestion/testutil"
@@ -88,7 +90,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -104,7 +106,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	wantChunkTexts := []string{"Alpha paragraph.", "Beta paragraph."}
+	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -131,9 +133,9 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	}
 
 	state := stateFromRunOutput(t, out)
-	chunkerState, ok := state["TokenChunker:SixApplesFall"]
+	chunkerState, ok := state["GeneralChunker:SixApplesFall"]
 	if !ok {
-		t.Fatal("missing TokenChunker:SixApplesFall state")
+		t.Fatal("missing GeneralChunker:SixApplesFall state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
@@ -180,7 +182,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -189,7 +191,6 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	}
 	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
 
-	wantTexts := []string{"Alpha paragraph.", "Beta paragraph."}
 	wantMergedText := "Alpha paragraph.\nBeta paragraph."
 	assertTokenizerTerminalChunk(t, payload, filename, wantMergedText)
 
@@ -215,14 +216,11 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 		t.Fatalf("parser output_format = %v, want json", got)
 	}
 	jsonItems, ok := parserState["json"].([]map[string]any)
-	if !ok || len(jsonItems) != 2 {
-		t.Fatalf("parser json = %T/%v, want 2 items", parserState["json"], parserState["json"])
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	for i, wantText := range wantTexts {
-		item := jsonItems[i]
-		if got := item["text"]; got != wantText {
-			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
-		}
+	if got := jsonItems[0]["text"]; got != "Alpha paragraph.\n\nBeta paragraph." {
+		t.Fatalf("parser json[0].text = %v, want normalized full text", got)
 	}
 	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
@@ -243,8 +241,6 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T) {
 	RequireTokenizerPool(t)
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -269,7 +265,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -368,7 +364,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -466,7 +462,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -549,7 +545,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -630,7 +626,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -734,7 +730,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 				t.Fatalf("NewPipelineFromDSL: %v", err)
 			}
 			attachFixedEmbedderFactory(t, pipe)
-			out, err := pipe.Run(context.Background(), map[string]any{
+			out, err := pipe.Run(t.Context(), map[string]any{
 				"doc_id": docID,
 			}, nil)
 			if err != nil {
@@ -770,6 +766,18 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 
 func withRealTemplateDeps(t *testing.T) storage.Storage {
 	t.Helper()
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend). Text content is extracted by pdfium
+	// (the PDF text layer) and tokenized offline, independent of the analyzer,
+	// so a mock preserves the chunking/embedding assertions under test.
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	origStorage := storage.GetStorageFactory().GetStorage()
 	mem := storage.NewMemoryStorage()
@@ -812,7 +820,7 @@ func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path,
 
 func seedTemplateDocumentBytes(t *testing.T, stg storage.Storage, name, bucket, path string, content []byte) string {
 	t.Helper()
-	if err := stg.Put(context.Background(), bucket, path, content); err != nil {
+	if err := stg.Put(t.Context(), bucket, path, content); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	if registerTemplateDocumentRef == nil {

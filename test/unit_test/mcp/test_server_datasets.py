@@ -63,7 +63,9 @@ def _stub_dataset_pages(monkeypatch, connector, datasets):
         page_size = params["page_size"]
         start = (page - 1) * page_size
         end = start + page_size
-        return _FakeResponse({"code": 0, "data": datasets[start:end], "total": len(datasets)})
+        # Mirrors the real REST envelope: api/utils/api_utils.py get_result() puts
+        # the dataset total under "total_datasets", not "total".
+        return _FakeResponse({"code": 0, "data": datasets[start:end], "total_datasets": len(datasets)})
 
     monkeypatch.setattr(connector, "_get", _get)
     return requests
@@ -81,6 +83,21 @@ async def test_list_datasets_default_fetches_all_with_rest_page_size_limit(monke
     assert [request["params"]["page"] for request in requests] == [1, 2, 3]
     assert all(request["path"] == "/datasets" for request in requests)
     assert all(request["params"]["page_size"] == 100 for request in requests)
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_stops_at_total_without_empty_page_request(monkeypatch, mcp_server):
+    """When the fetched rows reach the reported total_datasets, the loop must stop
+    without issuing the extra empty-page request. Reading the wrong key ("total")
+    left this early-exit dead and always cost one more roundtrip per full listing."""
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    requests = _stub_dataset_pages(monkeypatch, connector, _datasets(200))
+
+    result = await connector.list_datasets(api_key="unit-key")
+
+    rows = [json.loads(line) for line in result.splitlines()]
+    assert len(rows) == 200
+    assert [request["params"]["page"] for request in requests] == [1, 2]
 
 
 @pytest.mark.asyncio

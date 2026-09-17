@@ -24,7 +24,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +51,7 @@ type MySQLConnector struct {
 	metadataColumns []string
 	idColumn        string
 	timestampColumn string
+	fileExtension   string
 	batchSize       int
 	username        string
 	password        string
@@ -65,12 +68,15 @@ func NewMySQLConnector(config map[string]any) (*MySQLConnector, error) {
 		database:        strings.TrimSpace(stringConfig(config["database"])),
 		idColumn:        strings.TrimSpace(stringConfig(config["id_column"])),
 		timestampColumn: strings.TrimSpace(stringConfig(config["timestamp_column"])),
+		fileExtension:   fileExtensionFromConfig(config["file_extension"]),
 		batchSize:       configInt(config["batch_size"], defaultMySQLBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
-		openDB: func(dsn string) (*sql.DB, error) {
-			return sql.Open("mysql", dsn)
-		},
+	}
+	// Production dials through the SSRF-guarded, DNS-pinned openDB. Tests
+	// replace it with an injected openDB that avoids the real network.
+	connector.openDB = func(dsn string) (*sql.DB, error) {
+		return connector.openPinned(dsn)
 	}
 	connector.query = connector.sanitizeQuery(stringConfig(config["query"]))
 	connector.contentColumns = connector.splitColumns(config["content_columns"])
@@ -146,7 +152,10 @@ func (c *MySQLConnector) OpenPrune(ctx context.Context, request PruneRequest) (P
 	return &mysqlPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
 
-// open builds a MySQL connection with Python-compatible settings.
+// open builds a MySQL connection with Python-compatible settings. The default
+// openDB (wired in NewMySQLConnector) validates the host against the shared
+// SSRF guard and pins the dial; tests inject an openDB that bypasses the real
+// network.
 func (c *MySQLConnector) open() (*sql.DB, error) {
 	cfg := mysql.NewConfig()
 	cfg.User = c.username
@@ -158,6 +167,49 @@ func (c *MySQLConnector) open() (*sql.DB, error) {
 	cfg.ParseTime = true
 	cfg.Loc = time.UTC
 	return c.openDB(cfg.FormatDSN())
+}
+
+// openPinned is the production openDB: it validates the configured host with
+// the shared host-type SSRF guard and routes the connection through a custom
+// network whose dialer is pinned to the validated IP, closing the
+// DNS-rebinding window between validation and the TCP connect. The DSN keeps
+// the original hostname (TLS ServerName / host-based routing), while
+// go-sql-driver resolves the custom network through mysql.RegisterDialContext.
+func (c *MySQLConnector) openPinned(_ string) (*sql.DB, error) {
+	pinIP, err := assertConnectorHostSafe(c.host)
+	if err != nil {
+		return nil, err
+	}
+	network := mysqlPinnedNetwork(c.host, c.port, pinIP)
+	mysql.RegisterDialContext(network, mysqlPinnedDial(pinIP, c.port))
+	cfg := mysql.NewConfig()
+	cfg.User = c.username
+	cfg.Passwd = c.password
+	cfg.Net = network
+	cfg.Addr = net.JoinHostPort(c.host, strconv.Itoa(c.port))
+	cfg.DBName = c.database
+	cfg.Params = map[string]string{"charset": "utf8mb4"}
+	cfg.ParseTime = true
+	cfg.Loc = time.UTC
+	return sql.Open("mysql", cfg.FormatDSN())
+}
+
+// mysqlPinnedNetwork returns a deterministic custom network name for a
+// host/port/IP pin. Each distinct pin gets its own registered network, so a DNS
+// change can never make one connector reuse another connector's dialer. The
+// name is hex-only so it round-trips through go-sql-driver's DSN parser.
+func mysqlPinnedNetwork(host string, port int, pinIP net.IP) string {
+	sum := md5.Sum([]byte(fmt.Sprintf("%s:%d:%s", host, port, pinIP.String())))
+	return "pinned-" + hex.EncodeToString(sum[:8])
+}
+
+// mysqlPinnedDial returns a go-sql-driver dialer that connects every dial on
+// its registered network to pinIP:port, ignoring the host the driver parsed
+// from the DSN.
+func mysqlPinnedDial(pinIP net.IP, port int) mysql.DialContextFunc {
+	return func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(pinIP.String(), strconv.Itoa(port)))
+	}
 }
 
 // baseQueries returns the configured query or a SELECT per table.
@@ -386,7 +438,7 @@ func (c *MySQLConnector) rowToSourceDocument(row map[string]any, orderedColumns 
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: semanticID,
-		Extension:          ".txt",
+		Extension:          c.fileExtension,
 		Blob:               blob,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),

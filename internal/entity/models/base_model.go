@@ -24,12 +24,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/utility"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+)
+
+const (
+	redactedLogValue = "[REDACTED]"
 )
 
 type BaseModel struct {
@@ -213,13 +219,17 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	return body, nil
@@ -244,13 +254,17 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	return body, nil
@@ -274,7 +288,10 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -407,9 +424,14 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.MaxBatchSize = modelEntity.MaxBatchSize
 			modelResponse.Dimensions = modelEntity.Dimensions
+			modelResponse.ContextLength = modelEntity.ContextLength
 			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		if model.ContextLength != nil && *model.ContextLength > 0 {
+			modelResponse.ContextLength = model.ContextLength
 		}
 
 		// The provider-list merge treats remote entries as authoritative
@@ -429,7 +451,9 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-// settings and an SSRF guard wired into its Transport.
+// settings, an SSRF guard, and opt-in provider request/response logging wired
+// into its Transport. Logging is disabled unless LLM_DEBUG is true when the
+// client is created, normally during process startup.
 //
 // allowPrivate selects the guard strictness:
 //   - false (cloud-hosted drivers): every request is validated with
@@ -450,7 +474,7 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 5 * 60 * time.Second
+	t.ResponseHeaderTimeout = 20 * time.Minute
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t
@@ -459,7 +483,187 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	} else {
 		rt = &strictSSRFTransport{base: rt}
 	}
+	rt = newProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
+}
+
+func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	if !common.IsLLMDebugEnabled() {
+		return base
+	}
+	return &providerLoggingTransport{base: base}
+}
+
+type providerLoggingTransport struct {
+	base http.RoundTripper
+}
+
+func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	payload, err := readAndRestoreRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	providerURL := redactProviderURL(req.URL)
+	logPayload := redactProviderBody(payload)
+
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		logProviderCall(providerURL, logPayload, 0, "", err)
+		return nil, err
+	}
+	if resp.Body == nil {
+		logProviderCall(providerURL, logPayload, resp.StatusCode, "", nil)
+		return resp, nil
+	}
+
+	resp.Body = &providerResponseBody{
+		ReadCloser: resp.Body,
+		log: func(body []byte) {
+			logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), nil)
+		},
+	}
+	return resp, nil
+}
+
+// providerResponseBody captures bytes while callers consume them, preserving
+// streaming delivery instead of eagerly reading the entire provider response.
+type providerResponseBody struct {
+	io.ReadCloser
+	body bytes.Buffer
+	once sync.Once
+	log  func([]byte)
+}
+
+func (b *providerResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		_, _ = b.body.Write(p[:n])
+	}
+	if err == io.EOF {
+		b.logOnce()
+	}
+	return n, err
+}
+
+func (b *providerResponseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.logOnce()
+	return err
+}
+
+func (b *providerResponseBody) logOnce() {
+	b.once.Do(func() {
+		b.log(b.body.Bytes())
+	})
+}
+
+func readAndRestoreRequestBody(req *http.Request) ([]byte, error) {
+	if req.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read provider request body for logging: %w", err)
+	}
+	_ = req.Body.Close()
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	return body, nil
+}
+
+func redactProviderURL(requestURL *url.URL) string {
+	if requestURL == nil {
+		return ""
+	}
+	redacted := *requestURL
+	if redacted.User != nil {
+		redacted.User = url.User(redacted.User.Username())
+	}
+	query := redacted.Query()
+	for key := range query {
+		if isSensitiveLogKey(key) {
+			query.Set(key, redactedLogValue)
+		}
+	}
+	redacted.RawQuery = query.Encode()
+	return redacted.String()
+}
+
+func redactProviderBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	var value any
+	if err := json.Unmarshal(body, &value); err == nil {
+		redactProviderValue(value)
+		if redacted, err := json.Marshal(value); err == nil {
+			return string(redacted)
+		}
+	}
+
+	lines := strings.Split(string(body), "\n")
+	redactedAny := false
+	for i, line := range lines {
+		prefix, data, ok := strings.Cut(line, "data:")
+		if !ok || strings.TrimSpace(data) == "[DONE]" {
+			continue
+		}
+		var event any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &event); err != nil {
+			continue
+		}
+		redactProviderValue(event)
+		redacted, err := json.Marshal(event)
+		if err != nil {
+			continue
+		}
+		lines[i] = prefix + "data: " + string(redacted)
+		redactedAny = true
+	}
+	if redactedAny {
+		return strings.Join(lines, "\n")
+	}
+	return string(body)
+}
+
+func redactProviderValue(value any) {
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if isSensitiveLogKey(key) {
+				value[key] = redactedLogValue
+				continue
+			}
+			redactProviderValue(child)
+		}
+	case []any:
+		for _, child := range value {
+			redactProviderValue(child)
+		}
+	}
+}
+
+func isSensitiveLogKey(key string) bool {
+	normalized := strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.ToLower(key))
+	switch normalized {
+	case "apikey", "authorization", "accesstoken", "refreshtoken", "password", "secret", "token", "key":
+		return true
+	default:
+		return false
+	}
+}
+
+func logProviderCall(providerURL, payload string, statusCode int, responseBody string, err error) {
+	request := fmt.Sprintf("url=%s payload=%s", providerURL, payload)
+	response := fmt.Sprintf("response_code=%d response_body=%s", statusCode, responseBody)
+	if err != nil {
+		response += " error=" + err.Error()
+	}
+	common.LogRequestResponseInfo(request, response, err == nil && statusCode >= 200 && statusCode < 300)
 }
 
 // schemeSafeTransport wraps an http.RoundTripper so every outgoing request is
@@ -546,7 +750,11 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 			if cfg.ToolChoice != nil {
 				toolChoice = *cfg.ToolChoice
 			}
-			reqBody["tool_choice"] = toolChoice
+			if cfg.ToolChoiceValue != nil {
+				reqBody["tool_choice"] = cfg.ToolChoiceValue
+			} else {
+				reqBody["tool_choice"] = toolChoice
+			}
 		}
 	}
 
@@ -598,7 +806,11 @@ func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig)
 	}
 	reqBody["tools"] = chatConfig.Tools
 	if chatConfig.ToolChoice != nil {
-		reqBody["tool_choice"] = *chatConfig.ToolChoice
+		if chatConfig.ToolChoiceValue != nil {
+			reqBody["tool_choice"] = chatConfig.ToolChoiceValue
+		} else {
+			reqBody["tool_choice"] = *chatConfig.ToolChoice
+		}
 	}
 }
 

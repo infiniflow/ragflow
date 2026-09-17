@@ -1,3 +1,4 @@
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -10,6 +11,7 @@ import {
 } from '@/interfaces/database/agent';
 import { pickByBackend } from '@/utils/backend-variant';
 import { buildSelectOptions } from '@/utils/component-util';
+import { parseDelimiterListForDisplay } from '@/utils/delimiter-preview';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { humanId } from 'human-id';
@@ -27,8 +29,6 @@ import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
   CategorizeAnchorPointPositions,
-  FileType,
-  FileTypeSuffixMap,
   InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
@@ -290,6 +290,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
@@ -298,6 +299,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
@@ -313,6 +315,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
           };
           break;
         case FileType.Video:
@@ -362,6 +365,43 @@ export function transformTokenChunkerParams(
       ? transformObjectArrayToPureArray(params.children_delimiters, 'value')
       : [],
   };
+}
+
+// The two backends honor the chunker's delimiter list differently: the Go
+// chunker treats a bare entry as a soft split point (the split pieces are still
+// merged up to the chunk token size) while the Python flow TokenChunker only
+// activates backtick-wrapped entries. The shared chunker form shows the tip
+// that matches the running backend.
+export function getChunkerDelimiterTipKey() {
+  return pickByBackend({
+    go: 'flow.delimitersTip',
+    python: 'flow.delimitersTipPython',
+  });
+}
+
+export function getChunkerDelimiterPreview(values: (string | undefined)[]) {
+  return pickByBackend({
+    go: parseDelimiterListForDisplay(values, { keepBare: true }),
+    python: parseDelimiterListForDisplay(values, { keepBare: false }),
+  });
+}
+
+// The child split activates every non-empty entry on both backends, so the
+// child preview never drops bare rows.
+export function getChunkerChildrenDelimiterPreview(
+  values: (string | undefined)[],
+) {
+  return parseDelimiterListForDisplay(values, { keepBare: true });
+}
+
+export function transformGeneralChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
+  const result = transformTokenChunkerParams(params);
+  result.table_context_size = Number(params.table_context_size || 0);
+  result.image_context_size = Number(params.image_context_size || 0);
+  delete result.delimiter_mode;
+  return result;
 }
 
 export function transformTitleChunkerParams(
@@ -637,6 +677,10 @@ export const buildDslComponentsByGraph = (
           params = transformTokenChunkerParams(params);
           break;
 
+        case Operator.GeneralChunker:
+          params = transformGeneralChunkerParams(params);
+          break;
+
         case Operator.TitleChunker:
           params = transformTitleChunkerParams(params);
           break;
@@ -696,7 +740,9 @@ export const buildDslGlobalVariables = (
 
 // TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && res?.response.status !== 200;
+  res &&
+  (res?.response.status !== 200 ||
+    (typeof res?.data?.code === 'number' && res.data.code !== 0));
 
 // Replace the id in the object with text
 export const replaceIdWithText = (
@@ -794,6 +840,11 @@ export const generateNodeNamesWithIncreasingIndex = (
     .filter((x) => {
       const temporaryName = x.data.name;
 
+      // The first node of a type has no numeric suffix and occupies index 0
+      if (temporaryName === name) {
+        return true;
+      }
+
       const { type, index } = splitName(temporaryName);
 
       return (
@@ -807,7 +858,7 @@ export const generateNodeNamesWithIncreasingIndex = (
       const { index } = splitName(temporaryName);
 
       return {
-        idx: index,
+        idx: temporaryName === name ? 0 : index,
         name: temporaryName,
       };
     })
@@ -823,7 +874,7 @@ export const generateNodeNamesWithIncreasingIndex = (
     }
   }
 
-  return `${name}_${index}`;
+  return index === 0 ? name : `${name}_${index}`;
 };
 
 export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
@@ -928,6 +979,35 @@ export function convertToObjectArray<T extends string | number | boolean>(
     return [];
   }
   return list.map((x) => ({ value: x }));
+}
+
+/**
+ * Message (回复消息) components keep their texts in form.content (string[]).
+ * The backend rejects the component at canvas run time unless at least one
+ * entry is a non-blank string, so missing/non-array/blank-only content all
+ * count as empty here as well.
+ */
+export function isEmptyMessageContent(content?: unknown): boolean {
+  return (
+    !Array.isArray(content) ||
+    content.length === 0 ||
+    content.some((item) => typeof item !== 'string' || item.trim() === '')
+  );
+}
+
+/**
+ * Returns the display names of Message nodes whose content is empty, so the
+ * save flow can warn about them up front instead of surfacing the runtime
+ * error only when the user runs the agent.
+ */
+export function getEmptyMessageNodeNames(nodes: RAGFlowNodeType[]): string[] {
+  return nodes
+    .filter(
+      (node) =>
+        node.data?.label === Operator.Message &&
+        isEmptyMessageContent(node.data?.form?.content),
+    )
+    .map((node) => node.data?.name ?? node.id);
 }
 
 /**

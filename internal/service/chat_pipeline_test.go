@@ -18,8 +18,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -81,7 +83,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 		{"role": "user", "content": "first"},
 		{"role": "assistant", "content": "last message must not be assistant"},
 	}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-user last message, got nil")
 	}
@@ -94,7 +96,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 // service should return an error before spawning the goroutine.
 func TestAsyncChat_EmptyMessages(t *testing.T) {
 	s := &ChatPipelineService{}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), nil, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
 	}
@@ -108,7 +110,7 @@ func TestDecorateAnswer_TimerFormatAlwaysEmitted(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"hello world",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -146,7 +148,7 @@ func TestDecorateAnswer_ThinkMarkersPreserved(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"<think>reasoning</think>visible answer",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -176,7 +178,7 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"oops: invalid api key",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -203,7 +205,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see [ID:12] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -230,7 +232,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -270,7 +272,7 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		kb,
 		"system prompt",
@@ -299,7 +301,7 @@ func TestDecorateAnswer_PreCheckSkipsInsertCitations(t *testing.T) {
 	timer, _ := newTimerAndPrompt()
 	in := "answer has [ID:3] already in it"
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		in,
 		map[string]interface{}{
 			// No chunks → insertCitations path is gated off anyway,
@@ -447,7 +449,7 @@ func TestFallbackToLatestUser(t *testing.T) {
 // TestHydrateChunkVectors_NoChunksNoop pins the no-op behavior of
 // the hydration helper on empty input.
 func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(),
+	hits, err := HydrateChunkVectors(t.Context(),
 		map[string]interface{}{"chunks": []interface{}{}},
 		nil, nil, nil,
 	)
@@ -462,7 +464,7 @@ func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 // TestHydrateChunkVectors_NilKbinfosNoop pins the no-op behavior of
 // the hydration helper on nil kbinfos.
 func TestHydrateChunkVectors_NilKbinfosNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(), nil, nil, nil, nil)
+	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -525,7 +527,7 @@ func TestNormalizeSQL_StripsThinkBlocks(t *testing.T) {
 func TestBuildSQLReference_Scalar(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "",
+		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
 		"", "", nil, nil,
 	)
@@ -552,7 +554,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "select id, name from t",
+		t.Context(), nil, "", "select id, name from t",
 		rows,
 		"sys", "elasticsearch", nil, nil,
 	)
@@ -645,7 +647,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"x",
 		kb,
 		"system prompt",
@@ -1193,7 +1195,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm", []string{"kb_a", "kb_b"},
 	)
@@ -1218,7 +1220,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1250,7 +1252,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1269,7 +1271,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1282,7 +1284,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "", nil,
+		t.Context(), nil, "", "", nil,
 		"", "", nil, nil,
 	)
 	if ans != "No results." {
@@ -1304,7 +1306,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", kbs, nil,
 	)
 	if !strings.Contains(ans, "Source|") {
@@ -1351,7 +1353,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		rows, "", "elasticsearch", kbs, nil,
 	)
@@ -1375,7 +1377,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select title from t",
+		t.Context(), nil, "t", "select title from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
@@ -1403,7 +1405,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	fieldMap := map[string]interface{}{"title": "My Title"}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", nil, fieldMap,
 	)
 	if !strings.Contains(ans, "|My Title|") {
@@ -1422,7 +1424,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if strings.Contains(ans, "T13:24:55") {
@@ -1539,4 +1541,297 @@ func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
 			t.Fatalf("capacity error should not set max_tokens to zero, got %v", cfg.MaxTokens)
 		}
 	}
+}
+
+// stubHarness installs a fake harnessRetriever returning the given answer and
+// restores the previous one when the test ends.
+func stubHarness(t *testing.T, answer string) {
+	t.Helper()
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		return HarnessResult{Answer: answer}, nil
+	}
+}
+
+// collectSink records every delta with its isThink flag.
+func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
+	return func(delta string, isThink bool) {
+		*got = append(*got, delta)
+		*thinks = append(*thinks, isThink)
+	}
+}
+
+// collectThinkSink is collectSink's structured twin: the harness' step events in
+// order, so a test can assert what reached the request's ThinkSink.
+func collectThinkSink(events *[]ThinkEvent) func(ThinkEvent) {
+	return func(ev ThinkEvent) { *events = append(*events, ev) }
+}
+
+// TestRetrieveViaHarnessDoesNotSynthesizeLoopLines pins the fix for a trace that
+// described a loop which had not run: the pipeline used to emit
+// "[Tool loop] Deciding what to do next ..." / "Step 1: running rag..." around
+// EVERY non-naive harness call, whether or not the outer react loop was the
+// thing driving research. Those steps are now reported by the loop itself
+// (advanced_rag.runOuterReact*), so a harness stub — which by definition runs no
+// outer loop — must produce no narration at all.
+func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
+	stubHarness(t, "the final cited answer")
+	var receivedHistory []map[string]interface{}
+	retriever := harnessRetriever
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		receivedHistory = req.Messages
+		return retriever(ctx, req)
+	}
+	history := []map[string]interface{}{{"role": "user", "content": "earlier question"}, {"role": "assistant", "content": "earlier answer"}, {"role": "user", "content": "q"}}
+
+	var got []string
+	var thinks []bool
+	var events []ThinkEvent
+	s := &ChatPipelineService{}
+	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
+	if err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if !reflect.DeepEqual(receivedHistory, history) {
+		t.Fatalf("harness history = %#v, want %#v", receivedHistory, history)
+	}
+	if answer != "the final cited answer" {
+		t.Fatalf("answer = %q", answer)
+	}
+	if len(got) != 0 {
+		t.Errorf("the pipeline synthesized %d think delta(s), want none: %#v", len(got), got)
+	}
+	if len(events) != 0 {
+		t.Errorf("the pipeline synthesized %d step event(s), want none: %#v", len(events), events)
+	}
+}
+
+// TestRetrieveViaHarnessForwardsThinkSink pins the structured-step channel: the
+// sink the pipeline is given reaches the harness request, and the events the
+// harness emits arrive with their fields intact.
+func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		if req.ThinkSink == nil {
+			return HarnessResult{}, fmt.Errorf("harness request carries no ThinkSink")
+		}
+		req.ThinkSink(ThinkEvent{
+			Kind: "tool_result", Stage: "Function tool", Tool: "retrieve",
+			Status: "ok", Reason: "no_doc", Cause: "index not found", Results: 3, Documents: 2,
+			Sources: []string{"c1", "c2"}, DurationMS: 12,
+			Summary: "[Function tool] The retrieve tool returned 3 results.",
+		})
+		return HarnessResult{Answer: "a"}, nil
+	}
+
+	// The text sink is beside the point here (this test is about the structured
+	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
+	var events []ThinkEvent
+	s := &ChatPipelineService{}
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	// Only what the harness reported: the pipeline adds nothing of its own.
+	var got *ThinkEvent
+	for i := range events {
+		if events[i].Kind == "tool_result" {
+			got = &events[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("no tool_result among %#v", events)
+	}
+	if got.Tool != "retrieve" || got.Status != "ok" || got.Cause != "index not found" ||
+		got.Results != 3 || got.Documents != 2 || got.DurationMS != 12 ||
+		len(got.Sources) != 2 || got.Summary == "" {
+		t.Errorf("event lost fields on the way through: %#v", *got)
+	}
+	if len(events) != 1 {
+		t.Errorf("events = %#v, want only what the harness reported", events)
+	}
+}
+
+// TestHarnessThinkSinkForwardsEvent covers the pipeline-side half: one event in,
+// one chunk out, carrying the event and no answer delta.
+func TestHarnessThinkSinkForwardsEvent(t *testing.T) {
+	out := make(chan AsyncChatResult, 1)
+	harnessThinkSink(context.Background(), out)(ThinkEvent{Kind: "stage", Summary: "[Planner] x"})
+
+	select {
+	case chunk := <-out:
+		if chunk.ThinkEvent == nil || chunk.ThinkEvent.Kind != "stage" || chunk.ThinkEvent.Summary != "[Planner] x" {
+			t.Fatalf("chunk = %#v, want the event", chunk)
+		}
+		if chunk.Answer != "" || chunk.Final {
+			t.Errorf("an event chunk must carry no answer and not be final: %#v", chunk)
+		}
+	default:
+		t.Fatal("event was not forwarded")
+	}
+
+	// A cancelled request must not block the producer.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	harnessThinkSink(ctx, make(chan AsyncChatResult))(ThinkEvent{Summary: "y"})
+}
+
+// TestRetrieveViaHarnessNaiveEmitsNothing guards the naive path: no agentic loop
+// runs, so nothing is narrated — and with the pipeline no longer synthesizing
+// its own lines, nothing is emitted at all.
+func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
+	stubHarness(t, "x")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("naive mode emitted %d deltas, want 0: %#v", len(got), got)
+	}
+}
+
+// TestDecorateHarnessAnswerReferenceUsesClientChunkShape pins that the reasoning
+// path hands consumers the same reference shape as the non-reasoning one
+// (content / document_name / dataset_id — not the engine keys), and that the
+// source chunks are left untouched (no in-place vector stripping).
+func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
+	src := map[string]interface{}{
+		"chunk_id":            "c1",
+		"content_with_weight": "hello",
+		"docnm_kwd":           "Doc One",
+		"doc_id":              "d1",
+		"kb_id":               "kb1",
+		"vector":              []float64{0.1, 0.2},
+	}
+	kbinfos := map[string]interface{}{
+		"chunks":   []map[string]interface{}{src},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil)
+	if res.Reference == nil {
+		t.Fatal("a cited answer must carry a reference")
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 {
+		t.Fatalf("reference chunks = %#v, want 1", res.Reference["chunks"])
+	}
+	if chunks[0]["content"] != "hello" || chunks[0]["document_name"] != "Doc One" || chunks[0]["dataset_id"] != "kb1" {
+		t.Errorf("reference chunk = %#v, want the client-facing keys populated", chunks[0])
+	}
+	for _, engineKey := range []string{"content_with_weight", "docnm_kwd", "kb_id", "vector"} {
+		if _, has := chunks[0][engineKey]; has {
+			t.Errorf("reference chunk leaked engine key %q", engineKey)
+		}
+	}
+	if _, has := src["vector"]; !has {
+		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
+	}
+}
+
+// TestDecorateHarnessAnswerRewritesSlotCitations is the end-to-end lock for
+// the leaked "[ID:Slot 0]" bug: the harness answer arrives citing the internal
+// slot table, and the final answer must cite the chunk that filled the slot
+// instead — with that chunk present in the reference payload.
+func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c1", "content_with_weight": "unrelated", "doc_id": "d0", "docnm_kwd": "Other"},
+			{"chunk_id": "c9", "content_with_weight": "eiffel", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+		},
+	}
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(
+		"The tower opened in 1889 [ID:Slot 0].",
+		kbinfos,
+		map[string][]string{"0": {"c9"}},
+	)
+	if strings.Contains(res.Answer, "[ID:Slot") {
+		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
+	}
+	if !strings.Contains(res.Answer, "[ID:1]") {
+		t.Fatalf("final answer must cite the evidence chunk pool position, got %q", res.Answer)
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	// The reference keeps the whole citation pool (Python parity); it must at
+	// least carry the slot's evidence chunk so [ID:1] is openable.
+	found := false
+	for _, c := range chunks {
+		if c["content"] == "eiffel" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
+	}
+}
+
+// TestThinkEventWireKeys pins the JSON keys of a fully populated step: they ARE
+// the client contract (the SSE `think_event` field), so renaming or dropping a tag
+// breaks every client while neither the compiler nor any Go caller notices.
+//
+// It is also the only assertion on this struct's shape, which is why the harness
+// ALIASES it (harness.ThinkEvent) instead of carrying a second copy bridged field
+// by field in cmd — that copy compiled for as long as it stayed a subset, and
+// silently dropped any field added on the other side.
+func TestThinkEventWireKeys(t *testing.T) {
+	// Every field populated: with `omitempty` on all but Kind and Summary, that is
+	// what makes the whole key set appear.
+	full := ThinkEvent{
+		Kind:       "tool_result",
+		Stage:      "Function tool",
+		Tool:       "retrieve",
+		Args:       `{"query":"q"}`,
+		Status:     "ok",
+		Reason:     "no_doc",
+		Cause:      "the knowledge base returned no searchable hits",
+		Results:    3,
+		Documents:  2,
+		Sources:    []string{"c1", "c2"},
+		DurationMS: 12,
+		Summary:    "The retrieve tool returned 3 results from 2 documents.",
+	}
+	want := []string{
+		"args", "cause", "documents", "duration_ms", "kind", "reason",
+		"results", "sources", "stage", "status", "summary", "tool",
+	}
+	if got := thinkEventWireKeys(t, full); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("wire keys = %v, want %v", got, want)
+	}
+
+	// A stage step carries only Kind, Stage and Summary; everything else is
+	// omitted rather than sent as a zero — a client must treat each optional field
+	// as absent-when-zero, not as present-and-empty.
+	got := thinkEventWireKeys(t, ThinkEvent{Kind: "stage", Stage: "RAGAgent", Summary: "x"})
+	if strings.Join(got, ",") != "kind,stage,summary" {
+		t.Errorf("stage step keys = %v, want kind,stage,summary", got)
+	}
+}
+
+// thinkEventWireKeys marshals one event and returns its sorted JSON key set.
+func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
+	t.Helper()
+	raw, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	keys := make([]string, 0, len(decoded))
+	for k := range decoded {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

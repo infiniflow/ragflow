@@ -19,16 +19,18 @@ package nlp
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
-	"sort"
-	"strconv"
-	"strings"
-
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -63,6 +65,7 @@ type RetrievalRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	Aggs                   *bool
 	Highlight              *bool
+	AllowDenseFallback     *bool
 	Filter                 map[string]interface{}
 }
 
@@ -141,6 +144,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		AllowDenseFallback:     req.AllowDenseFallback,
 		Filter:                 req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
@@ -156,7 +160,10 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
-	sim, termSimilarity, vectorSimilarity := s.scoreSearchResult(ctx, req, searchResult)
+	sim, termSimilarity, vectorSimilarity, err := s.scoreSearchResult(ctx, req, searchResult)
+	if err != nil {
+		return nil, err
+	}
 	if len(sim) == 0 {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
@@ -408,7 +415,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}, nil
 }
 
-func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64) {
+func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64, error) {
 	// sim = tkWeight*tsim + vtWeight*vsim
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
@@ -445,11 +452,11 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 				}
 			}
 		}
-		return sim, sim, sim
+		return sim, sim, sim, nil
 	}
 
 	if useOceanBase {
-		return RerankStandard(
+		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
 			searchResult.QueryVector,
@@ -460,12 +467,13 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			qb,
 			*req.RankFeature,
 		)
+		return sim, tsim, vsim, nil
 	}
 
 	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
 	if err != nil {
 		common.Warn("KNNScores failed for ES, falling back to local computation", zap.Error(err))
-		return RerankStandard(
+		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
 			searchResult.QueryVector,
@@ -476,9 +484,10 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			qb,
 			*req.RankFeature,
 		)
+		return sim, tsim, vsim, nil
 	}
 	knnScores := s.docEngine.GetScores(knnResult)
-	return RerankWithKNN(
+	sim, tsim, vsim := RerankWithKNN(
 		searchResult.Chunks,
 		searchResult.IDs,
 		searchResult.Field,
@@ -490,6 +499,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		qb,
 		*req.RankFeature,
 	)
+	return sim, tsim, vsim, nil
 }
 
 // RetrievalSearchRequest is the request struct for RetrievalService.Search()
@@ -509,6 +519,7 @@ type RetrievalSearchRequest struct {
 	Filter                 map[string]interface{}
 	EmbeddingModel         *models.EmbeddingModel
 	VectorSimilarityWeight *float64
+	AllowDenseFallback     *bool
 }
 
 func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
@@ -535,7 +546,7 @@ func buildRetrievalFusionExpr(docEngineType string, topn int, vectorSimilarityWe
 	return &types.FusionExpr{
 		Method:       "weighted_sum",
 		TopN:         topn,
-		FusionParams: map[string]interface{}{"weights": "0.05,0.95"},
+		FusionParams: map[string]interface{}{"weights": "0.001,1"},
 	}
 }
 
@@ -561,6 +572,9 @@ type RetrievalSearchResult struct {
 func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchRequest) (*RetrievalSearchResult, error) {
 	if req.Highlight == nil {
 		req.Highlight = func() *bool { v := false; return &v }()
+	}
+	if req.AllowDenseFallback == nil {
+		req.AllowDenseFallback = new(true)
 	}
 	filters := req.GetFilters()
 	if _, ok := filters["available_int"]; !ok {
@@ -652,6 +666,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if err != nil {
 				return nil, fmt.Errorf("GetVector failed: %w", err)
 			}
+			denseTemplate := cloneDenseExpr(matchDense)
 
 			// Execute search with fusion
 			fusionExpr := buildRetrievalFusionExpr(s.docEngine.GetType(), knnTopK, req.VectorSimilarityWeight)
@@ -664,7 +679,11 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			}
 
 			searchRequest.SelectFields = searchSrc
-			searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+			if matchText == nil {
+				searchRequest.MatchExprs = []any{matchDense}
+			} else {
+				searchRequest.MatchExprs = []any{matchText, matchDense, fusionExpr}
+			}
 			searchRequest.RankFeature = req.RankFeature
 
 			engineResult, err = s.docEngine.Search(ctx, searchRequest)
@@ -674,7 +693,18 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// If result is empty, retry with relaxed conditions
 			if engineResult.Total == 0 {
 				_, hasDocIDFilter := filters["doc_id"]
-				if hasDocIDFilter {
+				if matchText == nil {
+					if *req.AllowDenseFallback {
+						common.Debug("Retrieval dense-only fallback after empty initial search")
+						matchDense = cloneDenseExpr(denseTemplate)
+						matchDense.ExtraOptions["similarity"] = 0.17
+						searchRequest.MatchExprs = []any{matchDense}
+						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						if err != nil {
+							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
+						}
+					}
+				} else if hasDocIDFilter {
 					// When a doc_id filter is present (e.g. from metadata filter like era=960)
 					// and the hybrid search returns no results, fall back to a filter-only
 					// search (no text match, no vector match). This ensures that when a
@@ -701,13 +731,29 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 					// This provides a second chance for queries that were too strict
 					// on the first attempt.
 					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", 0.1)
+					matchDense = cloneDenseExpr(denseTemplate)
 					matchDense.ExtraOptions["similarity"] = 0.17
-					searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+					if matchText == nil {
+						searchRequest.MatchExprs = []any{matchDense}
+					} else {
+						searchRequest.MatchExprs = []any{matchText, matchDense, fusionExpr}
+					}
 					searchRequest.RankFeature = req.RankFeature
 
 					engineResult, err = s.docEngine.Search(ctx, searchRequest)
 					if err != nil {
 						return nil, fmt.Errorf("search retry failed: %w", err)
+					}
+					// Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
+					if engineResult.Total == 0 && matchText != nil && *req.AllowDenseFallback {
+						common.Debug("Retrieval dense-only fallback after empty hybrid retries")
+						matchDense = cloneDenseExpr(denseTemplate)
+						matchDense.ExtraOptions["similarity"] = 0.17
+						searchRequest.MatchExprs = []any{matchDense}
+						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						if err != nil {
+							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
+						}
 					}
 				}
 			}
@@ -772,12 +818,24 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	}, nil
 }
 
+func cloneDenseExpr(source *types.MatchDenseExpr) *types.MatchDenseExpr {
+	clone := *source
+	clone.EmbeddingData = slices.Clone(source.EmbeddingData)
+	clone.ExtraOptions = maps.Clone(source.ExtraOptions)
+	return &clone
+}
+
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search
 func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, knnTopK, numCandidates int, similarity float64) (*types.MatchDenseExpr, error) {
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}}, embModel.APIConfig, embeddingConfig, nil)
+	// Query: true mirrors Python Dealer.get_vector (rag/nlp/search.py:75-82),
+	// which embeds the search text with emb_mdl.encode_queries — the asymmetric
+	// query encoding (Cohere search_query / Voyage query / Jina retrieval.query
+	// / NVIDIA query). Embedding it as a document would put the query vector in
+	// the wrong space for those providers.
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

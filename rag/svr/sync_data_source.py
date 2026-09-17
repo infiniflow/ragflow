@@ -32,8 +32,9 @@ import signal
 import sys
 import threading
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from flask import json
 
@@ -43,10 +44,11 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.constants import ConnectorTaskType, FileSource, TaskStatus
 from common.config_utils import show_configs
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.config import INDEX_BATCH_SIZE, SYNC_BATCH_PAUSE_SECONDS
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
+    SitemapConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -81,10 +83,12 @@ from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.sitemap_connector import iter_in_worker_thread, validate_connector_in_thread
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
+from rag.svr.feishu_wiki_sync import _build_feishu_wiki_generator
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
@@ -108,6 +112,48 @@ def _redact_mailbox(value: str) -> str:
     return f"{value[:4]}***" if len(value) > 4 else "***"
 
 
+def _redact_url(value: str | None) -> str:
+    """Sanitize URL before logging, stripping user credentials, query, and fragment."""
+    if not value or "://" not in value:
+        return value or ""
+    try:
+        parsed = urlparse(value)
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+    except (ValueError, TypeError):
+        return "<invalid URL>"
+
+
+async def _iterate_document_batches(generator):
+    """Yield connector batches, advancing thread-bridged iterators off the event loop.
+
+    Connectors that return an iterator flagged ``offload_next`` (see
+    ``common.data_source.sitemap_connector.iter_in_worker_thread``) may block in
+    ``next()`` while a batch is being fetched; that call is awaited through
+    ``asyncio.to_thread`` so ``asyncio.wait_for`` keeps enforcing the task timeout and
+    cancellation closes the source. Every other connector keeps its synchronous
+    iteration unchanged.
+    """
+    if not getattr(generator, "offload_next", False):
+        for item in generator:
+            yield item
+        return
+
+    sentinel = object()
+    try:
+        while True:
+            item = await asyncio.to_thread(next, generator, sentinel)
+            if item is sentinel:
+                return
+            yield item
+    finally:
+        close = getattr(generator, "close", None)
+        if close is not None:
+            close()
+
+
 class SyncBase:
     """
     Base class for all data source synchronization connectors.
@@ -117,6 +163,7 @@ class SyncBase:
     """
 
     SOURCE_NAME: str = None
+    RAISE_ON_BATCH_ERROR = False
 
     def __init__(self, conf: dict) -> None:
         self.conf = conf
@@ -212,22 +259,28 @@ class SyncBase:
         added_docs = 0
         updated_docs = 0
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        saw_documents = False
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
-        existing_doc_ids = {
-            doc["id"]
-            for doc in DocumentService.list_doc_headers_by_kb_and_source_type(
-                task["kb_id"],
-                source_type,
-            )
-        }
+        existing_headers = await asyncio.to_thread(
+            DocumentService.list_doc_headers_by_kb_and_source_type,
+            task["kb_id"],
+            source_type,
+        )
+        existing_doc_ids = {doc["id"] for doc in existing_headers}
 
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator:
+        pause_before_next_batch = False
+        async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
 
+            if pause_before_next_batch:
+                await asyncio.sleep(SYNC_BATCH_PAUSE_SECONDS)
+            pause_before_next_batch = True
+
+            saw_documents = True
             max_update = max(doc.doc_updated_at for doc in document_batch)
             next_update = max(next_update, max_update)
 
@@ -249,12 +302,12 @@ class SyncBase:
                     d["fingerprint"] = doc.fingerprint
                 docs.append(d)
 
+            cancel_event = threading.Event()
+            parent_task = asyncio.current_task()
             try:
-                e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update, cancel_event, parent_task)
                 if err:
                     had_parse_errors = True
-                SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
                 changed_doc_ids = set(dids)
                 updated_in_batch = len(changed_doc_ids & existing_doc_ids)
                 added_in_batch = len(changed_doc_ids) - updated_in_batch
@@ -262,6 +315,9 @@ class SyncBase:
                 updated_docs += updated_in_batch
                 existing_doc_ids.update(changed_doc_ids)
 
+            except asyncio.CancelledError:
+                cancel_event.set()
+                raise
             except Exception as batch_ex:
                 msg = str(batch_ex)
                 code = getattr(batch_ex, "args", [None])[0]
@@ -271,8 +327,12 @@ class SyncBase:
                 else:
                     logging.error(f"Error processing batch: {msg}")
 
+                if self.RAISE_ON_BATCH_ERROR:
+                    raise
                 failed_docs += len(docs)
-                continue
+
+        if not saw_documents:
+            next_update = self._get_empty_sync_cursor(task, next_update)
 
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
@@ -288,6 +348,10 @@ class SyncBase:
             self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
+
+    def _get_empty_sync_cursor(self, task: dict, current_cursor: datetime) -> datetime:
+        del task
+        return current_cursor
 
     async def _run_prune_task_logic(self, task: dict):
         if not self.conf.get("sync_deleted_files"):
@@ -324,6 +388,40 @@ class SyncBase:
 
     async def _generate(self, task: dict):
         raise NotImplementedError
+
+    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime, cancel_event: threading.Event | None = None, parent_task: asyncio.Task | None = None):
+        """Write one connector batch (MinIO + document rows) off the event loop.
+
+        Knowledgebase lookup and parse stay on the same worker thread so Peewee
+        objects are not shared across threads. ``cancel_event`` is set when the
+        awaiting coroutine catches ``CancelledError``. ``cancelled()`` stays false
+        until that handler runs, so the worker also observes ``cancelling()`` to
+        stop between files after ``wait_for`` times out. Uploads that already
+        started cannot be force-stopped.
+        """
+
+        def should_cancel() -> bool:
+            if cancel_event is not None and cancel_event.is_set():
+                return True
+            return parent_task is not None and (parent_task.cancelling() > 0 or parent_task.cancelled())
+
+        if should_cancel():
+            return [], []
+        _e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+        err, dids = SyncLogsService.duplicate_and_parse(
+            kb,
+            docs,
+            task["tenant_id"],
+            f"{self.SOURCE_NAME}/{task['connector_id']}",
+            task["auto_parse"],
+            should_cancel=should_cancel,
+        )
+        if should_cancel():
+            return err, dids
+        if err and self.RAISE_ON_BATCH_ERROR:
+            raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
+        SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
+        return err, dids
 
     def _get_source_prefix(self):
         return ""
@@ -508,6 +606,63 @@ class RSS(SyncBase):
             end_time,
         )
         return document_generator
+
+
+class Sitemap(SyncBase):
+    SOURCE_NAME: str = FileSource.SITEMAP
+
+    @staticmethod
+    def _sanitize_docs(gen):
+        """Strip URL scheme from semantic_identifier so object storage accepts it as a key."""
+        from urllib.parse import urlparse
+
+        for batch in gen:
+            sanitized = []
+            for doc in batch:
+                si = doc.semantic_identifier
+                if si.startswith(("http://", "https://")):
+                    parsed = urlparse(si)
+                    si = f"{parsed.netloc}{parsed.path}"
+                    if parsed.query:
+                        si += f"?{parsed.query}"
+                    if parsed.fragment:
+                        si += f"#{parsed.fragment}"
+                    si = si.strip("/")
+                    doc = doc.model_copy(update={"semantic_identifier": si})
+                sanitized.append(doc)
+            yield sanitized
+
+    async def _prepare_connector(self, task: dict):
+        """Build and validate the connector without starting any document traversal."""
+        self.connector = SitemapConnector.build_connector(self.conf)
+        # validate_connector_settings fetches the sitemap synchronously: keep it off the event
+        # loop, and tell the connector to stop if the task is cancelled meanwhile.
+        await validate_connector_in_thread(self.connector)
+        self.log_connection("Sitemap", self.conf["sitemap_url"], task)
+
+    async def _initialize_for_prune(self, task: dict):
+        # Prune only needs the connector (for retrieve_all_slim_docs_perm_sync); do not start
+        # the batch producer thread that _generate() would create and the base class discard.
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
+
+        # Batches are produced in a worker thread (network I/O off the event-loop thread)
+        # and handed over through a bounded queue.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()), on_close=self.connector.cancel)
+
+        end_time = datetime.now(UTC).timestamp()
+        return iter_in_worker_thread(
+            self._sanitize_docs(
+                self.connector.poll_source(
+                    task["poll_range_start"].timestamp(),
+                    end_time,
+                )
+            ),
+            on_close=self.connector.cancel,
+        )
 
 
 class Confluence(SyncBase):
@@ -1305,6 +1460,32 @@ class Slack(SyncBase):
         return document_generator
 
 
+class FeishuWiki(SyncBase):
+    """Synchronize downloadable files from a Feishu Wiki subtree."""
+
+    SOURCE_NAME: str = FileSource.FEISHU_WIKI
+    RAISE_ON_BATCH_ERROR = True
+
+    async def _generate(self, task: dict):
+        self._poll_window_end = datetime.now(UTC)
+        self.connector, document_generator = _build_feishu_wiki_generator(
+            self.conf,
+            task,
+            window_end=self._poll_window_end,
+        )
+        self.log_connection(
+            "Feishu Wiki",
+            f"space={self.conf.get('space_id', '<missing>')}",
+            task,
+        )
+        return document_generator
+
+    def _get_empty_sync_cursor(self, task: dict, current_cursor: datetime) -> datetime:
+        if task.get("reindex") != "1" and task.get("poll_range_start") is not None:
+            return self._poll_window_end
+        return current_cursor
+
+
 class Teams(SyncBase):
     SOURCE_NAME: str = FileSource.TEAMS
 
@@ -1385,6 +1566,7 @@ class WebDAV(SyncBase):
             base_url=self.conf["base_url"],
             remote_path=self.conf.get("remote_path", "/"),
             batch_size=batch_size,
+            ca_cert_path=self.conf.get("ca_cert_path"),
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
@@ -1883,6 +2065,7 @@ class AzureDevOps(SyncBase):
     async def _generate(self, task: dict):
         self.connector = AzureDevOpsConnector(
             organization=self.conf.get("organization"),
+            base_url=self.conf.get("base_url"),
             index_mode=self.conf.get("index_mode") or "organization",
             projects=self.conf.get("projects"),
             repositories=self.conf.get("repositories"),
@@ -1937,7 +2120,8 @@ class AzureDevOps(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
+        target = _redact_url(self.conf.get("base_url")) or f"organization({self.conf.get('organization')})"
+        self.log_connection("AzureDevOps", target, task)
         return wrapper()
 
 
@@ -2063,6 +2247,7 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             id_column=self.conf.get("id_column") or None,
             timestamp_column=self.conf.get("timestamp_column") or None,
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            file_extension=self.conf.get("file_extension", ".txt"),
         )
 
         credentials = self.conf.get("credentials")
@@ -2070,8 +2255,7 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             raise ValueError(f"{self.DB_TYPE} connector is missing credentials.")
 
         self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+        await asyncio.to_thread(self._prepare_rdbms_connector, task)
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
@@ -2091,7 +2275,15 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             _begin_info = f"from {poll_start}"
 
         self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+        return iter_in_worker_thread(document_generator)
+
+    def _prepare_rdbms_connector(self, task: dict) -> None:
+        """Validate and snapshot cursor state off the event loop, then drop the setup connection."""
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+        close_connection = getattr(self.connector, "_close_connection", None)
+        if close_connection is not None:
+            close_connection()
 
 
 class MySQL(_RDBMSBase):
@@ -2218,6 +2410,7 @@ class Xquik(SyncBase):
 
 func_factory = {
     FileSource.RSS: RSS,
+    FileSource.SITEMAP: Sitemap,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,
@@ -2227,6 +2420,7 @@ func_factory = {
     FileSource.CONFLUENCE: Confluence,
     FileSource.GMAIL: Gmail,
     FileSource.GOOGLE_DRIVE: GoogleDrive,
+    FileSource.FEISHU_WIKI: FeishuWiki,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
     FileSource.ONEDRIVE: OneDrive,

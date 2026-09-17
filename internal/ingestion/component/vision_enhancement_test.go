@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -124,9 +125,8 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 				return "describe the figure in " + language, nil
 			})
 
-			dispatched := parserDispatchResult{
+			dispatched := parser.ParseResult{
 				OutputFormat: "json",
-				DocType:      string(tc.fileType),
 				JSON: []map[string]any{
 					{"text": "Intro paragraph", "image": nil, "doc_type_kwd": "text"},
 					{"text": "", "image": "aGVsbG8taW1hZ2U=", "doc_type_kwd": "image"},
@@ -186,9 +186,8 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 		nil,
 	)
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "markdown",
-		DocType:      "docx",
 		Markdown:     "![Image](data:image/png;base64,abc)",
 		File:         map[string]any{"figures": []map[string]any{{"image": "abc", "marker": "x"}}},
 	}
@@ -214,9 +213,8 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 }
 
 func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
-		DocType:      "other",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		},
@@ -240,9 +238,8 @@ func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
 }
 
 func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
-		DocType:      "docx",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		},
@@ -267,7 +264,7 @@ func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
 // returned unchanged — enhancement must not touch items when dispatched.Err != nil.
 func TestVisionEnhancement_DispatchedErrSkipped(t *testing.T) {
 	parseErr := errors.New("parse failed")
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		Err:          parseErr,
 		OutputFormat: "json",
 		JSON: []map[string]any{
@@ -305,7 +302,7 @@ func TestVisionEnhancement_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
@@ -343,7 +340,7 @@ func TestVisionEnhancement_NonStringImageFieldFiltered(t *testing.T) {
 		fakePrompt,
 	)
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			// non-string image field — filtered by target collector
@@ -390,7 +387,7 @@ func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
 			"doc_type_kwd": "image",
 		}
 	}
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON:         items,
 	}
@@ -427,7 +424,7 @@ func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
 		fakePrompt,
 	)
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
@@ -465,7 +462,7 @@ func TestVisionEnhancement_PromptBuilderErrorSkipped(t *testing.T) {
 		},
 	)
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
@@ -503,7 +500,7 @@ func TestVisionEnhancement_ModelResolveFailureSkipped(t *testing.T) {
 		fakePrompt,
 	)
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
@@ -553,7 +550,7 @@ func TestVisionEnhancement_CancellationStopsSchedulingWithManyItems(t *testing.T
 			"doc_type_kwd": "image",
 		}
 	}
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON:         items,
 	}
@@ -691,6 +688,46 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 			input: "Just plain text without markdown block",
 			want:  "Just plain text without markdown block",
 		},
+		{
+			name:  "unwrapped python block",
+			input: "```python\nprint('hello')\n```",
+			want:  "```python\nprint('hello')\n```",
+		},
+		{
+			name:  "unwrapped JSON block",
+			input: "```json\n{\"value\": 1}\n```",
+			want:  "```json\n{\"value\": 1}\n```",
+		},
+		{
+			name:  "unlabeled code block",
+			input: "```\ncode without a language\n```",
+			want:  "```\ncode without a language\n```",
+		},
+		{
+			name:  "prose ending with code block",
+			input: "Example:\n```python\nprint('hello')\n```",
+			want:  "Example:\n```python\nprint('hello')\n```",
+		},
+		{
+			name:  "multiple unwrapped code blocks",
+			input: "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+			want:  "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+		},
+		{
+			name:  "unwrapped CRLF block",
+			input: "  ```python\r\nprint('hello')\r\n```  ",
+			want:  "```python\r\nprint('hello')\r\n```",
+		},
+		{
+			name:  "closing fence without markdown opener",
+			input: "Unopened block\n```",
+			want:  "Unopened block\n```",
+		},
+		{
+			name:  "markdown wrapper around code example",
+			input: "```markdown\nExample:\n```python\nprint('hello')\n```\n```",
+			want:  "Example:\n```python\nprint('hello')\n```",
+		},
 	}
 
 	for _, tc := range cases {
@@ -698,6 +735,10 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 			got := cleanMarkdownBlock(tc.input)
 			if got != tc.want {
 				t.Errorf("cleanMarkdownBlock(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+			resp := &modelModule.ChatResponse{Answer: &tc.input}
+			if got := extractVisionAnswer(resp); got != tc.want {
+				t.Errorf("extractVisionAnswer(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
 	}
@@ -765,7 +806,7 @@ func TestVisionEnhancement_PerCallModelPreferred(t *testing.T) {
 	setups := map[string]schema.ParserSetup{
 		"pdf": {"vlm": map[string]any{"llm_id": "custom-vlm@provider"}},
 	}
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
@@ -808,7 +849,7 @@ func TestVisionEnhancement_InvalidImageDataSkipped(t *testing.T) {
 		fakePrompt,
 	)
 
-	dispatched := parserDispatchResult{
+	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
 			{"text": "keep", "image": "!!!not-base64!!!", "doc_type_kwd": "image"},
@@ -839,6 +880,7 @@ type deadlineCaptureDriver struct {
 	modelModule.ModelDriver
 	hasDeadline bool
 	remaining   time.Duration
+	config      *modelModule.ChatConfig
 }
 
 func (d *deadlineCaptureDriver) ChatWithMessages(
@@ -846,11 +888,12 @@ func (d *deadlineCaptureDriver) ChatWithMessages(
 	_ string,
 	_ []modelModule.Message,
 	_ *modelModule.APIConfig,
-	_ *modelModule.ChatConfig,
+	config *modelModule.ChatConfig,
 	_ *common.ModelUsage,
 ) (*modelModule.ChatResponse, error) {
 	deadline, ok := ctx.Deadline()
 	d.hasDeadline = ok
+	d.config = config
 	if ok {
 		d.remaining = time.Until(deadline)
 	}
@@ -868,5 +911,11 @@ func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
 	}
 	if drv.remaining <= 0 || drv.remaining > visionChatTimeout+time.Second {
 		t.Fatalf("deadline remaining = %v, want ~%v", drv.remaining, visionChatTimeout)
+	}
+	if drv.config == nil || drv.config.Vision == nil || !*drv.config.Vision {
+		t.Fatal("vision chat must enable vision")
+	}
+	if drv.config.Thinking != nil {
+		t.Fatal("non-Ollama vision chat must preserve provider thinking default")
 	}
 }

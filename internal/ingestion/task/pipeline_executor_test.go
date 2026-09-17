@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sync"
@@ -25,16 +26,19 @@ import (
 
 func strPtr(s string) *string { return &s }
 
-// TestMarkCompiledProductsHidden verifies the pipeline caller hides
-// per-document compiled knowledge products (compile_kwd present) as
-// available_int=0 while leaving ordinary source chunks searchable
-// (available_int=1, the index default). Merged dataset-level products are written
-// by the consumer and never reach this path, so they are never double-marked.
+// TestMarkCompiledProductsHidden verifies the pipeline caller stages ONLY the
+// wiki variant's per-document rows as available_int=0 (they are intermediate
+// state for the consumer's merged pages). Tree / structure (page_index) /
+// mindmap rows are the final per-document products — Python writes them visible
+// at compile time — so they keep the index default available_int=1, as do
+// ordinary source chunks.
 func TestMarkCompiledProductsHidden(t *testing.T) {
 	chunks := []map[string]any{
 		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
-		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A"},
+		{"id": "tree-1", "compile_kwd": "tree", "content_with_weight": "tree node"},
+		{"id": "struct-1", "compile_kwd": "page_index", "content_with_weight": "entity A"},
 		{"id": "wiki-1", "compile_kwd": "wiki_page", "content_with_weight": "page X"},
+		{"id": "wiki-2", "compile_kwd": "wiki_section", "content_with_weight": "section X"},
 		{"id": "src-2", "content_with_weight": "another source chunk"},
 	}
 	markCompiledProductsHidden(chunks)
@@ -42,13 +46,19 @@ func TestMarkCompiledProductsHidden(t *testing.T) {
 	if v, ok := chunks[0]["available_int"]; ok {
 		t.Fatalf("ordinary source chunk should keep default available_int, got %v", v)
 	}
-	if chunks[1]["available_int"] != 0 {
-		t.Fatalf("compiled structure chunk should be available_int=0, got %v", chunks[1]["available_int"])
+	if v, ok := chunks[1]["available_int"]; ok {
+		t.Fatalf("tree row should stay visible (Python parity), got available_int=%v", v)
 	}
-	if chunks[2]["available_int"] != 0 {
-		t.Fatalf("compiled wiki chunk should be available_int=0, got %v", chunks[2]["available_int"])
+	if v, ok := chunks[2]["available_int"]; ok {
+		t.Fatalf("page_index row should stay visible (Python parity), got available_int=%v", v)
 	}
-	if v, ok := chunks[3]["available_int"]; ok {
+	if chunks[3]["available_int"] != 0 {
+		t.Fatalf("wiki page staging row should be available_int=0, got %v", chunks[3]["available_int"])
+	}
+	if chunks[4]["available_int"] != 0 {
+		t.Fatalf("wiki section staging row should be available_int=0, got %v", chunks[4]["available_int"])
+	}
+	if v, ok := chunks[5]["available_int"]; ok {
 		t.Fatalf("source chunk without compile_kwd should keep default available_int, got %v", v)
 	}
 }
@@ -68,11 +78,14 @@ func TestWikiActiveStatesDecodeCheckpointValues(t *testing.T) {
 }
 
 // TestApplyDocumentAvailability verifies disabled documents (status=0) force
-// ordinary source chunks to available_int=0 while compiled products stay hidden.
+// every row — source chunks AND compiled products — to available_int=0
+// (matching Python's doc_id-scoped availability toggle). Wiki staging rows are
+// already 0 from markCompiledProductsHidden; the stamp is a no-op for them.
 func TestApplyDocumentAvailability(t *testing.T) {
 	chunks := []map[string]any{
 		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
-		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A", "available_int": 0},
+		{"id": "tree-1", "compile_kwd": "tree", "content_with_weight": "tree node"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page", "content_with_weight": "page X", "available_int": 0},
 		{"id": "src-2", "content_with_weight": "another source chunk"},
 	}
 	markCompiledProductsHidden(chunks)
@@ -82,10 +95,13 @@ func TestApplyDocumentAvailability(t *testing.T) {
 		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[0]["available_int"])
 	}
 	if chunks[1]["available_int"] != 0 {
-		t.Fatalf("compiled product should stay available_int=0, got %v", chunks[1]["available_int"])
+		t.Fatalf("disabled doc compiled row should be available_int=0, got %v", chunks[1]["available_int"])
 	}
 	if chunks[2]["available_int"] != 0 {
-		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[2]["available_int"])
+		t.Fatalf("wiki staging row should stay available_int=0, got %v", chunks[2]["available_int"])
+	}
+	if chunks[3]["available_int"] != 0 {
+		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[3]["available_int"])
 	}
 
 	enabled := []map[string]any{
@@ -131,7 +147,7 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -356,7 +372,6 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	defer cleanup()
 
 	docName := "terminal.pdf"
-	run := "1"
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
 		TenantID:   "tenant-1",
 		KbID:       "kb-1",
@@ -371,7 +386,6 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 			Type:         "pdf",
 			Name:         &docName,
 			Suffix:       ".pdf",
-			Run:          &run,
 		},
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
@@ -485,6 +499,67 @@ func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) 
 	}
 }
 
+func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "tenant-1",
+		Title:  strPtr("My Pipeline"),
+		Avatar: strPtr("a.png"),
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate knowledgebase: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Knowledgebase{
+		ID:       "kb-1",
+		TenantID: "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("seed knowledgebase: %v", err)
+	}
+	docName := "sample.avi"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		PipelineID:   strPtr("canvas-1"),
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         &docName,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	// Mirrors Ingestor.recordTerminalPipelineLog: only the terminal status is
+	// known; pipeline_id and DSL are absent and must come from the document.
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "document_id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.PipelineID == nil || *log.PipelineID != "canvas-1" {
+		t.Fatalf("PipelineID = %v, want \"canvas-1\"", log.PipelineID)
+	}
+	if log.PipelineTitle == nil || *log.PipelineTitle != "My Pipeline" {
+		t.Fatalf("PipelineTitle = %v, want \"My Pipeline\"", log.PipelineTitle)
+	}
+	if log.Avatar == nil || *log.Avatar != "a.png" {
+		t.Fatalf("Avatar = %v, want \"a.png\"", log.Avatar)
+	}
+}
+
 func TestRecordPipelineLog_SourceFrom(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -552,6 +627,386 @@ func TestRecordPipelineLog_SourceFromReloadedDoc(t *testing.T) {
 	}
 	if captured.SourceFrom != "rss" {
 		t.Errorf("SourceFrom = %q, want %q", captured.SourceFrom, "rss")
+	}
+}
+
+func TestRecordPipelineLog_ReusesOpenPreTerminalRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	queuedMsg := "Task is queued..."
+	openLog := &entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "test-doc.pdf",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "local",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &queuedMsg,
+	}
+	if err := dao.DB.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+
+	progress := 1.0
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Name:         strPtr("test-doc.pdf"),
+		Suffix:       ".pdf",
+		Progress:     progress,
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "open-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the bound queued row)", count)
+	}
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.Progress != progress {
+		t.Fatalf("Progress = %v, want %v", log.Progress, progress)
+	}
+	if log.ProgressMsg == nil || *log.ProgressMsg != finalMsg {
+		t.Fatalf("ProgressMsg = %v, want final message", log.ProgressMsg)
+	}
+	if len(log.DSL) != 0 {
+		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
+// TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone locks the
+// timestamp handover: the terminal snapshot must not blank the start time the
+// queued row was opened with when the document carries none (a run that never
+// reached the progress sink).
+func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	openedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local)
+	queuedMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &queuedMsg,
+		ProcessBeginAt:  &openedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "4",
+		PipelineLogID: "open-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
+	}
+	if log.OperationStatus != "4" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.ProcessBeginAt == nil || !log.ProcessBeginAt.Equal(openedAt) {
+		t.Fatalf("ProcessBeginAt = %v, want the queued row's %v", log.ProcessBeginAt, openedAt)
+	}
+	if log.SourceFrom != "local" || log.DocumentSuffix != ".pdf" || log.DocumentType != "pdf" {
+		t.Fatalf("terminal write did not refresh document metadata: source_from=%q suffix=%q type=%q",
+			log.SourceFrom, log.DocumentSuffix, log.DocumentType)
+	}
+}
+
+// TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow locks the run-isolation
+// contract: a terminal write is bound to the row its own run opened, so a late
+// write from a superseded run (whose row was replaced) can neither finalize nor
+// even touch an open row belonging to another run of the same document.
+func TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	// An open row for the document that belongs to a different run: either the
+	// superseded run's row (cleanup failed) or the replacement run's fresh
+	// queued row. It must survive the write below untouched.
+	otherMsg := "Task is queued..."
+	other := &entity.PipelineOperationLog{
+		ID:              "other-run-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &otherMsg,
+	}
+	if err := dao.DB.Create(other).Error; err != nil {
+		t.Fatalf("seed other run's log: %v", err)
+	}
+
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	// This run's own row was deleted along with the superseded task.
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "superseded-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var reloaded entity.PipelineOperationLog
+	if err := dao.DB.First(&reloaded, "id = ?", "other-run-log").Error; err != nil {
+		t.Fatalf("reload other run's log: %v", err)
+	}
+	if reloaded.OperationStatus != "5" {
+		t.Fatalf("other run's row OperationStatus = %q, want %q (must not be touched)", reloaded.OperationStatus, "5")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (a bound missing row must not create a duplicate)", count)
+	}
+}
+
+// TestRecordPipelineLog_UnboundAdoptsOpenRow keeps the legacy contract for
+// callers that carry no bound row (debug-adjacent and non-ingestion paths): the
+// document's newest open row is adopted so a stray queued entry is closed
+// rather than left open.
+func TestRecordPipelineLog_UnboundAdoptsOpenRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	openMsg := "Task is queued..."
+	open := &entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &openMsg,
+	}
+	if err := dao.DB.Create(open).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var reloaded entity.PipelineOperationLog
+	if err := dao.DB.First(&reloaded, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("reload open log: %v", err)
+	}
+	if reloaded.OperationStatus != "3" {
+		t.Fatalf("open row OperationStatus = %q, want %q (adopted by the unbound writer)", reloaded.OperationStatus, "3")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (adopted, not duplicated)", count)
+	}
+}
+
+// TestRecordPipelineLog_DoesNotAdoptLiveRunsOpenRow locks the ownership rule on
+// the unbound fallback: the document's newest open row belongs to a live run, so
+// another run's terminal write must not finalize it. Adopting it would stamp the
+// live run's entry with a foreign status and swallow that run's own terminal
+// write (its CAS would find the row already closed).
+func TestRecordPipelineLog_DoesNotAdoptLiveRunsOpenRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	liveMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "live-run-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &liveMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed live run's open log: %v", err)
+	}
+	if err := dao.DB.Create(&entity.IngestionTask{
+		ID:         "live-task",
+		UserID:     "user-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+		Status:     "RUNNING",
+	}).Error; err != nil {
+		t.Fatalf("seed live task: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "live-task").
+		Update("pipeline_log_id", "live-run-log").Error; err != nil {
+		t.Fatalf("bind live task: %v", err)
+	}
+
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "4",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var live entity.PipelineOperationLog
+	if err := dao.DB.First(&live, "id = ?", "live-run-log").Error; err != nil {
+		t.Fatalf("load live run's log: %v", err)
+	}
+	if live.OperationStatus != "5" {
+		t.Fatalf("live run's row was adopted: OperationStatus = %q, want it untouched at %q", live.OperationStatus, "5")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("pipeline log rows = %d, want 2 (the unbound run records its own entry)", count)
+	}
+}
+
+func TestRecordPipelineLog_CreatesRowWithoutOpenPreTerminalRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	docName := "legacy.pdf"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Name:         &docName,
+		Suffix:       ".pdf",
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "naive"
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called: expected Create fallback without an open row")
 	}
 }
 
@@ -757,6 +1212,40 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 	}
 }
 
+func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Ctx = t.Context()
+	var capturedLog *entity.PipelineOperationLog
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+			return map[string]any{"chunks": []map[string]any{{"text": "hello world"}}}, dsl, nil
+		}).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			capturedLog = log
+			return nil
+		})
+
+	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedLog == nil {
+		t.Fatalf("expected pipeline operation log to be recorded")
+	}
+	if capturedLog.OperationStatus == "" {
+		t.Fatalf("expected OperationStatus to be non-empty")
+	}
+	if capturedLog.OperationStatus != string(entity.TaskStatusDone) {
+		t.Fatalf("expected OperationStatus = %q, got %q", entity.TaskStatusDone, capturedLog.OperationStatus)
+	}
+}
+
 // =============================================================================
 // Stub implementations for testing
 // =============================================================================
@@ -886,5 +1375,204 @@ func TestMergeCompiledVariants(t *testing.T) {
 	want := []string{"structure", "tree", "wiki"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("merged variants = %v, want %v", got, want)
+	}
+}
+
+// TestRunPipelineWithDSL_LogDSLStripsOutputs locks the "no business data in
+// the pipeline operation log" contract: the DSL runPipelineWithDSL returns for
+// the log (Execute passes it straight to recordPipelineLog) must NOT carry any
+// component's runtime outputs under obj.params.outputs. The log keeps the DSL
+// DEFINITION only (component structure, static params, downstream, graph,
+// path) so a historical run can be reconstructed and the dataset "View result"
+// / rerun UI no longer renders chunk business data. Dry-run previews still
+// carry outputs via ResultSink; only the persisted log is kept output-free
+// (buildLogDSL passes includeOutputs=false before recordPipelineLog).
+//
+// It drives the REAL runPipelineWithDSL with stub ingestion components, so
+// the log DSL is built from an actual run output (nested under
+// output["state"][<id>] by finalizeResult), not a hand-built one, and the
+// enveloped {"dsl": {...}} input is unwrapped to the front-end shape
+// (top-level components).
+func TestRunPipelineWithDSL_LogDSLStripsOutputs(t *testing.T) {
+	const (
+		compC = "logdsl.RealStubChunks"
+		compD = "logdsl.RealStubD"
+	)
+	runtime.MustRegister(compC, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return traceChunkComponent{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(compD, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return traceStubComponent{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	dsl := `{"dsl":{"components":{
+		"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["c"]},
+		"c":{"obj":{"component_name":"` + compC + `","params":{"setups":{"pdf":{"parse_method":"general"}}}},"upstream":["begin"],"downstream":["d"]},
+		"d":{"obj":{"component_name":"` + compD + `","params":{}},"upstream":["c"]}
+	},"path":["begin","c","d"],"graph":{"nodes":[{"id":"begin","data":{"name":"开始"}},{"id":"c","data":{"name":"解析"}},{"id":"d","data":{"name":"分词"}}]}}}`
+
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl", 0)
+	_, logDSL, err := svc.runPipelineWithDSL(t.Context(), dsl)
+	if err != nil {
+		t.Fatalf("runPipelineWithDSL: %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(logDSL), &doc); err != nil {
+		t.Fatalf("log DSL is not valid JSON: %v body=%s", err, logDSL)
+	}
+	// The enveloped canvas DSL must come back unwrapped: the front-end reads
+	// dsl.components at the top level.
+	components, ok := doc["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("log DSL must carry top-level components (unwrapped canvas envelope): %s", logDSL)
+	}
+
+	// Chunk-emitting component: the persisted log must carry the DSL DEFINITION
+	// only — NO runtime outputs under obj.params.outputs (the "no business data
+	// in the log" contract, Req 1). The dry-run preview (ResultSink/Redis) still
+	// carries full outputs for the dataset "View result" page; the persisted row
+	// must not. Static params survive so the rerun/canvas flow can reconstruct
+	// the component.
+	cParams, ok := components["c"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("log DSL components.c.obj.params missing: %s", logDSL)
+	}
+	if _, ok := cParams["outputs"]; ok {
+		t.Errorf("REGRESSION: persisted log DSL must NOT carry business data (obj.params.outputs) "+
+			"for chunk component c, got %#v", cParams["outputs"])
+	}
+	if _, ok := cParams["setups"]; !ok {
+		t.Errorf("persisted log DSL must keep static params.setups for c, got %#v", cParams)
+	}
+	// Non-components top-level keys are carried verbatim; this fixture's DSL
+	// declares "path" — the round-tripped log must keep it for rerun-flow
+	// consumers.
+	if p, _ := doc["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "d" {
+		t.Errorf("log DSL path=%#v want [begin c d]", doc["path"])
+	}
+}
+
+// TestBuildLogDSL_FallbackToStaticDSL pins the guarantee that log recording
+// never fails a run: when the run-result DSL cannot be built (a malformed
+// canvas), buildLogDSL must return the static dsl unchanged rather than a
+// half-written payload. The input dsl is the canvas definition (no runtime
+// outputs), so the fallback is not a business-data leak and the log row is
+// preserved for observability (recordPipelineLog still receives a valid,
+// definition-only DSL).
+//
+// Note: business-data payloads (e.g. NaN inside a chunk value) no longer reach
+// the persisted copy at all — the persist path passes includeOutputs=false, so
+// the outputs wrapper is never constructed and cannot break marshaling. The
+// realistic fallback trigger is therefore a malformed DSL, tested below.
+func TestBuildLogDSL_FallbackToStaticDSL(t *testing.T) {
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl-fallback", 0)
+
+	// Build failure: a DSL without a components map cannot produce a
+	// run-result DSL at all. The static dsl is returned unchanged.
+	badDSL := `{"dsl":{"path":["a"]}}`
+	if got := svc.buildLogDSL(badDSL, nil); got != badDSL {
+		t.Errorf("build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, badDSL)
+	}
+}
+
+// persistOnlySink simulates the real-parse (DB-backed) sink: it implements
+// pipeline.ProgressSink but NOT task.ResultSink, so buildLogDSL must NOT call
+// SetResult and the persisted DSL must carry no business data.
+type persistOnlySink struct{}
+
+func (persistOnlySink) OnComponentTotal(context.Context, string, int)                  {}
+func (persistOnlySink) OnComponentProgress(context.Context, pipelinepkg.ProgressEvent) {}
+
+// capturingSink simulates the dry-run (DebugLogSink) sink: it implements BOTH
+// ProgressSink and ResultSink, so buildLogDSL hands it the full result DSL
+// (business data) via SetResult for the Redis END marker.
+type capturingSink struct {
+	got    map[string]any
+	gotOut map[string]any
+}
+
+func (c *capturingSink) OnComponentTotal(context.Context, string, int)                  {}
+func (c *capturingSink) OnComponentProgress(context.Context, pipelinepkg.ProgressEvent) {}
+func (c *capturingSink) SetResult(dsl map[string]any, output map[string]any) {
+	c.got = dsl
+	c.gotOut = output
+}
+
+// TestBuildLogDSL_PersistStripsOutputs locks the core contract of the change:
+// the DSL string buildLogDSL returns for a NON-ResultSink (real-parse) sink
+// carries the DSL definition only — no component has obj.params.outputs, while
+// static params / graph / path survive. This is exactly what recordPipelineLog
+// persists to pipeline_operation_log.
+func TestBuildLogDSL_PersistStripsOutputs(t *testing.T) {
+	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {"setups": {"pdf": {"parse_method": "general"}}}}, "downstream": ["b"]}}, "graph": {"nodes": [{"id": "a"}]}, "path": ["a"]}`
+	output := map[string]any{
+		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
+	}
+
+	exec := &PipelineExecutor{progressSink: persistOnlySink{}}
+	logDSL := exec.buildLogDSL(dsl, output)
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
+		t.Fatalf("persisted log DSL must be valid JSON: %v (raw=%s)", err, logDSL)
+	}
+	comps, _ := parsed["components"].(map[string]any)
+	a, _ := comps["a"].(map[string]any)
+	aObj, _ := a["obj"].(map[string]any)
+	aParams, _ := aObj["params"].(map[string]any)
+	if _, ok := aParams["outputs"]; ok {
+		t.Errorf("persisted log DSL must NOT carry business data (obj.params.outputs), got %#v", aParams["outputs"])
+	}
+	// DSL definition preserved.
+	if _, ok := aParams["setups"]; !ok {
+		t.Error("persisted log DSL must keep static params.setups")
+	}
+	if _, ok := parsed["graph"]; !ok {
+		t.Error("persisted log DSL must keep graph")
+	}
+	if _, ok := parsed["path"]; !ok {
+		t.Error("persisted log DSL must keep path")
+	}
+}
+
+// TestBuildLogDSL_PreviewKeepsOutputs locks the dry-run (ResultSink) branch:
+// buildLogDSL calls ResultSink.SetResult with the FULL result DSL (business
+// data in obj.params.outputs), while the DSL it returns for persistence still
+// carries no business data. Dry-run never persists (IsDebug() early-return),
+// so the outputs only travel to Redis via SetResult.
+func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
+	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {}}, "downstream": ["b"]}}}`
+	output := map[string]any{
+		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
+	}
+
+	cap := &capturingSink{}
+	exec := &PipelineExecutor{progressSink: cap}
+	logDSL := exec.buildLogDSL(dsl, output)
+
+	// The ResultSink preview must carry the full outputs (business data).
+	if cap.got == nil {
+		t.Fatal("buildLogDSL must call ResultSink.SetResult for a dry-run (ResultSink) sink")
+	}
+	caps, _ := cap.got["components"].(map[string]any)
+	ca, _ := caps["a"].(map[string]any)
+	caObj, _ := ca["obj"].(map[string]any)
+	caParams, _ := caObj["params"].(map[string]any)
+	if _, ok := caParams["outputs"]; !ok {
+		t.Error("dry-run preview DSL must carry obj.params.outputs (business data)")
+	}
+
+	// Persisted copy returned by buildLogDSL still must NOT carry business data.
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
+		t.Fatalf("persisted log DSL must be valid JSON: %v", err)
+	}
+	pc, _ := parsed["components"].(map[string]any)
+	pa, _ := pc["a"].(map[string]any)
+	paObj, _ := pa["obj"].(map[string]any)
+	paParams, _ := paObj["params"].(map[string]any)
+	if _, ok := paParams["outputs"]; ok {
+		t.Error("persisted log DSL must NOT carry business data even when a ResultSink preview exists")
 	}
 }

@@ -28,8 +28,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -330,31 +328,27 @@ func (c *TeamsConnector) getJSON(ctx context.Context, apiURL string, out any) er
 	if err != nil {
 		return err
 	}
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
-	if err != nil {
-		return err
-	}
-
 	var lastErr error
 	retriedUnauthorized := false
 	for attempt := 1; attempt <= teamsRetryCount; attempt++ {
 		requestCtx, cancel := context.WithTimeout(ctx, teamsRequestTimeout)
-		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
+		resp, err := connectorRequest(requestCtx, connectorRequestOptions{
+			Method:  http.MethodGet,
+			RawURL:  apiURL,
+			Headers: map[string]string{"Authorization": "Bearer " + token, "Accept": "application/json"},
+			Timeout: teamsRequestTimeout,
+		})
 		if err != nil {
 			cancel()
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Accept", "application/json")
-
-		client := utility.PinnedHTTPClient(hostname, resolvedIP, teamsRequestTimeout)
-		resp, err := client.Do(req)
-		cancel()
-		if err != nil {
+			var unsafe *connectorUnsafeURLError
+			if errors.As(err, &unsafe) {
+				return unsafe.Err
+			}
 			lastErr = err
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
 			resp.Body.Close()
+			cancel()
 			if resp.StatusCode < 400 {
 				if readErr != nil {
 					return readErr

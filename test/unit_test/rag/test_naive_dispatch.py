@@ -36,12 +36,14 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from common.parser_config_utils import (
     MINERU_OPTION_KEYS,
     has_mineru_options,
+    is_tenant_model_id,
     normalize_layout_recognizer,
 )
 
@@ -90,6 +92,7 @@ def test_normalize_layout_recognizer_passes_through_known_keywords():
 
 
 def test_normalize_layout_recognizer_strips_known_provider_suffix():
+    assert normalize_layout_recognizer("my-llm@my-instance@my-provider@monkeyocrv2") == ("MonkeyOCRv2", "my-llm@my-instance@my-provider@monkeyocrv2")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@mineru") == ("MinerU", "my-llm@my-instance@my-provider@mineru")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@paddleocr") == ("PaddleOCR", "my-llm@my-instance@my-provider@paddleocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@opendataloader") == ("OpenDataLoader", "my-llm@my-instance@my-provider@opendataloader")
@@ -146,6 +149,10 @@ class _ByMineru(_Parser):
     pass
 
 
+class _ByMonkeyOCRv2(_Parser):
+    pass
+
+
 class _ByDocling(_Parser):
     pass
 
@@ -195,10 +202,17 @@ def naive_module():
         _stub("deepdoc.parser.figure_parser", VisionFigureParser=_Parser, vision_figure_parser_docx_wrapper_naive=lambda *a, **k: None, vision_figure_parser_pdf_wrapper=lambda *a, **k: None)
         _stub("deepdoc.parser.pdf_parser", PlainParser=_ByPlaintext, VisionParser=_Parser, RAGFlowPdfParser=_Parser)
         _stub("deepdoc.parser.docling_parser", DoclingParser=_ByDocling)
+        _stub("deepdoc.parser.monkeyocrv2_parser", MonkeyOCRv2Parser=_Parser)
         _stub("deepdoc.parser.tcadp_parser", TCADPParser=_Parser)
         _stub("deepdoc.parser.utils", extract_pdf_outlines=lambda *a, **k: [])
 
-        _stub("common.parser_config_utils", normalize_layout_recognizer=normalize_layout_recognizer, MINERU_OPTION_KEYS=MINERU_OPTION_KEYS, has_mineru_options=has_mineru_options)
+        _stub(
+            "common.parser_config_utils",
+            normalize_layout_recognizer=normalize_layout_recognizer,
+            MINERU_OPTION_KEYS=MINERU_OPTION_KEYS,
+            has_mineru_options=has_mineru_options,
+            is_tenant_model_id=is_tenant_model_id,
+        )
         _stub("common.float_utils", normalize_overlapped_percent=lambda x: x)
         _stub("common.text_utils", normalize_arabic_presentation_forms=lambda x: x)
         _stub("common.token_utils", num_tokens_from_string=lambda s: len((s or "").split()))
@@ -213,14 +227,19 @@ def naive_module():
 
         _stub(
             "rag.nlp",
+            # naive.py imports the unified delimiter constant (#18562); the
+            # dispatch tests never read the value — only the name must exist.
+            DEFAULT_DELIMITER="\n!?;。；！？",
             num_tokens_from_string=lambda s: len((s or "").split()),
             find_codec=lambda b: "utf-8",
+            decode_text=lambda b, document_type="text": (b.decode("utf-8"), "utf-8"),
             rag_tokenizer=types.SimpleNamespace(tokenize=lambda s: ((s or "").split(), [])),
             concat_img=lambda *a, **k: None,
             naive_merge=lambda *a, **k: [],
             naive_merge_with_images=lambda *a, **k: [],
             naive_merge_docx=lambda *a, **k: [],
             tokenize_chunks=lambda *a, **k: [],
+            tokenize_chunks_with_positions=lambda *a, **k: [],
             doc_tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_table=lambda *a, **k: [],
@@ -264,6 +283,7 @@ def naive_module():
         # so assertions can identify which parser the dispatch selected.
         module.PARSERS["deepdoc"] = _ByDeepdoc
         module.PARSERS["mineru"] = _ByMineru
+        module.PARSERS["monkeyocrv2"] = _ByMonkeyOCRv2
         module.PARSERS["docling"] = _ByDocling
         module.PARSERS["opendataloader"] = _ByOpenDataLoader
         module.PARSERS["plaintext"] = _ByPlaintext
@@ -285,6 +305,14 @@ def _dispatch(naive_module, layout_recognize, parser_config=None):
     cfg = dict(parser_config or {})
     cfg["layout_recognize"] = layout_recognize
     return naive_module._dispatch_pdf_parser(cfg)
+
+
+def test_dispatch_uses_single_monkeyocrv2_name(naive_module):
+    parser, name, layout_recognizer, _op, model = _dispatch(naive_module, "MonkeyOCRv2")
+    assert parser is _ByMonkeyOCRv2
+    assert name == "monkeyocrv2"
+    assert layout_recognizer == "MonkeyOCRv2"
+    assert model is None
 
 
 # CodeRabbit review #3: don't fall back to MinerU for known keywords.
@@ -336,6 +364,26 @@ def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize(naive_m
     assert parser.__name__ == "by_mineru"
 
 
+def test_dispatch_does_not_fall_back_to_mineru_for_vision_composite_name(naive_module):
+    """A resolved vision LLM composite name with leftover mineru_* form
+    defaults must keep routing to by_plaintext (vision parser), not MinerU."""
+    vision_ref = "qwen3.6-plus@tongyi@Tongyi-Qianwen"
+    parser, name, lr, _op, _model = _dispatch(
+        naive_module,
+        vision_ref,
+        {
+            "mineru_parse_method": "auto",
+            "mineru_formula_enable": True,
+            "mineru_table_enable": True,
+            "mineru_lang": "English",
+        },
+    )
+    assert name == vision_ref.lower()
+    assert lr == vision_ref
+    # Unknown layout names use the by_plaintext default (not PARSERS["plaintext"]).
+    assert parser is naive_module.by_plaintext
+
+
 # CodeRabbit review #4: layout_recognize_override preserves parser_model_name.
 def test_dispatch_uses_resolved_layout_recognize_via_override(naive_module):
     """The chunk() call site resolves a valid TenantModel UUID via
@@ -374,3 +422,63 @@ def test_dispatch_uses_resolved_layout_recognize_via_override_for_opendataloader
     assert name == "opendataloader"
     assert parser is _ByOpenDataLoader
     assert op_name == resolved
+
+
+def test_merge_excel_items_keeps_sheets_separate(naive_module):
+    items = [
+        ("a b", (0, 2, 2, 1, 2)),
+        ("c d", (0, 3, 3, 1, 2)),
+        ("e f", (1, 2, 2, 1, 3)),
+    ]
+    merged = naive_module._merge_excel_items(items, chunk_token_num=10)
+    assert [pos for _, pos in merged] == [(0, 2, 3, 1, 2), (1, 2, 2, 1, 3)]
+    assert merged[0][0] == "a b\nc d"
+
+
+def test_merge_excel_items_splits_on_token_budget(naive_module):
+    items = [
+        ("one two", (0, 2, 2, 1, 1)),
+        ("three four", (0, 3, 3, 1, 1)),
+    ]
+    merged = naive_module._merge_excel_items(items, chunk_token_num=2)
+    assert [pos for _, pos in merged] == [(0, 2, 2, 1, 1), (0, 3, 3, 1, 1)]
+
+
+def test_merge_excel_items_passthrough_when_budget_disabled(naive_module):
+    items = [("a", (0, 2, 2, 1, 1)), ("b", (0, 3, 3, 1, 1))]
+    assert naive_module._merge_excel_items(items, chunk_token_num=0) == items
+    assert naive_module._merge_excel_items([], chunk_token_num=128) == []
+
+
+def test_by_paddleocr_rethrows_parse_failure_and_notifies_callback(naive_module, monkeypatch):
+    callback = Mock()
+    parse_error = RuntimeError("paddle boom")
+    fake_parser = Mock()
+    fake_parser.parse_pdf.side_effect = parse_error
+    fake_bundle = Mock(mdl=fake_parser)
+
+    monkeypatch.setattr(naive_module, "resolve_model_config", Mock(return_value={"id": "cfg"}))
+    monkeypatch.setattr(naive_module, "LLMBundle", Mock(return_value=fake_bundle))
+
+    with pytest.raises(RuntimeError, match="paddle boom"):
+        naive_module.by_paddleocr(
+            "doc.pdf",
+            tenant_id="t1",
+            paddleocr_llm_name="paddle@provider",
+            callback=callback,
+        )
+
+    callback.assert_called_once()
+    prog, msg = callback.call_args.args
+    assert prog == -1
+    assert "Failed to parse pdf via PaddleOCR" in msg
+    assert "paddle boom" in msg
+
+
+def test_by_paddleocr_not_found_path_unchanged(naive_module):
+    callback = Mock()
+
+    sections, tables, parser = naive_module.by_paddleocr("doc.pdf", callback=callback)
+
+    assert (sections, tables, parser) == (None, None, None)
+    callback.assert_called_once_with(-1, "PaddleOCR not found.")

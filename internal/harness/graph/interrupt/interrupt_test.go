@@ -142,7 +142,7 @@ func TestIsInterruptContext(t *testing.T) {
 	}
 
 	// Regular context should not be interrupt context
-	regularCtx := context.Background()
+	regularCtx := t.Context()
 	if IsInterruptContext(regularCtx) {
 		t.Error("Regular context should not be an interrupt context")
 	}

@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -90,9 +91,7 @@ func (s *promptDirState) resolve(requestedRoot string) (string, error) {
 }
 
 // cleanMarkdownBlock mirrors Python common/string_utils.py:clean_markdown_block
-//
-//	re.sub(r"^\s*```markdown\s*\n?", "", text)
-//	re.sub(r"\n?\s*```\s*$", "", text)
+// and removes a closing fence only after recognizing an opening markdown wrapper.
 //
 // Matches Python without re.MULTILINE so ^/$ anchor only the whole text.
 var (
@@ -101,8 +100,10 @@ var (
 )
 
 func cleanMarkdownBlock(s string) string {
-	s = reMarkdownOpen.ReplaceAllString(s, "")
-	s = reMarkdownClose.ReplaceAllString(s, "")
+	if reMarkdownOpen.MatchString(s) {
+		s = reMarkdownOpen.ReplaceAllString(s, "")
+		s = reMarkdownClose.ReplaceAllString(s, "")
+	}
 	return strings.TrimSpace(s)
 }
 
@@ -162,10 +163,10 @@ func maybeDispatchVisionEnhancement(
 	ctx context.Context,
 	db *gorm.DB,
 	fileType utility.FileType,
-	dispatched parserDispatchResult,
+	dispatched parser.ParseResult,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	// 0. FileType allowlist guard.
 	if !isVisionEnhancementAllowed(fileType) {
 		return dispatched, false, nil
@@ -368,5 +369,10 @@ func defaultVisionChatInvoker(
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
 	vision := true
-	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	config := &modelModule.ChatConfig{Vision: &vision}
+	if _, ok := driver.(*modelModule.OllamaModel); ok {
+		thinking := false
+		config.Thinking = &thinking
+	}
+	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, config, nil)
 }

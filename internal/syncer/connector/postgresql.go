@@ -24,13 +24,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
@@ -55,6 +57,7 @@ type PostgreSQLConnector struct {
 	metadataColumns []string
 	idColumn        string
 	timestampColumn string
+	fileExtension   string
 	batchSize       int
 	username        string
 	password        string
@@ -73,14 +76,17 @@ func NewPostgreSQLConnector(config map[string]any) (*PostgreSQLConnector, error)
 		database:        strings.TrimSpace(stringConfig(config["database"])),
 		idColumn:        strings.TrimSpace(stringConfig(config["id_column"])),
 		timestampColumn: strings.TrimSpace(stringConfig(config["timestamp_column"])),
+		fileExtension:   fileExtensionFromConfig(config["file_extension"]),
 		batchSize:       configInt(config["batch_size"], defaultPostgresBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
 		sslmode:         strings.TrimSpace(stringConfig(config["sslmode"])),
 		connectTimeout:  configInt(config["connect_timeout"], defaultPostgresConnectTimeout),
-		openDB: func(dsn string) (*sql.DB, error) {
-			return sql.Open("pgx", dsn)
-		},
+	}
+	// Production dials through the SSRF-guarded, DNS-pinned openDB. Tests
+	// replace it with an injected openDB that avoids the real network.
+	connector.openDB = func(dsn string) (*sql.DB, error) {
+		return connector.openPinned(dsn)
 	}
 	if connector.sslmode == "" {
 		connector.sslmode = "prefer"
@@ -175,6 +181,35 @@ func (c *PostgreSQLConnector) open() (*sql.DB, error) {
 	query.Set("connect_timeout", strconv.Itoa(c.connectTimeout))
 	dsn.RawQuery = query.Encode()
 	return c.openDB(dsn.String())
+}
+
+// openPinned is the production openDB: it validates the configured host with
+// the shared host-type SSRF guard and installs a pgx DialFunc pinned to the
+// validated IP, closing the DNS-rebinding window between validation and the
+// TCP connect. The DSN keeps the original hostname so TLS ServerName /
+// host-based authentication are unchanged; only the underlying TCP dial is
+// rewritten.
+func (c *PostgreSQLConnector) openPinned(dsn string) (*sql.DB, error) {
+	pinIP, err := assertConnectorHostSafe(c.host)
+	if err != nil {
+		return nil, err
+	}
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	timeout := time.Duration(c.connectTimeout) * time.Second
+	port := strconv.Itoa(int(config.Port))
+	config.DialFunc = postgresPinnedDial(pinIP, port, timeout)
+	return stdlib.OpenDB(*config), nil
+}
+
+// postgresPinnedDial returns a pgx DialFunc that connects every dial to
+// pinIP:port, ignoring the host parsed from the DSN.
+func postgresPinnedDial(pinIP net.IP, port string, timeout time.Duration) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: timeout}).DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
+	}
 }
 
 // baseQueries returns the configured query or a SELECT per table.
@@ -413,7 +448,7 @@ func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedCol
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: semanticID,
-		Extension:          ".txt",
+		Extension:          c.fileExtension,
 		Blob:               blob,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),

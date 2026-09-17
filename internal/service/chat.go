@@ -79,7 +79,7 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords string, page, pageSize int, orderBy string, desc bool, ownerIDs []string) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
 	var chats []*entity.ChatListItem
 	var total int64
 	var err error
@@ -92,8 +92,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			userID,
 			page,
 			pageSize,
-			orderBy,
-			desc,
+			terms,
 			keywords,
 		)
 		if err != nil {
@@ -112,7 +111,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			}, nil
 		}
 
-		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, orderBy, desc, keywords)
+		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, terms, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -471,8 +470,16 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 	if promptConfig == nil {
 		promptConfig = map[string]interface{}{}
 	}
+	kbIDs, _ := listFromValue(req["kb_ids"])
 	if system, ok := promptConfig["system"]; !ok || !isTruthy(system) {
-		promptConfig["system"] = pyDefaultSystemPrompt
+		if len(kbIDs) > 0 {
+			promptConfig["system"] = pyDefaultSystemPrompt
+		} else {
+			// No dataset bound: do not seed the dataset-oriented default system prompt. Its
+			// hard-coded "not found in the dataset" sentence would otherwise be sent verbatim
+			// to the model on the no-dataset chat path.
+			promptConfig["system"] = ""
+		}
 	}
 	if _, ok := promptConfig["prologue"]; !ok {
 		promptConfig["prologue"] = pyDefaultPrologue
@@ -493,7 +500,6 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 		promptConfig["refine_multiturn"] = true
 	}
 
-	kbIDs, _ := listFromValue(req["kb_ids"])
 	system, _ := promptConfig["system"].(string)
 	if len(kbIDs) > 0 && !isTruthy(promptConfig["parameters"]) && strings.Contains(system, "{knowledge}") {
 		promptConfig["parameters"] = []interface{}{map[string]interface{}{"key": "knowledge", "optional": false}}

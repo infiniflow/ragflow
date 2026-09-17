@@ -57,6 +57,7 @@ describe('NavTreeLeftPanel', () => {
         navLoading={false}
         navError
         keywords=""
+        activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
         deleteNavLoading={false}
@@ -78,6 +79,7 @@ describe('NavTreeLeftPanel', () => {
         navLoading={false}
         navError
         keywords=""
+        activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
         deleteNavLoading={false}

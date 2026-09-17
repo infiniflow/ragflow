@@ -446,6 +446,12 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 
 	// Build filter string from condition
 	filter := buildFilterFromCondition(condition, clmns)
+	if len(condition) > 0 && (filter == "" || filter == "1=1") {
+		// Every condition key was dropped (blank value, empty list, unknown
+		// column). table.Update("1=1", ...) would rewrite every row of the
+		// dataset, so refuse instead — mirrors DeleteChunks/DeleteMetadata.
+		return fmt.Errorf("INFINITY update aborted: non-empty condition yielded unconstrained filter on table %s", tableName)
+	}
 
 	// Process remove operation first
 	removeValue := make(map[string]interface{})
@@ -977,7 +983,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Add text match if question is provided
 			if hasTextMatch {
 				extraOptions := map[string]string{
-					"minimum_should_match": fmt.Sprintf("%d%%", int(minMatch*100)),
+					"minimum_should_match": common.FormatMinimumShouldMatchPercent(minMatch),
 				}
 
 				if filterStr != "" {
@@ -2365,6 +2371,107 @@ func getChunkScore(chunk map[string]interface{}) float64 {
 	return 0.0
 }
 
+// numericValue reports whether v is a number the hex encoder accepts.
+func numericValue(v interface{}) (interface{}, bool) {
+	switch n := v.(type) {
+	case int, int64, float64:
+		return n, true
+	}
+	return nil, false
+}
+
+// numericRow appends one flat row of numbers: a JSON-decoded []interface{}, or
+// the Go-typed []int / []int64 / []float64 a chunk built in process carries.
+func numericRow(row interface{}, out *[]interface{}) bool {
+	if vals, ok := row.([]interface{}); ok {
+		for _, item := range vals {
+			n, isNum := numericValue(item)
+			if !isNum {
+				return false
+			}
+			*out = append(*out, n)
+		}
+		return true
+	}
+	switch vals := row.(type) {
+	case []int:
+		for _, n := range vals {
+			*out = append(*out, n)
+		}
+	case []int64:
+		for _, n := range vals {
+			*out = append(*out, n)
+		}
+	case []float64:
+		for _, n := range vals {
+			*out = append(*out, n)
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// numericSlice flattens a numeric slice — or a slice of numeric slices — into the
+// flat []interface{} the hex encoder takes. Two shapes reach the engine: values
+// decoded from JSON arrive as []interface{} (numbers as float64), while a chunk
+// built IN PROCESS carries Go's typed slices (the ingestion pipeline's
+// AddPositions emits []int / [][]int). Both must be encoded, because these
+// columns are VARCHAR holding the hex form: handing Infinity the typed slice
+// makes it try to store an int64 tensor and fail with
+// "Not support to convert Tensor(int64,5) to Varchar" (InfinityException 3049).
+// A scalar or a non-numeric value reports ok=false, so the caller keeps its
+// pass-through instead of hex-encoding something it cannot parse back.
+func numericSlice(v interface{}) ([]interface{}, bool) {
+	out := make([]interface{}, 0, 5)
+	switch vals := v.(type) {
+	case []interface{}:
+		// JSON shape: plain numbers, and/or position rows that are slices too.
+		for _, item := range vals {
+			if n, ok := numericValue(item); ok {
+				out = append(out, n)
+				continue
+			}
+			if !numericRow(item, &out) {
+				return nil, false
+			}
+		}
+	case []int:
+		for _, n := range vals {
+			out = append(out, n)
+		}
+	case []int64:
+		for _, n := range vals {
+			out = append(out, n)
+		}
+	case []float64:
+		for _, n := range vals {
+			out = append(out, n)
+		}
+	case [][]int:
+		for _, row := range vals {
+			if !numericRow(row, &out) {
+				return nil, false
+			}
+		}
+	case [][]int64:
+		for _, row := range vals {
+			if !numericRow(row, &out) {
+				return nil, false
+			}
+		}
+	case [][]float64:
+		for _, row := range vals {
+			if !numericRow(row, &out) {
+				return nil, false
+			}
+		}
+	default:
+		return nil, false
+	}
+	return out, true
+}
+
 // transformChunkFields converts chunk field names to Infinity format.
 // Converts internal field names (like docnm_kwd) to Infinity column names (docnm).
 // Also handles:
@@ -2390,23 +2497,23 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 				d["docnm"] = utility.ConvertToString(v)
 			}
 		case "important_kwd":
-			if list, ok := v.([]interface{}); ok {
-				emptyCount := 0
-				tokens := make([]string, 0)
-				for _, item := range list {
-					if str, ok := item.(string); ok {
-						if str == "" {
-							emptyCount++
-						} else {
-							tokens = append(tokens, str)
-						}
-					}
+			// Python: list2str(tokens, ",") plus the count of the empty entries
+			// (infinity_conn.py:528-535). The extractor and the tokenizer hand
+			// over a Go-NATIVE []string, which the old []interface{}-only branch
+			// fed to ConvertToString — writing "[a b]" into important_keywords
+			// and leaving important_kwd_empty_count unset.
+			parts := utility.ConvertToStringSlice(v)
+			tokens := make([]string, 0, len(parts))
+			emptyCount := 0
+			for _, str := range parts {
+				if str == "" {
+					emptyCount++
+					continue
 				}
-				d["important_keywords"] = strings.Join(tokens, ",")
-				d["important_kwd_empty_count"] = emptyCount
-			} else {
-				d["important_keywords"] = utility.ConvertToString(v)
+				tokens = append(tokens, str)
 			}
+			d["important_keywords"] = strings.Join(tokens, ",")
+			d["important_kwd_empty_count"] = emptyCount
 		case "important_tks":
 			if _, exists := chunk["important_kwd"]; !exists {
 				d["important_keywords"] = v
@@ -2459,15 +2566,15 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 				// 3. Otherwise assign v directly
 				d["kb_id"] = v
 			}
-		case "position_int":
-			if list, ok := v.([]interface{}); ok {
-				d["position_int"] = utility.ConvertPositionIntArrayToHex(list)
-			} else {
-				d["position_int"] = v
-			}
-		case "page_num_int", "top_int":
-			if list, ok := v.([]interface{}); ok {
-				d[k] = utility.ConvertIntArrayToHex(list)
+		case "position_int", "page_num_int", "top_int":
+			// Python flattens the position rows and hex-encodes every number
+			// (infinity_conn.py: `[num for row in v for num in row]`, "%08x").
+			// The input may be Go-NATIVE: the ingestion pipeline's AddPositions
+			// emits []int / [][]int, and those used to miss the
+			// []interface{}-only branch and reach Infinity as a raw tensor
+			// ("Not support to convert Tensor(int64,5) to Varchar", 3049).
+			if nums, ok := numericSlice(v); ok {
+				d[k] = utility.ConvertIntArrayToHex(nums)
 			} else {
 				d[k] = v
 			}

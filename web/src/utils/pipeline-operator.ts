@@ -19,6 +19,7 @@ import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
   initialGoExtractorValues,
+  initialGeneralChunkerValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
@@ -26,6 +27,7 @@ import {
 } from '@/pages/agent/constant/pipeline';
 import {
   transformExtractorParams,
+  transformGeneralChunkerParams,
   transformParserParams,
   transformTitleChunkerParams,
   transformTokenChunkerParams,
@@ -252,6 +254,17 @@ function transformTokenChunkerConfigToForm(
   return result;
 }
 
+function transformGeneralChunkerConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformTokenChunkerConfigToForm(config);
+  result.table_context_size = Number(config?.table_context_size ?? 0);
+  result.image_context_size = Number(config?.image_context_size ?? 0);
+  delete result.image_table_context_window;
+  delete result.delimiter_mode;
+  return result;
+}
+
 /**
  * Converts TitleChunker config from API/DSL format to form format.
  * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], include_heading_content, root_chunk_as_heading }
@@ -321,11 +334,50 @@ export function transformApiConfigToForm(
       return transformTokenizerConfigToForm(config);
     case Operator.TokenChunker:
       return transformTokenChunkerConfigToForm(config);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerConfigToForm(config);
     case Operator.TitleChunker:
       return transformTitleChunkerConfigToForm(config);
     default:
       return config ?? {};
   }
+}
+
+/**
+ * Converts a saved parser_config (API format, keyed by operator id) to the
+ * form format used by the operator tabs. Configs without pipeline keys
+ * (built-in parse type) are returned as-is.
+ *
+ * The dataset-level metadata group is authoritative for Extractor nodes,
+ * mirroring buildOperatorNode, so the values seeded into the outer form match
+ * what the operator tabs initialize from.
+ */
+export function transformSavedParserConfigToForm(
+  parserConfig?: Record<string, any>,
+): Record<string, any> | undefined {
+  if (
+    !parserConfig ||
+    typeof parserConfig !== 'object' ||
+    Array.isArray(parserConfig) ||
+    !Object.keys(parserConfig).some((key) => key.includes(':'))
+  ) {
+    return parserConfig;
+  }
+
+  const formParserConfig: Record<string, any> = {};
+  for (const [operatorId, config] of Object.entries(parserConfig)) {
+    const operatorType = getOperatorType(operatorId);
+    const apiConfig =
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(parserConfig.metadata)
+        ? { ...config, metadata: parserConfig.metadata }
+        : (config as Record<string, any>);
+    formParserConfig[operatorId] = transformApiConfigToForm(
+      operatorType,
+      apiConfig,
+    );
+  }
+  return formParserConfig;
 }
 
 /**
@@ -347,6 +399,8 @@ export function transformFormConfigToApi(
       return config; // passthrough for Tokenizer
     case Operator.TokenChunker:
       return transformTokenChunkerParams(config as any);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerParams(config as any);
     case Operator.TitleChunker:
       return transformTitleChunkerParams(config as any);
     default:
@@ -354,7 +408,7 @@ export function transformFormConfigToApi(
   }
 }
 
-function normalizeOperatorForm(
+export function normalizeOperatorForm(
   operatorId: string,
   rawForm: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -378,6 +432,11 @@ function normalizeOperatorForm(
     case Operator.TokenChunker:
       return {
         ...cloneDeep(initialTokenChunkerValues),
+        ...rawForm,
+      };
+    case Operator.GeneralChunker:
+      return {
+        ...cloneDeep(initialGeneralChunkerValues),
         ...rawForm,
       };
     case Operator.Extractor:

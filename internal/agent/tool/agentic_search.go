@@ -28,12 +28,15 @@ import (
 )
 
 // Agentic search tool names mirror Python rag/advanced_rag/harness/tools/search.py.
+//
+// Only the three retrieval modes are canvas tools. The harness' other names
+// (web_search, structured_query) have no canvas counterpart and are therefore
+// deliberately absent: Python's canvas reaches the web through its provider
+// tools (tavily / duckduckgo / …) and registers neither name in agent/tools/.
 const (
-	toolHybridSearch    = "hybrid_search"
-	toolVectorSearch    = "vector_search"
-	toolBM25Search      = "bm25_search"
-	toolWebSearch       = "web_search"
-	toolStructuredQuery = "structured_query"
+	toolHybridSearch = "hybrid_search"
+	toolVectorSearch = "vector_search"
+	toolBM25Search   = "bm25_search"
 )
 
 // hybridSearchArgs is the shared JSON schema for the three retrieval tools.
@@ -125,6 +128,7 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 		TopN:                     args.TopN,
 		TopK:                     args.TopN * 4,
 		SimilarityThreshold:      &similarityThreshold,
+		AllowDenseFallback:       new(false),
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
 	}
@@ -282,7 +286,11 @@ func narrowContent(content string, kwds []string) (string, bool) {
 	return "..." + highlightKeywords(b.String(), kwds) + "...", true
 }
 
-// highlightKeywords wraps keyword occurrences in <em>.
+// highlightKeywords stars keyword occurrences, mirroring Python
+// _highlight_keywords' `*term*` marker (text_processing.py:412) — NOT an XML
+// tag: search.py narrows through the same helper, so a starred span is what the
+// Python canvas hands the model. (The <em> tags elsewhere in this port are the
+// engine's highlight markup: rag/utils/*_conn.py, akshare.go.)
 func highlightKeywords(text string, kwds []string) string {
 	if len(kwds) == 0 {
 		return text
@@ -307,7 +315,7 @@ func highlightKeywords(text string, kwds []string) string {
 	}
 	pattern += ")"
 	re := regexp.MustCompile(`(?i)` + pattern)
-	return re.ReplaceAllString(text, "<em>${1}</em>")
+	return re.ReplaceAllString(text, "*${1}*")
 }
 
 func md5Hex(s string) string {
