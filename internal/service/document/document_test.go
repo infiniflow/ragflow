@@ -243,6 +243,33 @@ type claimFencingDocEngine struct {
 	deleteCalls int
 }
 
+type generatedCleanupDocEngine struct {
+	fakeChatDocEngine
+	deleteCalls      int
+	generatedDeleted bool
+	generatedCond    map[string]interface{}
+}
+
+func (e *generatedCleanupDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func (e *generatedCleanupDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if req.Offset > 0 {
+		return &types.SearchResult{Chunks: nil, Total: 1}, nil
+	}
+	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "source-1"}}, Total: 1}, nil
+}
+
+func (e *generatedCleanupDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, _, _ string) (int64, error) {
+	e.deleteCalls++
+	if available, ok := condition["available_int"].(int); ok && available == 0 {
+		e.generatedDeleted = true
+		e.generatedCond = condition
+	}
+	return 1, nil
+}
+
 func (e *claimFencingDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return true, nil
 }
@@ -2391,8 +2418,8 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if remainingTask != nil {
 		t.Fatalf("ingestion task should be deleted, status was %q", remainingTask.Status)
 	}
-	if engine.deleteCalls != 1 {
-		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
+	if engine.deleteCalls != 2 {
+		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
 	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
@@ -2430,6 +2457,31 @@ func TestClearDocumentParseResultsStopsAfterCleanupClaimIsFenced(t *testing.T) {
 	}
 	if engine.deleteCalls != 1 {
 		t.Fatalf("DeleteChunks calls = %d, want 1 after fencing", engine.deleteCalls)
+	}
+}
+
+func TestClearDocumentParseResultsDeletesDocumentGeneratedChunks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	engine := &generatedCleanupDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults failed: %v", err)
+	}
+	if !engine.generatedDeleted {
+		t.Fatalf("document-generated chunks were not deleted; calls=%d", engine.deleteCalls)
+	}
+	if engine.generatedCond["doc_id"] != "doc-1" || engine.generatedCond["kb_id"] != "kb-1" {
+		t.Fatalf("generated cleanup condition = %#v, want document and dataset scope", engine.generatedCond)
 	}
 }
 

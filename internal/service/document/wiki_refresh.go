@@ -128,6 +128,30 @@ func (s *DocumentService) deleteSourceChunks(ctx context.Context, tenantID, data
 	return nil
 }
 
+// deleteDocumentGeneratedChunks removes document-scoped compiler products
+// without touching source chunks or dataset-level merged products. The
+// operation is idempotent and fenced when called from a rerun cleanup claim.
+func (s *DocumentService) deleteDocumentGeneratedChunks(ctx context.Context, tenantID, datasetID, documentID string) error {
+	if s.docEngine == nil {
+		return nil
+	}
+	claimToken := s.cleanupClaimToken(ctx, documentID)
+	if err := s.beginCleanupBatch(ctx, documentID, claimToken); err != nil {
+		return err
+	}
+	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	_, err := s.docEngine.DeleteChunks(batchCtx, map[string]any{
+		"doc_id":        documentID,
+		"kb_id":         datasetID,
+		"available_int": 0,
+	}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
+	cancel()
+	if err != nil {
+		return err
+	}
+	return s.finishCleanupBatch(ctx, documentID, claimToken)
+}
+
 func (s *DocumentService) markDocumentWikiDirty(ctx context.Context, tenantID, datasetID, documentID string) {
 	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
