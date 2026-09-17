@@ -44,7 +44,7 @@ import {
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
 import { ArrowUpDown, Eye, MonitorUp } from 'lucide-react';
-import { FC, useMemo, useState } from 'react';
+import { FC, useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
@@ -358,7 +358,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     selectedLogID,
     isModalVisible,
   );
-  const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
+  const showLog = useCallback((row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
       fileName: row.original.document_name,
@@ -374,7 +374,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     setLogInfo(logDetail);
     setSelectedLogID(row.original.id);
     setIsModalVisible(true);
-  };
+  }, []);
   const modalLogInfo = useMemo<ILogInfo | undefined>(() => {
     if (!logInfo) {
       return undefined;
@@ -393,7 +393,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     return active === LogTabs.FILE_LOGS
       ? getFileLogsTableColumns(t, showLog, dataSourceInfo)
       : getDatasetLogsTableColumns(t, showLog);
-  }, [active, t]);
+  }, [active, dataSourceInfo, showLog, t]);
 
   const currentPagination = useMemo(
     () => ({
