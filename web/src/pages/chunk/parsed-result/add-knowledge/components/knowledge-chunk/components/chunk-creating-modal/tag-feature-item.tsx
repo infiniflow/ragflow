@@ -123,11 +123,17 @@ export const TagFeatureItem = () => {
                       rules={{
                         min: {
                           value: 1,
-                          message: t('knowledgeConfiguration.frequencyMinMessage', { min: 1 }),
+                          message: t(
+                            'knowledgeConfiguration.frequencyMinMessage',
+                            { min: 1 },
+                          ),
                         },
                         max: {
                           value: 10,
-                          message: t('knowledgeConfiguration.frequencyMaxMessage', { max: 10 }),
+                          message: t(
+                            'knowledgeConfiguration.frequencyMaxMessage',
+                            { max: 10 },
+                          ),
                         },
                       }}
                       render={({ field }) => (
