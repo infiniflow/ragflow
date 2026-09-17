@@ -671,10 +671,10 @@ func compilerDSL(t *testing.T) []byte {
 				"obj": map[string]any{
 					"component_name": "Compiler",
 					"params": map[string]any{
-						"outputs":                      map[string]any{},
+						"outputs":                       map[string]any{},
 						"compilation_template_group_id": "",
-						"llm_id":                       "",
-						"plan":                         false,
+						"llm_id":                        "",
+						"plan":                          false,
 					},
 				},
 			},
