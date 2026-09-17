@@ -5316,7 +5316,23 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *harness.Kbinfos, question strin
 	if maxTokens <= 0 {
 		maxTokens = evidenceBudgetTokens
 	}
-	evidence := strings.Join(prompts.KBPrompt(citeChunks, maxTokens), "\n")
+	// Publish the ordered evidence list the model is about to see so the chat
+	// pipeline can resolve the answer's [ID:n] markers against THE SAME list and put
+	// it in front of the reference (harness.Kbinfos.CiteChunkIDs →
+	// RunResponse.CiteChunkIDs → decorateHarnessAnswer). The blocks are numbered
+	// 0-based because the client renders a marker by indexing reference.chunks with
+	// its number, which the model has to write itself; citeChunks is the
+	// similarity-ranked, capped selection (not the pool in order), so the reference
+	// is ordered to match it.
+	//
+	// The ids come from the render's SOURCE indices, not from citeChunks: a chunk
+	// with no content renders no block, so walking citeChunks would publish an id for
+	// the skipped chunk and put every marker past it one block off.
+	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
+	if kb != nil {
+		kb.CiteChunkIDs = citeChunkIDsAt(citeChunks, sources)
+	}
+	evidence := strings.Join(blocks, "\n")
 
 	summary := ""
 	record := composedRecord(kb)
@@ -5442,6 +5458,22 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	return AnswerResult{Answer: answer, Partial: partial}, nil
 }
 
+// zeroBasedEvidenceRule states the evidence numbering for the compose model.
+//
+// The blocks this call renders are numbered from 0 because the client resolves a
+// marker by indexing reference.chunks with its number, and the answer reaches that
+// client as the model streams it. Saying so guards against the "the first source is
+// 1" habit: a model that falls back on it cites the second passage and leaves the
+// first one unreachable (its markers are still openable, they just point one block
+// off).
+//
+// It belongs at the call site, not in CitationPrompt: that text is shared with the
+// agent canvas, which numbers its blocks by hash id (component/prompts/citation.go).
+const zeroBasedEvidenceRule = "\n\n# Evidence ids\n" +
+	"The evidence blocks below are numbered from 0: the FIRST block is [ID:0]. " +
+	"Cite the id printed at the start of the block you used, exactly as printed — " +
+	"do not renumber the blocks yourself."
+
 // composeSystem builds the system prompt, mirroring Python's precedence rules.
 //
 // LANGUAGE IS DELIBERATELY LEFT OVERRIDABLE: "answer in the same language as the
@@ -5453,7 +5485,7 @@ func (d AnswerDeps) composeSystem() string {
 	// Mirror Python compose_system: the citation rules are citation_prompt
 	// (citation_prompt.md) with an optional user-defined override
 	// (RAGConfig.CiteRules / user_defined_prompts).
-	rules := prompts.CitationPrompt(d.CiteRules)
+	rules := prompts.CitationPrompt(d.CiteRules) + zeroBasedEvidenceRule
 	system := strings.ReplaceAll(harness.FinalAnswerSystem, "{cite_rules}", rules)
 	if sp := strings.TrimSpace(d.SystemPrompt); sp != "" {
 		system = fmt.Sprintf("%s\n\n# Assistant configuration (set by the user)\n%s\n\nFollow the configuration above for language, tone, style, format and any other presentational instruction, including where it overrides the language rule above. Where it conflicts with the citation rules, attribute fidelity, or the requirement to answer only from the provided evidence, those three take precedence.",
@@ -5465,6 +5497,25 @@ func (d AnswerDeps) composeSystem() string {
 // cleanAnswer strips a leading thinking preamble from the composed answer.
 func cleanAnswer(s string) string {
 	return strings.TrimSpace(reAnswerThink.ReplaceAllString(s, ""))
+}
+
+// citeChunkIDsAt returns the citation id of every chunk that rendered a block, in
+// render order, from the render's source indices.
+//
+// It takes the SOURCE INDICES rather than the chunk list because the renderer emits
+// no block for a chunk without content: one id per RENDERED block, or the published
+// list runs ahead of the numbering at every skip and each marker past it lands on
+// the wrong passage. A chunk without an id keeps its slot as an empty string —
+// dropped, it would shift the later blocks the same way (citePoolIdx resolves "" to
+// -1, so that block's own citation is dropped, but the blocks after it stay put).
+func citeChunkIDsAt(chunks []map[string]any, sources []int) []string {
+	out := make([]string, len(sources))
+	for i, src := range sources {
+		if src >= 0 && src < len(chunks) {
+			out[i] = harness.ChunkIDOf(chunks[src])
+		}
+	}
+	return out
 }
 
 // rankBySimilarity mirrors Python's sorted(..., key=similarity or score,

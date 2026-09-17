@@ -451,7 +451,7 @@ func TestFallbackToLatestUser(t *testing.T) {
 func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 	hits, err := HydrateChunkVectors(t.Context(),
 		map[string]interface{}{"chunks": []interface{}{}},
-		nil, nil, nil,
+		nil, nil, 0, nil,
 	)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -464,12 +464,55 @@ func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 // TestHydrateChunkVectors_NilKbinfosNoop pins the no-op behavior of
 // the hydration helper on nil kbinfos.
 func TestHydrateChunkVectors_NilKbinfosNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, nil)
+	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, 0, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	if hits != 0 {
 		t.Errorf("expected 0 hits, got %d", hits)
+	}
+}
+
+// TestVectorSignalHelpers pins the Python parity that a zero vector is NOT
+// hydrated content: dialog_service.py:93-95 skips a chunk only when
+// `any(x for x in v)`, so a placeholder of zeros must still be queued for the
+// engine fetch. Without that, the agentic path — whose evidence chunks carry no
+// `vector` key at all — left every chunk at zero similarity, and
+// insertCitations could never cite anything, so agentic answers came back with
+// no references while naive answers (real vectors inline) had them.
+func TestVectorSignalHelpers(t *testing.T) {
+	// No vector key at all: the agentic evidence shape.
+	agentic := map[string]interface{}{"chunk_id": "c1"}
+	if vectorHasSignal(chunkVector(agentic)) {
+		t.Fatal("chunk without a vector must not count as hydrated")
+	}
+	// Zero placeholder: the naive ES shape for an unselected embedding.
+	zero := map[string]interface{}{"vector": make([]float64, 4)}
+	if vectorHasSignal(chunkVector(zero)) {
+		t.Fatal("zero placeholder must not count as hydrated")
+	}
+	if got := firstChunkVectorDim([]map[string]interface{}{agentic, zero}); got != 4 {
+		t.Fatalf("firstChunkVectorDim = %d, want 4 (the placeholder length names the field)", got)
+	}
+	// Real vector in the []interface{} shape a JSON round-trip produces.
+	real := map[string]interface{}{"vector": []interface{}{0.0, 1.0, 0.0, 0.0}}
+	if !vectorHasSignal(chunkVector(real)) {
+		t.Fatal("non-zero vector must count as hydrated")
+	}
+	if got := firstChunkVectorDim([]map[string]interface{}{real}); got != 4 {
+		t.Fatalf("firstChunkVectorDim = %d, want 4", got)
+	}
+}
+
+// TestGetChunkValueFallsBackOnAbsenceOnly pins Python's get_value semantics
+// (`d.get(k1, d.get(k2))`, rag/prompts/generator.py:37-38): the fallback fires
+// on key ABSENCE only, so a key present with a nil value wins over k2.
+func TestGetChunkValueFallsBackOnAbsenceOnly(t *testing.T) {
+	if got := getChunkValue(map[string]interface{}{"content": nil, "content_with_weight": "body"}, "content", "content_with_weight"); got != nil {
+		t.Fatalf("got %v, want nil (a present key wins even when nil)", got)
+	}
+	if got := getChunkValue(map[string]interface{}{"content_with_weight": "body"}, "content", "content_with_weight"); got != "body" {
+		t.Fatalf("got %v, want body", got)
 	}
 }
 
@@ -1589,7 +1632,7 @@ func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
 	var thinks []bool
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
+	_, _, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
@@ -1630,7 +1673,7 @@ func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
 	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	// Only what the harness reported: the pipeline adds nothing of its own.
@@ -1687,7 +1730,7 @@ func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {
@@ -1714,7 +1757,7 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil)
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, nil)
 	if res.Reference == nil {
 		t.Fatal("a cited answer must carry a reference")
 	}
@@ -1732,6 +1775,61 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 	if _, has := src["vector"]; !has {
 		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
+	}
+}
+
+// TestReferenceChunksKeepsRenderedSlots pins the index contract of the reference
+// payload: the client resolves a marker by indexing reference.chunks with the
+// number the model wrote, so entry i has to be the chunk of rendered block i. A
+// block whose chunk cannot be located keeps its slot — dropping it would slide
+// every later marker onto a passage the model never cited.
+func TestReferenceChunksKeepsRenderedSlots(t *testing.T) {
+	pool := []map[string]interface{}{
+		{"chunk_id": "p0", "content": "zero"},
+		{"chunk_id": "p1", "content": "one"},
+		{"chunk_id": "p2", "content": "two"},
+	}
+	// Rendered blocks: pool 2, one that cannot be located, pool 0. The remaining
+	// pool chunk follows so nothing retrieved is lost.
+	got := referenceChunks([]int{2, -1, 0}, pool)
+	if len(got) != 4 {
+		t.Fatalf("reference = %d entries (%v), want 3 rendered slots plus the pool remainder", len(got), got)
+	}
+	if got[0]["chunk_id"] != "p2" || got[1] != nil || got[2]["chunk_id"] != "p0" {
+		t.Fatalf("reference = %v, want p2 at block 0, an empty slot at block 1, p0 at block 2", got)
+	}
+	if got[3]["chunk_id"] != "p1" {
+		t.Errorf("reference tail = %v, want the remaining pool chunk p1", got[3])
+	}
+}
+
+// TestReferenceChunksFallsBackToPoolOrder keeps the no-CiteChunkIDs behavior: the
+// pool order is then the numbering, so the reference is the pool untouched.
+func TestReferenceChunksFallsBackToPoolOrder(t *testing.T) {
+	pool := []map[string]interface{}{{"chunk_id": "p0"}, {"chunk_id": "p1"}}
+	got := referenceChunks(nil, pool)
+	if len(got) != 2 || got[0]["chunk_id"] != "p0" || got[1]["chunk_id"] != "p1" {
+		t.Fatalf("reference = %v, want the pool in order", got)
+	}
+}
+
+// TestCitationAuditReportsFigureChunkAndImage pins the observability line that
+// answers "why does Fig. n show no image": it names the chunk behind each cited
+// figure (Fig. n = rendered block n-1) and whether that chunk has an image, so a
+// text-only chunk (nothing to draw) is distinguishable from a marker that resolved
+// to the wrong chunk.
+func TestCitationAuditReportsFigureChunkAndImage(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"chunk_id": "c0", "image_id": "img-0"},
+		{"chunk_id": "c1"},
+		{"chunk_id": "c2", "img_id": "img-2"},
+	}
+	// Rendered blocks: pool 2, pool 0, pool 1 (Fig. 1..3). The model cited blocks 0
+	// and 2, so pool 2 (image) and pool 1 (no image) come back resolved.
+	got := citationAudit([]int{2, 0, 1}, []int{2, 1}, chunks)
+	want := "Fig.1=c2 image=true Fig.3=c1 image=false"
+	if got != want {
+		t.Errorf("citationAudit = %q, want %q", got, want)
 	}
 }
 
@@ -1754,12 +1852,13 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 		"The tower opened in 1889 [ID:Slot 0].",
 		kbinfos,
 		map[string][]string{"0": {"c9"}},
+		nil,
 	)
 	if strings.Contains(res.Answer, "[ID:Slot") {
 		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
 	}
 	if !strings.Contains(res.Answer, "[ID:1]") {
-		t.Fatalf("final answer must cite the evidence chunk pool position, got %q", res.Answer)
+		t.Fatalf("final answer must cite the evidence chunk pool index, got %q", res.Answer)
 	}
 	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
 	// The reference keeps the whole citation pool (Python parity); it must at
@@ -1834,4 +1933,199 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TestDecorateHarnessAnswerUncitedStillCarriesReference: an agentic answer the
+// model composed WITHOUT citation markers must still ship the passages it was
+// composed from. Python's `refs = ... if doc_ids else []` returned an empty
+// reference for exactly that case (a one-passage pool is the common one), which
+// left the user with an answer and nothing to open — while the naive path hands
+// the passages back unconditionally.
+func TestDecorateHarnessAnswerUncitedStillCarriesReference(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "the wolf is grey",
+				"doc_id":              "d1",
+				"docnm_kwd":           "wolf.jpg",
+				"kb_id":               "kb1",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
+		},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil)
+	if res.Reference == nil {
+		t.Fatal("an agentic answer with a citation pool must carry a reference")
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 || chunks[0]["document_name"] != "wolf.jpg" {
+		t.Fatalf("reference chunks = %#v, want the pool in the client-facing shape", res.Reference["chunks"])
+	}
+	// Nothing was cited, so no document can be filtered out.
+	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
+		t.Fatalf("reference doc_aggs = %#v, want the whole pool kept", res.Reference["doc_aggs"])
+	}
+}
+
+// TestDecorateHarnessAnswerResolvesRenderedPosition is the regression lock for
+// the one-passage agentic answer that came back with no reference. The compose
+// numbers its evidence 0-based and the model writes that number, so the marker
+// and the reference line up: the passage it names is openable, and a marker that
+// names nothing is removed instead of being handed to the client.
+func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "the wolf is grey",
+				"doc_id":              "d1",
+				"docnm_kwd":           "wolf.jpg",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
+		},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:0]。", kbinfos, nil, []string{"c1"})
+	if !strings.Contains(res.Answer, "[ID:0]") {
+		t.Fatalf("the marker is the client's index and must survive, got %q", res.Answer)
+	}
+	if res.Reference == nil {
+		t.Fatal("a one-passage agentic answer must carry a reference")
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 || chunks[0]["document_name"] != "wolf.jpg" {
+		t.Fatalf("reference chunks = %#v, want the cited passage", res.Reference["chunks"])
+	}
+
+	// The old numbering (a 1-based position) names no entry in a one-passage
+	// reference, so it must be dropped rather than shipped as a dead marker.
+	res = s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:1]。", kbinfos, nil, []string{"c1"})
+	if strings.Contains(res.Answer, "[ID:1]") {
+		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
+	}
+	if res.Reference == nil {
+		t.Fatal("the reference must survive a dropped marker")
+	}
+}
+
+// TestDecorateHarnessAnswerOrdersReferenceByRenderedOrder pins the ordering half
+// of the contract: the compose renders the evidence similarity-ranked (and
+// capped), so rendered position 0 is not pool[0]. The reference must put the
+// rendered list first — a marker's index is its position there — and append the
+// rest of the pool.
+func TestDecorateHarnessAnswerOrdersReferenceByRenderedOrder(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c1", "content_with_weight": "unrelated", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c2", "content_with_weight": "unrelated too", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c3", "content_with_weight": "eiffel", "doc_id": "d2", "docnm_kwd": "Doc Two"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+			map[string]interface{}{"doc_id": "d2", "doc_name": "Doc Two"},
+		},
+	}
+
+	s := &ChatPipelineService{}
+	// The compose ranked c3 first, so the model's [ID:0] is c3.
+	res := s.decorateHarnessAnswer(
+		"The tower opened in 1889 [ID:0].",
+		kbinfos,
+		nil,
+		[]string{"c3", "c1"},
+	)
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 3 {
+		t.Fatalf("reference chunks = %#v, want the rendered list plus the remaining pool", res.Reference["chunks"])
+	}
+	if chunks[0]["content"] != "eiffel" || chunks[0]["id"] != "c3" {
+		t.Fatalf("reference[0] = %#v, want the rendered first passage c3", chunks[0])
+	}
+	if chunks[1]["id"] != "c1" || chunks[2]["id"] != "c2" {
+		t.Fatalf("reference order = %#v, want [c3 c1 c2]", chunks)
+	}
+	// Only Doc Two (c3) was cited, so the other document is filtered out.
+	aggs, _ := res.Reference["doc_aggs"].([]interface{})
+	if len(aggs) != 1 {
+		t.Fatalf("reference doc_aggs = %#v, want only the cited document", res.Reference["doc_aggs"])
+	}
+	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
+		t.Fatalf("reference doc_aggs = %#v, want d2", aggs[0])
+	}
+}
+
+// TestDecorateHarnessAnswerDropsOnlyCanonicalMarkers pins the text-safety rule: a
+// canonical citation naming no rendered passage is removed (the user could never
+// open it), while a bare bracketed number in prose is left alone — "[2024]" is far
+// more likely to be ordinary text than a citation, and deleting user-visible text
+// is worse than a chip that cannot open.
+func TestDecorateHarnessAnswerDropsOnlyCanonicalMarkers(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c1", "content_with_weight": "one", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(
+		"发布于 [2024] 年 [ID:0]，并在 [ID:7] 修订。",
+		kbinfos,
+		nil,
+		[]string{"c1"},
+	)
+	if !strings.Contains(res.Answer, "[2024]") {
+		t.Errorf("prose brackets must survive, got %q", res.Answer)
+	}
+	if !strings.Contains(res.Answer, "[ID:0]") {
+		t.Errorf("a resolvable citation must survive, got %q", res.Answer)
+	}
+	if strings.Contains(res.Answer, "[ID:7]") {
+		t.Errorf("an unresolvable canonical marker must be dropped, got %q", res.Answer)
+	}
+}
+
+// TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock: when the harness
+// publishes an id the pool does not carry, that block keeps its slot so the blocks
+// after it keep the numbers the model saw. A marker naming a later block must
+// still resolve to the right chunk — and to the right document for doc_aggs.
+func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c1", "content_with_weight": "one", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c2", "content_with_weight": "two", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c3", "content_with_weight": "eiffel", "doc_id": "d2", "docnm_kwd": "Doc Two"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+			map[string]interface{}{"doc_id": "d2", "doc_name": "Doc Two"},
+		},
+	}
+
+	s := &ChatPipelineService{}
+	// The harness rendered c1, an unknown chunk, then c3 — so [ID:2] is c3.
+	res := s.decorateHarnessAnswer(
+		"The tower opened in 1889 [ID:2].",
+		kbinfos,
+		nil,
+		[]string{"c1", "gone", "c3"},
+	)
+	if !strings.Contains(res.Answer, "[ID:2]") {
+		t.Fatalf("a marker past the unknown block must survive, got %q", res.Answer)
+	}
+	aggs, _ := res.Reference["doc_aggs"].([]interface{})
+	if len(aggs) != 1 {
+		t.Fatalf("reference doc_aggs = %#v, want only the cited document", res.Reference["doc_aggs"])
+	}
+	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
+		t.Fatalf("reference doc_aggs = %#v, want d2 (c3)", aggs[0])
+	}
 }

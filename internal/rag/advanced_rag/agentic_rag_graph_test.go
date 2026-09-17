@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/advanced_rag/harness"
 	"ragflow/internal/rag/advanced_rag/slots"
+	"ragflow/internal/rag/prompts"
 )
 
 // ---------------------------------------------------------------------------
@@ -2507,6 +2509,64 @@ func TestRunAgenticComposesFromResearchFindings(t *testing.T) {
 	}
 	if !strings.Contains(mdl.lastUserPrompt(), "Culdcept was created by OmiyaSoft and released in 1999.") {
 		t.Errorf("prompt missing the research findings:\n%s", mdl.lastUserPrompt())
+	}
+}
+
+// TestComposePublishesCiteChunkIDs pins the evidence contract the chat pipeline
+// resolves citations against: the compose numbers the blocks 0-based (the client
+// indexes reference.chunks with the marker's number, and the answer is streamed
+// before any rewrite could apply) and publishes THAT order — similarity-ranked
+// and capped — on harness.Kbinfos.CiteChunkIDs, because the reference is built in
+// that order and a marker against the pool by position would land on the wrong
+// chunk (or past the end when the pool is shorter than the render cap, which is
+// how an agentic answer came back with no reference at all).
+func TestComposePublishesCiteChunkIDs(t *testing.T) {
+	kb := &harness.Kbinfos{
+		Chunks: []map[string]any{
+			{"chunk_id": "c1", "content": "the wolf is grey", "similarity": 0.1},
+			{"chunk_id": "c2", "content": "the wolf is small", "similarity": 0.9},
+			// No content: kbpBlock renders no block for it, so it must not take a
+			// slot in the published list either — an id for it would put every
+			// marker after it one block off the passage the model cited.
+			{"chunk_id": "c3", "content": "   ", "similarity": 0.5},
+		},
+	}
+	mdl := &fakeModel{replies: []*harness.ModelReply{{Content: "it is grey [ID:0]."}}}
+	if res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "what colour is it?", false, false); res.Failed {
+		t.Fatal("composition must succeed")
+	}
+	got := mdl.lastUserPrompt()
+	for _, want := range []string{"ID: 0", "ID: 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("evidence missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ID: 2") {
+		t.Errorf("evidence numbering ran past the rendered blocks:\n%s", got)
+	}
+	// The rendered order is the similarity ranking, not the pool order: the
+	// higher-similarity chunk is block 0. The blank chunk sits between the two
+	// rendered blocks and contributes no id.
+	want := []string{"c2", "c1"}
+	if !reflect.DeepEqual(kb.CiteChunkIDs, want) {
+		t.Fatalf("CiteChunkIDs = %v, want one id per rendered block in render order %v", kb.CiteChunkIDs, want)
+	}
+}
+
+// TestComposeSystemDeclaresZeroBasedEvidence pins the prompt-side guard for the
+// evidence numbering: the compose renders 0-based block ids and the client indexes
+// reference.chunks with the marker's number, so the model has to be told — one on
+// "the first source is 1" cites the second passage and never the first. The rule
+// belongs to the callers that render 0-based blocks, not to CitationPrompt:
+// CitationPrompt is shared with the agent canvas, which numbers its blocks by hash
+// id, so a base declared there would be wrong.
+func TestComposeSystemDeclaresZeroBasedEvidence(t *testing.T) {
+	sys := AnswerDeps{}.composeSystem()
+	if !strings.Contains(sys, "the FIRST block is [ID:0]") {
+		t.Fatalf("compose system prompt must state the 0-based evidence numbering:\n%s", sys)
+	}
+	if strings.Contains(prompts.CitationPrompt(""), "the FIRST block is [ID:0]") {
+		t.Fatal("CitationPrompt must not declare a base: the canvas render numbers its blocks by hash id")
 	}
 }
 

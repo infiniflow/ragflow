@@ -1748,12 +1748,21 @@ func chunksToMaps(chunks []runtime.RetrievalChunk) []map[string]any {
 	out := make([]map[string]any, 0, len(chunks))
 	for _, c := range chunks {
 		out = append(out, map[string]any{
-			"chunk_id":          c.ID,
-			"content":           c.Content,
-			"doc_id":            c.DocumentID,
-			"docnm_kwd":         c.DocumentName,
-			"dataset_id":        c.DatasetID,
-			"kb_id":             c.DatasetID,
+			"chunk_id": c.ID,
+			"content":  c.Content,
+			// content_with_weight is the engine/storage spelling of the body.
+			// Carried as an alias because the shared reference builder
+			// (chunksFormat → getValue("content_with_weight", "content")) and
+			// the citation prompt read the storage name; without it those
+			// readers get an empty body from an agentic chunk.
+			"content_with_weight": c.Content,
+			"doc_id":              c.DocumentID,
+			"docnm_kwd":           c.DocumentName,
+			"dataset_id":          c.DatasetID,
+			"kb_id":               c.DatasetID,
+			// doc_type_kwd is what marks a chunk as an image (or table); the
+			// reference card renders it and drops the marker without it.
+			"doc_type_kwd":      c.DocType,
 			"mom_id":            c.MomID,
 			"similarity":        c.Score,
 			"image_id":          c.ImageID,

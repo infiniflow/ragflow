@@ -1317,7 +1317,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			Images:          req.Images,
 			TextAttachments: req.TextAttachments,
 		})
-		res := service.HarnessResult{Chunks: r.Chunks, DocAggs: r.DocAggs, Answer: r.Answer, SlotCitations: r.SlotCitations}
+		res := service.HarnessResult{Chunks: r.Chunks, DocAggs: r.DocAggs, Answer: r.Answer, SlotCitations: r.SlotCitations, CiteChunkIDs: r.CiteChunkIDs}
 		if r.Kbinfos != nil {
 			res.Memory = r.Kbinfos.Memory
 			res.PreSummary = r.Kbinfos.PreSummary
