@@ -101,7 +101,6 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
 	}
-	opts.HTTPClient = withPinnedRedirectPolicy(opts.HTTPClient, opts.URL)
 
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
 	if headerErr != nil {
@@ -420,7 +419,6 @@ func requestSSE(ctx context.Context, endpoint string, headers map[string]string,
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
 		if u.Hostname() != originalHost(endpoint) {
 			postClient = PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
-			postClient.CheckRedirect = pinnedRedirectPolicy(postURL)
 		}
 	}
 

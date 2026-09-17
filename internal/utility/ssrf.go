@@ -290,66 +290,6 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 	return nil
 }
 
-// withPinnedRedirectPolicy returns a copy of client whose redirect policy is
-// pinned to originalURL's origin. It always works on a copy so a caller-provided
-// shared client is never mutated.
-func withPinnedRedirectPolicy(client *http.Client, originalURL string) *http.Client {
-	if client == nil {
-		return nil
-	}
-	clone := *client
-	clone.CheckRedirect = pinnedRedirectPolicy(originalURL)
-	return &clone
-}
-
-// pinnedRedirectPolicy returns an http.Client.CheckRedirect that keeps
-// redirects on the validated origin. A same-host redirect is dialed against the
-// client's pinned IP (the transport rewrites that hostname), so it carries the
-// same SSRF guarantee as the initial request; a redirect to any other host is
-// rejected outright, and every redirect target is re-checked by AssertURLSafe.
-func pinnedRedirectPolicy(originalURL string) func(*http.Request, []*http.Request) error {
-	orig, err := url.Parse(originalURL)
-	if err != nil {
-		return func(*http.Request, []*http.Request) error { return fmt.Errorf("invalid original URL") }
-	}
-	origHost := strings.ToLower(orig.Hostname())
-	origPort := effectivePort(orig)
-	origScheme := strings.ToLower(orig.Scheme)
-	return func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
-		}
-		if _, _, err := AssertURLSafe(req.URL.String()); err != nil {
-			return err
-		}
-		host := strings.ToLower(req.URL.Hostname())
-		port := effectivePort(req.URL)
-		if host != origHost || port != origPort {
-			return fmt.Errorf("redirect to %q is not allowed (must stay on the validated origin %q)", req.URL.Host, orig.Host)
-		}
-		if origScheme == "https" && !strings.EqualFold(req.URL.Scheme, "https") {
-			return fmt.Errorf("redirect must not downgrade the URL scheme from https")
-		}
-		return nil
-	}
-}
-
-// effectivePort returns the URL's port, defaulting to the scheme's standard
-// port (443 for https, 80 for http) so origin comparisons treat an explicit
-// default port and an omitted port as the same origin.
-func effectivePort(u *url.URL) string {
-	if p := u.Port(); p != "" {
-		return p
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return "443"
-	case "http":
-		return "80"
-	}
-	return ""
-}
-
 // PinnedHTTPClient returns an HTTP client whose Transport rewrites every
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are
