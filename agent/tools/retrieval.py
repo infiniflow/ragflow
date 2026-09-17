@@ -258,26 +258,25 @@ class Retrieval(ToolBase, ABC):
                 if cks:
                     kbinfos["chunks"] = cks
             kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"], [kb.tenant_id for kb in kbs])
+            # One KG retrieval with filtered_kb_ids; normalize content_with_weight
+            # so formalized_content / json match bot and chunk retrieval paths.
             if self._param.use_kg:
-                tenant_id = self._canvas.get_tenant_id()
-                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], kb_ids, embd_mdl, LLMBundle(tenant_id, chat_model_config))
+                chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
+                ck = await settings.kg_retriever.retrieval(
+                    query,
+                    [kb.tenant_id for kb in kbs],
+                    filtered_kb_ids,
+                    embd_mdl,
+                    LLMBundle(kbs[0].tenant_id, chat_model_config),
+                )
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
+                    ck["content"] = ck["content_with_weight"]
+                    del ck["content_with_weight"]
                     kbinfos["chunks"].insert(0, ck)
         else:
             kbinfos = {"chunks": [], "doc_aggs": []}
-
-        if self._param.use_kg and kbs:
-            chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, chat_model_config))
-            if self.check_if_canceled("Retrieval processing"):
-                return
-            if ck["content_with_weight"]:
-                ck["content"] = ck["content_with_weight"]
-                del ck["content_with_weight"]
-                kbinfos["chunks"].insert(0, ck)
 
         for ck in kbinfos["chunks"]:
             if "vector" in ck:
