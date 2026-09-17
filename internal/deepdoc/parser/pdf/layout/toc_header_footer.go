@@ -51,8 +51,10 @@ var (
 	chapterEntryPattern = regexp.MustCompile(`(?i)^(第\s*[0-9０-９一二三四五六七八九十百千]+\s*[章节篇部册卷回讲目]|chapter\s+(\d+|[a-z]+|one|two|three|four|five|six|seven|eight|nine|ten)|appendix\s+[a-z0-9]+|section\s+\d+|part\s+(\d+|[ivxlcdm]+|[a-z]+)|前言|序言|引言|导论|绪论|后记|结语|附录|索引|参考文献|结论|致谢|跋|序|凡例|目录|acknowledgements?|acknowledgments?)`)
 	// pageNumberPattern matches common page-number forms: pure digits, digits
 	// with leading dots (..18), roman numerals (III, IV), or dash-wrapped
-	// numbers (- 2 -).
-	pageNumberPattern = regexp.MustCompile(`^[.…]*\d+[.…]*$|^[.…]*[IVXLCDM]+[.…]*$|^\s*-\s*\d+\s*-\s*$`)
+	// numbers (- 2 -). Full-width digits count as digits, matching the class
+	// chapterEntryPattern uses for 第N章 numbering: the target corpus is largely
+	// CJK, and a full-width page-number column still has to confirm a TOC page.
+	pageNumberPattern = regexp.MustCompile(`^[.…]*[0-9０-９]+[.…]*$|^[.…]*[IVXLCDM]+[.…]*$|^\s*-\s*[0-9０-９]+\s*-\s*$`)
 	// tocTitlePattern matches an outline title that names the table of contents.
 	// It mirrors the section-level detector this pass replaces, which is why
 	// "致谢"/"acknowledge" are accepted as end-of-TOC markers alongside the
@@ -356,15 +358,16 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 	return out
 }
 
-// normalizeRunningText collapses whitespace and replaces digit runs with a single
+// normalizeRunningText collapses whitespace, replaces digit runs with a single
 // '#' and lower-cases the result, so per-page variants of the same running
-// header/footer ("- 2 -", "- 3 -", "Page 4 of 9") share one comparison key.
+// header/footer ("- 2 -", "- 3 -", "Page 4 of 9", "第 １ 页") share one
+// comparison key.
 func normalizeRunningText(text string) string {
 	t := strings.Join(strings.Fields(text), " ")
 	out := make([]rune, 0, len(t))
 	inDigit := false
 	for _, r := range t {
-		if r >= '0' && r <= '9' {
+		if isMaskableDigit(r) {
 			inDigit = true
 			continue
 		}
@@ -378,4 +381,13 @@ func normalizeRunningText(text string) string {
 		out = append(out, '#')
 	}
 	return strings.ToLower(strings.TrimSpace(string(out)))
+}
+
+// isMaskableDigit reports whether r is a digit whose per-page value must be
+// masked before running headers/footers are compared: ASCII and full-width
+// decimal digits. Full width is required for the same reason pageNumberPattern
+// accepts it — otherwise every page of "第 １ 页" / "第 ２ 页" gets its own key
+// and the footer never reaches minPages.
+func isMaskableDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= '０' && r <= '９')
 }

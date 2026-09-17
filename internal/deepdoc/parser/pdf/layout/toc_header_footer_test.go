@@ -376,6 +376,7 @@ func TestRemoveTOCText_Normalize(t *testing.T) {
 		{"Hello   World", "hello world"},
 		{"- 12 -", "- # -"},
 		{"Chapter 1: Intro", "chapter #: intro"},
+		{"第 １ 页", "第 # 页"},
 	}
 	for _, c := range cases {
 		if got := normalizeRunningText(c.in); got != c.want {
@@ -454,16 +455,57 @@ func TestRemoveHeaderFooterBoxes_PageCountGuard(t *testing.T) {
 // header zone must not be treated as a running header.
 func TestRemoveHeaderFooterBoxes_SkipsNonTextLayout(t *testing.T) {
 	pageHeight := 842.0
-	heights := map[int]float64{0: pageHeight, 1: pageHeight}
-	boxes := []pdf.TextBox{
-		{Text: "table header", PageNumber: 0, X0: 72, X1: 200, Top: 30, Bottom: 45, LayoutType: "table"},
-		tb("Body zero.", 0, 72, 400, 160, 180),
-		{Text: "table header", PageNumber: 1, X0: 72, X1: 200, Top: 30, Bottom: 45, LayoutType: "table"},
-		tb("Body one.", 1, 72, 400, 160, 180),
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes,
+			// Same text, same zone, but a table: never a running header.
+			pdf.TextBox{Text: "Running head", PageNumber: pg, X0: 72, X1: 200, Top: 30, Bottom: 45, LayoutType: "table"},
+			// Positive control in the same zone: this one must go.
+			tb("Running head", pg, 280, 400, 30, 45),
+			tb("Body text.", pg, 72, 400, 160, 180),
+		)
 	}
 	got := RemoveHeaderFooterBoxes(boxes, heights)
-	if len(got) != len(boxes) {
-		t.Fatalf("non-text zone boxes must be kept, got %d, want %d", len(got), len(boxes))
+
+	var tableKept, textKept int
+	for _, b := range got {
+		switch {
+		case b.LayoutType == "table":
+			tableKept++
+		case b.Text == "Running head":
+			textKept++
+		}
+	}
+	if textKept != 0 {
+		t.Fatalf("the repeated text header must be removed, %d survived", textKept)
+	}
+	if tableKept != 3 {
+		t.Fatalf("table boxes in the header zone must be kept, %d of 3 survived", tableKept)
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_FullWidthPageNumbers: full-width page numbers get
+// a distinct key per page unless they are masked like ASCII digits, so the
+// footer never reaches minPages and survives every page.
+func TestRemoveHeaderFooterBoxes_FullWidthPageNumbers(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes,
+			tb("正文内容。", pg, 72, 400, 160, 180),
+			tb("第 "+string(rune('０'+pg+1))+" 页", pg, 280, 340, 820, 835),
+		)
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if b.Top >= 800 {
+			t.Fatalf("full-width page-number footer %q must be removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected only the 3 body boxes, got %d", len(got))
 	}
 }
 
