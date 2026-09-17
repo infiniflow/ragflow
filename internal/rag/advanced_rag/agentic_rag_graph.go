@@ -552,7 +552,22 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	}
 	queries = dedupe(queries)
 	if len(queries) == 0 {
-		logger.Printf("[QueryRewriter] no actionable query produced; accepting the draft.")
+		// The rewriter is a MODEL and it can decline, which used to end the round: the routing above
+		// had already judged another round worth its budget (gaps exist, the review view changed),
+		// and one empty reply cancelled that judgement. On a set question the other fallback
+		// (unresolved slots' clues) is empty too, because its unknowns are names nobody has
+		// proposed yet. So the round is kept alive with queries taken from the run's own
+		// bookkeeping instead of the model.
+		//
+		// The SCA's gaps are NOT usable here: a gap derived from a draft carries the draft's TEXT
+		// (MissingPiece.What is the whole paragraph), which as a retrieval query is noise.
+		queries = fallbackQueries(st)
+		if len(queries) > 0 {
+			logger.Printf("[QueryRewriter] the rewriter produced no query; re-asking the run's own open terms (%d) instead.", len(queries))
+		}
+	}
+	if len(queries) == 0 {
+		logger.Printf("[QueryRewriter] no actionable query produced; accepting the draft (%d gap(s) went unpursued, +%d chunk(s) this round).", len(gaps), st.LastRoundNew)
 		st.NoProgress = true
 		return
 	}
@@ -630,6 +645,24 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": st.SearchRounds, "new": added})
 	}
+}
+
+// fallbackQueries is what the run can still ask WITHOUT a model: the terms it probed and got
+// nothing back for — a fact about the QUERY, which is what the probe ledger is for — and the
+// direction's own subject forms.
+func fallbackQueries(st *AgenticState) []string {
+	var out []string
+	if st.KB != nil {
+		out = append(out, st.KB.ProbedAbsentTerms()...)
+	}
+	out = append(out, harness.CoverageOf(st.SlotTable).Actors()...)
+	kept := make([]string, 0, len(out))
+	for _, q := range out {
+		if q = strings.TrimSpace(q); q != "" {
+			kept = append(kept, q)
+		}
+	}
+	return dedupe(kept)
 }
 
 // formalizeAnswerNode mirrors the `formalize_answer` node's state mutation
@@ -902,7 +935,60 @@ func composedRecord(kb *harness.Kbinfos) string {
 		}
 		record += ledger
 	}
+	if kb.SufficiencyUnchecked() {
+		// The review that judges completeness never produced a verdict (see graph_sca), so the count
+		// is what the evidence supports rather than a checked total.
+		record += "- NOTE: the sufficiency review could not be completed for this question, so nobody checked whether the members above are complete. State the count as what the evidence supports and do not present it as exhaustive."
+	}
 	return record
+}
+
+// ledgerNonNameMax bounds the "NOT names" line: enough that the run's probing stays visible on
+// the record, few enough that the terms nobody may use do not crowd out the ones they may.
+const ledgerNonNameMax = 10
+
+// probeNameRunes bounds what a probed term can be if it is to pass as a name. The corpus's names
+// are short (华雄, 程远志, 太史慈) and a longer term is a phrase a session built rather than a name
+// it found (荥阳太守王植, 令左右推出斩之).
+const probeNameRunes = 5
+
+// probeLedgerTerms splits the reached terms into the ones that can be a name and the ones that
+// cannot: an act word names the deed, so does a term carrying one, a term with a separator, a space
+// or too many runes is a query, and the actor's own forms are not elements of what he did. What is
+// name-shaped is left to judgement, which is what the section is for.
+func probeLedgerTerms(kb *harness.Kbinfos, reached []harness.ReachedTerm) (named []harness.ReachedTerm, others []string) {
+	acts, actors := kb.CoverageDecl()
+	for _, rt := range reached {
+		if probeNameShaped(rt.Term, acts, actors) {
+			named = append(named, rt)
+			continue
+		}
+		others = append(others, rt.Term)
+	}
+	return named, others
+}
+
+// probeNameShaped reports whether a probed term is shaped like a name (see probeLedgerTerms).
+func probeNameShaped(term string, acts, actors []string) bool {
+	t := strings.TrimSpace(term)
+	if t == "" || utf8.RuneCountInString(t) > probeNameRunes {
+		return false
+	}
+	for _, r := range t {
+		if unicode.IsSpace(r) || unicode.IsDigit(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			return false
+		}
+	}
+	lowered := strings.ToLower(t)
+	// An act word is rejected even when it is one rune and only contained: a name never carries the
+	// verb of the deed.
+	for _, act := range acts {
+		if act = strings.ToLower(strings.TrimSpace(act)); act != "" && strings.Contains(lowered, act) {
+			return false
+		}
+	}
+	// The actor's forms go through the same predicate as the member set (harness.IsActorForm).
+	return !harness.IsActorForm(t, actors)
 }
 
 // probeLedger renders the names the research PROBED — the terms the model itself
@@ -935,8 +1021,9 @@ func probeLedger(kb *harness.Kbinfos) string {
 		// Kbinfos.MarkSetDirection). The names stay in both cases: they are what the
 		// ledger has always been.
 		quoted := kb.IsSetDirection()
-		terms := make([]string, 0, len(reached))
-		for _, rt := range reached {
+		named, others := probeLedgerTerms(kb, reached)
+		terms := make([]string, 0, len(named))
+		for _, rt := range named {
 			// The name AND the words that prove it. Without the words the answer has
 			// a list of names and no way to point at a passage for any one of them,
 			// which is what a set answer needs to carry per member: measured
@@ -951,8 +1038,20 @@ func probeLedger(kb *harness.Kbinfos) string {
 			}
 			terms = append(terms, rt.Term)
 		}
-		fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded; the words behind each name are its evidence, and a member without words is a member nobody can point at): %s",
-			strings.Join(terms, "；"))
+		if len(terms) > 0 {
+			fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded; the words behind each name are its evidence, and a member without words is a member nobody can point at): %s",
+				strings.Join(terms, "；"))
+		}
+		if len(others) > 0 {
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			if len(others) > ledgerNonNameMax {
+				others = append(others[:ledgerNonNameMax], "…")
+			}
+			fmt.Fprintf(&b, "Probed, NOT names (the act words and query-shaped terms this run also asked about — listed so its own probing is visible on the record; do NOT list them as members): %s",
+				strings.Join(others, "；"))
+		}
 	}
 	if absent := kb.ProbedAbsentTerms(); len(absent) > 0 {
 		if b.Len() > 0 {

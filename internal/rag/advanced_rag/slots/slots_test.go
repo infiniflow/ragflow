@@ -11,17 +11,17 @@ import "testing"
 // fifteen real names sat in the list slot and the answer reported ten.
 func TestUnionKeepsTheInvariants(t *testing.T) {
 	// I2 — members union by name, first evidence wins.
-	a := Members(Member{Name: "华雄", ChunkID: "c1"}, Member{Name: "颜良"})
-	b := Members(Member{Name: "颜良", ChunkID: "c2"}, Member{Name: "管亥", ChunkID: "c3"})
+	a := Items(Item{Value: "华雄", ChunkID: "c1"}, Item{Value: "颜良"})
+	b := Items(Item{Value: "颜良", ChunkID: "c2"}, Item{Value: "管亥", ChunkID: "c3"})
 	got, dropped, ok := Union(a, b)
-	if !ok || len(got.Names()) != 3 {
+	if !ok || len(got.ItemValues()) != 3 {
 		t.Fatalf("members ∪ members = %v (ok=%v), want three names", got, ok)
 	}
 	if !dropped.IsZero() {
 		t.Errorf("dropped = %v, want nothing: a member list does not lose members to another list", dropped)
 	}
 	for _, m := range got.Items {
-		switch m.Name {
+		switch m.Value {
 		case "华雄":
 			if m.ChunkID != "c1" {
 				t.Errorf("华雄 = %v, want its own evidence kept", m)
@@ -36,14 +36,14 @@ func TestUnionKeepsTheInvariants(t *testing.T) {
 		}
 	}
 	// A member that arrived without evidence takes the one a later list supplies.
-	withEvidence, _, _ := Union(Members(Member{Name: "庞德"}), Members(Member{Name: "庞德", ChunkID: "c9"}))
+	withEvidence, _, _ := Union(Items(Item{Value: "庞德"}), Items(Item{Value: "庞德", ChunkID: "c9"}))
 	if withEvidence.Items[0].ChunkID != "c9" {
 		t.Errorf("庞德 = %v, want the evidence a later list supplied", withEvidence.Items[0])
 	}
 
 	// I3 — members beat a number, and the number is kept as the dropped claim.
 	union, dropped, ok := Union(a, Number(2))
-	if !ok || union.Kind != KindMembers {
+	if !ok || union.Kind != KindItems {
 		t.Fatalf("members ∪ count = %v (ok=%v), want the members", union, ok)
 	}
 	if dropped.Kind != KindCount || dropped.Count != 2 {
@@ -51,7 +51,7 @@ func TestUnionKeepsTheInvariants(t *testing.T) {
 	}
 	// …in either order.
 	union, dropped, ok = Union(Number(2), a)
-	if !ok || union.Kind != KindMembers || dropped.Count != 2 {
+	if !ok || union.Kind != KindItems || dropped.Count != 2 {
 		t.Errorf("count ∪ members = %v / %v (ok=%v), want the members with the count dropped", union, dropped, ok)
 	}
 
@@ -78,7 +78,7 @@ func TestUnionKeepsTheInvariants(t *testing.T) {
 	if _, _, ok := Union(Text("13"), Number(11)); ok {
 		t.Error("text ∪ count must not resolve: text is opaque and claims nothing")
 	}
-	if _, _, ok := Union(Members(Member{Name: "华雄"}), Text("华雄")); ok {
+	if _, _, ok := Union(Items(Item{Value: "华雄"}), Text("华雄")); ok {
 		t.Error("a member list and a text value must not resolve by union")
 	}
 }
@@ -95,7 +95,7 @@ func TestParseIsFailClosed(t *testing.T) {
 			map[string]any{"quote": "no name here"}, // skipped, not invented
 		},
 	})
-	if members.Kind != KindMembers || len(members.Names()) != 2 {
+	if members.Kind != KindItems || len(members.ItemValues()) != 2 {
 		t.Fatalf("members patch = %v, want two declared members", members)
 	}
 	if members.Items[0].ChunkID != "c1" {
@@ -111,7 +111,7 @@ func TestParseIsFailClosed(t *testing.T) {
 	if _, ok := opaque.Number(); ok {
 		t.Error("text must claim no number: that is what stops 17-19 from being read as 1719")
 	}
-	if names := opaque.Names(); names != nil {
+	if names := opaque.ItemValues(); names != nil {
 		t.Errorf("text names = %v, want none", names)
 	}
 
@@ -142,7 +142,7 @@ func TestRenderIsDerivedFromTheType(t *testing.T) {
 		in   Value
 		want string
 	}{
-		{Members(Member{Name: "华雄"}, Member{Name: "颜良"}), "华雄、颜良"},
+		{Items(Item{Value: "华雄"}, Item{Value: "颜良"}), "华雄、颜良"},
 		{Number(13), "13"},
 		{Interval(17, 19), "17-19"},
 		{Interval(5, 5), "5"},

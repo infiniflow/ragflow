@@ -14,11 +14,11 @@ import (
 // members or a number because the model DECLARED it (see package slots), so these are
 // what a patch now produces.
 func typedMembersSlot(id int, typ string, names ...string) Variable {
-	items := make([]slots.Member, 0, len(names))
+	items := make([]slots.Item, 0, len(names))
 	for _, n := range names {
-		items = append(items, slots.Member{Name: n})
+		items = append(items, slots.Item{Value: n})
 	}
-	v := slots.Members(items...)
+	v := slots.Items(items...)
 	rendered := slots.Render(v)
 	return Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
 }

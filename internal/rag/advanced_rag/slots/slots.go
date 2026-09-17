@@ -41,9 +41,10 @@ const (
 	// and merged by strength, and NEVER parsed, split, counted, or compared
 	// arithmetically.
 	KindText
-	// KindMembers is a list of named members, each optionally carrying the chunk that
-	// proves it.
-	KindMembers
+	// KindItems is a list of ITEMS the corpus states, each optionally carrying the chunk that
+	// proves it. The element kind is the answer's (names for one question, dates for the next),
+	// so the type says item and nothing here claims to know which kind this list holds.
+	KindItems
 	// KindCount is a claimed number ("13").
 	KindCount
 	// KindRange is a claimed interval ("about 17-19"), kept as two numbers rather than as a
@@ -55,7 +56,7 @@ func (k Kind) String() string {
 	switch k {
 	case KindText:
 		return "text"
-	case KindMembers:
+	case KindItems:
 		return "members"
 	case KindCount:
 		return "count"
@@ -65,11 +66,11 @@ func (k Kind) String() string {
 	return "empty"
 }
 
-// Member is one named member and the passage that proves it. A member without
-// evidence is a member nobody can point at, so the empty ChunkID is allowed but
-// visible (renderers show it).
-type Member struct {
-	Name    string
+// Item is one element of an enumerated answer and the passage that states it: a name for one
+// question, a date or a number for the next. The element kind belongs to the answer, not to the
+// type, and an empty ChunkID is allowed and visible — an item without one is not counted.
+type Item struct {
+	Value   string
 	ChunkID string
 	Quote   string
 }
@@ -77,18 +78,18 @@ type Member struct {
 // Value is what one slot holds. Exactly one of the fields matching Kind is set.
 type Value struct {
 	Kind  Kind
-	Text  string   // KindText (the raw candidate, verbatim)
-	Items []Member // KindMembers
-	Count int      // KindCount
-	Lo    int      // KindRange (inclusive)
-	Hi    int      // KindRange (inclusive)
+	Text  string // KindText (the raw candidate, verbatim)
+	Items []Item // KindItems
+	Count int    // KindCount
+	Lo    int    // KindRange (inclusive)
+	Hi    int    // KindRange (inclusive)
 }
 
 // Text wraps an opaque string.
 func Text(s string) Value { return Value{Kind: KindText, Text: s} }
 
 // Members wraps a member list (evidence may be empty per item).
-func Members(items ...Member) Value { return Value{Kind: KindMembers, Items: items} }
+func Items(items ...Item) Value { return Value{Kind: KindItems, Items: items} }
 
 // Number wraps a claimed count.
 func Number(n int) Value { return Value{Kind: KindCount, Count: n} }
@@ -106,21 +107,21 @@ func (v Value) IsZero() bool {
 	switch v.Kind {
 	case KindText:
 		return strings.TrimSpace(v.Text) == ""
-	case KindMembers:
+	case KindItems:
 		return len(v.Items) == 0
 	}
 	return v.Kind == KindEmpty
 }
 
-// Names is the member names in order, deduped case-insensitively.
-func (v Value) Names() []string {
-	if v.Kind != KindMembers {
+// ItemValues is the items' values in order, deduped case-insensitively.
+func (v Value) ItemValues() []string {
+	if v.Kind != KindItems {
 		return nil
 	}
 	seen := make(map[string]bool, len(v.Items))
 	out := make([]string, 0, len(v.Items))
 	for _, m := range v.Items {
-		name := strings.TrimSpace(m.Name)
+		name := strings.TrimSpace(m.Value)
 		if name == "" {
 			continue
 		}
@@ -130,6 +131,34 @@ func (v Value) Names() []string {
 		}
 		seen[key] = true
 		out = append(out, name)
+	}
+	return out
+}
+
+// Anchored is the items that carry the chunk stating them: what a count may be derived from and
+// what an answer may cite. The test reads ChunkID, not Quote, because a quotation with no passage
+// to look it up in cannot be checked.
+func (v Value) Anchored() []Item {
+	return v.itemsWhere(func(it Item) bool { return strings.TrimSpace(it.ChunkID) != "" })
+}
+
+// Unanchored is the complement of Anchored: the items asserted with no passage in hand. They are
+// not deleted — the record lists them beside the number — but they are not counted.
+func (v Value) Unanchored() []Item {
+	return v.itemsWhere(func(it Item) bool { return strings.TrimSpace(it.ChunkID) == "" })
+}
+
+// itemsWhere filters the items by a property of the item. A value that is not a list has no
+// items, so the filters answer nothing rather than inventing a list out of text.
+func (v Value) itemsWhere(keep func(Item) bool) []Item {
+	if v.Kind != KindItems {
+		return nil
+	}
+	out := make([]Item, 0, len(v.Items))
+	for _, it := range v.Items {
+		if keep(it) {
+			out = append(out, it)
+		}
 	}
 	return out
 }
@@ -154,8 +183,8 @@ func Render(v Value) string {
 	switch v.Kind {
 	case KindText:
 		return v.Text
-	case KindMembers:
-		names := v.Names()
+	case KindItems:
+		names := v.ItemValues()
 		return strings.Join(names, "、")
 	case KindCount:
 		return strconv.Itoa(v.Count)
@@ -180,15 +209,15 @@ func Union(a, b Value) (union, dropped Value, ok bool) {
 		return Value{}, Value{}, false
 	}
 	switch {
-	case a.Kind == KindMembers && b.Kind == KindMembers:
+	case a.Kind == KindItems && b.Kind == KindItems:
 		// Two member lists never produce a LOSER: the union is the resolution, and a
 		// subset union (this side added nothing) is a resolution too — the base is
 		// already the answer, so nothing is reported as dropped.
-		merged, _ := mergeMembers(a.Items, b.Items)
-		return Value{Kind: KindMembers, Items: merged}, Value{}, true
-	case a.Kind == KindMembers && isNumeric(b.Kind):
+		merged, _ := mergeItems(a.Items, b.Items)
+		return Value{Kind: KindItems, Items: merged}, Value{}, true
+	case a.Kind == KindItems && isNumeric(b.Kind):
 		return a, b, true
-	case b.Kind == KindMembers && isNumeric(a.Kind):
+	case b.Kind == KindItems && isNumeric(a.Kind):
 		return b, a, true
 	case isNumeric(a.Kind) && isNumeric(b.Kind):
 		an, _ := a.Number()
@@ -209,12 +238,12 @@ func Union(a, b Value) (union, dropped Value, ok bool) {
 
 func isNumeric(k Kind) bool { return k == KindCount || k == KindRange }
 
-// mergeMembers unions two member lists by name, first evidence wins.
-func mergeMembers(base, branch []Member) ([]Member, bool) {
-	out := make([]Member, 0, len(base)+len(branch))
+// mergeItems unions two member lists by name, first evidence wins.
+func mergeItems(base, branch []Item) ([]Item, bool) {
+	out := make([]Item, 0, len(base)+len(branch))
 	seen := make(map[string]int, len(base)+len(branch))
 	for _, m := range base {
-		name := strings.TrimSpace(m.Name)
+		name := strings.TrimSpace(m.Value)
 		if name == "" {
 			continue
 		}
@@ -223,11 +252,11 @@ func mergeMembers(base, branch []Member) ([]Member, bool) {
 			continue
 		}
 		seen[key] = len(out)
-		out = append(out, Member{Name: name, ChunkID: m.ChunkID, Quote: m.Quote})
+		out = append(out, Item{Value: name, ChunkID: m.ChunkID, Quote: m.Quote})
 	}
 	added := false
 	for _, m := range branch {
-		name := strings.TrimSpace(m.Name)
+		name := strings.TrimSpace(m.Value)
 		if name == "" {
 			continue
 		}
@@ -241,7 +270,7 @@ func mergeMembers(base, branch []Member) ([]Member, bool) {
 			continue
 		}
 		seen[key] = len(out)
-		out = append(out, Member{Name: name, ChunkID: m.ChunkID, Quote: m.Quote})
+		out = append(out, Item{Value: name, ChunkID: m.ChunkID, Quote: m.Quote})
 		added = true
 	}
 	return out, added
@@ -267,7 +296,7 @@ func Parse(patch map[string]any) Value {
 			// Declared a list and gave none: the text (if any) is opaque, not a list.
 			return Text(candidateText(patch))
 		}
-		return Value{Kind: KindMembers, Items: items}
+		return Value{Kind: KindItems, Items: items}
 	case "count":
 		if n, ok := asInt(patch["count"]); ok {
 			return Number(n)
@@ -303,27 +332,27 @@ func candidateText(patch map[string]any) string {
 	return strings.TrimSpace(asString(raw))
 }
 
-func parseItems(raw any) []Member {
+func parseItems(raw any) []Item {
 	list, _ := raw.([]any)
-	out := make([]Member, 0, len(list))
+	out := make([]Item, 0, len(list))
 	for _, item := range list {
 		switch it := item.(type) {
 		case string:
 			if name := strings.TrimSpace(it); name != "" {
-				out = append(out, Member{Name: name})
+				out = append(out, Item{Value: name})
 			}
 		case map[string]any:
 			name := strings.TrimSpace(asString(it["name"]))
 			if name == "" {
 				// Tolerate {"candidate": …} / {"value": …} spellings, but a missing
-				// name is not a member: skip rather than invent one.
+				// value is not an item: skip rather than invent one.
 				name = strings.TrimSpace(asString(it["candidate"]))
 			}
 			if name == "" {
 				continue
 			}
-			out = append(out, Member{
-				Name:    name,
+			out = append(out, Item{
+				Value:   name,
 				ChunkID: strings.TrimSpace(asString(it["chunk_id"])),
 				Quote:   strings.TrimSpace(asString(it["quote"])),
 			})

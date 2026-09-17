@@ -84,7 +84,12 @@ const (
 	PrefetchTimeoutS    = 90.0 // programmatic fan-out fetch
 	DraftTimeoutS       = 60.0 // fallback draft synthesis
 	SCATimeoutS         = 60.0 // sufficient-context review call
-	RewriteTimeoutS     = 45.0 // gap → query rewrite call
+	// SCARetryHeadroomS is the clock that must be left before a FAILED review is retried once:
+	// the second attempt plus the answer that follows it. Below it the retry is skipped and the
+	// unavailable review is recorded as such (see graph_sca), because a retry that eats the
+	// answer's own clock trades a missing verdict for a missing answer.
+	SCARetryHeadroomS = 120.0
+	RewriteTimeoutS   = 45.0 // gap → query rewrite call
 	// CoverageResolveTimeoutS bounds the enumeration's last node (see RunCoverageResolve): it runs
 	// before the answer is composed, so it may not spend the clock the answer needs. It bounds the
 	// WHOLE resolve, which is batched and parallel, rather than one call carrying every

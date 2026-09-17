@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,16 +61,18 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	if slotID < 0 {
 		return stats
 	}
-	set, reached := coverageResolveCandidates(st.KB, &st.SlotTable)
+	set, reached, claimed := coverageResolveCandidates(st.KB, &st.SlotTable, cov)
 	if set.Empty() {
 		// Nothing to judge: no enumeration ran (no clock left, or the executor cannot search)
 		// and no probe reached a name the slots do not already hold.
 		return stats
 	}
-	if reached > 0 {
+	if reached+claimed > 0 {
 		// The split is worth a line: it is the difference between a node that judges only what
-		// its own enumeration recalled and one that also judges what the run's search touched.
-		logger.Printf("[Coverage] resolve candidates: %d window(s) + %d reached name(s)", len(set.Windows)-reached, reached)
+		// its own enumeration recalled and one that also judges what the run's search touched
+		// and what the sessions ASSERTED but never showed a passage for.
+		logger.Printf("[Coverage] resolve candidates: %d window(s) + %d reached name(s) + %d unjudged claim(s) = %d line(s)",
+			len(set.Windows)-reached-claimed, reached, claimed, len(set.Windows))
 	}
 
 	// Bounded like every other single-purpose call in this graph: the answer composition
@@ -94,11 +97,11 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 		return stats
 	}
 
-	items := make([]slots.Member, 0, len(members))
+	items := make([]slots.Item, 0, len(members))
 	for _, m := range members {
-		items = append(items, slots.Member{Name: m.Name, ChunkID: m.ChunkID, Quote: m.Quote})
+		items = append(items, slots.Item{Value: m.Name, ChunkID: m.ChunkID, Quote: m.Quote})
 	}
-	value := slots.Members(items...)
+	value := slots.Items(items...)
 	rendered := slots.Render(value)
 	// 1.0, and the number is a statement about the EVIDENCE rather than a claim: every
 	// member here was just matched to the line that names it, so the list is accountable
@@ -142,10 +145,10 @@ func coverageTargetSlot(table *harness.State) int {
 	}
 	best, bestN := -1, -1
 	for _, v := range table.State {
-		if v.Typed().Kind != slots.KindMembers {
+		if v.Typed().Kind != slots.KindItems {
 			continue
 		}
-		if n := len(v.Typed().Names()); n > bestN {
+		if n := len(v.Typed().ItemValues()); n > bestN {
 			best, bestN = v.ID, n
 		}
 	}
@@ -162,17 +165,24 @@ func coverageTargetSlot(table *harness.State) int {
 // names: the run holds the passage, names it nowhere, and the count comes out short of what
 // the corpus states.
 //
-// Both sources are deduped before they are asked about: a name a slot already declares, and a
+// Both sources are deduped before they are asked about: a name that is already SETTLED, and a
 // name a window of the SAME passage already quotes, are not put in front of the model twice.
-// Returns the union and how many lines the second source contributed.
-func coverageResolveCandidates(kb *harness.Kbinfos, table *harness.State) (harness.CoverageSet, int) {
+// Settled means anchored (see harness.AnchoredItems): a name a session wrote without a passage is
+// a claim nobody has ruled on, so it stays a candidate — which is what gives the run a way to
+// refute a claim it holds the refuting passage for.
+//
+// Returns the union, how many lines the reached terms contributed, and how many unanchored claims
+// were handed over.
+func coverageResolveCandidates(kb *harness.Kbinfos, table *harness.State, cov harness.Coverage) (harness.CoverageSet, int, int) {
 	var set harness.CoverageSet
 	if kb == nil {
-		return set, 0
+		return set, 0, 0
 	}
 	set, _ = kb.CoverageSet()
+	// Only anchored items are settled: a name written without a passage has not been judged, so it
+	// stays a candidate here.
 	known := map[string]bool{}
-	for _, name := range harness.MemberNames(table) {
+	for _, name := range harness.AnchoredItems(table) {
 		known[strings.ToLower(strings.TrimSpace(name))] = true
 	}
 	added := 0
@@ -196,7 +206,86 @@ func coverageResolveCandidates(kb *harness.Kbinfos, table *harness.State) (harne
 		known[key] = true
 		added++
 	}
-	return set, added
+	// Third source: the names a session asserted with no passage. They are handed over as candidates
+	// with whatever the pool can show about them, so a claim the run can refute is refuted rather
+	// than counted or silently dropped.
+	claimed := 0
+	for _, name := range harness.UnanchoredItems(table) {
+		term := strings.TrimSpace(name)
+		key := strings.ToLower(term)
+		if term == "" || known[key] {
+			continue
+		}
+		windows := claimWindows(kb, term, cov, coverageClaimWindowsPerName)
+		if len(windows) == 0 {
+			continue
+		}
+		for _, w := range windows {
+			if windowQuotesTerm(set.Windows, w.ChunkID, term) {
+				continue
+			}
+			set.Windows = append(set.Windows, w)
+		}
+		known[key] = true
+		claimed++
+	}
+	return set, added, claimed
+}
+
+// coverageClaimWindowsPerName bounds the passages ONE claimed name is shown with: enough to
+// contain the one that states the deed (a name is usually mentioned in several places, and only
+// one of them is the killing), and no more.
+const coverageClaimWindowsPerName = 2
+
+// claimWindows finds the pool passages that mention a claimed name, the ones carrying the deed's
+// words or the actor first. A claim no passage mentions is returned nothing: it stays unjudged.
+func claimWindows(kb *harness.Kbinfos, name string, cov harness.Coverage, max int) []harness.CoverageWindow {
+	type scored struct {
+		window harness.CoverageWindow
+		score  int
+	}
+	var found []scored
+	for _, c := range kb.ChunksFrom(0, kb.PoolSize()) {
+		id := harness.ChunkIDOf(c)
+		if id == "" {
+			continue
+		}
+		text := harness.ChunkTextOf(c)
+		if !strings.Contains(text, name) {
+			continue
+		}
+		score := 0
+		act := ""
+		for _, a := range cov.Acts {
+			if a != "" && strings.Contains(text, a) {
+				act = a
+				score++
+				break
+			}
+		}
+		for _, form := range cov.Actors() {
+			if form != "" && strings.Contains(text, form) {
+				score++
+				break
+			}
+		}
+		quote := ledgerQuote(kb, id, name)
+		if quote == "" {
+			continue
+		}
+		// The act word the passage carries rides the window, so the ranking that offered it is
+		// visible in the log (see CoverageWindow.Act).
+		found = append(found, scored{harness.CoverageWindow{ChunkID: id, Quote: quote, Act: act}, score})
+	}
+	sort.SliceStable(found, func(i, j int) bool { return found[i].score > found[j].score })
+	out := make([]harness.CoverageWindow, 0, max)
+	for _, f := range found {
+		if len(out) >= max {
+			break
+		}
+		out = append(out, f.window)
+	}
+	return out
 }
 
 // windowQuotesTerm reports whether a window of this passage already carries the term: that line

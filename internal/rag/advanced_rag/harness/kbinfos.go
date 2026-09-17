@@ -137,6 +137,12 @@ type Kbinfos struct {
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
+	// actWords / actorForms are the direction's declaration (see MarkCoverage). Guarded by ledgerMu.
+	actWords   []string
+	actorForms []string
+	// sufficiencyUnchecked records that the completeness review never ran (see
+	// NoteSufficiencyUnchecked). Guarded by ledgerMu.
+	sufficiencyUnchecked bool
 	// coverageSet is what this QUESTION's enumeration found, and coverageReady records
 	// that it ran at all (see StoreCoverageSet): the windows it admits stay in the pool
 	// under the same chunk ids, so a later round reuses the same evidence rather than
@@ -403,6 +409,53 @@ func (k *Kbinfos) IsSetDirection() bool {
 	k.ledgerMu.Lock()
 	defer k.ledgerMu.Unlock()
 	return k.setDirection
+}
+
+// NoteSufficiencyUnchecked records that the review which judges completeness never ran, so the
+// record the answer reads can say so. It is not a verdict, and not a reason to mark the answer
+// partial.
+func (k *Kbinfos) NoteSufficiencyUnchecked() {
+	if k == nil {
+		return
+	}
+	k.ledgerMu.Lock()
+	k.sufficiencyUnchecked = true
+	k.ledgerMu.Unlock()
+}
+
+// SufficiencyUnchecked reports whether the review that would have judged completeness
+// never ran (see NoteSufficiencyUnchecked). Safe on a nil pool.
+func (k *Kbinfos) SufficiencyUnchecked() bool {
+	if k == nil {
+		return false
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	return k.sufficiencyUnchecked
+}
+
+// MarkCoverage records the direction's declaration — the actor's forms and the act words — for the
+// readers that have the pool but not the slot table (see CoverageDecl). Where StoreCoverageSet
+// holds what the corpus answered, this holds what the run was asking with.
+func (k *Kbinfos) MarkCoverage(cov Coverage) {
+	if k == nil {
+		return
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	k.actWords = append([]string(nil), cov.Acts...)
+	k.actorForms = cov.Actors()
+}
+
+// CoverageDecl is the direction's declaration (see MarkCoverage). Empty when no enumeration
+// direction declared itself, and its probes are read by shape alone.
+func (k *Kbinfos) CoverageDecl() (acts, actors []string) {
+	if k == nil {
+		return nil, nil
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	return append([]string(nil), k.actWords...), append([]string(nil), k.actorForms...)
 }
 
 // StoreCoverageSet records what this question's enumeration found (see

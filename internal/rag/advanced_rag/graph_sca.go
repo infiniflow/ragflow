@@ -229,15 +229,24 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 	st.KB.Chunks = view
 	defer func() { st.KB.Chunks = orig }()
 
-	t := nodeClock(SCATimeoutS, 15.0, st.RemainingS()-10.0)
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
-	defer cancel()
-
-	res := orchestrator.SufficientContextAgent(callCtx, orchestrator.SCADeps{
-		KB:      st.KB,
-		Model:   &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength},
-		Prompts: deps.SCAPrompts,
-	}, st.Question, claims)
+	review := func() orchestrator.SCAResult {
+		t := nodeClock(SCATimeoutS, 15.0, st.RemainingS()-10.0)
+		callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
+		defer cancel()
+		return orchestrator.SufficientContextAgent(callCtx, orchestrator.SCADeps{
+			KB:      st.KB,
+			Model:   &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength},
+			Prompts: deps.SCAPrompts,
+		}, st.Question, claims)
+	}
+	res := review()
+	if len(scaResultToMap(res)) == 0 && st.RemainingS() >= SCARetryHeadroomS {
+		// One retry: a failed review is a fact about the moment, not about the question, and on a
+		// count question this is the only stage that asks whether the list is complete. Spent only
+		// while there is clock left for the answer beside it.
+		logger.Printf("[SCA] review unavailable on the first attempt (%.0fs left); retrying once.", st.RemainingS())
+		res = review()
+	}
 
 	st.SCAViewID = viewID
 	st.SCA = scaResultToMap(res)
@@ -255,6 +264,9 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 		logger.Printf("[SCA] unavailable (no review could be completed); recording UNKNOWN — this is not a sufficiency judgement, so the round's own record drives the loop.")
 		st.SCA = map[string]any{}
 		st.Verdict = VerdictUnknown
+		// The fact goes where the answer can read it (see composedRecord). The partial label keeps
+		// its evidence-based rule above: they are different claims.
+		st.KB.NoteSufficiencyUnchecked()
 		return
 	}
 	if res.IsSufficient {

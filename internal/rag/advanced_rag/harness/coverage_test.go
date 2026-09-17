@@ -187,7 +187,7 @@ func TestEnumerateCoverageKeepsWhatTheRecallReturned(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
 		{"chunk_id": "c1", "content": "关羽手起刀落，斩孔秀于马下。", "doc_id": "d1"},
 	}})
-	cov := Coverage{Actor: "关羽|关公", Acts: []string{"斩"}, Set: true, Members: true}
+	cov := Coverage{Actor: "关羽|关公", Acts: []string{"斩"}, Set: true, ItemKind: "person"}
 	if !cov.Ok() {
 		t.Fatalf("the fixture must be an enumeration: %+v", cov)
 	}

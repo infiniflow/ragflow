@@ -51,9 +51,20 @@ type Coverage struct {
 	// Set reports that the table asked for a count, a set or a list — the answer is a SET
 	// rather than one value.
 	Set bool
-	// Members reports that a slot of this table carries NAMES (entity / person / dataset),
-	// as opposed to numbers, dates and phrases.
-	Members bool
+	// ItemKind is what the answer's elements are, when the table declares it: "person", "entity",
+	// "dataset", or the bare "list"/"set". Empty when the answer is not a list of elements.
+	ItemKind string
+}
+
+// CoverageItemKinds reads the planner's slot vocabulary as what the answer enumerates. A kind not
+// in this table is not a list of elements (a count, a range, a date, a phrase), and the gate below
+// pays nothing for it.
+var CoverageItemKinds = map[string]string{
+	"entity":  "entity",
+	"person":  "person",
+	"dataset": "dataset",
+	"list":    "list",
+	"set":     "set",
 }
 
 // CoverageOf reads the declaration out of the planner's own table.
@@ -66,15 +77,15 @@ func CoverageOf(table State) Coverage {
 	var c Coverage
 	for _, v := range table.State {
 		// The two readings are independent: "list" and "set" are BOTH set-shaped and
-		// name-carrying, so a slot may satisfy either or both (they were two predicates
+		// element-carrying, so a slot may satisfy either or both (they were two predicates
 		// before, and this keeps their union exact).
-		switch strings.ToLower(strings.TrimSpace(v.Type)) {
+		kind := strings.ToLower(strings.TrimSpace(v.Type))
+		switch kind {
 		case "count", "set", "list":
 			c.Set = true
 		}
-		switch strings.ToLower(strings.TrimSpace(v.Type)) {
-		case "entity", "person", "dataset", "list", "set":
-			c.Members = true
+		if k, ok := CoverageItemKinds[kind]; ok && c.ItemKind == "" {
+			c.ItemKind = k
 		}
 		if c.Actor == "" {
 			c.Actor = strings.TrimSpace(v.Subject)
@@ -88,16 +99,16 @@ func CoverageOf(table State) Coverage {
 	return c
 }
 
-// Ok reports whether this table asks for an enumeration: a SET of NAMED members whose
-// deed the planner wrote the words for.
+// Ok reports whether this table asks for an enumeration: a SET of ELEMENTS whose deed the
+// planner wrote the words for.
 //
-// The conjunction is the whole gate, and it is what separates a set of named members
-// from a count of EVENTS — the planner declares act words for the latter too ("how many
-// times did it happen" → the verb for it), and no name an enumeration could return changes
-// a count of events. Held only by the NAME-carrying half, the enumeration runs on
-// single-value questions, where it can only add cost and timeouts.
+// The conjunction is the whole gate, and it is what separates a set of elements from a
+// count of EVENTS — the planner declares act words for the latter too ("how many times did
+// it happen" → the verb for it), and no element an enumeration could return changes a count
+// of events. Held only by the element-carrying half, the enumeration runs on single-value
+// questions, where it can only add cost and timeouts.
 func (c Coverage) Ok() bool {
-	return c.Set && c.Members && len(c.Acts) > 0
+	return c.Set && c.ItemKind != "" && len(c.Acts) > 0
 }
 
 // Actors splits the declared actor into its alternatives, which are what the corpus has

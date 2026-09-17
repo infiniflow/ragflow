@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -161,6 +162,13 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 		// this states it where a set answer is assembled, together with the rule that keeps a
 		// count honest — a member nobody can point at a passage is not counted.
 		lines = append(lines, "State the count and the members TOGETHER: every member you list carries the words behind it (quoted above, or its own [ID:n]) — never one range for the list — and a member you cannot point at a passage for is left out of both the list and the count.")
+		// The names the number above leaves out are listed, so the answer can tell a complete list
+		// from one that is short by a claim nobody could quote.
+		if claims := harness.UnanchoredItems(&slotTable); len(claims) > 0 {
+			lines = append(lines, fmt.Sprintf(
+				"- claimed WITHOUT a passage in hand (NOT in the %d above — the count may be short by up to %d): %s. Each one is a name somebody asserted and no passage in hand states: find the words that put it in the answer, or leave it out of both the list and the count.",
+				n, len(claims), strings.Join(claims, "、")))
+		}
 		// A count larger than the members it counts is a claim about members that are NOT in
 		// the record, and the answer has to be told that rather than left to reconcile it:
 		// left alone it explains the gap as "more members whose details the material does not
@@ -175,10 +183,24 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 			// A DECLARED number (slots.KindCount / KindRange) compared with the members
 			// above. Text claims no number, so prose can no longer masquerade as a
 			// count here (or as a member list on the other side of the comparison).
-			if claimed, ok := v.Typed().Number(); ok && claimed != n {
+			if claimed, ok := v.Typed().Number(); ok {
+				if claimed == n {
+					continue
+				}
 				lines = append(lines, fmt.Sprintf(
 					"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — the count and the members listed disagree. Reconcile them against the evidence before answering: a count larger than the members that are listed is not evidence of members, and a list is only as complete as the passages behind it.",
 					v.ID, v.Type, claimed, n))
+				continue
+			}
+			// The other half of the same disagreement: a count slot holding WORDS. It claims no
+			// number by contract (KindText is opaque and nothing derives from it), so it used to
+			// pass in silence — the record showed its prose beside the enumerated size and let the
+			// answer take either, which is how 14 became an answer to a table that enumerated 16.
+			// The words are not parsed; the disagreement is stated.
+			if isCountSlot(v) && strings.TrimSpace(*v.Candidate) != strconv.Itoa(n) {
+				lines = append(lines, fmt.Sprintf(
+					"- NOTE: slot %d [%s] holds %q as text, not a number, so nothing was derived from it while the slots above enumerate %d. State the count the evidence supports.",
+					v.ID, v.Type, truncateRunes(strings.TrimSpace(*v.Candidate), 60), n))
 			}
 		}
 	}
@@ -210,9 +232,9 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	return strings.Join(lines, "\n")
 }
 
-// enumeratedSize is how many distinct members the table's slots declare: one source
-// spells one member several ways, and a set counts entities, not spellings.
-func enumeratedSize(table harness.State) int { return len(harness.MemberNames(&table)) }
+// enumeratedSize is how many distinct items the table can point at (harness.AnchoredItems): one
+// source spells one item several ways, and a set counts entities, not spellings.
+func enumeratedSize(table harness.State) int { return len(harness.AnchoredItems(&table)) }
 
 // BuildSlotTable: decompose the question into
 // a slot table, seeding it with the planner's fan-outs.
@@ -783,6 +805,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 					_LOG.Printf("[SlotResearch] enumeration: %d operand(s) asked, %d passage(s) recalled, %d window(s) found; seed +%d char(s).",
 						len(set.Operands), set.Recalled, len(set.Windows), len(set.Render()))
 					logCoverageWindows(set)
+					kb.MarkCoverage(cov)
 					kb.StoreCoverageSet(set)
 					deps.CoverageSeed = set.Render()
 				}
@@ -1092,36 +1115,43 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 	return &out
 }
 
-// syncCountSlots writes the table's OWN count into every slot that claims one.
+// isCountSlot reports whether a slot declares itself a count — the planner's word for a number
+// slot. It decides only whether a disagreement is worth STATING; nothing is derived from it
+// (syncCountSlots reads the value's KIND for that, never the type word).
+func isCountSlot(v harness.Variable) bool {
+	return v.Candidate != nil && strings.EqualFold(strings.TrimSpace(v.Type), "count")
+}
+
+// countDerivedFloor is the smallest set a count may be derived from: one quotable item is not an
+// enumeration, and a half-filled table must not collapse a claimed number to one.
+const countDerivedFloor = 2
+
+// syncCountSlots writes the size of the enumerable set into every slot that claims a number, and
+// keeps the old claim as an alternate. Only a number-claiming slot is touched (slots.Value.Number),
+// and the size counts the items the table can point at (harness.AnchoredItems): a count of claims
+// is a count of nothing.
 //
-// A count slot holds a claim ABOUT the list slots, and the two are written by different
-// sessions, so nothing kept them in step: the slot's own number can be the one the answer
-// reports, whatever the list slots enumerated.
-//
-// The number is DERIVED: len(members) over the declared member lists, and ONLY a slot
-// that CLAIMS a number is corrected — it takes the derived one and keeps its old claim
-// as an alternate clue, so the record still shows what was claimed beside what is
-// enumerated.
-//
-// A slot that claims NO number is left exactly as it is: a date, a phrase or a sentence is
-// not a count anybody can check, and inventing a number for it would state as the count
-// something no session claimed. Reading the slot's declared TYPE string to guess otherwise
-// is the rule this replaces (see slots.Value.Number).
+// The size is read across the whole table, so a question with two sets gets one number for both
+// until the planner says which count counts which set. Below countDerivedFloor there is nothing to
+// derive from and the claim stands.
 //
 // It returns the ids it changed, for the log.
 func syncCountSlots(table *harness.State) []int {
 	if table == nil || len(table.State) == 0 {
 		return nil
 	}
-	union := harness.MemberNames(table)
-	if len(union) < 2 {
+	union := harness.AnchoredItems(table)
+	if len(union) < countDerivedFloor {
 		return nil
 	}
-	var raised []int
+	var raised, unreadable []int
 	for i := range table.State {
 		v := &table.State[i]
 		claimed, ok := v.Typed().Number()
 		if !ok {
+			if isCountSlot(*v) {
+				unreadable = append(unreadable, v.ID)
+			}
 			continue
 		}
 		if claimed == len(union) {
@@ -1139,6 +1169,11 @@ func syncCountSlots(table *harness.State) []int {
 		rendered := slots.Render(derived)
 		v.Candidate = &rendered
 		raised = append(raised, v.ID)
+	}
+	if len(unreadable) > 0 {
+		// A count slot holding words cannot be corrected — nothing derives from text — so it is
+		// said out loud instead, and the record states the disagreement (see RenderSlotRecord).
+		_LOG.Printf("[Coverage] count slot(s) %v hold text, not a number: nothing was derived from them", unreadable)
 	}
 	return raised
 }

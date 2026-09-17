@@ -59,14 +59,14 @@ func CollectSessionRecord(table State, kb *Kbinfos) SessionRecord {
 		}
 		r.Absent = kb.ProbedAbsentTerms()
 	}
-	// Members come from the slots that DECLARE members (slots.KindMembers), each
+	// Members come from the slots that DECLARE members (slots.KindItems), each
 	// item carrying its evidence. Nothing is split out of text: a slot holding a
 	// sentence, a date or a count contributes no members, and the text is never
 	// inspected to find out whether it might have been a list (see package slots for
 	// the measurement that made this fail closed).
 	// ONE definition of the table's members (see MemberNames): the count the answer
 	// reports and the list this line shows read the same fact.
-	r.Members = MemberNames(&table)
+	r.Members = ItemValues(&table)
 	joined := strings.ToLower(strings.Join(r.Members, "\x00"))
 	for _, term := range r.Reached {
 		// Substring containment, not equality: a candidate is often a clause

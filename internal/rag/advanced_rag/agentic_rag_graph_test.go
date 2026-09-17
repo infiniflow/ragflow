@@ -1438,6 +1438,107 @@ func TestSCAUnavailableIsNotAVerdict(t *testing.T) {
 	if st.PartialAnswer {
 		t.Error("PartialAnswer = true on an UNKNOWN verdict with no unresolved slots; partial is a statement about the evidence")
 	}
+	// The FACT still has to reach the answer: nobody checked whether the record is complete.
+	if !st.KB.SufficiencyUnchecked() {
+		t.Error("an un-run review must be recorded on the run (see NoteSufficiencyUnchecked): the record has to say nobody checked, or the count reads as a checked total")
+	}
+	if rec := composedRecord(st.KB); !strings.Contains(rec, "nobody checked whether the members above are complete") {
+		t.Errorf("record = %q, want the unchecked review stated where the answer reads it", rec)
+	}
+}
+
+// TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames pins what the probed list may be READ as: names.
+//
+// Measured (2026-09-17, 三国/关羽) the list handed the answer `杀 斩 武将 名单 亲斩 关羽 太史慈 …
+// 赚城斩车胄 令左右推出斩之 庞德`, under the instruction "any name here that the record above does
+// not mention is a finding nobody recorded" — an invitation to count the actor among the people he
+// killed, and the deed's own verbs among its objects. The act words and query-shaped terms come
+// from the run's own probes and are still shown (the ledger's job is to make the probing visible),
+// but they are shown as what they are.
+func TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames(t *testing.T) {
+	kb := &harness.Kbinfos{}
+	kb.Admit(func(p *harness.PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "c1", "content": "关公马快，赶上文丑，脑后一刀，将文丑斩下马来。"})
+	})
+	// The direction's own declaration: what the run is searching WITH (actor forms + act words).
+	kb.MarkCoverage(harness.Coverage{Acts: []string{"斩", "杀"}, Actor: "关羽|云长"})
+	for _, term := range []string{
+		"文丑", "太史慈", "关羽", "斩孔秀", "亲斩", "关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德",
+	} {
+		kb.RecordReachedTerm(term, "c1")
+	}
+
+	ledger := probeLedger(kb)
+	names, others, split := strings.Cut(ledger, "Probed, NOT names")
+	if !split {
+		t.Fatalf("ledger = %q, want the non-names said apart from the names", ledger)
+	}
+	if !strings.Contains(names, "文丑") || !strings.Contains(names, "太史慈") {
+		t.Errorf("names = %q, want the name-shaped terms kept whatever they name (文丑 is a kill, 太史慈 a judgement the answer makes)", names)
+	}
+	for _, banned := range []string{"关羽", "斩孔秀", "亲斩", "关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德"} {
+		if strings.Contains(names, banned) {
+			t.Errorf("names = %q, must not offer %q as a name", names, banned)
+		}
+		if !strings.Contains(others, banned) {
+			t.Errorf("non-names = %q, want %q shown as probed-but-not-a-name", others, banned)
+		}
+	}
+}
+
+// TestComposedRecordSaysWhenNobodyCheckedCompleteness pins the note's default and its wording: a
+// run whose review ran says nothing extra, and one whose review never ran says the one thing the
+// answer needs — nobody checked.
+func TestComposedRecordSaysWhenNobodyCheckedCompleteness(t *testing.T) {
+	kb := &harness.Kbinfos{Record: "- slot 0 [count]: 18"}
+	if rec := composedRecord(kb); strings.Contains(rec, "nobody checked") {
+		t.Fatalf("record = %q, want no note while the review ran", rec)
+	}
+	kb.NoteSufficiencyUnchecked()
+	rec := composedRecord(kb)
+	if !strings.Contains(rec, "- slot 0 [count]: 18") {
+		t.Fatalf("record = %q, want the slots kept", rec)
+	}
+	if !strings.Contains(rec, "nobody checked whether the members above are complete") ||
+		!strings.Contains(rec, "do not present it as exhaustive") {
+		t.Fatalf("record = %q, want the unchecked review stated", rec)
+	}
+}
+
+// TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines pins the asymmetry that used to end the
+// loop: the routing had already judged another round worth its budget (gaps exist, the review view
+// changed) and one empty reply from the rewriter cancelled that judgement — while the other
+// fallback, the unresolved slots' clues, is empty on a set question whose unknowns are names nobody
+// has proposed yet. Measured (2026-09-17, 三国/关羽): INSUFFICIENT, 3 gaps, +182 chunks, 130s left,
+// and no round.
+func TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines(t *testing.T) {
+	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
+	st.SCA = map[string]any{"claims": map[string]any{
+		"c1": map[string]any{"verdict": "unverified", "missing_information": []any{
+			map[string]any{"what": "the count", "search_hint": "count the passages"},
+		}},
+	}}
+	st.KB = &harness.Kbinfos{}
+	st.KB.RecordProbedAbsent("斩孟坦")
+	st.SlotTable = harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩"}, Subject: "关羽|云长"},
+	}, 0, nil)
+	st.Deadline = time.Now().Add(120 * time.Second)
+
+	mdl := &scriptedModel{}
+	mdl.push(`{"queries": []}`)
+	queryRewriteNode(context.Background(), RAGTools{
+		Model:  mdl,
+		Search: harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
+	}, st, log.New(&bytes.Buffer{}, "", 0))
+
+	if st.NoProgress {
+		t.Fatal("NoProgress = true: the rewriter declined, and the round had already been judged worth its budget")
+	}
+	joined := strings.Join(st.CurrentQueries, "|")
+	if !strings.Contains(joined, "斩孟坦") || !strings.Contains(joined, "关羽") {
+		t.Fatalf("CurrentQueries = %v, want the run's own open terms", st.CurrentQueries)
+	}
 }
 
 // TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps pins: with
@@ -3001,7 +3102,7 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
 		typedCountVar(0, "count", 10, 0),
-		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥"),
+		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥"),
 	}, 0, nil)
 	raised := syncCountSlots(&table)
 	if len(raised) != 1 || raised[0] != 0 {
@@ -3015,7 +3116,7 @@ func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	// the claim is kept beside them as an alternate.
 	bigger := harness.NewState([]harness.Variable{
 		typedCountVar(0, "count", 16, 0),
-		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
+		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
 	if changed := syncCountSlots(&bigger); len(changed) != 1 {
 		t.Fatalf("changed = %v, want the over-claim reconciled to the members", changed)
@@ -3031,7 +3132,7 @@ func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	// A count that already agrees is left alone.
 	agreed := harness.NewState([]harness.Variable{
 		typedCountVar(0, "count", 6, 0),
-		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
+		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
 	if changed := syncCountSlots(&agreed); len(changed) != 0 {
 		t.Fatalf("changed = %v, want an agreeing count untouched", changed)
@@ -3043,7 +3144,7 @@ func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	// into the count slot, and the members beside it are what the answer must repeat).
 	unreadable := harness.NewState([]harness.Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
-		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
+		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
 	if changed := syncCountSlots(&unreadable); len(changed) != 0 {
 		t.Fatalf("changed = %v, want an unreadable claim left alone", changed)
@@ -3074,9 +3175,9 @@ func TestMemberCountIgnoresProseFragments(t *testing.T) {
 	// nothing, so the count is the members or it is nothing.
 	table := harness.NewState([]harness.Variable{
 		typedCountVar(0, "count", 28, 0),
-		typedMembersVar(1, "web", "孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳"),
+		typedAnchoredMembersVar(1, "web", "孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳"),
 		{ID: 2, Type: "web", Candidate: strPtr("第五回（发矫诏诸镇应曹公、破关兵三英战吕布）、第二十五回（屯土山关公约三事、救白马曹操解重围）")},
-		typedMembersVar(3, "web", "华雄、颜良、文丑、庞德"),
+		typedAnchoredMembersVar(3, "web", "华雄、颜良、文丑、庞德"),
 	}, 0, nil)
 
 	// Eleven distinct real names: the prose pieces around them are not members.
@@ -3087,6 +3188,128 @@ func TestMemberCountIgnoresProseFragments(t *testing.T) {
 	syncCountSlots(&table)
 	if got := *table.ByID(0).Candidate; got != "11" {
 		t.Fatalf("count slot = %q, want 11 (the enumerated members)", got)
+	}
+}
+
+// TestSyncCountSlotsCountsOnlyMembersWithAPassage pins the count's unit one level further down:
+// a member counts when it carries the passage that states it.
+//
+// The fixture is the measured case (2026-09-17, 三国/关羽): a session's member list merged with the
+// resolve's, and among the names two that no passage in hand quotes — 于禁 (taken at 水淹七军 and
+// released, never killed) and 刘延 (who outlives the actor). The union was 18, the answer stated
+// 18, and sixteen of those names had a passage behind them. A claim is not a member: the number
+// is what the table can point at, and the claim stays visible as the slot's alternate.
+func TestSyncCountSlotsCountsOnlyMembersWithAPassage(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		typedCountVar(0, "count", 18, 0),
+		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
+		typedMembersVar(2, "person", "于禁、刘延"),
+	}, 0, nil)
+	raised := syncCountSlots(&table)
+	if len(raised) != 1 || raised[0] != 0 {
+		t.Fatalf("raised = %v, want the count slot reconciled to the members with a passage", raised)
+	}
+	if got := *table.ByID(0).Candidate; got != "2" {
+		t.Fatalf("count slot = %q, want 2 (the members the table can quote)", got)
+	}
+	if alts := alternateCandidatesOf(*table.ByID(0)); len(alts) != 1 || alts[0] != "18" {
+		t.Fatalf("alternates = %v, want the 18 kept as the record's alternate", alts)
+	}
+}
+
+// TestSlotRecordStatesACountSlotThatHoldsWords pins the silent half of the count disagreement.
+//
+// A count slot whose value is TEXT passes in silence: it claims no number, so nothing is derived
+// from it (by contract), and the record used to say nothing either — its words sat beside the
+// enumerated size and the answer took whichever it liked. Measured (2026-09-17, 三国/关羽): a
+// session's "14" answered a table that enumerated 16. The words are not parsed here either; the
+// disagreement is stated.
+func TestSlotRecordStatesACountSlotThatHoldsWords(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("14")},
+		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
+	}, 0, nil)
+	rec := RenderSlotRecord(table, "")
+	if !strings.Contains(rec, "enumerated members across the slots above: 3") {
+		t.Fatalf("record = %q, want the enumerated size stated", rec)
+	}
+	if !strings.Contains(rec, `holds "14" as text, not a number`) {
+		t.Fatalf("record = %q, want a count slot holding words stated as a disagreement", rec)
+	}
+
+	// The declared-number branch keeps its own wording.
+	numbered := harness.NewState([]harness.Variable{
+		typedCountVar(0, "count", 14, 0),
+		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
+	}, 0, nil)
+	if rec := RenderSlotRecord(numbered, ""); !strings.Contains(rec, "says 14 while the slots above enumerate 3") {
+		t.Fatalf("record = %q, want a declared number's disagreement stated as before", rec)
+	}
+}
+
+// TestSyncCountSlotsReadsTheWholeTable pins the ONE assumption the derivation carries: the size is
+// read ACROSS the table, so a question that enumerates two sets gets one number for both count
+// slots (`斩杀` and `生擒` both read 4 here).
+//
+// It is pinned rather than fixed because the fix is a DECLARATION — the planner saying which count
+// counts which set — and an inference (adjacency, wording) would guess exactly where the record has
+// to be exact. Until that declaration exists, the record's own line is the honest reading: it says
+// "across the slots above", not per slot.
+func TestSyncCountSlotsReadsTheWholeTable(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		typedCountVar(0, "count", 9, 0),
+		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
+		typedCountVar(2, "count", 4, 0),
+		typedAnchoredMembersVar(3, "person", "于禁、庞德"),
+	}, 0, nil)
+	syncCountSlots(&table)
+	for _, id := range []int{0, 2} {
+		if got := *table.ByID(id).Candidate; got != "4" {
+			t.Fatalf("slot %d = %q, want the table-wide size: two sets per table are a declaration the planner does not make yet", id, got)
+		}
+	}
+}
+
+// TestSyncCountSlotsLeavesWhatClaimsNoNumber pins the kind-keyed half: the derivation touches the
+// slots that CLAIM a number and nothing else — a text claim is not a number anybody can check, and
+// the floor keeps a barely-filled table from collapsing a claim to one.
+func TestSyncCountSlotsLeavesWhatClaimsNoNumber(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")}, // prose: claims no number
+		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
+	}, 0, nil)
+	if changed := syncCountSlots(&table); len(changed) != 0 {
+		t.Fatalf("changed = %v, want a claim that is not a number left alone", changed)
+	}
+	// One quotable element is below the floor: nothing to derive from, so the claim stands.
+	thin := harness.NewState([]harness.Variable{
+		typedCountVar(0, "count", 9, 0),
+		typedAnchoredMembersVar(1, "person", "华雄"),
+	}, 0, nil)
+	if changed := syncCountSlots(&thin); len(changed) != 0 {
+		t.Fatalf("changed = %v, want the floor respected (one element is not an enumeration)", changed)
+	}
+	if got := *thin.ByID(0).Candidate; got != "9" {
+		t.Fatalf("count slot = %q, want the claim standing below the floor", got)
+	}
+}
+
+// TestSlotRecordNamesTheClaimsWithoutAPassage pins the other half of that rule: leaving a claim
+// out of the number must not hide it. An answer told only "the members are two" cannot tell that
+// two more names were claimed — nor that its number may therefore be short.
+func TestSlotRecordNamesTheClaimsWithoutAPassage(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		typedCountVar(0, "count", 4, 0),
+		typedAnchoredMembersVar(1, "person", "荀正、杨龄"),
+		typedMembersVar(2, "person", "于禁、刘延"),
+	}, 0, nil)
+	rec := RenderSlotRecord(table, "")
+	if !strings.Contains(rec, "enumerated members across the slots above: 2") {
+		t.Fatalf("record = %q, want the size stated over the members with a passage", rec)
+	}
+	if !strings.Contains(rec, "claimed WITHOUT a passage in hand") ||
+		!strings.Contains(rec, "于禁") || !strings.Contains(rec, "刘延") {
+		t.Fatalf("record = %q, want the claims named beside the number", rec)
 	}
 }
 
@@ -3152,7 +3375,7 @@ func TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate(t *testing.T) {
 func TestSlotRecordLeadsWithFactsNotWithASessionsProse(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
 		typedCountVar(0, "count", 10, 0),
-		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、程远志、夏侯存、庞德"),
+		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、程远志、夏侯存、庞德"),
 		// A second slot of the same table holds REFERENCES, not members — and it is
 		// TEXT, so it contributes none: counting them is how this record once
 		// answered its own count with a nineteen on a twelve-member list.
@@ -3241,11 +3464,11 @@ func TestValueRecordCarriesNoEnumeratedMembers(t *testing.T) {
 // runtime counts (see package slots): names with no declared kind are opaque text.
 func typedMembersValue(list string) slots.Value {
 	items := strings.Split(list, "、")
-	members := make([]slots.Member, 0, len(items))
+	members := make([]slots.Item, 0, len(items))
 	for _, n := range items {
-		members = append(members, slots.Member{Name: strings.TrimSpace(n)})
+		members = append(members, slots.Item{Value: strings.TrimSpace(n)})
 	}
-	return slots.Members(members...)
+	return slots.Items(members...)
 }
 
 // typedMembersVar is typedMembersValue as the slot variable a session would patch.
@@ -3256,19 +3479,36 @@ func typedMembersVar(id int, typ, list string) harness.Variable {
 // typedMembersVarS is the same with an explicit strength, the way a session's patch
 // carries one.
 func typedMembersVarS(id int, typ string, strength float64, names ...string) harness.Variable {
-	items := make([]slots.Member, 0, len(names))
+	items := make([]slots.Item, 0, len(names))
 	for _, n := range names {
 		if n = strings.TrimSpace(n); n != "" {
-			items = append(items, slots.Member{Name: n})
+			items = append(items, slots.Item{Value: n})
 		}
 	}
-	v := slots.Members(items...)
+	v := slots.Items(items...)
 	rendered := slots.Render(v)
 	out := harness.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
 	if strength > 0 {
 		out.CandidateStrength = &strength
 	}
 	return out
+}
+
+// typedAnchoredMembersVar is typedMembersVarS with the passage each member rests on: the shape a
+// member must have to be COUNTED (see harness.AnchoredMembers). Without the chunk id the member
+// is a claim — visible in the record, absent from the number.
+func typedAnchoredMembersVar(id int, typ string, lists ...string) harness.Variable {
+	items := make([]slots.Item, 0, len(lists))
+	for _, list := range lists {
+		for _, n := range strings.Split(list, "、") {
+			if n = strings.TrimSpace(n); n != "" {
+				items = append(items, slots.Item{Value: n, ChunkID: "c-" + n, Quote: "…" + n + "…"})
+			}
+		}
+	}
+	v := slots.Items(items...)
+	rendered := slots.Render(v)
+	return harness.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
 }
 
 func typedCountVar(id int, typ string, n int, strength float64) harness.Variable {
@@ -3285,7 +3525,7 @@ func TestUnionIsOrderIndependent(t *testing.T) {
 	eleven := typedMembersValue("华雄、管亥、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳")
 	thirteen := typedMembersValue("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、庞德、成何、管亥")
 	names := func(v slots.Value) string {
-		out := v.Names()
+		out := v.ItemValues()
 		sort.Strings(out)
 		return strings.Join(out, "、")
 	}
@@ -3314,7 +3554,7 @@ func TestUnionIsOrderIndependent(t *testing.T) {
 	// A number never outvotes the members it counts: the number is the claim that
 	// loses, kept as the dropped value.
 	union, dropped, ok := slots.Union(thirteen, slots.Number(11))
-	if !ok || union.Kind != slots.KindMembers {
+	if !ok || union.Kind != slots.KindItems {
 		t.Fatalf("members vs count = %v ok=%v, want the members", union, ok)
 	}
 	if dropped.Count != 11 {
@@ -3338,11 +3578,11 @@ func TestUnionIsOrderIndependent(t *testing.T) {
 // the four extra being place-qualified copies of names already listed.
 func TestMemberUnionDropsPlaceAndEventPhrases(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
-		typedMembersVar(1, "person", "程远志、华雄、管亥、颜良、文丑、杨龄、孔秀、孟坦、韩福、卞喜、王植、秦琪、车胄、成何、蔡阳、吕旷、吕翔、荀正、纪灵、夏侯存、庞德"),
-		typedMembersVar(2, "person", "孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪"),
+		typedAnchoredMembersVar(1, "person", "程远志、华雄、管亥、颜良、文丑、杨龄、孔秀、孟坦、韩福、卞喜、王植、秦琪、车胄、成何、蔡阳、吕旷、吕翔、荀正、纪灵、夏侯存、庞德"),
+		typedAnchoredMembersVar(2, "person", "孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪"),
 	}, 0, nil)
 
-	union := harness.MemberNames(&table)
+	union := harness.ItemValues(&table)
 	if len(union) != 21 {
 		t.Fatalf("member count = %d, want the 21 names (place-qualified copies are not members): %v", len(union), union)
 	}
