@@ -1,9 +1,101 @@
 from abc import ABC
 import os
+from functools import cmp_to_key
+
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
 
+# Type rank for the ListOperations ``sort`` op. Pairs of same-rank values
+# compare numerically (numbers) or lexicographically (everything else). Across
+# ranks, the lower rank always wins — this gives a strict, transitive
+# ordering that avoids the cycle the previous ``lessScalar``-style
+# comparator produced (``10 > 2``, ``2 > "11"``, ``"11" > 10``). The Go
+# runtime port (internal/agent/component/list_operations.go ``lessKey``)
+# uses the same rank-then-compare scheme, so flows run on either runtime
+# produce the same ordering — see issue #19427 follow-up review.
+_NUMERIC_RANK = 0
+_TEXT_RANK = 1
+
+
+def _scalar_rank(v):
+    """Return the rank for ``v`` (lower wins). Numbers (``int``/``float``,
+    excluding ``bool`` since Python treats ``bool`` as an ``int`` subclass)
+    come first; everything else (``str``, ``None``, ``bool``, ``list``,
+    etc.) sorts into the text rank. Matches Go's ``lessKey`` rank."""
+    if not isinstance(v, bool) and isinstance(v, (int, float)):
+        return _NUMERIC_RANK
+    return _TEXT_RANK
+
+
+def _go_format_scalar(v):
+    """Render ``v`` the way Go's ``fmt.Sprintf(\"%v\", v)`` does for the
+    non-numeric branch. Python's ``str()`` differs from Go's ``%v`` for
+    some types (``None`` → ``\"None\"`` vs ``\"<nil>\"``,
+    ``True``/``False`` → ``\"True\"/\"False\"`` vs ``\"true\"/\"false\"``).
+    Pin a uniform formatter so the Python and Go runtimes agree on the
+    lexicographic fallback (CodeRabbit review on PR #19782)."""
+    if v is None:
+        return "<nil>"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
+
+
+def _scalar_compare(a, b):
+    """Comparator for the ListOperations ``sort`` op — transitive order
+    matching the Go runtime's ``lessKey`` (internal/agent/component/list_operations.go).
+
+    1. Rank by type: numbers (``int``/``float`` excluding ``bool``) before
+       everything else. This breaks the previous cycle
+       (``10 > 2``, ``2 > "11"``, ``"11" > 10``) where two numbers
+       compared numerically but a number-vs-string fell through to
+       lexicographic.
+    2. Within the numeric rank: compare numerically.
+    3. Within the text rank: compare lexicographically via
+       :func:`_go_format_scalar` so Python ``str()`` / ``True`` / ``None``
+       differences don't pull the ordering out of alignment with Go's
+       ``fmt.Sprintf(\"%v\", v)`` fallback.
+
+    ``bool`` is excluded from the numeric branch (matches Go's
+    ``toFloat64OK`` returning ``false`` for ``bool``); ``True``/``False``
+    sort by their Go-formatted string (``\"true\"`` < ``\"false\"``).
+    """
+    a_rank, b_rank = _scalar_rank(a), _scalar_rank(b)
+    if a_rank != b_rank:
+        return -1 if a_rank < b_rank else 1
+    if a_rank == _NUMERIC_RANK:
+        if a < b:
+            return -1
+        if a > b:
+            return 1
+        return 0
+    sa, sb = _go_format_scalar(a), _go_format_scalar(b)
+    if sa < sb:
+        return -1
+    if sa > sb:
+        return 1
+    return 0
+
+
+def _scalar_sort_key(v):
+    """Return a sort key for ``v`` that ``sorted`` can use safely.
+
+    Returns a ``(rank, formatted_string)`` tuple. The rank gives a strict
+    type ordering (numbers before non-numbers); the formatted string breaks
+    ties lexicographically. Using a tuple key avoids the
+    ``TypeError: '<' not supported between instances of 'X' and 'Y'`` that
+    ``sorted`` raises when two items have the same key but heterogeneous
+    Python types — a real risk for the dict-field sort path where two
+    different fields can produce equal keys.
+
+    Pass the result through :func:`cmp_to_key` of :func:`_scalar_compare`
+    when a pure cmp function is more natural (e.g. nested sorts); this
+    helper is the recommended adapter for ``sorted(items, key=...)``."""
+    return (_scalar_rank(v), _go_format_scalar(v))
+
+
+>>>>>>> 132ef599e (fix(agent): use rank-based comparator for transitive ListOperations sort (#19427 follow-up))
 class ListOperationsParam(ComponentParamBase):
     """
     Define the List Operations component parameters.
