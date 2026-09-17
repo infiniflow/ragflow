@@ -30,8 +30,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	md "github.com/JohannesKaufmann/html-to-markdown"
 )
 
 const (
@@ -375,7 +373,7 @@ func addMoodleToken(fileURL, token string) string {
 }
 
 func moodleHTMLToMarkdown(html string) (string, error) {
-	converter := md.NewConverter("", true, &md.Options{EmDelimiter: "*"})
+	converter := newMarkdownConverter()
 	out, err := converter.ConvertString(html)
 	if err != nil {
 		return "", fmt.Errorf("Moodle HTML to Markdown conversion failed: %w", err)
