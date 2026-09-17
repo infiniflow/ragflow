@@ -189,6 +189,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			}
 		}
 		common.Info("Database schema migrated successfully")
+
+		// Split the conversation message and reference payloads out of their
+		// parent tables. It has to run after AutoMigrate, which unlike
+		// RunMigrations creates the child tables this backfill writes to.
+		if err = migrateConversationHistory(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate conversation history: %w", err)
+		}
 	} else {
 		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
 		// performed by the standalone --migrate action, so a server-mode process
