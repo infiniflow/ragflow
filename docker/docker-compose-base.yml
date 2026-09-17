@@ -304,16 +304,16 @@ services:
     user: "0:0"
     env_file: .env
     # Publish the Kvrocks port so a host-run Go binary (e.g. ./bin/ragflow_server
-    # --ingestor) can reach it. The host-facing port reuses the Redis slot
-    # (REDIS_PORT): the Go deployment disables the Valkey `redis` service (see
-    # docker-compose-go.yml), so that slot is free, and CI offsets REDIS_PORT per
-    # job to avoid clashes between concurrent test runs on a shared runner. Locally
-    # REDIS_PORT defaults to 6379, so this still binds 127.0.0.1:6379. The container
-    # port (right side) stays 6379, and the Go services reach `kvrocks:6379` inside
-    # the docker network regardless of the host mapping (KVROCKS_PORT stays 6379,
-    # set by the Go overlay).
+    # --ingestor) can reach it. The host-facing port uses KVROCKS_PORT (default 6379
+    # locally, so a local host binary connects to localhost:6379). In CI the port is
+    # offset per job (KVROCKS_PORT = 6381 + PORT_OFFSET, reserved alongside the other
+    # CI ports) so concurrent test runs on a shared runner do not clash, and it stays
+    # distinct from REDIS_PORT (used by the Valkey `redis` service that the Python
+    # deployment still runs next to Kvrocks). The container port (right side) stays
+    # 6379, and the Go services reach `kvrocks:6379` inside the docker network
+    # regardless of the host mapping (KVROCKS_PORT stays 6379, set by the Go overlay).
     ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${KVROCKS_PORT:-6379}:6379"
     profiles:
       - ragflow-go
     volumes:
