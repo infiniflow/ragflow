@@ -1,25 +1,9 @@
-import ast
-from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
-from urllib.parse import urlparse
+from unittest.mock import Mock, patch
 
-from common.llm_request_context import openai_user_kwargs, reset_llm_request_context, set_llm_request_context
-
-
-SOURCE = Path(__file__).resolve().parents[4] / "rag/llm/embedding_model.py"
-TREE = ast.parse(SOURCE.read_text())
-CLASSES = [node for node in TREE.body if isinstance(node, ast.ClassDef) and node.name == "OpenAIEmbed"]
-NAMESPACE = {
-    "Base": object,
-    "openai_user_kwargs": openai_user_kwargs,
-    "urlparse": urlparse,
-    "_sorted_by_index": lambda items: sorted(items, key=lambda item: item.index),
-    "total_token_count_from_response": lambda response: response.usage.total_tokens,
-}
-exec(compile(ast.Module(body=CLASSES, type_ignores=[]), str(SOURCE), "exec"), NAMESPACE)
-OpenAIEmbed = NAMESPACE["OpenAIEmbed"]
+from common.llm_request_context import reset_llm_request_context, set_llm_request_context
+from rag.llm.embedding_model import OpenAIEmbed, OpenAI_APIEmbed
 
 
 class OvhEmbeddingUserTests(unittest.TestCase):
@@ -42,11 +26,23 @@ class OvhEmbeddingUserTests(unittest.TestCase):
 
     def test_ovh_omits_user_and_preserves_payload_and_result(self):
         vectors, tokens = self.embed._call(["first", "second"])
-        self.assertEqual(self.create.call_args.kwargs, {
-            "input": ["first", "second"], "model": "BGE-M3", "encoding_format": "float",
-        })
+        self.assertEqual(
+            self.create.call_args.kwargs,
+            {
+                "input": ["first", "second"],
+                "model": "BGE-M3",
+                "encoding_format": "float",
+            },
+        )
         self.assertEqual(vectors, [[1.0], [2.0]])
         self.assertEqual(tokens, 7)
+
+    def test_compatible_provider_inherits_ovh_filter(self):
+        with patch("rag.llm.embedding_model.OpenAI", return_value=self.embed.client):
+            provider = OpenAI_APIEmbed("test-key", "BGE-M3", self.embed.client.base_url)
+        provider._call(["query"])
+        self.assertNotIn("user", self.create.call_args.kwargs)
+        self.assertEqual(self.create.call_args.kwargs["model"], "BGE-M3")
 
     def test_ovh_hostname_case_port_and_trailing_slash(self):
         self.embed.client.base_url = "https://OAI.ENDPOINTS.KEPLER.AI.CLOUD.OVH.NET:443/v1/"
