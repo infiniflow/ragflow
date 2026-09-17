@@ -799,6 +799,54 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return purgeErr }
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("deleteDocumentFull error = %v, want purge error", err)
+	}
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task == nil {
+		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+	}
+}
+
+func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return purgeErr }
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("RemoveDocumentKeepFile error = %v, want purge error", err)
+	}
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task == nil {
+		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+	}
+}
+
 func TestDeleteDocumentFull_NotFound(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

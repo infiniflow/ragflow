@@ -128,6 +128,20 @@ func (s *DocumentService) cleanupClaimToken(ctx context.Context, documentID stri
 	return token
 }
 
+// purgeTaskStateForCleanup removes resumable checkpoint, tracker, and chunk
+// cache state before a task row is deleted. The bounded context makes Redis
+// outages and hung clients observable to the caller instead of allowing a
+// destructive task/document delete to proceed with stale resume state.
+func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID string) error {
+	purgeTaskState := s.purgeTaskState
+	if purgeTaskState == nil {
+		purgeTaskState = ingestionpipeline.PurgeTaskState
+	}
+	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	defer cancel()
+	return purgeTaskState(batchCtx, taskID)
+}
+
 // beginCleanupBatch renews the request's fencing claim immediately before an
 // external storage operation. A missing token means this helper is being used
 // by an internal path that does not hold a cleanup claim.
@@ -257,17 +271,10 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		taskExisted = true
 	}
 	if task != nil {
-		purgeTaskState := s.purgeTaskState
-		if purgeTaskState == nil {
-			purgeTaskState = ingestionpipeline.PurgeTaskState
-		}
 		if err := s.beginCleanupBatch(ctx, doc.ID, claimToken); err != nil {
 			return fmt.Errorf("begin task state cleanup for document %s: %w", doc.ID, err)
 		}
-		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
-		err := purgeTaskState(batchCtx, task.ID)
-		cancel()
-		if err != nil {
+		if err := s.purgeTaskStateForCleanup(ctx, task.ID); err != nil {
 			return fmt.Errorf("purge task state for document %s: %w", doc.ID, err)
 		}
 		if err := s.finishCleanupBatch(ctx, doc.ID, claimToken); err != nil {
