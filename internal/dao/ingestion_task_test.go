@@ -29,7 +29,7 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentSucceeds(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrent(ctx, db, "task-1", common.CREATED, common.RUNNING)
+	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrent(ctx, db, "task-1", []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentSucceeds(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskDAOUpdateStatusIfCurrentInSucceeds(t *testing.T) {
+func TestIngestionTaskDAOUpdateStatusIfCurrentMatchesMultipleStatuses(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
 	DB = db
@@ -64,9 +64,9 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentInSucceeds(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrentIn(ctx, db, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
+	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrent(ctx, db, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
 	if err != nil {
-		t.Fatalf("UpdateStatusIfCurrentIn failed: %v", err)
+		t.Fatalf("UpdateStatusIfCurrent failed: %v", err)
 	}
 	if !updated {
 		t.Fatal("expected update to succeed")
@@ -81,7 +81,7 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentInSucceeds(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskDAOUpdateStatusIfCurrentInRejectsMismatchedStatus(t *testing.T) {
+func TestIngestionTaskDAOUpdateStatusIfCurrentEmptyStatusesReturnsFalse(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
 	DB = db
@@ -92,27 +92,27 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentInRejectsMismatchedStatus(t *testi
 		UserID:     "user-1",
 		DocumentID: "doc-1",
 		DatasetID:  "kb-1",
-		Status:     common.STOPPING,
+		Status:     common.CREATED,
 	}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
 	ctx := t.Context()
-	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrentIn(ctx, db, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
+	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrent(ctx, db, "task-1", nil, common.RUNNING)
 	if err != nil {
-		t.Fatalf("UpdateStatusIfCurrentIn failed: %v", err)
+		t.Fatalf("UpdateStatusIfCurrent failed: %v", err)
 	}
 	if updated {
-		t.Fatal("expected update to be rejected")
+		t.Fatal("expected update with empty fromStatuses to be rejected")
 	}
 
 	reloaded, err := NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if reloaded.Status != common.STOPPING {
-		t.Fatalf("status = %q, want %q", reloaded.Status, common.STOPPING)
+	if reloaded.Status != common.CREATED {
+		t.Fatalf("status = %q, want %q", reloaded.Status, common.CREATED)
 	}
 }
 
@@ -321,7 +321,7 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing
 	}
 
 	ctx := t.Context()
-	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrent(ctx, db, "task-1", common.CREATED, common.RUNNING)
+	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrent(ctx, db, "task-1", []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent failed: %v", err)
 	}

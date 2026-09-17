@@ -404,7 +404,7 @@ func (s *IngestionTaskService) transitionFrom(ctx context.Context, taskID string
 			return nil, err
 		}
 	}
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrentIn(ctx, dao.DB, taskID, fromStatuses, to)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, fromStatuses, to)
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +427,7 @@ func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to
 		}
 		return task, err
 	}
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, task.Status, to)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{task.Status}, to)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +513,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, status)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
 	if err != nil {
 		return err
 	}
@@ -533,7 +533,7 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 // the unstarted from-state, so it never regresses a row the worker already
 // advanced.
 func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, common.SCHEDULED)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, common.SCHEDULED)
 	if err != nil {
 		return nil, err
 	}
