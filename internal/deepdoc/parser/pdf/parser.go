@@ -204,7 +204,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	var dlaRegions []pdf.DLAPageRegions
 
 	if pageImg != nil && renderErr == nil {
-		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer)
+		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer, pageZoom)
 		annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
 			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom)
 	}
@@ -223,7 +223,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		slog.Debug("per-page zoom retry", "page", pg, "zoom", retryZoom)
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
-			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer)
+			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer, retryZoom)
 			annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
 				ctx, retryImg, ocrBoxes, pg, retryRenderErr, docAnalyzer, tb, retryZoom)
 			pageImg = retryImg
@@ -295,7 +295,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 //     glyphs so downstream median-height/width stats stay meaningful.
 //   - bool: whether OCR was actually used to produce ocrBoxes.
 func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, pg int,
-	renderErr error, isScanNoise bool, docAnalyzer pdf.DocAnalyzer,
+	renderErr error, isScanNoise bool, docAnalyzer pdf.DocAnalyzer, zoom float64,
 ) ([]pdf.TextBox, []pdf.TextChar, bool) {
 	var ocrBoxes []pdf.TextBox
 	ocrUsed := false
@@ -303,14 +303,14 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	if renderErr == nil && pageImg != nil {
 		hasCleanChars := len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars)
 		if hasCleanChars {
-			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
+			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg, zoom)
 			ocrUsed = ocrBoxes != nil
 		} else {
 			label := "scan page"
 			if len(chars) > 0 && !isScanNoise {
 				label = "garbled page"
 			}
-			ocrBoxes = p.ocrDetectAndRecognize(ctx, pageImg, docAnalyzer, pg, label)
+			ocrBoxes = p.ocrDetectAndRecognize(ctx, pageImg, docAnalyzer, pg, label, zoom)
 			ocrUsed = ocrBoxes != nil
 			if ocrUsed {
 				// Synthetic OCR chars feed downstream median calculations.
@@ -322,7 +322,7 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 				}
 			} else if len(chars) > 0 {
 				// Detect failed but chars exist: try the merge path.
-				ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
+				ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg, zoom)
 				ocrUsed = ocrBoxes != nil
 			}
 		}
