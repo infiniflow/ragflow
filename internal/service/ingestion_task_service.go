@@ -67,6 +67,7 @@ type IngestionTaskService struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	pipelineLogDAO      *dao.PipelineOperationLogDAO
+	cleanupClaimDAO     *dao.DocumentCleanupClaimDAO
 	kbDAO               *dao.KnowledgebaseDAO
 	userCanvasDAO       *dao.UserCanvasDAO
 	taskPublisher       TaskPublisher
@@ -80,6 +81,7 @@ func NewIngestionTaskService() *IngestionTaskService {
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
+		cleanupClaimDAO:     dao.NewDocumentCleanupClaimDAO(),
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		userCanvasDAO:       dao.NewUserCanvasDAO(),
 		taskPublisher:       NewMessageQueueTaskPublisher(),
@@ -721,6 +723,17 @@ func (s *IngestionTaskService) ensureRunIdentity(ctx context.Context, task *enti
 		lockedDocument, err := s.documentDAO.GetByIDForUpdate(ctx, tx, task.DocumentID)
 		if err != nil {
 			return err
+		}
+		now, err := dao.CurrentUnixTime(ctx, tx)
+		if err != nil {
+			return err
+		}
+		claim, err := s.cleanupClaimDAO.GetActive(ctx, tx, lockedDocument.ID, now)
+		if err != nil {
+			return err
+		}
+		if claim != nil {
+			return fmt.Errorf("document %s cleanup claim is active", lockedDocument.ID)
 		}
 		lockedTask, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
 		if err != nil {

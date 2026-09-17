@@ -462,6 +462,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
+		&entity.DocumentCleanupClaim{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},

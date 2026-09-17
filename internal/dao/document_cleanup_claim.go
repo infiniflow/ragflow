@@ -99,6 +99,36 @@ func (dao *DocumentCleanupClaimDAO) Validate(ctx context.Context, db *gorm.DB, d
 	return count == 1
 }
 
+// GetActive returns the currently unexpired claim for a document.
+func (dao *DocumentCleanupClaimDAO) GetActive(ctx context.Context, db *gorm.DB, documentID string, now int64) (*entity.DocumentCleanupClaim, error) {
+	var claim entity.DocumentCleanupClaim
+	err := db.WithContext(ctx).Where("document_id = ? AND expires_at > ?", documentID, now).First(&claim).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &claim, nil
+}
+
+// CurrentUnixTime reads the database clock in seconds so lease comparisons do
+// not depend on the clocks of individual API or worker processes.
+func CurrentUnixTime(ctx context.Context, db *gorm.DB) (int64, error) {
+	query := "SELECT UNIX_TIMESTAMP()"
+	switch db.Dialector.Name() {
+	case "sqlite":
+		query = "SELECT CAST(strftime('%s', 'now') AS INTEGER)"
+	case "postgres":
+		query = "SELECT CAST(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) AS BIGINT)"
+	}
+	var now int64
+	if err := db.WithContext(ctx).Raw(query).Scan(&now).Error; err != nil {
+		return 0, err
+	}
+	return now, nil
+}
+
 // Release removes a claim only when token still owns it.
 func (dao *DocumentCleanupClaimDAO) Release(ctx context.Context, db *gorm.DB, documentID, token string) (bool, error) {
 	result := db.WithContext(ctx).Where("document_id = ? AND token = ?", documentID, token).Delete(&entity.DocumentCleanupClaim{})
