@@ -485,7 +485,15 @@ class SyncLogsService(CommonService):
             task_id = get_uuid()
             ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
             ret = cls.save(
-                id=task_id, kb_id=kb_id, status=TaskStatus.SCHEDULE, connector_id=connector_id, task_type=task_type, poll_range_start=poll_range_start, from_beginning=reindex, total_docs_indexed=total_docs_indexed, time_started=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                id=task_id,
+                kb_id=kb_id,
+                status=TaskStatus.SCHEDULE,
+                connector_id=connector_id,
+                task_type=task_type,
+                poll_range_start=poll_range_start,
+                from_beginning=reindex,
+                total_docs_indexed=total_docs_indexed,
+                time_started=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             if run_immediately:
                 DB.execute_sql(
