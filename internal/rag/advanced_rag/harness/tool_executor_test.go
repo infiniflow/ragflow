@@ -17,11 +17,13 @@ package harness
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
@@ -305,19 +307,475 @@ func TestSearchChunksAlwaysUsesCompiled(t *testing.T) {
 }
 
 func TestRenderToolArgs(t *testing.T) {
-	if got := renderToolArgs(nil); got != "{}" {
-		t.Errorf("renderToolArgs(nil) = %q, want {}", got)
+	if got := RenderToolArgs(nil); got != "{}" {
+		t.Errorf("RenderToolArgs(nil) = %q, want {}", got)
 	}
-	if got := renderToolArgs(map[string]any{}); got != "{}" {
-		t.Errorf("renderToolArgs(map{}) = %q, want {}", got)
+	if got := RenderToolArgs(map[string]any{}); got != "{}" {
+		t.Errorf("RenderToolArgs(map{}) = %q, want {}", got)
 	}
-	got := renderToolArgs(map[string]any{"q": "hi", "n": 3})
+	got := RenderToolArgs(map[string]any{"q": "hi", "n": 3})
 	if !strings.Contains(got, `"q":"hi"`) || !strings.Contains(got, `"n":3`) {
-		t.Errorf("renderToolArgs = %q, want both keys", got)
+		t.Errorf("RenderToolArgs = %q, want both keys", got)
 	}
 	// Unmarshalable values must degrade to "{}", not blow up the log line.
-	if got := renderToolArgs(map[string]any{"f": func() {}}); got != "{}" {
-		t.Errorf("renderToolArgs(func value) = %q, want {}", got)
+	if got := RenderToolArgs(map[string]any{"f": func() {}}); got != "{}" {
+		t.Errorf("RenderToolArgs(func value) = %q, want {}", got)
+	}
+
+	// A long value is CAPPED: the slot-research driver passes a paragraph of
+	// evidence as its "query", and the uncapped rendering repeated the same 200
+	// characters on every line of its round.
+	long := strings.Repeat("曹", 200)
+	got = RenderToolArgs(map[string]any{"query": []any{long}})
+	if strings.Contains(got, long) || !strings.Contains(got, "…") {
+		t.Errorf("long args = %q, want the value capped with an ellipsis", got)
+	}
+	if n := utf8.RuneCountInString(got); n > ThinkLabelMaxRunes+16 {
+		t.Errorf("rendered args = %d runes, want one capped value", n)
+	}
+	// Capping must not produce invalid UTF-8 (it cuts on rune boundaries)...
+	if !utf8.ValidString(got) {
+		t.Errorf("capped args are not valid UTF-8: %q", got)
+	}
+	// ...nor invalid JSON: the capped value still parses.
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Errorf("capped args must stay valid JSON: %v", err)
+	}
+	// Nested shapes are capped too (a tool argument can be an object).
+	if got := RenderToolArgs(map[string]any{"scope": map[string]any{"q": long}}); !strings.Contains(got, "…") {
+		t.Errorf("nested args = %q, want the nested value capped", got)
+	}
+	// A list of short queries is left alone: capping caps VALUES, it does not
+	// truncate the call.
+	if got := RenderToolArgs(map[string]any{"query": []any{"a", "b"}}); got != `{"query":["a","b"]}` {
+		t.Errorf("short args = %q, want them untouched", got)
+	}
+}
+
+// TestToolCallLine pins the think block's call step: the tool and its query, and
+// nothing else. The argument object is a developer's record — the document id, the
+// kind switch, the nav hint and the empty scope list are all detail a reader would
+// have to parse — and a call that carries no query names only the tool instead of
+// trailing an empty "with:" or falling back to an id.
+func TestToolCallLine(t *testing.T) {
+	const docID = "95a7aee3f11143e69dc9fa5b7bad3a14"
+	cases := []struct {
+		name string
+		tool string
+		args map[string]any
+		want string
+	}{
+		// The shape the reader actually meets: a document-scoped call that also
+		// carries the query it was made for. Only the query survives.
+		{"query-with-plumbing", "navigate_structure",
+			map[string]any{"doc_id": docID, "kind": "catalog", "query": "曹操历史地位"},
+			`Running the navigate_structure tool with "曹操历史地位".`},
+		{"query-list", "retrieve", map[string]any{"nav_hint": "", "query": []any{"曹操的逝世日期", "曹操是谁"}},
+			`Running the retrieve tool with "曹操的逝世日期", "曹操是谁".`},
+		{"question", "calculate", map[string]any{"question": "how many people"},
+			`Running the calculate tool with "how many people".`},
+		{"doc-only", "summarize_document", map[string]any{"doc_id": docID},
+			"Running the summarize_document tool."},
+		{"no-args", "summarize_document", nil, "Running the summarize_document tool."},
+	}
+	for _, tc := range cases {
+		if got := ToolCallLine(tc.tool, tc.args); got != tc.want {
+			t.Errorf("%s: ToolCallLine = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestCountOfPluralizes pins the two rules the trace needs: a regular noun takes
+// "s", and a consonant+y noun takes "ies". Appending a bare "s" is what printed
+// "3 first-hop querys" and "3 targeted querys".
+func TestCountOfPluralizes(t *testing.T) {
+	cases := []struct {
+		n    int
+		noun string
+		want string
+	}{
+		{1, "query", "1 query"},
+		{3, "query", "3 queries"},
+		{2, "first-hop query", "2 first-hop queries"},
+		{2, "targeted query", "2 targeted queries"},
+		{2, "passage", "2 passages"},
+		{2, "new passage", "2 new passages"},
+		{1, "sub-question", "1 sub-question"},
+		{2, "sub-question", "2 sub-questions"},
+		{2, "evidence block", "2 evidence blocks"},
+		{2, "key", "2 keys"},
+		{0, "gathered passage", "0 gathered passages"},
+	}
+	for _, tc := range cases {
+		if got := CountOf(tc.n, tc.noun); got != tc.want {
+			t.Errorf("CountOf(%d, %q) = %q, want %q", tc.n, tc.noun, got, tc.want)
+		}
+	}
+}
+
+// TestExecuteNarratesToolOutcome pins the RESULT half of the "[Function tool]"
+// think-block narration: every call reports what came back (status, result
+// count, source documents), not only that it ran. Without it the trace shows a
+// tool was invoked but never whether it found anything.
+//
+// It also pins the STRUCTURED twin of both halves: a client rendering steps
+// gets the tool name, arguments, status, result/document counts and evidence
+// anchors without parsing the sentences.
+func TestExecuteNarratesToolOutcome(t *testing.T) {
+	var buf bytes.Buffer
+	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c1", "doc_id": "d1", "content": "hit one"},
+		{"chunk_id": "c2", "doc_id": "d1", "content": "hit two"},
+		{"chunk_id": "c3", "doc_id": "d2", "content": "hit three"},
+	}})
+	deps.Logger = log.New(&buf, "", 0)
+	var events []ThinkEvent
+	ctx := WithSteps(context.Background(), StepReporter{Events: func(ev ThinkEvent) { events = append(events, ev) }})
+	// search_chunks never narrows (no keywords), so the stub's hits reach the
+	// outcome verbatim.
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
+	if _, err := ex.Execute(ctx, "search_chunks", map[string]any{"query": "q"}); err != nil {
+		t.Fatalf("search_chunks: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"[Function tool] Running the search_chunks tool with: ",
+		`[Function tool] The search_chunks tool returned 3 results from 2 documents for "q".`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("think-log narration missing %q:\n%s", want, out)
+		}
+	}
+
+	// The tool's two halves PLUS the search legs underneath it: the legs report
+	// their own steps (which leg ran, what it searched, what it found), so the
+	// think block answers "what did it actually search".
+	var call, result ThinkEvent
+	var legLines []string
+	for _, ev := range events {
+		switch ev.Kind {
+		case ThinkKindToolCall:
+			call = ev
+		case ThinkKindToolResult:
+			result = ev
+		case ThinkKindStage:
+			legLines = append(legLines, ev.Summary)
+		}
+	}
+	legs := strings.Join(legLines, "\n")
+	for _, want := range []string{
+		// The leg's two steps as the READER gets them: sentences in the family every
+		// leg shares (the method is named inside the sentence, because the
+		// "[Hybrid search]" prefix is a developer's label), counts in words, no ids —
+		// and no "the knowledge base", which every leg has in common.
+		`[Hybrid search] Searching by meaning and keyword for "q".`,
+		`[Hybrid search] Found 3 passages in 2 documents for "q".`,
+	} {
+		if !strings.Contains(legs, want) {
+			t.Errorf("search-leg step missing %q; legs:\n%s", want, legs)
+		}
+	}
+	// The log keeps its own terse form: the same verb without the method clause and
+	// without a period.
+	if !strings.Contains(out, `[Hybrid search] Searching for "q"`) {
+		t.Errorf("the log must keep its searching line:\n%s", out)
+	}
+	// ...and the log form must not be what the block got: the two sentences differ
+	// by design (the log has no method clause and no period).
+	if strings.Contains(legs, `Searching for "q"`) {
+		t.Errorf("the think block got the log line instead of the sentence:\n%s", legs)
+	}
+	// The per-document breakdown the sentence is derived from stays in the
+	// developer log, keyed by id: that is the half a developer greps for.
+	if !strings.Contains(out, `"q" -> 3 chunk(s): d1:2chunk(14chars); d2:1chunk(9chars)`) {
+		t.Errorf("the log must keep the per-document breakdown:\n%s", out)
+	}
+	if strings.Contains(legs, "d1:2chunk") {
+		t.Errorf("document ids must not reach the think block; legs:\n%s", legs)
+	}
+	if call.Kind != ThinkKindToolCall || call.Tool != "search_chunks" || call.Stage != "Function tool" {
+		t.Errorf("call event = %#v", call)
+	}
+	// The call step names the tool and its query — nothing else — while the log and
+	// the event's Args keep the argument object the model emitted.
+	if want := `[Function tool] Running the search_chunks tool with "q".`; call.Summary != want {
+		t.Errorf("call summary = %q, want %q", call.Summary, want)
+	}
+	if !strings.Contains(out, `[Function tool] Running the search_chunks tool with: {"query":"q"}`) {
+		t.Errorf("the log must keep the argument object:\n%s", out)
+	}
+	if !strings.Contains(call.Args, `"query":"q"`) {
+		t.Errorf("call args = %q, want the rendered arguments", call.Args)
+	}
+
+	if result.Kind != ThinkKindToolResult || result.Status != StatusOK {
+		t.Errorf("result event = %#v, want an ok result", result)
+	}
+	if result.Results != 3 || result.Documents != 2 {
+		t.Errorf("result counts = %d/%d, want 3 results from 2 documents", result.Results, result.Documents)
+	}
+	// The evidence anchors are the admitted chunk ids — what the sentence's
+	// "3 results" points at.
+	if len(result.Sources) != 3 {
+		t.Errorf("sources = %#v, want the 3 admitted chunk ids", result.Sources)
+	}
+	// The result carries the call's arguments too, and its sentence names them:
+	// with concurrent calls interleaving their lines, that is what pairs a result
+	// back to the call that produced it.
+	if result.Args != call.Args {
+		t.Errorf("result args = %q, want the call's arguments %q", result.Args, call.Args)
+	}
+	if !strings.Contains(result.Summary, `for "q"`) {
+		t.Errorf("result summary = %q, want it to name the query", result.Summary)
+	}
+	// The structured counts must agree with the sentence shown to the user.
+	if !strings.Contains(result.Summary, "3 results from 2 documents") {
+		t.Errorf("result summary = %q, want it to carry the same counts", result.Summary)
+	}
+}
+
+// TestExecuteHidesDocumentIDsFromThink pins the split the two projections exist
+// for: a 32-hex document id is exact for a developer and meaningless for a reader,
+// so it belongs in the developer log and in the machine-readable Args — and not in
+// the think block, neither in the call's arguments nor in the outcome sentence.
+//
+// The call targets a tool name this deployment has no binding for on purpose: it
+// exercises the whole path (call line, outcome line, label fallback) without
+// needing a retriever.
+func TestExecuteHidesDocumentIDsFromThink(t *testing.T) {
+	const docID = "95a7aee3f11143e69dc9fa5b7bad3a14"
+	var logBuf, think strings.Builder
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.Logger = log.New(&logBuf, "", 0)
+	var events []ThinkEvent
+	ctx := WithSteps(context.Background(), StepReporter{
+		Text:   func(line string) { think.WriteString(line) },
+		Events: func(ev ThinkEvent) { events = append(events, ev) },
+	})
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
+	if _, err := ex.Execute(ctx, "time_travel", map[string]any{"doc_id": docID}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// A doc-scoped call has no query, so the call step names only the tool: no
+	// argument object, and therefore no id.
+	if !strings.Contains(think.String(), "[Function tool] Running the time_travel tool.") {
+		t.Errorf("think block should show the call without arguments:\n%s", think.String())
+	}
+	if strings.Contains(think.String(), docID) {
+		t.Errorf("the think block must not carry a document id:\n%s", think.String())
+	}
+	// A document-scoped call has no human label: it goes unlabelled rather than
+	// naming a document the reader cannot resolve.
+	if !strings.Contains(think.String(),
+		"[Function tool] The time_travel tool is not wired in this deployment, so nothing ran.") {
+		t.Errorf("think block missing the outcome sentence:\n%s", think.String())
+	}
+
+	// The structured summaries follow the same rule as the text (a client renders
+	// them), while the event's Args keep the exact call: that is what a client
+	// correlates a step on.
+	for _, ev := range events {
+		if strings.Contains(ev.Summary, docID) {
+			t.Errorf("event summary %q carries the document id", ev.Summary)
+		}
+	}
+	if last := events[len(events)-1]; !strings.Contains(last.Args, docID) {
+		t.Errorf("event Args = %q, want the document id kept", last.Args)
+	}
+
+	// The developer log keeps the id on both halves of the call.
+	if !strings.Contains(logBuf.String(), `"doc_id":"`+docID+`"`) {
+		t.Errorf("the log's call line must keep the document id:\n%s", logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "so nothing ran for document "+docID) {
+		t.Errorf("the log's outcome line must name the document by id:\n%s", logBuf.String())
+	}
+}
+
+// TestExecuteNarratesEmptyOutcome pins the other end: a tool that reached
+// nothing says so, instead of leaving that indistinguishable from a hit.
+func TestExecuteNarratesEmptyOutcome(t *testing.T) {
+	var buf bytes.Buffer
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.Logger = log.New(&buf, "", 0)
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
+	if _, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"}); err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if want := `[Function tool] The retrieve tool matched nothing for "q".`; !strings.Contains(buf.String(), want) {
+		t.Errorf("think-log narration missing %q:\n%s", want, buf.String())
+	}
+}
+
+// TestChunkAggLegFitsTheCandidateCountToItsPool pins the nav-tree chunk-agg
+// leg's retrieval parameters against the retrieval service's own invariant
+// (`page * page_size <= rerank_candidates_count`, nlp/retrieval.go:126 =
+// rag/nlp/search.py:745).
+//
+// Python passes the pool as page_size AND raises rerank_candidates_count to the
+// same pool for this leg (dataset_api_service.py:4106-4129, plus the
+// must_not={"exists":"compile_kwd"} of _NAV_CHUNK_AGG_EXCLUDE_COMPILED=True).
+// Go dropped both, so page_size 256 met the default candidate count 64 and every
+// nav-tree descent failed with "rerank_candidates_count(64) must be greater than
+// or equal to page(1) * page_size(256)" — reported as an infra tool failure, and
+// the navigation ladder silently degraded to plain retrieval on every round.
+func TestChunkAggLegFitsTheCandidateCountToItsPool(t *testing.T) {
+	const pool = 256 // nav chunkAggPool / Python _NAV_CHUNK_AGG_POOL
+	r := &stubRetriever{chunks: []map[string]any{{"chunk_id": "c1"}}}
+	retrieve := chunkAggRetrieveFrom(r)
+
+	chunks, err := retrieve(context.Background(), "tenant1", "kb1", "q", []string{"d1"}, pool, 0.3)
+	if err != nil {
+		t.Fatalf("chunkAggRetrieveFrom: %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want the backend's hit", len(chunks))
+	}
+	req := r.lastReq(t)
+	if req.TopN != pool {
+		t.Errorf("TopN = %d, want %d (page_size IS the pool)", req.TopN, pool)
+	}
+	if req.RerankCandidatesCount < req.TopN {
+		t.Errorf("RerankCandidatesCount = %d < page_size %d: the retrieval service rejects this combination",
+			req.RerankCandidatesCount, req.TopN)
+	}
+	if !req.ExcludeCompiled {
+		t.Error("ExcludeCompiled = false: this leg aggregates ORIGINAL chunks per document, so compiled rows must be filtered out")
+	}
+	if len(req.DocScope) != 1 || req.DocScope[0] != "d1" {
+		t.Errorf("DocScope = %v, want the caller's document scope", req.DocScope)
+	}
+}
+
+// TestRenderToolOutcomeCoversEveryStatus pins one written sentence per status,
+// so an unmapped status can never silently fall back to a bare result count.
+//
+// Two properties are pinned alongside the status wording, because both are what
+// makes the sentence usable: it names the call's query (parallel calls interleave
+// their lines, so an unlabelled result cannot be paired with its call) and it
+// never spells the machine-readable reason into prose.
+//
+// The label is the ONLY input that differs between the two audiences (the think
+// sentence passes ArgsLabel, the developer line docIDLabel), so this test passes
+// labels rather than arguments: the wording above is written once and cannot
+// drift between them. TestExecuteHidesDocumentIDsFromThink pins the split itself.
+func TestRenderToolOutcomeCoversEveryStatus(t *testing.T) {
+	cases := []struct {
+		name  string
+		tool  string
+		label string
+		oc    ToolOutcome
+		want  string
+	}{
+		{"ok-no-docs", "calculate", "", ToolOutcome{Status: StatusOK, Payload: []any{map[string]any{"id": "c1"}}},
+			"The calculate tool returned 1 result."},
+		{"ok-with-docs", "retrieve", ` for "曹操是谁"`, ToolOutcome{Status: StatusOK, Payload: []any{
+			map[string]any{"doc_id": "d1"}, map[string]any{"doc_id": "d2"}}},
+			`The retrieve tool returned 2 results from 2 documents for "曹操是谁".`},
+		{"ok-multi-query", "retrieve", ` for "曹操的逝世日期", "曹操是谁"`, ToolOutcome{Status: StatusOK,
+			Payload: []any{map[string]any{"doc_id": "d1"}}},
+			`The retrieve tool returned 1 result from 1 document for "曹操的逝世日期", "曹操是谁".`},
+		// navigate_tree reports routing, not passages: its single payload entry
+		// names the documents it routed to as doc_ids.
+		{"ok-routed-docs", "navigate_tree", ` for "曹操是谁"`, ToolOutcome{Status: StatusOK, Payload: []any{
+			map[string]any{"kind": "navigate_tree", "doc_ids": []string{"d1", "d2", "d3"}}}},
+			`The navigate_tree tool returned 1 result from 3 documents for "曹操是谁".`},
+		// A document-scoped call has NO label a reader can use: the id names
+		// nothing they know, so the sentence goes unlabelled while the developer
+		// copy carries " for document d9" (docIDLabel — pinned by TestQuoteQueries).
+		{"ok-doc-scoped", "list_chunks", "", ToolOutcome{Status: StatusOK,
+			Payload: []any{map[string]any{"id": "c1"}}},
+			"The list_chunks tool returned 1 result."},
+		// Singular "1 result" must not be followed by "all of them".
+		{"redundant", "retrieve", ` for "q"`, ToolOutcome{Status: StatusRedundant,
+			Payload: []any{map[string]any{"id": "c1"}}},
+			`The retrieve tool returned 1 result for "q", already in the evidence pool.`},
+		{"miss", "retrieve", ` for "q"`, ToolOutcome{Status: StatusMiss, Reason: ReasonNoDoc},
+			`The retrieve tool matched nothing for "q".`},
+		// Without a query argument the sentence still has to name what was
+		// matched against, or it ends on a dangling preposition.
+		{"miss-unlabelled", "retrieve", "", ToolOutcome{Status: StatusMiss, Reason: ReasonNoDoc},
+			"The retrieve tool matched nothing for this query."},
+		// A hallucinated tool name is not a failure of this deployment's tools.
+		{"unwired", "time_travel", ` for "q"`, ToolOutcome{Status: StatusMiss, Reason: ReasonUnwired},
+			`The time_travel tool is not wired in this deployment, so nothing ran for "q".`},
+		{"empty-no-structure", "navigate_structure", ` for "曹操是谁"`,
+			ToolOutcome{Status: StatusEmpty, Reason: ReasonNoStructure},
+			`The navigate_structure tool has no compiled structure to read for "曹操是谁".`},
+		{"poor", "calculate", ` for "how many people"`, ToolOutcome{Status: StatusPoor, Reason: ReasonNoDoc},
+			`The calculate tool produced a result too weak to use for "how many people".`},
+		// The producer's own diagnostic is the actionable half of a failure; the
+		// reason token stays in the event.
+		{"error-with-cause", "navigate_tree", "", ToolOutcome{Status: StatusError, Reason: ReasonInfra,
+			Diagnostic: "nav-tree descent failed for kb=kb1"},
+			"The navigate_tree tool could not run: nav-tree descent failed for kb=kb1."},
+	}
+	for _, tc := range cases {
+		if got := renderToolOutcome(tc.tool, tc.label, tc.oc, nil); got != tc.want {
+			t.Errorf("%s: renderToolOutcome = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	got := renderToolOutcome("retrieve", ` for "q"`, ToolOutcome{Status: StatusOK}, errors.New("backend down"))
+	if !strings.Contains(got, "backend down") || !strings.Contains(got, `for "q"`) {
+		t.Errorf("a transport error must be reported against its call: %q", got)
+	}
+}
+
+// TestQuoteQueries pins the query label's two shapes and its refusal to label an
+// argument that holds no text (a fall-through, not a blank label).
+func TestQuoteQueries(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  any
+		want string
+	}{
+		{"string", "曹操是谁", `"曹操是谁"`},
+		{"string-list", []string{"a", "b"}, `"a", "b"`},
+		{"any-list", []any{"a", 3, "b"}, `"a", "b"`},
+		{"blank", "   ", ""},
+		{"blank-list", []any{"", "  "}, ""},
+		{"wrong-type", 42, ""},
+		{"nil", nil, ""},
+	}
+	for _, tc := range cases {
+		if got := quoteQueries(tc.raw); got != tc.want {
+			t.Errorf("%s: quoteQueries = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	// A blank query does NOT fall back to the document id on the human side: the
+	// id names nothing a reader knows. The developer copy is what carries it.
+	if got := ArgsLabel(map[string]any{"query": "  ", "doc_id": "d1"}); got != "" {
+		t.Errorf("ArgsLabel = %q, want no label for a blank query", got)
+	}
+	if got := docIDLabel(map[string]any{"query": "  ", "doc_id": "d1"}); got != " for document d1" {
+		t.Errorf("docIDLabel = %q, want the doc_id fallback for the developer log", got)
+	}
+	if got := docIDLabel(map[string]any{"doc_id": "  "}); got != "" {
+		t.Errorf("docIDLabel = %q, want no label for a blank id", got)
+	}
+	if got := ArgsLabel(map[string]any{"nav_hint": "x"}); got != "" {
+		t.Errorf("ArgsLabel = %q, want no label", got)
+	}
+
+	// A paragraph-long "query" (the slot-research driver searches slot evidence)
+	// is capped, and capped on a rune boundary: the label rides the result
+	// sentence, so an uncapped one repeated the same 200 characters on every line
+	// of the round.
+	label := quoteQueries(strings.Repeat("曹", 200))
+	if !strings.Contains(label, "…") {
+		t.Errorf("quoteQueries(long) = %q, want it capped", label)
+	}
+	if n := utf8.RuneCountInString(label); n > ThinkLabelMaxRunes+4 {
+		t.Errorf("quoteQueries(long) = %d runes, want a capped label", n)
+	}
+	if !utf8.ValidString(label) {
+		t.Errorf("quoteQueries(long) = %q, not valid UTF-8", label)
 	}
 }
 
