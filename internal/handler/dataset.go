@@ -606,8 +606,8 @@ func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
 	limit := 0
 	if rawLimit := c.Query("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be an integer")
+		if err != nil || parsed <= 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be a positive integer")
 			return
 		}
 		limit = parsed

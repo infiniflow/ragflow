@@ -83,6 +83,15 @@ func TestDatasetsHandlerListIngestionMessagesValidatesAndPages(t *testing.T) {
 	if body.Code != common.CodeArgumentError {
 		t.Fatalf("invalid cursor code = %d, want %d", body.Code, common.CodeArgumentError)
 	}
+
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/ingestions/run-1/messages?limit=0", nil))
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal invalid limit response: %v", err)
+	}
+	if body.Code != common.CodeArgumentError {
+		t.Fatalf("zero limit code = %d, want %d", body.Code, common.CodeArgumentError)
+	}
 }
 
 func newIngestionMessagesHandlerRouter() *gin.Engine {
