@@ -28,11 +28,14 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
 import { useTranslation } from 'react-i18next';
 
-export type SelectWithSearchOptionType = RAGFlowSelectOptionType & {
+export type SelectWithSearchOptionType = {
+  label: ReactNode;
+  value: string;
+  disabled?: boolean;
+  icon?: ReactNode;
   description?: ReactNode;
 };
 
@@ -40,6 +43,7 @@ export type SelectWithSearchFlagOptionType = {
   label: ReactNode;
   value?: string;
   disabled?: boolean;
+  icon?: ReactNode;
   options?: SelectWithSearchOptionType[];
   keywords?: string[];
   description?: ReactNode;
@@ -57,6 +61,8 @@ export type SelectWithSearchFlagProps = {
   allowCustomValue?: boolean;
   // Always show the search input even with few options
   alwaysShowSearch?: boolean;
+  // Show only the selected option's icon in the trigger instead of its label
+  onlyShowSelectedIcon?: boolean;
   // Return false to veto selecting the custom value on Enter
   onNoMatchEnter?(searchValue: string): boolean | void;
   disableAutoSelectOnEnter?: boolean;
@@ -71,20 +77,20 @@ function filterFn(value: string, search: string, keywords?: string[]) {
   return 0;
 }
 
-function findLabelWithoutOptions(
+function findOptionWithoutOptions(
   options: SelectWithSearchFlagOptionType[],
   value: string,
 ) {
-  return options.find((opt) => opt.value === value)?.label || '';
+  return options.find((opt) => opt.value === value);
 }
 
-function findLabelWithOptions(
+function findOptionWithOptions(
   options: SelectWithSearchFlagOptionType[],
   value: string,
 ) {
   return options
     .map((group) => group?.options?.find((item) => item.value === value))
-    .filter(Boolean)[0]?.label;
+    .filter(Boolean)[0];
 }
 
 function hasMatchingOptions(
@@ -133,6 +139,7 @@ export const SelectWithSearch = forwardRef<
       emptyData,
       allowCustomValue = false,
       alwaysShowSearch = false,
+      onlyShowSelectedIcon = false,
       onNoMatchEnter,
       disableAutoSelectOnEnter = false,
       testId,
@@ -148,11 +155,11 @@ export const SelectWithSearch = forwardRef<
     const [value, setValue] = useState<string>('');
     const [searchValue, setSearchValue] = useState<string>('');
 
-    const selectLabel = useMemo(() => {
+    const selectedOption = useMemo(() => {
       if (options.every((x) => x.options === undefined)) {
-        return findLabelWithoutOptions(options, value);
+        return findOptionWithoutOptions(options, value);
       } else if (options.every((x) => Array.isArray(x.options))) {
-        return findLabelWithOptions(options, value);
+        return findOptionWithOptions(options, value);
       } else {
         // Some have options, some don't
         const optionsWithOptions = options.filter((x) =>
@@ -162,13 +169,15 @@ export const SelectWithSearch = forwardRef<
           (x) => x.options === undefined,
         );
 
-        const label = findLabelWithOptions(optionsWithOptions, value);
-        if (label) {
-          return label;
+        const option = findOptionWithOptions(optionsWithOptions, value);
+        if (option) {
+          return option;
         }
-        return findLabelWithoutOptions(optionsWithoutOptions, value);
+        return findOptionWithoutOptions(optionsWithoutOptions, value);
       }
     }, [options, value]);
+
+    const selectLabel = selectedOption?.label;
 
     const showSearch = useMemo(() => {
       if (allowCustomValue || alwaysShowSearch) {
@@ -260,7 +269,9 @@ export const SelectWithSearch = forwardRef<
           >
             {selectLabel || value ? (
               <span className="flex min-w-0 options-center gap-2 truncate text-text-primary">
-                {selectLabel || value}
+                {onlyShowSelectedIcon && selectedOption?.icon
+                  ? selectedOption.icon
+                  : selectLabel || value}
               </span>
             ) : (
               <span className="text-text-disabled">{resolvedPlaceholder}</span>
@@ -354,7 +365,10 @@ export const SelectWithSearch = forwardRef<
                             value === option.value ? 'bg-bg-card' : '',
                           )}
                         >
-                          <span className="leading-none">{option.label}</span>
+                          <span className="flex items-center gap-2 leading-none">
+                            {option.icon}
+                            {option.label}
+                          </span>
                           {option.description && (
                             <span className="text-text-secondary text-xs leading-none">
                               {option.description}
@@ -396,7 +410,10 @@ export const SelectWithSearch = forwardRef<
                         },
                       )}
                     >
-                      <span className="leading-none">{group.label}</span>
+                      <span className="flex items-center gap-2 leading-none">
+                        {group.icon}
+                        {group.label}
+                      </span>
                       {group.description && (
                         <span className="text-text-secondary text-xs leading-none">
                           {group.description}
