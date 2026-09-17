@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+import time
 import zipfile
 from collections.abc import Generator
 from datetime import datetime, timezone
@@ -32,6 +33,8 @@ PAGE_SIZE = 100
 ZOTERO_API_KEY_HOSTS = frozenset({"api.zotero.org"})
 MAX_FILE_REDIRECTS = 10
 _READ_CHUNK_BYTES = 64 * 1024
+MAX_DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_RETRY_BACKOFF_SEC = 0.5
 
 
 def _read_response_capped(response, max_bytes: int) -> bytes:
@@ -148,7 +151,7 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 continue
             if end_dt and modified > end_dt:
                 continue
-            blob, filename = self._download_pdf(item)
+            blob, filename = self._download_pdf_with_retry(item)
             if not blob:
                 continue
             documents.append(self._build_document(item, blob, filename, modified))
@@ -226,6 +229,22 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if not isinstance(payload, list):
             raise ConnectorValidationError("Unexpected Zotero API response")
         return payload
+
+    def _download_pdf_with_retry(self, item: dict[str, Any]) -> tuple[bytes, str]:
+        attachment_key = item.get("key", "")
+        filename = ""
+        for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+            blob, filename = self._download_pdf(item)
+            if blob:
+                return blob, filename
+            if attempt < MAX_DOWNLOAD_ATTEMPTS:
+                time.sleep(DOWNLOAD_RETRY_BACKOFF_SEC * attempt)
+        logger.warning(
+            "Skipping Zotero attachment %s after %d failed download attempts",
+            attachment_key,
+            MAX_DOWNLOAD_ATTEMPTS,
+        )
+        return b"", filename
 
     def _download_pdf(self, item: dict[str, Any]) -> tuple[bytes, str]:
         data = item.get("data") or {}

@@ -218,11 +218,33 @@ func (c *ZoteroConnector) validateWebDAVAccess(ctx context.Context) error {
 		return nil
 	}
 	probeURL := strings.TrimRight(c.webdavURL, "/") + "/zotero/"
-	_, _, err := assertRestAPIURLSafe(ctx, probeURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method: "PROPFIND",
+		RawURL: probeURL,
+		Body:   []byte(webdavPropfindBody),
+		Headers: map[string]string{
+			"Depth":         "0",
+			"Content-Type":  "application/xml",
+			"Authorization": "Basic " + basicAuthHeader(c.webdavUser, c.webdavPass),
+		},
+		Timeout: zoteroRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
-		return &ConnectorValidationError{Message: fmt.Sprintf("WebDAV URL is not allowed: %v", err)}
+		return &ConnectorValidationError{Message: fmt.Sprintf("WebDAV probe failed: %v", connectorUnsafeErr(err))}
 	}
-	return nil
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	switch resp.StatusCode {
+	case http.StatusMultiStatus, http.StatusOK:
+		return nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return &ConnectorMissingCredentialError{Message: "WebDAV credentials appear invalid or expired"}
+	case http.StatusNotFound:
+		return &ConnectorValidationError{Message: "WebDAV zotero collection was not found"}
+	default:
+		return &ConnectorValidationError{Message: fmt.Sprintf("WebDAV probe returned HTTP %d", resp.StatusCode)}
+	}
 }
 
 func (c *ZoteroConnector) collectPDFRecords(ctx context.Context, request SyncRequest) ([]zoteroPDFRecord, error) {
@@ -239,7 +261,12 @@ func (c *ZoteroConnector) collectPDFRecords(ctx context.Context, request SyncReq
 			}
 			updatedAt, err := zoteroParseTime(item.Data.DateModified)
 			if err != nil {
-				continue
+				slog.Warn(
+					"zotero: using fallback timestamp for attachment with invalid dateModified",
+					"item_key", item.Key,
+					"error", err,
+				)
+				updatedAt = time.Unix(0, 0).UTC()
 			}
 			if !request.FromBeginning && request.WindowStart != nil {
 				if !updatedAt.After(*request.WindowStart) {
@@ -429,9 +456,8 @@ func (c *ZoteroConnector) getPinnedURL(ctx context.Context, rawURL string, autho
 	if client == nil {
 		client = http.DefaultClient
 	}
-	transport := newRestAPIPinnedTransport(hostname, pinIP)
 	httpClient := *client
-	httpClient.Transport = transport
+	httpClient.Transport = newConnectorPinnedTransport(client, hostname, pinIP, zoteroRequestTimeout)
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
@@ -628,6 +654,14 @@ func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	for len(documents) < s.batchSize && s.index < len(s.records) {
 		record := s.records[s.index]
 		blob, filename, err := s.connector.downloadPDF(ctx, record.attachment)
+		if err != nil {
+			if ctx.Err() != nil {
+				return SyncBatch{}, ctx.Err()
+			}
+		}
+		if len(blob) == 0 && ctx.Err() != nil {
+			return SyncBatch{}, ctx.Err()
+		}
 		if err != nil || len(blob) == 0 {
 			breakBatch, advanceIndex := s.handleDownloadFailure(
 				record,

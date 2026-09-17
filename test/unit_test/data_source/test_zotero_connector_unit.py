@@ -144,6 +144,36 @@ def test_zotero_rejects_http_webdav_url():
         connector.validate_local_settings()
 
 
+def test_zotero_download_retries_before_skip(monkeypatch):
+    monkeypatch.setattr(
+        zotero_mod,
+        "assert_url_is_safe",
+        lambda url, allowed_schemes=None: ("api.zotero.org", "1.2.3.4"),
+    )
+    monkeypatch.setattr(
+        zotero_mod,
+        "pin_dns",
+        lambda host, ip: _nullcontext(),
+    )
+    monkeypatch.setattr(zotero_mod, "DOWNLOAD_RETRY_BACKOFF_SEC", 0)
+    connector = ZoteroConnector(zotero_user_id="12345678", batch_size=10)
+    connector.load_credentials({"zotero_api_key": "secret"})
+    attempts = {"count": 0}
+
+    def fake_download(_item):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            return b"", "paper.pdf"
+        return b"%PDF", "paper.pdf"
+
+    monkeypatch.setattr(connector, "_download_pdf", fake_download)
+    items = [_attachment_item("ATTACH1", "2026-01-02T00:00:00Z")]
+    with patch.object(connector, "_iter_pdf_attachments", return_value=iter(items)):
+        batches = list(connector.load_from_state())
+    assert len(batches) == 1
+    assert attempts["count"] == 3
+
+
 def test_zotero_yields_batches_incrementally(monkeypatch):
     monkeypatch.setattr(
         zotero_mod,
