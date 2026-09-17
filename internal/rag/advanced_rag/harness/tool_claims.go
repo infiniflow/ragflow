@@ -95,7 +95,7 @@ type compilationProbe struct {
 }
 
 // claimEngine resolves the doc engine: the deps' handle first, the process
-// singleton as fallback (mirrors runSearch's DocEngine resolution).
+// singleton as fallback (mirrors RunSearch's DocEngine resolution).
 func claimEngine(deps SearchDeps) engine.DocEngine {
 	if deps.DocEngine != nil {
 		return deps.DocEngine

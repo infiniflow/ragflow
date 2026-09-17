@@ -361,7 +361,7 @@ func nlpRequestFromRetrieval(
 		PageSize:           topN,
 		EmbeddingModel:     embeddingModel,
 		Aggs:               boolPtr(false),
-		Highlight:          boolPtr(false),
+		Highlight:          boolPtr(req.Highlight),
 		AllowDenseFallback: req.AllowDenseFallback,
 	}
 	if excludeCompiled {
@@ -609,6 +609,9 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),
+		// The nlp layer writes this key only when the request asked for a
+		// highlight (RetrievalRequest.Highlight); absent otherwise.
+		Highlight: stringFromMap(raw, "highlight"),
 	}
 }
 

@@ -78,6 +78,10 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 		RetrievalFrom:            req.RetrievalFrom,
 		DocScope:                 req.DocScope,
 		TenantID:                 req.TenantID,
+		// Highlight is the per-chunk highlighted snippet: Python asks for it
+		// ONLY from RAGTools.retrieve (agentic_rag.py:721), so it rides along on
+		// the same request and stays off for the search.py legs.
+		Highlight: req.Highlight,
 		// rank_feature (Python retrieve: rank_feature=label_question(question,
 		// self.kbs)) — forwarded from the RAGTools-computed value. nil stays nil
 		// (the harness legs omit the argument in Python too, keeping the nlp
@@ -107,6 +111,7 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 			TermSimilarity:   c.TermSimilarity,
 			VectorSimilarity: c.VectorSimilarity,
 			MomID:            c.MomID,
+			Highlight:        c.Highlight,
 		})
 	}
 	return out, nil

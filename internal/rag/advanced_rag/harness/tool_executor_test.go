@@ -96,6 +96,47 @@ func TestRuntimeRetrieverPreservesUnsetControls(t *testing.T) {
 	}
 }
 
+// TestRuntimeRetrieverCarriesHighlight pins the retrieve-only highlight: the
+// request flag reaches the service, and the snippet it returns rides the chunk
+// into the harness — under a key that is ABSENT (not empty) when the caller did
+// not ask, because Python's chunks only carry "highlight" for the one entry
+// point that passes highlight=True (RAGTools.retrieve, agentic_rag.py:721).
+func TestRuntimeRetrieverCarriesHighlight(t *testing.T) {
+	prev := runtime.GetRetrievalService()
+	var got runtime.RetrievalRequest
+	runtime.SetRetrievalService(stubRetrievalService{
+		lastReq: &got,
+		chunks:  []runtime.RetrievalChunk{{ID: "c1", Content: "raw", Highlight: "<em>raw</em>"}},
+	})
+	t.Cleanup(func() { runtime.SetRetrievalService(prev) })
+
+	r := &RuntimeRetriever{}
+	chunks, err := r.Retrieve(context.Background(), RetrieveRequest{
+		Query: "q", DatasetIDs: []string{"kb-1"}, Highlight: true,
+	})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if !got.Highlight {
+		t.Error("Highlight = false on the service request, want the caller's flag forwarded")
+	}
+	if len(chunks) != 1 || chunks[0]["highlight"] != "<em>raw</em>" {
+		t.Errorf("highlight = %v, want the snippet on the chunk", chunks)
+	}
+
+	// With the flag off the key stays off the chunk rather than arriving empty.
+	runtime.SetRetrievalService(stubRetrievalService{
+		chunks: []runtime.RetrievalChunk{{ID: "c1", Content: "raw"}},
+	})
+	chunks, err = r.Retrieve(context.Background(), RetrieveRequest{Query: "q", DatasetIDs: []string{"kb-1"}})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if _, ok := chunks[0]["highlight"]; ok {
+		t.Errorf("highlight key = %v, want it absent when the search did not ask for one", chunks[0]["highlight"])
+	}
+}
+
 // TestChunkAggRetrieveLeavesControlsUnset pins the caller side: the chunk-agg
 // retriever has no threshold/weight of its own, so it must omit both rather
 // than pass zero overrides.

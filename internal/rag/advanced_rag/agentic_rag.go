@@ -260,8 +260,12 @@ type RAGTools struct {
 	Steps harness.StepReporter
 	// Retrieval tuning, mirroring Python RAGTools.retrieve: an explicit tool
 	// argument still wins over these, and zero selects the harness defaults.
-	TopN                int
-	SimilarityThreshold float64
+	TopN int
+	// SimilarityThreshold mirrors Python RAGTools.similarity_threshold: a
+	// pointer so "not configured" (nil → the entry point's own default) stays
+	// distinct from an explicit 0 (no floor), which Python spells `is None`
+	// (agentic_rag.py:672).
+	SimilarityThreshold *float64
 	// VectorSimilarityWeight is the vector leg's weight (Python
 	// tools.vector_similarity_weight). A pointer so an explicit 0 — keyword-only,
 	// which is what Python's agentic retrieve uses — is distinguishable from
@@ -2316,6 +2320,44 @@ func (s *outerReactSession) selectEvidence(answer string) {
 	}
 }
 
+// Retrieve is Python RAGTools.retrieve (agentic_rag.py:648), the low/naive
+// direct pass. Unlike hybrid_search it honours UsingEmbedding and does NOT
+// exclude compiled rows (Python's retrieve has no must_not compile_kwd).
+//
+// The per-entry-point differences live in harness.SearchOpts so that
+// harness.RunSearch stays the engine-facing executor and each Python entry
+// point keeps its own preset — the four search.py legs' presets stay in
+// harness/tool_search.go, this one sits next to the other RAGTools methods.
+func Retrieve(ctx context.Context, sd harness.SearchDeps, p harness.SearchParams) ([]map[string]any, []map[string]any) {
+	return harness.RunSearch(ctx, sd, p, harness.SearchOpts{
+		// Python resolves top_n per entry point and RAGTools.retrieve's own
+		// default is 6 — deliberately NOT the search tools' 12
+		// (agentic_rag.py:669-670).
+		DefaultTopN:     6,
+		Weight:          harness.ResolveVectorWeight(sd, harness.ChannelRetrieve),
+		Threshold:       harness.FloatPtrOrDef(sd.SimilarityThreshold, harness.DefaultSimilarityThreshold),
+		ExcludeCompiled: false,
+		PromoteChildren: true,
+		// Python RAGTools.retrieve: embd_mdl = self.embed_mdl if using_embedding
+		// else None (agentic_rag.py:retrieve) — no dense leg without the flag.
+		DisableVector: !sd.UsingEmbedding,
+		// Go-only identity: Python's L1 RAGTools.retrieve logs nothing of its
+		// own, so there is no Python string to mirror. The tag stays
+		// human-readable, because this is the only trace the naive/low direct
+		// pass leaves.
+		LogLabel:    "Retrieve",
+		LogVerb:     "Searching for",
+		LogKeywords: true,
+		NarrowLabel: "retrieve",
+		// Python RAGTools.retrieve is the ONLY entry point that passes
+		// rank_feature=label_question(question, self.kbs) (agentic_rag.py:723).
+		RankFeature: true,
+		// …and the only one that asks for highlights: search.py's legs all pass
+		// highlight=False (search.py:169 / :235 / :273).
+		Highlight: true,
+	})
+}
+
 // runDirect is the low/naive path: one hybrid search, no tool loop.
 //
 // It is the ONE Go implementation of Python orchestrator/direct.py::direct_search
@@ -2345,15 +2387,16 @@ func runDirect(ctx context.Context, deps RAGTools, req harness.RunRequest, sd ha
 	}
 	defer done()
 
+	// Python's low mode is harness/orchestrator/direct.py:direct_search, which
+	// calls hybrid_search(tools, query, keywords, retrieval_query,
+	// use_compiled=True) — NOT RAGTools.retrieve — so this leg keeps the hybrid
+	// preset.
 	chunks, aggs := harness.HybridSearch(ctx, sd, harness.SearchParams{
 		Question:       req.Question,
 		Keywords:       req.Keywords,
 		RetrievalQuery: retrievalQuery,
 		UseCompiled:    req.UseCompiled,
 		TopN:           req.TopN,
-		// Mirrors Python RAGTools.retrieve — the only function honouring
-		// using_embedding.
-		Channel: harness.ChannelRetrieve,
 	})
 	kb.Merge(chunks, aggs)
 	if !kb.HasChunks() {

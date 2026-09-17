@@ -4373,7 +4373,7 @@ func NaiveRAG(ctx context.Context, deps RAGTools, req harness.RunRequest, kb *ha
 		// the tools instance — including rank_feature. Projecting only a subset
 		// here would silently drop that tuning for the naive path.
 		var aggs []map[string]any
-		chunks, aggs = harness.RetrieveSearch(ctx,
+		chunks, aggs = Retrieve(ctx,
 			searchDepsFor(ctx, deps, req, req.DatasetIDs, req.TenantID, kb, logger),
 			harness.SearchParams{
 				Question: question,
@@ -4945,6 +4945,11 @@ func RunAgenticRAG(ctx context.Context, deps RAGTools, req harness.RunRequest, s
 // runDirectFallback retrieves once when no model is configured: the loop cannot
 // plan, research, or review without one, so the caller still gets evidence
 // rather than an error.
+//
+// Go-only path — Python has no "model missing" branch, so nothing there decides
+// which preset it should use. It reuses the low-mode hybrid preset (see
+// runDirect); retrieveSearch is the alternative if this should mirror the
+// degraded path Python does have (_naive_rag's tools.retrieve(question)).
 func runDirectFallback(ctx context.Context, deps RAGTools, req harness.RunRequest, kb *harness.Kbinfos, logger *log.Logger) {
 	chunks, aggs := harness.HybridSearch(ctx,
 		searchDepsFor(ctx, deps, req, req.DatasetIDs, req.TenantID, kb, logger),
@@ -4953,8 +4958,6 @@ func runDirectFallback(ctx context.Context, deps RAGTools, req harness.RunReques
 			Keywords:    req.Keywords,
 			UseCompiled: req.UseCompiled,
 			TopN:        req.TopN,
-			// Mirrors Python RAGTools.retrieve.
-			Channel: harness.ChannelRetrieve,
 		})
 	kb.Merge(chunks, aggs)
 }

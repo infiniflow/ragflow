@@ -1272,6 +1272,18 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// and Python has no evidence-token override (the compose always
 			// uses min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS=8000),
 			// which EvidenceMaxTokens<=0 reproduces).
+			//
+			// TopN / SimilarityThreshold / VectorSimilarityWeight /
+			// RerankCandidatesCount / TopK are the dialog's retrieval knobs,
+			// carried in with the request the way Python passes them to the
+			// constructor (dialog_service.py:2114-2118). Leaving them unset made
+			// every agentic leg fall back to the package defaults, so a dialog
+			// configured with its own top_n / threshold was ignored.
+			TopN:                   req.Tuning.TopN,
+			SimilarityThreshold:    req.Tuning.SimilarityThreshold,
+			VectorSimilarityWeight: req.Tuning.VectorSimilarityWeight,
+			RerankCandidatesCount:  req.Tuning.RerankCandidatesCount,
+			TopK:                   req.Tuning.TopK,
 		}
 		// Diagnose WHY compiled expansion is disabled: NewCompiledExpander
 		// returns nil for three reasons (store==nil / no datasets / no tenant)

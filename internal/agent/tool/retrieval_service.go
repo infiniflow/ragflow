@@ -48,6 +48,12 @@ type RetrievalChunk struct {
 	// for top-level chunks. Threaded through so the harness can run
 	// retrieval_by_children (child fragments are promoted to their parent chunk).
 	MomID string
+	// Highlight is the keyword-emphasised snippet, filled ONLY when the request
+	// asked for one (RetrievalRequest.Highlight — Python's
+	// RAGTools.retrieve highlight=True, agentic_rag.py:721); empty otherwise,
+	// and the harness then leaves the key off the chunk entirely, the way
+	// Python's chunks carry no "highlight" key when the search did not ask.
+	Highlight string
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
@@ -96,6 +102,11 @@ type RetrievalRequest struct {
 	// CanvasState.Sys["user_id"] when empty (set by the Begin component at
 	// internal/agent/component/begin.go:82).
 	TenantID string
+	// Highlight asks the retriever for the per-chunk highlighted snippet.
+	// Python passes highlight=True only from RAGTools.retrieve
+	// (agentic_rag.py:721); the search.py legs all pass False, which is why this
+	// defaults to off.
+	Highlight bool
 	// UserID optionally filters memory messages by the user_id they were
 	// recorded with (the Retrieval node's "User ID" field, e.g. resolved
 	// from sys.user_id). Empty = no user filter. Only meaningful for
