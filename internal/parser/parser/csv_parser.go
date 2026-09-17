@@ -63,7 +63,13 @@ func (p *CSVParser) String() string {
 // would drift on any of these knobs.
 func newCSVReader(filename, text string) *csv.Reader {
 	reader := csv.NewReader(strings.NewReader(text))
-	if strings.HasSuffix(strings.ToLower(filename), ".tsv") || (!strings.Contains(text, ",") && strings.Contains(text, "\t")) {
+	name := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(name, ".tsv"), strings.HasSuffix(name, ".txt"):
+		// Python splits a .txt table on a tab (rag/app/table.py:555,
+		// kwargs.get("delimiter", "\t")) and a .tsv on the same default (:574).
+		reader.Comma = '\t'
+	case !strings.Contains(text, ",") && strings.Contains(text, "\t"):
 		reader.Comma = '\t'
 	}
 	reader.LazyQuotes = true

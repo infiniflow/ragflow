@@ -64,9 +64,10 @@ def test_probe_csv_reports_ingestion_column_names(table_module):
 
 
 def test_probe_csv_skips_leading_empty_rows_and_keeps_header_cells(table_module):
-    # A delimited header is indexed as read (rag/app/table.py:565, :577), so the
-    # probe must not trim it or rename an empty cell: a role configured for the
-    # name the probe reports has to match the column ingestion creates.
+    # A delimited header is indexed as read (rag/app/table.py:582, then
+    # _deduplicate_column_names at :594), so the probe must not trim it or rename
+    # an empty cell: a role configured for the name the probe reports has to match
+    # the column ingestion creates.
     content = b",,\n,name,amount\n,1,10\n"
     assert table_module.probe_table_headers(content, "data.csv") == ["", "name", "amount"]
 
@@ -79,12 +80,19 @@ def test_probe_tsv_uses_tab_delimiter(table_module):
     assert table_module.probe_table_headers(content, "data.tsv") == ["name", "amount"]
 
 
+def test_probe_txt_uses_tab_delimiter(table_module):
+    # rag/app/table.py:555 splits a .txt line on "\t", so a comma inside a
+    # field must not become a second column.
+    content = b"name,full\tamount\nAlice,Ann\t10\n"
+    assert table_module.probe_table_headers(content, "data.txt") == ["name,full", "amount"]
+
+
 def test_probe_csv_strips_utf8_bom(table_module):
     content = b"\xef\xbb\xbfname,amount\nAlice,10\n"
     assert table_module.probe_table_headers(content, "data.csv") == ["name", "amount"]
 
 
-def test_probe_xlsx_uses_first_sheet_header_row(table_module):
+def test_probe_xlsx_unions_every_sheet(table_module):
     from openpyxl import Workbook
 
     wb = Workbook()
@@ -92,12 +100,18 @@ def test_probe_xlsx_uses_first_sheet_header_row(table_module):
     ws.append([None, None])
     ws.append(["id", "amount", "name"])
     ws.append([1, 10, "Alice"])
+    other = wb.create_sheet("Later")
+    other.append(["sku", "amount"])
+    other.append(["A1", 10])
     buffer = BytesIO()
     wb.save(buffer)
 
+    # Ingestion indexes every sheet and merges table_column_names in first-seen
+    # order, so the preview has to offer the same columns.
     assert table_module.probe_table_headers(buffer.getvalue(), "data.xlsx") == [
         "amount",
         "name",
+        "sku",
     ]
 
 

@@ -100,13 +100,16 @@ def probe_table_headers(content, filename):
     """Column names a table file parses into, read from its leading rows only.
 
     Used by the pre-ingestion schema probe: it must not read the whole file, so
-    it inspects the first non-empty row of the first sheet. A sheet with merged
-    or multi-level headers is parsed with hierarchical headers, which this
-    preview cannot reproduce — the parser stays authoritative.
+    for a workbook it takes the first non-empty row of every sheet and unions
+    the columns in the order they are first seen, which is what ingestion
+    writes to ``table_column_names``. A sheet with merged or multi-level
+    headers is parsed with hierarchical headers, which this preview cannot
+    reproduce — the parser stays authoritative.
     """
     name = (filename or "").lower()
     if name.endswith((".csv", ".tsv", ".txt")):
-        delimiter = "\t" if name.endswith(".tsv") else ","
+        # A .txt table is tab-delimited (see the TXT branch below), like a .tsv.
+        delimiter = "," if name.endswith(".csv") else "\t"
         text_stream = io.StringIO(content.decode("utf-8-sig", errors="replace"))
         for row in csv.reader(text_stream, delimiter=delimiter):
             if any(cell.strip() for cell in row):
@@ -117,12 +120,18 @@ def probe_table_headers(content, filename):
 
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         try:
-            if not wb.sheetnames:
-                return []
-            for row in wb[wb.sheetnames[0]].iter_rows(values_only=True):
-                if any(str(cell or "").strip() for cell in row):
-                    return table_column_header_names(row, spreadsheet=True)
-            return []
+            names = []
+            seen = set()
+            for sheet in wb.sheetnames:
+                for row in wb[sheet].iter_rows(values_only=True):
+                    if not any(str(cell or "").strip() for cell in row):
+                        continue
+                    for column in table_column_header_names(row, spreadsheet=True):
+                        if column not in seen:
+                            seen.add(column)
+                            names.append(column)
+                    break
+            return names
         finally:
             wb.close()
     raise ValueError(f"Unsupported or binary table format: {filename}")

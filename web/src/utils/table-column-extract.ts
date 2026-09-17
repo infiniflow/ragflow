@@ -39,7 +39,7 @@ export async function extractTableColumns(file: File): Promise<string[]> {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
 
   if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
-    return extractCsvColumns(file, ext === 'tsv');
+    return extractCsvColumns(file, ext !== 'csv');
   }
 
   if (['xlsx', 'xls'].includes(ext)) {
@@ -49,7 +49,10 @@ export async function extractTableColumns(file: File): Promise<string[]> {
   return [];
 }
 
-function extractCsvColumns(file: File, isTSV: boolean): Promise<string[]> {
+function extractCsvColumns(
+  file: File,
+  tabDelimited: boolean,
+): Promise<string[]> {
   return new Promise((resolve) => {
     Papa.parse(file, {
       preview: 5, // Read initial rows to skip leading empties
@@ -59,7 +62,8 @@ function extractCsvColumns(file: File, isTSV: boolean): Promise<string[]> {
       // with csv.reader, whose skipinitialspace default keeps every field), so
       // trimming here would name a column the parser never creates.
       trimValues: false,
-      delimiter: isTSV ? '\t' : undefined,
+      // A .txt table is tab-separated, like a .tsv (rag/app/table.py).
+      delimiter: tabDelimited ? '\t' : undefined,
       complete(results) {
         const rows = (results.data as string[][]) ?? [];
         for (const row of rows) {

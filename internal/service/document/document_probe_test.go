@@ -146,6 +146,23 @@ func TestProbeTable_XLSXMatchesIngestionColumnNames(t *testing.T) {
 	if err := f.SetCellValue("Sheet1", "A2", "widget"); err != nil {
 		t.Fatalf("set cell: %v", err)
 	}
+	// A later sheet can carry columns the first one does not, and ingestion
+	// indexes them all, so the probe must offer them too.
+	if _, err := f.NewSheet("Sheet2"); err != nil {
+		t.Fatalf("new sheet: %v", err)
+	}
+	for i, name := range []string{"Warehouse", "Product", "Qty"} {
+		cell, err := excelize.CoordinatesToCellName(i+1, 1)
+		if err != nil {
+			t.Fatalf("coordinate: %v", err)
+		}
+		if err := f.SetCellValue("Sheet2", cell, name); err != nil {
+			t.Fatalf("set header: %v", err)
+		}
+	}
+	if err := f.SetCellValue("Sheet2", "A2", "W1"); err != nil {
+		t.Fatalf("set cell: %v", err)
+	}
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
@@ -173,6 +190,26 @@ func TestProbeTable_XLSXMatchesIngestionColumnNames(t *testing.T) {
 
 	if !reflect.DeepEqual(probed, indexed) {
 		t.Fatalf("probe = %#v, ingestion = %#v", probed, indexed)
+	}
+	want := []string{"Product", "Column_2", "Product_2", "Price", "Warehouse", "Qty"}
+	if !reflect.DeepEqual(probed, want) {
+		t.Fatalf("probe = %#v, want %#v", probed, want)
+	}
+}
+
+// A .txt table is tab-separated, like a .tsv (rag/app/table.py splits it on
+// "\t"), so a comma must not split its header into extra columns.
+func TestProbeTable_TXTUsesTabDelimiter(t *testing.T) {
+	svc := &DocumentService{}
+
+	cols, err := svc.ProbeTable(strings.NewReader("name,full\tamount\nAlice,Ann\t10\n"), "data.txt")
+	if err != nil {
+		t.Fatalf("ProbeTable: %v", err)
+	}
+
+	want := []string{"name,full", "amount"}
+	if !reflect.DeepEqual(cols, want) {
+		t.Fatalf("got %#v, want %#v", cols, want)
 	}
 }
 

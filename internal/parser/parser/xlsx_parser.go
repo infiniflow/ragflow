@@ -210,14 +210,13 @@ func xlsxRowParseResult(filename string, items []map[string]any, columns []strin
 }
 
 // ProbeSpreadsheetColumnNames returns the column names parseXLSXRowsJSON would
-// index for the first sheet of the workbook stream, read from its first row
-// with content. The caller bounds the reader; a header fits the prefix it reads.
+// index for the given workbook stream: the first row with content of every
+// sheet, unioned in the order the columns are first seen, which is the order
+// ingestion writes to table_column_names. The caller bounds the reader; a
+// header fits the prefix it reads.
 //
-// Only the first sheet is probed: a workbook whose later sheets carry different
-// columns is reported with those columns missing, and the client-side
-// extraction fallback covers that case. A sheet with merged or multi-level
-// headers is parsed hierarchically, which this preview cannot reproduce — the
-// parser stays authoritative.
+// A sheet with merged or multi-level headers is parsed hierarchically, which
+// this preview cannot reproduce — the parser stays authoritative.
 func ProbeSpreadsheetColumnNames(r io.Reader) ([]string, error) {
 	f, err := excelize.OpenReader(r)
 	if err != nil {
@@ -225,32 +224,37 @@ func ProbeSpreadsheetColumnNames(r io.Reader) ([]string, error) {
 	}
 	defer f.Close()
 
-	sheets := f.GetSheetList()
-	if len(sheets) == 0 {
-		return []string{}, nil
-	}
-
-	rows, err := f.Rows(sheets[0])
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		cols, err := rows.Columns()
+	seen := make(map[string]struct{})
+	names := make([]string, 0)
+	for _, sheet := range f.GetSheetList() {
+		rows, err := f.Rows(sheet)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		cols = cleanIllegalControlChars([][]string{cols})[0]
-		if !TableRowHasContent(cols) {
-			continue
-		}
+		for rows.Next() {
+			cols, err := rows.Columns()
+			if err != nil {
+				continue
+			}
+			cols = cleanIllegalControlChars([][]string{cols})[0]
+			if !TableRowHasContent(cols) {
+				continue
+			}
 
-		names, _ := TableColumnHeaderNames(cols, TableHeaderRuleSpreadsheet)
-		return names, nil
+			header, _ := TableColumnHeaderNames(cols, TableHeaderRuleSpreadsheet)
+			for _, name := range header {
+				if _, ok := seen[name]; ok {
+					continue
+				}
+				seen[name] = struct{}{}
+				names = append(names, name)
+			}
+			break
+		}
+		rows.Close()
 	}
 
-	return []string{}, nil
+	return names, nil
 }
 
 func spreadsheetRowParseResult(filename, format string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
