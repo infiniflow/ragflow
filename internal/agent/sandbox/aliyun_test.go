@@ -80,7 +80,7 @@ func TestAliyunProtocolUsesSavedTemplateSignedExecuteAndDelete(t *testing.T) {
 		Timeout  int    `json:"timeout"`
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/2025-09-10/sandboxes":
@@ -124,6 +124,8 @@ func TestAliyunProtocolUsesSavedTemplateSignedExecuteAndDelete(t *testing.T) {
 	if err := p.Initialize(t.Context()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
+	p.sdk.HttpClient = aliyunTestHTTPClient{server.Client()}
+	p.helper.client = server.Client()
 	inst, err := p.CreateInstance(t.Context(), "python")
 	if err != nil {
 		t.Fatalf("create instance: %v", err)
@@ -147,5 +149,52 @@ func TestAliyunProtocolUsesSavedTemplateSignedExecuteAndDelete(t *testing.T) {
 	}
 	if !sawCreate || !sawExecute || !sawDelete {
 		t.Fatalf("requests seen create=%v execute=%v delete=%v", sawCreate, sawExecute, sawDelete)
+	}
+}
+
+type aliyunTestHTTPClient struct{ *http.Client }
+
+func (c aliyunTestHTTPClient) Call(req *http.Request, _ *http.Transport) (*http.Response, error) {
+	return c.Do(req)
+}
+
+func TestAliyunRejectsInvalidRuntimeConfig(t *testing.T) {
+	for _, timeout := range []string{"0", "-1"} {
+		t.Run("timeout="+timeout, func(t *testing.T) {
+			t.Setenv("AGENTRUN_TIMEOUT", timeout)
+			p := newAliyunProviderFromEnv()
+			p.accessKeyID, p.accessKeySecret, p.accountID = "LTAI-test", "test", "account"
+			if err := p.Initialize(t.Context()); err == nil {
+				t.Fatal("invalid timeout accepted")
+			}
+			if p.sdk != nil || p.helper != nil {
+				t.Fatal("clients built before validation")
+			}
+		})
+	}
+	for _, endpoint := range []string{"http://example.test", "http://127.0.0.1:1234", "ftp://example.test", "https://", "https://user:secret@example.test"} {
+		t.Run(endpoint, func(t *testing.T) {
+			cfg := map[string]any{"access_key_id": "LTAI-test", "access_key_secret": "test", "account_id": "account", "execute_host": endpoint}
+			if err := ValidateConfig("aliyun_codeinterpreter", cfg); err == nil {
+				t.Fatal("admin accepted insecure endpoint")
+			}
+			p := newAliyunProviderFromConfig(cfg)
+			if err := p.Initialize(t.Context()); err == nil {
+				t.Fatal("runtime accepted insecure endpoint")
+			}
+			t.Setenv("AGENTRUN_EXECUTE_HOST", endpoint)
+			p = newAliyunProviderFromEnv()
+			p.accessKeyID, p.accessKeySecret, p.accountID = "LTAI-test", "test", "account"
+			if err := p.Initialize(t.Context()); err == nil {
+				t.Fatal("environment accepted insecure endpoint")
+			}
+		})
+	}
+	p := newAliyunProviderFromConfig(map[string]any{"access_key_id": "LTAI-test", "access_key_secret": "test", "account_id": "account", "execute_host": "example.test"})
+	if err := p.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if p.executeHost != "https://example.test" || *p.sdk.Protocol != "https" {
+		t.Fatal("endpoint not normalized to HTTPS")
 	}
 }

@@ -115,6 +115,15 @@ func (p *AliyunCodeInterpreterProvider) ProviderType() ProviderType {
 
 // Initialize constructs the signed control-plane client without creating resources.
 func (p *AliyunCodeInterpreterProvider) Initialize(ctx context.Context) error {
+	if p.timeout < 1 {
+		return errors.New("aliyun: timeout must be at least 1 second")
+	}
+	endpointURL, err := normalizeAliyunEndpoint(p.executeHost)
+	if err != nil {
+		return err
+	}
+	p.executeHost = endpointURL
+
 	if p.accessKeyID == "" || p.accessKeySecret == "" {
 		return errors.New("aliyun: AGENTRUN_ACCESS_KEY_ID and AGENTRUN_ACCESS_KEY_SECRET are required")
 	}
@@ -122,9 +131,10 @@ func (p *AliyunCodeInterpreterProvider) Initialize(ctx context.Context) error {
 		return errors.New("aliyun: AGENTRUN_ACCOUNT_ID is required")
 	}
 
-	endpoint, protocol := aliyunControlEndpoint(p.executeHost)
-	if endpoint == nil {
-		endpoint = stringPtr("agentrun." + p.region + ".aliyuncs.com")
+	endpoint, protocol := stringPtr("agentrun."+p.region+".aliyuncs.com"), stringPtr("https")
+	if p.executeHost != "" {
+		u, _ := url.Parse(p.executeHost)
+		endpoint = &u.Host
 	}
 	requestTimeout := p.timeout * 1000
 	cfg := &openapiutil.Config{
@@ -333,8 +343,10 @@ func (p *AliyunCodeInterpreterProvider) callExecute(ctx context.Context, sandbox
 	endpoint := p.executeHost
 	if endpoint == "" {
 		endpoint = fmt.Sprintf("https://%s.agentrun-data.%s.aliyuncs.com", p.accountID, p.region)
-	} else if !strings.Contains(endpoint, "://") {
-		endpoint = "https://" + endpoint
+	}
+	endpoint, err := normalizeAliyunEndpoint(endpoint)
+	if err != nil {
+		return nil, err
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -380,14 +392,18 @@ func (p *AliyunCodeInterpreterProvider) aliyunSignedHeaders(u *url.URL, now time
 	}
 }
 
-func aliyunControlEndpoint(endpoint string) (*string, *string) {
+func normalizeAliyunEndpoint(endpoint string) (string, error) {
 	if endpoint == "" {
-		return nil, nil
+		return "", nil
 	}
-	if u, err := url.Parse(endpoint); err == nil && u.Host != "" {
-		return &u.Host, &u.Scheme
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "https://" + endpoint
 	}
-	return &endpoint, nil
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return "", errors.New("aliyun: execute_host must be an HTTPS URL without user credentials")
+	}
+	return u.String(), nil
 }
 
 // DestroyInstance calls DeleteSandbox via the SDK.

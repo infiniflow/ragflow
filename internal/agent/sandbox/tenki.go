@@ -251,6 +251,9 @@ func (p *TenkiProvider) ExecuteCode(
 	if lang == "" {
 		return nil, fmt.Errorf("tenki: unsupported language %q", language)
 	}
+	if timeoutSec == 0 {
+		timeoutSec = int(p.timeout.Seconds())
+	}
 	timeout, err := validateTimeout(timeoutSec)
 	if err != nil {
 		return nil, err

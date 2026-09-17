@@ -131,6 +131,15 @@ func ValidateConfig(provider string, config map[string]any) error {
 			}
 		}
 	case "aliyun_codeinterpreter":
+		if endpoint, present := config["execute_host"]; present {
+			value, ok := endpoint.(string)
+			if !ok {
+				return invalid("execute_host must be a string")
+			}
+			if _, err := normalizeAliyunEndpoint(value); err != nil {
+				return invalid("%s", err)
+			}
+		}
 		if id := stringValue(config["access_key_id"]); id != "" && !strings.HasPrefix(id, "LTAI") {
 			return invalid("invalid AccessKey ID format (should start with 'LTAI')")
 		}

@@ -198,7 +198,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 			name: "timeout too small",
 			fn: func() error {
 				_, err := p.ExecuteCode(t.Context(),
-					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
+					&SandboxInstance{InstanceID: "x"}, "x", "python", -1, nil)
 				return err
 			},
 			want: "timeout",
