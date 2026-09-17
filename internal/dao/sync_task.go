@@ -319,7 +319,7 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 			failed = true
 			status = SyncStatusFail
 			connectorStatus = SyncStatusFail
-			errorMsg = fmt.Sprintf("sync task failed after %d transient retries: %s", maxRetries, message)
+			errorMsg = fmt.Sprintf("sync task failed after %d retries, last error: %s", attempts-1, message)
 		}
 
 		if err := tx.Model(&entity.SyncLogs{}).

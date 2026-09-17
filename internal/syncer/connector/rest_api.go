@@ -717,8 +717,8 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 	case status >= 400 && status < 500 && status != http.StatusTooManyRequests:
 		return nil, &ConnectorValidationError{Message: fmt.Sprintf("REST API request failed with non-retriable client error status %d", status)}
 	case status >= 500:
-		// The "http <status>" wording lets the syncer's task-level retry
-		// classifier (isTransientSyncError) recognize exhausted server errors.
+		// Keep the "http <status>" wording so the failure surfaces clearly in
+		// the sync task error message.
 		return nil, fmt.Errorf("REST API request failed with http %d", status)
 	}
 

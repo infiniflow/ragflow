@@ -24,10 +24,25 @@ import (
 	"strings"
 )
 
-// maxTransientTaskRetries max retry time when network error occur
-const maxTransientTaskRetries int64 = 3
+// maxTransientTaskRetries is the total attempt budget for whitelisted
+// (transient) task errors: 3 retries plus the final attempt.
+const maxTransientTaskRetries int64 = 4
 
-// isTransientSyncError reports whether a task-level sync error is worth retrying.
+// maxNonTransientTaskRetries is the total attempt budget for non-whitelisted
+// task errors: 2 retries plus the final attempt.
+const maxNonTransientTaskRetries int64 = 3
+
+// maxTaskRetries returns the total attempt budget for a task error:
+// whitelisted (transient) errors get more retries than other errors.
+func maxTaskRetries(err error) int64 {
+	if isTransientSyncError(err) {
+		return maxTransientTaskRetries
+	}
+	return maxNonTransientTaskRetries
+}
+
+// isTransientSyncError reports whether a task-level sync error is worth
+// extra retries.
 func isTransientSyncError(err error) bool {
 	if err == nil {
 		return false

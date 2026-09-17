@@ -1165,7 +1165,7 @@ func TestSyncRunnerResultWaitHonorsCancel(t *testing.T) {
 func TestBatchFailureDoesNotAdvanceWaterline(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2)}).Error
 	taskDAO := dao.NewSyncTaskDAO(db)
 	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
@@ -1179,6 +1179,12 @@ func TestBatchFailureDoesNotAdvanceWaterline(t *testing.T) {
 	}
 	if task.Status != dao.SyncStatusFail {
 		t.Fatalf("status = %s, want fail", task.Status)
+	}
+	if task.ErrorCount != 3 {
+		t.Fatalf("error_count = %d, want 3", task.ErrorCount)
+	}
+	if !strings.Contains(task.ErrorMsg, "failed after 2 retries") || !strings.Contains(task.ErrorMsg, "boom") {
+		t.Fatalf("error_msg = %q", task.ErrorMsg)
 	}
 	if task.PollRangeEnd != nil {
 		t.Fatalf("poll_range_end advanced on failure")
@@ -1211,11 +1217,40 @@ func TestTransientFailureReschedulesTask(t *testing.T) {
 	}
 }
 
-// TestTransientFailureFailsAfterThreeRetries verifies retryable errors become terminal after the retry budget.
+// TestNonTransientFailureReschedulesTask verifies every task execution error
+// (not only "transient" ones) keeps the same task scheduled for retry.
+func TestNonTransientFailureReschedulesTask(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
+	sink := &fakeSink{errBySourceID: map[string]error{"bad": errors.New("boom")}}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("status = %s, want schedule", task.Status)
+	}
+	if task.ErrorCount != 1 {
+		t.Fatalf("error_count = %d, want 1", task.ErrorCount)
+	}
+	if !strings.Contains(task.ErrorMsg, "boom") {
+		t.Fatalf("error_msg = %q, want boom", task.ErrorMsg)
+	}
+}
+
+// TestTransientFailureFailsAfterThreeRetries verifies whitelisted (transient)
+// errors become terminal after their retry budget: 3 retries plus the final attempt.
 func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2)}).Error; err != nil {
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(3)}).Error; err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
 	taskDAO := dao.NewSyncTaskDAO(db)
@@ -1231,10 +1266,10 @@ func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	if task.Status != dao.SyncStatusFail {
 		t.Fatalf("status = %s, want fail", task.Status)
 	}
-	if task.ErrorCount != 3 {
-		t.Fatalf("error_count = %d, want 3", task.ErrorCount)
+	if task.ErrorCount != 4 {
+		t.Fatalf("error_count = %d, want 4", task.ErrorCount)
 	}
-	if !strings.Contains(task.ErrorMsg, "failed after 3 transient retries") || !strings.Contains(task.ErrorMsg, "unexpected EOF") {
+	if !strings.Contains(task.ErrorMsg, "failed after 3 retries") || !strings.Contains(task.ErrorMsg, "unexpected EOF") {
 		t.Fatalf("error_msg = %q", task.ErrorMsg)
 	}
 }
