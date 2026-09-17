@@ -577,6 +577,10 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 	return req, responseFormat, nil
 }
 
+// openAITTSDefaultVoice keeps the Go driver aligned with Python's
+// HTTPBasedTTS.tts(text, voice="alloy") default used by OpenAITTS.
+const openAITTSDefaultVoice = "alloy"
+
 func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, stream bool) (*http.Request, string, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, "", err
@@ -617,13 +621,10 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 		}
 	}
 
-	voice, ok := reqBody["voice"]
-	if !ok || voice == nil {
-		return nil, "", fmt.Errorf("voice is required")
-	}
-	voiceString, ok := voice.(string)
-	if !ok || strings.TrimSpace(voiceString) == "" {
-		return nil, "", fmt.Errorf("voice is required")
+	if voice, ok := reqBody["voice"]; !ok || voice == nil {
+		reqBody["voice"] = openAITTSDefaultVoice
+	} else if voiceString, isString := voice.(string); !isString || strings.TrimSpace(voiceString) == "" {
+		reqBody["voice"] = openAITTSDefaultVoice
 	}
 
 	streamFormat := ""

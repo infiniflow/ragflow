@@ -1103,13 +1103,18 @@ def test_chat_audio_speech_routes_unit(monkeypatch):
     assert res["message"] == "No default TTS model is set"
 
     class _TTSOk:
+        def __init__(self):
+            self.calls = []
+
         def tts(self, txt):
-            if not txt:
-                return []
+            assert txt, "endpoint must not synthesize empty segments"
+            self.calls.append(txt)
             yield f"chunk-{txt}".encode("utf-8")
 
+    _set_route_unit_request_json(monkeypatch, module, {"text": "A。B。"})
+    tts_ok = _TTSOk()
     monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: {"llm_name": "tts-x"})
-    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())
+    monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: tts_ok)
     resp = _run(module.tts.__wrapped__())
     assert resp.mimetype == "audio/mpeg"
     assert resp.headers.get("Cache-Control") == "no-cache"
@@ -1118,6 +1123,8 @@ def test_chat_audio_speech_routes_unit(monkeypatch):
     chunks = _run(_collect_stream(resp.body))
     assert any("chunk-A" in chunk for chunk in chunks)
     assert any("chunk-B" in chunk for chunk in chunks)
+    assert tts_ok.calls == ["A", "B"]
+    assert not any('"code": 500' in chunk for chunk in chunks)
 
     class _TTSErr:
         def tts(self, _txt):

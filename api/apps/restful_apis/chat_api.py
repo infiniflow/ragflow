@@ -1105,6 +1105,8 @@ async def tts():
     def stream_audio():
         try:
             for txt in re.split(r"[，。/《》？；：！\n\r:;]+", text):
+                if not txt:
+                    continue
                 for chunk in tts_mdl.tts(txt):
                     yield chunk
         except Exception as e:

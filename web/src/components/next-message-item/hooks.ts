@@ -20,6 +20,7 @@ import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
 import { useDeleteMessage, useFeedback } from '@/hooks/use-chat-request';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
 import { hexStringToUint8Array } from '@/utils/common-util';
+import { removeThinkSection } from '@/utils/chat';
 import { SpeechPlayer } from 'openai-speech-stream-player';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -96,7 +97,7 @@ export const useSpeech = (content: string, audioBinary?: string) => {
   }, []);
 
   const speech = useCallback(async () => {
-    const response = await read({ text: content });
+    const response = await read({ text: removeThinkSection(content) });
     if (response) {
       player?.current?.feedWithResponse(response);
     }

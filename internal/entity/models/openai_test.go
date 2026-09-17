@@ -283,34 +283,63 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 	}
 }
 
-func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
+func TestOpenAIAudioSpeechDefaultsVoiceWhenMissing(t *testing.T) {
 	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if body["voice"] != openAITTSDefaultVoice {
+			t.Errorf("voice=%v, want %q", body["voice"], openAITTSDefaultVoice)
+		}
+		_, _ = w.Write([]byte("audio-bytes"))
+	}))
+	defer srv.Close()
+
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
-	ctx := t.Context()
-
-	_, err := newOpenAIForTest("http://unused").AudioSpeech(
+	resp, err := newOpenAIForTest(srv.URL).AudioSpeech(
 		ctx,
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		&TTSConfig{Format: "mp3"},
 		nil,
 	)
-	if err == nil || !strings.Contains(err.Error(), "voice is required") {
-		t.Fatalf("err=%v, want voice is required", err)
+	if err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	if string(resp.Audio) != "audio-bytes" {
+		t.Fatalf("Audio=%q, want audio-bytes", string(resp.Audio))
 	}
 }
 
-func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
+func TestOpenAIAudioSpeechDefaultsVoiceWhenNonString(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if body["voice"] != openAITTSDefaultVoice {
+			t.Errorf("voice=%v, want %q", body["voice"], openAITTSDefaultVoice)
+		}
+		_, _ = w.Write([]byte("audio-bytes"))
+	}))
+	defer srv.Close()
+
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
-
-	_, err := newOpenAIForTest("http://unused").AudioSpeech(
+	resp, err := newOpenAIForTest(srv.URL).AudioSpeech(
 		ctx,
 		&model,
 		&input,
@@ -318,8 +347,11 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 		&TTSConfig{Params: map[string]interface{}{"voice": 123}},
 		nil,
 	)
-	if err == nil || !strings.Contains(err.Error(), "voice is required") {
-		t.Fatalf("err=%v, want voice is required", err)
+	if err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	if string(resp.Audio) != "audio-bytes" {
+		t.Fatalf("Audio=%q, want audio-bytes", string(resp.Audio))
 	}
 }
 
