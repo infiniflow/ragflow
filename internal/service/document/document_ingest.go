@@ -71,23 +71,46 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		validatedIDs = append(validatedIDs, docID)
 	}
 
-	// Batch pre-check for reparse with delete: use the validated doc IDs
-	// so we don't silently skip non-existent or unauthorized documents.
-	if run == string(entity.TaskStatusRunning) && req.Delete {
-		if err = s.AssertIngestionTasksTerminal(ctx, validatedIDs); err != nil {
-			return common.CodeDataError, err
+	// Start parsing: filter out in-flight documents (RUNNING, SCHEDULED,
+	// CREATED, STOPPING) so active parses continue undisturbed, and skip
+	// already COMPLETED documents when delete is false to avoid duplicate
+	// chunk errors. Only documents requiring a new parse run are started.
+	if run == string(entity.TaskStatusRunning) {
+		taskMap := make(map[string]*entity.IngestionTask, len(validatedIDs))
+		if s.ingestionTaskDAO != nil && len(validatedIDs) > 0 {
+			taskMap, err = s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, validatedIDs)
+			if err != nil {
+				return common.CodeExceptionError, fmt.Errorf("fail to get ingestion tasks: %w", err)
+			}
 		}
-	}
 
-	for _, vd := range validated {
-		doc := vd.doc
-		kb := vd.kb
+		toStart := make([]validatedDoc, 0, len(validated))
+		toStartIDs := make([]string, 0, len(validatedIDs))
+		for _, vd := range validated {
+			task := taskMap[vd.doc.ID]
+			if task != nil && common.IsActiveTaskStatus(task.Status) {
+				continue
+			}
+			if !req.Delete && task != nil && task.Status == common.COMPLETED {
+				continue
+			}
+			toStart = append(toStart, vd)
+			toStartIDs = append(toStartIDs, vd.doc.ID)
+		}
 
-		// Start parsing: delegates to the shared start-parse flow. The
-		// document run status is set by service.IngestionTaskService.StartRunning
-		// when the task transitions from CREATED or SCHEDULED,
-		// not here.
-		if run == string(entity.TaskStatusRunning) {
+		if len(toStart) == 0 {
+			return common.CodeSuccess, nil
+		}
+
+		if req.Delete {
+			if err = s.AssertIngestionTasksTerminal(ctx, toStartIDs); err != nil {
+				return common.CodeDataError, err
+			}
+		}
+
+		for _, vd := range toStart {
+			doc := vd.doc
+			kb := vd.kb
 			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
 				ApplyKB:         req.ApplyKB,
 				RerunWithDelete: req.Delete,
@@ -95,8 +118,13 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 				common.Error(fmt.Sprintf("go side, doc %s, start parse", doc.ID), err)
 				return common.CodeExceptionError, err
 			}
-			continue
 		}
+		return common.CodeSuccess, nil
+	}
+
+	for _, vd := range validated {
+		doc := vd.doc
+		kb := vd.kb
 
 		// Cancel: RequestStop (STOPPING) and update doc state. Do NOT
 		// delete the ingestion task or chunks here — deletion races with
