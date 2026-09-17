@@ -685,7 +685,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	if query == "" {
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
-	router := e.navRouter()
+	router := e.navRouter(ctx)
 	// The tool argument is NOT threaded (navigate_tree takes query + keywords only), but
 	// the SESSION scope still applies: the router ceilings its scope with the session
 	// doc_scope. The router must therefore receive the session ceiling, never the tool
@@ -836,7 +836,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		// DocScope is the session ceiling, not the tool argument (see the note in
 		// navigateTree): args["doc_scope"] is never threaded, but the routing done when
 		// doc_id is absent applies the session document scope.
-		res := NavigateTree(ctx, e.navRouter(), NavTreeInput{
+		res := NavigateTree(ctx, e.navRouter(ctx), NavTreeInput{
 			Query:    query,
 			Keywords: e.req.Keywords,
 			DocScope: e.deps.DocScope,
@@ -868,7 +868,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 	// Zero-LLM vector-beam drill-down: read each document's compiled structure of the
 	// requested kind, drill toward the query, and hand the model the merged
 	// <structure_navigation> outline with chunk-pointer anchors.
-	res, drill := navigateStructures(ctx, e.deps.TenantID, query, docIDs, kind, e.navRouter(), e.deps)
+	res, drill := navigateStructures(ctx, e.deps.TenantID, query, docIDs, kind, e.navRouter(ctx), e.deps)
 	metrics := map[string]any{
 		"entities":    drill.nodes,
 		"chunk_ptrs":  drill.chunkPtrs,
@@ -915,15 +915,40 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 }
 
 // navRouter returns the navigation-tree router navigateTree and navigateStructure
-// share. It follows the agentic router choice: the navigation-tree route asks for
-// router="claim_agg" — the claim leg runs first and decides the ranking when it hits, and
-// raw-chunk aggregation (chunk_agg) is the fallback. A nil retrieval backend degrades to
-// the nav-row router, which needs no backend.
-func (e *searchExecutor) navRouter() NavTreeRouter {
+// share, decided in this order:
+//
+//  1. The dataset has a COMPILATION. Navigation routes over compiled structure, so a
+//     dataset carrying no compiled rows has nothing to route on and gets
+//     noCompilationRouter — the tool then reports no_structure and the session is told to
+//     use search_chunks / retrieve, i.e. plain search. Without this gate the route stood
+//     behind an uncompiled dataset too, because the chunk leg is a plain similarity
+//     ranking that needs no compilation: raw retrieval came back dressed as a structure
+//     descent, and the rounds went to "navigation" results that name no structure.
+//  2. It follows the agentic router choice: the navigation-tree route asks for
+//     router="claim_agg" — the claim leg runs first and decides the ranking when it hits,
+//     and raw-chunk aggregation (chunk_agg) is the fallback. A nil retrieval backend
+//     degrades to the nav-row router, which needs no backend.
+//
+// A caller-installed NavRouter is an explicit override and skips both.
+func (e *searchExecutor) navRouter(ctx context.Context) NavTreeRouter {
 	if e.deps.NavRouter != nil {
 		return e.deps.NavRouter
 	}
+	if !DatasetHasCompilation(ctx, e.deps) {
+		return noCompilationRouter{}
+	}
 	return defaultNavRouter(e.deps)
+}
+
+// noCompilationRouter is what an UNCOMPILED dataset gets: Route answers (nil, nil), the
+// NavTreeRouter contract's "this dataset has no compiled tree", so NavigateTree reports
+// no_structure (dataset-level, and its tool note says to use search_chunks / retrieve)
+// instead of routing the query through raw-chunk aggregation.
+type noCompilationRouter struct{}
+
+// Route implements NavTreeRouter: no compiled structure, nothing to route, not an error.
+func (noCompilationRouter) Route(context.Context, string, string, string, []string, int) ([][2]string, error) {
+	return nil, nil
 }
 
 // defaultNavRouter builds the claim_agg router over the chunk_agg fallback.
