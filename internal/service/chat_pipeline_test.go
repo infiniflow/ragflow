@@ -1673,7 +1673,7 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil)
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, true)
 	if res.Reference == nil {
 		t.Fatal("a cited answer must carry a reference")
 	}
@@ -1713,6 +1713,7 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 		"The tower opened in 1889 [ID:Slot 0].",
 		kbinfos,
 		map[string][]string{"0": {"c9"}},
+		true,
 	)
 	if strings.Contains(res.Answer, "[ID:Slot") {
 		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
@@ -1731,5 +1732,78 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
+	}
+}
+
+func TestAsyncChatHarnessQuote(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	previousHarness := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = previousHarness })
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		req.AnswerSink("Research[ID:", true)
+		req.AnswerSink("0] done", true)
+		for _, delta := range []string{"Answer[", "ID:0", "] end"} {
+			req.AnswerSink(delta, false)
+		}
+		return HarnessResult{
+			Answer:  "Answer[ID:0] end",
+			Chunks:  []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+			DocAggs: []map[string]interface{}{{"doc_id": "d1", "doc_name": "Source"}},
+		}, nil
+	}
+	for _, tt := range []struct {
+		name            string
+		config, request any
+		wantQuote       bool
+	}{
+		{"default enabled", nil, nil, true},
+		{"chat disabled", false, true, false},
+		{"request disabled", true, false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			chat := dialForTest("glm-4-flash@ZHIPU-AI")
+			chat.KBIDs = entity.JSONSlice{"kb-1"}
+			chat.PromptConfig["system"] = "Answer using {knowledge}"
+			chat.PromptConfig["quote"] = tt.config
+			results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+				[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+				map[string]interface{}{"reasoning": 1, "quote": tt.request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var streamed, reasoning strings.Builder
+			var final AsyncChatResult
+			want := "Answer end"
+			if tt.wantQuote {
+				want = "Answer[ID:0] end"
+			}
+			for result := range results {
+				reasoning.WriteString(result.Reasoning)
+				if result.Final {
+					final = result
+				} else {
+					streamed.WriteString(result.Answer)
+					if !strings.HasPrefix(want, streamed.String()) {
+						t.Fatalf("stream leaked citation text: %q", streamed.String())
+					}
+				}
+			}
+			if !final.Final || final.Answer != want || streamed.String() != want {
+				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
+			}
+			if (len(final.Reference) > 0) != tt.wantQuote {
+				t.Fatalf("references=%#v, quote=%v", final.Reference, tt.wantQuote)
+			}
+			if !tt.wantQuote && (final.Reference == nil || strings.Contains(reasoning.String(), "[ID:")) {
+				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
+			}
+		})
 	}
 }
