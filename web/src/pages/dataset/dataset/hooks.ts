@@ -84,11 +84,13 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
       taskId: source?.id,
       fileName: source?.name || '-',
       details: source
-        ? getDocumentProgressMessage({
-            ...source,
-            latest_ingestion_event:
-              latestEvent ?? source.latest_ingestion_event,
-          })
+        ? messages?.items.length
+          ? ''
+          : getDocumentProgressMessage({
+              ...source,
+              latest_ingestion_event:
+                latestEvent ?? source.latest_ingestion_event,
+            })
         : '-',
     };
     if (source) {
@@ -104,15 +106,18 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         // Go derives status from ingestion_status (queued included);
         // Python reads the legacy run field.
         status: getDocumentRunningStatus(source),
-        details: getDocumentProgressMessage({
-          ...source,
-          latest_ingestion_event:
-            latestEvent ?? source.latest_ingestion_event,
-        }),
+        details: messages?.items.length
+          ? ''
+          : getDocumentProgressMessage({
+              ...source,
+              latest_ingestion_event:
+                latestEvent ?? source.latest_ingestion_event,
+            }),
+        events: messages?.items,
       };
     }
     return log;
-  }, [sourceDoc, latestEvent]);
+  }, [sourceDoc, latestEvent, messages]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

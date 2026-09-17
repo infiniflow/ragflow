@@ -152,7 +152,9 @@ describe('useShowLog — Go backend early-log fallback', () => {
     act(() => result.current.showLog(doc));
 
     await waitFor(() =>
-      expect(result.current.logInfo.details).toBe('Task is queued...'),
+      expect(result.current.logInfo.events?.map((event: { message: string }) => event.message)).toEqual([
+        'Task is queued...',
+      ]),
     );
     expect(mockList).toHaveBeenCalledWith(
       'kb-1',
