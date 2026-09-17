@@ -1106,14 +1106,58 @@ class MWSChat(Base):
         return cleaned
 
     def _request_body(self, history, gen_conf, *, stream):
-        """Build a strict MWS chat request from RAGFlow messages and options."""
+        """Build an MWS request and flatten unsupported tool-history messages."""
         messages = []
         for message in history:
-            role = message.get("role") if isinstance(message, dict) else None
-            content = message.get("content") if isinstance(message, dict) else None
-            if role not in self._ROLES or not isinstance(content, str):
-                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
-            messages.append({"role": role, "content": content})
+            if not isinstance(message, dict):
+                raise ValueError("MWS chat message must be a dictionary")
+
+            role = message.get("role")
+            if role not in self._ROLES and role != "tool":
+                raise ValueError(f"Unsupported MWS chat role: {role}")
+
+            content = message.get("content")
+            if role in {"system", "user"}:
+                if not isinstance(content, str):
+                    raise ValueError(f"MWS {role} message content must be a string")
+                messages.append({"role": role, "content": content})
+                continue
+
+            if role == "assistant":
+                tool_calls = message.get("tool_calls")
+                if tool_calls:
+                    serialized_calls = json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
+                    serialized_content = f"<tool_calls>{serialized_calls}</tool_calls>"
+                    if isinstance(content, str) and content:
+                        serialized_content = f"{content}\n{serialized_content}"
+                    messages.append(
+                        {
+                            "role": role,
+                            "content": serialized_content,
+                        }
+                    )
+                    continue
+                if not isinstance(content, str):
+                    raise ValueError("MWS assistant message content must be a string")
+                messages.append({"role": role, "content": content})
+                continue
+
+            tool_call_id = message.get("tool_call_id")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                raise ValueError("MWS tool message requires tool_call_id")
+            if not isinstance(content, str):
+                raise ValueError("MWS tool message content must be a string")
+            serialized_result = json.dumps(
+                {"tool_call_id": tool_call_id, "content": content},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"<tool_result>{serialized_result}</tool_result>",
+                }
+            )
         if not messages:
             raise ValueError("MWS chat messages are required")
 

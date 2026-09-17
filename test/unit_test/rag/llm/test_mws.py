@@ -15,6 +15,7 @@
 #
 """Tests for MWS provider registration, discovery, and inference adapters."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import numpy as np
@@ -294,6 +295,86 @@ async def test_mws_chat_uses_exact_url_bearer_header_and_documented_fields():
             "max_completion_tokens": 128,
         },
     )
+
+
+@pytest.mark.p1
+def test_mws_chat_request_flattens_openai_tool_history():
+    """Convert RAGFlow tool history to the roles and strings accepted by MWS."""
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+    tool_calls = [
+        {
+            "id": "call_123",
+            "type": "function",
+            "function": {
+                "name": "DuckDuckGo",
+                "arguments": '{"query":"Makise Kurisu"}',
+            },
+        }
+    ]
+    expected_tool_calls = f"<tool_calls>{json.dumps(tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>"
+    expected_tool_result = (
+        '<tool_result>{"tool_call_id":"call_123",'
+        '"content":"Makise Kurisu is a fictional character."}</tool_result>'
+    )
+
+    body = chat._request_body(
+        [
+            {"role": "system", "content": "Use tools when needed."},
+            {"role": "user", "content": "Who is Makise Kurisu?"},
+            {"role": "assistant", "content": None, "tool_calls": tool_calls},
+            {
+                "role": "tool",
+                "tool_call_id": "call_123",
+                "content": "Makise Kurisu is a fictional character.",
+            },
+            {"role": "user", "content": "Exceed max rounds: 1"},
+        ],
+        {"temperature": 0.2},
+        stream=False,
+    )
+
+    assert body == {
+        "model": "qwen3-235b-instruct",
+        "messages": [
+            {"role": "system", "content": "Use tools when needed."},
+            {"role": "user", "content": "Who is Makise Kurisu?"},
+            {
+                "role": "assistant",
+                "content": expected_tool_calls,
+            },
+            {
+                "role": "user",
+                "content": expected_tool_result,
+            },
+            {"role": "user", "content": "Exceed max rounds: 1"},
+        ],
+        "temperature": 0.2,
+    }
+    assert all(message["role"] in {"system", "user", "assistant"} for message in body["messages"])
+    assert all(isinstance(message["content"], str) for message in body["messages"])
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("history", "error"),
+    [
+        (["not-a-message"], "must be a dictionary"),
+        ([{"role": "developer", "content": "No"}], "Unsupported MWS chat role"),
+        ([{"role": "user", "content": None}], "user message content must be a string"),
+        ([{"role": "assistant", "content": None}], "assistant message content must be a string"),
+        ([{"role": "tool", "content": "result"}], "requires tool_call_id"),
+        (
+            [{"role": "tool", "tool_call_id": "call_123", "content": None}],
+            "tool message content must be a string",
+        ),
+    ],
+)
+def test_mws_chat_request_rejects_invalid_message_shapes(history, error):
+    """Keep strict validation around MWS tool-history normalization."""
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+
+    with pytest.raises(ValueError, match=error):
+        chat._request_body(history, {}, stream=False)
 
 
 @pytest.mark.p1
