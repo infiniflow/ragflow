@@ -86,6 +86,13 @@ func (dao *DocumentCleanupClaimDAO) Renew(ctx context.Context, db *gorm.DB, docu
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
+		// MySQL reports zero affected rows when a renewal lands in the same
+		// second as acquisition and both timestamp values remain unchanged.
+		// Confirm the fencing token still owns an unexpired claim before
+		// treating that no-op update as a genuine loss.
+		if dao.Validate(ctx, db, documentID, token, now) {
+			return nil
+		}
 		return ErrDocumentCleanupClaimLost
 	}
 	return nil

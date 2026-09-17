@@ -45,6 +45,9 @@ func TestDocumentCleanupClaimMySQLTakeoverAndFencing(t *testing.T) {
 	if first.ExpiresAt != 220 {
 		t.Fatalf("initial expiry = %d, want 220", first.ExpiresAt)
 	}
+	if err = claims.Renew(t.Context(), dbA, documentID, first.Token, 100, 120, 45); err != nil {
+		t.Fatalf("renew immediately after acquire: %v", err)
+	}
 	if _, err = claims.Acquire(t.Context(), dbB, documentID, "grace-owner", 264, 120, 45); !errors.Is(err, ErrDocumentCleanupClaimHeld) {
 		t.Fatalf("acquire during takeover grace error = %v, want ErrDocumentCleanupClaimHeld", err)
 	}

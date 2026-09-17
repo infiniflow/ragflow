@@ -66,6 +66,33 @@ func TestDocumentCleanupClaimDAOFencesExpiredOwners(t *testing.T) {
 	}
 }
 
+func TestDocumentCleanupClaimDAORenewAcceptsNoOpUpdateForCurrentOwner(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&entity.DocumentCleanupClaim{}); err != nil {
+		t.Fatalf("migrate cleanup claim: %v", err)
+	}
+
+	claims := NewDocumentCleanupClaimDAO()
+	claim, err := claims.Acquire(t.Context(), db, "doc-1", "api-a", 100, 120, 45)
+	if err != nil {
+		t.Fatalf("acquire claim: %v", err)
+	}
+	if err = db.Callback().Update().After("gorm:update").Register("test: no-op cleanup claim update", func(tx *gorm.DB) {
+		if tx.Statement.Table == (entity.DocumentCleanupClaim{}).TableName() {
+			tx.RowsAffected = 0
+		}
+	}); err != nil {
+		t.Fatalf("register no-op update callback: %v", err)
+	}
+
+	if err = claims.Renew(t.Context(), db, "doc-1", claim.Token, 100, 120, 45); err != nil {
+		t.Fatalf("renew current claim after a no-op update: %v", err)
+	}
+}
+
 func TestDocumentCleanupClaimDAOConcurrentTakeoverHasSingleWinner(t *testing.T) {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared&_busy_timeout=5000", t.Name())
 	dbA, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
