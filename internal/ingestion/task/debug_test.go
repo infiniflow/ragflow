@@ -401,7 +401,7 @@ func TestBuildDebugResultDSL_Envelope(t *testing.T) {
 	}
 
 	// Raw (non-enveloped) DSL.
-	rawRes, err := BuildDebugResultDSL(rawDSL, output)
+	rawRes, err := BuildDebugResultDSL(rawDSL, output, true)
 	if err != nil {
 		t.Fatalf("raw DSL: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestBuildDebugResultDSL_Envelope(t *testing.T) {
 
 	// Enveloped DSL (production shape) must unwrap to the same result.
 	envDSL := `{"dsl": ` + rawDSL + `}`
-	envRes, err := BuildDebugResultDSL(envDSL, output)
+	envRes, err := BuildDebugResultDSL(envDSL, output, true)
 	if err != nil {
 		t.Fatalf("enveloped DSL: %v", err)
 	}

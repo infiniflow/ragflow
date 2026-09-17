@@ -18,25 +18,15 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
-
-// MCPRetrievalService abstracts the dataset retrieval operations needed
-// by the MCP server handler.
-type MCPRetrievalService interface {
-	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
-	ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error)
-}
 
 // MCPServerHandler handles MCP protocol requests (JSON-RPC over HTTP).
 // It exposes RAGFlow capabilities as MCP tools to external AI clients.
@@ -44,6 +34,19 @@ type MCPServerHandler struct {
 	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
 	listChatsFunc    func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
 	retrievalFunc    func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error)
+}
+
+// NewStandaloneMCPHandler exposes the native SDK transports.
+func NewStandaloneMCPHandler(
+	resolveUser func(context.Context, string) (string, error),
+	listDatasetsFunc func(context.Context, string, int, int, string, bool) ([]map[string]interface{}, int64, error),
+	listChatsFunc func(context.Context, string, int, int, string, bool) ([]map[string]interface{}, int64, error),
+	retrievalFunc func(context.Context, string, mcp.RetrievalRequest) (string, error),
+	opts mcp.Options,
+) *mcp.Handler {
+	return mcp.NewHandler(resolveUser, func(userID string) mcp.Connector {
+		return mcp.NewServiceConnector(userID, listDatasetsFunc, listChatsFunc, retrievalFunc)
+	}, opts)
 }
 
 // NewMCPServerHandler creates a new MCPServerHandler.
@@ -78,46 +81,23 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 		return
 	}
 
-	const maxMCPBodyBytes = 1 << 20 // 1 MiB
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxMCPBodyBytes)
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Failed to read request body: "+err.Error())
-		return
+	hdl := NewStandaloneMCPHandler(func(context.Context, string) (string, error) { return user.ID, nil }, h.listDatasetsFunc, h.listChatsFunc, h.retrievalFunc, mcp.Options{StreamableHTTP: true, JSONResponse: true})
+	defer hdl.Close()
+	request := c.Request.Clone(c.Request.Context())
+	request.URL.Path = "/mcp"
+	// Preserve the legacy REST contract: callers historically sent ordinary
+	// JSON without Streamable HTTP's dual Accept header.
+	if accept := request.Header.Get("Accept"); accept == "" || accept == "application/json" {
+		request.Header.Set("Accept", "application/json, text/event-stream")
 	}
-
-	// Create a connector for this user. Each request gets its own connector
-	// so that user context is always correct.
-	connector := mcp.NewServiceConnector(
-		user.ID,
-		h.listDatasetsFunc,
-		h.listChatsFunc,
-		h.retrievalFunc,
-	)
-
-	ctx := c.Request.Context()
-	server := mcp.NewServer(connector)
-	respBody, hasResponse, err := server.HandleRequest(ctx, body)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "MCP server error: "+err.Error())
-		return
-	}
-
-	if !hasResponse {
-		// Notification — no response per JSON-RPC spec.
-		c.Status(http.StatusAccepted)
-		return
-	}
-
-	// The MCP protocol uses application/json with JSON-RPC responses.
-	c.Data(http.StatusOK, "application/json", respBody)
+	hdl.ServeHTTP(c.Writer, request)
 }
 
 // MCPListDatasets wraps DatasetService.ListDatasets for the MCP tool handler,
 // filling in default values for parameters that the MCP tool does not expose.
 func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 	data, total, _, err := ds.ListDatasets(ctx,
-		"", "", page, pageSize, orderby, desc,
+		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
 		"", nil, "", userID, nil,
 	)
 	return data, total, err
@@ -126,7 +106,7 @@ func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID str
 // MCPListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
 func MCPListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, orderby, desc, nil)
+	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -139,143 +119,4 @@ func MCPListChats(ctx context.Context, chatService *service.ChatService, userID 
 		})
 	}
 	return chatList, resp.Total, nil
-}
-
-// mcpRerankCandidatesCount is the fixed rerank candidate window sent with every
-// retrieval request, so the ranking cannot shift between pages of one
-// pagination sequence. Requests whose page * page_size exceeds it are rejected
-// up front. Keep in sync with _RERANK_CANDIDATES_COUNT in mcp/server/server.py.
-const mcpRerankCandidatesCount = 512
-
-// validateRetrievalWindow checks that the requested page fits inside the fixed
-// rerank candidate window. page/page_size default to the same values as the
-// Python MCP server (1/30) when unset. The comparison divides instead of
-// multiplying so a hostile page value cannot overflow page * pageSize.
-func validateRetrievalWindow(page, pageSize int) error {
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 30
-	}
-	if page > mcpRerankCandidatesCount/pageSize {
-		return fmt.Errorf("page (%d) * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page, pageSize, mcpRerankCandidatesCount)
-	}
-	return nil
-}
-
-// MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
-// It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
-// and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
-	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
-		return "", err
-	}
-	// Resolve dataset IDs: if none provided, fetch ALL accessible datasets
-	// across all pages (matching Python _fetch_all_datasets behaviour).
-	datasetIDs := req.DatasetIDs
-	if len(datasetIDs) == 0 {
-		const maxPageSize = 100
-		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
-			data, total, _, err := ds.ListDatasets(ctx,
-				"", "", page, pageSize, "create_time", true,
-				"", nil, "", userID, nil,
-			)
-			return data, total, err
-		}, maxPageSize)
-		if err != nil {
-			return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
-		}
-		if len(ids) == 0 {
-			return "", fmt.Errorf("no accessible datasets found")
-		}
-		datasetIDs = ids
-	}
-
-	searchReq := &service.SearchDatasetsRequest{
-		DatasetIDs:   datasetIDs,
-		Question:     req.Question,
-		DocumentIDs:  req.DocumentIDs,
-		ForceRefresh: req.ForceRefresh,
-	}
-
-	if req.Page > 0 {
-		v := req.Page
-		searchReq.Page = &v
-	}
-	if req.PageSize > 0 {
-		v := req.PageSize
-		searchReq.PageSize = &v
-	}
-	if req.TopK > 0 {
-		v := req.TopK
-		searchReq.TopK = &v
-	}
-	{
-		v := req.SimilarityThreshold
-		searchReq.SimilarityThreshold = &v
-	}
-	{
-		v := req.VectorSimilarityWeight
-		searchReq.VectorSimilarityWeight = &v
-	}
-	if req.RerankID != "" {
-		v := req.RerankID
-		searchReq.RerankID = &v
-	}
-	{
-		v := mcpRerankCandidatesCount
-		searchReq.RerankCandidatesCount = &v
-	}
-	{
-		v := req.Keyword
-		searchReq.Keyword = &v
-	}
-
-	resp, err := ds.SearchDatasets(ctx, searchReq, userID)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := json.Marshal(resp)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize retrieval result: %w", err)
-	}
-	return string(result), nil
-}
-
-// fetchAllDatasetIDs pages through listPage collecting dataset IDs until the
-// total reported by the service is reached, or a short or empty page arrives.
-// Stopping at the reported total avoids an extra empty-page request when the
-// dataset count is an exact multiple of pageSize.
-func fetchAllDatasetIDs(listPage func(page, pageSize int) ([]map[string]interface{}, int64, error), pageSize int) ([]string, error) {
-	var ids []string
-	page := 1
-	fetched := 0
-	for {
-		data, total, err := listPage(page, pageSize)
-		if err != nil {
-			return nil, err
-		}
-		if len(data) == 0 {
-			break
-		}
-		fetched += len(data)
-		for _, d := range data {
-			if id, ok := d["id"].(string); ok && id != "" {
-				ids = append(ids, id)
-			}
-		}
-		// Stop once the reported total is reached so exact multiples of
-		// pageSize do not pay an extra empty-page request.
-		if total > 0 && int64(fetched) >= total {
-			break
-		}
-		// A page smaller than pageSize is the last page.
-		if len(data) < pageSize {
-			break
-		}
-		page++
-	}
-	return ids, nil
 }

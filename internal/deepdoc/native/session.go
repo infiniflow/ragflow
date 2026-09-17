@@ -22,6 +22,17 @@ import (
 	ort "github.com/infiniflow/onnxruntime_go"
 )
 
+// intraOpThreads is the intra-op thread count every session is opened with.
+//
+// ONNX Runtime gives each session its own intra-op thread pool (the C API
+// never switches a session onto a shared/global pool), so the threads DeepDoc
+// inference occupies in this process are intraOpThreads × the number of
+// concurrently running sessions. Pinning it to 1 keeps every Run to a single
+// thread, which is what makes the process ceiling a plain concurrency budget:
+// the capacity registered in inference_limit.go bounds how many Runs may be in
+// flight, and each of them costs exactly one thread.
+const intraOpThreads = 1
+
 var (
 	ortOnce    sync.Once
 	ortInitErr error
@@ -79,25 +90,12 @@ type session struct {
 }
 
 // NewSession opens modelPath. inShape/outShape describe the fixed tensor
-// dimensions; outSize is the total element count of the output tensor.
-// intraOpThreads controls ONNX Runtime's intra-op parallelism. DLA/TSR/OCR-rec
-// pass 0 to use all cores — matching deepdoc's Python onnxruntime
-// (intra_op_num_threads defaults to 0 = all cores); their Run path does no
-// contour extraction, so the parallel reduction order matches Python for
-// bit-stable parity.
-//
-// The DB text detector is currently pinned to 1 (single-threaded). NOTE: the
-// historical rationale for this — that a multi-threaded Run would leave ONNX
-// Runtime worker threads settling while the postprocess's OpenCV findContours
-// ran its parallel_for_ and under-ran — does NOT apply to this pure-Go port.
-// Here the postprocess (hand-rolled findContours / boxScoreFast / fillPoly) is
-// fully synchronous and only runs after RunWithOptions returns, so there is no
-// thread competition with the detector. The pin is preserved as-is because the
-// det pred map was verified at intraOpThreads=1 (mean|Δ|≈4e-5 vs the Python
-// reference); flipping it to 0 must be re-confirmed on the det integration
-// fixtures before landing, since the reduction order differs.
-// InitORT must have been called first.
-func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64, intraOpThreads int) (*session, error) {
+// dimensions; outSize is the total element count of the output tensor. The
+// session runs intraOpThreads intra-op threads (see the constant): one thread
+// per Run, with the process-wide ceiling owned by the inference budget the
+// process owner registers (see inference_limit.go). InitORT must have been
+// called first.
+func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64) (*session, error) {
 	in := make([]float32, prod(inShape))
 	out := make([]float32, prod(outShape))
 	inT, err := ort.NewTensor(ort.NewShape(inShape...), in)
@@ -115,11 +113,23 @@ func NewSession(modelPath, inName string, inShape []int64, outName string, outSh
 		outT.Destroy()
 		return nil, err
 	}
-	// intraOpThreads == 0 → all cores (mirrors Python's onnxruntime default);
-	// the DB detector passes 1, preserved as-is for verified det parity (see
-	// NewSession doc above — the old findContours/parallel_for_ rationale does
-	// not apply to this pure-Go port).
+	// One intra-op thread per session: the session's Runs then cost one thread
+	// each, so the process-wide inference ceiling is exactly the number of
+	// concurrent Runs the caller admits (see the intraOpThreads constant).
 	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
+		opts.Destroy()
+		inT.Destroy()
+		outT.Destroy()
+		return nil, err
+	}
+	// Disable the BFC memory arena for this session. The arena pre-reserves a
+	// native block per session and never shrinks it, so every pooled (often
+	// idle) session hoards one. Across the rec/det/DLA/TSR pools (~220 live
+	// sessions while parsing a large PDF) this dominated the ~14 GB of native
+	// memory seen at the ~20 GB OOM peak. With the arena off, idle sessions keep
+	// only their weights; activation tensors are allocated directly and freed
+	// after each Run.
+	if err := opts.SetCpuMemArena(false); err != nil {
 		opts.Destroy()
 		inT.Destroy()
 		outT.Destroy()

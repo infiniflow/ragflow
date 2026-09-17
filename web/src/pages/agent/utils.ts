@@ -1,3 +1,4 @@
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -28,8 +29,6 @@ import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
   CategorizeAnchorPointPositions,
-  FileType,
-  FileTypeSuffixMap,
   InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
@@ -741,7 +740,9 @@ export const buildDslGlobalVariables = (
 
 // TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && res?.response.status !== 200;
+  res &&
+  (res?.response.status !== 200 ||
+    (typeof res?.data?.code === 'number' && res.data.code !== 0));
 
 // Replace the id in the object with text
 export const replaceIdWithText = (

@@ -1283,10 +1283,6 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 	if deps.Chat == nil {
 		return fmt.Errorf("Wiki page rewrite chat model is unavailable")
 	}
-	maxTokens := deps.ModelMaxOutput
-	if maxTokens <= 0 {
-		maxTokens = 4096
-	}
 	jobs := make([]CompilerJob, 0, len(indexes))
 	for _, idx := range indexes {
 		idx := idx
@@ -1304,7 +1300,6 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 				SystemPrompt: wikiPageRewriteSystemPrompt,
 				UserPrompt:   prompt,
 				Temperature:  floatPtr(0.1),
-				MaxTokens:    &maxTokens,
 			})
 			if err != nil {
 				return fmt.Errorf("rewrite Wiki page %q: %w", metaString(page.Meta, "slug"), err)

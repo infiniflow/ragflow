@@ -1,5 +1,6 @@
+import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import { FileType, initialParserValues } from '../../constant/pipeline';
+import { initialParserValues } from '../../constant/pipeline';
 import { buildInitialParserSetup, buildInitialParserValues } from './utils';
 
 describe('parser-form utils', () => {

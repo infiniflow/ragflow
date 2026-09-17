@@ -178,49 +178,6 @@ export const useUpdateChunk = () => {
   };
 };
 
-export const useRerunDataflow = ({
-  data,
-}: {
-  data: IPipelineFileLogDetail;
-}) => {
-  const [isChange, setIsChange] = useState(false);
-
-  const { mutateAsync: handleReRunFunc, isPending: loading } = useMutation({
-    mutationKey: ['pipelineRerun', data],
-    mutationFn: async (newData: { value: IDslComponent; key: string }) => {
-      const newDsl = {
-        ...data.dsl,
-        components: {
-          ...data.dsl.components,
-          [newData.key]: newData.value,
-        },
-      };
-
-      // this Data provided to the interface
-      const params = {
-        id: data.id,
-        dsl: newDsl,
-        component_id: newData.key,
-      };
-      const { data: result } = await kbService.pipelineRerun(params);
-      if (result.code === 0) {
-        message.success(t('message.operated'));
-        // queryClient.invalidateQueries({
-        //   queryKey: [type],
-        // });
-      }
-      return result;
-    },
-  });
-
-  return {
-    loading,
-    isChange,
-    setIsChange,
-    handleReRunFunc,
-  };
-};
-
 export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
   const timelineNodes: TimelineNode[] = useMemo(() => {
     const nodes: Array<

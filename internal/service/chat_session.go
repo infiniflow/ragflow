@@ -47,7 +47,7 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
+	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
 	CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error)
 }
@@ -244,7 +244,7 @@ type ChatSessionPayload struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, orderby, desc, page, pageSize, includeHistory...)
+	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, terms, page, pageSize, includeHistory...)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +407,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", "create_time", true, 0, -1, false)
+			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, false)
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}
@@ -569,7 +569,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 	session, err := s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID)
 	if err != nil {
 		if isChatSessionNotFound(err) {
-			return nil, common.CodeDataError, errors.New("session not found")
+			return nil, common.CodeDataError, errors.New("Session not found!")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -1543,6 +1543,10 @@ func (s *ChatSessionService) ChatCompletions(
 				ans["end_to_think"] = nil
 				delete(ans, "start_to_think")
 				delete(ans, "end_to_think")
+				// Same structured step channel as the non-legacy path.
+				if result.ThinkEvent != nil {
+					ans["think_event"] = result.ThinkEvent
+				}
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
@@ -1597,6 +1601,14 @@ func (s *ChatSessionService) ChatCompletions(
 				ans := s.structureAnswer(session, deltaAnswer, messageID, sessionID, reference)
 				ans["start_to_think"] = result.StartToThink
 				ans["end_to_think"] = result.EndToThink
+				// The structured twin of a reasoning step rides the chunk that
+				// carries it. An event-only chunk (no delta) is a no-op for a
+				// client that only reads answer/think markers, and gives a
+				// step-rendering client the fields the sentence cannot convey
+				// (tool, status, sources, duration).
+				if result.ThinkEvent != nil {
+					ans["think_event"] = result.ThinkEvent
+				}
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
@@ -1937,6 +1949,7 @@ type sseAnswerChunk struct {
 	ChatID       string                 `json:"chat_id,omitempty"`
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
+	ThinkEvent   interface{}            `json:"think_event,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order matching Python:
@@ -2051,6 +2064,7 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 		ChatID:       chatID,
 		StartToThink: startToThink,
 		EndToThink:   endToThink,
+		ThinkEvent:   ans["think_event"],
 	}
 	wrapper := sseWrapper{Code: 0, Message: "", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)
@@ -2208,7 +2222,7 @@ func (s *ChatSessionService) chunksFormat(reference map[string]interface{}) []ma
 	for _, chunk := range raw {
 		out = append(out, map[string]interface{}{
 			"id":                getValue(chunk, "chunk_id", "id"),
-			"content":           getValue(chunk, "content_with_weight", "content"),
+			"content":           getValue(chunk, "content", "content_with_weight"),
 			"document_id":       getValue(chunk, "doc_id", "document_id"),
 			"document_name":     getValue(chunk, "docnm_kwd", "document_name"),
 			"dataset_id":        getValue(chunk, "kb_id", "dataset_id"),

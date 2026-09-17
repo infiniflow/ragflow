@@ -30,6 +30,7 @@ package native
 //     degenerate case for the fixed-shape recognizers, whose key set is tiny.
 
 import (
+	"context"
 	"reflect"
 	"strconv"
 	"strings"
@@ -75,7 +76,25 @@ func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessio
 // miss, plus a release func. The caller must call release exactly once. A
 // poisoned session is Destroyed on release rather than pooled (ORT does not
 // guarantee reuse safety after a forced termination).
-func (p *sessionPool[K, V]) Get(key K, newFn func() (V, error)) (V, func(), error) {
+//
+// Get takes a process-wide inference slot before it hands out a session and
+// returns that slot from release, so the slot is held for the whole hold window
+// (session construction on a miss, then the caller's Run). This is what makes
+// the process inference budget real; see inference_limit.go.
+func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, error)) (V, func(), error) {
+	if err := acquireInference(ctx); err != nil {
+		var zero V
+		return zero, nil, err
+	}
+	slotReturned := false
+	returnSlot := func() {
+		if slotReturned {
+			return
+		}
+		slotReturned = true
+		releaseInference()
+	}
+
 	p.mu.Lock()
 	kp := p.pools[key]
 	if kp == nil {
@@ -102,12 +121,14 @@ func (p *sessionPool[K, V]) Get(key K, newFn func() (V, error)) (V, func(), erro
 		var err error
 		s, err = newFn()
 		if err != nil {
+			returnSlot()
 			var zero V
 			return zero, nil, err
 		}
 	}
 
 	release := func() {
+		defer returnSlot()
 		if s.isPoisoned() {
 			s.Destroy()
 			return
@@ -181,17 +202,15 @@ func (p *sessionPool[K, V]) evictLRU() {
 type sessKey struct {
 	modelPath, inName, outName string
 	inShape, outShape          string
-	intraOpThreads             int
 }
 
-func sessKeyOf(modelPath, inName string, inShape []int64, outName string, outShape []int64, intraOpThreads int) sessKey {
+func sessKeyOf(modelPath, inName string, inShape []int64, outName string, outShape []int64) sessKey {
 	return sessKey{
-		modelPath:      modelPath,
-		inName:         inName,
-		outName:        outName,
-		inShape:        shapeKey(inShape),
-		outShape:       shapeKey(outShape),
-		intraOpThreads: intraOpThreads,
+		modelPath: modelPath,
+		inName:    inName,
+		outName:   outName,
+		inShape:   shapeKey(inShape),
+		outShape:  shapeKey(outShape),
 	}
 }
 
@@ -209,10 +228,10 @@ var modelSessions = newSessionPool[sessKey, *session](0, 0)
 
 // getModelSession returns a reusable session for the given model signature plus
 // a release func. The caller must call release exactly once.
-func getModelSession(modelPath, inName string, inShape []int64, outName string, outShape []int64, intraOpThreads int) (*session, func(), error) {
-	key := sessKeyOf(modelPath, inName, inShape, outName, outShape, intraOpThreads)
-	return modelSessions.Get(key, func() (*session, error) {
-		return NewSession(modelPath, inName, inShape, outName, outShape, intraOpThreads)
+func getModelSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string, outShape []int64) (*session, func(), error) {
+	key := sessKeyOf(modelPath, inName, inShape, outName, outShape)
+	return modelSessions.Get(ctx, key, func() (*session, error) {
+		return NewSession(modelPath, inName, inShape, outName, outShape)
 	})
 }
 
@@ -225,16 +244,14 @@ func getModelSession(modelPath, inName string, inShape []int64, outName string, 
 type recKey struct {
 	modelPath, inName, outName string
 	inShape                    string
-	intraOpThreads             int
 }
 
-func recKeyOf(modelPath, inName string, inShape []int64, outName string, intraOpThreads int) recKey {
+func recKeyOf(modelPath, inName string, inShape []int64, outName string) recKey {
 	return recKey{
-		modelPath:      modelPath,
-		inName:         inName,
-		outName:        outName,
-		inShape:        shapeKey(inShape),
-		intraOpThreads: intraOpThreads,
+		modelPath: modelPath,
+		inName:    inName,
+		outName:   outName,
+		inShape:   shapeKey(inShape),
 	}
 }
 
@@ -257,9 +274,9 @@ var recSessions = newSessionPool[recKey, *recSession](recMaxShapePools, recShape
 
 // getRecSession returns a reusable dynamic-width OCR-rec session for the given
 // input width plus a release func. The caller must call release exactly once.
-func getRecSession(modelPath, inName string, inShape []int64, outName string, intraOpThreads int) (*recSession, func(), error) {
-	key := recKeyOf(modelPath, inName, inShape, outName, intraOpThreads)
-	return recSessions.Get(key, func() (*recSession, error) {
-		return newRecSession(modelPath, inName, inShape, outName, intraOpThreads)
+func getRecSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*recSession, func(), error) {
+	key := recKeyOf(modelPath, inName, inShape, outName)
+	return recSessions.Get(ctx, key, func() (*recSession, error) {
+		return newRecSession(modelPath, inName, inShape, outName)
 	})
 }

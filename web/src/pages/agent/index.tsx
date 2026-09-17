@@ -53,7 +53,6 @@ import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
-import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useIsPipeline } from './hooks/use-is-pipeline';
 import {
   useIsConversationMode,
@@ -124,15 +123,7 @@ export default function Agent() {
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { buildDslData } = useBuildDslData();
   const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
-  const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
-  const handleRunAgent = useCallback(() => {
-    if (inputs.length > 0) {
-      showChatDrawer();
-    } else {
-      handleRun();
-    }
-  }, [handleRun, inputs, showChatDrawer]);
   const {
     visible: versionDialogVisible,
     hideModal: hideVersionDialog,
@@ -219,17 +210,16 @@ export default function Agent() {
     stopFetchTrace,
   });
 
-  const handleButtonRunClick = useCallback(() => {
+  const handleButtonRunClick = useCallback(async () => {
     if (isWebhookMode) {
-      saveGraph();
-      showWebhookTestSheet();
+      if ((await saveGraph())?.code === 0) showWebhookTestSheet();
     } else if (isPipeline) {
       handleRunPipeline();
     } else {
-      handleRunAgent();
+      handleRun();
     }
   }, [
-    handleRunAgent,
+    handleRun,
     handleRunPipeline,
     isPipeline,
     isWebhookMode,

@@ -1,3 +1,4 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -8,7 +9,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { SwitchLogicOperator } from '@/constants/agent';
@@ -77,8 +77,7 @@ type VariableWithPathProps = {
 function VariableWithPath({ name }: VariableWithPathProps) {
   const { t: translate } = useTranslation();
   const form = useFormContext();
-  const fullValue: string =
-    useWatch({ control: form.control, name }) ?? '';
+  const fullValue: string = useWatch({ control: form.control, name }) ?? '';
 
   const { base, suffix } = useMemo(
     () => splitBaseAndPath(fullValue),
@@ -184,9 +183,7 @@ function ConditionCards({
                   render={() => (
                     <FormItem className="flex-1 min-w-0">
                       <FormControl>
-                        <VariableWithPath
-                          name={`${name}.${index}.cpn_id`}
-                        />
+                        <VariableWithPath name={`${name}.${index}.cpn_id`} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -200,7 +197,7 @@ function ConditionCards({
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <RAGFlowSelect
+                          <SelectWithSearch
                             {...field}
                             options={switchOperatorOptions}
                             onlyShowSelectedIcon
@@ -319,7 +316,7 @@ function SwitchForm({ node }: IOperatorForm) {
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>
-                            <RAGFlowSelect
+                            <SelectWithSearch
                               {...field}
                               options={switchLogicOperatorOptions}
                             />

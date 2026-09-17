@@ -1902,7 +1902,7 @@ func TestListAgentsIncludesReleaseTime(t *testing.T) {
 		t.Fatalf("failed to seed released version: %v", err)
 	}
 	ctx := t.Context()
-	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -1952,7 +1952,7 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, "create_time", true, nil, "dataflow_canvas,agent_canvas", "", nil)
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "dataflow_canvas,agent_canvas", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -1960,7 +1960,7 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 		t.Fatalf("multi-category filter returned total=%d rows=%d, want 3/3", resp.Total, len(resp.Canvas))
 	}
 
-	single, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, "create_time", true, nil, "agent_canvas", "", nil)
+	single, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "agent_canvas", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents (single category) failed: code=%v err=%v", code, err)
 	}
@@ -1972,8 +1972,8 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 // TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
 // template group owned by the caller appears in the merged /agents list
 // (no canvas_category filter), carrying the "compilation_template_group" type
-// discriminator and its title = name. Built-in catalogue groups (empty tenant)
-// must NOT leak in.
+// discriminator and its title = name. Groups without the caller's tenant
+// ownership must NOT leak in.
 func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -1993,7 +1993,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// The caller's own group (must appear), updated before the canvas.
 	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
-	// A built-in catalogue group with empty tenant_id (must NOT appear).
+	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
 		Scope: "file", BaseModel: entity.BaseModel{CreateTime: &base},
@@ -2001,7 +2001,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 		t.Fatalf("failed to seed builtin group: %v", err)
 	}
 
-	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
