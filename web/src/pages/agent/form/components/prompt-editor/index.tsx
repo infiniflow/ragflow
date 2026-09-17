@@ -7,12 +7,7 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
-import {
-  $getRoot,
-  EditorState,
-  Klass,
-  LexicalNode,
-} from 'lexical';
+import { $getRoot, EditorState, Klass, LexicalNode } from 'lexical';
 
 import { Switch } from '@/components/ui/switch';
 import {

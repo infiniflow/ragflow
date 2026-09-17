@@ -1,4 +1,9 @@
-import { $getRoot, $getSelection, $isRangeSelection, LexicalEditor } from 'lexical';
+import {
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  LexicalEditor,
+} from 'lexical';
 
 export function insertVariableTrigger(editor: LexicalEditor) {
   editor.update(
