@@ -98,6 +98,10 @@ const (
 	// SCAViewCap is the view the SCA is shown: large enough that the passage carrying the
 	// answer is not the one that gets cut.
 	SCAViewCap = 60
+	// CoverageEnrollHeadroomS is the clock the resolve node needs before it may run the
+	// direction's enumeration itself (see enrollEnumeration): the enumeration plus the answer
+	// that still has to be composed. Below it the node judges what it already has.
+	CoverageEnrollHeadroomS = 45.0
 	// MaxSnippetPool is the storage ceiling of the snippet pool across ALL
 	// rounds. Storage and REVIEW are decoupled: the SCA only reads a ranked
 	// view, so the pool may accumulate freely while prompts stay bounded.

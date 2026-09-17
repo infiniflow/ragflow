@@ -1835,6 +1835,40 @@ const answerTargetContract = "Answer Target Contract:\n" +
 	"largest/most/least/最), compare the alternatives in the evidence and name " +
 	"the EXTREME one rather than the most common or first-listed.\n"
 
+// withCitedChunks puts the passage behind every enumerated item FIRST, then the top-scoring
+// remainder. An enumerated answer cites one passage per element, and those passages are in the pool
+// but not necessarily among the few that score highest: a sixteen-member table whose answer could
+// name only three of them was reading the same six blocks as any other question.
+//
+// Members first also means a token budget that truncates can only drop the scored extras, never an
+// element's own passage (see KBPrompt, which stops at the budget).
+func withCitedChunks(ranked []map[string]any, kb *harness.Kbinfos, cap int) []map[string]any {
+	if kb == nil || len(ranked) == 0 {
+		return ranked
+	}
+	cited := make([]map[string]any, 0, len(ranked))
+	used := map[string]bool{}
+	for _, id := range kb.CitedChunks() {
+		if c := kb.ChunkByID(id); c != nil && !used[id] {
+			used[id] = true
+			cited = append(cited, c)
+		}
+	}
+	for _, c := range ranked {
+		if len(cited) >= len(kb.CitedChunks())+cap {
+			break
+		}
+		if id := harness.ChunkIDOf(c); id != "" && used[id] {
+			continue
+		}
+		cited = append(cited, c)
+	}
+	if len(cited) == 0 {
+		return ranked
+	}
+	return cited
+}
+
 // answerPromptWithEvidence renders the parts list in order: question, answer-target
 // contract, optional no-evidence instruction, research summary, partial preamble,
 // evidence. The no-evidence flag is `abstain or empty_result or not chunks`.
@@ -1844,10 +1878,7 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *harness.Kbinfos, question strin
 		chunks = kb.Chunks
 	}
 	ranked := rankByScore(chunks)
-	citeChunks := ranked
-	if len(citeChunks) > citeChunkCap {
-		citeChunks = citeChunks[:citeChunkCap]
-	}
+	citeChunks := withCitedChunks(ranked, kb, citeChunkCap)
 	if len(citeChunks) == 0 {
 		citeChunks = chunks
 	}

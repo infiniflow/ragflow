@@ -112,6 +112,27 @@ func UnanchoredItems(table *State) []string {
 	return itemValuesWhere(table, slots.Value.Unanchored)
 }
 
+// AnchoredItemChunks is the passage behind each anchored item, deduped and in table order: what an
+// answer that must cite one passage per element needs in front of it (see withCitedChunks).
+func AnchoredItemChunks(table *State) []string {
+	if table == nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range table.State {
+		for _, it := range v.Typed().Anchored() {
+			id := strings.TrimSpace(it.ChunkID)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // itemValuesWhere joins the items a picker selects ACROSS the table's slots, in ItemValues order,
 // so every reading of the table agrees on WHICH values exist and in what order; only the picker
 // differs.

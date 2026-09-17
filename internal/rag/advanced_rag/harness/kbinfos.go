@@ -140,6 +140,9 @@ type Kbinfos struct {
 	// actWords / actorForms are the direction's declaration (see MarkCoverage). Guarded by ledgerMu.
 	actWords   []string
 	actorForms []string
+	// citedChunks are the passages the enumerated items rest on (see NoteCitedChunks).
+	// Guarded by ledgerMu.
+	citedChunks []string
 	// sufficiencyUnchecked records that the completeness review never ran (see
 	// NoteSufficiencyUnchecked). Guarded by ledgerMu.
 	sufficiencyUnchecked bool
@@ -456,6 +459,28 @@ func (k *Kbinfos) CoverageDecl() (acts, actors []string) {
 	k.ledgerMu.Lock()
 	defer k.ledgerMu.Unlock()
 	return append([]string(nil), k.actWords...), append([]string(nil), k.actorForms...)
+}
+
+// NoteCitedChunks records the passages the enumerated items rest on (see
+// harness.AnchoredItemChunks): the compose prompt puts them in front of the answer, which has to
+// cite one passage per element. Guarded by ledgerMu.
+func (k *Kbinfos) NoteCitedChunks(ids []string) {
+	if k == nil {
+		return
+	}
+	k.ledgerMu.Lock()
+	k.citedChunks = append([]string(nil), ids...)
+	k.ledgerMu.Unlock()
+}
+
+// CitedChunks is the passages recorded by NoteCitedChunks, empty when no enumeration wrote items.
+func (k *Kbinfos) CitedChunks() []string {
+	if k == nil {
+		return nil
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	return append([]string(nil), k.citedChunks...)
 }
 
 // StoreCoverageSet records what this question's enumeration found (see

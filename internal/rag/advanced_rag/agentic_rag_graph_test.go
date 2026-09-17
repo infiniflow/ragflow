@@ -3217,6 +3217,112 @@ func TestSyncCountSlotsCountsOnlyMembersWithAPassage(t *testing.T) {
 	}
 }
 
+// TestMemberLineCarriesTheItemsOwnWords pins that an enumerated member reaches the answer WITH its
+// words, not as a bare name.
+//
+// The evidence block is token-budgeted, so the passage behind a member may not fit: measured
+// (2026-09-17, 三国/关羽) 18 members against the 13 passages the budget carried, and the answer had
+// to name five of them as "listed in the record, no original text provided". The record's own
+// contract accepts a member "quoted above", so the quote travels with the name.
+func TestMemberLineCarriesTheItemsOwnWords(t *testing.T) {
+	items := slots.Items(
+		slots.Item{Value: "华雄", ChunkID: "c1", Quote: "云长提华雄之头，掷于地上"},
+		slots.Item{Value: "刘延"},
+	)
+	line := memberLine(harness.Variable{ID: 1, Type: "person", Value: &items})
+	if !strings.Contains(line, "华雄 ←c1 “云长提华雄之头，掷于地上”") {
+		t.Fatalf("line = %q, want the member's own words beside the passage that states it", line)
+	}
+	if !strings.Contains(line, "刘延 ←(no passage)") {
+		t.Fatalf("line = %q, want a member with no passage still marked as a claim", line)
+	}
+}
+
+// TestRunCoverageResolveEnrollsTheEnumerationThePlannerSkipped pins the wiring that the measured
+// run (2026-09-17, 三国/关羽) needed: the planner typed the answer slot "count", the sessions
+// patched the members into it, and no type word ever asked for a set.
+//
+// The VALUE is the fact, so the resolve — the last node that can complete the set — runs the
+// direction's enumeration itself instead of judging only what a session happened to write down.
+// Ten names were the whole answer that day; the corpus stated more.
+func TestRunCoverageResolveEnrollsTheEnumerationThePlannerSkipped(t *testing.T) {
+	items := slots.Items(
+		slots.Item{Value: "华雄", ChunkID: "c-华雄"},
+		slots.Item{Value: "颜良", ChunkID: "c-颜良"},
+	)
+	rendered := slots.Render(items)
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩"}, Candidate: &rendered, Value: &items},
+	}, 0, nil)
+
+	exec := &coverageStubExec{}
+	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
+	st.KB = &harness.Kbinfos{}
+	st.SlotTable = table
+	st.Deadline = time.Now().Add(120 * time.Second)
+
+	model := &scriptedModel{}
+	model.push(`{"members": [{"i": 0, "name": "孔秀"}], "not_members": []}`)
+	RunCoverageResolve(context.Background(), RAGTools{
+		Model: model,
+		Tools: &harness.Toolset{Exec: exec},
+	}, st, nil)
+
+	if exec.ran() != 1 {
+		t.Fatalf("enumeration ran %d time(s), want the resolve to enroll it when no type word asked for it", exec.ran())
+	}
+	names := strings.Join(harness.ItemValues(&st.SlotTable), "、")
+	if !strings.Contains(names, "孔秀") {
+		t.Fatalf("items = %q, want the window the enrolled enumeration admitted judged into the table", names)
+	}
+}
+
+// TestCiteChunksPutTheItemsPassagesFirst pins the citation set of an enumerated answer.
+//
+// The answer has to cite one passage per element, and those passages are in the pool but not
+// necessarily among the few that score highest: a sixteen-member table whose answer named only
+// three of them was reading the same handful of blocks as any other question. Members first also
+// means a token budget that truncates drops scored extras, never an element's own passage.
+func TestCiteChunksPutTheItemsPassagesFirst(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "w1", "content": "低分段落", "similarity": 0.1},
+		{"chunk_id": "w2", "content": "高分段落", "similarity": 0.9},
+		{"chunk_id": "w3", "content": "成员自己的段落", "similarity": 0.2},
+	}
+	kb := &harness.Kbinfos{Chunks: chunks}
+	kb.NoteCitedChunks([]string{"w3"})
+
+	got := withCitedChunks(rankByScore(chunks), kb, citeChunkCap)
+	if len(got) != 3 || harness.ChunkIDOf(got[0]) != "w3" {
+		t.Fatalf("citeChunks = %v, want the items' own passage first and the rest after it", got)
+	}
+	if harness.ChunkIDOf(got[1]) != "w2" {
+		t.Fatalf("citeChunks = %v, want the scored chunks after the items' passages", got)
+	}
+
+	// Without items the selection is unchanged: the top-scoring chunk, capped.
+	plain := withCitedChunks(rankByScore(chunks), &harness.Kbinfos{Chunks: chunks}, 1)
+	if len(plain) != 1 || harness.ChunkIDOf(plain[0]) != "w2" {
+		t.Fatalf("citeChunks = %v, want the plain top-N selection when no items carry passages", plain)
+	}
+}
+
+// TestSlotRecordShowsEachItemWithItsPassage pins the citation half of the record: an item's chunk id
+// is in the value, and the record used to print names only — so the instruction to cite each member
+// ("every member you list carries the words behind it") had nothing to cite.
+func TestSlotRecordShowsEachItemWithItsPassage(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
+		typedMembersVar(2, "person", "于禁"),
+	}, 0, nil)
+	rec := RenderSlotRecord(table, "")
+	for _, want := range []string{"华雄 ←c-华雄", "荀正 ←c-荀正", "于禁 ←(no passage)"} {
+		if !strings.Contains(rec, want) {
+			t.Fatalf("record = %q, want %q", rec, want)
+		}
+	}
+}
+
 // TestSlotRecordStatesACountSlotThatHoldsWords pins the silent half of the count disagreement.
 //
 // A count slot whose value is TEXT passes in silence: it claims no number, so nothing is derived

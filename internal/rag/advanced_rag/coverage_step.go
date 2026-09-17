@@ -52,8 +52,13 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	// even one that contains a count — pays nothing for it (see harness.Coverage.Ok).
 	cov := harness.CoverageOf(st.SlotTable)
 	if !cov.Ok() {
+		// Said out loud. A node that returns in silence is indistinguishable from one that judged
+		// and found nothing, and this was the whole reason a run could enumerate ten names while
+		// the corpus stated sixteen (see enrollEnumeration).
+		logger.Printf("[Coverage] resolve skipped: this table is not an enumeration (set=%v itemKind=%q acts=%d) — nothing to judge here.", cov.Set, cov.ItemKind, len(cov.Acts))
 		return stats
 	}
+	enrollEnumeration(ctx, deps, st, cov, logger)
 	// And the members go into a slot that ALREADY holds members, so a table whose slots
 	// hold values (one name, one date, one number, one phrase) is not enumerated at all
 	// and this step spends nothing — not even a call.
@@ -65,6 +70,7 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	if set.Empty() {
 		// Nothing to judge: no enumeration ran (no clock left, or the executor cannot search)
 		// and no probe reached a name the slots do not already hold.
+		logger.Printf("[Coverage] resolve has nothing to judge: %d enumeration window(s), %d reached name(s), %d unjudged claim(s).", len(set.Windows), reached, claimed)
 		return stats
 	}
 	if reached+claimed > 0 {
@@ -123,13 +129,17 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	// refresh it, or the members just proved would be invisible to the answer that must
 	// list them.
 	st.KB.Record = RenderSlotRecord(st.SlotTable, st.CollectedAnswer)
+	// The passages behind the items travel with the run (see Kbinfos.NoteCitedChunks): the compose
+	// prompt puts them in front of the answer, which must cite one passage per member and otherwise
+	// sees only the top-scoring handful.
+	st.KB.NoteCitedChunks(harness.AnchoredItemChunks(&st.SlotTable))
 	if stats.Unknown > 0 {
 		// An enumeration that did not finish must not read as one that did. The windows with
 		// no verdict are members nobody judged, so the list above is a LOWER BOUND, and the
 		// record says so: a count the corpus cannot support is worse than a count that names
 		// its own gap, and only the record reaches the answer that states the number.
-		st.KB.Record += fmt.Sprintf("\n- NOTE: %d of the %d enumerated passage(s) got no verdict, so the members above are a LOWER BOUND — state the count as what it is and do not present it as exact.\n",
-			stats.Unknown, stats.Asked)
+		st.KB.Record += fmt.Sprintf("\n- NOTE: %d of the %d enumerated passage(s) got no verdict, so the members above are a LOWER BOUND — state the count as what it is and do not present it as exact. Nobody read: %s\n",
+			stats.Unknown, stats.Asked, strings.Join(cappedList(stats.Unjudged, 12), ", "))
 	}
 	logger.Printf("[Coverage] resolve done: asked=%d answered=%d unknown=%d member(s)=%d written into slot %d",
 		stats.Asked, stats.Answered, stats.Unknown, len(items), slotID)
@@ -230,6 +240,47 @@ func coverageResolveCandidates(kb *harness.Kbinfos, table *harness.State, cov ha
 		claimed++
 	}
 	return set, added, claimed
+}
+
+// cappedList returns at most n entries, marking that more were left out.
+func cappedList(items []string, n int) []string {
+	if len(items) <= n {
+		return items
+	}
+	return append(items[:n], "…")
+}
+
+// enrollEnumeration runs the direction's window enumeration when the table holds items but no
+// enumeration stands behind them.
+//
+// The planner's type words are a hint; the sessions' own output is the fact (see CoverageOf, which
+// reads the value). When the two disagree it is this node that pays for it, because it is the LAST
+// one that can complete the set: enrolling here is what turns "the names a session remembered" back
+// into "the windows the corpus states".
+func enrollEnumeration(ctx context.Context, deps RAGTools, st *AgenticState, cov harness.Coverage, logger *log.Logger) {
+	if _, done := st.KB.CoverageSet(); done {
+		return
+	}
+	if cov.ItemKind == "" || len(cov.Operands()) == 0 || deps.Tools == nil {
+		return
+	}
+	if st.RemainingS() < CoverageEnrollHeadroomS {
+		logger.Printf("[Coverage] enumeration not enrolled: %.0fs left (needs %.0fs for it and the answer beside it); judging what the run already holds.", st.RemainingS(), CoverageEnrollHeadroomS)
+		return
+	}
+	runner, ok := deps.Tools.Exec.(harness.CoverageRunner)
+	if !ok {
+		logger.Printf("[Coverage] enumeration not enrolled: the executor cannot enumerate (it does not implement harness.CoverageRunner).")
+		return
+	}
+	set := runner.EnumerateCoverage(ctx, cov, st.KB)
+	if len(set.Operands) == 0 {
+		return
+	}
+	logger.Printf("[Coverage] enumeration enrolled at the resolve node: %d operand(s) asked, %d passage(s) recalled, %d window(s) found (no type word had asked for it).",
+		len(set.Operands), set.Recalled, len(set.Windows))
+	st.KB.MarkCoverage(cov)
+	st.KB.StoreCoverageSet(set)
 }
 
 // coverageClaimWindowsPerName bounds the passages ONE claimed name is shown with: enough to

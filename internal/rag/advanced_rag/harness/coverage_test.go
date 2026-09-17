@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/rag/advanced_rag/slots"
 )
 
 // TestCoverageWindowsCentreOnTheAct pins the unit a verdict is asked about: the words
@@ -81,14 +83,22 @@ func TestResolveCoverageAsksEveryWindowInBatches(t *testing.T) {
 	model.failIf = func(user string) bool { return strings.Contains(user, "chunk_id=c8") }
 
 	members, stats := ResolveCoverage(context.Background(), model, "关羽杀了多少有姓名的人物？", Coverage{Actor: "关羽"}, set)
-	if stats.Batches != 4 || stats.Asked != 9 {
-		t.Fatalf("stats = %+v, want 9 windows asked about, and the 5 that got no verdict asked again", stats)
+	// 2 batches carry the first pass (9 windows, batch of 8), and the 5 windows left without a
+	// verdict are re-asked once per remaining pass (see coverageResolvePasses).
+	if want := 2 + (coverageResolvePasses - 1); stats.Batches != want || stats.Asked != 9 {
+		t.Fatalf("stats = %+v, want %d batch(es): 9 windows asked about, and the 5 that got no verdict asked again", stats, want)
+	}
+	// WHICH passages nobody read travels with the count: a reader can check the ids.
+	if got := strings.Join(stats.Unjudged, ","); got != "c4,c5,c6,c7,c8" {
+		t.Fatalf("unjudged = %q, want the ids of the windows that got no verdict", got)
 	}
 	// 4 of the 9 windows got a verdict (3 members + 1 not-a-member); the failed batch's
 	// window AND the four lines the model skipped stay UNKNOWN, not absent. The re-ask puts
 	// them in front of the model again, but a call that fails every time cannot judge them —
 	// so the budget has to be the caller's to report, which is what the counters are for.
-	if stats.Failed != 3 || stats.Answered != 4 || stats.Unknown != 5 {
+	// One failed call per pass over the batch that always fails (the first pass's batch plus one
+	// per re-ask pass), so the counter tracks CALLS, as its contract says.
+	if stats.Failed != coverageResolvePasses || stats.Answered != 4 || stats.Unknown != 5 {
 		t.Fatalf("stats = %+v, want the failed batch and the skipped lines UNKNOWN, not absent", stats)
 	}
 	if len(members) != 2 {
@@ -180,6 +190,31 @@ func (m *stubCoverageModel) Complete(_ context.Context, messages []schema.Messag
 //
 // GrepSearch's second value is its DOC AGGREGATIONS, not an error, and DocAggs builds that
 // slice with make() — so it is non-nil whether or not anything came back. Read as an error,
+// TestCoverageOfReadsTheValueAsADeclaration pins where a direction can be declared FROM: the
+// planner's type words, or the table's own value. The value wins, because it is the fact — a slot
+// holding items says the answer is a set whatever the planner typed it.
+func TestCoverageOfReadsTheValueAsADeclaration(t *testing.T) {
+	items := slots.Items(slots.Item{Value: "华雄", ChunkID: "c1"})
+	untyped := NewState([]Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩"}, Value: &items},
+	}, 0, nil)
+	cov := CoverageOf(untyped)
+	if !cov.Ok() {
+		t.Fatalf("cov = %+v, want a table whose VALUE holds items to be an enumeration whatever its type word says", cov)
+	}
+	if cov.ItemKind != CoverageItemKindItems {
+		t.Fatalf("itemKind = %q, want %q when only the value names the kind", cov.ItemKind, CoverageItemKindItems)
+	}
+
+	// A declared kind is kept: nothing here overrides the planner's word.
+	typed := NewState([]Variable{
+		{ID: 0, Type: "person", Terms: []string{"斩"}, Value: &items},
+	}, 0, nil)
+	if kind := CoverageOf(typed).ItemKind; kind != "person" {
+		t.Fatalf("itemKind = %q, want the planner's kind kept when it named one", kind)
+	}
+}
+
 // the branch fires on every operand: Truncated is set, every recall's passages are dropped,
 // and the rendered seed tells each session the direction came back empty. Nothing caught
 // that until this test, because the loop had no test of its own.

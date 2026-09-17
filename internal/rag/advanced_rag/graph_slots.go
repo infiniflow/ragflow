@@ -133,9 +133,12 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 		if vtype == "" {
 			vtype = "entity"
 		}
-		if v.Candidate == nil || *v.Candidate == "" {
+		switch {
+		case memberLine(v) != "":
+			lines = append(lines, fmt.Sprintf("- slot %d [%s]: %s", v.ID, vtype, memberLine(v)))
+		case v.Candidate == nil || *v.Candidate == "":
 			lines = append(lines, fmt.Sprintf("- slot %d [%s]: NOT RESOLVED", v.ID, vtype))
-		} else {
+		default:
 			lines = append(lines, fmt.Sprintf("- slot %d [%s]: %s", v.ID, vtype, *v.Candidate))
 		}
 		// Claims that lost the slot comparison (see MergeSlotPatch). They are not
@@ -197,7 +200,7 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 			// pass in silence — the record showed its prose beside the enumerated size and let the
 			// answer take either, which is how 14 became an answer to a table that enumerated 16.
 			// The words are not parsed; the disagreement is stated.
-			if isCountSlot(v) && strings.TrimSpace(*v.Candidate) != strconv.Itoa(n) {
+			if isCountSlot(v) && v.Typed().Kind != slots.KindItems && strings.TrimSpace(*v.Candidate) != strconv.Itoa(n) {
 				lines = append(lines, fmt.Sprintf(
 					"- NOTE: slot %d [%s] holds %q as text, not a number, so nothing was derived from it while the slots above enumerate %d. State the count the evidence supports.",
 					v.ID, v.Type, truncateRunes(strings.TrimSpace(*v.Candidate), 60), n))
@@ -1115,6 +1118,49 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 	return &out
 }
 
+// memberLine renders a slot holding items as each item WITH the passage behind it, so the citation
+// instruction below ("every member you list carries the words behind it") has something to point
+// at. Without the ids it asked for citations nobody could make.
+func memberLine(v harness.Variable) string {
+	val := v.Typed()
+	if val.Kind != slots.KindItems {
+		return ""
+	}
+	parts := make([]string, 0, len(val.Items))
+	for _, it := range val.Items {
+		name := strings.TrimSpace(it.Value)
+		if name == "" {
+			continue
+		}
+		if id := strings.TrimSpace(it.ChunkID); id != "" {
+			// The words travel WITH the name. The evidence block the answer reads is budgeted, so a
+			// member whose passage did not fit used to arrive as a bare name and had to be dropped
+			// from the list: measured (2026-09-17, 三国/关羽) 18 members against the 13 passages the
+			// budget carried — the answer named the other five as "listed in the record, no original
+			// text provided". The quote here is the verdict's own window (bounded by
+			// coverageWindowBefore/After): the words the membership rests on, and the record's own
+			// contract accepts "quoted above" as the evidence for a member.
+			parts = append(parts, name+" ←"+id+itemQuote(it.Quote))
+		} else {
+			parts = append(parts, name+" ←(no passage)")
+		}
+	}
+	return strings.Join(parts, "、")
+}
+
+// itemQuoteMaxRunes bounds the words a member carries into the record. Short because the record is
+// read by the answer model and travelled with the name only to keep it citable at all.
+const itemQuoteMaxRunes = 120
+
+// itemQuote renders the words an item rests on, or nothing when the item has none: a member with no
+// quote is a claim, and the record already says so with "(no passage)".
+func itemQuote(quote string) string {
+	if quote = strings.TrimSpace(quote); quote == "" {
+		return ""
+	}
+	return " “" + truncateRunes(quote, itemQuoteMaxRunes) + "”"
+}
+
 // isCountSlot reports whether a slot declares itself a count — the planner's word for a number
 // slot. It decides only whether a disagreement is worth STATING; nothing is derived from it
 // (syncCountSlots reads the value's KIND for that, never the type word).
@@ -1149,7 +1195,10 @@ func syncCountSlots(table *harness.State) []int {
 		v := &table.State[i]
 		claimed, ok := v.Typed().Number()
 		if !ok {
-			if isCountSlot(*v) {
+			// A slot holding ITEMS is read, just not as a number: the size is derived from the items
+			// and the record states it, so it is not an unreadable count (a session may patch the
+			// members into the slot the planner typed "count").
+			if isCountSlot(*v) && v.Typed().Kind != slots.KindItems {
 				unreadable = append(unreadable, v.ID)
 			}
 			continue

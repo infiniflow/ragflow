@@ -56,6 +56,10 @@ type ResolveStats struct {
 	Answered int
 	Unknown  int
 	Failed   int
+	// Unjudged are the chunk ids that got no verdict — the windows a failed call left, the lines
+	// the model skipped, the windows the cap kept out. The count alone says "the list may be
+	// short"; the ids say WHICH passages nobody read, which is what a reader can check.
+	Unjudged []string
 }
 
 // resolveJob is ONE window as a unit of work: the index it holds in the caller's window list
@@ -93,7 +97,7 @@ const (
 	// the model, and each pass after it re-asks ONLY the windows that got no verdict — a call
 	// that failed, or lines the reply left out. Work that already has a verdict is never sent
 	// again, so the set closes without paying twice for the windows that were answered.
-	coverageResolvePasses = 3
+	coverageResolvePasses = 5
 )
 
 // ResolveCoverage is the enumeration's LAST node: every window gets a verdict, and the
@@ -199,6 +203,16 @@ func ResolveCoverage(ctx context.Context, model SessionModel, question string, c
 	// Every window is UNKNOWN unless a verdict named it: the windows a failed call left, the
 	// lines the model skipped, and the windows the cap kept out.
 	stats.Unknown = dropped + (stats.Asked - stats.Answered)
+	for i, w := range windows {
+		if !judged[i] {
+			stats.Unjudged = appendUnique(stats.Unjudged, w.ChunkID)
+		}
+	}
+	if len(set.Windows) > coverageWindowsMax {
+		for _, w := range set.Windows[coverageWindowsMax:] {
+			stats.Unjudged = appendUnique(stats.Unjudged, w.ChunkID)
+		}
+	}
 	return members, stats
 }
 

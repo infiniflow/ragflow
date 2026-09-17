@@ -16,7 +16,11 @@
 
 package harness
 
-import "strings"
+import (
+	"strings"
+
+	"ragflow/internal/rag/advanced_rag/slots"
+)
 
 // CoverageActWordsMax bounds the act words ONE slot may declare. Ten because a source
 // words one deed many ways (斩 / 杀 / 劈 / 挥为两段 …), and a phrasing no act word covers
@@ -56,6 +60,10 @@ type Coverage struct {
 	ItemKind string
 }
 
+// CoverageItemKindItems is the element kind a slot declares BY ITS OWN VALUE: a slot holding a
+// list of items says the answer is a set, and no planner word names the kind any further.
+const CoverageItemKindItems = "items"
+
 // CoverageItemKinds reads the planner's slot vocabulary as what the answer enumerates. A kind not
 // in this table is not a list of elements (a count, a range, a date, a phrase), and the gate below
 // pays nothing for it.
@@ -86,6 +94,17 @@ func CoverageOf(table State) Coverage {
 		}
 		if k, ok := CoverageItemKinds[kind]; ok && c.ItemKind == "" {
 			c.ItemKind = k
+		}
+		// The VALUE declares the direction too, and it is the stronger word of the two: a slot
+		// holding a list of items says the answer is a set whatever the planner typed it.
+		// Measured (2026-09-17, 三国/关羽): the members were patched into the slot typed "count",
+		// so no type word asked for a set — and the run then skipped BOTH the enumeration and the
+		// point-of-naming node, judging only the ten names a session happened to write down.
+		if v.Typed().Kind == slots.KindItems {
+			c.Set = true
+			if c.ItemKind == "" {
+				c.ItemKind = CoverageItemKindItems
+			}
 		}
 		if c.Actor == "" {
 			c.Actor = strings.TrimSpace(v.Subject)
