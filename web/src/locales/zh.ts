@@ -859,6 +859,8 @@ export default {
       tagName: '标签',
       tagMessage: '请选择标签',
       frequency: '频次',
+      frequencyMinMessage: '频次最小为 {{min}}',
+      frequencyMaxMessage: '频次最大为 {{max}}',
       searchTags: '搜索标签',
       tagCloud: '云',
       tagTable: '表',

@@ -946,6 +946,8 @@ Paragraphs:
       tagName: 'Tag',
       tagMessage: 'Please select a tag',
       frequency: 'Frequency',
+      frequencyMinMessage: 'Frequency must be at least {{min}}',
+      frequencyMaxMessage: 'Frequency must be at most {{max}}',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
       tagTable: 'Table',
