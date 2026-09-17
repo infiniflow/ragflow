@@ -386,7 +386,10 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
     """
 
     def new_task(_memory_id: str, _source_id: int):
-        return {"id": get_uuid(), "doc_id": _memory_id, "task_type": "memory", "progress": 0.0, "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "digest": str(_source_id)}
+        task = {"id": get_uuid(), "doc_id": _memory_id, "task_type": "memory", "progress": 0.0, "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "digest": str(_source_id)}
+        if memory.tenant_id:
+            task["tenant_id"] = memory.tenant_id
+        return task
 
     not_found_memory = []
     failed_memory = []

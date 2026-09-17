@@ -467,8 +467,10 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str |
         - Previous task chunks may be reused if available
     """
 
+    tenant_id = doc.get("tenant_id") or DocumentService.get_tenant_id(doc["id"])
+
     def new_task():
-        return {
+        task = {
             "id": get_uuid(),
             "doc_id": doc["id"],
             "progress": 0.0,
@@ -476,6 +478,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str |
             "to_page": MAXIMUM_TASK_PAGE_NUMBER,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
+        if tenant_id:
+            task["tenant_id"] = tenant_id
+        return task
 
     parse_task_array = []
 
@@ -676,6 +681,8 @@ def queue_dataflow(
         priority=priority,
         begin_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
+    if tenant_id:
+        task["tenant_id"] = tenant_id
     if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
         TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
         DocumentService.begin2parse(doc_id)

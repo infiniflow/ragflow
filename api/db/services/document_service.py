@@ -1273,8 +1273,10 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
+    tenant_id = sample_doc.get("tenant_id") or DocumentService.get_tenant_id(sample_doc["id"])
+
     def new_task():
-        return {
+        task = {
             "id": get_uuid(),
             "doc_id": fake_doc_id,
             "from_page": MAXIMUM_TASK_PAGE_NUMBER,
@@ -1283,6 +1285,9 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
             "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task " + ty,
             "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
+        if tenant_id:
+            task["tenant_id"] = tenant_id
+        return task
 
     task = new_task()
     for field in ["doc_id", "from_page", "to_page"]:
@@ -1316,6 +1321,7 @@ def queue_per_doc_raptor_task(doc, priority):
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
+    tenant_id = doc.get("tenant_id") or DocumentService.get_tenant_id(doc["id"])
     task = {
         "id": get_uuid(),
         "doc_id": doc["id"],
@@ -1325,6 +1331,8 @@ def queue_per_doc_raptor_task(doc, priority):
         "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task raptor",
         "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+    if tenant_id:
+        task["tenant_id"] = tenant_id
     for field in ["doc_id", "from_page", "to_page"]:
         hasher.update(str(task[field]).encode("utf-8"))
     hasher.update(b"raptor")

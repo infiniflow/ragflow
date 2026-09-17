@@ -42,6 +42,7 @@ def _queued_page_spans(monkeypatch, layout_model_name, pages, total_pages=30):
     monkeypatch.setattr(ts.PdfParser, "total_page_number", staticmethod(lambda *_a, **_k: total_pages))
     monkeypatch.setattr(ts, "get_composite_model_name_by_id", lambda _id: layout_model_name)
     monkeypatch.setattr(ts.DocumentService, "get_chunking_config", staticmethod(lambda _id: {"tenant_id": "t", "kb_id": "k", "parser_config": {}}))
+    monkeypatch.setattr(ts.DocumentService, "get_tenant_id", staticmethod(lambda _id: "t"))
     monkeypatch.setattr(ts.TaskService, "get_tasks", staticmethod(lambda _id: []))
     monkeypatch.setattr(ts.DocumentService, "update_by_id", staticmethod(lambda *_a, **_k: None))
     monkeypatch.setattr(ts.DocumentService, "begin2parse", staticmethod(lambda *_a, **_k: None))

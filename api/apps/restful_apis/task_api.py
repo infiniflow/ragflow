@@ -27,6 +27,16 @@ from common.constants import RetCode, TaskStatus
 from rag.utils.redis_conn import REDIS_CONN
 
 
+def _tenant_can_cancel(tenant_id, user_id) -> bool:
+    if not tenant_id or not user_id:
+        return False
+    if tenant_id == user_id:
+        return True
+    from api.db.services.user_service import UserTenantService
+
+    return UserTenantService.filter_by_tenant_and_user_id(tenant_id, user_id) is not None
+
+
 @manager.route("/tasks/<task_id>/cancel", methods=["POST"])  # noqa: F821
 @login_required
 async def cancel_task(task_id):
@@ -63,8 +73,7 @@ async def _cancel_task(task_id):
     # so the caller must be able to access the dataset that owns the document -
     # otherwise any logged-in user could stop another tenant's parsing tasks by
     # guessing a task id. Tasks bound to fake doc ids (canvas debug,
-    # graph/raptor) carry no resolvable document and are cancelled through the
-    # kb-scoped flows instead.
+    # graph/raptor) have no resolvable document and are authorized by Task.tenant_id.
     doc_id = task.doc_id
     doc = None
     if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
@@ -77,6 +86,9 @@ async def _cancel_task(task_id):
             logging.warning("task cancel denied: task_id=%s user_id=%s", task_id, current_user.id)
             return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="no authorization")
         _, doc = DocumentService.get_by_id(doc_id)
+    elif not _tenant_can_cancel(getattr(task, "tenant_id", None), current_user.id):
+        logging.warning("task cancel denied: task_id=%s user_id=%s", task_id, current_user.id)
+        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="no authorization")
 
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")

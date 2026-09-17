@@ -1434,6 +1434,7 @@ class FileCommitItem(DataBaseModel):
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=True, help_text="tenant that owns the task", index=True)
     from_page = IntegerField(default=0)
     to_page = IntegerField(default=MAXIMUM_TASK_PAGE_NUMBER)
     # Standard document parsing tasks historically use task_type="" to mean
@@ -2485,6 +2486,7 @@ def migrate_db():
     alter_db_add_column(migrator, "file_commit_item", "content_after_location", CharField(max_length=512, null=True))
     alter_db_add_column(migrator, "file_commit_item", "slug_kwd", CharField(max_length=512, null=True, index=True))
     alter_db_add_column(migrator, "file_commit_item", "page_type_kwd", CharField(max_length=32, null=True, index=True))
+    alter_db_add_column(migrator, "task", "tenant_id", CharField(max_length=32, null=True, help_text="tenant that owns the task", index=True))
     alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_secret_key")
     alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_public_key")
     alter_db_drop_index(migrator, "tenant_langfuse", "idx_tenant_langfuse_host")
@@ -2531,6 +2533,83 @@ def migrate_db():
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
     ensure_model_indexes(migrator)
+    backfill_task_tenant_id()
+
+
+def backfill_task_tenant_id():
+    """Fill task.tenant_id from documents and KB-level task traces where resolvable."""
+    try:
+        if not DB.table_exists("task") or not DB.table_exists("knowledgebase"):
+            return
+    except Exception as ex:
+        logging.warning("Failed to inspect tables while backfilling task.tenant_id: %s", ex)
+        return
+
+    db_type = (settings.DATABASE_TYPE or "mysql").lower()
+    mysql_like = db_type in ("mysql", "oceanbase")
+    try:
+        if mysql_like:
+            DB.execute_sql(
+                "UPDATE task INNER JOIN document ON task.doc_id = document.id "
+                "INNER JOIN knowledgebase ON document.kb_id = knowledgebase.id "
+                "SET task.tenant_id = knowledgebase.tenant_id "
+                "WHERE COALESCE(task.tenant_id, '') = ''"
+            )
+        else:
+            DB.execute_sql(
+                "UPDATE task SET tenant_id = knowledgebase.tenant_id "
+                "FROM document JOIN knowledgebase ON document.kb_id = knowledgebase.id "
+                "WHERE task.doc_id = document.id AND COALESCE(task.tenant_id, '') = ''"
+            )
+    except Exception as ex:
+        logging.warning("Failed to backfill task.tenant_id from documents: %s", ex)
+
+    kb_task_columns = (
+        "graphrag_task_id",
+        "raptor_task_id",
+        "mindmap_task_id",
+        "wiki_task_id",
+        "skill_task_id",
+        "structure_graph_task_id",
+        "structure_mindmap_task_id",
+        "timeline_task_id",
+        "session_graph_task_id",
+        "session_essence_task_id",
+        "structure_task_id",
+    )
+    for column in kb_task_columns:
+        try:
+            if mysql_like:
+                DB.execute_sql(
+                    f"UPDATE task INNER JOIN knowledgebase ON task.id = knowledgebase.{column} "
+                    "SET task.tenant_id = knowledgebase.tenant_id "
+                    "WHERE COALESCE(task.tenant_id, '') = ''"
+                )
+            else:
+                DB.execute_sql(
+                    f"UPDATE task SET tenant_id = knowledgebase.tenant_id FROM knowledgebase "
+                    f"WHERE task.id = knowledgebase.{column} AND COALESCE(task.tenant_id, '') = ''"
+                )
+        except Exception as ex:
+            logging.warning("Failed to backfill task.tenant_id from knowledgebase.%s: %s", column, ex)
+
+    if not DB.table_exists("memory"):
+        return
+    try:
+        if mysql_like:
+            DB.execute_sql(
+                "UPDATE task INNER JOIN memory ON task.doc_id = memory.id "
+                "SET task.tenant_id = memory.tenant_id "
+                "WHERE task.task_type = 'memory' AND COALESCE(task.tenant_id, '') = ''"
+            )
+        else:
+            DB.execute_sql(
+                "UPDATE task SET tenant_id = memory.tenant_id FROM memory "
+                "WHERE task.doc_id = memory.id AND task.task_type = 'memory' "
+                "AND COALESCE(task.tenant_id, '') = ''"
+            )
+    except Exception as ex:
+        logging.warning("Failed to backfill task.tenant_id from memory: %s", ex)
 
 
 def migrate_model_type_names():

@@ -26,6 +26,7 @@ def _queue_tasks(monkeypatch, parser_id, parser_config):
     monkeypatch.setattr(task_service.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args: b"pdf"))
     monkeypatch.setattr(task_service.PdfParser, "total_page_number", lambda *_args: 20)
     monkeypatch.setattr(task_service.DocumentService, "get_chunking_config", lambda *_args: {})
+    monkeypatch.setattr(task_service.DocumentService, "get_tenant_id", lambda *_args: "tenant-1")
     monkeypatch.setattr(task_service.TaskService, "get_tasks", lambda *_args: [])
     monkeypatch.setattr(task_service.DocumentService, "update_by_id", lambda *_args: None)
     monkeypatch.setattr(task_service, "bulk_insert_into_db", lambda _model, tasks, _replace: queued_tasks.extend(tasks))
@@ -55,6 +56,7 @@ def test_queue_tasks_collapses_multiple_page_ranges_for_resume(monkeypatch):
     assert len(queued_tasks) == 1
     assert queued_tasks[0]["from_page"] == 0
     assert queued_tasks[0]["to_page"] == 20
+    assert queued_tasks[0]["tenant_id"] == "tenant-1"
 
 
 @pytest.mark.p2
@@ -79,3 +81,16 @@ def test_queue_tasks_does_not_log_the_resume_collapse_for_naive(monkeypatch, cap
         _queue_tasks(monkeypatch, "naive", {"pages": [[1, 5], [10, 15]], "task_page_size": 12})
 
     assert "uses the resume parser" not in caplog.text
+
+
+@pytest.mark.p2
+def test_queue_dataflow_persists_tenant_id_for_canvas_debug(monkeypatch):
+    inserted = []
+    monkeypatch.setattr(task_service, "bulk_insert_into_db", lambda _model, data_source, replace_on_conflict=False: inserted.extend(data_source))
+    monkeypatch.setattr(task_service.DocumentService, "get_knowledgebase_id", lambda *_args: None)
+    monkeypatch.setattr(task_service.REDIS_CONN, "queue_product", lambda *_args, **_kwargs: True)
+
+    ok, err = task_service.queue_dataflow("tenant-own", "flow-1", "task-debug")
+    assert ok, err
+    assert inserted[0]["tenant_id"] == "tenant-own"
+    assert inserted[0]["doc_id"] == task_service.CANVAS_DEBUG_DOC_ID

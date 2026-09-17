@@ -22,6 +22,7 @@ import "time"
 type Task struct {
 	ID              string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	DocID           string     `gorm:"column:doc_id;size:32;not null;index" json:"doc_id"`
+	TenantID        *string    `gorm:"column:tenant_id;size:32;index" json:"tenant_id,omitempty"`
 	FromPage        int64      `gorm:"column:from_page;default:0" json:"from_page"`
 	ToPage          int64      `gorm:"column:to_page;default:100000000" json:"to_page"`
 	TaskType        string     `gorm:"column:task_type;size:32;not null;default:''" json:"task_type"`

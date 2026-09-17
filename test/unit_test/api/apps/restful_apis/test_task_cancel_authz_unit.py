@@ -46,7 +46,7 @@ REDIS_SETS: list = []
 REQUEST_JSON: dict = {"action": "stop"}
 
 
-def _load_module(monkeypatch, *, accessible_kb_ids):
+def _load_module(monkeypatch, *, accessible_kb_ids, joined_tenant_ids=None):
     repo_root = Path(__file__).resolve().parents[5]
 
     quart_mod = ModuleType("quart")
@@ -141,13 +141,21 @@ def _load_module(monkeypatch, *, accessible_kb_ids):
         @staticmethod
         def get_by_id(task_id):
             if task_id == "task-1":
-                return True, SimpleNamespace(id="task-1", doc_id="doc-1")
+                return True, SimpleNamespace(id="task-1", doc_id="doc-1", tenant_id="user-a")
             if task_id == "task-2":
-                return True, SimpleNamespace(id="task-2", doc_id="doc-2")
+                return True, SimpleNamespace(id="task-2", doc_id="doc-2", tenant_id="user-b")
             if task_id == "task-3":
-                return True, SimpleNamespace(id="task-3", doc_id="dataflow_x")
+                return True, SimpleNamespace(id="task-3", doc_id="dataflow_x", tenant_id="user-a")
             if task_id == "task-4":
-                return True, SimpleNamespace(id="task-4", doc_id="doc-gone")
+                return True, SimpleNamespace(id="task-4", doc_id="doc-gone", tenant_id="user-a")
+            if task_id == "task-5":
+                return True, SimpleNamespace(id="task-5", doc_id="dataflow_x", tenant_id="tenant-b")
+            if task_id == "task-6":
+                return True, SimpleNamespace(id="task-6", doc_id="graph_raptor_x", tenant_id="user-a")
+            if task_id == "task-7":
+                return True, SimpleNamespace(id="task-7", doc_id="graph_raptor_x", tenant_id="tenant-b")
+            if task_id == "task-8":
+                return True, SimpleNamespace(id="task-8", doc_id="dataflow_x", tenant_id=None)
             return False, None
 
     task_svc_mod.TaskService = _TaskService
@@ -189,6 +197,19 @@ def _load_module(monkeypatch, *, accessible_kb_ids):
 
     kb_svc_mod.KnowledgebaseService = _KnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
+
+    joined = set(joined_tenant_ids or ())
+    user_svc_mod = ModuleType("api.db.services.user_service")
+
+    class _UserTenantService:
+        @staticmethod
+        def filter_by_tenant_and_user_id(tenant_id, user_id):
+            if tenant_id in joined:
+                return SimpleNamespace(tenant_id=tenant_id, user_id=user_id)
+            return None
+
+    user_svc_mod.UserTenantService = _UserTenantService
+    monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_svc_mod)
 
     for mod_name in list(sys.modules.keys()):
         if mod_name.startswith("api.apps.restful_apis.task_api"):
@@ -247,11 +268,61 @@ def test_patch_rejects_unknown_action(monkeypatch):
 
 
 @pytest.mark.p2
-def test_fake_doc_id_tasks_still_cancel(monkeypatch):
-    # Canvas-debug / graph-raptor tasks carry fake doc ids and are cancelled
-    # through the kb-scoped flows; the authz change must not break them.
+def test_fake_doc_id_cancel_allowed_for_owning_tenant(monkeypatch):
     module = _load_module(monkeypatch, accessible_kb_ids=set())
     res = _run(module.cancel_task("task-3"))
+    assert res["code"] == 0, res
+    assert "task-3-cancel" in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_fake_doc_id_cancel_denied_for_other_tenant(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids=set())
+    res = _run(module.cancel_task("task-5"))
+    assert res["code"] != 0, f"cross-tenant fake-doc cancel must be denied, got {res}"
+    assert "task-5-cancel" not in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_graph_raptor_fake_doc_cancel_allowed_for_owning_tenant(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids=set())
+    res = _run(module.cancel_task("task-6"))
+    assert res["code"] == 0, res
+    assert "task-6-cancel" in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_graph_raptor_fake_doc_cancel_denied_for_other_tenant(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids=set())
+    res = _run(module.cancel_task("task-7"))
+    assert res["code"] != 0, f"cross-tenant graph-raptor cancel must be denied, got {res}"
+    assert "task-7-cancel" not in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_fake_doc_id_cancel_denied_without_tenant_id(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids=set())
+    res = _run(module.cancel_task("task-8"))
+    assert res["code"] != 0, f"unscoped fake-doc cancel must fail closed, got {res}"
+    assert "task-8-cancel" not in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_fake_doc_id_cancel_allowed_for_joined_tenant(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids=set(), joined_tenant_ids={"tenant-b"})
+    res = _run(module.cancel_task("task-5"))
+    assert res["code"] == 0, res
+    assert "task-5-cancel" in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_patch_stop_enforces_fake_doc_tenant_scope(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids=set())
+    REQUEST_JSON["action"] = "stop"
+    res = _run(module.patch_task("task-5"))
+    assert res["code"] != 0, f"cross-tenant PATCH stop must be denied, got {res}"
+    assert "task-5-cancel" not in REDIS_SETS
+    res = _run(module.patch_task("task-3"))
     assert res["code"] == 0, res
     assert "task-3-cancel" in REDIS_SETS
 
