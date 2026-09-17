@@ -471,7 +471,16 @@ class LLM(ComponentBase):
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams]) and not (ex and ex["goto"]):
+        # Defer to an unconsumed partial ONLY when every downstream consumer is
+        # a Message: Message knows how to consume the partial (it streams it).
+        # Any other consumer (Agent/LLM, Fillup, Invoke, ...) would receive the
+        # opaque partial object instead of the semantic answer -- e.g. LLM
+        # prompt normalization stringifies it into "functools.partial(...)",
+        # leaking the bound system prompt/message state. A mixed graph therefore
+        # takes the eager path so every consumer sees the same answer string.
+        # (An empty downstream list keeps the previous eager behavior.)
+        has_message_downstream = bool(downstreams) and all(self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams)
+        if has_message_downstream and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output_async, prompt, deepcopy(msg)))
             return
 
