@@ -1589,7 +1589,7 @@ func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
 	var thinks []bool
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
+	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history, HarnessRetrievalTuning{})
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
@@ -1630,7 +1630,7 @@ func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
 	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil, HarnessRetrievalTuning{}); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	// Only what the harness reported: the pipeline adds nothing of its own.
@@ -1687,7 +1687,7 @@ func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil, HarnessRetrievalTuning{}); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {
@@ -1834,4 +1834,43 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TestRetrieveViaHarnessForwardsRetrievalTuning pins the wiring: the dialog's
+// retrieval knobs must reach the harness request, where the handler copies them
+// onto RAGTools exactly as Python passes them to the constructor
+// (dialog_service.py:2114-2118). Without this the agentic legs silently used
+// their package defaults and ignored the dialog configuration.
+func TestRetrieveViaHarnessForwardsRetrievalTuning(t *testing.T) {
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	var got HarnessRetrievalTuning
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		got = req.Tuning
+		return HarnessResult{Answer: "a"}, nil
+	}
+
+	threshold := 0.42
+	weight := 0.11
+	s := &ChatPipelineService{}
+	_, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil,
+		func(string, bool) {}, nil, "", nil, HarnessRetrievalTuning{
+			TopN:                   7,
+			SimilarityThreshold:    &threshold,
+			VectorSimilarityWeight: &weight,
+			RerankCandidatesCount:  77,
+			TopK:                   2048,
+		})
+	if err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if got.TopN != 7 || got.RerankCandidatesCount != 77 || got.TopK != 2048 {
+		t.Errorf("tuning = %+v, want TopN 7 / RerankCandidatesCount 77 / TopK 2048", got)
+	}
+	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != threshold {
+		t.Errorf("SimilarityThreshold = %v, want %v", got.SimilarityThreshold, threshold)
+	}
+	if got.VectorSimilarityWeight == nil || *got.VectorSimilarityWeight != weight {
+		t.Errorf("VectorSimilarityWeight = %v, want %v", got.VectorSimilarityWeight, weight)
+	}
 }

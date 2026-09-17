@@ -55,6 +55,10 @@ type RetrievalChunk struct {
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
+	// Highlight is the keyword-emphasised snippet, carried only when the
+	// retrieval asked for it (Python's RAGTools.retrieve highlight=True,
+	// agentic_rag.py:721). Empty means the caller did not ask for one.
+	Highlight string
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
@@ -85,6 +89,10 @@ type RetrievalRequest struct {
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	TenantID string
+	// Highlight asks the retriever for the per-chunk highlighted snippet.
+	// Python passes highlight=True only from RAGTools.retrieve
+	// (agentic_rag.py:721); the search.py legs all pass False.
+	Highlight bool
 	// RankFeature is the label_question term→weight map passed through to the
 	// engine so retrieval is biased toward the query's predicted topic class.
 	// Mirrors engine nlp.RetrievalRequest.RankFeature.

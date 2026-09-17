@@ -72,14 +72,6 @@ type SearchParams struct {
 	// `FOUND BUT NOT RECORDED=斩颜良、诛文丑、三国演义、关羽…+14` — every entry a query
 	// word, and not one of the members the round was actually missing.
 	SkipReachLedger bool
-	// Channel is retained for backward compatibility with callers that still
-	// poke the unified HybridSearch with an explicit channel. It is DEPRECATED:
-	// each Python entry point is now its own function (HybridSearch /
-	// VectorSearch / BM25Search / GrepSearch / RetrieveSearch) and selects its
-	// vector weight, similarity threshold and compiled-row exclusion
-	// internally. New code should call the specific function instead of setting
-	// Channel on HybridSearch. runSearch does NOT read this field.
-	Channel SearchChannel
 }
 
 // SearchFn performs one hybrid search and returns chunks + doc aggs, so the

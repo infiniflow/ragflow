@@ -146,12 +146,14 @@ func TestHybridSearchEffectiveQueryCapsCodePoints(t *testing.T) {
 	}
 }
 
-func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
+func TestSearchLegsCarryNoRankFeature(t *testing.T) {
 	// Python passes rank_feature ONLY from RAGTools.retrieve
-	// (agentic_rag.py:668 rank_feature=label_question(question, self.kbs)).
-	// search.py's three legs call retriever.retrieval WITHOUT rank_feature
+	// (agentic_rag.py:723 rank_feature=label_question(question, self.kbs)).
+	// search.py's legs call retriever.retrieval WITHOUT rank_feature
 	// (:158-173 hybrid, :223-238 vector, :260-275 bm25; grep_search delegates to
 	// bm25_search, :428), so those requests must stay nil even with a Tagger.
+	// RAGTools.retrieve's own boost is asserted next to its preset
+	// (agentic_rag_test.go: TestRetrieveCarriesQuestionTags).
 	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.KBs = []*entity.Knowledgebase{{}}
@@ -162,43 +164,20 @@ func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
 	BM25Search(context.Background(), deps, SearchParams{Question: "who made it?"})
 	GrepSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
 
-	want := map[string]float64{"definition": 1.0, "entity": 1.0}
 	for i, req := range r.requests {
 		if req.RankFeature != nil {
 			t.Errorf("request %d (%s) RankFeature = %v, want nil (search.py legs never pass rank_feature)", i, req.Query, req.RankFeature)
 		}
 	}
-
-	// RAGTools.retrieve is the only leg that carries the label_question boost.
-	r2 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
-	deps2, _ := newTestSearchDeps(r2)
-	deps2.KBs = []*entity.Knowledgebase{{}}
-	deps2.Tagger = stubTagger{t: t}
-	deps2.UsingEmbedding = true
-	RetrieveSearch(context.Background(), deps2, SearchParams{Question: "who made it?"})
-	if len(r2.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(r2.requests))
-	}
-	if got := r2.requests[0].RankFeature; !reflect.DeepEqual(got, want) {
-		t.Errorf("RetrieveSearch RankFeature = %v, want %v", got, want)
-	}
-
-	// Nil Tagger -> empty rank feature even on the retrieve leg (Python
-	// label_question returning None).
-	r3 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
-	deps3, _ := newTestSearchDeps(r3)
-	deps3.UsingEmbedding = true
-	RetrieveSearch(context.Background(), deps3, SearchParams{Question: "unique query no rf"})
-	if len(r3.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(r3.requests))
-	}
-	if len(r3.requests[0].RankFeature) != 0 {
-		t.Errorf("RankFeature = %v, want empty for nil Tagger", r3.requests[0].RankFeature)
-	}
 }
 
 // stubTagger implements QuestionLabeler for TestHybridSearchPassesRankFeature.
-type stubTagger struct{ t *testing.T }
+type stubTagger struct {
+	t *testing.T
+	// empty makes LabelQuestion resolve nothing, which is Python's
+	// label_question returning None for a dataset with no tag source.
+	empty bool
+}
 
 func (s stubTagger) LabelQuestion(_ context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 	if question != "who made it?" {
@@ -206,6 +185,9 @@ func (s stubTagger) LabelQuestion(_ context.Context, question string, kbs []*ent
 	}
 	if len(kbs) != 1 {
 		s.t.Errorf("LabelQuestion called with %d kbs, want 1", len(kbs))
+	}
+	if s.empty {
+		return nil
 	}
 	return map[string]float64{"definition": 1.0, "entity": 1.0}
 }
@@ -663,17 +645,21 @@ func TestGrepSearchSearchingLineSplitsAudiences(t *testing.T) {
 	}
 }
 
-// TestSearchLegsShareOneThinkSentenceFamily pins the wording of all five legs'
-// "searching" step in ONE place. They land in a single think block, so they have to
-// scan as one family ("Searching … for \"q\".") while still saying which leg
+// TestSearchLegsShareOneThinkSentenceFamily pins the wording of the four search.py
+// legs' "searching" step in ONE place. They land in a single think block, so they
+// have to scan as one family ("Searching … for \"q\".") while still saying which leg
 // searched — the "[Hybrid search]" prefix is a developer's label, so the difference
 // has to be IN the sentence.
 //
-// "the knowledge base" is deliberately absent from every one of them: all five legs
+// "the knowledge base" is deliberately absent from every one of them: all four legs
 // search it, so the phrase distinguishes nothing a reader can act on. The LOG side
 // keeps Python's own wording (including that phrase where Python has it) — pinned by
 // TestGrepSearchSearchingLineSplitsAudiences and the log-diff tests, which is why it
 // is not repeated here.
+//
+// RAGTools.retrieve is the fifth entry point and no longer lives here: it sits with
+// the other RAGTools methods (advanced_rag.Retrieve), which pins its sentence
+// (TestRetrieveThinkSentence).
 func TestSearchLegsShareOneThinkSentenceFamily(t *testing.T) {
 	cases := []struct {
 		name string
@@ -692,10 +678,6 @@ func TestSearchLegsShareOneThinkSentenceFamily(t *testing.T) {
 			BM25Search(ctx, d, SearchParams{Question: "q"})
 		},
 			`[BM25 search] Searching by keyword for "q".`},
-		{"retrieve", func(ctx context.Context, d SearchDeps) {
-			RetrieveSearch(ctx, d, SearchParams{Question: "q"})
-		},
-			`[Retrieve] Searching for "q".`},
 		{"grep", func(ctx context.Context, d SearchDeps) {
 			GrepSearch(ctx, d, SearchParams{Question: "q"})
 		},
@@ -1005,24 +987,7 @@ func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
 	}
 }
 
-// TestRetrieveSearchDoesNotExcludeCompiled mirrors Python RAGTools.retrieve:
-// unlike hybrid_search it does NOT exclude compiled rows, and honours
-// UsingEmbedding (weight 0.7 when on).
-func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
-	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
-	deps, _ := newTestSearchDeps(r)
-	deps.UsingEmbedding = true
-	RetrieveSearch(context.Background(), deps, SearchParams{Question: "q"})
-	req := r.lastReq(t)
-	if req.ExcludeCompiled {
-		t.Error("retrieve search must NOT exclude compiled rows")
-	}
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != DefaultHybridVectorWeight {
-		t.Errorf("retrieve search weight = %v, want %v", got, DefaultHybridVectorWeight)
-	}
-}
-
-// TestHybridSearchMergesSQLKBs verifies that hybrid_search folds the session's
+// TestHybridSearchMergesSQLKBs verifies that hybrid_search folds the session's// TestHybridSearchMergesSQLKBs verifies that hybrid_search folds the session's
 // structured (SQL) datasets into the target id list, mirroring Python
 // search.py:hybrid_search (`tools.kb_ids + [kb.id for kb in tools.sql_kbs]`).
 func TestHybridSearchMergesSQLKBs(t *testing.T) {
@@ -1148,7 +1113,7 @@ func TestQueryToTerms(t *testing.T) {
 func TestAgenticVectorWeightDefaultsToZero(t *testing.T) {
 	// Python's agentic retrieve runs keyword-only: using_embedding defaults to
 	// False and no caller passes True (agentic_rag.py:retrieve, 643-646).
-	got := floatPtrOrDef(nil, DefaultAgenticVectorWeight)
+	got := FloatPtrOrDef(nil, DefaultAgenticVectorWeight)
 	if got != 0 {
 		t.Fatalf("default vector weight = %v, want 0 (keyword-only, as in Python)", got)
 	}
@@ -1161,7 +1126,7 @@ func TestVectorWeightHonoursExplicitZero(t *testing.T) {
 	// A pointer keeps "configured 0" distinct from "unset", so keyword-only can
 	// be requested explicitly rather than only by omission.
 	zero := 0.0
-	if got := floatPtrOrDef(&zero, DefaultAgenticVectorWeight); got != 0 {
+	if got := FloatPtrOrDef(&zero, DefaultAgenticVectorWeight); got != 0 {
 		t.Fatalf("got %v, want 0", got)
 	}
 
@@ -1174,7 +1139,7 @@ func TestVectorWeightHonoursExplicitZero(t *testing.T) {
 func TestVectorWeightCanEnableHybrid(t *testing.T) {
 	// Hybrid retrieval stays available, just not by default.
 	hybrid := 0.3
-	if got := floatPtrOrDef(&hybrid, DefaultAgenticVectorWeight); got != 0.3 {
+	if got := FloatPtrOrDef(&hybrid, DefaultAgenticVectorWeight); got != 0.3 {
 		t.Fatalf("got %v, want 0.3 when explicitly configured", got)
 	}
 }
@@ -1191,14 +1156,14 @@ func TestRetrievalDefaultsUseIntOrDef(t *testing.T) {
 func TestResolveVectorWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
 	// Python RAGTools.retrieve(using_embedding: bool = False).
 	// Off → keyword-only (weight 0); on → 0.7 default or the configured override.
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 0 {
+	if got := ResolveVectorWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 0 {
 		t.Fatalf("using_embedding=false → %v, want 0 (keyword-only)", got)
 	}
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != DefaultHybridVectorWeight {
+	if got := ResolveVectorWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != DefaultHybridVectorWeight {
 		t.Fatalf("using_embedding=true → %v, want %v", got, DefaultHybridVectorWeight)
 	}
 	override := 0.5
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, VectorSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
+	if got := ResolveVectorWeight(SearchDeps{UsingEmbedding: true, VectorSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
 		t.Fatalf("using_embedding=true with override → %v, want 0.5", got)
 	}
 }
@@ -1206,10 +1171,10 @@ func TestResolveVectorWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
 func TestResolveVectorWeightHybridDefaultsToThreeTenths(t *testing.T) {
 	// Python hybrid_search defaults the vector weight to 0.3
 	// (_DEFAULT_HYBRID_VECTOR_WEIGHT,), unlike RAGTools.retrieve's 0.7.
-	if got := resolveVectorWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
+	if got := ResolveVectorWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid → %v, want %v", got, HybridSearchDefaultVectorWeight)
 	}
-	if got := resolveVectorWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 0 {
+	if got := ResolveVectorWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 0 {
 		t.Fatalf("hybrid with no embedder → %v, want 0 (Python: `if embd_mdl`)", got)
 	}
 }
@@ -1220,7 +1185,7 @@ func TestResolveVectorWeightHybridDefaultsToThreeTenths(t *testing.T) {
 // semantic leg for search_chunks — losing recall of passages sharing no surface
 // words. The gate for this channel is the embedder, nothing else.
 func TestResolveVectorWeightHybridIgnoresUsingEmbedding(t *testing.T) {
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
+	if got := ResolveVectorWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid with using_embedding=false → %v, want %v: the vector leg "+
 			"must NOT depend on using_embedding", got, HybridSearchDefaultVectorWeight)
 	}
@@ -1231,10 +1196,10 @@ func TestResolveVectorWeightHybridIgnoresUsingEmbedding(t *testing.T) {
 // flag can turn one on.
 func TestResolveVectorWeightGrepIsAlwaysZero(t *testing.T) {
 	override := 0.9
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 0 {
+	if got := ResolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 0 {
 		t.Fatalf("grep → %v, want 0 (grep_search has no vector leg)", got)
 	}
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, VectorSimilarityWeight: &override}, ChannelGrep); got != 0 {
+	if got := ResolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, VectorSimilarityWeight: &override}, ChannelGrep); got != 0 {
 		t.Fatalf("grep with override → %v, want 0 (grep_search has no vector leg)", got)
 	}
 }
@@ -1706,5 +1671,66 @@ func TestProbeItemsAreTheCallersOwnWords(t *testing.T) {
 	}
 	if !batch["三国演义"] {
 		t.Error("the caller's own word 三国演义 must be a candidate item")
+	}
+}
+
+// TestSearchLegsAskForNoHighlight pins the other half of the retrieve-only
+// request flags: Python's search.py legs all pass highlight=False
+// (search.py:169 / :235 / :273), so no leg may turn the snippet on.
+func TestSearchLegsAskForNoHighlight(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+
+	HybridSearch(context.Background(), deps, SearchParams{Question: "q"})
+	VectorSearch(context.Background(), deps, SearchParams{Question: "q"})
+	BM25Search(context.Background(), deps, SearchParams{Question: "q"})
+	GrepSearch(context.Background(), deps, SearchParams{Question: "q"})
+
+	for i, req := range r.requests {
+		if req.Highlight {
+			t.Errorf("request %d (%s) Highlight = true, want false (search.py legs pass highlight=False)", i, req.Query)
+		}
+	}
+}
+
+// TestResolveDocScopeNoMatchSentinel pins Python retrieve:676: the "the metadata
+// filter matched no document" sentinel means an EMPTY result, not a document id.
+// Left to travel as an id it would read as one unknown document, which — with no
+// session base scope — falls back to UNFILTERED retrieval.
+func TestResolveDocScopeNoMatchSentinel(t *testing.T) {
+	got := resolveDocScope(context.Background(), SearchDeps{}, []string{noMatchDocIDSentinel}, []string{"kb"}, _LOG)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("sentinel scope = %#v, want a non-nil empty scope (match nothing)", got)
+	}
+	got = resolveDocScope(context.Background(),
+		SearchDeps{DocScope: []string{noMatchDocIDSentinel}}, nil, []string{"kb"}, _LOG)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("session sentinel scope = %#v, want a non-nil empty scope", got)
+	}
+}
+
+// TestRetrievalTenantIDs pins the tenant scope a retrieval and its child
+// promotion run over: every tenant the bound datasets live in (Python's
+// `self.tenant_ids`, agentic_rag.py:711/729), de-duplicated, falling back to the
+// calling tenant when no dataset carries one.
+func TestRetrievalTenantIDs(t *testing.T) {
+	cases := []struct {
+		name string
+		deps SearchDeps
+		want []string
+	}{
+		{"dataset tenants", SearchDeps{
+			TenantID: "calling",
+			KBs: []*entity.Knowledgebase{
+				{TenantID: "t1"}, {TenantID: "t2"}, {TenantID: "t1"}, nil, {TenantID: ""},
+			},
+		}, []string{"t1", "t2"}},
+		{"no dataset tenant", SearchDeps{TenantID: "calling"}, []string{"calling"}},
+		{"nothing", SearchDeps{}, nil},
+	}
+	for _, tc := range cases {
+		if got := retrievalTenantIDs(tc.deps); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: retrievalTenantIDs = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

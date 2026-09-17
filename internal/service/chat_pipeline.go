@@ -813,7 +813,18 @@ func (s *ChatPipelineService) AsyncChat(
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, thinkSink, harnessSystemPrompt, history)
+				// The dialog's retrieval knobs, the same ones the non-reasoning
+				// path below reads off `chat`: Python hands them to RAGTools at
+				// construction (dialog_service.py:2114-2118) so every agentic leg
+				// resolves its defaults against them.
+				tuning := HarnessRetrievalTuning{
+					TopN:                   int(chat.TopN),
+					SimilarityThreshold:    ptrFloat64(chat.SimilarityThreshold),
+					VectorSimilarityWeight: ptrFloat64(chat.VectorSimilarityWeight),
+					RerankCandidatesCount:  rerankCandidatesCount,
+					TopK:                   int(chat.TopK),
+				}
+				hk, slotCites, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, thinkSink, harnessSystemPrompt, history, tuning)
 				// The harness streams think-then-answer inside ONE compose call.
 				// Close the block here, once that call (and its trailing
 				// narration line) has returned: a reasoning-only run would
@@ -4751,6 +4762,19 @@ func harnessBoundDatasetNames(kbs []*entity.Knowledgebase) string {
 	return strings.Join(names, ", ")
 }
 
+// HarnessRetrievalTuning mirrors the retrieval knobs Python builds RAGTools with
+// out of the dialog (dialog_service.py:2114-2118): similarity_threshold,
+// vector_similarity_weight, top_n, rerank_candidates_count, top_k. The two
+// weights are pointers so a configured 0 stays distinct from "unset":
+// RAGTools resolves each one per entry point (agentic_rag.py:669-672).
+type HarnessRetrievalTuning struct {
+	TopN                   int
+	SimilarityThreshold    *float64
+	VectorSimilarityWeight *float64
+	RerankCandidatesCount  int
+	TopK                   int
+}
+
 // HarnessRequest carries the minimal inputs the chat pipeline hands to the
 // agentic-RAG harness for evidence collection.
 type HarnessRequest struct {
@@ -4799,6 +4823,10 @@ type HarnessRequest struct {
 	// its own evidence block). Empty when the dialog configures none — Python
 	// then composes without the "# Assistant configuration" block.
 	SystemPrompt string
+	// Tuning carries the dialog's retrieval knobs (Python constructs RAGTools
+	// with them: dialog_service.py:2114-2118). Zero values keep each entry
+	// point's own default.
+	Tuning HarnessRetrievalTuning
 }
 
 // HarnessResult is the evidence the harness returns, normalized to the map
@@ -4880,7 +4908,7 @@ func harnessThinkSink(ctx context.Context, out chan<- AsyncChatResult) func(Thin
 	}
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}, tuning HarnessRetrievalTuning) (map[string]interface{}, map[string][]string, string, error) {
 	if harnessRetriever == nil {
 		return nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
@@ -4905,6 +4933,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 		TextAttachments: textAttachments,
 		WebSearch:       webSearch,
 		SystemPrompt:    dialogSystemPrompt,
+		Tuning:          tuning,
 	})
 	if err != nil {
 		return nil, nil, "", err

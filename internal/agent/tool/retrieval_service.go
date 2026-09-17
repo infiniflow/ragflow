@@ -48,6 +48,12 @@ type RetrievalChunk struct {
 	// for top-level chunks. Threaded through so the harness can run
 	// retrieval_by_children (child fragments are promoted to their parent chunk).
 	MomID string
+	// Highlight is the keyword-emphasised snippet, filled ONLY when the request
+	// asked for one (RetrievalRequest.Highlight — Python's
+	// RAGTools.retrieve highlight=True, agentic_rag.py:721); empty otherwise,
+	// and the harness then leaves the key off the chunk entirely, the way
+	// Python's chunks carry no "highlight" key when the search did not ask.
+	Highlight string
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
@@ -73,12 +79,21 @@ type RetrievalRequest struct {
 	CrossLanguages      []string
 	TOCEnhance          bool
 	// RankFeature mirrors Python RAGTools.retrieve's rank_feature argument:
-	// question-type tags (from label_question) the retriever uses to boost
-	// matching chunks. The Go engine consumes it as a tag → weight map, so it
-	// is *map[string]float64. Nil means no tag boost (fall back to enhancer).
-	RankFeature    *map[string]float64
-	MetaDataFilter map[string]any
-	RetrievalFrom  string
+	// question-type tags (from label_question) that boost matching chunks,
+	// consumed by the engine as a tag → weight map. Three states, as in Python
+	// (rag/nlp/search.py:722): nil = argument omitted, so the nlp layer applies
+	// its own default; a non-nil pointer to an EMPTY map = "no tag feature",
+	// which suppresses that default (Python's None); a populated map = the
+	// weights.
+	RankFeature *map[string]float64
+	// ResolveRankFeature asks the backend to compute the tag feature itself
+	// (Python label_question) when RankFeature carries no value. Only the canvas
+	// retrieval tool sets it (agent/tools/retrieval.py:245 passes
+	// rank_feature=label_question unconditionally); the harness legs leave it
+	// unset because Python's harness/tools/search.py passes no rank_feature.
+	ResolveRankFeature bool
+	MetaDataFilter     map[string]any
+	RetrievalFrom      string
 	// DocScope restricts retrieval to a set of document ids (from document_ids
 	// on the retrieval node/tool, or dataset_navigation_by_tree). Empty = no doc filter.
 	DocScope []string
@@ -87,6 +102,11 @@ type RetrievalRequest struct {
 	// CanvasState.Sys["user_id"] when empty (set by the Begin component at
 	// internal/agent/component/begin.go:82).
 	TenantID string
+	// Highlight asks the retriever for the per-chunk highlighted snippet.
+	// Python passes highlight=True only from RAGTools.retrieve
+	// (agentic_rag.py:721); the search.py legs all pass False, which is why this
+	// defaults to off.
+	Highlight bool
 	// UserID optionally filters memory messages by the user_id they were
 	// recorded with (the Retrieval node's "User ID" field, e.g. resolved
 	// from sys.user_id). Empty = no user filter. Only meaningful for

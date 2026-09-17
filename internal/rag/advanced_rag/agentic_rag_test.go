@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/rag/advanced_rag/harness"
 )
@@ -996,5 +998,197 @@ func TestTruncCutsOnRuneBoundaries(t *testing.T) {
 	}
 	if got := trunc(s, 99); got != s {
 		t.Errorf("trunc beyond the length = %q, want it unchanged", got)
+	}
+}
+
+// retrieveReqRecorder captures every request Retrieve puts on the wire.
+type retrieveReqRecorder struct {
+	requests []harness.RetrieveRequest
+}
+
+func (r *retrieveReqRecorder) Retrieve(_ context.Context, req harness.RetrieveRequest) ([]map[string]any, error) {
+	r.requests = append(r.requests, req)
+	return []map[string]any{{"chunk_id": "c1", "content": "hit", "doc_id": "d1"}}, nil
+}
+
+// newRetrieveDeps binds the recorder to the minimum a search needs to run.
+func newRetrieveDeps(r harness.Retriever) harness.SearchDeps {
+	return harness.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, TenantID: "tenant1"}
+}
+
+// nilTagTagger mirrors a dataset whose label_question finds nothing.
+type nilTagTagger struct{}
+
+func (nilTagTagger) LabelQuestion(context.Context, string, []*entity.Knowledgebase) map[string]float64 {
+	return nil
+}
+
+// TestRetrieveCarriesQuestionTags pins RAGTools.retrieve's rank_feature policy:
+// it is the ONE entry point that passes
+// rank_feature=label_question(question, self.kbs) (agentic_rag.py:723), so the
+// tags the Tagger resolves must reach the retriever.
+func TestRetrieveCarriesQuestionTags(t *testing.T) {
+	r := &retrieveReqRecorder{}
+	sd := newRetrieveDeps(r)
+	sd.KBs = []*entity.Knowledgebase{{}}
+	sd.Tagger = rfTagger{}
+	sd.UsingEmbedding = true
+
+	Retrieve(context.Background(), sd, harness.SearchParams{Question: "who made it?"})
+
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	want := map[string]float64{"location": 1.0}
+	if got := r.requests[0].RankFeature; !reflect.DeepEqual(got, want) {
+		t.Errorf("RankFeature = %v, want %v", got, want)
+	}
+}
+
+// TestRetrieveAsksForHighlight pins the other retrieve-only request flag:
+// Python's RAGTools.retrieve is the ONE entry point that passes highlight=True
+// (agentic_rag.py:721); search.py's legs all pass highlight=False, which the
+// harness asserts separately (TestSearchLegsAskForNoHighlight).
+func TestRetrieveAsksForHighlight(t *testing.T) {
+	r := &retrieveReqRecorder{}
+	sd := newRetrieveDeps(r)
+	sd.UsingEmbedding = true
+
+	Retrieve(context.Background(), sd, harness.SearchParams{Question: "who made it?"})
+
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	if !r.requests[0].Highlight {
+		t.Error("Highlight = false, want true (RAGTools.retrieve passes highlight=True)")
+	}
+}
+
+// TestRetrieveRankFeatureIsNeverNil pins the None semantics: a Tagger that
+// resolves nothing — or no Tagger at all — is a VALUE, not an omission. Python
+// hands label_question's None straight to retrieval(), which suppresses the
+// pagerank default instead of re-enabling it, so the request must carry a
+// non-nil empty feature.
+func TestRetrieveRankFeatureIsNeverNil(t *testing.T) {
+	cases := []struct {
+		name   string
+		tagger harness.QuestionLabeler
+	}{
+		{"no tagger", nil},
+		{"tagger without tags", nilTagTagger{}},
+	}
+	for _, tc := range cases {
+		r := &retrieveReqRecorder{}
+		sd := newRetrieveDeps(r)
+		sd.Tagger = tc.tagger
+		sd.UsingEmbedding = true
+
+		Retrieve(context.Background(), sd, harness.SearchParams{Question: "q"})
+
+		if len(r.requests) != 1 {
+			t.Fatalf("%s: requests = %d, want 1", tc.name, len(r.requests))
+		}
+		if got := r.requests[0].RankFeature; got == nil || len(got) != 0 {
+			t.Errorf("%s: RankFeature = %v, want a non-nil empty map", tc.name, got)
+		}
+	}
+}
+
+// TestRetrievePreset pins the preset RAGTools.retrieve is built from: compiled
+// rows are NOT excluded (Python's retrieve has no must_not compile_kwd), and
+// `using_embedding` — honoured by this leg alone — decides whether a dense leg
+// runs at all.
+func TestRetrievePreset(t *testing.T) {
+	// using_embedding on: dense leg engaged at the retrieve default weight.
+	r := &retrieveReqRecorder{}
+	sd := newRetrieveDeps(r)
+	sd.UsingEmbedding = true
+	Retrieve(context.Background(), sd, harness.SearchParams{Question: "q"})
+	req := r.requests[0]
+	if req.ExcludeCompiled {
+		t.Error("retrieve must NOT exclude compiled rows")
+	}
+	if req.DisableVectorLeg {
+		t.Error("using_embedding on must keep the dense leg")
+	}
+	if req.VectorSimilarityWeight == nil {
+		t.Fatal("VectorSimilarityWeight missing")
+	}
+	if got := *req.VectorSimilarityWeight; got != harness.DefaultHybridVectorWeight {
+		t.Errorf("weight = %v, want %v", got, harness.DefaultHybridVectorWeight)
+	}
+
+	// using_embedding off: no dense leg at all, and no weight on the keyword leg.
+	r2 := &retrieveReqRecorder{}
+	sd2 := newRetrieveDeps(r2)
+	Retrieve(context.Background(), sd2, harness.SearchParams{Question: "q"})
+	req2 := r2.requests[0]
+	if !req2.DisableVectorLeg {
+		t.Error("using_embedding off must disable the dense leg")
+	}
+	if req2.VectorSimilarityWeight == nil {
+		t.Fatal("VectorSimilarityWeight missing")
+	}
+	if got := *req2.VectorSimilarityWeight; got != 0 {
+		t.Errorf("weight = %v, want 0 without using_embedding", got)
+	}
+}
+
+// TestRetrieveDefaults pins the two entry-point defaults that are retrieve's
+// alone: top_n 6 — deliberately NOT the search tools' 12
+// (agentic_rag.py:669-670) — and highlight=True (agentic_rag.py:721), which no
+// search.py leg asks for.
+func TestRetrieveDefaults(t *testing.T) {
+	r := &retrieveReqRecorder{}
+	sd := newRetrieveDeps(r)
+
+	Retrieve(context.Background(), sd, harness.SearchParams{Question: "q"})
+
+	req := r.requests[0]
+	if req.TopN != 6 {
+		t.Errorf("TopN = %d, want 6 (RAGTools.retrieve's own default)", req.TopN)
+	}
+	if !req.Highlight {
+		t.Error("Highlight = false, want true (RAGTools.retrieve is the only leg that asks for it)")
+	}
+}
+
+// TestRetrieveKeepsAnExplicitZeroThreshold pins the `is None` semantics of
+// Python's similarity_threshold (agentic_rag.py:672): a configured 0 means "no
+// floor" and must NOT be read as "unset" and replaced by the 0.2 default.
+func TestRetrieveKeepsAnExplicitZeroThreshold(t *testing.T) {
+	zero := 0.0
+	r := &retrieveReqRecorder{}
+	sd := newRetrieveDeps(r)
+	sd.SimilarityThreshold = &zero
+
+	Retrieve(context.Background(), sd, harness.SearchParams{Question: "q"})
+
+	req := r.requests[0]
+	if req.SimilarityThreshold == nil {
+		t.Fatal("SimilarityThreshold missing")
+	}
+	if got := *req.SimilarityThreshold; got != 0 {
+		t.Errorf("similarity threshold = %v, want the explicit 0 (no floor)", got)
+	}
+}
+
+// TestRetrieveThinkSentence pins the leg's think-block sentence, the fifth leg of
+// the family harness.TestSearchLegsShareOneThinkSentenceFamily covers for the
+// search.py entry points. Retrieve sits beside the other RAGTools methods, so its
+// sentence is asserted here: it must read as the same family ("Searching for …")
+// with no implementation phrase and no developer label inside the sentence.
+func TestRetrieveThinkSentence(t *testing.T) {
+	sd := newRetrieveDeps(&retrieveReqRecorder{})
+	sd.UsingEmbedding = true
+	var text []string
+	ctx := harness.WithSteps(context.Background(), harness.StepReporter{
+		Text: func(line string) { text = append(text, line) },
+	})
+
+	Retrieve(ctx, sd, harness.SearchParams{Question: "q"})
+
+	if got := strings.Join(text, ""); !strings.Contains(got, `[Retrieve] Searching for "q".`) {
+		t.Errorf("think = %q, want the family sentence", got)
 	}
 }

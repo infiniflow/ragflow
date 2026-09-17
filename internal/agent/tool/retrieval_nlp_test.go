@@ -568,3 +568,113 @@ func (f fakeKnowledgebaseLookup) GetByName(_ context.Context, _ *gorm.DB, name, 
 	}
 	return nil, gorm.ErrRecordNotFound
 }
+
+// recordingEnhancer counts LabelQuestion calls so a test can tell "the tag
+// vocabulary was aggregated" from "nothing asked for it".
+type recordingEnhancer struct {
+	labelCalls int
+	labelValue map[string]float64
+}
+
+func (e *recordingEnhancer) CrossLanguages(context.Context, string, string, []string) (string, error) {
+	return "", nil
+}
+
+func (e *recordingEnhancer) FilterDocuments(
+	context.Context, map[string]any, string, *modelModule.ChatModel, []string, []string,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (e *recordingEnhancer) LabelQuestion(
+	context.Context, string, []*entity.Knowledgebase,
+) map[string]float64 {
+	e.labelCalls++
+	return e.labelValue
+}
+
+func (e *recordingEnhancer) EnhanceTOC(
+	context.Context, *modelModule.ChatModel, []string, []string, string, int, []map[string]any,
+) ([]map[string]any, error) {
+	return nil, nil
+}
+
+func (e *recordingEnhancer) RetrieveByChildren(
+	context.Context, []map[string]any, []string,
+) []map[string]any {
+	return nil
+}
+
+// TestResolveRankFeature pins who computes the tag-based rank feature, mirroring
+// Python's split between its callers: the agentic harness passes none (its
+// hybrid/bm25/vector legs must keep the nlp layer's pagerank-only default,
+// harness/tools/search.py), RAGTools.retrieve passes a value it computed itself,
+// and only the canvas retrieval tool asks for label_question
+// (agent/tools/retrieval.py:245). A caller that passed a feature and got nothing
+// back — or asked for label_question and got None — must still be told apart
+// from "omitted", because retrieval() only defaults an omitted argument.
+func TestResolveRankFeature(t *testing.T) {
+	kbs := []*entity.Knowledgebase{{ID: "kb-1"}}
+	explicit := map[string]float64{"pagerank_fea": 10, "security": 0.5}
+	fromEnhancer := map[string]float64{"security": 0.25}
+
+	// A value on the request wins; the enhancer is not consulted.
+	enhancer := &recordingEnhancer{labelValue: fromEnhancer}
+	got := resolveRankFeature(t.Context(), RetrievalRequest{
+		RankFeature:        &explicit,
+		ResolveRankFeature: true,
+	}, enhancer, "q", kbs)
+	if len(got) != len(explicit) || got["security"] != 0.5 {
+		t.Fatalf("explicit rank feature = %v, want %v", got, explicit)
+	}
+	if enhancer.labelCalls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0 when the request carries a feature", enhancer.labelCalls)
+	}
+
+	// The canvas retrieval tool asks for it: the enhancer resolves the KB objects.
+	enhancer = &recordingEnhancer{labelValue: fromEnhancer}
+	got = resolveRankFeature(t.Context(), RetrievalRequest{ResolveRankFeature: true}, enhancer, "q", kbs)
+	if len(got) != 1 || got["security"] != 0.25 {
+		t.Fatalf("resolved rank feature = %v, want %v", got, fromEnhancer)
+	}
+	if enhancer.labelCalls != 1 {
+		t.Fatalf("LabelQuestion calls = %d, want 1", enhancer.labelCalls)
+	}
+
+	// The harness legs ask for nothing: nil keeps settings.retriever.retrieval's
+	// pagerank default and must not trigger a tag-vocabulary aggregation.
+	enhancer = &recordingEnhancer{labelValue: fromEnhancer}
+	if got = resolveRankFeature(t.Context(), RetrievalRequest{}, enhancer, "q", kbs); got != nil {
+		t.Fatalf("harness rank feature = %v, want nil", got)
+	}
+	if enhancer.labelCalls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0 for the harness legs", enhancer.labelCalls)
+	}
+
+	// An explicit empty feature is a value, not an omission: it must reach the
+	// nlp layer (which suppresses its default) and it must not be recomputed.
+	empty := map[string]float64{}
+	if got = resolveRankFeature(t.Context(), RetrievalRequest{RankFeature: &empty}, enhancer, "q", kbs); got == nil || len(got) != 0 {
+		t.Fatalf("empty rank feature = %v, want a non-nil empty map", got)
+	}
+	if enhancer.labelCalls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0 for an empty feature", enhancer.labelCalls)
+	}
+
+	// The canvas tool asked for label_question and the enhancer found no tag
+	// vocabulary: Python passes None on, so the answer is an explicit empty
+	// feature — never nil (the legs' value) and never a panic.
+	enhancer = &recordingEnhancer{}
+	if got = resolveRankFeature(t.Context(), RetrievalRequest{ResolveRankFeature: true}, enhancer, "q", kbs); got == nil || len(got) != 0 {
+		t.Fatalf("unresolved rank feature = %v, want a non-nil empty map", got)
+	}
+	if enhancer.labelCalls != 1 {
+		t.Fatalf("LabelQuestion calls = %d, want 1", enhancer.labelCalls)
+	}
+
+	// No enhancer configured: the opt-in degrades to "explicitly no feature"
+	// rather than panicking.
+	if got = resolveRankFeature(t.Context(), RetrievalRequest{ResolveRankFeature: true}, nil, "q", kbs); got == nil || len(got) != 0 {
+		t.Fatalf("rank feature without enhancer = %v, want a non-nil empty map", got)
+	}
+}

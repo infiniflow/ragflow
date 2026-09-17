@@ -1092,7 +1092,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 // SearchResponse Elasticsearch search response
 type SearchResponse struct {
-	Hits struct {
+	// TimedOut mirrors ES's `timed_out`: the hit list is PARTIAL. Python's
+	// connector raises on it (rag/utils/es_conn.py), so Search does too.
+	TimedOut bool `json:"timed_out"`
+	Hits     struct {
 		Total struct {
 			Value int64 `json:"value"`
 		} `json:"total"`
@@ -1117,9 +1120,10 @@ type SearchResponse struct {
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	types.LogSearchRequest("Elasticsearch", req)
 
-	// Validate inputs and set defaults
+	// Every failure below returns an EMPTY result alongside the error, never a
+	// nil one, so a caller that ignores the error still reads an empty set.
 	if len(req.IndexNames) == 0 {
-		return nil, fmt.Errorf("index names cannot be empty")
+		return &types.SearchResult{}, fmt.Errorf("index names cannot be empty")
 	}
 
 	offset := max(req.Offset, 0)
@@ -1157,16 +1161,16 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				if weights, ok := m.FusionParams["weights"].(string); ok {
 					// Assert structure only when FusionExpr has weighted_sum with weights
 					if len(req.MatchExprs) != 3 {
-						return nil, fmt.Errorf("match_expressions must have exactly 3 elements with FusionExpr, got %d", len(req.MatchExprs))
+						return &types.SearchResult{}, fmt.Errorf("match_expressions must have exactly 3 elements with FusionExpr, got %d", len(req.MatchExprs))
 					}
 					if _, ok := req.MatchExprs[0].(*types.MatchTextExpr); !ok {
-						return nil, fmt.Errorf("match_expressions[0] must be MatchTextExpr")
+						return &types.SearchResult{}, fmt.Errorf("match_expressions[0] must be MatchTextExpr")
 					}
 					if _, ok := req.MatchExprs[1].(*types.MatchDenseExpr); !ok {
-						return nil, fmt.Errorf("match_expressions[1] must be MatchDenseExpr")
+						return &types.SearchResult{}, fmt.Errorf("match_expressions[1] must be MatchDenseExpr")
 					}
 					if _, ok := req.MatchExprs[2].(*types.FusionExpr); !ok {
-						return nil, fmt.Errorf("match_expressions[2] must be FusionExpr")
+						return &types.SearchResult{}, fmt.Errorf("match_expressions[2] must be FusionExpr")
 					}
 					parts := strings.Split(weights, ",")
 					if len(parts) == 2 {
@@ -1207,7 +1211,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	if hasVectorMatch {
 		if isMemoryIndex {
 			if err := e.ensureMemoryMessageSearchVectorMappings(ctx, req.IndexNames, matchDense.VectorColumnName, len(matchDense.EmbeddingData)); err != nil {
-				return nil, err
+				return &types.SearchResult{}, err
 			}
 		}
 
@@ -1348,7 +1352,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// Serialize query
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
-		return nil, fmt.Errorf("error encoding query: %w", err)
+		return &types.SearchResult{}, fmt.Errorf("error encoding query: %w", err)
 	}
 
 	// Execute search. When useSearchAfter is true we must NOT send
@@ -1360,11 +1364,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		allResults []map[string]interface{}
 		err        error
 	)
-
 	if useSearchAfter {
 		allResults, totalHits, err = e.searchAfterCursor(ctx, req, queryBody, offset, limit)
 		if err != nil {
-			return nil, err
+			return &types.SearchResult{}, err
 		}
 	} else {
 		// WithBody takes an io.Reader that the Go client streams
@@ -1382,21 +1385,47 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			)
 			if err != nil {
 				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(err))
-				continue
+				return &types.SearchResult{}, fmt.Errorf("elasticsearch search on %s: %w", indexName, err)
 			}
 			defer res.Body.Close()
 
 			if res.IsError() {
 				bodyBytes, _ := io.ReadAll(res.Body)
-				common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
-				continue
+				// A missing index is the CALLER's state to rule out, not something
+				// Search may hide: those that can legitimately run before their
+				// index exists filter it themselves (memory/utils/es_conn.py:
+				// 135-137). Both shapes are checked, because a missing index
+				// inside a multi-index request arrives as a 400 carrying
+				// index_not_found_exception.
+				if res.StatusCode == http.StatusNotFound ||
+					bytes.Contains(bodyBytes, []byte("index_not_found_exception")) {
+					common.Debug("Elasticsearch search on a missing index",
+						zap.String("index", indexName))
+					return &types.SearchResult{}, fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, indexName)
+				}
+				// Any other rejection is a defect in the REQUEST — bad query, bad
+				// sort, from+size past index.max_result_window — and must not be
+				// reported as "no results": swallowing it is what kept the tag
+				// vocabulary empty. Python raises for these too
+				// (rag/utils/es_conn.py).
+				common.Warn("Elasticsearch error response",
+					zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+				if reason := extractErrorReason(bodyBytes); reason != "" {
+					return &types.SearchResult{}, fmt.Errorf("elasticsearch search on %s failed: %s", indexName, reason)
+				}
+				return &types.SearchResult{}, fmt.Errorf("elasticsearch search on %s failed: %s", indexName, string(bodyBytes))
 			}
 
 			// Parse response and return results
 			var esResp SearchResponse
 			if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
 				common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
-				continue
+				return &types.SearchResult{}, fmt.Errorf("elasticsearch response on %s: %w", indexName, err)
+			}
+			if esResp.TimedOut {
+				// A partial hit set must not be read as the whole corpus; Python
+				// raises here too (`res.get("timed_out")`, rag/utils/es_conn.py).
+				return &types.SearchResult{}, fmt.Errorf("elasticsearch search on %s timed out", indexName)
 			}
 
 			searchChunks := convertESResponse(&esResp, "")
@@ -1639,6 +1668,8 @@ func (e *Engine) executeSearchRequest(
 		return SearchResponse{}, fmt.Errorf("error encoding query: %w", err)
 	}
 
+	common.Debug("Elasticsearch search DSL", zap.Strings("indexNames", req.IndexNames), zap.Any("dsl", queryBody))
+
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
 		e.client.Search.WithIndex(req.IndexNames...),
@@ -1658,6 +1689,12 @@ func (e *Engine) executeSearchRequest(
 	var esResp SearchResponse
 	if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
 		return SearchResponse{}, fmt.Errorf("elasticsearch failed to parse response: %w", err)
+	}
+	if esResp.TimedOut {
+		// A timed-out batch truncates the paginated walk: the caller would read
+		// the pages collected so far as the whole result set (Python raises on
+		// the flag as well, rag/utils/es_conn.py).
+		return SearchResponse{}, fmt.Errorf("elasticsearch search timed out")
 	}
 	return esResp, nil
 }

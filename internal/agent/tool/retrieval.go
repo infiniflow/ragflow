@@ -232,6 +232,10 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		DocScope:                 append([]string(nil), args.DocumentIDs...),
 		UserID:                   args.UserID,
 		TenantID:                 retrievalTenantID(ctx),
+		// Python's RetrievalTool always passes
+		// rank_feature=label_question(query, kbs) (agent/tools/retrieval.py:245):
+		// the backend computes the tag feature for it.
+		ResolveRankFeature: true,
 	}
 
 	var chunks []RetrievalChunk

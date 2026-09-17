@@ -200,12 +200,18 @@ type RetrieveRequest struct {
 	// (Python tools.meta_data_filter). Nil means no filtering.
 	MetaDataFilter map[string]any
 	// RankFeature mirrors Python RAGTools.retrieve's `rank_feature` argument
-	// (agentic_rag.py:retrieve): question-type tags produced by
-	// label_question(question, self.kbs) that the retriever uses to boost
-	// matching chunks. The Go engine consumes it as a tag → weight map (matching
-	// internal/engine/types and the chat pipeline), so it is map[string]float64,
-	// not a bare list. Nil means no rank feature (Python passes None).
+	// (agentic_rag.py:723): question-type tags from label_question(question,
+	// self.kbs) that boost matching chunks, consumed by the engine as a
+	// tag → weight map. Three states, because Python's retrieval() tells them
+	// apart (rag/nlp/search.py:722): nil = argument omitted (the
+	// hybrid/vector/bm25 legs), keeping the retriever's {PAGERANK_FLD: 10}
+	// default; empty non-nil = "no tag feature" (Python's None), which suppresses
+	// that default; otherwise the tag weights.
 	RankFeature map[string]float64
+	// Highlight asks the backend for the per-chunk highlighted snippet
+	// (search.py:hybrid_search `highlight=...`). Python passes it False on every
+	// search.py leg and True only from RAGTools.retrieve (agentic_rag.py:721).
+	Highlight bool
 	// ExcludeCompiled excludes compiled-product rows from plain retrieval
 	// (Python hybrid_search passes must_not={"exists": "compile_kwd"},
 	// search.py:hybrid_search). Compiled products have their own expansion step, so the
@@ -222,18 +228,9 @@ func intOrDef(v, fallback int) int {
 	return fallback
 }
 
-// floatOrDef returns v when set, else fallback. Kept separate from the pointer
-// form below so both "unset" conventions stay explicit at the call site.
-func floatOrDef(v, fallback float64) float64 {
-	if v > 0 {
-		return v
-	}
-	return fallback
-}
-
-// floatPtrOrDef returns *v when configured, else fallback. A pointer is used so
+// FloatPtrOrDef returns *v when configured, else fallback. A pointer is used so
 // a configured 0 is honoured instead of looking like "unset".
-func floatPtrOrDef(v *float64, fallback float64) float64 {
+func FloatPtrOrDef(v *float64, fallback float64) float64 {
 	if v != nil {
 		return *v
 	}
@@ -266,7 +263,7 @@ const (
 	ChannelRetrieve
 )
 
-// resolveVectorWeight mirrors the weight each Python entry point computes. The
+// ResolveVectorWeight mirrors the weight each Python entry point computes. The
 // gate differs per channel — that is the whole point:
 //
 //   - ChannelGrep: always 0 (grep_search has no vector leg).
@@ -275,7 +272,7 @@ const (
 //     here: Python's hybrid_search has no such parameter.
 //   - ChannelRetrieve: 0 unless UsingEmbedding (Python's using_embedding),
 //     otherwise VectorSimilarityWeight ?? 0.7.
-func resolveVectorWeight(deps SearchDeps, ch SearchChannel) float64 {
+func ResolveVectorWeight(deps SearchDeps, ch SearchChannel) float64 {
 	switch ch {
 	case ChannelGrep:
 		return 0
@@ -287,12 +284,12 @@ func resolveVectorWeight(deps SearchDeps, ch SearchChannel) float64 {
 		if !deps.HasEmbedder {
 			return 0
 		}
-		return floatPtrOrDef(deps.VectorSimilarityWeight, HybridSearchDefaultVectorWeight)
+		return FloatPtrOrDef(deps.VectorSimilarityWeight, HybridSearchDefaultVectorWeight)
 	default:
 		if !deps.UsingEmbedding {
 			return 0
 		}
-		return floatPtrOrDef(deps.VectorSimilarityWeight, DefaultHybridVectorWeight)
+		return FloatPtrOrDef(deps.VectorSimilarityWeight, DefaultHybridVectorWeight)
 	}
 }
 
@@ -306,7 +303,7 @@ type SearchDeps struct {
 	// tools.sql_kbs). Python hybrid_search merges them into the target id list
 	// (search.py:hybrid_search: `tools.kb_ids + [kb.id for kb in tools.sql_kbs]`), so the
 	// keyword/vector search spans the structured tables too. Go keeps them
-	// separate on SearchDeps and folds them into targetIDs in runSearch.
+	// separate on SearchDeps and folds them into targetIDs in RunSearch.
 	SQLKBs []string
 	// TenantID scopes the retrieval.
 	TenantID string
@@ -319,7 +316,7 @@ type SearchDeps struct {
 	IndexName string
 	// DocEngine fetches parent chunks during retrieval_by_children (child
 	// fragments are promoted to their parent chunk). Nil falls back to
-	// engine.Get(). Kept here so runSearch can promote children for the
+	// engine.Get(). Kept here so RunSearch can promote children for the
 	// hybrid/retrieve entry points without the Backend guessing which caller
 	// wants promotion.
 	DocEngine engine.DocEngine
@@ -365,8 +362,13 @@ type SearchDeps struct {
 	// Retrieval tuning (Python RAGTools.retrieve: _setting(self, "top_n"),
 	// similarity_threshold, vector_similarity_weight, rerank_candidates_count,
 	// top_k). Zero falls back to this package's Default* constants.
-	TopN                int
-	SimilarityThreshold float64
+	TopN int
+	// SimilarityThreshold is a pointer because Python distinguishes "not
+	// supplied" from an explicit value with `is None` (agentic_rag.py:672), and
+	// ZERO is a valid explicit floor ("no floor"). A plain float could not carry
+	// that: 0 was read as "unset" and forced this package's 0.2 default onto a
+	// caller that asked for no floor at all.
+	SimilarityThreshold *float64
 	// VectorSimilarityWeight is a pointer so an explicit 0 (keyword-only, the
 	// agentic default) is distinguishable from "not configured", which falls
 	// back to DefaultAgenticVectorWeight.
@@ -537,29 +539,39 @@ func FanoutKeyedTerms(terms []string) []string {
 	return out
 }
 
-// searchOpts carries the per-entry-point differences that in Python live in
-// separate functions (hybrid_search / vector_search / bm25_search / grep_search /
-// RAGTools.retrieve). In Go each entry point is its own function that builds a
-// searchOpts and delegates to runSearch, so the vector-weight gate, similarity
-// threshold and compiled-row exclusion are chosen by the CALLER, never by a
-// single shared "channel flag" that a global switch could silently corrupt.
-type searchOpts struct {
-	// weight is the VECTOR similarity weight (Python vector_similarity_weight).
-	weight float64
-	// threshold is the engine similarity floor.
-	threshold float64
-	// excludeCompiled mirrors Python hybrid_search's must_not={"exists":"compile_kwd"}.
-	excludeCompiled bool
-	// promoteChildren mirrors Python calling settings.retriever.retrieval_by_children
+// SearchOpts carries the per-entry-point differences that in Python live in
+// separate functions. The four search.py legs (hybrid_search / vector_search /
+// bm25_search / grep_search) build theirs in this file; RAGTools.retrieve —
+// which Python defines outside search.py — builds its own next to RAGTools
+// (RAGTools layer: internal/rag/advanced_rag/agentic_rag.go, func Retrieve).
+// Every entry point is therefore its
+// own function, and the vector-weight gate, similarity threshold and
+// compiled-row exclusion are chosen by the CALLER, never by a single shared
+// "channel flag" that a global switch could silently corrupt.
+type SearchOpts struct {
+	// DefaultTopN is the entry point's own top_n fallback. Python resolves top_n
+	// per entry point — after the explicit argument and the caller's
+	// configuration — and the numbers differ "on purpose"
+	// (agentic_rag.py:669-670): the search tools fall back to
+	// _DEFAULT_TOP_N = 12, RAGTools.retrieve to 6. Zero keeps the package
+	// default.
+	DefaultTopN int
+	// Weight is the VECTOR similarity weight (Python vector_similarity_weight).
+	Weight float64
+	// Threshold is the engine similarity floor.
+	Threshold float64
+	// ExcludeCompiled mirrors Python hybrid_search's must_not={"exists":"compile_kwd"}.
+	ExcludeCompiled bool
+	// PromoteChildren mirrors Python calling settings.retriever.retrieval_by_children
 	// after search (search.py:_normalize): child fragments are lifted to their
 	// parent chunk. In Python EVERY entry point does this — hybrid_search (L106),
 	// vector_search (L239) and bm25_search (L276) all route through _normalize, and
-	// grep_search builds on bm25_search. So ALL entry points set promoteChildren:
+	// grep_search builds on bm25_search. So ALL entry points set PromoteChildren:
 	// true (including vector/bm25/grep); only a future non-promoting path would
 	// leave it false. An empty tenant_id still skips promotion, mirroring Python
 	// _normalize.
-	promoteChildren bool
-	// logLabel / logVerb / logKeywords describe the entry point's own
+	PromoteChildren bool
+	// LogLabel / LogVerb / LogKeywords describe the entry point's own
 	// "searching" line — the LOG form, terse and grep-friendly, with the keywords
 	// suffix and no period:
 	//
@@ -579,7 +591,7 @@ type searchOpts struct {
 	//
 	// The think block gets thinkVerb through searchThinkLine instead — one sentence
 	// family for every leg, with the method named and the keyword list left out. The
-	// two sentences come from the same call (runSearch / GrepSearch), so they can
+	// two sentences come from the same call (RunSearch / GrepSearch), so they can
 	// never describe different searches.
 	//
 	// The RESULT line is the other half of a leg (reportSearchResult): every leg
@@ -592,45 +604,50 @@ type searchOpts struct {
 	// deliberate state — see the fan-out's narrow bypass —
 	// agentic_rag_graph.py:_search_one — and search_chunks takes no keywords at all,
 	// action_session.py:execute_tool — so a bare "(keywords: )" reads like a dropped
-	// argument). logKeywords also keeps grep from growing a suffix Python never
+	// argument). LogKeywords also keeps grep from growing a suffix Python never
 	// prints on that leg.
-	logLabel    string
-	logVerb     string
-	logKeywords bool
+	LogLabel    string
+	LogVerb     string
+	LogKeywords bool
 	// thinkVerb is the same leg's verb for the think block, which reports a
 	// SENTENCE: it names the method ("by meaning and keyword") because the
 	// "[Hybrid search]" prefix is a developer's label, and it is the reason the two
 	// projections differ at all. Every leg sets it explicitly — so the log side can
 	// be reworded (the hybrid and retrieve legs dropped "the knowledge base", above)
-	// without the trace moving with it; the fallback to logVerb only covers a future
+	// without the trace moving with it; the fallback to LogVerb only covers a future
 	// leg that forgets to set one, where an identical sentence beats an empty one.
 	thinkVerb string
-	// cache enables the per-request search cache (SearchCacheLoad/Store). Python
+	// Cache enables the per-request search cache (SearchCacheLoad/Store). Python
 	// keeps that cache on `tools.search_cache` and touches it ONLY inside
 	// hybrid_search (:136-141 read, :207 write); vector_search / bm25_search /
 	// grep_search / RAGTools.retrieve never consult it. Go's cache lives on the
 	// shared deps.KB, so without this gate a keyword-only leg could be served a
 	// hybrid result (different vector weight, threshold and compiled policy)
 	// and vice versa — Go's "enhanced" typing did not make it hybrid-scoped.
-	cache bool
-	// narrowLabel tags the narrowing line. Python is NOT self-consistent here:
+	Cache bool
+	// NarrowLabel tags the narrowing line. Python is NOT self-consistent here:
 	// hybrid_search passes the snake_case "hybrid_search", while
 	// vector_search / bm25_search pass their display labels "Vector search"
 	// (:248) / "BM25 search" (:288). Both forms are reproduced verbatim.
-	narrowLabel string
-	// disableVector mirrors Python passing embd_mdl=None: when set the request
+	NarrowLabel string
+	// DisableVector mirrors Python passing embd_mdl=None: when set the request
 	// carries DisableVectorLeg and the backend runs the keyword-only branch.
 	// Grep (bm25_search) always sets it; hybrid/retrieve set it from their own
 	// embedder gates (HasEmbedder / UsingEmbedding).
-	disableVector bool
-	// rankFeature opts the entry point into the question-type tag boost
+	DisableVector bool
+	// RankFeature opts the entry point into the question-type tag boost
 	// (rank_feature). Python: ONLY RAGTools.retrieve passes
-	// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668);
+	// rank_feature=label_question(question, self.kbs) (agentic_rag.py:723);
 	// search.py's three legs call retriever.retrieval WITHOUT rank_feature
 	// (:158-173 hybrid, :223-238 vector, :260-275 bm25 — grep_search delegates
 	// to bm25_search, :428). Before this gate every Go leg shipped the boost,
 	// re-ranking search_chunks/retrieve results differently from Python.
-	rankFeature bool
+	RankFeature bool
+	// Highlight asks the retriever to attach the highlighted snippet of each
+	// chunk. Python: ONLY RAGTools.retrieve passes highlight=True
+	// (agentic_rag.py:721); hybrid_search / vector_search / bm25_search all
+	// pass highlight=False (search.py:169 / :235 / :273).
+	Highlight bool
 }
 
 // searchLogLine renders the "what this leg is searching for" message, WITHOUT
@@ -665,16 +682,19 @@ func searchLogger(deps SearchDeps) *log.Logger {
 	return _LOG
 }
 
-// runSearch is the shared body of every search entry point. It is deliberately
+// RunSearch is the shared body of every search entry point. It is deliberately
 // dumb about WHICH Python function it mirrors: that is encoded by opts, supplied
 // by the calling entry-point function.
-func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts searchOpts) ([]map[string]any, []map[string]any) {
+func RunSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts SearchOpts) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
 	// Python retrieve:614-646 — an explicit argument wins, then the caller's
 	// configuration, then this package's own defaults.
 	topN := p.TopN
 	if topN <= 0 {
 		topN = deps.TopN
+	}
+	if topN <= 0 {
+		topN = opts.DefaultTopN
 	}
 	if topN <= 0 {
 		topN = DefaultTopN
@@ -732,15 +752,15 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// point — "[Hybrid search] Searching for", "[Vector search] Searching by meaning
 	// for", "[BM25 search] Searching by keyword for", "[Grep search]
 	// Keyword-first locate for" — and only the three keyword-carrying legs
-	// append the keywords (see searchOpts.logLabel / logVerb / logKeywords for which
+	// append the keywords (see SearchOpts.LogLabel / LogVerb / LogKeywords for which
 	// verbs are Python's own and which dropped "the knowledge base").
 	// The suffix is printed only when non-empty: a keyword-less leg is a
 	// deliberate state (fan-out Channel B is a narrow bypass,
 	// agentic_rag_graph.py:_search_one; search_chunks takes no keywords at all,
 	// action_session.py:execute_tool), so a bare "(keywords: )" reads like a dropped
 	// argument rather than an intentional empty.
-	searchLine := searchLogLine(opts.logVerb, p.Question)
-	if kws := strings.TrimSpace(p.Keywords); opts.logKeywords && kws != "" {
+	searchLine := searchLogLine(opts.LogVerb, p.Question)
+	if kws := strings.TrimSpace(p.Keywords); opts.LogKeywords && kws != "" {
 		searchLine += fmt.Sprintf(" (keywords: %s)", kws)
 	}
 	// A STEP, not only a log line: which leg ran and what it searched for is
@@ -750,7 +770,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// The two audiences get different sentences from this one call site. The log
 	// keeps Python's shape — label, keyword list and result line, plus Python's verb
 	// on the vector/bm25/grep legs (the hybrid and retrieve verbs deliberately dropped
-	// "the knowledge base"; see logVerb above for what a log diff can still be
+	// "the knowledge base"; see LogVerb above for what a log diff can still be
 	// compared against). The think block gets the sentence family every leg
 	// shares, which names the method inside the sentence because "[BM25 search]" is
 	// a developer's label, and leaves out the keyword list: that appears only on the
@@ -758,37 +778,42 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// a detail a reader would have to parse rather than read.
 	thinkVerb := opts.thinkVerb
 	if thinkVerb == "" {
-		thinkVerb = opts.logVerb
+		thinkVerb = opts.LogVerb
 	}
-	StepsFrom(ctx).StageLineDetail(logger, opts.logLabel,
+	StepsFrom(ctx).StageLineDetail(logger, opts.LogLabel,
 		searchThinkLine(thinkVerb, p.Question), searchLine)
 
 	// 3. Per-request dedup: an identical query+scope is retrieved at most once,
 	// so e.g. pre_search and a claim search asking the same question do not
 	// repeat the round-trip, child fetch and narrowing. Python's cache is
 	// hybrid-only — both the lookup (:136-141) and the store (:207) sit inside
-	// hybrid_search — hence opts.cache.
-	if deps.KB != nil && opts.cache {
+	// hybrid_search — hence opts.Cache.
+	if deps.KB != nil && opts.Cache {
 		if chunks, aggs, ok := deps.KB.SearchCacheLoad(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope)); ok {
-			logger.Printf("[%s] Already searched this — reusing the %d passage(s) found earlier.", opts.logLabel, len(chunks))
+			logger.Printf("[%s] Already searched this — reusing the %d passage(s) found earlier.", opts.LogLabel, len(chunks))
 			// A cache hit still hands a pool back, so it still reports one: the
 			// dedup line explains WHY nothing was retrieved, this says WHAT the leg
 			// contributed (Go-only: Python returns here silently on the result side).
-			reportSearchResult(ctx, logger, opts.logLabel, p.Question, chunks)
+			reportSearchResult(ctx, logger, opts.LogLabel, p.Question, chunks)
 			return chunks, aggs
 		}
 	}
 
 	// 4. Retrieve.
 	// rank_feature ONLY on the retrieve leg (Python RAGTools.retrieve:
-	// rank_feature=label_question(question, self.kbs), agentic_rag.py:668).
-	// search.py's hybrid/vector/bm25 legs never pass it (:158-173/:223-238/
-	// :260-275), so the other entry points leave the request's RankFeature nil.
-	// Go computes it from the KB objects via the injected Tagger; nil Tagger ⇒
-	// no boost (Python's label_question returns None).
+	// rank_feature=label_question(question, self.kbs), agentic_rag.py:723); the
+	// hybrid/vector/bm25 legs never pass the argument, which is the nil below.
 	var rankFeature map[string]float64
-	if opts.rankFeature && deps.Tagger != nil {
-		rankFeature = deps.Tagger.LabelQuestion(ctx, effectiveQuery, deps.KBs)
+	if opts.RankFeature {
+		if deps.Tagger != nil {
+			rankFeature = deps.Tagger.LabelQuestion(ctx, effectiveQuery, deps.KBs)
+		}
+		// A nil result (no Tagger, no tag vocabulary) is a value, not an
+		// omission: Python hands that None straight to retrieval(), which
+		// suppresses the default instead of re-enabling it.
+		if rankFeature == nil {
+			rankFeature = map[string]float64{}
+		}
 	}
 	// Neither of the leg's two lines is emitted here: the searching line is above
 	// and the result line at the end (reportSearchResult). Emitting either one here
@@ -808,27 +833,28 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 			TopN:                  topN,
 			TopK:                  intOrDef(deps.TopK, DefaultTopK),
 			RerankCandidatesCount: max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
-			SimilarityThreshold:   &opts.threshold,
+			SimilarityThreshold:   &opts.Threshold,
 			// VectorSimilarityWeight carries the VECTOR weight verbatim (Python
 			// vector_similarity_weight); the canvas adapter's keyword-weight
 			// inversion does NOT apply to this field. DisableVectorLeg mirrors
 			// Python passing embd_mdl=None (no dense leg at all).
-			VectorSimilarityWeight: &opts.weight,
-			DisableVectorLeg:       opts.disableVector,
+			VectorSimilarityWeight: &opts.Weight,
+			DisableVectorLeg:       opts.DisableVector,
 			TenantID:               deps.TenantID,
 			MetaDataFilter:         deps.MetaDataFilter,
 			RankFeature:            rankFeature,
-			ExcludeCompiled:        opts.excludeCompiled,
+			ExcludeCompiled:        opts.ExcludeCompiled,
+			Highlight:              opts.Highlight,
 		})
 	}
 	chunks, err := retrieve()
 	if err != nil {
 		// Go-only line: Python lets the retriever's exception propagate untagged.
-		logger.Printf("[%s] retrieval failed: %v — retrying once.", opts.logLabel, err)
+		logger.Printf("[%s] retrieval failed: %v — retrying once.", opts.LogLabel, err)
 		chunks, err = retrieve()
 	}
 	if err != nil {
-		logger.Printf("[%s] retrieval failed twice: %v", opts.logLabel, err)
+		logger.Printf("[%s] retrieval failed twice: %v", opts.LogLabel, err)
 		return nil, nil
 	}
 
@@ -836,17 +862,17 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// chunk right after retrieval through _normalize (, also reached
 	// by vector_search L239 and bm25_search L276; grep_search rides on bm25_search;
 	// RAGTools.retrieve does the same at). ALL entry points do
-	// this, so every runSearch caller sets promoteChildren: true. The promotion
-	// lives here (gated by opts.promoteChildren) rather than in the shared Backend
+	// this, so every RunSearch caller sets PromoteChildren: true. The promotion
+	// lives here (gated by opts.PromoteChildren) rather than in the shared Backend
 	// so a future non-promoting path can opt out; an empty tenant_id skips it,
 	// mirroring Python _normalize.
-	if opts.promoteChildren {
+	if opts.PromoteChildren {
 		de := deps.DocEngine
 		if de == nil {
 			de = engine.Get()
 		}
 		if de != nil && len(chunks) > 0 {
-			chunks = nlp.RetrievalByChildren(chunks, []string{deps.TenantID}, de, ctx)
+			chunks = nlp.RetrievalByChildren(chunks, retrievalTenantIDs(deps), de, ctx)
 		}
 	}
 
@@ -863,21 +889,21 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	}
 
 	// 6. Narrow-or-keep (chunks only; doc_aggs stays as retrieved).
-	chunks = NarrowOrKeep(ctx, chunks, p.Keywords, opts.narrowLabel, logger)
+	chunks = NarrowOrKeep(ctx, chunks, p.Keywords, opts.NarrowLabel, logger)
 
 	// 7. Compiled expansion.
 	if p.UseCompiled && len(chunks) > 0 && deps.Expand != nil {
-		logger.Printf("[%s] Compiled expansion enabled — enriching with page_index/tree/KG navigation.", opts.logLabel)
+		logger.Printf("[%s] Compiled expansion enabled — enriching with page_index/tree/KG navigation.", opts.LogLabel)
 		if err := deps.Expand.Expand(ctx, deps.KB, p.Question, p.Keywords, docScope); err != nil {
-			logger.Printf("[%s] compiled expansion failed: %v", opts.logLabel, err)
+			logger.Printf("[%s] compiled expansion failed: %v", opts.LogLabel, err)
 		}
 	}
 
 	// What the leg FOUND, reported once, on every path (see reportSearchResult).
-	reportSearchResult(ctx, logger, opts.logLabel, p.Question, chunks)
+	reportSearchResult(ctx, logger, opts.LogLabel, p.Question, chunks)
 
 	// 8. Cache the result — hybrid leg only, mirroring Python search.py:hybrid_search.
-	if deps.KB != nil && opts.cache {
+	if deps.KB != nil && opts.Cache {
 		deps.KB.SearchCacheStore(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope), chunks, aggs)
 	}
 	return chunks, aggs
@@ -887,24 +913,24 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 // gated on an embedder being configured (Python: vector_weight = _setting(...)
 // if embd_mdl else 0); default weight 0.3. Compiled rows are excluded.
 func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
-	return runSearch(ctx, deps, p, searchOpts{
-		weight:          resolveVectorWeight(deps, ChannelHybrid),
-		threshold:       floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
-		excludeCompiled: true,
-		promoteChildren: true,
+	return RunSearch(ctx, deps, p, SearchOpts{
+		Weight:          ResolveVectorWeight(deps, ChannelHybrid),
+		Threshold:       FloatPtrOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
+		ExcludeCompiled: true,
+		PromoteChildren: true,
 		// Python hybrid_search passes the real embd_mdl even at weight 0; the
 		// dense leg is dropped only when no embedder is configured
 		// (search.py:143-145 `vector_weight = ... if embd_mdl else 0`).
-		disableVector: !deps.HasEmbedder,
-		logLabel:      "Hybrid search",
-		logVerb:       "Searching for",
-		logKeywords:   true,
+		DisableVector: !deps.HasEmbedder,
+		LogLabel:      "Hybrid search",
+		LogVerb:       "Searching for",
+		LogKeywords:   true,
 		thinkVerb:     "Searching by meaning and keyword for",
-		cache:         true, // Python's search_cache is read/written here only (:136/:207)
+		Cache:         true, // Python's search_cache is read/written here only (:136/:207)
 		// Python passes the SNAKE_CASE tag to _narrow_or_keep on this leg
 		// (search.py:hybrid_search) although its own lines say "Hybrid search" — the
 		// inconsistency is Python's and is reproduced verbatim.
-		narrowLabel: "hybrid_search",
+		NarrowLabel: "hybrid_search",
 	})
 }
 
@@ -916,16 +942,16 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 	if !deps.HasEmbedder {
 		return nil, nil
 	}
-	return runSearch(ctx, deps, p, searchOpts{
-		weight:          1.0,
-		threshold:       VectorSearchDefaultSimilarityThreshold,
-		excludeCompiled: true,
-		promoteChildren: true,
-		logLabel:        "Vector search",
-		logVerb:         "Searching by meaning for",
-		logKeywords:     true,
+	return RunSearch(ctx, deps, p, SearchOpts{
+		Weight:          1.0,
+		Threshold:       VectorSearchDefaultSimilarityThreshold,
+		ExcludeCompiled: true,
+		PromoteChildren: true,
+		LogLabel:        "Vector search",
+		LogVerb:         "Searching by meaning for",
+		LogKeywords:     true,
 		thinkVerb:       "Searching by meaning for",
-		narrowLabel:     "Vector search",
+		NarrowLabel:     "Vector search",
 	})
 }
 
@@ -933,19 +959,19 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 // vector weight is unconditionally 0, the similarity floor is 0.0, and compiled
 // rows are excluded.
 func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
-	return runSearch(ctx, deps, p, searchOpts{
-		weight:          0,
-		threshold:       BM25SearchDefaultSimilarityThreshold,
-		excludeCompiled: true,
-		promoteChildren: true,
+	return RunSearch(ctx, deps, p, SearchOpts{
+		Weight:          0,
+		Threshold:       BM25SearchDefaultSimilarityThreshold,
+		ExcludeCompiled: true,
+		PromoteChildren: true,
 		// Python bm25_search passes embd_mdl=None (search.py:260-275): keyword
 		// only, NO dense leg at all — not even a weight-0 one.
-		disableVector: true,
-		logLabel:      "BM25 search",
-		logVerb:       "Searching by keyword for",
-		logKeywords:   true,
+		DisableVector: true,
+		LogLabel:      "BM25 search",
+		LogVerb:       "Searching by keyword for",
+		LogKeywords:   true,
 		thinkVerb:     "Searching by keyword for",
-		narrowLabel:   "BM25 search",
+		NarrowLabel:   "BM25 search",
 	})
 }
 
@@ -1199,7 +1225,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// Python logs the locate line BEFORE extracting the terms and before the
 	// empty-query bail-out (search.py:grep_search).
 	//
-	// Same split as runSearch: the log keeps Python's phrasing ("Keyword-first
+	// Same split as RunSearch: the log keeps Python's phrasing ("Keyword-first
 	// locate for", search.py:418) and the think block says what the leg does — find
 	// these exact words — in the family the other legs use. "Keyword-first locate"
 	// was a noun phrase naming the implementation, not an action a reader could read.
@@ -1253,7 +1279,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// A long question buries its proper nouns under stopwords; without the hint
 	// the noun chunk never enters the candidate pool and grep has nothing to
 	// locate. It is a SOFT boost — the pool still spans the corpus. Delegating
-	// (rather than calling runSearch) also reproduces Python's log sequence:
+	// (rather than calling RunSearch) also reproduces Python's log sequence:
 	// bm25_search logs "[BM25 search] Searching by keyword for …" and narrows
 	// under that same tag (:252 / :288), then GrepSearch logs its own two lines.
 	hint := strings.TrimSpace(p.Keywords)
@@ -1349,33 +1375,6 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	logger.Printf("[Grep search] narrowed %d->%d chunk(s), %.1fK chars.", len(chunks), len(out), float64(chars)/1000.0)
 	report(out)
 	return out, docAggs
-}
-
-// RetrieveSearch mirrors Python RAGTools.retrieve, the
-// low/naive direct pass. Unlike HybridSearch it honours UsingEmbedding and does
-// NOT exclude compiled rows (Python's retrieve has no must_not compile_kwd).
-func RetrieveSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
-	return runSearch(ctx, deps, p, searchOpts{
-		weight:          resolveVectorWeight(deps, ChannelRetrieve),
-		threshold:       floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
-		excludeCompiled: false,
-		promoteChildren: true,
-		// Python RAGTools.retrieve: embd_mdl = self.embed_mdl if using_embedding
-		// else None (agentic_rag.py:retrieve) — no dense leg without the flag.
-		disableVector: !deps.UsingEmbedding,
-		// Go-only identity: Python's L1 RAGTools.retrieve
-		// logs nothing of its own, so there is no Python string to mirror. The
-		// tag stays human-readable and the extra lines stay on, because this is
-		// the only trace the low-mode direct pass leaves.
-		logLabel:    "Retrieve",
-		logVerb:     "Searching for",
-		logKeywords: true,
-		thinkVerb:   "Searching for",
-		narrowLabel: "retrieve",
-		// Python RAGTools.retrieve is the ONLY entry point that passes
-		// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668).
-		rankFeature: true,
-	})
 }
 
 // webSearchMaxChunks is the hard ceiling on admitted web passages per call:
@@ -1705,6 +1704,35 @@ func scopedDocIDs(sessionScope, scope []string) []string {
 	return out
 }
 
+// retrievalTenantIDs is the tenant scope a retrieval and its child promotion run
+// over: every tenant the bound datasets live in, which is Python's
+// `self.tenant_ids` (agentic_rag.py:711 for the search, :729 for
+// retrieval_by_children). SearchDeps.TenantID is the CALLING tenant and stays
+// the index/scope default; using it alone would skip the child promotion of a
+// dataset bound from another tenant.
+func retrievalTenantIDs(deps SearchDeps) []string {
+	seen := make(map[string]struct{}, len(deps.KBs))
+	var out []string
+	for _, kb := range deps.KBs {
+		if kb == nil || kb.TenantID == "" {
+			continue
+		}
+		if _, ok := seen[kb.TenantID]; ok {
+			continue
+		}
+		seen[kb.TenantID] = struct{}{}
+		out = append(out, kb.TenantID)
+	}
+	if len(out) == 0 && deps.TenantID != "" {
+		return []string{deps.TenantID}
+	}
+	return out
+}
+
+// noMatchDocIDSentinel is service.NoMatchDocIDSentinel ("the metadata filter
+// matched no document"), repeated because harness cannot import internal/service.
+const noMatchDocIDSentinel = "-999"
+
 // resolveDocScope mirrors Python retrieve:620-635 — apply the session doc_scope
 // ceiling, then keep only the requested document ids that actually belong to the
 // session's datasets.
@@ -1731,6 +1759,15 @@ func scopedDocIDs(sessionScope, scope []string) []string {
 // empty DocScope as "match nothing".
 func resolveDocScope(ctx context.Context, deps SearchDeps, scope, kbIDs []string, logger *log.Logger) []string {
 	scope = scopedDocIDs(deps.DocScope, scope)
+	// Python retrieve:676 short-circuits the "the metadata filter matched no
+	// document" sentinel to an empty result instead of letting it travel as a
+	// document id, which downstream would read as "one unknown id" and — with no
+	// session base scope — turn into UNFILTERED retrieval.
+	// service.NoMatchDocIDSentinel carries the same value; it is repeated here
+	// because this package cannot import internal/service.
+	if len(scope) == 1 && scope[0] == noMatchDocIDSentinel {
+		return []string{}
+	}
 	if len(scope) == 0 && len(deps.DocScope) > 0 {
 		// The session ceiling removed every requested id. Python's scoped_doc_ids
 		// yields an empty list here, which its downstream `if doc_scope:` reads as

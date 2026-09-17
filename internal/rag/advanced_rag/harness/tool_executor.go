@@ -1708,8 +1708,8 @@ func PublishReferences(ctx context.Context, kb *Kbinfos) {
 // settings.retriever: it runs the backend search and returns the normalised
 // chunks. Child-fragment promotion (retrieval_by_children) is NOT done here —
 // it is entry-point specific (only hybrid_search / RAGTools.retrieve do it in
-// Python, search.py:_normalize / agentic_rag.py:RAGTools.retrieve), so it lives in runSearch, gated
-// by searchOpts.promoteChildren, and this Backend stays caller-agnostic.
+// Python, search.py:_normalize / agentic_rag.py:RAGTools.retrieve), so it lives in RunSearch, gated
+// by SearchOpts.PromoteChildren, and this Backend stays caller-agnostic.
 type RuntimeRetriever struct{}
 
 func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([]map[string]any, error) {
@@ -1729,6 +1729,7 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		DisableVectorLeg:       req.DisableVectorLeg,
 		TenantID:               req.TenantID,
+		Highlight:              req.Highlight,
 		RankFeature:            req.RankFeature,
 		// ExcludeCompiled maps Python hybrid_search's
 		// must_not={"exists":"compile_kwd"} onto the runtime request's
@@ -1747,7 +1748,7 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 func chunksToMaps(chunks []runtime.RetrievalChunk) []map[string]any {
 	out := make([]map[string]any, 0, len(chunks))
 	for _, c := range chunks {
-		out = append(out, map[string]any{
+		chunk := map[string]any{
 			"chunk_id":          c.ID,
 			"content":           c.Content,
 			"doc_id":            c.DocumentID,
@@ -1764,7 +1765,15 @@ func chunksToMaps(chunks []runtime.RetrievalChunk) []map[string]any {
 			"score":             c.Score,
 			"term_similarity":   c.TermSimilarity,
 			"vector_similarity": c.VectorSimilarity,
-		})
+		}
+		// Only the leg that asked for a highlight carries the key, so a chunk
+		// from a search.py leg looks exactly like Python's (no "highlight" key
+		// rather than an empty one). Narrowing drops the key anyway, because the
+		// spans stop applying once the text is cut (see grep_sed_narrow.go).
+		if c.Highlight != "" {
+			chunk["highlight"] = c.Highlight
+		}
+		out = append(out, chunk)
 	}
 	return out
 }

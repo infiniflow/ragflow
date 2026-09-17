@@ -78,9 +78,15 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 		RetrievalFrom:            req.RetrievalFrom,
 		DocScope:                 req.DocScope,
 		TenantID:                 req.TenantID,
+		// Highlight is the per-chunk highlighted snippet: Python asks for it
+		// ONLY from RAGTools.retrieve (agentic_rag.py:721), so it rides along on
+		// the same request and stays off for the search.py legs.
+		Highlight: req.Highlight,
 		// rank_feature (Python retrieve: rank_feature=label_question(question,
-		// self.kbs)) — forwarded from the RAGTools-computed value so the agentic
-		// tool stays authoritative; the adapter falls back to its own resolution.
+		// self.kbs)) — forwarded from the RAGTools-computed value. nil stays nil
+		// (the harness legs omit the argument in Python too, keeping the nlp
+		// layer's pagerank default); an empty non-nil map is an explicit "no tag
+		// feature" (Python's None) and must not re-enable it.
 		RankFeature: rankFeatureOrNil(req.RankFeature),
 		// OnlyOriginalText restricts retrieval to ordinary document chunks (no
 		// compile_kwd) — Python hybrid_search's must_not={"exists":"compile_kwd"}.
@@ -105,16 +111,18 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 			TermSimilarity:   c.TermSimilarity,
 			VectorSimilarity: c.VectorSimilarity,
 			MomID:            c.MomID,
+			Highlight:        c.Highlight,
 		})
 	}
 	return out, nil
 }
 
 // rankFeatureOrNil converts a map-valued rank feature into the pointer form the
-// tool request expects, returning nil when empty so a missing feature is
-// distinguished from an empty one (Python passes None for "no rank feature").
+// tool request expects. Only an ABSENT map becomes nil: an empty non-nil map is
+// an explicit "no tag feature", and the nlp layer applies its default
+// {PAGERANK_FLD: 10} to an omitted argument only (rag/nlp/search.py:722).
 func rankFeatureOrNil(m map[string]float64) *map[string]float64 {
-	if len(m) == 0 {
+	if m == nil {
 		return nil
 	}
 	return &m
