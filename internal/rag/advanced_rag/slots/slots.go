@@ -1,13 +1,12 @@
 // Package slots is the VALUE ALGEBRA of a slot table: what a candidate value IS,
 // how two values MERGE, and how a table's count is DERIVED.
 //
-// It exists because the alternative was measured to fail. When a candidate is free
-// text, the structure is lost at the boundary — the model writes "约 17-19 人" — and
-// every consumer downstream has to GUESS it back: is this a count? a list? are these
-// pieces names? Each guess is a rule, the rules interact, and measured (2026-09-16,
-// 三国/关羽) the result was a count slot holding "约、人" (the digits rejected as "not
-// members", the qualifiers accepted as "members") while fifteen real names sat in
-// another slot and the answer reported ten.
+// It exists because the alternative fails. When a candidate is free text, the structure is
+// lost at the boundary — a count arrives as a sentence — and every consumer downstream has
+// to GUESS it back: is this a count? a list? are these pieces names? Each guess is a rule,
+// the rules interact, and the result is a count slot holding the words around the number
+// (digits rejected as "not members", qualifiers accepted as "members") while the real names
+// sit in another slot.
 //
 // So the structure travels WITH the value: a members list carries its items (each
 // with the chunk that proves it), a count carries a number, a range carries two, and
@@ -47,9 +46,8 @@ const (
 	KindMembers
 	// KindCount is a claimed number ("13").
 	KindCount
-	// KindRange is a claimed interval ("约 17-19"), kept as two numbers rather than as
-	// a string that someone later tries to parse (measured: "17-19" parsed
-	// digit-by-digit is 1719).
+	// KindRange is a claimed interval ("about 17-19"), kept as two numbers rather than as a
+	// string that someone later tries to parse: parsed digit-by-digit it is 1719.
 	KindRange
 )
 

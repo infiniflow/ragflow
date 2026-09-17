@@ -135,18 +135,16 @@ const GrepOutTotalChars = 8000
 // length>=2, deduped (order-preserving) and capped — and extends it to CJK.
 //
 // An ALNUM-ONLY tokenizer yields no term at all for a Chinese query, and the grep leg's
-// own guard returns whole chunks instead of located windows. Measured on a Chinese
-// question: the
-// "Keyword-first locate" line was logged, a narrowed line never was, and every
-// hit was a ~1200-char chunk. That is expensive (a name lives in one clause of
-// those 1200 chars) and it is what made an enumeration unreadable to the model,
+// own guard returns whole chunks instead of located windows: the locate line is logged, a
+// narrowed line never is, and every hit is a whole chunk. That is expensive (a name lives
+// in one clause of a chunk) and it is what makes an enumeration unreadable to the model,
 // which cannot see WHICH clause a name sits in.
 //
 // The derivation adds CJK support, with no regex:
 //
-//   - an ALTERNATION is the caller's own term list — "颜良|文丑|荀正" is how the
-//     count protocol tells a session to batch its probes — so it is split on "|"
-//     and its pieces are kept at any length ("关羽|斩": the predicate is a term);
+//   - an ALTERNATION is the caller's own term list — it is how the count protocol
+//     tells a session to batch its probes — so it is split on "|" and its pieces are
+//     kept at any length (a predicate is a term too);
 //   - otherwise the query is split on whitespace and punctuation, Latin tokens
 //     keep the two-character floor, and CJK tokens keep a two-CJK-rune
 //     floor (a lone Chinese character is a particle, not a term);
@@ -161,8 +159,8 @@ func GrepTermsFromQuery(query string) []string {
 // probeItemsOf returns the terms a call proposed AS ITEMS — a string the model
 // wrote to ask about one individual.
 //
-// Two shapes qualify: the pieces of a batch (`关羽 斩 华雄 颜良`), and a query that
-// IS one word (`韩福`). Everything else is prose the model wrote to ask a
+// Two shapes qualify: the pieces of a whitespace-separated batch, and a query that
+// IS one word. Everything else is prose the model wrote to ask a
 // question, whose words belong to the question rather than to a member list; and
 // the two-rune windows an unbroken clause decomposes into are our guesses, not the
 // caller's words at all (see GrepWordsFromQuery).
@@ -170,9 +168,8 @@ func GrepTermsFromQuery(query string) []string {
 // The distinction matters at the reach ledger. The ledger is read back as the
 // session's to-do list — "you probed this, it came back with a passage, it is in
 // no slot" — and a to-do list built from a question's words tells the model
-// nothing. Measured (2026-09-15): that line read `FOUND BUT NOT RECORDED=三国、
-// 演义、关羽、五关…+15` in a run whose sessions were missing six members, none of
-// which was on it, while the window fragments had cost a retrieval each.
+// nothing: its entries are the question's own words, none of them the members the
+// sessions are missing, while the window fragments cost a retrieval each.
 func probeItemsOf(queries []string) map[string]bool {
 	out := make(map[string]bool)
 	for _, q := range queries {
@@ -201,10 +198,8 @@ func probeItemsOf(queries []string) map[string]bool {
 // The windows exist to LOCATE a term inside an unbroken CJK clause — the thing
 // grep is for, and a failed lookup there costs nothing. As terms to SEARCH FOR,
 // they are our guesses rather than the caller's words, and each one would spend a
-// retrieval of its own. Measured (2026-09-15): a pass built from windows probed
-// 羽斩 / 杀的 / 的有 / 领名 / 单温 and reported 14 of 20 probes "absent" — fourteen
-// retrievals spent on fragments nobody asked about, while every name the question
-// was missing stayed out of the list entirely.
+// retrieval of its own — retrievals spent on fragments nobody asked about, while the
+// names the question is missing stay out of the list entirely.
 //
 // So a caller that READS these (the named-term seat pass) uses the words; a
 // caller that LOCATES with them uses the terms.

@@ -90,10 +90,9 @@ func RenderSlotDraft(slotTable harness.State, collectedAnswer string, slotEviden
 // verifies a candidate against the passages that produced it, so it carries the
 // machine fields that make that verification possible — the candidate strength,
 // the terminal type, the evidence ids. Handing those to the answer model is a
-// different act with a different failure mode, and it was measured: composing
-// with the draft as "Research Summary (primary evidence)" produced an answer that
-// quoted the bookkeeping verbatim ("slot 1 [entity] … (strength=0.90)
-// [terminal=state, evidence_ids=[…]]").
+// different act with a different failure mode: composing with the draft as
+// "Research Summary (primary evidence)" produces an answer that quotes the
+// bookkeeping verbatim, machine fields and all.
 //
 // So the answer sees the FACTS the research settled — which slot holds what —
 // with no strength, no evidence ids, no clue tails: the evidence ids are already
@@ -107,14 +106,11 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	// demotion of the session's own prose — is about reconciling a list with a
 	// count, and a single-value question has neither.
 	//
-	// Measured (2026-09-15, FRAMES): rendered ungated, the enumerated line appeared
-	// in 21 of 20 questions' records and the prose demotion in 9, on questions whose
-	// answer is one date or one number. One of them is worth quoting because it is
-	// the shape of the mistake: a "how much shorter is A than B" record carried
-	// `- slot 1 [number]: 133 feet` beside `- enumerated members across the slots
-	// above: 16`, where the 16 was `Grace's、High、Falls、Colonial、Creek` — one
-	// waterfall's name, cut at its separators by whoever wrote it into the slot.
-	// The session's draft answer was then labelled UNVERIFIED and demoted below it.
+	// Rendered ungated, the enumerated line and the prose demotion appear on questions
+	// whose answer is one date or one number, where a "count" computed from a single
+	// value's text is meaningless: one name cut at its separators reads as several
+	// members, and the session's own draft answer is then demoted below a line that does
+	// not apply to it.
 	// The record's SET handling follows the PLANNER'S DECLARATION — count / set / list,
 	// the shape half of harness.Coverage — exactly as it did before the enumeration was
 	// refactored: a table the planner typed as a set states its size and demotes a
@@ -159,27 +155,21 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	// the record can stand behind.
 	if n := enumeratedSize(slotTable); enumerating && n > 0 {
 		lines = append(lines, fmt.Sprintf("- enumerated members across the slots above: %d", n))
-		// A set answer is only as good as what it can point at, member by member.
-		// Measured (2026-09-16): handed a list of names and no per-member evidence,
-		// an answer reported "21 listed, four counted but not listed" and cited ONE
-		// evidence range for all of them. The citation contract already forbids
-		// ranges; this states it where a set answer is assembled, together with the
-		// rule that keeps a count honest — a member nobody can point at a passage is
-		// not counted.
+		// A set answer is only as good as what it can point at, member by member. Handed a
+		// list of names and no per-member evidence, an answer counts members it cannot cite
+		// and cites one range for all of them. The citation contract already forbids ranges;
+		// this states it where a set answer is assembled, together with the rule that keeps a
+		// count honest — a member nobody can point at a passage is not counted.
 		lines = append(lines, "State the count and the members TOGETHER: every member you list carries the words behind it (quoted above, or its own [ID:n]) — never one range for the list — and a member you cannot point at a passage for is left out of both the list and the count.")
-		// A count larger than the members it counts is a claim about members that
-		// are NOT in the record, and the answer has to be told that rather than left
-		// to reconcile it. Measured (2026-09-15): a record whose count slot read 19
-		// while its slots enumerated 12 produced an answer of nineteen people, which
-		// then explained the gap as "seven more whose details the material does not
-		// list" — seven members that never existed.
+		// A count larger than the members it counts is a claim about members that are NOT in
+		// the record, and the answer has to be told that rather than left to reconcile it:
+		// left alone it explains the gap as "more members whose details the material does not
+		// list" — members that never existed.
 		//
-		// The note STATES the disagreement; it does not order which number to take.
-		// An order was tried and reverted: measured (2026-09-16, 三国/关羽) a record
-		// whose enumerated number had been computed over the wrong slots said "take
-		// the number from the enumerated members", and the answer took it — nine, for
-		// a question whose sessions had enumerated fourteen. A count can be an
-		// over-claim and a list can be incomplete; only the passages decide between
+		// The note STATES the disagreement; it does not order which number to take. An order
+		// was tried and reverted: told to take the number from the enumerated members, the
+		// answer took it even when that number had been computed over the wrong slots. A count
+		// can be an over-claim and a list can be incomplete; only the passages decide between
 		// them, and the answer is the stage that reads them.
 		for _, v := range slotTable.State {
 			// A DECLARED number (slots.KindCount / KindRange) compared with the members
@@ -194,13 +184,11 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	}
 	// A session's own draft answer goes LAST and is labelled for what it is.
 	//
-	// It used to lead the record, and the answer copied it: measured twice
-	// (2026-09-15, 三国演义/关羽) — a record whose slots enumerated seventeen
-	// members produced a fifteen-member answer, and a record enumerating fourteen
-	// produced a ten-member answer, in both cases exactly the number written in the
-	// session's own prose. The prose is one session's recollection, written before
-	// the other sessions' findings were merged into the table above; it is a claim
-	// to reconcile with the members, not the record.
+	// It used to lead the record, and the answer copied it: whatever number a session wrote
+	// in its own prose became the number the answer reported, even when the slots above
+	// enumerated a different one. The prose is one session's recollection, written before the
+	// other sessions' findings were merged into the table above; it is a claim to reconcile
+	// with the members, not the record.
 	//
 	// On a VALUE record there are no members to reconcile against — the prose is the
 	// only candidate answer the record has, so it leads the record instead (see the
@@ -211,11 +199,10 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 		// The draft is not a member LIST — copying its prose is how a fifteen-member answer
 		// came out of a seventeen-member record — but the PASSAGES it quotes are evidence
 		// like any other, and a name those passages attribute to the actor is a member even
-		// when no slot above lists it. Measured (2026-09-16, 三国/关羽, two runs of one
-		// question): one record enumerated 17 members and answered 17; another enumerated 10
-		// while its own draft carried the original text for four more (管亥 / 荀正 / 车胄 /
-		// 杨龄), and the answer — told that "the members stand" — dropped all four. The
-		// evidence was in hand; the rule threw it away. So the draft is demoted as a SOURCE
+		// even when no slot above lists it. A record can enumerate far fewer members than its
+		// own draft quotes the text for, and an answer told that "the members stand" then drops
+		// every one of them. The evidence was in hand; the rule threw it away. So the draft is
+		// demoted as a SOURCE
 		// of members and promoted as evidence: its quotations are the arbiter, and neither
 		// the slots nor the draft decides on its own.
 		lines = append(lines, "One session's own draft answer (UNVERIFIED — written before the other sessions were merged. Its PROSE is not a member list: do not copy its count or its wording. Its QUOTATIONS are evidence like any other: a name those passages attribute to the actor is a member even when no slot above lists it, and a name whose passage attributes the deed to someone else is not. Reconcile the draft with the slots — with the quotations as the arbiter, not either list — and include every member the evidence supports): "+collectedAnswer)
@@ -609,11 +596,9 @@ func PrefillSlotsFromEvidence(slotTable *harness.State, kb *harness.Kbinfos) int
 // Whether a member the answer missed was ever IN FRONT of a session is otherwise unknowable, and
 // that difference decides which fault to fix: a name quoted inside a window the sessions read and
 // did not write is a WRITE-BACK fault (the record, the last node), while a name the enumeration
-// never showed is a COVERAGE fault (the operand recall, the window budget). Measured (2026-09-16,
-// 三国/关羽): runs of one question with the same code answered 18 / 16 / 15 / 12 members — the same
-// eleven names every time, plus a different handful of the other eight (程远志 / 管亥 / 车胄 / 杨龄 /
-// 夏侯存 / 成何 / 庞德 / 翟元 / 荀正) — and no line in any of those logs could say whether the
-// missing ones had been shown at all. Every window change made from those logs was therefore a
+// never showed is a COVERAGE fault (the operand recall, the window budget). Without the quotes a
+// log cannot say whether a missing member was ever shown at all, and the same code answers very
+// different member counts on one question, so every window change made from such a log is a
 // guess, and two of them were wrong.
 func logCoverageWindows(set harness.CoverageSet) {
 	for _, w := range set.Windows {
@@ -660,12 +645,11 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 	// A filled table is not a finished round for a question whose answer slot is
 	// DERIVED: a count computed from the members it found is filled by
 	// construction, however few members that is, so `unresolved == 0` silently
-	// cancelled rounds the routing had started precisely because the review named
-	// gaps. Measured (fixrecall2, 2026-09-15): round 2 rewrote the question into
-	// the right chapter-level queries, prefetched their evidence, logged "all slots
-	// filled; no session to run", and spent its budget with a draft byte-identical
-	// to round 1's — the passages it had just admitted were never read into the
-	// record, which is the step a session exists for.
+	// cancelled rounds the routing had started precisely because the review named gaps: a
+	// rewrite round prefetches its evidence, logs "all slots filled; no session to run", and
+	// spends its budget with a draft byte-identical to the previous round's — the passages it
+	// had just admitted were never read into the record, which is the step a session exists
+	// for.
 	type direction struct {
 		slotID int
 		text   string
@@ -727,10 +711,10 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 	// The direction's SHAPE is only known here, after the table was built — and the
 	// round's own context was fixed before that, by a caller that could not know it.
 	// A session therefore cannot ride this round's clock, or the enumeration it is
-	// midway through is cut before it can patch: measured (2026-09-16, 三国/关羽) the
-	// pass timeout cancelled a session at the deadline one millisecond before its
-	// patch, and the member it had already reached (管亥, three passages, admitted to
-	// the shared pool by the session's own batch) died with it. So an enumeration pass
+	// midway through is cut before it can patch: the pass timeout can cancel a session at the
+	// deadline just before its patch, and the member it had already reached — its passages
+	// admitted to the shared pool by the session's own batch — dies with it. So an
+	// enumeration pass
 	// hangs its sessions off the PARENT context with the shape's own clock
 	// (harness.SessionWallS), and buys the question the one-shot budget extension
 	// that lets the NEXT round start and pick up whatever this one could not record.
@@ -766,17 +750,14 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 
 	// The ENUMERATION runs HERE — in code, before any session starts.
 	//
-	// The direction's own act words used to be rendered into the seed as a list of queries
-	// to make, and the measurement is why that is not enough: measured (2026-09-16,
-	// 三国/关羽) a round declared ten act words with several aliases each (2175 characters of
-	// patterns, in the seed of every session) and not one session ran a single one of them —
-	// the run's query log holds zero `.*` queries and the sessions improvised space-separated
-	// word lists instead (`关羽 斩华雄 温酒`, `关公 砍死 斩 杀`), then re-probed the same names by
-	// hand in the next round. A list of queries in a prompt is advice; the completeness of an
-	// enumeration cannot rest on advice. So the runtime asks the corpus ITSELF — one recall per
-	// operand, the windows where the deed is stated (harness.EnumerateCoverage) — admits them
-	// to the pool, and seeds the sessions with what came back: the session's job becomes
-	// reading evidence rather than guessing names.
+	// The direction's own act words used to be rendered into the seed as a list of queries to
+	// make, and that is not enough: a list of queries in a prompt is advice, and advice may
+	// simply not be taken — the sessions improvise their own word lists instead and re-probe
+	// the same names by hand in the next round. The completeness of an enumeration cannot
+	// rest on advice. So the runtime asks the corpus ITSELF — one recall per operand, the
+	// windows where the deed is stated (harness.EnumerateCoverage) — admits them to the pool,
+	// and seeds the sessions with what came back: the session's job becomes reading evidence
+	// rather than guessing names.
 	//
 	// Run once per QUESTION, not once per round: the windows stay in the pool under the same
 	// ids and the set is kept (Kbinfos.CoverageSet), so the last node resolves the same
@@ -786,9 +767,8 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 	case !cov.Ok():
 		// A table of counts and dates declares act words too (the planner is told to for "a
 		// count of things someone DID"), and no name an enumeration could return changes a
-		// count of events: measured (2026-09-16, FRAMES) two such questions carried a
-		// 100-passage reading list into sessions 8 passages a turn, together ~18% of the
-		// run's tokens.
+		// count of events: running it there only carries a reading list into sessions that
+		// cannot use it.
 		if len(cov.Acts) > 0 {
 			_LOG.Printf("[SlotResearch] %d act word(s) declared but this table is not an ENUMERATION (it declared no count/set/list slot, or no NAME-carrying slot) — not run: a value question pays nothing for a set's bookkeeping.", len(cov.Acts))
 		}
@@ -936,10 +916,9 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 		})
 	}
 
-	// One set, one answer: a table can hold the members in one slot and the count
-	// in another, written by different sessions, with nothing keeping them in step
-	// (measured 2026-09-15: count slot read 10 while the sessions had enumerated
-	// twelve). Raised here, before the draft the answer is written from.
+	// One set, one answer: a table can hold the members in one slot and the count in
+	// another, written by different sessions, with nothing keeping them in step. Raised
+	// here, before the draft the answer is written from.
 	if raised := syncCountSlots(&slotTable); len(raised) > 0 {
 		_LOG.Printf("[SlotResearch] count slot(s) %v set to the enumerated members' size", raised)
 	}
@@ -1026,9 +1005,9 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			merged = append(merged, v)
 			continue
 		}
-		// A slot holding a SET merges by UNION; a slot holding one VALUE is still
-		// settled by strength (see slots.Union for why, and for the measured run
-		// where a count outvoted the members it was counting).
+		// A slot holding a SET merges by UNION; a slot holding one VALUE is still settled by
+		// strength (see slots.Union for why, and for the case where a count outvoted the
+		// members it was counting).
 		//
 		// The union is over TYPED values: members union by name, a membership claim
 		// beats a number, two numbers keep the larger. Text is not the union's
@@ -1066,8 +1045,8 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			// to leave no trace at all: not in the table, not in the draft, not in the
 			// record. Two sessions enumerating the same question from different angles
 			// therefore produced whichever LIST the model happened to call stronger,
-			// and the other list was silently gone (measured: runs of the same question
-			// returning 11 / 13 / 15 members, with no slot holding the complete list).
+			// and the other list was silently gone: runs of the same question return different
+			// member counts, with no slot holding the complete list.
 			//
 			// The losing claim is kept in the slot's Alternates field —
 			// the one field MergeSlotPatch unions, never replaces. The framework does not decide
@@ -1098,11 +1077,10 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			Value:             value,
 			// The DECLARATION travels with the slot. Terms/Subject are what the
 			// enumeration is built from (harness.CoverageOf), and rebuilding the slot
-			// without them is why one run's second round had no enumeration at all:
-			// measured (2026-09-16, 三国/关羽) round 1's seeds carried 6325 characters
-			// (method + the enumerated windows) and round 2's carried 4150 (method only),
-			// so the recovery round — the one the routing opened because the record was
-			// still short — ran with the enumeration switched off.
+			// without them is why a later round can have no enumeration at all: the seed carries
+			// the method AND the enumerated windows on the first pass and only the method
+			// afterwards, so the recovery round — the one the routing opened because the record
+			// was still short — runs with the enumeration switched off.
 			Terms:   append([]string(nil), v.Terms...),
 			Subject: v.Subject,
 		})
@@ -1116,22 +1094,19 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 
 // syncCountSlots writes the table's OWN count into every slot that claims one.
 //
-// A count slot holds a claim ABOUT the list slots, and the two are written by
-// different sessions, so nothing kept them in step: measured (2026-09-15), slot 0
-// [count] read 10 while the same table's sessions had enumerated twelve members, and
-// the answer was the 10.
+// A count slot holds a claim ABOUT the list slots, and the two are written by different
+// sessions, so nothing kept them in step: the slot's own number can be the one the answer
+// reports, whatever the list slots enumerated.
 //
 // The number is DERIVED: len(members) over the declared member lists, and ONLY a slot
 // that CLAIMS a number is corrected — it takes the derived one and keeps its old claim
 // as an alternate clue, so the record still shows what was claimed beside what is
 // enumerated.
 //
-// A slot that claims NO number is left exactly as it is: a date, a phrase or a sentence
-// is not a count anybody can check (measured 2026-09-16, 三国/关羽: a session wrote
-// "约 17-19 人" into the count slot, and the members beside it are what the answer must
-// repeat — inventing a number for it would state as the count something no session
-// claimed). Reading the slot's declared TYPE string to guess otherwise is the rule this
-// replaces (see slots.Value.Number).
+// A slot that claims NO number is left exactly as it is: a date, a phrase or a sentence is
+// not a count anybody can check, and inventing a number for it would state as the count
+// something no session claimed. Reading the slot's declared TYPE string to guess otherwise
+// is the rule this replaces (see slots.Value.Number).
 //
 // It returns the ids it changed, for the log.
 func syncCountSlots(table *harness.State) []int {
@@ -1152,10 +1127,9 @@ func syncCountSlots(table *harness.State) []int {
 		if claimed == len(union) {
 			continue
 		}
-		// The claim loses either way — a count larger than the members listed is not
-		// evidence of members, and a smaller one is a set that lost some. Measured
-		// (2026-09-16): a slot left holding a session's 28 against thirteen enumerated
-		// members is the number the answer reported.
+		// The claim loses either way — a count larger than the members listed is not evidence
+		// of members, and a smaller one is a set that lost some. Left standing, the claim is the
+		// number the answer reports, whatever the enumerated members say.
 		//
 		// Deduped because this runs after EVERY pass (and again after the last node), so
 		// an undeduped append printed the same alternate line once per run.

@@ -63,10 +63,9 @@ const (
 	// The question budget is sized for one pass (TotalBudgetS 180 ⊃ PassTimeoutS
 	// 120) and an enumeration needs a second one: its first pass spends the wall
 	// clock on batches of names, so a member that a cut session never patched has
-	// nowhere to be picked up — measured (2026-09-16, 三国/关羽) the run ended at
-	// `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone. The
-	// extension is what lets the round AFTER that one start at all: a spent pass
-	// leaves ~35s and MinRoundHeadroomS is 50.
+	// nowhere to be picked up: a spent pass leaves too little room for another round
+	// (MinRoundHeadroomS), and a member that was reached but never recorded is lost with
+	// it. The extension is what lets the round AFTER that one start at all.
 	SetBudgetExtensionS = 120.0
 	// setSessionSlackS is added to the session clock an ENUMERATION pass hands its
 	// sessions, so a session's own finalize/salvage step still fits inside the
@@ -88,11 +87,11 @@ const (
 	RewriteTimeoutS     = 45.0 // gap → query rewrite call
 	// CoverageResolveTimeoutS bounds the enumeration's last node (see RunCoverageResolve): it runs
 	// before the answer is composed, so it may not spend the clock the answer needs. It bounds the
-	// WHOLE resolve, which is batched and parallel, rather than one call carrying every window —
-	// measured (2026-09-16, 三国/关羽) a single call carrying 28 candidates reached this clock and
-	// answered nothing at all.
+	// WHOLE resolve, which is batched and parallel, rather than one call carrying every
+	// window: one call that carries them all hits this clock and answers nothing at all.
 	CoverageResolveTimeoutS = 30.0
-	// SCAViewCap: 24 of 225 hid the answer-bearing table chunk from the SCA.
+	// SCAViewCap is the view the SCA is shown: large enough that the passage carrying the
+	// answer is not the one that gets cut.
 	SCAViewCap = 60
 	// MaxSnippetPool is the storage ceiling of the snippet pool across ALL
 	// rounds. Storage and REVIEW are decoupled: the SCA only reads a ranked

@@ -18,7 +18,9 @@ package advanced_rag
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"ragflow/internal/rag/advanced_rag/harness"
@@ -28,13 +30,12 @@ import (
 // The enumeration's LAST node: the runtime asks the model about every window the
 // enumeration found, and writes the members its verdicts name.
 //
-// Why this node exists at all is measured (2026-09-16, 三国/关羽): the evidence was never
-// the limit — the corpus holds nineteen named kills, the pool held 244 passages, and runs
-// of ONE build answered 18 / 16 / 15 / 14 / 12 members with the same corpus in hand. What
-// varied was what a session WROTE: each session patched 12-14 names and the round's union
-// was whichever list happened to be longest. So the write-back stops being a session's
-// memory and becomes the runtime's own step — every window gets a verdict, and a window
-// nobody answered is reported as UNKNOWN rather than read as "the corpus does not say it".
+// Why this node exists at all: the evidence is not the limit — with the same corpus in
+// hand, runs of one build answer different member counts. What varies is what a session
+// WROTE: each session patches a handful of names and the round's union is whichever list
+// happens to be longest. So the write-back stops being a session's memory and becomes the
+// runtime's own step — every window gets a verdict, and a window nobody answered is
+// reported as UNKNOWN rather than read as "the corpus does not say it".
 //
 // The judgement itself stays the model's (see harness.CoverageResolvePrompt): nothing here
 // decides what a kill is, or which words mean one.
@@ -59,11 +60,16 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	if slotID < 0 {
 		return stats
 	}
-	set, ok := st.KB.CoverageSet()
-	if !ok || set.Empty() {
-		// No enumeration ran (no clock left, or the executor cannot search): the sessions'
-		// own list is all there is, and there is nothing here to check it against.
+	set, reached := coverageResolveCandidates(st.KB, &st.SlotTable)
+	if set.Empty() {
+		// Nothing to judge: no enumeration ran (no clock left, or the executor cannot search)
+		// and no probe reached a name the slots do not already hold.
 		return stats
+	}
+	if reached > 0 {
+		// The split is worth a line: it is the difference between a node that judges only what
+		// its own enumeration recalled and one that also judges what the run's search touched.
+		logger.Printf("[Coverage] resolve candidates: %d window(s) + %d reached name(s)", len(set.Windows)-reached, reached)
 	}
 
 	// Bounded like every other single-purpose call in this graph: the answer composition
@@ -74,9 +80,11 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 
 	members, stats := harness.ResolveCoverage(callCtx, deps.Model, st.Question, cov, set)
 	if stats.Failed > 0 {
-		// Said out loud because a failed batch is members nobody checked — the failure this
-		// node exists to make visible, not to hide.
-		logger.Printf("[Coverage] %d of %d resolve batch(es) failed; %d window(s) left UNKNOWN", stats.Failed, stats.Batches, stats.Unknown)
+		// Said out loud because a failed call is members nobody checked — the failure this
+		// node exists to make visible, not to hide. It counts CALLS, so a window that had to
+		// be re-asked shows up here twice; what the caller must read is the UNKNOWN count,
+		// which is windows.
+		logger.Printf("[Coverage] %d of %d resolve call(s) failed; %d window(s) left UNKNOWN", stats.Failed, stats.Batches, stats.Unknown)
 	}
 	if stats.Unknown > 0 {
 		logger.Printf("[Coverage] %d of %d window(s) got no verdict — UNKNOWN, not absent", stats.Unknown, stats.Asked)
@@ -112,6 +120,14 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	// refresh it, or the members just proved would be invisible to the answer that must
 	// list them.
 	st.KB.Record = RenderSlotRecord(st.SlotTable, st.CollectedAnswer)
+	if stats.Unknown > 0 {
+		// An enumeration that did not finish must not read as one that did. The windows with
+		// no verdict are members nobody judged, so the list above is a LOWER BOUND, and the
+		// record says so: a count the corpus cannot support is worse than a count that names
+		// its own gap, and only the record reaches the answer that states the number.
+		st.KB.Record += fmt.Sprintf("\n- NOTE: %d of the %d enumerated passage(s) got no verdict, so the members above are a LOWER BOUND — state the count as what it is and do not present it as exact.\n",
+			stats.Unknown, stats.Asked)
+	}
 	logger.Printf("[Coverage] resolve done: asked=%d answered=%d unknown=%d member(s)=%d written into slot %d",
 		stats.Asked, stats.Answered, stats.Unknown, len(items), slotID)
 	return stats
@@ -134,4 +150,62 @@ func coverageTargetSlot(table *harness.State) int {
 		}
 	}
 	return best
+}
+
+// coverageResolveCandidates assembles the lines the point-of-naming node judges: the
+// enumeration's windows, then the names a probe already REACHED and no slot holds yet.
+//
+// The second source is not bookkeeping — it is the difference between "the corpus was asked
+// about this direction" and "the run's own search touched this name". A reached name has the
+// pool passage that carries it, so it is a member with its evidence whatever the session did
+// with it afterwards, and a node that judges only its own enumeration drops exactly those
+// names: the run holds the passage, names it nowhere, and the count comes out short of what
+// the corpus states.
+//
+// Both sources are deduped before they are asked about: a name a slot already declares, and a
+// name a window of the SAME passage already quotes, are not put in front of the model twice.
+// Returns the union and how many lines the second source contributed.
+func coverageResolveCandidates(kb *harness.Kbinfos, table *harness.State) (harness.CoverageSet, int) {
+	var set harness.CoverageSet
+	if kb == nil {
+		return set, 0
+	}
+	set, _ = kb.CoverageSet()
+	known := map[string]bool{}
+	for _, name := range harness.MemberNames(table) {
+		known[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	added := 0
+	for _, rt := range kb.ReachedTerms() {
+		term := strings.TrimSpace(rt.Term)
+		key := strings.ToLower(term)
+		if term == "" || rt.ChunkID == "" || known[key] {
+			continue
+		}
+		if windowQuotesTerm(set.Windows, rt.ChunkID, term) {
+			continue
+		}
+		// The words are what makes the name answerable: a member no line can point at is a
+		// member nobody can cite, so a reached term whose passage is no longer in the pool is
+		// left to the record's own ledger instead of being handed over as a bare name.
+		quote := ledgerQuote(kb, rt.ChunkID, term)
+		if quote == "" {
+			continue
+		}
+		set.Windows = append(set.Windows, harness.CoverageWindow{ChunkID: rt.ChunkID, Quote: quote})
+		known[key] = true
+		added++
+	}
+	return set, added
+}
+
+// windowQuotesTerm reports whether a window of this passage already carries the term: that line
+// names the member once, and a second line quoting the same words would ask about it twice.
+func windowQuotesTerm(windows []harness.CoverageWindow, chunkID, term string) bool {
+	for _, w := range windows {
+		if w.ChunkID == chunkID && strings.Contains(w.Quote, term) {
+			return true
+		}
+	}
+	return false
 }

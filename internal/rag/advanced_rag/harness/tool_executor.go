@@ -97,11 +97,9 @@ func NewSearchExecutor(deps SearchDeps, req RunRequest) ToolExecutor {
 // rather than to a prompt.
 //
 // It is a runner rather than a caller-side helper for one reason: the runtime has to be
-// able to ask the corpus itself. The same queries handed to the model as a list went
-// unrun — measured (2026-09-16, 三国/关羽) a round rendered 2175 characters of act
-// patterns into the seed of every session and the run's query log holds zero of them —
-// so the enumeration is a step of the graph, and the only thing it needs from the tool
-// layer is a search.
+// able to ask the corpus itself. Queries handed to the model as a list are advice and may
+// simply not be run, so the enumeration is a step of the graph, and the only thing it needs
+// from the tool layer is a search.
 type CoverageRunner interface {
 	EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet
 }
@@ -529,13 +527,9 @@ func argString(args map[string]any, key string) string {
 // and that prompt's budget were the same number. Nothing renders the pool whole any
 // more (the SCA reads a ranked 60-chunk view, the session seed injects a bounded
 // digest, the draft is bounded), so the cap is a storage-discipline number again —
-// and on an enumeration it is the NEXT ceiling rather than a prompt limit. Measured
-// (2026-09-14, fixrecall): a round of batch name probing ended at 117 chunks, three
-// below the cap, with the question's members still arriving; at 200 the same shape
-// reached seventeen. Measured here (2026-09-16, 三国/关羽): the run's own line
-// `pool at the cap 120 but the batch asked about "管亥"; admitting the passage that
-// reaches it (pool 121, novelty slack 1/40)` — the tail members' passages are what
-// the cap refuses.
+// and on an enumeration it is the NEXT ceiling rather than a prompt limit: what it
+// refuses is the passage that would have reached the last members, which are named
+// late in the pool's order.
 const evidencePoolCap = 200
 
 // The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
@@ -566,9 +560,7 @@ func probeTerms(q string) []string {
 // space-separated list inside one string, or a list of query strings — because
 // GrepTermsFromQuery already reads all three. That is the point: the seat
 // mechanism is attached to the FACT that the call named terms, not to a syntax
-// the model may never write. Measured (2026-09-15): fifteen calls, every one of
-// them naming people, zero of them using `|` — a `|`-triggered mechanism fires
-// never.
+// the model may never write — a `|`-triggered mechanism would fire never.
 //
 // The cap (GrepTermsMax) bounds the seat pass, which runs one cheap keyword
 // search per unreached term; the caller logs how many named terms were dropped
@@ -576,20 +568,17 @@ func probeTerms(q string) []string {
 //
 // The terms are the caller's OWN WORDS (GrepWordsFromQuery), not the CJK windows
 // the locate step derives from them: a window is our guess at where a name can be
-// found, and probing one spends a retrieval on a fragment nobody asked about
-// (measured 2026-09-15: 羽斩 / 杀的 / 的有 / 领名, fourteen of twenty probes
-// "absent").
+// found, and probing one spends a retrieval on a fragment nobody asked about.
 func namedTermsOf(queries []string) []string {
 	var out []string
 	seen := make(map[string]bool, len(queries)*2)
 	for _, q := range queries {
 		for _, t := range GrepWordsFromQuery(q) {
-			// A PIECE OF A PATTERN is a phrase, not a name: "关公.*斩" asks how a
-			// deed is written, and probing 关公 or 斩 as a name spends a retrieval
-			// on a word nobody proposed as a member (measured: a pass built from
-			// such fragments probed 羽斩 / 杀的 / 的有 and reported fourteen
-			// "absent"). An alternation of PLAIN words ("华雄|颜良|蔡阳") is exactly
-			// what the seat exists for, so the test is pattern OPERATORS, not "|".
+			// A PIECE OF A PATTERN is a phrase, not a name: an alternation carrying
+			// operators asks how a deed is written, and probing its pieces as names
+			// spends a retrieval on a word nobody proposed as a member. An alternation
+			// of PLAIN words is exactly what the seat exists for, so the test is pattern
+			// OPERATORS, not "|".
 			if strings.ContainsAny(t, ".*+?()[]{}^$\\") {
 				continue
 			}
@@ -640,9 +629,8 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// a dropped query is not a spared repeat — it is a member nobody searched.
 	// The flag is set by the same gate that hands the model the set method (see
 	// Kbinfos.MarkSetDirection), so a VALUE direction keeps the small cap it had.
-	// Measured (2026-09-16, medium mode): every call asked 3-5 queries against
-	// these caps, nine calls were cut, and the names the run then failed to
-	// record had been named only in the dropped ones.
+	// Calls ask several queries apiece, and a name the answer later turns out to be
+	// missing was often named only in a dropped one.
 	maxQ := len(queries)
 	switch name {
 	case "retrieve":
@@ -661,9 +649,8 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// The full list is kept: maxQ bounds how many EXPENSIVE queries run, but the
 	// terms of the dropped ones still get their own cheap seat below. Dropping a
 	// list item silently (as this cut used to) drops the individuals it named
-	// before any retrieval happens — measured (2026-09-15): a run named 29
-	// queries, 8 never executed, and those 8 included the only mentions of the
-	// names it was missing.
+	// before any retrieval happens, and those individuals can be the only mentions of
+	// the very names the answer is missing.
 	allQueries := queries
 	dropped := 0
 	if len(queries) > maxQ {

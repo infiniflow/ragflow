@@ -33,8 +33,14 @@ const (
 	coverageWindowsPerChunk = 3
 	coverageWindowBefore    = 80
 	coverageWindowAfter     = 60
-	coverageWindowsMax      = 160
-	coverageSeedMaxChars    = 8000
+	// coverageWindowsMax bounds the lines the point-of-naming node is handed, over BOTH of its
+	// sources: this enumeration's windows and the names a probe already reached (the reached
+	// ledger's own cap, reachedTermsMax). It is spent against that node's capacity — workers ×
+	// clock / a slow call × batch — so the two move together: a cap above the capacity is a
+	// ceiling that can never be reached, and the member set then moves with the provider's
+	// latency instead of with the corpus.
+	coverageWindowsMax   = 192
+	coverageSeedMaxChars = 8000
 )
 
 // CoverageWindow is one place the corpus states the deed: the chunk it is in, the words
@@ -93,7 +99,17 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 			set.Truncated = true
 			break
 		}
-		chunks, err := GrepSearch(ctx, deps, SearchParams{
+		// The recall's SECOND value is its doc aggregations, NOT an error: GrepSearch
+		// cannot fail, and DocAggs builds its slice with make() so it is non-nil whether or
+		// not anything came back. Read as an error, this branch fires on EVERY operand and
+		// discards each recall's passages as though the corpus had answered nothing — the
+		// opposite of what this set is for, and a seed that tells every session the
+		// direction is empty.
+		//
+		// A transport failure is therefore indistinguishable from an empty recall HERE;
+		// when that distinction is needed, GrepSearch has to grow an error. Until then the
+		// recall's result IS the evidence.
+		chunks, _ := GrepSearch(ctx, deps, SearchParams{
 			Question: operand,
 			Keywords: operand,
 			TopN:     coverageRecallTopN,
@@ -102,14 +118,13 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 			// so the reach ledger must not read them as names a probe confirmed.
 			SkipReachLedger: true,
 		})
-		if err != nil {
-			// A failed recall is NOT an empty corpus: what came back is real, what did
-			// not come back is UNKNOWN — the distinction this set's whole contract rests
-			// on (see CoverageSet.Truncated). Dropping the error read a transport
-			// failure as "the corpus does not state it".
-			_LOG.Printf("[Coverage] operand %q: recall failed; the enumeration is partial: %v", operand, err)
-			set.Truncated = true
-			continue
+		if len(chunks) >= coverageRecallTopN {
+			// The recall came back at its whole bound: what the corpus holds for this operand
+			// MAY be more than this, and nothing downstream can tell the difference — the member
+			// set would be the head of a ranking presented as a total. It is logged as a
+			// measurement so that "was the recall complete" is a fact in the run's own record
+			// instead of a guess (see CoverageSet.Truncated for the clock-and-cap case).
+			_LOG.Printf("[Coverage] operand %q: recall hit its bound (%d passage(s)) — the corpus may hold more", operand, coverageRecallTopN)
 		}
 		for _, c := range chunks {
 			if id := ChunkIDOf(c); id != "" {
@@ -156,9 +171,7 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 
 // Render is the seed text: the enumeration stated as a FACT with what came back.
 //
-// A list of queries in a prompt is advice — measured (2026-09-16, 三国/关羽) a round
-// rendered ten act words with several aliases each into the seed of every session (2175
-// characters of patterns) and not one session ran a single one of them. A window is
+// A list of queries in a prompt is advice, and advice may simply not be taken. A window is
 // evidence: it carries the chunk id a verdict cites, so the session reads rather than
 // guesses, and `(nothing)` is the corpus answering about these WORDS rather than nobody
 // having looked.

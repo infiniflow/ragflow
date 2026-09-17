@@ -58,22 +58,42 @@ type ResolveStats struct {
 	Failed   int
 }
 
-// batchResult is one batch's outcome: the members it named, which of its lines were
-// judged (as a member or explicitly not), and whether the call failed.
+// resolveJob is ONE window as a unit of work: the index it holds in the caller's window list
+// (which is what a citation is resolved from) and the window itself.
+type resolveJob struct {
+	idx int
+	w   CoverageWindow
+}
+
+// batchResult is one CALL's outcome: the members it named, which of its jobs were judged (as
+// a member or explicitly not), and whether the call failed. The indices are the CALLER's
+// window indices, so a later pass can re-ask exactly the ones that got no verdict.
 type batchResult struct {
 	members []ResolvedMember
-	answers map[int]bool
+	judged  []int
 	failed  bool
 }
 
-// The resolve's bounds. A batch is small because ONE prompt carrying every candidate is
-// the failure this node exists to remove: measured (2026-09-16, 三国/关羽) a single call
-// carrying 28 candidates hit its 30s clock and answered nothing (`asked=28 answered=0`),
-// which is a whole enumeration's worth of members lost to one timeout.
+// The resolve's bounds. A batch is small because ONE prompt carrying every candidate is the
+// failure this node exists to remove: a single call that carries them all reaches its clock
+// and answers nothing, losing a whole enumeration's worth of members to one timeout.
+//
+// These bound ONE budget, not three independent knobs: this node has to be able to judge
+// coverageWindowsMax windows inside CoverageResolveTimeoutS, and its capacity is
+// workers × (clock / the slowest call it can expect) × batch. At three workers and a
+// five-second call that is 144 windows — BELOW the 160 the enumeration is allowed to hand it,
+// i.e. a ceiling the point-of-naming step can never clear, which makes the member set a
+// function of provider latency instead of a function of the corpus. Six workers clear the
+// same cap with room to spare (6 × (30/5) × 8 = 288).
 const (
 	coverageResolveBatch      = 8
-	coverageResolveWorkers    = 3
+	coverageResolveWorkers    = 6
 	coverageResolveQuoteChars = 300
+	// coverageResolvePasses bounds the re-asking: the first pass puts every window in front of
+	// the model, and each pass after it re-asks ONLY the windows that got no verdict — a call
+	// that failed, or lines the reply left out. Work that already has a verdict is never sent
+	// again, so the set closes without paying twice for the windows that were answered.
+	coverageResolvePasses = 3
 )
 
 // ResolveCoverage is the enumeration's LAST node: every window gets a verdict, and the
@@ -88,8 +108,8 @@ const (
 //   - A member's citation is the LINE'S chunk id, never the reply's: the model only has
 //     to get a line number right, so a fabricated source cannot reach the record.
 //   - The member's NAME is kept as the model wrote it from the line, and members are
-//     deduped case-insensitively — one source spells one member several ways (Mona Lisa /
-//     mona lisa, 关羽 / 关公), and a set counts entities, not spellings.
+//     deduped case-insensitively — one source spells one member several ways, and a set
+//     counts entities, not spellings.
 func ResolveCoverage(ctx context.Context, model SessionModel, question string, cov Coverage, set CoverageSet) ([]ResolvedMember, ResolveStats) {
 	stats := ResolveStats{Asked: len(set.Windows)}
 	if model == nil || set.Empty() {
@@ -106,61 +126,87 @@ func ResolveCoverage(ctx context.Context, model SessionModel, question string, c
 	}
 	stats.Asked = len(windows)
 
-	batches := (len(windows) + coverageResolveBatch - 1) / coverageResolveBatch
-	out := make([]batchResult, batches)
-
-	sem := make(chan struct{}, coverageResolveWorkers)
-	var wg sync.WaitGroup
-	for b := 0; b < batches; b++ {
-		lo := b * coverageResolveBatch
-		hi := min(lo+coverageResolveBatch, len(windows))
-		part := windows[lo:hi]
-		wg.Add(1)
-		go func(b int, part []CoverageWindow) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			out[b] = resolveCoverageBatch(ctx, model, question, cov, part)
-		}(b, part)
+	// EVERY window is a unit of work that must end with exactly one verdict, so the set is
+	// CLOSED: the first pass asks about all of them, and each pass after it re-asks only the
+	// ones that got none — a call that failed, or lines the reply left out. Answering is what
+	// makes a member set a function of the corpus instead of a function of which call happened
+	// to come back in time.
+	pending := make([]resolveJob, 0, len(windows))
+	for i, w := range windows {
+		pending = append(pending, resolveJob{idx: i, w: w})
 	}
-	wg.Wait()
-
+	judged := make([]bool, len(windows))
 	seen := map[string]int{}
 	var members []ResolvedMember
-	for _, r := range out {
-		stats.Batches++
-		if r.failed {
-			stats.Failed++
-			continue
+
+	for pass := 0; pass < coverageResolvePasses && len(pending) > 0; pass++ {
+		if ctx.Err() != nil {
+			break
 		}
-		stats.Answered += len(r.answers)
-		for _, m := range r.members {
-			key := strings.ToLower(strings.TrimSpace(m.Name))
-			if key == "" {
-				continue
+		out := make([]batchResult, (len(pending)+coverageResolveBatch-1)/coverageResolveBatch)
+		sem := make(chan struct{}, coverageResolveWorkers)
+		var wg sync.WaitGroup
+		for b := range out {
+			lo := b * coverageResolveBatch
+			hi := min(lo+coverageResolveBatch, len(pending))
+			part := pending[lo:hi]
+			wg.Add(1)
+			go func(b int, part []resolveJob) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				out[b] = resolveCoverageBatch(ctx, model, question, cov, part)
+			}(b, part)
+		}
+		wg.Wait()
+
+		for _, r := range out {
+			stats.Batches++
+			if r.failed {
+				stats.Failed++
 			}
-			if i, dup := seen[key]; dup {
-				// The member is already known; a second passage is worth keeping when the
-				// first came without one (evidence is what makes a member answerable).
-				if members[i].ChunkID == "" && m.ChunkID != "" {
-					members[i] = m
+			for _, idx := range r.judged {
+				if !judged[idx] {
+					judged[idx] = true
+					stats.Answered++
 				}
-				continue
 			}
-			seen[key] = len(members)
-			members = append(members, m)
+			for _, m := range r.members {
+				key := strings.ToLower(strings.TrimSpace(m.Name))
+				if key == "" {
+					continue
+				}
+				if i, dup := seen[key]; dup {
+					// The member is already known; a second passage is worth keeping when the
+					// first came without one (evidence is what makes a member answerable).
+					if members[i].ChunkID == "" && m.ChunkID != "" {
+						members[i] = m
+					}
+					continue
+				}
+				seen[key] = len(members)
+				members = append(members, m)
+			}
 		}
+		next := pending[:0:0]
+		for _, j := range pending {
+			if !judged[j.idx] {
+				next = append(next, j)
+			}
+		}
+		pending = next
 	}
-	// Every window is UNKNOWN unless a verdict named it: the windows a failed batch
-	// carried, the lines the model skipped, and the windows the cap kept out.
+	// Every window is UNKNOWN unless a verdict named it: the windows a failed call left, the
+	// lines the model skipped, and the windows the cap kept out.
 	stats.Unknown = dropped + (stats.Asked - stats.Answered)
 	return members, stats
 }
 
-// resolveCoverageBatch puts ONE batch of windows in front of the model and returns the
-// members it named out of that batch.
-func resolveCoverageBatch(ctx context.Context, model SessionModel, question string, cov Coverage, part []CoverageWindow) batchResult {
-	res := batchResult{answers: map[int]bool{}}
+// resolveCoverageBatch puts ONE batch of jobs in front of the model and returns the members
+// it named out of that batch. The verdicts it reports are keyed by the CALLER's window
+// indices, so the caller can re-ask exactly the jobs that came back with none.
+func resolveCoverageBatch(ctx context.Context, model SessionModel, question string, cov Coverage, part []resolveJob) batchResult {
+	res := batchResult{}
 	if ctx.Err() != nil {
 		return res
 	}
@@ -187,24 +233,26 @@ func resolveCoverageBatch(ctx context.Context, model SessionModel, question stri
 		if !ok || name == "" || i < 0 || i >= len(part) {
 			continue
 		}
-		res.answers[i] = true
+		res.judged = append(res.judged, part[i].idx)
 		res.members = append(res.members, ResolvedMember{
 			Name:    name,
-			ChunkID: part[i].ChunkID,
-			Quote:   truncateRunes(part[i].Quote, coverageResolveQuoteChars),
+			ChunkID: part[i].w.ChunkID,
+			Quote:   truncateRunes(part[i].w.Quote, coverageResolveQuoteChars),
 		})
 	}
 	for _, raw := range coverageAnyList(obj["not_members"]) {
 		if i, ok := coverageInt(raw); ok && i >= 0 && i < len(part) {
-			res.answers[i] = true
+			res.judged = append(res.judged, part[i].idx)
 		}
 	}
 	return res
 }
 
 // coverageResolveQuestion renders one call's user message: the question, the actor's
-// declared forms, and this batch's windows on their own numbered lines.
-func coverageResolveQuestion(question string, cov Coverage, part []CoverageWindow) string {
+// declared forms, and this batch's windows on their own numbered lines. The numbering is
+// BATCH-LOCAL and starts at 0 in every call — that is the whole interface the model has to
+// get right, and the caller maps a line number back to its window.
+func coverageResolveQuestion(question string, cov Coverage, part []resolveJob) string {
 	var b strings.Builder
 	b.WriteString("Question: " + question + "\n")
 	if actors := cov.Actors(); len(actors) > 0 {
@@ -214,7 +262,8 @@ func coverageResolveQuestion(question string, cov Coverage, part []CoverageWindo
 		b.WriteString("Act words this direction declared: " + strings.Join(cov.Acts, " / ") + "\n")
 	}
 	b.WriteString("Evidence lines:\n")
-	for i, w := range part {
+	for i, j := range part {
+		w := j.w
 		quote := truncateRunes(w.Quote, coverageResolveQuoteChars)
 		b.WriteString("- [" + strconv.Itoa(i) + "] chunk_id=" + w.ChunkID + " \"" + quote + "\"\n")
 	}

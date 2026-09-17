@@ -39,13 +39,14 @@ const CoverageActWordsMax = 10
 // Subject). Those two declarations are the plan. A table that does not make them is not
 // enumerated, and pays nothing (Coverage.Ok).
 type Coverage struct {
-	// Actor is the actor's declared forms, alternatives joined by '|' ("关羽|云长|关公").
+	// Actor is the actor's declared forms, alternatives joined by '|' (a name and its
+	// aliases).
 	// Empty is allowed: the deed's own words still enumerate ("who was killed" questions
 	// state the act without naming the actor).
 	Actor string
-	// Acts are the words the planner declared for the deed (斩 / 杀 / 诛 …). A phrasing no
-	// act word covers is a passage no query names, which is why the planner is asked for
-	// several.
+	// Acts are the words the planner declared for the deed — the verbs the source uses for
+	// it. A phrasing no act word covers is a passage no query names, which is why the
+	// planner is asked for several.
 	Acts []string
 	// Set reports that the table asked for a count, a set or a list — the answer is a SET
 	// rather than one value.
@@ -59,9 +60,8 @@ type Coverage struct {
 //
 // Nothing here reads a slot's text, the question, or a candidate: the shape and the deed
 // are what the PLANNER said about the answer, so the gate cannot be fooled by how a
-// passage happens to be worded. Measured (2026-09-15): a permissive reading of a
-// candidate seeded 44 of 67 sessions with 2777 characters of set strategy on questions
-// that assemble nothing.
+// passage happens to be worded. A permissive reading instead spends set strategy on
+// questions that assemble nothing.
 func CoverageOf(table State) Coverage {
 	var c Coverage
 	for _, v := range table.State {
@@ -93,17 +93,15 @@ func CoverageOf(table State) Coverage {
 //
 // The conjunction is the whole gate, and it is what separates a set of named members
 // from a count of EVENTS — the planner declares act words for the latter too ("how many
-// times had Brazil won the World Cup" → won / victory / champion), and no name an
-// enumeration could return changes a count of events. Measured (2026-09-16, FRAMES):
-// with the gate held only by the NAME-carrying half the enumeration ran on 7 of 20
-// questions, every one of them a single-value question, and the run ended 0.833 with two
-// timeouts against 0.875 with none.
+// times did it happen" → the verb for it), and no name an enumeration could return changes
+// a count of events. Held only by the NAME-carrying half, the enumeration runs on
+// single-value questions, where it can only add cost and timeouts.
 func (c Coverage) Ok() bool {
 	return c.Set && c.Members && len(c.Acts) > 0
 }
 
 // Actors splits the declared actor into its alternatives, which are what the corpus has
-// to be read with: one source words one person several ways (关羽 / 关公 / 云长 / 关云长).
+// to be read with: one source words one person several ways.
 func (c Coverage) Actors() []string {
 	var out []string
 	for _, part := range strings.FieldsFunc(c.Actor, func(r rune) bool {
@@ -118,11 +116,9 @@ func (c Coverage) Actors() []string {
 
 // Operands is the recall list: the actor's alternatives and the act words, deduped.
 //
-// ONE entry per operand is the point. The enumeration used to ask the corpus once per
-// (actor, act) PAIR — fourteen patterns over six operands each — so the same operand was
-// recalled a dozen times and the common ones (`斩`, `杀`) filled their recall bound before
-// the pattern ever saw them: measured (2026-09-16, 三国/关羽) 84 searches where 27
-// distinct queries exist, with the two heaviest verbs truncated at 200 passages.
+// ONE entry per operand is the point. Asking once per (actor, act) PAIR recalls the same
+// operand over and over, so a common word fills its recall bound before the rarer ones are
+// ever reached.
 func (c Coverage) Operands() []string {
 	var out []string
 	for _, a := range c.Actors() {

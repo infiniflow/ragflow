@@ -94,10 +94,10 @@ type Variable struct {
 	// (see Coverage / EnumerateCoverage), and the sessions read what came back, so the
 	// tail of the list is a property of the corpus rather than of the model's memory.
 	Terms []string
-	// Subject is WHO the act is about, declared next to the act words ("关羽"). The
-	// pattern asks for subject AND act together, because an act word on its own has a
-	// poor candidate pool (measured 2026-09-16: 劈 returned nothing for a book whose
-	// text says 劈管亥于马下). Empty means the pattern searches the term alone.
+	// Subject is WHO the act is about, declared next to the act words. The pattern asks for
+	// subject AND act together, because an act word on its own has a poor candidate pool — a
+	// rare verb can come back empty for a text that does state the deed. Empty means the
+	// pattern searches the term alone.
 	Subject string
 }
 
@@ -1342,13 +1342,11 @@ const (
 	// setActionTimeoutS is the wall clock an ENUMERATION session gets, i.e. a
 	// session whose direction declared a set (see SessionWallS). The extra time is
 	// not a bigger turn budget — the turns are what the enumeration spends, and one
-	// of them is a batch of names whose results have to be read and patched. It is
-	// measured: 三国/关羽 (2026-09-16) lost the member 管亥 — reached, three
-	// passages, admitted to the shared pool by its own batch — because the pass
-	// cancelled the session at its 120s wall clock ONE MILLISECOND before the patch
-	// that would have recorded it (14:09:53.573 `context deadline exceeded` vs
-	// 14:09:53.574 for the session that made it). A value question has nothing to
-	// spend the extra time on, so it keeps the tighter clock.
+	// of them is a batch of names whose results have to be read and patched: a session can be
+	// cancelled at its wall clock a millisecond before the patch that would have recorded a
+	// member it had already reached — its passages admitted to the shared pool by its own
+	// batch. A value question has nothing to spend the extra time on, so it keeps the tighter
+	// clock.
 	setActionTimeoutS = 150.0
 	// snippetsPerQuery is the FALLBACK per-query snippet cap, used when the mode
 	// leaves ModeSpec.SnippetsPerQuery unset. The live value is
@@ -1359,14 +1357,10 @@ const (
 	// the digest never shows a session LESS of a chunk than the same chunk would carry
 	// as a tool result.
 	//
-	// The previous 300-code-point cut ended mid-sentence on
-	// narrative passages — and the model, told to answer only from what it was shown,
-	// excluded the people whose kill clause fell outside the window. Measured
-	// (2026-09-14, on the fixrecall line): with the cut at 1200 an enumeration run
-	// reached seventeen members while runs before and after it stalled four short with
-	// the same passages in the pool. Ported here after measuring the same shape on
-	// 2026-09-16: 管亥 / 杨龄 / 程远志 appeared ZERO times in whole runs whose pools held
-	// their passages.
+	// The previous 300-code-point cut ended mid-sentence on narrative passages, and the
+	// model — told to answer only from what it was shown — excluded the parties whose clause
+	// fell outside the window: a cap smaller than one sentence truncates exactly the evidence
+	// the answer is built from, even when the passage is in the pool.
 	evidenceDigestChars = 1200
 	// maxToolResponseChars bounds ONE tool payload.
 	maxToolResponseChars = 12000
@@ -1397,10 +1391,9 @@ const (
 	// path asked for a larger one (medium/high 4 → 8, ultra 6 → 10): the extra turns
 	// exist to spend a batch of NAMES turn after turn, and a session that never
 	// writes one has no batch to spend them on — while the mode's number is billed
-	// to every turn of every session on the question. Measured (2026-09-16, FRAMES,
-	// mode high) the floor rise took per-question cost 88k → 160k tokens with a 227s
-	// single request against a 300s client timeout, on a workload that writes almost
-	// no batches; the one question that does enumerate pays the larger floor once.
+	// to every turn of every session on the question. A raised floor gives a batch-writing
+	// session the turns it needs, and a question that writes almost no batches pays it on
+	// every session.
 	valueTurnFloor = 4
 	// turnAskFloorS is the session clock below which no further turn is offered:
 	// the finalize/salvage step must still fit, or the extra turn buys evidence
@@ -2136,12 +2129,10 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 // appendBatchProtocol hands the set-direction method to a session that has SHOWN it
 // is enumerating — the second, and the only zero-false-positive, delivery.
 //
-// A session seeded by setProtocolFor already has the text; this path exists for the
-// set direction whose planner typed its count slot `number` rather than `count` (the
-// same question was typed both ways on two runs of 2026-09-16), and the signal it
-// rides is the caller's own writing: the model writes a batch of items exactly when
-// the direction is a set — measured the same day, same server: 0 batches over 20
-// FRAMES questions, 18 over one 三国 question.
+// A session seeded by setProtocolFor already has the text; this path exists for the set
+// direction whose planner typed its count slot with a type that does not read as a count.
+// The signal it rides is the caller's own writing: the model writes a batch of items
+// exactly when the direction is a set.
 //
 // It rides the tool result the model is about to read, like the record line, and is
 // appended at most once per session.
@@ -2192,11 +2183,8 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	// The line reports members, probed names and reached names — the set's to-do
 	// list. On a single-value question every field of it is empty or meaningless
 	// (`members=0 | probed-reached=0`), it is recomputed and appended on every turn,
-	// and the model then spends turns on it: measured (2026-09-15, FRAMES) 214
-	// lines across 20 questions while the same benchmark without them scored
-	// 0/1/2 zeros and had 60 rounds against this run's 68. The record itself is
-	// still kept on the session (the continuation ask reads it), only the line the
-	// model sees is skipped.
+	// and the model then spends turns on it. The record itself is still kept on the session
+	// (the continuation ask reads it), only the line the model sees is skipped.
 	if !s.enumerating() {
 		return
 	}
@@ -2234,14 +2222,11 @@ func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExt
 // offerContinuation asks the MODEL whether the session takes another turn.
 //
 // The mode's turn count used to end the session outright (ActionMaxTurns was 4 on
-// medium/high at the time), and the measured cost is in the log: at 18:09:49 a session still
-// turning named terms into evidence was finalized by `Attempts >= 4`
-// mid-enumeration, with 84s of its own clock unspent and a tool result the model
-// never read. Replacing that with a runtime heuristic ("did the record grow?")
-// fixed the cut-off but bought the wrong thing: the ledger grows whenever the
-// model PROBES, so the heuristic extended sessions that were piling up findings
-// without recording any (measured: four extensions in a row at
-// `members=0 reached=8 undecided=8`).
+// medium/high at the time), which finalized sessions mid-enumeration with their own clock
+// unspent and a tool result the model never read. Replacing that with a runtime heuristic
+// ("did the record grow?") fixed the cut-off but bought the wrong thing: the ledger grows
+// whenever the model PROBES, so the heuristic extended sessions that were piling up findings
+// without recording any.
 //
 // So the floor is the floor and the decision is the model's: it is told the
 // budget state, handed the record line it just received, and asked to continue
@@ -2254,10 +2239,9 @@ func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExt
 // an extra model call plus up to turnRunExtra more turns, and a question that is not
 // assembling a set has nothing for those turns to find.
 //
-// Measured (2026-09-15): while the gate read the shape of the planner's table, 24
-// offers went to FRAMES questions doing arithmetic over two values — 68 rounds
-// against that benchmark's own baseline of 60 — while the caller's own batch, which
-// this reads, was written ZERO times by the same 20 questions.
+// While the gate read the shape of the planner's table, past runs extended questions that
+// were doing arithmetic over two values, whose caller's own batch — the thing this reads —
+// was never written at all.
 func (s *SessionState) offerContinuation() bool {
 	if !s.enumerating() {
 		return false
@@ -2283,12 +2267,9 @@ func (s *SessionState) parentSet() bool { return CoverageOf(s.ParentState).Set }
 // wroteBatch reports whether the CALLER wrote a batch of terms in one query — the
 // signal that it is enumerating rather than asking a question.
 //
-// The gate is the caller's own writing, not a guess about the question, because the
-// guess is measurably wrong: measured (2026-09-15, one server session, two workloads)
-// a 20-question FRAMES run wrote ZERO batches while ONE 三国 question wrote fifteen,
-// and the shape test misfired on eleven FRAMES sessions — a slot TYPE cannot tell
-// "how many people did X kill" from "how many times larger is A than B", and a single
-// phrase's commas make it look like two members.
+// The gate is the caller's own writing, not a guess about the question, because the guess
+// is wrong: a slot TYPE cannot tell "how many people did X kill" from "how many times larger
+// is A than B", and a single phrase's commas make it look like two members.
 func (s *SessionState) wroteBatch() bool {
 	for _, q := range s.SearchQueries {
 		if callerBatch(q) {
@@ -2303,10 +2284,9 @@ func (s *SessionState) wroteBatch() bool {
 // count/list.
 //
 // The table stays as the second half on purpose: a session may enumerate without ever
-// writing a two-name batch (one probe per member), and then the record line is
-// exactly what it needs. That half's false positives are bounded and counted — over
-// one 20-question FRAMES run it opened once (a sentence written into a count-typed
-// slot); the batch half opened zero times.
+// writing a two-name batch (one probe per member), and then the record line is exactly what
+// it needs. That half's false positives are bounded and rare (a sentence written into a
+// count-typed slot); the batch half has none.
 func (s *SessionState) enumerating() bool {
 	return s.wroteBatch() || s.parentSet()
 }
@@ -2341,20 +2321,17 @@ func SessionWallS(parent State) float64 {
 // setMethodFor returns the enumeration METHOD, or "" when the direction is not an
 // enumeration.
 //
-// The method is `action_set`, and both halves of when it is delivered are measured: its
-// FIRST instruction — propose more candidates than you expect — is a decision taken
-// before the first query, so a direction that has declared itself an enumeration is
-// seeded (measured 2026-09-16, 三国/关羽: eighteen members with the method in the seed of
-// a `[count]` table, fourteen when it arrived a turn later); and a direction that has not
-// is handed it after the first batch it writes (see appendBatchProtocol), which is the
-// signal with no measured false positives.
+// The method is `action_set`, and both halves of when it is delivered are deliberate: its
+// FIRST instruction — propose more candidates than you expect — is a decision taken before
+// the first query, so a direction that has declared itself an enumeration is seeded before
+// its first turn; and a direction that has not is handed the method after the first batch it
+// writes (see appendBatchProtocol), which is the signal with no observed false positives.
 //
 // The gate is the enumeration itself (see Coverage): the method tells a session to
 // enumerate NAMED members, and a single-value question that merely contains a count must
-// not be told to assemble anything. Measured (2026-09-16, FRAMES): the permissive version
-// seeded 44 of 67 sessions with 2777 characters of set strategy each on questions that
-// assemble nothing; the shape-only version still seeded the value questions that contain a
-// count, and that run finished 0.833 with two timeouts against 0.875 with none.
+// not be told to assemble anything. A permissive version seeds most sessions with set
+// strategy on questions that assemble nothing, and a shape-only version still seeds the value
+// questions that merely contain a count — where it can only add cost and timeouts.
 func setMethodFor(table State, prompts PromptLoader) string {
 	if !CoverageOf(table).Ok() {
 		return ""
@@ -2366,12 +2343,10 @@ func setMethodFor(table State, prompts PromptLoader) string {
 // method, and — when the runtime has already run the enumeration — the windows it found
 // (see CoverageSet.Render).
 //
-// A list of queries in a prompt is ADVICE: measured (2026-09-16, 三国/关羽) a round
-// rendered 2175 characters of act patterns into the seed of every session and not one
-// session ran a single one of them (the run's query log holds zero `.*` queries). A
-// window is evidence — it carries the chunk id a member is cited by — so the session's
-// job becomes reading what came back. When no enumeration ran (no clock, no executor),
-// the method travels alone: the seed never carries queries to make.
+// A list of queries in a prompt is ADVICE, and advice may simply not be taken. A window is
+// evidence — it carries the chunk id a member is cited by — so the session's job becomes
+// reading what came back. When no enumeration ran (no clock, no executor), the method
+// travels alone: the seed never carries queries to make.
 func enumerationSeed(table State, prompts PromptLoader, seed string) string {
 	if !CoverageOf(table).Ok() {
 		// Not an enumeration: nothing to assemble, so neither the method nor a window has
@@ -2416,12 +2391,11 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 	// The patch written HERE is the one that lands in the record, so the record is
 	// part of the order.
 	//
-	// Measured (fixrecall2, 2026-09-15): a session probed 成何, the corpus returned
-	// three passages, and the terminal patch did not mention him — the run's own
-	// evidence, found and paid for, dropped at the last step. The record is the
-	// only place that fact exists, and this is the last call that can act on it, so
-	// the salvage order names the names it has to account for instead of asking for
-	// "whatever you have".
+	// A session can probe a name, get its passages back, and never mention it in the terminal
+	// patch — the run's own evidence, found and paid for, dropped at the last step. The record
+	// is the only place that fact exists, and this is the last call that can act on it, so the
+	// salvage order names the names it has to account for instead of asking for "whatever you
+	// have".
 	if rec := s.sessionRecordNow(); rec.Pool > 0 {
 		budgetPrompt += "\n\nAccount for the record below in the patch you write. Every name listed as " +
 			"FOUND BUT NOT RECORDED has a passage in the pool, so it is either a member this patch includes or " +
@@ -2586,9 +2560,9 @@ func (s *SessionState) route() routeTarget {
 // route was never reached and the session burned the whole timeout.
 func (s *SessionState) routeAfterTool() routeTarget {
 	if s.Attempts >= s.actionMaxTurns() {
-		// Same rule as route: the tool result that just arrived is what the
-		// continuation offer is about, so the model decides with it in hand
-		// (measured: the run's last probe's result was never read by a turn).
+		// Same rule as route: the tool result that just arrived is what the continuation offer
+		// is about, so the model decides with it in hand — otherwise the last probe's result is
+		// never read by a turn.
 		if s.offerContinuation() {
 			return routeRunAction
 		}
@@ -3535,13 +3509,12 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 
 	// A direction that IS an enumeration is seeded WITH THE METHOD, before its first turn.
 	//
-	// The method's first instruction is to propose more candidates than you expect, which
-	// is a decision taken BEFORE the first query — measured (2026-09-16, 三国/关羽):
-	// eighteen members with the method in the seed of a `[count]` table, fourteen when it
-	// arrived one turn later. The gate is the enumeration itself (see Coverage) and not a
-	// reading of the candidates (see setMethodFor for the forty-four-of-sixty-seven
-	// measurement that reverted the permissive version). A set direction that is not an
-	// enumeration gets the method from appendBatchProtocol, on the first batch it writes.
+	// The method's first instruction is to propose more candidates than you expect, which is a
+	// decision taken BEFORE the first query: seeded a turn later it is already too late to
+	// change the candidates the session proposed. The gate is the enumeration itself (see
+	// Coverage) and not a reading of the candidates (see setMethodFor). A set direction that is
+	// not an enumeration gets the method from appendBatchProtocol, on the first batch it
+	// writes.
 	seededMethod := enumerationSeed(parent, deps.Prompts, deps.CoverageSeed)
 	if seededMethod != "" {
 		seedUser += "\n\n" + seededMethod
@@ -3612,9 +3585,8 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// needs the prompt loader. It arrives in the seed when the table declared a
 		// set (see setProtocolFor), or on the first batch the caller writes
 		// (appendBatchProtocol) — so it is loaded for every session, and shown at
-		// most ONCE: a seeded session is marked as already carrying it, because
-		// measured (2026-09-16, 三国) every session of one run had it twice, 2776
-		// characters each, once from the seed and once from the batch append.
+		// most ONCE: a seeded session is marked as already carrying it, or it would receive the
+		// whole text twice — once from the seed and once from the batch append.
 		EnumerationProtocol: loadOptionalPrompt(deps.Prompts, "action_set"),
 		BatchProtocolShown:  seededMethod != "",
 	}
@@ -4044,9 +4016,8 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 			continue
 		}
 		// Cap each chunk at evidenceDigestChars and flatten newlines so the digest
-		// stays single-line per chunk. The cap is evidenceDigestChars (1200): a
-		// 300-code-point window is shorter than the sentence a kill is reported in (see
-		// evidenceDigestChars for the runs that measured it).
+		// stays single-line per chunk. The cap is evidenceDigestChars, which is sized to hold a
+		// whole sentence (see the constant).
 		content = truncateRunes(content, evidenceDigestChars)
 		content = strings.ReplaceAll(content, "\n", " ")
 		// "[cid] text" so the model can cite the chunk id.

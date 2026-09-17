@@ -20,10 +20,9 @@ import (
 // had already resolved, and it could not see that a name it found was still
 // unrecorded.
 //
-// Measured (fixrecall2, 2026-09-15, mode=high): a session probed 15+ terms across
-// 8 turns and recorded none of them until it was forced to, with 庞德 queried,
-// found, and then dropped by the model's own reasoning — a decision the runtime
-// could not see and therefore never asked about.
+// Without them a session can probe term after term and record none of them until it is
+// forced to, dropping a name it queried and found by its own reasoning — a decision the
+// runtime cannot see and therefore never asks about.
 //
 // The record is also the basis of the continuation decision: the offer the model
 // answers (offerContinuation) carries it, so "is anything still missing?" is a
@@ -167,11 +166,9 @@ const subjectWordsMax = 8
 //
 // The pool is text the round has ALREADY paid for, and a session only ever sees
 // the parts its own queries returned — everything else sat in hand, unread. That
-// gap is where members are lost without anyone noticing. Measured (2026-09-15,
-// 三国演义/关羽, mode=high): the passage naming 管亥 was fetched into the round's
-// evidence at 21:09:13 and no session ever named it, because nothing had shown it;
-// the sessions' own enumeration reached 11 and 12 members, and the five names the
-// answer was missing were all in passages of exactly that kind.
+// gap is where members are lost without anyone noticing: a passage can sit in the round's
+// evidence, unread by every session, because nothing showed it — and the names an answer is
+// missing are all in passages of exactly that kind.
 //
 // The framework does not name anybody here. It reads the unread passages that
 // mention a word THIS SESSION has used — the direction it was sent on, the slot's
@@ -181,23 +178,18 @@ const subjectWordsMax = 8
 // does not contain. The division of labour is the usual one: the runtime supplies
 // a fact (this text exists, you have not read it), the model decides what is in it.
 //
-// Mentioning one of those words is a FILTER, not a preference. Measured
-// (2026-09-15, the first version of this, which ranked every unread passage by how
-// much of its vocabulary was new): all eight excerpts it delivered were passages
-// the question had nothing to do with — a chapter heading, 曹操's youth, 张角
-// receiving the book — because "says the most you have not seen" and "is about
-// this question" are anti-correlated: the passages that carry the subject share
-// their vocabulary with what the session already read, so they score LOW. The
+// Mentioning one of those words is a FILTER, not a preference. Ranking unread passages by
+// how much of their vocabulary is new delivers passages the question has nothing to do
+// with, because "says the most you have not seen" and "is about this question" are
+// anti-correlated: the passages that carry the subject share their vocabulary with what the
+// session already read, so they score LOW. The
 // words the session itself used are what tells the two apart, and they are the
 // model's words, not a lexicon.
 func (s *SessionState) unreadPoolExcerpt() string {
-	// ONE per session, and that is deliberate. Across the first two runs of this
-	// mechanism (2026-09-15) it delivered twelve excerpts — a chapter heading, 曹操's
-	// youth, 张角 receiving the book, a 文丑 passage — and none of them carried a
-	// member the record was missing. The premise still holds (the passage naming
-	// 管亥 was in the pool for the whole of those runs), but the selection is not
-	// good enough to spend context on every flat turn, so it stays available as the
-	// session's last resort rather than a routine.
+	// ONE per session, and that is deliberate. The premise holds — such a passage really is
+	// in the pool and really is unread — but the selection is not reliable enough to spend
+	// context on every flat turn, so it stays available as the session's last resort rather
+	// than a routine.
 	if s.KB == nil || s.PoolRead {
 		return ""
 	}
@@ -282,9 +274,9 @@ func (s *SessionState) subjectWords() []string {
 			}
 		}
 	}
-	// The session's OWN queries first: they are the most specific thing it has
-	// said, and they are where the corpus's aliases enter (a session that asked
-	// about 关公 gets passages that say 关公, while the direction may only say 关羽).
+	// The session's OWN queries first: they are the most specific thing it has said, and
+	// they are where the corpus's aliases enter — asking with one alias retrieves passages
+	// that use another, while the direction may use only one.
 	for _, q := range s.SearchQueries {
 		add(q)
 	}

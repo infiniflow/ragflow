@@ -64,9 +64,8 @@ func TestCoverageWindowsCentreOnTheAct(t *testing.T) {
 // absence, a member's citation comes from the LINE, and one source's two spellings of one
 // entity are one member.
 //
-// The single call it replaces is measured (2026-09-16, 三国/关羽): 28 candidates in one
-// prompt, a 30s clock, `asked=28 answered=0` — a whole enumeration's members lost to one
-// timeout.
+// The single call it replaces loses a whole enumeration's members to one timeout: every
+// candidate in one prompt, one clock shared by all of them.
 func TestResolveCoverageAsksEveryWindowInBatches(t *testing.T) {
 	set := CoverageSet{}
 	for i := 0; i < 9; i++ {
@@ -82,12 +81,14 @@ func TestResolveCoverageAsksEveryWindowInBatches(t *testing.T) {
 	model.failIf = func(user string) bool { return strings.Contains(user, "chunk_id=c8") }
 
 	members, stats := ResolveCoverage(context.Background(), model, "关羽杀了多少有姓名的人物？", Coverage{Actor: "关羽"}, set)
-	if stats.Batches != 2 || stats.Asked != 9 {
-		t.Fatalf("stats = %+v, want 9 windows asked about in 2 batches", stats)
+	if stats.Batches != 4 || stats.Asked != 9 {
+		t.Fatalf("stats = %+v, want 9 windows asked about, and the 5 that got no verdict asked again", stats)
 	}
 	// 4 of the 9 windows got a verdict (3 members + 1 not-a-member); the failed batch's
-	// window AND the four lines the model skipped are UNKNOWN, not absent.
-	if stats.Failed != 1 || stats.Answered != 4 || stats.Unknown != 5 {
+	// window AND the four lines the model skipped stay UNKNOWN, not absent. The re-ask puts
+	// them in front of the model again, but a call that fails every time cannot judge them —
+	// so the budget has to be the caller's to report, which is what the counters are for.
+	if stats.Failed != 3 || stats.Answered != 4 || stats.Unknown != 5 {
 		t.Fatalf("stats = %+v, want the failed batch and the skipped lines UNKNOWN, not absent", stats)
 	}
 	if len(members) != 2 {
@@ -98,6 +99,42 @@ func TestResolveCoverageAsksEveryWindowInBatches(t *testing.T) {
 	}
 	if strings.ToLower(members[1].Name) != "mona lisa" {
 		t.Errorf("member = %+v, want one member for two spellings", members[1])
+	}
+}
+
+// TestResolveCoverageReasksTheWindowsWithoutAVerdict pins the CLOSURE of the point-of-naming
+// step: a line the reply left out is asked again, and work that already has a verdict is
+// spared.
+//
+// The member set has to be a function of the corpus, not of which call came back. A reply that
+// answers some of its lines and omits the rest leaves those members unjudged, and a pass that
+// stopped there left windows that were RECALLED and SHOWN ending up in no list at all — the
+// count then moves with the provider's latency rather than with the source.
+func TestResolveCoverageReasksTheWindowsWithoutAVerdict(t *testing.T) {
+	set := CoverageSet{}
+	for i := 0; i < 3; i++ {
+		set.Windows = append(set.Windows, CoverageWindow{ChunkID: fmt.Sprintf("c%d", i), Quote: "云长斩之", Act: "斩"})
+	}
+	calls := 0
+	model := &stubCoverageModel{reply: func(string) string {
+		calls++
+		if calls == 1 {
+			// The first call answers ONE of its three lines and omits the other two.
+			return `{"members": [{"i": 0, "name": "孔秀"}], "not_members": []}`
+		}
+		// The line numbers are BATCH-LOCAL: this call carries the two lines nobody judged.
+		return `{"members": [], "not_members": [0, 1]}`
+	}}
+
+	members, stats := ResolveCoverage(context.Background(), model, "关羽杀了多少有姓名的人物？", Coverage{Actor: "关羽"}, set)
+	if stats.Asked != 3 || stats.Answered != 3 || stats.Unknown != 0 {
+		t.Fatalf("stats = %+v, want every window judged after the re-ask", stats)
+	}
+	if stats.Batches != 2 {
+		t.Errorf("Batches = %d, want the two unjudged lines asked again in a second call", stats.Batches)
+	}
+	if len(members) != 1 || members[0].Name != "孔秀" || members[0].ChunkID != "c0" {
+		t.Errorf("members = %+v, want the one member the first call named, cited by its line", members)
 	}
 }
 
@@ -135,4 +172,40 @@ func (m *stubCoverageModel) Complete(_ context.Context, messages []schema.Messag
 		return nil, fmt.Errorf("stub: transport failed")
 	}
 	return &ModelReply{Content: m.reply(user)}, nil
+}
+
+// TestEnumerateCoverageKeepsWhatTheRecallReturned pins the enumeration's recall loop: a
+// passage the recall came back with IS the evidence, and nothing here is a clock
+// exhaustion.
+//
+// GrepSearch's second value is its DOC AGGREGATIONS, not an error, and DocAggs builds that
+// slice with make() — so it is non-nil whether or not anything came back. Read as an error,
+// the branch fires on every operand: Truncated is set, every recall's passages are dropped,
+// and the rendered seed tells each session the direction came back empty. Nothing caught
+// that until this test, because the loop had no test of its own.
+func TestEnumerateCoverageKeepsWhatTheRecallReturned(t *testing.T) {
+	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c1", "content": "关羽手起刀落，斩孔秀于马下。", "doc_id": "d1"},
+	}})
+	cov := Coverage{Actor: "关羽|关公", Acts: []string{"斩"}, Set: true, Members: true}
+	if !cov.Ok() {
+		t.Fatalf("the fixture must be an enumeration: %+v", cov)
+	}
+
+	set := EnumerateCoverage(context.Background(), deps, cov, kb)
+	if set.Recalled == 0 {
+		t.Fatalf("Recalled = 0 over %d operand(s): the recalled passage(s) were dropped", len(set.Operands))
+	}
+	if len(set.Windows) == 0 {
+		t.Fatalf("Windows = 0: a passage naming the actor and the act word is a window (%+v)", set)
+	}
+	if set.Truncated {
+		t.Error("Truncated = true: nothing here ran out of clock, and saying so seeds every session with (nothing)")
+	}
+	if !strings.Contains(set.Windows[0].Quote, "斩孔秀") {
+		t.Errorf("window = %q, want the words around the act", set.Windows[0].Quote)
+	}
+	if !strings.Contains(set.Render(), "chunk_id=c1") {
+		t.Errorf("seed = %q, want the window's chunk id (a member is citable only through it)", set.Render())
+	}
 }

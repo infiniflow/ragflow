@@ -64,9 +64,8 @@ type SearchParams struct {
 	// list, and it is read as a to-do list, so what enters it must be a NAME the
 	// caller probed. The runtime's completeness pass queries ask for the actor and
 	// the act words (see RunCompletenessPass), which are not names and are searched
-	// by construction: measured (2026-09-16, 三国/关羽) the record read
-	// `FOUND BUT NOT RECORDED=斩颜良、诛文丑、三国演义、关羽…+14` — every entry a query
-	// word, and not one of the members the round was actually missing.
+	// by construction: without the flag every entry is a query word, and not one of them
+	// is a member the round is actually missing.
 	SkipReachLedger bool
 	// Channel is retained for backward compatibility with callers that still
 	// poke the unified HybridSearch with an explicit channel. It is DEPRECATED:
@@ -117,8 +116,8 @@ type Kbinfos struct {
 	//
 	// The two are separate on purpose. A draft is written to be VERIFIED against
 	// the passages that produced it; the answer prompt is written to be ANSWERED
-	// from. Reusing one as the other handed the answer model the runtime's
-	// bookkeeping, and the measured result was an answer quoting it verbatim
+	// from. Reusing one as the other hands the answer model the runtime's bookkeeping,
+	// and the answer quotes the bookkeeping verbatim:
 	// ("slot 1 [entity] … (strength=0.90) [terminal=state, evidence_ids=[…]]").
 	Record string
 	// novelAdmitted counts the chunks the cap EXEMPTION below has let in beyond
@@ -226,10 +225,8 @@ func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 // INVARIANT — fn must not call anything that takes k.mu itself (Admit, Merge,
 // MergeDocAggs, RetireClaimsCoveredBy, PoolAdmitter.Full's siblings…): the mutex
 // is NOT reentrant, so that call parks the goroutine forever on a lock it already
-// holds, and a mutex wait ignores context cancellation, so the run never returns
-// and nothing is logged. Measured (fixrecall2, 2026-09-15): a seat recorded its
-// member from inside the admit batch and the run hung with no I/O, no CPU and no
-// further log line.
+// holds, and a mutex wait ignores context cancellation, so the run never returns and
+// nothing is logged: the goroutine parks silently.
 //
 // What fn MAY call is the search record (RecordReachedTerm / RecordProbedAbsent):
 // those live behind ledgerMu, precisely so the batch that answered a probe can
@@ -280,11 +277,8 @@ var evidencePoolFullLogged sync.Once
 // and where?", and the per-name window it returns is the only place that answer
 // ever lives — no later search can reconstruct WHICH names came back empty.
 //
-// Measured (fixrecall, 2026-09-14): a seven-name probe returned ten chunks
-// carrying 庞德 / 成何 / 于禁 and NOT ONE carrying 车胄 / 荀正 / 管亥 / 杨龄 — four
-// members the corpus does hold; and on the cap itself, "a round of batch name
-// probing ended at 117 chunks, three short of the cap, with the question's
-// members still arriving". A cap that drops those windows converts a successful
+// A batch probe can come back with passages for some of the names it asked about and none
+// for others the corpus does hold, so a cap that drops those windows converts a successful
 // probe into "nothing new", which the model then reads as "not a member".
 //
 // The slack is what keeps the exemption from being open-ended: it is charged per
@@ -388,11 +382,9 @@ func (k *Kbinfos) RecordReachedTerm(term, chunkID string) {
 //
 // on a direction whose answer is a LIST, the caller's queries are facets of that
 // list rather than rephrasings of one question, so a query that is dropped is not
-// a spared repeat — it is a member nobody searched. Measured (2026-09-16): a
-// medium-mode run asked 3-5 queries per call against a cap of 2 (search_chunks) /
-// 3 (retrieve); nine calls were cut, and the names it later turned out to be
-// missing had been named only in the dropped ones. On a VALUE direction the
-// queries ARE rephrasings of one question and the small cap stays.
+// a spared repeat — it is a member nobody searched, and the names the answer turns out to
+// be missing were often named only in a dropped one. On a VALUE direction the queries ARE
+// rephrasings of one question and the small cap stays.
 func (k *Kbinfos) MarkSetDirection() {
 	if k == nil {
 		return

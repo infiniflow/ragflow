@@ -55,7 +55,7 @@ const (
 var (
 	// queryMetaRe matches the regex metacharacters blanked out before splitting a query
 	// into its literal terms. The split that follows is on WHITE SPACE, never on \w+:
-	// Go's RE2 \w is ASCII-only, so tokenizing "关羽 斩杀" with it yields nothing at all
+	// Go's RE2 \w is ASCII-only, so tokenizing a CJK phrase with it yields nothing at all
 	// and the fan-out BM25 leg loses the keyed terms it needs to weight the
 	// discriminating entity.
 	queryMetaRe = regexp.MustCompile(`[.*+?^$()\[\]{}]`)
@@ -653,13 +653,11 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// "[<kind>] Searching the knowledge base for …" through the run's logger,
 	// which Rag wraps with the think-log forwarder (see think_log.go). Emitting
 	// one here as well would show the same search twice in the reasoning block.
-	// D5: a retrieval that FAILS is retried once before the query is written off. The
-	// failure this exists for is the upstream one: measured (2026-09-16) two queries of a
-	// run answered `SILICONFLOW API error: 503 Service Unavailable … Model service
-	// overloaded`, and the passages those queries would have returned were simply gone
-	// from a question whose whole work is coverage. One retry costs one round trip on the
-	// failure path only, and it is a retry of the same request (no re-planning, nothing
-	// cached, nothing narrowed yet).
+	// D5: a retrieval that FAILS is retried once before the query is written off. The failure
+	// this exists for is the upstream one — a provider answering an error on a query that
+	// carries evidence the question needs, whose passages are then simply gone. One retry
+	// costs one round trip on the failure path only, and it is a retry of the same request
+	// (no re-planning, nothing cached, nothing narrowed yet).
 	retrieve := func() ([]map[string]any, error) {
 		return deps.Backend.Retrieve(ctx, RetrieveRequest{
 			Query:                 effectiveQuery,
@@ -808,26 +806,23 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 //
 // A pattern is a LOCATOR, and a locator is only as good as the ground it is given:
 // recalling ten passages answers "does this pattern occur in those ten", not
-// "where does it occur". Measured (fixrecall2, 2026-09-15): every pattern query in
-// a run reported `10 candidate(s)` — the tool's own topN per operand — so
-// `关公.*斩|云长.*斩` could only ever match inside ~40 passages of a corpus where
-// the subject alone occurs in a large part of the text. That is the one retrieval
-// path that does not depend on the model already knowing the name, and it was
-// looking through a keyhole.
+// "where does it occur". Recalling only a small topN per operand lets a pattern match
+// inside a handful of passages of a corpus where the subject alone occurs in a large part
+// of the text. That is the one retrieval path that does not depend on the model already
+// knowing the name, and a narrow recall has it looking through a keyhole.
 //
 // It is the widest per-operand number the pipeline already uses elsewhere
 // (SCAViewCap), and only the MATCHED windows travel onwards — the grep output cap
 // (GrepOutTotalChars) still bounds what the model pays for.
 //
-// 200, after the measurement that shows 60 is the binding constraint rather than the
-// corpus: in one 三国/关羽 run the operands' own match counts were 云长(111) 斩(97) 关公(79)
-// 关云长(33) 关羽(7) 杀(143), so a pattern's recall stopped before the corpus did and ~50 of
-// 云长's passages were never matched against the pattern at all — the windows that hold the
-// members nobody has named are exactly the ones past a ranking's head. The number is a
-// RECALL bound on candidates that are only matched and narrowed (the model sees the
-// matched windows, capped by GrepOutTotalChars), so widening it costs retrieval, not
-// prompt — and a pattern whose operand hits the bound is now logged rather than silently
-// truncated (see retrieveGrepCandidates).
+// 200, because the binding constraint is the recall bound rather than the corpus: an
+// operand's own match count runs well past a small topN, so a pattern's recall stops before
+// the corpus does and the passages past a ranking's head are never matched against the
+// pattern at all — and those are exactly the windows that hold the members nobody has
+// named. The number is a RECALL bound on candidates that are only matched and narrowed (the
+// model sees the matched windows, capped by GrepOutTotalChars), so widening it costs
+// retrieval, not prompt — and a pattern whose operand hits the bound is logged rather than
+// silently truncated (see retrieveGrepCandidates).
 const patternRecallTopN = 200
 
 // isStructuralPattern reports whether a query asks for structure (any-wildcard
@@ -840,11 +835,10 @@ func isStructuralPattern(query string) bool {
 // query — rather than a sentence.
 //
 // Three shapes count, and they are the three the model actually writes: an
-// alternation (`华雄|颜良|文丑`), a pattern (`关公.*斩`, whose operands are the
-// terms), and whitespace-separated CJK pieces (`关羽 斩 华雄 颜良 文丑 蔡阳`).
-// The last one is the reason this predicate exists rather than a `|` test: across
-// the runs of 2026-09-15 the model wrote that exact batch shape and never wrote a
-// `|`, so a `|`-only gate kept the per-term seat allocation permanently off.
+// alternation, a pattern (whose operands are the terms), and whitespace-separated CJK
+// pieces. The last one is the reason this predicate exists rather than a `|` test: the model
+// writes that batch shape and never writes a `|`, so a `|`-only gate would keep the
+// per-term seat allocation permanently off.
 //
 // A sentence is excluded on purpose, in both languages: an English question
 // splits on whitespace but carries no CJK, and a Chinese question has no
@@ -869,14 +863,11 @@ func callerBatch(query string) bool {
 
 // retrieveGrepCandidates fetches the candidate set the locate step then narrows.
 //
-// One ranked search answers "what does this query match", which is the wrong
-// question for an alternation. "车胄|庞德|成何|夏侯存|荀正|管亥|杨龄" asks WHICH of
-// these the corpus carries, and a single top-N hands nearly every seat to the
-// passages that match many of the terms at once. Measured on that exact
-// seven-name probe (2026-09-14): ten chunks came back carrying 庞德 / 成何 /
-// 于禁, and NOT ONE chunk carrying 车胄, 荀正, 管亥 or 杨龄 — four members the
-// corpus does hold. They never reached the pool, and the round answered four
-// short while the probe itself had done its job.
+// One ranked search answers "what does this query match", which is the wrong question for
+// an alternation. A batch of names asks WHICH of them the corpus carries, and a single
+// top-N hands nearly every seat to the passages that match many of the terms at once: the
+// rarest names — the ones the probe was made for — never reach the pool, and the round
+// answers short while the probe itself had done its job.
 //
 // So an alternation searches each term on its own, and the results are woven
 // term-by-term, best hit first. The caller's per-query cap then keeps ONE hit
@@ -889,11 +880,10 @@ func callerBatch(query string) bool {
 // TopN, and the narrowing stage's char budget still decides how much of the
 // woven set survives.
 //
-// The trigger is the CALLER's BATCH, not the `|` character. Measured over the
-// runs of 2026-09-15: the model wrote `关羽 斩 华雄 颜良 文丑 蔡阳` — a batch of
-// names separated by spaces, with no `|` anywhere in the run — so a `|`-only
-// trigger left this whole function dead code while the batches it was written
-// for went to a single ranked top-N. A batch is an alternation, a pattern, or two
+// The trigger is the CALLER's BATCH, not the `|` character: the model writes batches of
+// names separated by spaces and no `|`, so a `|`-only trigger would leave this whole
+// function dead code while the batches it was written for went to a single ranked top-N.
+// A batch is an alternation, a pattern, or two
 // or more CJK pieces separated by whitespace; a sentence in either language is
 // none of those, which is what keeps the extra searches off the questions that
 // are not enumerating anything.
@@ -995,10 +985,9 @@ const ProbeSeatTopN = 3
 // seat is the same thing in all three cases. What it replaces is asking for
 // several individuals at once: one ranked search hands its seats to the passages
 // that match MANY of the named terms, so the rarest name — the reason the call
-// was made — is the one that loses. Measured (2026-09-15): a run named 29
-// queries, only 21 were executed (maxQ), every session query's candidates were
-// cut to one flat per-query cap, and the answer stopped at twelve members with
-// the rare names missing while ES had returned 30-64 candidates per query.
+// was made — is the one that loses: most queries in a call are cut by the per-query cap,
+// and the candidates that did come back were flattened to one hit each, so the rarest names
+// are missing from an answer whose retrieval had returned tens of candidates per query.
 //
 // The term alone is the query, on the keyword leg only: no vector leg, no
 // compiled expansion, no model call — a few hundred milliseconds, which is what
@@ -1069,11 +1058,9 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// A window searched on its own spends a retrieval on a fragment nobody
 	// proposed — and, because a term searched on its own records what it reached,
 	// it also entered the reach ledger. The session then reads that ledger back as
-	// its to-do list. Measured (2026-09-15): the batch `三国演义 关羽过五关斩六将
-	// 六将姓名` searched 国演 / 羽过 / 过五 / 五关 / 关斩 / 斩六 / 六将, and the `[record]`
-	// line the session was told to trust read `FOUND BUT NOT RECORDED=三国、演义、
-	// 关羽、五关…` while the six names that question was actually missing were not
-	// on it at all.
+	// its to-do list: the windows of an unbroken clause are recorded as if they were probes,
+	// so the ledger fills with fragments the question is made of, while the names the round is
+	// actually missing are not on it at all.
 	//
 	// A pattern keeps its operands: those are already the caller's words, and its
 	// recall needs the long ones (`关公.*斩` searches 关公 and 斩).
