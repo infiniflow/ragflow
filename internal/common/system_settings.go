@@ -65,6 +65,9 @@ func ValidateSystemSettingValue(setting entity.SystemSettings, value string) err
 }
 
 func InferSystemSettingDataType(name string) string {
+	if name == "sandbox.provider_type" {
+		return "string"
+	}
 	if strings.HasPrefix(name, "sandbox.") {
 		return "json"
 	}
