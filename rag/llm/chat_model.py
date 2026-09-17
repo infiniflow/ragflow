@@ -479,6 +479,9 @@ class Base(ABC):
         self.tools = tools
 
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        if not self.tools:
+            return await self.async_chat(system, history, gen_conf)
+
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
@@ -567,6 +570,11 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        if not self.tools:
+            async for chunk in self.async_chat_streamly(system, history, gen_conf):
+                yield chunk
+            return
+
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
