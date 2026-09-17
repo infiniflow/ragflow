@@ -195,6 +195,14 @@ export type FileParserGap = ParserGap & { name: string };
 export const hasUnsupportedTypeGap = (gaps: ParserGap[]) =>
   gaps.some((gap) => gap.reason === ParserGapReason.UnsupportedType);
 
+// Modal copy keyed by gap kind: missing models steer to adding the model,
+// unsupported types to reselecting the parse method.
+export const pickByGapKind = <T>(
+  gaps: ParserGap[],
+  options: { missingModel: T; unsupportedType: T },
+): T =>
+  hasUnsupportedTypeGap(gaps) ? options.unsupportedType : options.missingModel;
+
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 
 const ExtensionToFileTypeMap: Record<string, FileType> = Object.entries(

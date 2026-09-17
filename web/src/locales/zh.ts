@@ -357,8 +357,9 @@ export default {
     knowledgeDetails: {
       continueUpload: '继续上传',
       reselectParser: '重新选择解析方法',
+      goAddModel: '前往添加模型',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
-      fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
+      fileModelMissing: '{{name}}（{{fileType}}）需要添加{{model}}模型',
       missingModelAsr: '音频（ASR）',
       missingModelVision: '视觉',
       uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
@@ -367,6 +368,8 @@ export default {
       reselectParserAfterUploadHint:
         '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
+      addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
+      addModelToParseHint: '请前往添加模型后再解析。',
       parseBlockedTitle: '无法解析',
       parseBlockedPartialTitle: '部分文件无法解析',
       parseValidFiles: '解析有效文件',
@@ -859,6 +862,8 @@ export default {
       tagName: '标签',
       tagMessage: '请选择标签',
       frequency: '频次',
+      frequencyMinMessage: '频次最小为 {{min}}',
+      frequencyMaxMessage: '频次最大为 {{max}}',
       searchTags: '搜索标签',
       tagCloud: '云',
       tagTable: '表',

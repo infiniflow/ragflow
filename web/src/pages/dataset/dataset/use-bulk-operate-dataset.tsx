@@ -90,11 +90,10 @@ export function useBulkOperateDataset({
           if (validIds.length === 0) {
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
-              content: buildParserGapModalContent(
-                t,
-                gaps,
-                'knowledgeDetails.reselectParserToParseHint',
-              ),
+              content: buildParserGapModalContent(t, gaps, {
+                missingModel: 'knowledgeDetails.addModelToParseHint',
+                unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+              }),
               showCancel: false,
               okText: t('common.cancel'),
               closable: false,
@@ -106,11 +105,10 @@ export function useBulkOperateDataset({
             title: t('knowledgeDetails.parseBlockedPartialTitle'),
             content: (
               <div className="space-y-2">
-                {buildParserGapModalContent(
-                  t,
-                  gaps,
-                  'knowledgeDetails.reselectParserToParseHint',
-                )}
+                {buildParserGapModalContent(t, gaps, {
+                  missingModel: 'knowledgeDetails.addModelToParseHint',
+                  unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+                })}
                 <p>
                   {t('knowledgeDetails.parseValidFilesNote', {
                     count: validIds.length,
