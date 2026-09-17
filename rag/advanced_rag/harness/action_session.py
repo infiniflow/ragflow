@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -38,7 +39,7 @@ _LOG = logging.getLogger(__name__)
 _INIT_TIMEOUT_S = 45.0
 _ACTION_TIMEOUT_S = 75.0
 _SNIPPETS_PER_QUERY = 4
-_MAX_TOOL_RESPONSE_CHARS = 12000
+_MAX_TOOL_RESPONSE_CHARS = 100000
 # Dataset-level empty results (reason="no_structure") a compiled-structure tool
 # must accumulate before it is disabled for the rest of the session. Kept above
 # 1: a single empty can be SCOPED — graph_explore over a doc_scope that has no
@@ -406,6 +407,66 @@ _GRAPH_EXPLORE_TOOL_SPEC = {
     },
 }
 
+_METADATA_SEARCH_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "metadata_search",
+        "description": (
+            "WHEN TO CALL: PRE-FILTER the document set by title BEFORE retrieving chunks — the question names a document by title or recognizable name; or you need a named document subset; or the corpus is large and a title filter would sharpen recall. Prefer 'contains' with a distinctive substring. "
+            "CALL AT MOST ONCE PER DIRECTION: then use search_chunks / retrieve inside those documents. "
+            "DO NOT CALL: nothing names a document/subset; you already hold a doc_id (use list_chunks); counting or enumerating. "
+            "ARGUMENTS: query — 1-2 strings. filters — [{key, value, op}]; key is only 'title'; op — see enum; logic 'and'|'or'. For the string ops the value MUST be ONE keyword, never a list — one call per keyword; 'in' takes a list; 'empty' takes no value. Example: [{key: 'title', op: 'contains', value: 'New York'}]. Titles use spaces, not underscores. "
+            "OUTPUT: ranked chunks from ONLY the matching documents. ok = new evidence; redundant = already seen; miss = nothing matched. "
+            "IF IT FAILS: 'no documents match' — shorten the substring, or drop the filter and use search_chunks. Do NOT retry the same filter."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 2,
+                },
+                "filters": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            # Only `title` is exposed for now. Extending to other
+                            # metadata fields is a matter of adding to this enum —
+                            # the executor below is already field-agnostic.
+                            "key": {
+                                "type": "string",
+                                "enum": ["title"],
+                                "description": "the document title",
+                            },
+                            "value": {
+                                "type": ["string", "array", "null"],
+                                "description": (
+                                    "The keyword/value to match. For contains/=/start with/end with/not "
+                                    "contains this MUST be a SINGLE string keyword (e.g. 'Bowling'), never "
+                                    "a list — to match several keywords, call metadata_search once per "
+                                    "keyword. 'in'/'not in' MAY be a list of strings; 'empty'/'not empty' "
+                                    "take no value."
+                                ),
+                            },
+                            "op": {
+                                "type": "string",
+                                "enum": ["=", "contains", "not contains", "start with", "end with", "in", "empty", "not empty"],
+                            },
+                        },
+                        "required": ["key", "op"],
+                    },
+                },
+                "logic": {"type": "string", "enum": ["and", "or"], "default": "and"},
+            },
+            "required": ["query", "filters"],
+        },
+    },
+}
+
 _TOOL_MAP = {
     "retrieve": _RETRIEVE_TOOL_SPEC,
     "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC,
@@ -415,6 +476,7 @@ _TOOL_MAP = {
     "calculate": _CALCULATE_TOOL_SPEC,
     "graph_explore": _GRAPH_EXPLORE_TOOL_SPEC,
     "web_search": _WEB_SEARCH_TOOL_SPEC,
+    "metadata_search": _METADATA_SEARCH_TOOL_SPEC,
 }
 
 
@@ -447,7 +509,12 @@ def _active_tool_specs(tools) -> list:
     disabled = getattr(tools, "_disabled_tools", None) or set()
     if disabled:
         names -= set(disabled)
-    return [spec for name, spec in _TOOL_MAP.items() if name in names]
+    specs = []
+    for name, spec in _TOOL_MAP.items():
+        if name not in names:
+            continue
+        specs.append(copy.deepcopy(spec))
+    return specs
 
 
 def _disable_tool(tools, name: str) -> None:
@@ -676,16 +743,23 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
         return False
     seen.add(cid)
     ids.append(cid)
-    # Table chunks pass through UN-truncated: the 1200-char cap hides answer
+    # Table chunks pass through UN-truncated: the 5000-char cap hides answer
     # rows in the mid/late table (Q86: rank-19 row at char 5181 of a 8274-char
     # standings table was cut, so the session model guessed the athlete). The
     # pool (kbinfos) already stores the full chunk; only the model-facing
     # session output was truncated here.
     _ct = _chunk_text(c) or ""
     if _is_table_chunk(c):
-        entry = {"id": str(cid), "content": _ct}
+        # Table chunks are shown to the model as a Markdown view (key-value for
+        # infoboxes, a full-row pipe table for ranked/result tables) instead of
+        # raw <table> markup: same rows, a fraction of the tokens, and the format
+        # comparison over 11 serializations ranks Markdown-KV/Markdown above raw
+        # HTML. The shared pool keeps the RAW chunk for citation and re-reads.
+        from rag.advanced_rag.harness.tools.table_view import table_view_or_raw
+
+        entry = {"id": str(cid), "content": table_view_or_raw(_ct)}
     else:
-        entry = {"id": str(cid), "content": _ct[:1200]}
+        entry = {"id": str(cid), "content": _ct[:5000]}
     if include_doc_id:
         entry["doc_id"] = _doc_id(c)
     out.append(entry)
@@ -770,9 +844,16 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
     only differences are the search backend (grep vs hybrid), ``top_n``, the
     per-call query cap — all passed in. ``kw`` forwards backend kwargs such as
     ``use_compiled`` (search_chunks' compiled-structure expansion).
+
+    ``fail_hard`` (default False) controls exception handling: most tools want a
+    soft per-query skip so a single backend blip does not kill the whole turn;
+    ``metadata_search`` passes True so a real retrieval failure surfaces as
+    ``ERROR/infra`` instead of being silently downgraded to ``MISS/no_doc``
+    (which would mislead the model into thinking no document matched).
     """
     from rag.advanced_rag.harness.tools.search import _chunk_id
 
+    fail_hard = kw.pop("fail_hard", False)
     kb_ids = _kb_ids(tools)
     out, ids = [], []
     seen = set()
@@ -794,7 +875,9 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
         try:
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
             cands = res.get("chunks", []) or []
-        except Exception:  # noqa: BLE001
+        except Exception:
+            if fail_hard:
+                raise
             _LOG.warning("[Action Session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
             continue
         for c in cands[:_SNIPPETS_PER_QUERY]:
@@ -901,6 +984,183 @@ async def _exec_web_search(tools, queries: list) -> ToolOutcome:
     return _search_outcome(out, ids, new_ev)
 
 
+def _normalize_metadata_value(value, op):
+    """Coerce a model-supplied filter value to the single value the executor
+    expects. String ops (contains, =, start with, end with, not contains) take
+    ONE keyword; if a list sneaks in, collapse it to the first non-empty element
+    (one metadata_search call = one keyword) and log it. 'in'/'not in' keep
+    their list (the value set), and empty/not empty take no value."""
+    if op in ("in", "not in"):
+        return value
+    if isinstance(value, list):
+        flat = [str(v) for v in value if v not in (None, "")]
+        if not flat:
+            return None
+        chosen = flat[0]
+        if len(flat) > 1:
+            _LOG.info(
+                "[metadata search] value list collapsed to single keyword %r (ignored: %s); to match all, call metadata_search once per keyword",
+                chosen,
+                flat[1:],
+            )
+        return chosen
+    return value
+
+
+async def _exec_metadata_search(tools, args: dict) -> ToolOutcome:
+    """Metadata-filtered hybrid retrieval (metadata_search tool).
+
+    Pipeline: validate the requested metadata keys against the dataset's real
+    fields -> resolve matching doc_ids via ES/Infinity push-down (in-memory
+    ``meta_filter`` fallback) -> hybrid_search scoped to exactly those
+    documents.
+
+    The executor is field-agnostic: which keys are reachable is decided by the
+    ``key`` enum in :data:`_METADATA_SEARCH_TOOL_SPEC` (currently ``title``
+    only), so exposing another metadata field later needs no change here.
+    """
+    from api.db.services.doc_metadata_service import DocMetadataService
+    from common.metadata_utils import meta_filter
+    from common.misc_utils import thread_pool_exec
+    from rag.advanced_rag.harness.tools.search import hybrid_search
+
+    queries = _arg_query_list(args, 2)
+    filters = args.get("filters") or []
+    logic = str(args.get("logic") or "and")
+
+    if not queries:
+        _LOG.info("[metadata search] skipped — no query provided")
+        return ToolOutcome(payload=[], status=ERROR, reason="bad_args", metrics={"hits": 0, "new_evidence": 0})
+    if not filters:
+        _LOG.info("[metadata search] skipped — no metadata filters supplied (need ≥1 {key, op, value})")
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": "No metadata conditions given. metadata_search needs at least one {key, value, op} filter — otherwise use search_chunks / retrieve.",
+                }
+            ],
+            status=MISS,
+            reason="bad_args",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+
+    kb_ids = _kb_ids(tools)
+    if not kb_ids:
+        return ToolOutcome(payload=[], status=ERROR, reason="infra", metrics={"hits": 0, "new_evidence": 0})
+
+    # 1) Key validation against the dataset's REAL metadata fields. A dataset
+    #    without the requested key (e.g. no title) must degrade to a hint, not
+    #    to an empty retrieval the model would retry forever.
+    try:
+        known_keys = await thread_pool_exec(DocMetadataService.get_metadata_keys_by_kbs, kb_ids)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[metadata search] get_metadata_keys_by_kbs failed", exc_info=True)
+        known_keys = []
+    known_set = {str(k) for k in (known_keys or [])}
+    bad = [str(f.get("key")) for f in filters if str(f.get("key")) not in known_set]
+    if bad:
+        _LOG.info(
+            "[metadata search] bad key(s) %s — not in dataset metadata (available: %s)",
+            bad,
+            sorted(known_set)[:30],
+        )
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": f"Metadata key(s) {bad} do not exist in this dataset. Available: {sorted(known_set)[:30] or 'NONE — this dataset has no metadata, use search_chunks / retrieve'}.",
+                }
+            ],
+            status=MISS,
+            reason="bad_args",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+
+    # Normalize filter values BEFORE they reach meta_filter / ES push-down, so a
+    # model that mistakenly emits a list where one keyword is expected can never
+    # silently produce a no_doc TypeError again. 'in'/'not in' keep their list
+    # semantics; string ops collapse a list to its first keyword (one call = one
+    # keyword) and log it so the model can re-call per keyword if needed.
+    normalized_filters = [{**f, "value": _normalize_metadata_value(f.get("value"), f.get("op"))} for f in filters]
+
+    # 2) Resolve matching doc_ids: ES/Infinity push-down, in-memory fallback.
+    try:
+        doc_ids = await thread_pool_exec(DocMetadataService.filter_doc_ids_by_meta_pushdown, kb_ids, normalized_filters, logic)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[metadata search] push-down failed", exc_info=True)
+        doc_ids = None
+    if doc_ids is None:
+        try:
+            metas = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, kb_ids)
+            doc_ids = meta_filter(metas, normalized_filters, logic) or []
+        except Exception:  # noqa: BLE001
+            _LOG.warning("[metadata search] in-memory fallback failed", exc_info=True)
+            doc_ids = []
+    doc_ids = [str(d) for d in (doc_ids or [])]
+
+    if not doc_ids:
+        _LOG.info("[metadata search] no documents matched filters=%s logic=%s", normalized_filters, logic)
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": "No documents match the given metadata conditions. Loosen or change the "
+                    "filters (try a shorter substring, or the space form instead of underscores), "
+                    "or use search_chunks / retrieve for unfiltered search.",
+                }
+            ],
+            status=MISS,
+            reason="no_doc",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+
+    # 3) Intersect with the session's global document scope.
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_ids = tools.scoped_doc_ids(doc_ids) or []
+    if not doc_ids:
+        _LOG.info("[metadata search] 0 documents after doc-scope intersection")
+        return ToolOutcome(payload=[], status=MISS, reason="no_doc", metrics={"hits": 0, "new_evidence": 0})
+
+    # 4) Hybrid search restricted to exactly those documents.
+    #    use_compiled=False: compiled expansion would pull in out-of-scope chunks
+    #    and break the "only these documents" contract.
+    #    fail_hard=True: a genuine retrieval failure (embedding/infra) must surface
+    #    as ERROR/infra, NOT as MISS/no_doc (which would wrongly tell the model no
+    #    document matched). An empty-but-valid result still returns MISS correctly.
+    try:
+        out, ids, new_ev = await _run_search(
+            tools,
+            hybrid_search,
+            queries,
+            top_n=20,
+            max_q=2,
+            doc_scope=doc_ids,
+            use_compiled=False,
+            fail_hard=True,
+        )
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[metadata search] retrieval failed", exc_info=True)
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": "Retrieval backend failed (embedding/infra). Retry later or fall back to search_chunks / retrieve for unfiltered search.",
+                }
+            ],
+            status=ERROR,
+            reason="infra",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+    _LOG.info(
+        "[metadata search] ok — %d doc(s) matched by filters, %d hit(s), %d new evidence",
+        len(doc_ids),
+        len(out),
+        new_ev,
+    )
+    return _search_outcome(out, ids, new_ev)
+
+
 async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     """Deep-read one document's full text (list_chunks tool).
 
@@ -908,7 +1168,7 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     QUERY-level miss (``miss``), never a dataset fact, so ``_tool_node`` must not
     disable the tool over it.
     """
-    from rag.advanced_rag.harness.tools.search import _chunk_id, list_chunks
+    from rag.advanced_rag.harness.tools.search import _LIST_CHUNKS_MAX_CHUNKS, _chunk_id, _chunk_text, list_chunks
 
     try:
         res = await list_chunks(tools, doc_id)
@@ -919,7 +1179,29 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
     seen = set()
-    for c in (res.get("chunks") or [])[:30]:
+    doc_chunks = [c for c in (res.get("chunks") or []) if _chunk_id(c)]
+    # Section index (generic, not per-question): deep-reading a long document only
+    # helps if the model can see WHICH sections it holds. A 39-chunk article
+    # otherwise arrives as one undifferentiated wall of text and the answer-bearing
+    # section is what gets skipped (2026-09-16 FRAMES attribution: the right
+    # document was retrieved and read, the model still answered from the wrong
+    # section). The index lists every section heading + chunk id + size, so the
+    # model can target a section with a scoped search instead of re-reading all of
+    # it; it is metadata, not evidence, so it is not added to the citation pool.
+    index_lines = []
+    for i, c in enumerate(doc_chunks, 1):
+        txt = _chunk_text(c) or ""
+        head = next((ln.strip() for ln in txt.splitlines() if ln.strip()), "")
+        index_lines.append(f"{i}. [{_chunk_id(c)}] {head[:120]} ({len(txt)} chars)")
+    if index_lines:
+        out.append(
+            {
+                "kind": "doc_index",
+                "doc_id": str(doc_id),
+                "content": "Sections of this document — read the ones the question needs:\n" + "\n".join(index_lines),
+            }
+        )
+    for c in doc_chunks[:_LIST_CHUNKS_MAX_CHUNKS]:
         cid = _chunk_id(c)
         if not cid:
             continue
@@ -1157,6 +1439,8 @@ async def execute_tool(tools, name: str, args: dict) -> ToolOutcome:
         return await _exec_graph_explore(tools, args)
     if name == "web_search":
         return await _exec_web_search(tools, _arg_query_list(args, 2))
+    if name == "metadata_search":
+        return await _exec_metadata_search(tools, args)
     _LOG.warning("[Action Session] unknown tool %r; ignored.", name)
     return ToolOutcome(payload=[], status=ERROR, reason="bad_args")
 
@@ -1183,6 +1467,8 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         kwargs = {"model": mdl.model_name, "messages": oai_messages, "temperature": temperature}
         if tools_list:
             kwargs["tools"] = tools_list
+        if timeout_s:
+            kwargs["timeout"] = timeout_s
         response = await create(**kwargs)
         from rag.advanced_rag.harness.stats import record_external_response
 
@@ -1245,7 +1531,7 @@ def _parse_tool_calls(msg) -> list:
             # Do NOT drop it. OpenAI's protocol requires every assistant
             # tool_call to be answered by a matching ``tool`` message — dropping
             # one leaves a dangling tool_call and the next request is rejected
-            # ("tool call result does not follow tool call"). Keep it as a
+            # ("tool call result does not follow tool call"). Keep it as an
             # "unknown" call so _tool_node replies with a correction instead.
             #
             # Models most often emit the XML protocol tags (state / answer) as
@@ -1319,6 +1605,8 @@ class _SessionState(TypedDict, total=False):
     _direction: str  # this slot's question — needed to re-run retrieval later
     _routed_docs: list  # navigate_tree's top-n: scope for the `scoped` rung
     _nav_rule_id: str  # which rung control currently rests on ("" = finished)
+    _search_queries: list
+    _skipped_dup: int
 
 
 async def _run_action_node(state: _SessionState) -> dict:
@@ -1413,6 +1701,7 @@ async def _tool_node(state: _SessionState) -> dict:
     # makes the model re-issue redundant retrieves. The same-session cache only
     # avoids RE-EXECUTING a repeated query, it still returns a response for it.
     pending = state.get("_pending_calls") or []
+    ms_used = bool(state.get("_metadata_search_used", False))
     seen_queries = list(state.get("_search_queries") or [])
     skipped = 0
     strikes = dict(state.get("_tool_strikes") or {})
@@ -1422,7 +1711,7 @@ async def _tool_node(state: _SessionState) -> dict:
     # tool_call that comes in — a call only advances its own rung, and a later
     # ladder continuation must continue from the SAME resting point.
     pending_rule = state.get("_nav_rule_id", "")
-    for c in pending:
+    for batch_index, c in enumerate(pending):
         # Near-duplicate retrieval suppression: if the model re-issues the same
         # intent as an earlier search (paraphrase), do NOT re-run ES — return a
         # nudge so it patches / reframes instead of burning turns (Q30 burned
@@ -1441,6 +1730,27 @@ async def _tool_node(state: _SessionState) -> dict:
                                 {
                                     "kind": c["name"],
                                     "note": "This query is a near-duplicate of an earlier retrieval and was skipped to avoid redundant searching. Patch the slot with what you have, or issue a genuinely NEW retrieval angle.",
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            )
+            continue
+        # metadata_search ONE-SHOT guard: block any 2nd call within this direction.
+        if c["name"] == "metadata_search" and ms_used:
+            _LOG.info("[Action Session] blocking 2nd metadata_search this direction (one-shot guard)")
+            tool_msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": c["id"],
+                    "content": json.dumps(
+                        {
+                            "passages": [
+                                {
+                                    "kind": "metadata_search",
+                                    "note": "metadata_search is a ONE-SHOT pre-filter and was ALREADY used this direction. Continue with search_chunks / retrieve inside the documents it returned — do NOT call metadata_search again this direction.",
                                 }
                             ]
                         },
@@ -1477,6 +1787,8 @@ async def _tool_node(state: _SessionState) -> dict:
         if q:
             seen_queries.append(q)
         evidence_ids.extend(oc.evidence_ids)
+        if c["name"] == "metadata_search":
+            ms_used = True
         chunks = list(oc.payload or [])
         # ── Policy: act on WHAT happened, not just on payload size ──────────
         if oc.status == OK:
@@ -1575,6 +1887,7 @@ async def _tool_node(state: _SessionState) -> dict:
         "_routed_docs": state.get("_routed_docs") or [],
         "_direction": state.get("_direction", ""),
         "_nav_rule_id": pending_rule,
+        "_metadata_search_used": ms_used,
     }
 
 
@@ -2084,6 +2397,32 @@ def _extract_relevant_evidence(tools, direction: str, max_chunks: int = 4) -> st
     return "\n".join(lines)
 
 
+def _dump_pool_evidence(tools) -> str:
+    """TEST-ONLY: full dump of the shared evidence pool for the session seed.
+
+    Counterpart to :func:`_extract_relevant_evidence`: no top-k cap and no
+    300-char truncation — every chunk currently in ``tools.kbinfos["chunks"]``
+    is injected verbatim so the action session sees ALL prior evidence.
+    """
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text
+
+    kbinfos = getattr(tools, "kbinfos", None) or {}
+    chunks = kbinfos.get("chunks") or []
+    lines = []
+    for c in chunks:
+        cid = _chunk_id(c)
+        text = (_chunk_text(c) or "").replace("\n", " ")
+        lines.append(f"[{cid}] {text}")
+    dump = "\n".join(lines)
+    _LOG.info(
+        "[Action Session] seed ALREADY RETRIEVED dump: %d chunk(s), %d chars (kbinfos pool=%d)",
+        len(lines),
+        len(dump),
+        len(chunks),
+    )
+    return dump
+
+
 async def run_action_session(
     tools,
     direction: str,
@@ -2099,7 +2438,11 @@ async def run_action_session(
     system = load_prompt("action_run")
     seed_user = f"Direction: {direction}\n\nState:\n{parent_state.render_slots()}"
 
-    existing = _extract_relevant_evidence(tools, direction, max_chunks=4)
+    # TEST: `_extract_relevant_evidence` (top-4 / 300-char relevance digest) is
+    # DISABLED. Instead inject the FULL shared evidence pool so the action session
+    # sees every passage already retrieved this round (and prior rounds).
+    # existing = _extract_relevant_evidence(tools, direction, max_chunks=4)
+    existing = _dump_pool_evidence(tools)
     if existing:
         seed_user += "\n\nALREADY RETRIEVED (do NOT re-retrieve these — use them to fill slots or identify gaps):\n" + existing
 
@@ -2234,7 +2577,7 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
 
             record_external_call(None)
         except Exception:  # noqa: BLE001
-            pass
+            _LOG.debug("[Action Session] slot-table decomposition usage booking skipped", exc_info=True)
 
     raw = await _init_chat(tools, system, user, tmo)
     _book_raw_call()
