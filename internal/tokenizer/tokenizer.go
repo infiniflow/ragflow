@@ -20,16 +20,22 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
 
 	rag "ragflow/internal/binding"
 )
+
+var engineType string
+
+func SetEngineType(engine string) {
+	engineType = engine
+}
 
 // PoolConfig configures the elastic analyzer pool
 type PoolConfig struct {
@@ -58,6 +64,12 @@ type analyzerPool struct {
 	wg           sync.WaitGroup
 }
 
+// defaultLanguage is applied to every analyzer instance on pool acquisition
+// to clear any sticky language state left by a previous task. Ingestion
+// callers should use the public API variants that accept an explicit
+// language override.
+const defaultLanguage = "English"
+
 var (
 	globalPool    *analyzerPool
 	poolOnce      sync.Once
@@ -80,7 +92,11 @@ func Init(cfg *PoolConfig) error {
 
 		// Set default values
 		if cfg.DictPath == "" {
-			cfg.DictPath = "/usr/share/infinity/resource"
+			if env := common.GetEnv(common.EnvRAGFlowDictPath); env != "" {
+				cfg.DictPath = env
+			} else {
+				cfg.DictPath = "/usr/share/infinity/resource"
+			}
 		}
 		if cfg.MinSize <= 0 {
 			cfg.MinSize = runtime.NumCPU() * 2
@@ -376,8 +392,9 @@ func Close() {
 	}
 }
 
-// withAnalyzer executes the given function with an exclusive analyzer instance
-func withAnalyzer(fn func(*rag.Analyzer) error) error {
+// withAnalyzer acquires an analyzer instance, applies the given language
+// (with "" mapping to defaultLanguage), and executes fn.
+func withAnalyzer(lang string, fn func(*rag.Analyzer) error) error {
 	if globalPool == nil {
 		return fmt.Errorf("tokenizer pool not initialized")
 	}
@@ -388,11 +405,16 @@ func withAnalyzer(fn func(*rag.Analyzer) error) error {
 	}
 	defer globalPool.release(instance)
 
+	if lang == "" {
+		lang = defaultLanguage
+	}
+	instance.analyzer.SetLanguage(lang)
+
 	return fn(instance.analyzer)
 }
 
-// withAnalyzerResult executes the given function with an exclusive analyzer instance and returns a result
-func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
+// withAnalyzerResult is the result-returning variant of withAnalyzer.
+func withAnalyzerResult[T any](lang string, fn func(*rag.Analyzer) (T, error)) (T, error) {
 	var result T
 	if globalPool == nil {
 		return result, fmt.Errorf("tokenizer pool not initialized")
@@ -404,32 +426,63 @@ func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
 	}
 	defer globalPool.release(instance)
 
+	if lang == "" {
+		lang = defaultLanguage
+	}
+	instance.analyzer.SetLanguage(lang)
+
 	return fn(instance.analyzer)
 }
 
-// Tokenize tokenizes the text and returns a space-separated string of tokens
+type Tokenizer struct {
+	lang string
+}
+
+// New returns a request-scoped tokenizer. Empty language falls back to English.
+func New(lang string) Tokenizer {
+	return Tokenizer{lang: lang}
+}
+
+var defaultTokenizer = New("")
+
+// Tokenize tokenizes the text and returns a space-separated string of tokens.
 // Example: "hello world" -> "hello world"
 //
-// NOTE: For Infinity engine, returns input unchanged to match python's behavior
+// NOTE: For Infinity engine, returns input unchanged to match python's behavior.
 func Tokenize(text string) (string, error) {
-	if engine.GetEngineType() == "infinity" {
+	return defaultTokenizer.Tokenize(text)
+}
+
+// Tokenize tokenizes the text using the tokenizer's request-scoped language.
+func (t Tokenizer) Tokenize(text string) (string, error) {
+	if engineType == "infinity" {
 		return text, nil
 	}
-	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
 		return a.Tokenize(text)
 	})
 }
 
-// TokenizeWithPosition tokenizes the text and returns a list of tokens with position information
+// TokenizeWithPosition tokenizes the text and returns a list of tokens with position information.
 func TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
-	return withAnalyzerResult(func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
+	return defaultTokenizer.TokenizeWithPosition(text)
+}
+
+// TokenizeWithPosition tokenizes the text using the tokenizer's request-scoped language.
+func (t Tokenizer) TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
 		return a.TokenizeWithPosition(text)
 	})
 }
 
-// Analyze analyzes the text and returns all tokens
+// Analyze analyzes the text and returns all tokens.
 func Analyze(text string) ([]rag.Token, error) {
-	return withAnalyzerResult(func(a *rag.Analyzer) ([]rag.Token, error) {
+	return defaultTokenizer.Analyze(text)
+}
+
+// Analyze analyzes the text using the tokenizer's request-scoped language.
+func (t Tokenizer) Analyze(text string) ([]rag.Token, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
 		return a.Analyze(text)
 	})
 }
@@ -443,16 +496,23 @@ func SetFineGrained(fineGrained bool) {
 	common.Debug("SetFineGrained is no-op in pool mode", zap.Bool("fine_grained", fineGrained))
 }
 
-// FineGrainedTokenize performs fine-grained tokenization on space-separated tokens
+// FineGrainedTokenize performs fine-grained tokenization on space-separated
+// tokens.
 // Input: space-separated tokens (e.g., "hello world 测试")
 // Output: space-separated fine-grained tokens (e.g., "hello world 测 试")
 //
-// NOTE: For Infinity engine, returns input unchanged to match python's behavior
+// NOTE: For Infinity engine, returns input unchanged to match python's behavior.
 func FineGrainedTokenize(tokens string) (string, error) {
-	if engine.GetEngineType() == "infinity" {
+	return defaultTokenizer.FineGrainedTokenize(tokens)
+}
+
+// FineGrainedTokenize performs fine-grained tokenization using the tokenizer's
+// request-scoped language.
+func (t Tokenizer) FineGrainedTokenize(tokens string) (string, error) {
+	if engineType == "infinity" {
 		return tokens, nil
 	}
-	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
+	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
 		return a.FineGrainedTokenize(tokens)
 	})
 }
@@ -471,7 +531,7 @@ func IsInitialized() bool {
 // GetTermFreq returns the frequency of a term (matching Python rag_tokenizer.freq)
 // Returns: frequency value, or 0 if term not found
 func GetTermFreq(term string) int32 {
-	result, _ := withAnalyzerResult(func(a *rag.Analyzer) (int32, error) {
+	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (int32, error) {
 		return a.GetTermFreq(term), nil
 	})
 	return result
@@ -480,8 +540,134 @@ func GetTermFreq(term string) int32 {
 // GetTermTag returns the POS tag of a term (matching Python rag_tokenizer.tag)
 // Returns: POS tag string (e.g., "n", "v", "ns"), or empty string if term not found or no tag
 func GetTermTag(term string) string {
-	result, _ := withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
+	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (string, error) {
 		return a.GetTermTag(term), nil
 	})
 	return result
+}
+
+var cl100kEncoder struct {
+	sync.Once
+	enc *tiktoken.Tiktoken
+	err error
+}
+
+func getCL100KEncoder() (*tiktoken.Tiktoken, error) {
+	cl100kEncoder.Do(func() {
+		cl100kEncoder.enc, cl100kEncoder.err = tiktoken.GetEncoding("cl100k_base")
+	})
+	return cl100kEncoder.enc, cl100kEncoder.err
+}
+
+// resetCL100KEncoderForTest clears the cl100k encoder cache so a test can force a
+// fresh load under a different search-root scope. Test-only; it mutates package
+// state. A plain assignment replaces the embedded sync.Once with an un-fired one
+// and wipes any cached result, so the next getCL100KEncoder / InitCL100KEncoder
+// re-runs the loader rather than returning a result cached by a sibling test.
+func resetCL100KEncoderForTest() {
+	cl100kEncoder = struct {
+		sync.Once
+		enc *tiktoken.Tiktoken
+		err error
+	}{}
+}
+
+// InitCL100KEncoder loads the cl100k_base BPE encoder once and returns an
+// error if the table is unavailable. Call it during server startup (before any
+// request reaches NumTokensFromString) so a missing table fails fast instead
+// of silently zeroing every token count.
+//
+// Why fail-fast and not a retry/warning: NumTokensFromString intentionally
+// returns 0 on encoder error to stay cheap on the hot path, which means a
+// missing cl100k_base.tiktoken (the Go image used to omit it) degraded every
+// token budget to 0 while content_ltks — a separate offline C++ tokenizer —
+// kept working, and the divergence went unnoticed. Catching it at startup turns
+// that silent data corruption into a hard, loud failure.
+func InitCL100KEncoder() error {
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		return fmt.Errorf("cl100k_base BPE table unavailable (NumTokensFromString would silently return 0): %w", err)
+	}
+	if enc == nil {
+		return fmt.Errorf("cl100k_base encoder unavailable: GetEncoding returned a nil encoder without error")
+	}
+	return nil
+}
+
+// NumTokensFromString returns the number of tokens in s using the cl100k_base
+// BPE encoding.
+//
+// A missing BPE table PANICS instead of returning 0. Python's
+// num_tokens_from_string (common/token_utils.py) resolves its encoder OUTSIDE the
+// try, so an unavailable table raises there — only an encode() failure is folded
+// into 0. Returning 0 here would fail OPEN (every budget would "fit"), which is
+// the exact silent-corruption mode that made a Go image missing
+// cl100k_base.tiktoken zero every token count. InitCL100KEncoder still runs at
+// startup (cmd/ragflow_server.go) so a bad deployment dies with a clear message,
+// and this function now stays loud too in case a caller bypasses that guard.
+func NumTokensFromString(s string) int {
+	if s == "" {
+		return 0
+	}
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		panic(fmt.Sprintf("tokenizer.NumTokensFromString: cl100k_base BPE table unavailable: %v", err))
+	}
+	if enc == nil {
+		panic("tokenizer.NumTokensFromString: cl100k_base encoder is nil")
+	}
+	return len(enc.Encode(s, nil, nil))
+}
+
+// TrimContentToTokenLimit truncates s to at most limit tokens using the
+// cl100k_base encoder. Mirrors Python's trim_content helper in
+// rag/prompts/generator.py: encoder.decode(encoder.encode(content)[:limit]).
+// Returns the original string if it already fits.
+//
+// Like Python's trim_content, an unavailable encoder PANICS: the previous
+// byte-length fallback silently produced a differently-truncated string instead
+// of surfacing the missing table. See NumTokensFromString.
+func TrimContentToTokenLimit(s string, limit int) string {
+	if limit < 0 {
+		limit = 0
+	}
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		panic(fmt.Sprintf("tokenizer.TrimContentToTokenLimit: cl100k_base BPE table unavailable: %v", err))
+	}
+	if enc == nil {
+		panic("tokenizer.TrimContentToTokenLimit: cl100k_base encoder is nil")
+	}
+	tokens := enc.Encode(s, nil, nil)
+	if len(tokens) <= limit {
+		return s
+	}
+	return enc.Decode(tokens[:limit])
+}
+
+// EncodeCL100KTokens returns the cl100k_base token ids of s, from the same
+// cached encoder NumTokensFromString and TrimContentToTokenLimit use. ok is
+// false when the encoder is unavailable — the same degraded world where those
+// two degrade — so callers can run their own fallback instead of mistaking an
+// empty result for "zero tokens".
+func EncodeCL100KTokens(s string) (tokens []int, ok bool) {
+	enc, err := getCL100KEncoder()
+	if err != nil || enc == nil {
+		return nil, false
+	}
+	return enc.Encode(s, nil, nil), true
+}
+
+// DecodeCL100KTokens concatenates the raw byte sequences of tokens. Decoding
+// is a plain vocabulary-table concat (no re-segmentation), so
+// Decode(Encode(s)) == s and Decode(tokens[a:b]) is exactly the corresponding
+// byte slice of s — including a slice whose ends cut a multibyte rune, which
+// comes back as raw continuation bytes rather than U+FFFD. Returns "" when
+// the encoder is unavailable (callers gate on EncodeCL100KTokens first).
+func DecodeCL100KTokens(tokens []int) string {
+	enc, err := getCL100KEncoder()
+	if err != nil || enc == nil {
+		return ""
+	}
+	return enc.Decode(tokens)
 }

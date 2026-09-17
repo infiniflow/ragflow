@@ -89,7 +89,7 @@ def test_duplicated_name_dataset(get_auth):
     if isinstance(data, dict):
         data = data.get("kbs", [])
     dataset_list = []
-    pattern = r'^test_create_dataset.*'
+    pattern = r"^test_create_dataset.*"
     for item in data:
         dataset_name = item.get("name")
         dataset_id = item.get("id")
@@ -106,10 +106,10 @@ def test_duplicated_name_dataset(get_auth):
 def test_invalid_name_dataset(get_auth):
     # create dataset
     res = create_dataset(get_auth, {"name": 0})
-    assert res['code'] != 0
+    assert res["code"] != 0
 
     res = create_dataset(get_auth, {"name": ""})
-    assert res['code'] != 0
+    assert res["code"] != 0
 
     long_string = ""
 
@@ -117,7 +117,7 @@ def test_invalid_name_dataset(get_auth):
         long_string += random.choice(string.ascii_letters + string.digits)
 
     res = create_dataset(get_auth, {"name": long_string})
-    assert res['code'] != 0
+    assert res["code"] != 0
     print(res)
 
 
@@ -144,13 +144,17 @@ def test_update_different_params_dataset_success(get_auth):
     print(f"found {len(dataset_list)} datasets")
     dataset_id = dataset_list[0]
 
-    res = update_dataset(get_auth, dataset_id, {
-        "name": "test_update_dataset",
-        "description": "test",
-        "permission": "me",
-        "chunk_method": "presentation",
-        "language": "spanish",
-    })
+    res = update_dataset(
+        get_auth,
+        dataset_id,
+        {
+            "name": "test_update_dataset",
+            "description": "test",
+            "permission": "me",
+            "chunk_method": "presentation",
+            "language": "spanish",
+        },
+    )
     assert res.get("code") == 0, f"{res.get('message')}"
 
     # delete dataset

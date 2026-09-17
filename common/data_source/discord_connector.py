@@ -248,6 +248,19 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self._discord_bot_token: str | None = None
         self.requested_start_date_string: str = start_date or ""
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "DiscordConnector":
+        server_ids = config.get("server_ids")
+        channel_names = config.get("channel_names")
+        connector = cls(
+            server_ids=server_ids.split(",") if server_ids else [],
+            channel_names=channel_names.split(",") if channel_names else [],
+            start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
+            batch_size=int(config.get("batch_size") or INDEX_BATCH_SIZE),
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     @property
     def discord_bot_token(self) -> str:
         if self._discord_bot_token is None:
@@ -281,12 +294,12 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             id = doc_batch[0].id
             min_updated_at = doc_batch[0].doc_updated_at
             max_updated_at = doc_batch[-1].doc_updated_at
-            blob = b''
+            blob = b""
             size_bytes = 0
             for d in doc_batch:
                 min_updated_at = min(min_updated_at, d.doc_updated_at)
                 max_updated_at = max(max_updated_at, d.doc_updated_at)
-                blob += b'\n\n' + d.blob
+                blob += b"\n\n" + d.blob
                 size_bytes += d.size_bytes
 
             return Document(

@@ -76,9 +76,9 @@ export function QueryVariable({
       name={name}
       render={({ field }) => (
         <FormItem className={className}>
-          {hideLabel || label || (
-            <FormLabel tooltip={t('flow.queryTip')}>
-              {t('flow.query')}
+          {hideLabel || (
+            <FormLabel tooltip={label ? undefined : t('flow.queryTip')}>
+              {label || t('flow.query')}
             </FormLabel>
           )}
           <FormControl>{renderWidget(field.value, field.onChange)}</FormControl>

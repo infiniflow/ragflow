@@ -13,6 +13,7 @@ import { IConversation } from '@/interfaces/database/chat';
 import { Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useChatStreamStore } from '../chat-stream/store';
 import { useChatUrlParams } from '../hooks/use-chat-url';
 
 export function ConversationDropdown({
@@ -27,17 +28,22 @@ export function ConversationDropdown({
   const { setConversationBoth } = useChatUrlParams();
   const { removeSessions } = useRemoveSessions();
   const { conversationId, isNew } = useGetChatSearchParams();
+  const removeStreamSessions = useChatStreamStore(
+    (state) => state.removeSessions,
+  );
 
   const handleDelete: MouseEventHandler<HTMLDivElement> =
     useCallback(async () => {
       if (isNew === 'true' && removeTemporaryConversation) {
         removeTemporaryConversation(conversation.id);
+        removeStreamSessions([conversation.id]);
         if (conversationId === conversation.id) {
           setConversationBoth('', '');
         }
       } else {
         const code = await removeSessions([conversation.id]);
         if (code === 0) {
+          removeStreamSessions([conversation.id]);
           setConversationBoth('', '');
         }
       }
@@ -46,6 +52,7 @@ export function ConversationDropdown({
       conversationId,
       isNew,
       removeSessions,
+      removeStreamSessions,
       removeTemporaryConversation,
       setConversationBoth,
     ]);

@@ -7,7 +7,10 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
+import {
+  SelectWithSearch,
+  SelectWithSearchOptionType,
+} from '../originui/select-with-search';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +35,7 @@ export function RAGFlowPagination({
   const [currentPage, setCurrentPage] = useState(1);
   const [currentPageSize, setCurrentPageSize] = useState('10');
 
-  const sizeChangerOptions: RAGFlowSelectOptionType[] = useMemo(() => {
+  const sizeChangerOptions: SelectWithSearchOptionType[] = useMemo(() => {
     return [10, 20, 50, 100].map((x) => ({
       label: <span>{t('pagination.page', { page: x })}</span>,
       value: x.toString(),
@@ -85,10 +88,10 @@ export function RAGFlowPagination({
 
   const handlePageSizeChange = useCallback(
     (size: string) => {
-      onChange?.(currentPage, Number(size));
+      onChange?.(1, Number(size));
       setCurrentPageSize(size);
     },
-    [currentPage, onChange],
+    [onChange],
   );
 
   useEffect(() => {
@@ -175,11 +178,11 @@ export function RAGFlowPagination({
       </Pagination>
 
       {showSizeChanger && (
-        <RAGFlowSelect
+        <SelectWithSearch
           options={sizeChangerOptions}
           value={currentPageSize}
           onChange={handlePageSizeChange}
-          triggerClassName="bg-bg-card border-transparent"
+          triggerClassName="w-fit bg-bg-card border-transparent"
         />
       )}
     </div>

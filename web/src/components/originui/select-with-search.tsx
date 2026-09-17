@@ -2,6 +2,7 @@
 
 import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
 import {
+  KeyboardEvent,
   MouseEventHandler,
   ReactNode,
   forwardRef,
@@ -27,15 +28,25 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
-import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
+import { useTranslation } from 'react-i18next';
+
+export type SelectWithSearchOptionType = {
+  label: ReactNode;
+  value: string;
+  disabled?: boolean;
+  icon?: ReactNode;
+  description?: ReactNode;
+};
 
 export type SelectWithSearchFlagOptionType = {
   label: ReactNode;
   value?: string;
   disabled?: boolean;
-  options?: RAGFlowSelectOptionType[];
+  icon?: ReactNode;
+  options?: SelectWithSearchOptionType[];
+  keywords?: string[];
+  description?: ReactNode;
 };
 
 export type SelectWithSearchFlagProps = {
@@ -47,6 +58,14 @@ export type SelectWithSearchFlagProps = {
   disabled?: boolean;
   placeholder?: string;
   emptyData?: string;
+  allowCustomValue?: boolean;
+  // Always show the search input even with few options
+  alwaysShowSearch?: boolean;
+  // Show only the selected option's icon in the trigger instead of its label
+  onlyShowSelectedIcon?: boolean;
+  // Return false to veto selecting the custom value on Enter
+  onNoMatchEnter?(searchValue: string): boolean | void;
+  disableAutoSelectOnEnter?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
 };
@@ -58,20 +77,50 @@ function filterFn(value: string, search: string, keywords?: string[]) {
   return 0;
 }
 
-function findLabelWithoutOptions(
+function findOptionWithoutOptions(
   options: SelectWithSearchFlagOptionType[],
   value: string,
 ) {
-  return options.find((opt) => opt.value === value)?.label || '';
+  return options.find((opt) => opt.value === value);
 }
 
-function findLabelWithOptions(
+function findOptionWithOptions(
   options: SelectWithSearchFlagOptionType[],
   value: string,
 ) {
   return options
     .map((group) => group?.options?.find((item) => item.value === value))
-    .filter(Boolean)[0]?.label;
+    .filter(Boolean)[0];
+}
+
+function hasMatchingOptions(
+  options: SelectWithSearchFlagOptionType[],
+  searchValue: string,
+) {
+  const search = searchValue.trim();
+  if (!search) {
+    return true;
+  }
+  return options.some((group) => {
+    if (group.options) {
+      return group.options.some(
+        (option) =>
+          filterFn(
+            option.value ?? '',
+            search,
+            typeof option.label === 'string' ? [option.label] : [],
+          ) === 1,
+      );
+    }
+    return (
+      filterFn(
+        group.value ?? '',
+        search,
+        group.keywords ??
+          (typeof group.label === 'string' ? [group.label] : []),
+      ) === 1
+    );
+  });
 }
 
 export const SelectWithSearch = forwardRef<
@@ -86,22 +135,31 @@ export const SelectWithSearch = forwardRef<
       triggerClassName,
       allowClear = false,
       disabled = false,
-      placeholder = t('common.selectPlaceholder'),
-      emptyData = t('common.noDataFound'),
+      placeholder,
+      emptyData,
+      allowCustomValue = false,
+      alwaysShowSearch = false,
+      onlyShowSelectedIcon = false,
+      onNoMatchEnter,
+      disableAutoSelectOnEnter = false,
       testId,
       optionTestIdPrefix,
     },
     ref,
   ) => {
+    const { t } = useTranslation();
+    const resolvedPlaceholder = placeholder ?? t('common.selectPlaceholder');
+    const resolvedEmptyData = emptyData ?? t('common.noDataFound');
     const id = useId();
     const [open, setOpen] = useState<boolean>(false);
     const [value, setValue] = useState<string>('');
+    const [searchValue, setSearchValue] = useState<string>('');
 
-    const selectLabel = useMemo(() => {
+    const selectedOption = useMemo(() => {
       if (options.every((x) => x.options === undefined)) {
-        return findLabelWithoutOptions(options, value);
+        return findOptionWithoutOptions(options, value);
       } else if (options.every((x) => Array.isArray(x.options))) {
-        return findLabelWithOptions(options, value);
+        return findOptionWithOptions(options, value);
       } else {
         // Some have options, some don't
         const optionsWithOptions = options.filter((x) =>
@@ -111,15 +169,20 @@ export const SelectWithSearch = forwardRef<
           (x) => x.options === undefined,
         );
 
-        const label = findLabelWithOptions(optionsWithOptions, value);
-        if (label) {
-          return label;
+        const option = findOptionWithOptions(optionsWithOptions, value);
+        if (option) {
+          return option;
         }
-        return findLabelWithoutOptions(optionsWithoutOptions, value);
+        return findOptionWithoutOptions(optionsWithoutOptions, value);
       }
     }, [options, value]);
 
+    const selectLabel = selectedOption?.label;
+
     const showSearch = useMemo(() => {
+      if (allowCustomValue || alwaysShowSearch) {
+        return true;
+      }
       if (Array.isArray(options) && options.length > 5) {
         return true;
       }
@@ -130,7 +193,21 @@ export const SelectWithSearch = forwardRef<
         return optionsNum > 5;
       }
       return false;
-    }, [options]);
+    }, [allowCustomValue, alwaysShowSearch, options]);
+
+    const hasCustomSearchValue = useMemo(() => {
+      const customValue = searchValue.trim();
+      if (!allowCustomValue || !customValue) {
+        return false;
+      }
+
+      const values = options.flatMap((option) =>
+        option.options
+          ? option.options.map((item) => item.value)
+          : option.value,
+      );
+      return !values.includes(customValue);
+    }, [allowCustomValue, options, searchValue]);
 
     const handleSelect = useCallback(
       (val: string) => {
@@ -148,6 +225,26 @@ export const SelectWithSearch = forwardRef<
         onChange?.('');
       },
       [onChange],
+    );
+
+    const handleInputKeyDown = useCallback(
+      (e: KeyboardEvent<HTMLInputElement>) => {
+        const keywords = searchValue.trim();
+        if (e.key === 'Enter' && keywords) {
+          if (disableAutoSelectOnEnter) {
+            e.preventDefault();
+            onNoMatchEnter?.(keywords);
+            setSearchValue('');
+            setOpen(false);
+          } else if (!hasMatchingOptions(options, keywords)) {
+            if (onNoMatchEnter?.(keywords) === false) {
+              // Vetoed: prevent cmdk from selecting the custom value item
+              e.preventDefault();
+            }
+          }
+        }
+      },
+      [searchValue, options, onNoMatchEnter, disableAutoSelectOnEnter],
     );
 
     useEffect(() => {
@@ -171,11 +268,13 @@ export const SelectWithSearch = forwardRef<
             )}
           >
             {selectLabel || value ? (
-              <span className="flex min-w-0 options-center gap-2 truncate">
-                {selectLabel || value}
+              <span className="flex min-w-0 options-center gap-2 truncate text-text-primary">
+                {onlyShowSelectedIcon && selectedOption?.icon
+                  ? selectedOption.icon
+                  : selectLabel || value}
               </span>
             ) : (
-              <span className="text-text-disabled">{placeholder}</span>
+              <span className="text-text-disabled">{resolvedPlaceholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
@@ -205,14 +304,32 @@ export const SelectWithSearch = forwardRef<
           <Command className="p-5" filter={filterFn}>
             {showSearch && (
               <CommandInput
-                placeholder={t('common.search') + '...'}
-                className=" placeholder:text-text-disabled"
+                placeholder={
+                  allowCustomValue
+                    ? t('common.searchOrEnterToAdd') + '...'
+                    : t('common.search') + '...'
+                }
+                className="placeholder:text-text-disabled"
+                value={searchValue}
+                onValueChange={setSearchValue}
+                onKeyDown={handleInputKeyDown}
               />
             )}
             <CommandList className="mt-2 outline-none">
               <CommandEmpty>
-                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+                <div
+                  dangerouslySetInnerHTML={{ __html: resolvedEmptyData }}
+                ></div>
               </CommandEmpty>
+              {hasCustomSearchValue && (
+                <CommandItem
+                  value={searchValue.trim()}
+                  onSelect={handleSelect}
+                  className="mb-1 min-h-10 data-[selected='true']:bg-card-soft"
+                >
+                  <span className="leading-none">{searchValue.trim()}</span>
+                </CommandItem>
+              )}
               {options.map((group, groupIndex) => {
                 if (group.options) {
                   return (
@@ -240,12 +357,28 @@ export const SelectWithSearch = forwardRef<
                               ? `${optionTestIdPrefix}${option.value}`
                               : 'combobox-option'
                           }
-                          className={value === option.value ? 'bg-bg-card' : ''}
+                          className={cn(
+                            "relative flex flex-col min-h-10 pr-8 data-[selected='true']:bg-card-soft",
+                            option.description
+                              ? 'items-start gap-1'
+                              : 'justify-center items-start',
+                            value === option.value ? 'bg-bg-card' : '',
+                          )}
                         >
-                          <span className="leading-none">{option.label}</span>
-
+                          <span className="flex items-center gap-2 leading-none">
+                            {option.icon}
+                            {option.label}
+                          </span>
+                          {option.description && (
+                            <span className="text-text-secondary text-xs leading-none">
+                              {option.description}
+                            </span>
+                          )}
                           {value === option.value && (
-                            <CheckIcon size={16} className="ml-auto" />
+                            <CheckIcon
+                              size={16}
+                              className="absolute top-1/2 -translate-y-1/2 right-2"
+                            />
                           )}
                         </CommandItem>
                       ))}
@@ -258,7 +391,8 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       keywords={
-                        typeof group.label === 'string' ? [group.label] : []
+                        group.keywords ??
+                        (typeof group.label === 'string' ? [group.label] : [])
                       }
                       onSelect={handleSelect}
                       data-testid={
@@ -266,14 +400,30 @@ export const SelectWithSearch = forwardRef<
                           ? `${optionTestIdPrefix}${group.value}`
                           : 'combobox-option'
                       }
-                      className={cn('mb-1 min-h-10 ', {
-                        'bg-bg-card ': value === group.value,
-                      })}
+                      className={cn(
+                        "relative flex flex-col min-h-10 mb-1 pr-8 data-[selected='true']:bg-card-soft",
+                        group.description
+                          ? 'items-start gap-1'
+                          : 'justify-center items-start',
+                        {
+                          'bg-bg-card ': value === group.value,
+                        },
+                      )}
                     >
-                      <span className="leading-none">{group.label}</span>
-
+                      <span className="flex items-center gap-2 leading-none">
+                        {group.icon}
+                        {group.label}
+                      </span>
+                      {group.description && (
+                        <span className="text-text-secondary text-xs leading-none">
+                          {group.description}
+                        </span>
+                      )}
                       {value === group.value && (
-                        <CheckIcon size={16} className="ml-auto" />
+                        <CheckIcon
+                          size={16}
+                          className="absolute top-1/2 -translate-y-1/2 right-2"
+                        />
                       )}
                     </CommandItem>
                   );

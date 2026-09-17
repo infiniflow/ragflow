@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import mimetypes
 import os
 import posixpath
@@ -73,6 +74,7 @@ class SSHProvider(SandboxProvider):
         self.max_output_bytes = 1024 * 1024
         self.max_artifacts = 20
         self.max_artifact_bytes = 10 * 1024 * 1024
+        self.known_hosts = ""
         self._initialized = False
         self._instances: dict[str, dict[str, Any]] = {}
 
@@ -90,6 +92,7 @@ class SSHProvider(SandboxProvider):
         self.max_output_bytes = int(config.get("max_output_bytes", 1024 * 1024) or 1024 * 1024)
         self.max_artifacts = int(config.get("max_artifacts", 20) or 20)
         self.max_artifact_bytes = int(config.get("max_artifact_bytes", 10 * 1024 * 1024) or 10 * 1024 * 1024)
+        self.known_hosts = str(config.get("known_hosts", "") or "").strip()
 
         is_valid, error_message = self.validate_config(
             {
@@ -132,9 +135,7 @@ class SSHProvider(SandboxProvider):
                 timeout=min(self.timeout, 10),
             )
             if exit_code != 0:
-                raise RuntimeError(
-                    f"Failed to create remote artifacts directory: {stderr or stdout or 'unknown error'}"
-                )
+                raise RuntimeError(f"Failed to create remote artifacts directory: {stderr or stdout or 'unknown error'}")
         except Exception:
             sftp.close()
             client.close()
@@ -208,9 +209,7 @@ class SSHProvider(SandboxProvider):
                 "status": "ok" if exit_code == 0 else "error",
                 "timeout": exec_timeout,
                 "command": command,
-                "artifacts": self._collect_artifacts(
-                    sftp, posixpath.join(remote_work_dir, "artifacts")
-                ),
+                "artifacts": self._collect_artifacts(sftp, posixpath.join(remote_work_dir, "artifacts")),
                 "result_present": structured_result.get("present", False),
                 "result_value": structured_result.get("value"),
                 "result_type": structured_result.get("type"),
@@ -266,18 +265,13 @@ class SSHProvider(SandboxProvider):
                     timeout=min(self.timeout, 10),
                 )
                 if exit_code != 0:
-                    raise SandboxProviderConfigError(
-                        f"SSH connectivity check failed on {self.username}@{self.host}:{self.port}: "
-                        f"{stderr or 'remote command returned non-zero exit status'}"
-                    )
+                    raise SandboxProviderConfigError(f"SSH connectivity check failed on {self.username}@{self.host}:{self.port}: {stderr or 'remote command returned non-zero exit status'}")
             finally:
                 client.close()
         except SandboxProviderConfigError:
             raise
         except Exception as exc:
-            raise SandboxProviderConfigError(
-                f"Failed to connect to SSH host {self.username}@{self.host}:{self.port}: {exc}"
-            ) from exc
+            raise SandboxProviderConfigError(f"Failed to connect to SSH host {self.username}@{self.host}:{self.port}: {exc}") from exc
 
     def get_supported_languages(self) -> List[str]:
         return ["python", "javascript", "nodejs"]
@@ -332,6 +326,18 @@ class SSHProvider(SandboxProvider):
                 "secret": True,
                 "placeholder": "Optional",
                 "description": "Passphrase for the private key if it is encrypted.",
+            },
+            "known_hosts": {
+                "type": "string",
+                "required": False,
+                "label": "SSH known_hosts File",
+                "placeholder": "/etc/ragflow/ssh_known_hosts",
+                "description": (
+                    "Path to an OpenSSH-format known_hosts file used to verify "
+                    "the remote host's key. When set, the file is loaded on top "
+                    "of the system host keys (~/.ssh/known_hosts). When unset, "
+                    "only system keys are used and unknown hosts are rejected."
+                ),
             },
             "python_bin": {
                 "type": "string",
@@ -435,7 +441,32 @@ class SSHProvider(SandboxProvider):
     def _create_ssh_client(self) -> paramiko.SSHClient:
         paramiko = _get_paramiko_module()
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Load trusted host keys BEFORE setting the policy. Without
+        # load_system_host_keys() the in-memory store is empty and
+        # RejectPolicy would reject every host on first connect,
+        # breaking the provider for normal setups. The order matters:
+        # load_system_host_keys() populates the store from
+        # ~/.ssh/known_hosts (and the legacy /etc/ssh/ssh_known_hosts);
+        # an optional explicit known_hosts file from `known_hosts`
+        # config is then merged on top.
+        client.load_system_host_keys()
+        if self.known_hosts:
+            try:
+                client.load_host_keys(self.known_hosts)
+            except OSError as exc:
+                # Fail closed when the operator-configured trust store
+                # is unreadable: continuing with system keys could let
+                # the connection succeed against an unintended anchor
+                # (e.g. an attacker who can write ~/.ssh/known_hosts).
+                # Match the Go provider's fail-closed posture (see
+                # internal/agent/sandbox/ssh.go::hostKeyCallback).
+                logging.warning("SSH: failed to load configured known_hosts file; refusing connection")
+                raise SandboxProviderConfigError("Failed to load configured SSH known_hosts file.") from exc
+        # Reject unknown hosts: this is the default fail-closed posture
+        # to prevent silent MITM. Operators must either ship a populated
+        # known_hosts file or accept the warning (paramiko will fail the
+        # connect) on first encounter.
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         connect_kwargs: dict[str, Any] = {
             "hostname": self.host,
@@ -480,9 +511,7 @@ class SSHProvider(SandboxProvider):
                 except Exception as exc:
                     errors.append(str(exc))
 
-        raise SandboxProviderConfigError(
-            "Failed to load SSH private key. " + "; ".join(error for error in errors if error)
-        )
+        raise SandboxProviderConfigError("Failed to load SSH private key. " + "; ".join(error for error in errors if error))
 
     def _create_remote_workspace(self, client: paramiko.SSHClient) -> str:
         base_dir = self.work_dir.rstrip("/") or "/tmp"
@@ -493,9 +522,7 @@ class SSHProvider(SandboxProvider):
             timeout=min(self.timeout, 10),
         )
         if exit_code != 0:
-            raise RuntimeError(
-                f"Failed to create remote workspace on {self.host}: {stderr or stdout or 'unknown error'}"
-            )
+            raise RuntimeError(f"Failed to create remote workspace on {self.host}: {stderr or stdout or 'unknown error'}")
 
         remote_work_dir = stdout.strip().splitlines()[-1] if stdout.strip() else ""
         if not remote_work_dir:
@@ -535,10 +562,7 @@ class SSHProvider(SandboxProvider):
         else:
             raise RuntimeError(f"Unsupported language for SSH provider: {language}")
 
-        return (
-            f"cd {shlex.quote(remote_work_dir)} && "
-            f"{shlex.quote(executable)} {shlex.quote(remote_script_path)}"
-        )
+        return f"cd {shlex.quote(remote_work_dir)} && {shlex.quote(executable)} {shlex.quote(remote_script_path)}"
 
     def _run_remote_command(
         self,
@@ -658,7 +682,5 @@ def _get_paramiko_module():
     try:
         import paramiko
     except ImportError as exc:
-        raise SandboxProviderConfigError(
-            "paramiko is required for the SSH sandbox provider. Install the project dependencies to enable it."
-        ) from exc
+        raise SandboxProviderConfigError("paramiko is required for the SSH sandbox provider. Install the project dependencies to enable it.") from exc
     return paramiko

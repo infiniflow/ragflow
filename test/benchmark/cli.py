@@ -22,7 +22,7 @@ from .dataset import (
     wait_for_parse_done,
 )
 from .http_client import HttpClient
-from .metrics import ChatSample, RetrievalSample, summarize
+from .metrics import ChatSample, RetrievalSample, request_rates, summarize
 from .report import chat_report, retrieval_report
 from .retrieval import RetrievalError, build_payload, run_retrieval as run_retrieval_request
 from .utils import eprint, load_json_arg, split_csv
@@ -199,6 +199,50 @@ def _retrieval_worker(
     return run_retrieval_request(client, payload)
 
 
+def _parse_model_id(model_id: str):
+    """Parse model_id into (model_name, model_instance, model_provider).
+
+    Accepted formats:
+      - model_name@instance@provider  -> (model_name, instance, provider)
+      - model_name@provider            -> (model_name, "default", provider)
+      - model_name                     -> (model_name, "default", "")
+    """
+    parts = model_id.split("@")
+    if len(parts) >= 3:
+        return parts[0], parts[1], parts[-1]
+    elif len(parts) == 2:
+        return parts[0], "default", parts[1]
+    else:
+        return model_id, "default", ""
+
+
+# Mapping from legacy CLI arg keys to API model_type values
+_MODEL_TYPE_MAP = {
+    "llm_id": "chat",
+    "embd_id": "embedding",
+    "img2txt_id": "vision",
+    "asr_id": "asr",
+    "tts_id": "tts",
+}
+
+
+def _set_default_models_from_args(client: HttpClient, args: argparse.Namespace) -> None:
+    """Set tenant default models from CLI arguments using the new PATCH /models/default API."""
+    model_specs = [
+        (args.tenant_llm_id, "llm_id"),
+        (args.tenant_embd_id, "embd_id"),
+        (args.tenant_img2txt_id, "img2txt_id"),
+        (args.tenant_asr_id, "asr_id"),
+        (args.tenant_tts_id, "tts_id"),
+    ]
+    for model_id, type_key in model_specs:
+        if not model_id:
+            continue
+        model_name, model_instance, model_provider = _parse_model_id(model_id)
+        model_type = _MODEL_TYPE_MAP[type_key]
+        auth.set_default_model(client, model_provider, model_instance, model_name, model_type)
+
+
 def _ensure_auth(client: HttpClient, args: argparse.Namespace) -> None:
     if args.api_key:
         client.api_key = args.api_key
@@ -232,19 +276,7 @@ def _ensure_auth(client: HttpClient, args: argparse.Namespace) -> None:
     if args.set_tenant_info:
         if not args.tenant_llm_id or not args.tenant_embd_id:
             raise AuthError("Missing --tenant-llm-id or --tenant-embd-id for tenant setup")
-        tenant = auth.get_tenant_info(client)
-        tenant_id = tenant.get("tenant_id")
-        if not tenant_id:
-            raise AuthError("Tenant info missing tenant_id")
-        payload = {
-            "tenant_id": tenant_id,
-            "llm_id": args.tenant_llm_id,
-            "embd_id": args.tenant_embd_id,
-            "img2txt_id": args.tenant_img2txt_id or "",
-            "asr_id": args.tenant_asr_id or "",
-            "tts_id": args.tenant_tts_id,
-        }
-        auth.set_tenant_info(client, payload)
+        _set_default_models_from_args(client, args)
 
     api_key = auth.create_api_token(client, login_token, args.token_name)
     client.api_key = api_key
@@ -425,7 +457,7 @@ def run_chat(client: HttpClient, args: argparse.Namespace) -> int:
             "errors": [e for e in errors if e],
             "created": created,
             "total_duration_s": total_duration,
-            "qps": (args.iterations / total_duration) if total_duration > 0 else None,
+            **request_rates(success, failure, total_duration),
         }
         if args.print_response:
             payload["responses"] = responses
@@ -525,7 +557,7 @@ def run_retrieval(client: HttpClient, args: argparse.Namespace) -> int:
             "errors": [e for e in errors if e],
             "created": created,
             "total_duration_s": total_duration,
-            "qps": (args.iterations / total_duration) if total_duration > 0 else None,
+            **request_rates(success, failure, total_duration),
         }
         if args.print_response:
             payload["responses"] = responses

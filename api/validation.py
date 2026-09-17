@@ -22,9 +22,7 @@ def python_version_validation():
     # Check python version
     required_python_version = (3, 10)
     if sys.version_info < required_python_version:
-        logging.info(
-            f"Required Python: >= {required_python_version[0]}.{required_python_version[1]}. Current Python version: {sys.version_info[0]}.{sys.version_info[1]}."
-        )
+        logging.info(f"Required Python: >= {required_python_version[0]}.{required_python_version[1]}. Current Python version: {sys.version_info[0]}.{sys.version_info[1]}.")
         sys.exit(1)
     else:
         logging.info(f"Python version: {sys.version_info[0]}.{sys.version_info[1]}")
@@ -35,15 +33,25 @@ python_version_validation()
 
 # Download nltk data
 def download_nltk_data():
+    import os
+
+    # NLTK >=3.10 refuses proxied downloads (SSRF guard) unless opted in.
+    os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
+
     import nltk
-    nltk.download('wordnet', halt_on_error=False, quiet=True)
-    nltk.download('punkt_tab', halt_on_error=False, quiet=True)
+
+    # NLTK >=3.8.2 gates the `wordnet` corpus behind the `omw-1.4` package, so
+    # both must be present or tokenization-backed paths raise LookupError.
+    nltk.download("omw-1.4", halt_on_error=False, quiet=True)
+    nltk.download("wordnet", halt_on_error=False, quiet=True)
+    nltk.download("punkt_tab", halt_on_error=False, quiet=True)
 
 
 try:
     from multiprocessing import Pool
+
     pool = Pool(processes=1)
     thread = pool.apply_async(download_nltk_data)
     binary = thread.get(timeout=60)
 except Exception:
-    print('\x1b[6;37;41m WARNING \x1b[0m' + "Downloading NLTK data failure.", flush=True)
+    print("\x1b[6;37;41m WARNING \x1b[0m" + "Downloading NLTK data failure.", flush=True)

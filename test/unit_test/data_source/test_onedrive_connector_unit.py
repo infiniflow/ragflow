@@ -7,6 +7,7 @@ from common.data_source.onedrive_connector import OneDriveConnector, OneDriveChe
 from common.data_source.models import SlimDocument
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
+    ConnectorValidationError,
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
@@ -18,10 +19,65 @@ _GOOD_CREDS = {
     "client_secret": "secret-xyz",
 }
 
+_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+
+# ---------------------------------------------------------------------------
+# folder_path / _delta_url
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.p2
+def test_folder_path_prepends_leading_slash_for_delta_url():
+    connector = OneDriveConnector(folder_path="Documents/Reports")
+    assert connector.folder_path == "/Documents/Reports"
+    assert connector._delta_url("drive-1") == (f"{_GRAPH_BASE}/drives/drive-1/root:/Documents/Reports:/delta")
+
+
+@pytest.mark.p2
+def test_folder_path_preserves_leading_slash():
+    connector = OneDriveConnector(folder_path="/Documents/Reports/")
+    assert connector.folder_path == "/Documents/Reports"
+    assert connector._delta_url("drive-1") == (f"{_GRAPH_BASE}/drives/drive-1/root:/Documents/Reports:/delta")
+
+
+@pytest.mark.p2
+def test_folder_path_rejects_parent_segments():
+    with pytest.raises(ConnectorValidationError, match="\\.\\."):
+        OneDriveConnector(folder_path="/Documents/../secret")
+
+
+@pytest.mark.p2
+def test_folder_path_normalizes_consecutive_slashes():
+    connector = OneDriveConnector(folder_path="//Documents//Reports")
+    assert connector.folder_path == "/Documents/Reports"
+    assert connector._delta_url("drive-1") == (f"{_GRAPH_BASE}/drives/drive-1/root:/Documents/Reports:/delta")
+
+
+@pytest.mark.p2
+def test_folder_path_strips_whitespace():
+    connector = OneDriveConnector(folder_path="  Documents/Reports  ")
+    assert connector.folder_path == "/Documents/Reports"
+
+
+@pytest.mark.p2
+def test_folder_path_root_uses_drive_root_delta():
+    connector = OneDriveConnector(folder_path="/")
+    assert connector.folder_path is None
+    assert connector._delta_url("drive-1") == f"{_GRAPH_BASE}/drives/drive-1/root/delta"
+
+
+@pytest.mark.p2
+def test_folder_path_double_slash_only_uses_drive_root_delta():
+    connector = OneDriveConnector(folder_path="//")
+    assert connector.folder_path is None
+    assert connector._delta_url("drive-1") == f"{_GRAPH_BASE}/drives/drive-1/root/delta"
+
 
 # ---------------------------------------------------------------------------
 # load_credentials
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p2
 def test_load_credentials_missing_fields_raises():
@@ -61,6 +117,7 @@ def test_load_credentials_msal_failure_raises():
 # ---------------------------------------------------------------------------
 # validate_connector_settings
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p2
 def test_validate_without_credentials_raises():
@@ -130,6 +187,7 @@ def test_validate_unexpected_status_raises():
 # Checkpoint helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.p2
 def test_build_dummy_checkpoint():
     connector = OneDriveConnector()
@@ -149,6 +207,7 @@ def test_validate_checkpoint_json_invalid_returns_dummy():
 # ---------------------------------------------------------------------------
 # _iter_documents (via poll_source)
 # ---------------------------------------------------------------------------
+
 
 def _ok(json_value):
     """Tiny helper: build a successful MagicMock response with .ok / .json()."""
@@ -174,20 +233,22 @@ def test_poll_source_yields_supported_files():
     connector._access_token = "tok"
 
     drives_resp = _ok({"value": [{"id": "drive-1"}]})
-    delta_resp = _ok({
-        "value": [
-            {
-                "id": "file-1",
-                "name": "report.docx",
-                "file": {},
-                "lastModifiedDateTime": "2026-05-20T10:00:00Z",
-                "webUrl": "https://example.com/report.docx",
-                "size": 1024,
-                "createdBy": {"user": {"displayName": "Alice"}},
-            }
-        ],
-        "@odata.deltaLink": "https://graph.microsoft.com/delta-link",
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {
+                    "id": "file-1",
+                    "name": "report.docx",
+                    "file": {},
+                    "lastModifiedDateTime": "2026-05-20T10:00:00Z",
+                    "webUrl": "https://example.com/report.docx",
+                    "size": 1024,
+                    "createdBy": {"user": {"displayName": "Alice"}},
+                }
+            ],
+            "@odata.deltaLink": "https://graph.microsoft.com/delta-link",
+        }
+    )
 
     with patch.object(connector, "_get", side_effect=[drives_resp, delta_resp]):
         batches = list(connector.poll_source(0.0, 9999999999.0))
@@ -203,18 +264,20 @@ def test_poll_source_skips_unsupported_extensions():
     connector._access_token = "tok"
 
     drives_resp = _ok({"value": [{"id": "drive-1"}]})
-    delta_resp = _ok({
-        "value": [
-            {
-                "id": "img-1",
-                "name": "photo.png",  # not in _SUPPORTED_EXTENSIONS
-                "file": {},
-                "lastModifiedDateTime": "2026-05-20T10:00:00Z",
-                "webUrl": "https://example.com/photo.png",
-                "size": 512,
-            }
-        ],
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {
+                    "id": "img-1",
+                    "name": "photo.png",  # not in _SUPPORTED_EXTENSIONS
+                    "file": {},
+                    "lastModifiedDateTime": "2026-05-20T10:00:00Z",
+                    "webUrl": "https://example.com/photo.png",
+                    "size": 512,
+                }
+            ],
+        }
+    )
 
     with patch.object(connector, "_get", side_effect=[drives_resp, delta_resp]):
         batches = list(connector.poll_source(0.0, 9999999999.0))
@@ -228,16 +291,18 @@ def test_poll_source_skips_deleted_items():
     connector._access_token = "tok"
 
     drives_resp = _ok({"value": [{"id": "drive-1"}]})
-    delta_resp = _ok({
-        "value": [
-            {
-                "id": "file-del",
-                "name": "gone.docx",
-                "file": {},
-                "deleted": {"state": "deleted"},
-            }
-        ],
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {
+                    "id": "file-del",
+                    "name": "gone.docx",
+                    "file": {},
+                    "deleted": {"state": "deleted"},
+                }
+            ],
+        }
+    )
 
     with patch.object(connector, "_get", side_effect=[drives_resp, delta_resp]):
         batches = list(connector.poll_source(0.0, 9999999999.0))
@@ -248,6 +313,7 @@ def test_poll_source_skips_deleted_items():
 # ---------------------------------------------------------------------------
 # Non-2xx Graph responses must raise (no silent partial syncs)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p1
 def test_iter_documents_raises_on_graph_http_500():
@@ -293,6 +359,7 @@ def test_list_drive_ids_raises_on_http_error():
 # retrieve_all_slim_docs_perm_sync: yields SlimDocument batches for prune
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.p1
 def test_retrieve_slim_docs_yields_slimdocument_batches():
     """The prune collector does file_list.extend(batch) and reads .id on each
@@ -302,13 +369,15 @@ def test_retrieve_slim_docs_yields_slimdocument_batches():
     connector._access_token = "tok"
 
     drives_resp = _ok({"value": [{"id": "drive-1"}]})
-    delta_resp = _ok({
-        "value": [
-            {"id": "f1", "name": "a.docx", "file": {}},
-            {"id": "f2", "name": "b.pdf", "file": {}},
-            {"id": "f3", "name": "c.txt", "file": {}},
-        ],
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {"id": "f1", "name": "a.docx", "file": {}},
+                {"id": "f2", "name": "b.pdf", "file": {}},
+                {"id": "f3", "name": "c.txt", "file": {}},
+            ],
+        }
+    )
 
     with patch.object(connector, "_get", side_effect=[drives_resp, delta_resp]):
         batches = list(connector.retrieve_all_slim_docs_perm_sync())
@@ -327,13 +396,15 @@ def test_retrieve_slim_docs_skips_folders_and_deleted():
     connector._access_token = "tok"
 
     drives_resp = _ok({"value": [{"id": "drive-1"}]})
-    delta_resp = _ok({
-        "value": [
-            {"id": "folder-1", "name": "Docs", "folder": {}},  # folder, no "file"
-            {"id": "del-1", "name": "gone.pdf", "file": {}, "deleted": {"state": "deleted"}},
-            {"id": "ok-1", "name": "keep.pdf", "file": {}},
-        ],
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {"id": "folder-1", "name": "Docs", "folder": {}},  # folder, no "file"
+                {"id": "del-1", "name": "gone.pdf", "file": {}, "deleted": {"state": "deleted"}},
+                {"id": "ok-1", "name": "keep.pdf", "file": {}},
+            ],
+        }
+    )
 
     with patch.object(connector, "_get", side_effect=[drives_resp, delta_resp]):
         batches = list(connector.retrieve_all_slim_docs_perm_sync())
@@ -366,6 +437,7 @@ def test_retrieve_slim_docs_requires_credentials():
 # ---------------------------------------------------------------------------
 # load_from_checkpoint: resumes from delta_links and honors start floor
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p1
 def test_load_from_checkpoint_uses_persisted_delta_link():

@@ -1,9 +1,11 @@
 """Box connector"""
+
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Generator
 
-from box_sdk_gen import BoxClient
+from box_sdk_gen import AccessToken, BoxClient, BoxOAuth, OAuthConfig
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
@@ -20,6 +22,29 @@ class BoxConnector(LoadConnector, PollConnector):
         self.folder_id = "0" if not folder_id else folder_id
         self.use_marker = use_marker
         self.box_client: BoxClient | None = None
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "BoxConnector":
+        credentials = config.get("credentials") or {}
+        box_tokens = credentials.get("box_tokens")
+        if not box_tokens:
+            raise ConnectorMissingCredentialError("Box tokens are required.")
+        token_payload = json.loads(box_tokens) if isinstance(box_tokens, str) else box_tokens
+        auth = BoxOAuth(
+            OAuthConfig(
+                client_id=token_payload["client_id"],
+                client_secret=token_payload["client_secret"],
+            )
+        )
+        auth.token_storage.store(
+            AccessToken(
+                access_token=token_payload["access_token"],
+                refresh_token=token_payload["refresh_token"],
+            )
+        )
+        connector = cls(folder_id=config.get("folder_id", "0"))
+        connector.load_credentials(auth)
+        return connector
 
     def load_credentials(self, auth: Any):
         self.box_client = BoxClient(auth=auth)
@@ -53,18 +78,10 @@ class BoxConnector(LoadConnector, PollConnector):
             for entry in result.entries:
                 if entry.type == "file":
                     file = self.box_client.files.get_file_by_id(entry.id)
-                    semantic_identifier = (
-                        f"{relative_folder_path} / {file.name}"
-                        if relative_folder_path
-                        else file.name
-                    )
+                    semantic_identifier = f"{relative_folder_path} / {file.name}" if relative_folder_path else file.name
                     yield file, semantic_identifier
                 elif entry.type == "folder":
-                    child_relative_path = (
-                        f"{relative_folder_path} / {entry.name}"
-                        if relative_folder_path
-                        else entry.name
-                    )
+                    child_relative_path = f"{relative_folder_path} / {entry.name}" if relative_folder_path else entry.name
                     yield from self._iter_files_recursive(
                         folder_id=entry.id,
                         relative_folder_path=child_relative_path,
@@ -96,10 +113,7 @@ class BoxConnector(LoadConnector, PollConnector):
             relative_folder_path=relative_folder_path,
         ):
             modified_time: SecondsSinceUnixEpoch | None = None
-            raw_time = (
-                getattr(file, "created_at", None)
-                or getattr(file, "content_created_at", None)
-            )
+            raw_time = getattr(file, "created_at", None) or getattr(file, "content_created_at", None)
 
             if raw_time:
                 modified_time = self._box_datetime_to_epoch_seconds(raw_time)
@@ -161,7 +175,6 @@ class BoxConnector(LoadConnector, PollConnector):
     def poll_source(self, start, end):
         return self._yield_files_recursive(folder_id=self.folder_id, start=start, end=end)
 
-
     def load_from_state(self):
         return self._yield_files_recursive(folder_id=self.folder_id, start=None, end=None)
 
@@ -173,7 +186,7 @@ class BoxConnector(LoadConnector, PollConnector):
 # app = Flask(__name__)
 
 # AUTH = BoxOAuth(
-#     OAuthConfig(client_id="8suvn9ik7qezsq2dub0ye6ubox61081z", client_secret="QScvhLgBcZrb2ck1QP1ovkutpRhI2QcN")
+#     OAuthConfig(client_id="<your-client-id>", client_secret="<your-client-secret>")
 # )
 
 
@@ -190,7 +203,7 @@ class BoxConnector(LoadConnector, PollConnector):
 #     AUTH.get_tokens_authorization_code_grant(request.args.get("code"))
 #     box = BoxConnector()
 #     box.load_credentials({"auth": AUTH})
-    
+
 #     lst = []
 #     for file in box.load_from_state():
 #        for f in file:

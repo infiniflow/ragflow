@@ -89,7 +89,7 @@ func TestAssertURLSafe(t *testing.T) {
 			name: "disallowed scheme ftp",
 			url:  "ftp://example.com/",
 			ips:  []string{"93.184.216.34"},
-			want: want{errSubstr: "Disallowed URL scheme"},
+			want: want{errSubstr: "disallowed URL scheme"},
 		},
 		{
 			name: "missing host",
@@ -100,7 +100,7 @@ func TestAssertURLSafe(t *testing.T) {
 			name: "resolution fails",
 			url:  "http://nosuchhost.test/x",
 			err:  "no such host",
-			want: want{errSubstr: "Could not resolve"},
+			want: want{errSubstr: "could not resolve"},
 		},
 		{
 			name: "all addresses must be public",
@@ -119,6 +119,48 @@ func TestAssertURLSafe(t *testing.T) {
 			url:  "http://stub/",
 			ips:  []string{"203.0.113.5"},
 			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "0.0.0.0/8 rejected",
+			url:  "http://stub/",
+			ips:  []string{"0.1.2.3"},
+			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "6to4 wrapping loopback rejected",
+			url:  "http://stub/",
+			ips:  []string{"2002:7f00:1::1"},
+			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "NAT64 well-known prefix wrapping metadata IP rejected",
+			url:  "http://stub/",
+			ips:  []string{"64:ff9b::a9fe:a9fe"},
+			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "NAT64 local-use prefix rejected",
+			url:  "http://stub/",
+			ips:  []string{"64:ff9b:1::7f00:1"},
+			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "Teredo wrapping loopback client rejected",
+			url:  "http://stub/",
+			ips:  []string{"2001:0:0:0:0:0:80ff:fffe"},
+			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "IPv4-compatible wrapping loopback rejected",
+			url:  "http://stub/",
+			ips:  []string{"::7f00:1"},
+			want: want{errSubstr: "non-public address"},
+		},
+		{
+			name: "NAT64 well-known prefix wrapping public IP allowed",
+			url:  "http://stub/",
+			ips:  []string{"64:ff9b::808:808"},
+			want: want{host: "stub", ip: "64:ff9b::808:808"},
 		},
 	}
 

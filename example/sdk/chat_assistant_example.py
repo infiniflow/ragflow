@@ -15,7 +15,7 @@
 #
 
 """
-The example demonstrates how to create a chat assistant, manage sessions, 
+The example demonstrates how to create a chat assistant, manage sessions,
 and perform both standard and streaming chat.
 """
 
@@ -39,7 +39,7 @@ try:
         name="Test Assistant",
         dataset_ids=[dataset.id],
         llm_id="deepseek-chat",  # Example LLM ID, replace with your actual model ID
-        prompt_config={"system": "You are a helpful assistant."}
+        prompt_config={"system": "You are a helpful assistant."},
     )
     print(f"Assistant created: {assistant.name} (ID: {assistant.id})")
 
@@ -52,12 +52,12 @@ try:
     print("\n--- Standard Chat ---")
     question = "What is RAGFlow?"
     print(f"User: {question}")
-    
+
     # ask returns a generator of Message objects
     # for stream=False, it yields once with the full answer
     for message in session.ask(question=question, stream=False):
         print(f"Assistant: {message.content}")
-        if hasattr(message, 'reference') and message.reference:
+        if hasattr(message, "reference") and message.reference:
             print(f"References used: {len(message.reference)} chunks")
 
     # 5. Streaming chat
@@ -65,10 +65,10 @@ try:
     question = "Tell me more about its features."
     print(f"User: {question}")
     print("Assistant: ", end="", flush=True)
-    
+
     for message in session.ask(question=question, stream=True):
         # In streaming mode, each message.content usually contains the incremental part
-        # or the full content so far depending on the SDK implementation. 
+        # or the full content so far depending on the SDK implementation.
         # Based on RAGFlow SDK, it typically yields incremental parts.
         print(message.content, end="", flush=True)
     print("\n")

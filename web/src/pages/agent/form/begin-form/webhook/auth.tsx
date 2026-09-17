@@ -1,6 +1,7 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { WebhookJWTAlgorithmList } from '@/constants/agent';
 import { WebhookSecurityAuthType } from '@/pages/agent/constant';
 import { buildOptions } from '@/utils/form';
@@ -53,7 +54,7 @@ export function Auth() {
           name="security.basic_auth.password"
           label={t('flow.webhook.password')}
         >
-          <Input></Input>
+          <Input type="password" autoComplete="new-password"></Input>
         </RAGFlowFormItem>
       </>
     ),
@@ -100,7 +101,21 @@ export function Auth() {
     [WebhookSecurityAuthType.Token]: renderTokenAuth,
     [WebhookSecurityAuthType.Basic]: renderBasicAuth,
     [WebhookSecurityAuthType.Jwt]: renderJwtAuth,
-    [WebhookSecurityAuthType.None]: () => null,
+    [WebhookSecurityAuthType.None]: () => (
+      <RAGFlowFormItem
+        name="security.allow_anonymous"
+        label={t('flow.webhook.allowAnonymous')}
+        tooltip={t('flow.webhook.allowAnonymousTip')}
+        horizontal
+      >
+        {(field) => (
+          <Switch
+            checked={field.value}
+            onCheckedChange={field.onChange}
+          ></Switch>
+        )}
+      </RAGFlowFormItem>
+    ),
   };
 
   return (

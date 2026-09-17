@@ -47,12 +47,8 @@ def wait_for_dataset_detail_ready(page, expect, timeout_ms: int) -> None:
         if env_bool("PW_DEBUG_DUMP"):
             url = page.url
             button_count = page.locator("button, [role='button']").count()
-            body_text = page.evaluate(
-                "(() => (document.body && document.body.innerText) || '')()"
-            )
-            debug(
-                f"[dataset] detail_ready_failed url={url} button_count={button_count}"
-            )
+            body_text = page.evaluate("(() => (document.body && document.body.innerText) || '')()")
+            debug(f"[dataset] detail_ready_failed url={url} button_count={button_count}")
             debug(f"[dataset] body_text_snippet={body_text[:200]!r}")
         raise
 
@@ -114,9 +110,7 @@ def ensure_upload_modal_open(page, expect, auth_click, timeout_ms: int):
             return modal
         except AssertionError:
             pass
-    return open_upload_modal_from_dataset_detail(
-        page, expect, auth_click, timeout_ms=timeout_ms
-    )
+    return open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms=timeout_ms)
 
 
 def ensure_parse_on(upload_modal, expect) -> None:
@@ -136,9 +130,7 @@ def open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms: 
     page.wait_for_selector("button", timeout=timeout_ms)
 
     if hasattr(page, "get_by_role"):
-        tab_locator = page.get_by_role(
-            "tab", name=re.compile(r"^(files|documents|file)$", re.I)
-        )
+        tab_locator = page.get_by_role("tab", name=re.compile(r"^(files|documents|file)$", re.I))
         if tab_locator.count() > 0:
             tab = tab_locator.first
             try:
@@ -148,16 +140,12 @@ def open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms: 
             except Exception:
                 pass
 
-    candidate_names = re.compile(
-        r"(upload file|upload|add file|add document|add|new)", re.I
-    )
+    candidate_names = re.compile(r"(upload file|upload|add file|add document|add|new)", re.I)
     trigger_locator = None
     if hasattr(page, "get_by_role"):
         trigger_locator = page.get_by_role("button", name=candidate_names)
     if trigger_locator is None or trigger_locator.count() == 0:
-        trigger_locator = page.locator("[role='button'], button, a").filter(
-            has_text=candidate_names
-        )
+        trigger_locator = page.locator("[role='button'], button, a").filter(has_text=candidate_names)
 
     trigger = None
     if trigger_locator.count() > 0:
@@ -172,9 +160,7 @@ def open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms: 
                 continue
 
     if trigger is None:
-        aria_candidates = page.locator(
-            "button[aria-label], button[title], [role='button'][aria-label], [role='button'][title]"
-        )
+        aria_candidates = page.locator("button[aria-label], button[title], [role='button'][aria-label], [role='button'][title]")
         limit = min(aria_candidates.count(), 10)
         for idx in range(limit):
             candidate = aria_candidates.nth(idx)
@@ -215,13 +201,8 @@ def open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms: 
                 title = item.get_attribute("title")
             except Exception as exc:
                 title = f"<title-error:{exc}>"
-            button_dump.append(
-                {"text": text, "aria_label": aria_label, "title": title}
-            )
-        raise AssertionError(
-            "Upload entrypoint not found on dataset detail page. "
-            f"visible_buttons={button_dump}"
-        )
+            button_dump.append({"text": text, "aria_label": aria_label, "title": title})
+        raise AssertionError(f"Upload entrypoint not found on dataset detail page. visible_buttons={button_dump}")
 
     try:
         if trigger.evaluate("el => el.tagName.toLowerCase() === 'button'"):
@@ -233,15 +214,9 @@ def open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms: 
 
     def _click_upload_file_popover_item() -> bool:
         locators = [
-            page.locator("[role='menuitem']").filter(
-                has_text=re.compile(r"^upload file$", re.I)
-            ),
-            page.locator("[role='option']").filter(
-                has_text=re.compile(r"^upload file$", re.I)
-            ),
-            page.locator("div, span, li").filter(
-                has_text=re.compile(r"^upload file$", re.I)
-            ),
+            page.locator("[role='menuitem']").filter(has_text=re.compile(r"^upload file$", re.I)),
+            page.locator("[role='option']").filter(has_text=re.compile(r"^upload file$", re.I)),
+            page.locator("div, span, li").filter(has_text=re.compile(r"^upload file$", re.I)),
         ]
         for locator in locators:
             if locator.count() == 0:
@@ -278,9 +253,7 @@ def open_upload_modal_from_dataset_detail(page, expect, auth_click, timeout_ms: 
             has_upload_text = page.locator("text=/upload file/i").count() > 0
             debug(f"[dataset] upload_item_missing has_upload_text={has_upload_text}")
             debug(f"[dataset] visible_button_texts={button_texts}")
-        raise AssertionError(
-            "Upload file popover item not found after clicking Add trigger."
-        )
+        raise AssertionError("Upload file popover item not found after clicking Add trigger.")
 
     try:
         page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
@@ -296,9 +269,7 @@ def select_chunking_method_general(page, expect, modal, timeout_ms: int) -> None
     """Select the General chunking method inside the dataset modal."""
     trigger_locator = modal.locator(
         "button",
-        has=modal.locator(
-            "span", has_text=re.compile(r"please select a chunking method\\.", re.I)
-        ),
+        has=modal.locator("span", has_text=re.compile(r"please select a chunking method\\.", re.I)),
     ).first
     if trigger_locator.count() == 0:
         label = modal.locator("text=/please select a chunking method\\./i").first
@@ -314,15 +285,8 @@ def select_chunking_method_general(page, expect, modal, timeout_ms: int) -> None
         if env_bool("PW_DEBUG_DUMP"):
             modal_text = modal.inner_text()
             button_count = modal.locator("button").count()
-            label_count = modal.locator(
-                "text=/please select a chunking method\\./i"
-            ).count()
-            debug(
-                "[dataset] chunking_trigger_missing "
-                f"button_count={button_count} label_count={label_count} "
-                f"trigger_locator_count={trigger_locator.count()} "
-                "trigger_handle_found=False"
-            )
+            label_count = modal.locator("text=/please select a chunking method\\./i").count()
+            debug(f"[dataset] chunking_trigger_missing button_count={button_count} label_count={label_count} trigger_locator_count={trigger_locator.count()} trigger_handle_found=False")
             debug(f"[dataset] modal_text_snippet={modal_text[:300]!r}")
         raise AssertionError("Chunking method dropdown trigger not found.")
 
@@ -342,29 +306,20 @@ def select_chunking_method_general(page, expect, modal, timeout_ms: int) -> None
 
     option = listbox.locator("span", has_text=re.compile(r"^General$", re.I)).first
     if option.count() == 0:
-        option = listbox.locator(
-            "div", has=page.locator("span", has_text=re.compile(r"^General$", re.I))
-        ).first
+        option = listbox.locator("div", has=page.locator("span", has_text=re.compile(r"^General$", re.I))).first
     if option.count() == 0 and env_bool("PW_DEBUG_DUMP"):
         try:
             listbox_text = listbox.inner_text()
         except Exception:
             listbox_text = ""
-        span_count = listbox.locator(
-            "span", has_text=re.compile(r"^General$", re.I)
-        ).count()
-        debug(
-            "[dataset] general_option_missing "
-            f"listbox_count={listbox.count()} span_count={span_count}"
-        )
+        span_count = listbox.locator("span", has_text=re.compile(r"^General$", re.I)).count()
+        debug(f"[dataset] general_option_missing listbox_count={listbox.count()} span_count={span_count}")
         debug(f"[dataset] listbox_text_snippet={listbox_text[:300]!r}")
     expect(option).to_be_visible(timeout=timeout_ms)
     option.click()
     if trigger_for_assert is not None:
         try:
-            expect(trigger_for_assert).to_contain_text(
-                re.compile(r"General", re.I), timeout=timeout_ms
-            )
+            expect(trigger_for_assert).to_contain_text(re.compile(r"General", re.I), timeout=timeout_ms)
         except AssertionError:
             # Trigger can rerender after selection; verify selected label in modal instead.
             expect(modal).to_contain_text(re.compile(r"General", re.I), timeout=timeout_ms)
@@ -386,9 +341,7 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
     except PlaywrightTimeoutError:
         if env_bool("PW_DEBUG_DUMP"):
             url = page.url
-            body_text = page.evaluate(
-                "(() => (document.body && document.body.innerText) || '')()"
-            )
+            body_text = page.evaluate("(() => (document.body && document.body.innerText) || '')()")
             lines = body_text.splitlines()
             snippet = "\n".join(lines[:20])[:500]
             debug(f"[dataset] entrypoint_wait_timeout url={url} snippet={snippet!r}")
@@ -399,11 +352,7 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
             locator.click()
         except Exception as exc:
             message = str(exc).lower()
-            if (
-                "not attached to the dom" not in message
-                and "intercepts pointer events" not in message
-                and "element is not stable" not in message
-            ):
+            if "not attached to the dom" not in message and "intercepts pointer events" not in message and "element is not stable" not in message:
                 raise
             locator.click(force=True)
 
@@ -413,15 +362,11 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
         if hasattr(page, "get_by_role"):
             create_btn = page.get_by_role("button", name=re.compile(r"create dataset", re.I))
         if create_btn is None or create_btn.count() == 0:
-            create_btn = page.locator(
-                "button", has_text=re.compile(r"create dataset", re.I)
-            ).first
+            create_btn = page.locator("button", has_text=re.compile(r"create dataset", re.I)).first
         if create_btn.count() == 0:
             if env_bool("PW_DEBUG_DUMP"):
                 url = page.url
-                body_text = page.evaluate(
-                    "(() => (document.body && document.body.innerText) || '')()"
-                )
+                body_text = page.evaluate("(() => (document.body && document.body.innerText) || '')()")
                 lines = body_text.splitlines()
                 snippet = "\n".join(lines[:20])[:500]
                 debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
@@ -433,9 +378,7 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
         except AssertionError:
             if env_bool("PW_DEBUG_DUMP"):
                 url = page.url
-                body_text = page.evaluate(
-                    "(() => (document.body && document.body.innerText) || '')()"
-                )
+                body_text = page.evaluate("(() => (document.body && document.body.innerText) || '')()")
                 lines = body_text.splitlines()
                 snippet = "\n".join(lines[:20])[:500]
                 debug(f"[dataset] entrypoint_not_found url={url} snippet={snippet!r}")
@@ -446,9 +389,7 @@ def open_create_dataset_modal(page, expect, timeout_ms: int):
     if empty_text.count() > 0:
         debug("[dataset] using empty-state entrypoint")
         expect(empty_text).to_be_visible(timeout=5000)
-        entrypoint = empty_text.locator(
-            "xpath=ancestor-or-self::*[self::button or self::a or @role='button'][1]"
-        )
+        entrypoint = empty_text.locator("xpath=ancestor-or-self::*[self::button or self::a or @role='button'][1]")
         if entrypoint.count() > 0:
             expect(entrypoint.first).to_be_visible(timeout=5000)
             _click_entrypoint(entrypoint.first)
@@ -482,17 +423,13 @@ def delete_uploaded_file(page, expect, filename: str, timeout_ms: int) -> None:
         if by_testid.count() > 0:
             return by_testid.first
 
-        by_label = confirm.locator(
-            "button:visible", has_text=re.compile("^delete$", re.I)
-        )
+        by_label = confirm.locator("button:visible", has_text=re.compile("^delete$", re.I))
         if by_label.count() > 0:
             return by_label.first
 
         return confirm.locator("button:visible").last
 
-    row = page.locator(
-        f"[data-testid='document-row'][data-doc-name={json.dumps(filename)}]"
-    )
+    row = page.locator(f"[data-testid='document-row'][data-doc-name={json.dumps(filename)}]")
     expect(row).to_be_visible(timeout=timeout_ms)
     delete_button = row.locator("[data-testid='document-delete']")
     expect(delete_button).to_be_visible(timeout=timeout_ms)

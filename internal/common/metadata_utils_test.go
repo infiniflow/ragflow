@@ -20,6 +20,92 @@ import (
 	"testing"
 )
 
+func TestTurn2JSONSchema(t *testing.T) {
+	fields := []MetadataFieldDef{
+		{Key: "author", Description: "doc author", Enum: []string{"Alice", "Bob"}},
+		{Key: "year", Type: "number"},
+		{Key: "", Type: "string"}, // blank key must be dropped
+	}
+	schema := Turn2JSONSchema(fields)
+	if schema["type"] != "object" {
+		t.Fatalf("expected object type, got %v", schema["type"])
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatalf("expected additionalProperties false, got %v", schema["additionalProperties"])
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("expected properties map")
+	}
+	if len(props) != 2 {
+		t.Fatalf("expected 2 properties (blank key dropped), got %d", len(props))
+	}
+	author, ok := props["author"].(map[string]any)
+	if !ok {
+		t.Fatal("author property missing")
+	}
+	if author["type"] != "string" {
+		t.Fatalf("enum field should be typed string, got %v", author["type"])
+	}
+	if _, ok := author["enum"]; !ok {
+		t.Fatal("author should carry enum")
+	}
+	if _, ok := author["description"]; !ok {
+		t.Fatal("author should carry description")
+	}
+}
+
+func TestTurn2JSONSchema_Empty(t *testing.T) {
+	if len(Turn2JSONSchema(nil)) != 0 {
+		t.Fatal("expected empty schema for nil fields")
+	}
+}
+
+func TestSplitCombinedMetadataValues(t *testing.T) {
+	in := map[string]any{
+		"people": []string{"关羽、孙权", "张辽", "刘备、关羽"},
+		"level":  "high",            // scalar string is NOT split
+		"score":  float64(0.9),      // non-string passes through
+		"tags":   []any{"a|b", "c"}, // []any of strings is split
+	}
+	out := SplitCombinedMetadataValues(in)
+	people, ok := out["people"].([]string)
+	if !ok {
+		t.Fatalf("people should be []string, got %T", out["people"])
+	}
+	// 关羽、孙权 -> 关羽,孙权 ; 张辽 ; 刘备、关羽 -> 刘备,关羽 ; dedupe 关羽
+	want := []string{"关羽", "孙权", "张辽", "刘备"}
+	if len(people) != len(want) {
+		t.Fatalf("people=%v, want %v", people, want)
+	}
+	for i := range want {
+		if people[i] != want[i] {
+			t.Fatalf("people[%d]=%q, want %q", i, people[i], want[i])
+		}
+	}
+	if out["level"] != "high" {
+		t.Fatalf("scalar string must be preserved unchanged, got %v", out["level"])
+	}
+	if out["score"] != float64(0.9) {
+		t.Fatalf("non-string passes through, got %v", out["score"])
+	}
+	tags, ok := out["tags"].([]string)
+	if !ok || len(tags) != 3 {
+		t.Fatalf("tags=%v, want [a b c]", out["tags"])
+	}
+}
+
+func TestSplitCombinedMetadataValues_Noop(t *testing.T) {
+	var nilMap map[string]any
+	if SplitCombinedMetadataValues(nilMap) != nil {
+		t.Fatal("nil map must be returned as nil")
+	}
+	empty := map[string]any{}
+	if len(SplitCombinedMetadataValues(empty)) != 0 {
+		t.Fatal("empty map must stay empty")
+	}
+}
+
 func TestParseAndConvert_OperatorMapping(t *testing.T) {
 	input := map[string]interface{}{
 		"conditions": []interface{}{

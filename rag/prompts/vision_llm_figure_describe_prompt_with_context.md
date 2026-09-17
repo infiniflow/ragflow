@@ -7,6 +7,12 @@ You are an expert visual data analyst.
 Analyze the image and produce a textual representation strictly based on what is visible in the image.
 Surrounding context may be used only for minimal clarification or disambiguation of terms that appear in the image, not as a source of new information.
 
+## OUTPUT LANGUAGE
+
+- Write all descriptions and field values in {{ language }}.
+- Preserve all visible text verbatim in its original language; do not translate it.
+- Keep the required output field names exactly as specified below.
+
 ## CONTEXT (ABOVE)
 
 {{ context_above }}

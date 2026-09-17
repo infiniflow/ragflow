@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+
+set -e
+
+echo "Start RAGFlow cluster, version: "
+cat /ragflow/VERSION
+
+# -----------------------------------------------------------------------------
+# Usage and command-line argument parsing
+# -----------------------------------------------------------------------------
+function usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo
+    echo "  --disable-webserver                     Disables the web server (nginx + ragflow_server)."
+    echo "  --disable-taskexecutor                  Disables task executor workers."
+    echo "  --disable-datasync                      Disables synchronization of datasource workers."
+    echo "  --enable-mcpserver                      Enables the MCP server."
+    echo "  --enable-adminserver                    Enables the Admin server."
+    echo "  --init-model-provider-tables            Run model provider table migrations and exit."
+    echo "  --init-superuser                        Initializes the superuser (needs --enable-adminserver)."
+    echo "  --consumer-no-beg=<num>                 Start range for consumers (if using range-based)."
+    echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
+    echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
+    echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --mcp-host=<string>                     Address the MCP server binds to (default: 127.0.0.1)."
+    echo "  --mcp-port=<num>                        Port the MCP server listens on (default: 9382)."
+    echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
+    echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
+    echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
+    echo "  --no-transport-streamable-http-enabled  Disables the MCP streamable HTTP transport. Disabling"
+    echo "                                          both transports re-enables this one, since the server"
+    echo "                                          requires at least one."
+    echo "  --no-json-response                      Disables JSON responses from the MCP server."
+    echo
+    echo "Examples:"
+    echo "  $0 --disable-taskexecutor"
+    echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
+    echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
+    echo "  $0 --enable-mcpserver"
+    echo "  $0 --enable-adminserver"
+    echo "  $0 --enable-adminserver --init-superuser"
+    exit 1
+}
+
+ENABLE_WEBSERVER=1 # Default to enable web server
+ENABLE_TASKEXECUTOR=1  # Default to enable task executor
+ENABLE_DATASYNC=1
+ENABLE_MCP_SERVER=0
+ENABLE_ADMIN_SERVER=0 # Default close admin server
+INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
+INIT_MODEL_PROVIDER_TABLES=0
+CONSUMER_NO_BEG=0
+CONSUMER_NO_END=0
+WORKERS=1
+
+MCP_HOST="127.0.0.1"
+MCP_PORT=9382
+MCP_MODE="self-host"
+MCP_HOST_API_KEY=""
+MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
+MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
+MCP_JSON_RESPONSE_FLAG="--json-response"
+
+# -----------------------------------------------------------------------------
+# Host ID logic:
+#   1. By default, use the system hostname if length <= 32
+#   2. Otherwise, use the full MD5 hash of the hostname (32 hex chars)
+# -----------------------------------------------------------------------------
+CURRENT_HOSTNAME="$(hostname)"
+if [ ${#CURRENT_HOSTNAME} -le 32 ]; then
+  DEFAULT_HOST_ID="$CURRENT_HOSTNAME"
+else
+  DEFAULT_HOST_ID="$(echo -n "$CURRENT_HOSTNAME" | md5sum | cut -d ' ' -f 1)"
+fi
+
+HOST_ID="$DEFAULT_HOST_ID"
+
+# Parse arguments
+for arg in "$@"; do
+  case $arg in
+    --disable-webserver)
+      ENABLE_WEBSERVER=0
+      shift
+      ;;
+    --disable-taskexecutor)
+      ENABLE_TASKEXECUTOR=0
+      shift
+      ;;
+    --disable-datasync)
+      ENABLE_DATASYNC=0
+      shift
+      ;;
+    --enable-mcpserver)
+      ENABLE_MCP_SERVER=1
+      shift
+      ;;
+    --enable-adminserver)
+      ENABLE_ADMIN_SERVER=1
+      shift
+      ;;
+    --init-model-provider-tables)
+      INIT_MODEL_PROVIDER_TABLES=1
+      shift
+      ;;
+    --init-superuser)
+      INIT_SUPERUSER_ARGS="--init-superuser"
+      shift
+      ;;
+    --mcp-host=*)
+      MCP_HOST="${arg#*=}"
+      shift
+      ;;
+    --mcp-port=*)
+      MCP_PORT="${arg#*=}"
+      shift
+      ;;
+    --mcp-mode=*)
+      MCP_MODE="${arg#*=}"
+      shift
+      ;;
+    --mcp-host-api-key=*)
+      MCP_HOST_API_KEY="${arg#*=}"
+      shift
+      ;;
+    --transport-sse-enabled|--no-transport-sse-enabled)
+      MCP_TRANSPORT_SSE_FLAG="$arg"
+      shift
+      ;;
+    --transport-streamable-http-enabled|--no-transport-streamable-http-enabled)
+      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="$arg"
+      shift
+      ;;
+    --json-response|--no-json-response)
+      MCP_JSON_RESPONSE_FLAG="$arg"
+      shift
+      ;;
+    --consumer-no-beg=*)
+      CONSUMER_NO_BEG="${arg#*=}"
+      shift
+      ;;
+    --consumer-no-end=*)
+      CONSUMER_NO_END="${arg#*=}"
+      shift
+      ;;
+    --workers=*)
+      WORKERS="${arg#*=}"
+      shift
+      ;;
+    --host-id=*)
+      HOST_ID="${arg#*=}"
+      shift
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+
+# -----------------------------------------------------------------------------
+# Replace env variables in the service_conf.yaml file
+# -----------------------------------------------------------------------------
+CONF_DIR="/ragflow/conf"
+TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
+CONF_FILE="${CONF_DIR}/service_conf.yaml"
+
+rm -f "${CONF_FILE}"
+DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
+while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
+        varname="${BASH_REMATCH[1]}"
+        default="${BASH_REMATCH[2]}"
+
+        if [ -n "${!varname}" ]; then
+            eval "echo \"$line"\" >> "${CONF_FILE}"
+        else
+            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
+        fi
+    else
+        eval "echo \"$line\"" >> "${CONF_FILE}"
+    fi
+done < "${TEMPLATE_FILE}"
+
+export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
+
+# -----------------------------------------------------------------------------
+# Select Nginx Configuration
+# -----------------------------------------------------------------------------
+# This image ships the Go backend only, so the golang config is the only one
+# available.
+NGINX_CONF_DIR="/etc/nginx/conf.d"
+cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+
+# -----------------------------------------------------------------------------
+# Function(s)
+# -----------------------------------------------------------------------------
+
+# One-shot Go migration. bin/ragflow_server --migrate is a standalone action: it
+# runs the migrations and exits, independent of any server mode.
+function run_go_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [[ "$db_type" == "gaussdb" || "$db_type" == "gauss" ]]; then
+        # The Go migrations emit MySQL-only SQL and cannot run against a GaussDB
+        # metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+    echo "Running model provider table migrations..."
+    bin/ragflow_server --migrate
+}
+
+# Whether any Go server mode will run. These are the processes that used to
+# carry --migrate, so the standalone migration must run before them.
+function go_backend_enabled() {
+    if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+        return 0
+    fi
+    if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]] || [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# -----------------------------------------------------------------------------
+# Start components based on flags
+# -----------------------------------------------------------------------------
+run_with_restart() {
+  local process_name="$1"
+  shift
+
+  while true; do
+    echo "Attempt to start ${process_name}..."
+    set +e
+    "$@"
+    local exit_code=$?
+    set -e
+    echo "${process_name} exited with code ${exit_code}. Restarting in 1 second..."
+    sleep 1
+  done
+}
+
+# --init-model-provider-tables keeps its documented "run migrations and exit"
+# meaning: it migrates and exits without booting any server.
+if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
+    run_go_migrations
+    echo "Model provider table migrations finished. Exiting."
+    exit 0
+fi
+
+# Otherwise migrate once up front, before any Go server mode boots. --migrate is
+# a standalone action, so it is no longer attached to --api/--admin/--syncer.
+if go_backend_enabled; then
+    run_go_migrations
+fi
+
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
+fi
+
+sleep 5
+
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    echo "Starting Admin go server..."
+    run_with_restart "Admin go server" bin/ragflow_server --admin ${INIT_SUPERUSER_ARGS} &
+fi
+
+if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+    echo "Starting nginx..."
+    /usr/sbin/nginx -c /etc/nginx/nginx.conf
+
+    echo "Starting RAGFlow go server..."
+    MCP_ARGS=()
+    if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+        MCP_ARGS=(
+            --enable-mcpserver
+            --mcp-host="${MCP_HOST}"
+            --mcp-port="${MCP_PORT}"
+            --mcp-mode="${MCP_MODE}"
+            --mcp-host-api-key="${MCP_HOST_API_KEY}"
+            "${MCP_TRANSPORT_SSE_FLAG}"
+            "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}"
+            "${MCP_JSON_RESPONSE_FLAG}"
+        )
+    fi
+    run_with_restart "RAGFlow go server" bin/ragflow_server --api "${MCP_ARGS[@]}" &
+fi
+
+# MCP needs no separate process: --api serves it in-process at POST /mcp on the
+# main API port.
+
+# Task execution is the Go ingestor's job. This image ships no Python task
+# executor (rag/svr/task_executor.py is not copied), so --ingestor is the only
+# worker that can run here.
+if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
+    if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
+        echo "Starting go ingestor..."
+        run_with_restart "ingestor" bin/ragflow_server --ingestor &
+    else
+        # Otherwise, start a fixed number of workers
+        echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
+        for (( i=0; i<WORKERS; i++ ))
+        do
+            echo "Starting go ingestor..."
+            run_with_restart "ingestor" bin/ragflow_server --ingestor &
+        done
+    fi
+fi
+
+wait

@@ -8,7 +8,6 @@ import {
   useGetChunkHighlights,
   useGetPipelineResultSearchParams,
   useHandleChunkCardClick,
-  useRerunDataflow,
   useSummaryInfo,
   useTimelineDataFlow,
 } from './hooks';
@@ -20,10 +19,10 @@ import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal/modal';
 import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { Images } from '@/constants/common';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { Routes } from '@/routes';
 import { LucideArrowBigLeft } from 'lucide-react';
 import TimelineDataFlow from './components/time-line';
@@ -33,16 +32,44 @@ import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
 const DataflowResult = () => {
-  const { isReadOnly, knowledgeId, agentId, documentExtension } =
-    useGetPipelineResultSearchParams();
+  const {
+    isReadOnly,
+    knowledgeId,
+    agentId,
+    documentExtension,
+    documentName,
+    documentSize,
+    documentCreatedAt,
+  } = useGetPipelineResultSearchParams();
 
   const isAgent = !!agentId;
 
   const { pipelineResult } = useFetchPipelineResult({ agentId });
 
   const {
-    data: { documentInfo },
+    data: { documentInfo: chunkDocumentInfo },
   } = useFetchNextChunkList(!isAgent);
+
+  // In agent mode the chunk list query is disabled, so the document info
+  // comes from the search params passed by the pipeline log sheet instead.
+  const documentInfo = useMemo<IKnowledgeFile>(() => {
+    if (!isAgent) {
+      return chunkDocumentInfo;
+    }
+    return {
+      name: documentName,
+      size: Number(documentSize) || 0,
+      create_date: documentCreatedAt
+        ? new Date(Number(documentCreatedAt) * 1000).toISOString()
+        : '',
+    } as IKnowledgeFile;
+  }, [
+    chunkDocumentInfo,
+    documentCreatedAt,
+    documentName,
+    documentSize,
+    isAgent,
+  ]);
 
   const { selectedChunk, handleChunkCardClick } = useHandleChunkCardClick();
   const [activeStepId, setActiveStepId] = useState<number | string>(2);
@@ -63,7 +90,7 @@ const DataflowResult = () => {
   const fileType = useMemo(() => {
     if (isAgent) {
       return Images.some((x) => x === documentExtension)
-        ? documentInfo?.name.split('.').pop() || 'visual'
+        ? documentInfo?.name?.split('.').pop() || documentExtension
         : documentExtension;
     }
     switch (documentInfo?.type) {
@@ -81,56 +108,8 @@ const DataflowResult = () => {
     return 'unknown';
   }, [documentExtension, documentInfo?.name, documentInfo?.type, isAgent]);
 
-  const {
-    handleReRunFunc,
-    isChange,
-    setIsChange,
-    loading: reRunLoading,
-  } = useRerunDataflow({
-    data: dataset,
-  });
-
-  const handleStepChange = (id: number | string, step: TimelineNode) => {
-    if (isChange) {
-      Modal.show({
-        visible: true,
-        className: '!w-[560px]',
-        title: t('dataflowParser.changeStepModalTitle'),
-        children: (
-          <div
-            className="text-sm text-text-secondary"
-            dangerouslySetInnerHTML={{
-              __html: t('dataflowParser.changeStepModalContent', {
-                step: step?.title,
-              }),
-            }}
-          ></div>
-        ),
-        onVisibleChange: () => {
-          Modal.destroy();
-        },
-        footer: (
-          <div className="flex justify-end gap-2">
-            <Button variant={'outline'} onClick={() => Modal.destroy()}>
-              {t('dataflowParser.changeStepModalCancelText')}
-            </Button>
-            <Button
-              variant={'secondary'}
-              className="!bg-state-error text-text-primary"
-              onClick={() => {
-                Modal.destroy();
-                setActiveStepId(id);
-                setIsChange(false);
-              }}
-            >
-              {t('dataflowParser.changeStepModalConfirmText')}
-            </Button>
-          </div>
-        ),
-      });
-    } else {
-      setActiveStepId(id);
-    }
+  const handleStepChange = (id: number | string) => {
+    setActiveStepId(id);
   };
 
   const { type } = useGetKnowledgeSearchParams();
@@ -203,9 +182,6 @@ const DataflowResult = () => {
               currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
               <ParserContainer
                 isReadonly={isReadOnly}
-                isChange={isChange}
-                reRunLoading={reRunLoading}
-                setIsChange={setIsChange}
                 step={currentTimeNode as TimelineNode}
                 data={
                   currentTimeNode.detail as {
@@ -215,7 +191,6 @@ const DataflowResult = () => {
                 }
                 summaryInfo={summaryInfo}
                 clickChunk={handleChunkCardClick}
-                reRunFunc={handleReRunFunc}
               />
             )}
             {/* )} */}

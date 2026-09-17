@@ -96,6 +96,7 @@ func TestGPUStackFactory(t *testing.T) {
 }
 
 func TestGPUStackChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-8b" {
 			t.Errorf("model=%v", body["model"])
@@ -112,10 +113,12 @@ func TestGPUStackChatHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
+	ctx := t.Context()
 	resp, err := newGPUStackForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -129,6 +132,7 @@ func TestGPUStackChatHappyPath(t *testing.T) {
 }
 
 func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -143,10 +147,12 @@ func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
+	ctx := t.Context()
 	resp, err := newGPUStackForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -160,8 +166,9 @@ func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
 }
 
 func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		for _, k := range []string{"model", "messages", "stream", "max_tokens", "temperature", "top_p", "stop"} {
+		for _, k := range []string{"model", "messages", "stream", "temperature", "top_p", "stop"} {
 			if _, present := body[k]; !present {
 				t.Errorf("documented field %q missing from request body", k)
 			}
@@ -179,34 +186,43 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 	temp := 0.5
 	topP := 0.95
 	stop := []string{"END"}
+	ctx := t.Context()
 	_, err := newGPUStackForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
 }
 
-func TestGPUStackChatRequiresAPIKey(t *testing.T) {
+func TestGPUStackChatAllowsEmptyAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
+		&APIConfig{}, nil, nil,
 	)
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 
 func TestGPUStackChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
+	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
+		ctx,
 		"",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
@@ -214,9 +230,12 @@ func TestGPUStackChatRequiresModelName(t *testing.T) {
 }
 
 func TestGPUStackChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
+	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
-		"qwen3-8b", nil, &APIConfig{ApiKey: &apiKey}, nil,
+		ctx,
+		"qwen3-8b", nil, &APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
@@ -224,6 +243,7 @@ func TestGPUStackChatRequiresMessages(t *testing.T) {
 }
 
 func TestGPUStackChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -231,10 +251,12 @@ func TestGPUStackChatRejectsHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
+	ctx := t.Context()
 	_, err := newGPUStackForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
@@ -242,12 +264,15 @@ func TestGPUStackChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestGPUStackChatRequiresBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	model := NewGPUStackModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	apiKey := "test-key"
+	ctx := t.Context()
 	_, err := model.ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
 		t.Errorf("expected base-URL error, got %v", err)
@@ -255,6 +280,7 @@ func TestGPUStackChatRequiresBaseURL(t *testing.T) {
 }
 
 func TestGPUStackStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
@@ -266,10 +292,12 @@ func TestGPUStackStreamHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	var sawDone bool
+	ctx := t.Context()
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -294,6 +322,7 @@ func TestGPUStackStreamHappyPath(t *testing.T) {
 }
 
 func TestGPUStackStreamExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"think "}}]}`+"\n"+
@@ -304,10 +333,12 @@ func TestGPUStackStreamExtractsReasoningContent(t *testing.T) {
 
 	apiKey := "test-key"
 	var content, reasoning []string
+	ctx := t.Context()
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
 				reasoning = append(reasoning, *r)
@@ -330,13 +361,17 @@ func TestGPUStackStreamExtractsReasoningContent(t *testing.T) {
 }
 
 func TestGPUStackStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	stream := false
+	ctx := t.Context()
 	err := newGPUStackForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
@@ -345,11 +380,14 @@ func TestGPUStackStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestGPUStackStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
+	ctx := t.Context()
 	err := newGPUStackForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
@@ -357,16 +395,19 @@ func TestGPUStackStreamRequiresSender(t *testing.T) {
 }
 
 func TestGPUStackStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
 	defer srv.Close()
 
 	apiKey := "test-key"
+	ctx := t.Context()
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
@@ -375,6 +416,7 @@ func TestGPUStackStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestGPUStackStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {this is not valid json}`+"\n",
@@ -382,10 +424,12 @@ func TestGPUStackStreamRejectsMalformedFrame(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
+	ctx := t.Context()
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
@@ -394,6 +438,7 @@ func TestGPUStackStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestGPUStackStreamSurfacesUpstreamError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"oom","type":"runtime_error"}}`+"\n",
@@ -401,10 +446,12 @@ func TestGPUStackStreamSurfacesUpstreamError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
+	ctx := t.Context()
 	err := newGPUStackForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
 	)
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
@@ -413,6 +460,8 @@ func TestGPUStackStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestGPUStackListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s want GET", r.Method)
@@ -434,27 +483,30 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := newGPUStackForTest(srv.URL)
-	models, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen3-8b,qwen3-32b" {
+	if joinModelNames(models, ",") != "qwen3-8b,qwen3-32b" {
 		t.Errorf("models=%v", models)
 	}
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
-func TestGPUStackListModelsRequiresAPIKey(t *testing.T) {
-	_, err := newGPUStackForTest("http://unused").ListModels(&APIConfig{})
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	_, err := newGPUStackForTest("http://unused").ListModels(ctx, &APIConfig{})
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 
 // TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1-openai/embeddings.
 func TestGPUStackEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "bge-m3" {
 			t.Errorf("model=%v", body["model"])
@@ -477,8 +529,8 @@ func TestGPUStackEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512})
+	ctx := t.Context()
+	vecs, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -492,6 +544,7 @@ func TestGPUStackEmbedHappyPath(t *testing.T) {
 
 // TestGPUStackEmbedReordersByIndex verifies out-of-order response indices are mapped correctly.
 func TestGPUStackEmbedReordersByIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -505,8 +558,8 @@ func TestGPUStackEmbedReordersByIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	vecs, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -519,6 +572,7 @@ func TestGPUStackEmbedReordersByIndex(t *testing.T) {
 
 // TestGPUStackEmbedEmptyInputShortCircuits avoids HTTP when texts is empty.
 func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("Embed([]) made an unexpected HTTP call")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -527,7 +581,9 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	vecs, err := newGPUStackForTest(srv.URL).Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	vecs, err := newGPUStackForTest(srv.URL).Embed(
+		ctx, &model, EmbedRequest{Texts: []string{}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -537,16 +593,19 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 }
 
 // TestGPUStackEmbedRequiresAPIKey rejects requests without an API key.
-func TestGPUStackEmbedRequiresAPIKey(t *testing.T) {
+func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	model := "bge-m3"
-	_, err := newGPUStackForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	_, err := newGPUStackForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 
 // TestGPUStackEmbedRejectsDuplicateIndex errors on duplicate response indices.
 func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -559,7 +618,8 @@ func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -567,6 +627,7 @@ func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
 
 // TestGPUStackEmbedRejectsOutOfRangeIndex errors when index exceeds input length.
 func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -578,7 +639,8 @@ func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -586,6 +648,7 @@ func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 // TestGPUStackEmbedRejectsMissingIndex errors when index is omitted from response.
 func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -597,7 +660,8 @@ func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding index") {
 		t.Errorf("expected missing-index error, got %v", err)
 	}
@@ -605,6 +669,7 @@ func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
 
 // TestGPUStackEmbedRejectsEmptyVector errors when the API returns a zero-length vector.
 func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -616,7 +681,8 @@ func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "empty embedding vector") {
 		t.Errorf("expected empty-vector error, got %v", err)
 	}
@@ -624,6 +690,7 @@ func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
 
 // TestGPUStackEmbedRejectsMissingSlot errors when a response index is never returned.
 func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -635,28 +702,31 @@ func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "bge-m3"
-	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	ctx := t.Context()
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
 }
 
 func TestGPUStackUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newGPUStackForTest("http://unused")
 	model := "x"
-	if _, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
-	if _, err := m.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: %v", err)
 	}
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

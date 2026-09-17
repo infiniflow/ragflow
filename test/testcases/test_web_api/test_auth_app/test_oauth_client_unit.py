@@ -153,9 +153,7 @@ def test_oauth_client_sync_matrix_unit(monkeypatch):
     assert call_log[1][0] == "GET"
     assert call_log[1][3]["Authorization"] == "Bearer access-1"
 
-    normalized = client.normalize_user_info(
-        {"email": "fallback@example.com", "username": "fallback-user", "nickname": "fallback-nick", "avatar_url": "direct-avatar"}
-    )
+    normalized = client.normalize_user_info({"email": "fallback@example.com", "username": "fallback-user", "nickname": "fallback-nick", "avatar_url": "direct-avatar"})
     assert normalized.to_dict()["avatar_url"] == "direct-avatar"
 
     enterprise_email = client.normalize_user_info({"enterprise_email": "enterprise@example.com", "name": "Enterprise User"})

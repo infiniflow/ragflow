@@ -20,6 +20,7 @@ on: each ``@tool`` callable carries a well-formed OpenAI function schema,
 required vs. optional params are derived from defaults, and the session
 dispatches both sync and async callables by name.
 """
+
 import asyncio
 
 import pytest
@@ -99,7 +100,8 @@ def test_session_rejects_non_mapping_arguments():
 
 
 def test_session_rejects_non_tool_callable():
-    def plain(x): return x
+    def plain(x):
+        return x
 
     with pytest.raises(TypeError):
         FunctionToolSession([plain])

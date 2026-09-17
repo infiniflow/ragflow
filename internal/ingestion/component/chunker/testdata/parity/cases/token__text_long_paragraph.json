@@ -1,0 +1,16 @@
+{
+ "id": "token__text_long_paragraph",
+ "component": "TokenChunker",
+ "notes": "One unbroken line with no newline at all, so neither side can use a delimiter and both must fall back to whitespace-atom sub-splitting. Isolates _split_oversized_unit from the delimiter divergence.",
+ "param": {
+  "chunk_token_size": 32,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "text",
+  "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+ }
+}

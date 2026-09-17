@@ -202,6 +202,21 @@ def test_load_oidc_metadata_success_and_wraps_failure(monkeypatch):
 
 
 @pytest.mark.p2
+def test_load_oidc_metadata_strips_trailing_slash_from_issuer(monkeypatch):
+    _, oidc_module = _load_auth_modules(monkeypatch)
+
+    calls = {}
+
+    def _ok_sync_request(method, url, timeout):
+        calls["url"] = url
+        return _FakeResponse(_metadata("https://issuer.example"))
+
+    monkeypatch.setattr(oidc_module, "sync_request", _ok_sync_request)
+    oidc_module.OIDCClient._load_oidc_metadata("https://issuer.example/")
+    assert calls["url"] == "https://issuer.example/.well-known/openid-configuration"
+
+
+@pytest.mark.p2
 def test_parse_id_token_success_and_error(monkeypatch):
     _, oidc_module = _load_auth_modules(monkeypatch)
     client = _make_client(monkeypatch, oidc_module)
@@ -334,9 +349,7 @@ def test_parse_id_token_passes_pinned_algorithms_to_jwt_decode(monkeypatch):
     # verification path must not consult it. We sabotage
     # ``jwt.get_unverified_header`` to prove the code never calls it.
     def _explode(_token):  # pragma: no cover - must not be called
-        raise AssertionError(
-            "parse_id_token must not read the algorithm from the unverified JWT header"
-        )
+        raise AssertionError("parse_id_token must not read the algorithm from the unverified JWT header")
 
     monkeypatch.setattr(oidc_module.jwt, "get_unverified_header", _explode)
     monkeypatch.setattr(oidc_module.jwt, "PyJWKClient", _DummyJwkClient)
@@ -650,9 +663,7 @@ def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
                     {"email": "octo-async@example.com", "primary": True},
                 ]
             )
-        return _FakeResponse(
-            {"login": "octocat-async", "name": "Octo Async", "avatar_url": "https://avatar.example/octo-async.png"}
-        )
+        return _FakeResponse({"login": "octocat-async", "name": "Octo Async", "avatar_url": "https://avatar.example/octo-async.png"})
 
     monkeypatch.setattr(github_module, "async_request", _fake_async_request)
     info = asyncio.run(client.async_fetch_user_info("async-token"))

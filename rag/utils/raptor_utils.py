@@ -25,36 +25,11 @@ from typing import Optional
 import xxhash
 
 RAPTOR_TREE_BUILDER = "raptor"
-PSI_TREE_BUILDER = "psi"
-SUPPORTED_TREE_BUILDERS = {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
-GMM_CLUSTERING_METHOD = "gmm"
-AHC_CLUSTERING_METHOD = "ahc"
-SUPPORTED_CLUSTERING_METHODS = {GMM_CLUSTERING_METHOD, AHC_CLUSTERING_METHOD}
 
 # File extensions for structured data types
 EXCEL_EXTENSIONS = {".xls", ".xlsx", ".xlsm", ".xlsb"}
 CSV_EXTENSIONS = {".csv", ".tsv"}
 STRUCTURED_EXTENSIONS = EXCEL_EXTENSIONS | CSV_EXTENSIONS
-
-
-def get_raptor_tree_builder(raptor_config: dict | None) -> str:
-    """Return the configured RAPTOR tree builder with legacy ext fallback."""
-    raptor_config = raptor_config or {}
-    ext = raptor_config.get("ext") or {}
-    tree_builder = ext.get("tree_builder") or raptor_config.get("tree_builder") or RAPTOR_TREE_BUILDER
-    if tree_builder not in SUPPORTED_TREE_BUILDERS:
-        raise ValueError(f"Unsupported RAPTOR tree builder: {tree_builder}")
-    return tree_builder
-
-
-def get_raptor_clustering_method(raptor_config: dict | None) -> str:
-    """Return the configured RAPTOR clustering method with legacy ext fallback."""
-    raptor_config = raptor_config or {}
-    ext = raptor_config.get("ext") or {}
-    clustering_method = ext.get("clustering_method") or raptor_config.get("clustering_method") or GMM_CLUSTERING_METHOD
-    if clustering_method not in SUPPORTED_CLUSTERING_METHODS:
-        raise ValueError(f"Unsupported RAPTOR clustering method: {clustering_method}")
-    return clustering_method
 
 
 def _as_extra_dict(extra) -> dict:
@@ -72,6 +47,7 @@ def _as_extra_dict(extra) -> dict:
         # Fallback: try parsing Python dict literal (single quotes)
         try:
             import ast
+
             parsed = ast.literal_eval(extra)
             if isinstance(parsed, dict):
                 return parsed
@@ -138,10 +114,10 @@ def make_raptor_summary_chunk_id(content: str, doc_id: str) -> str:
 def is_structured_file_type(file_type: Optional[str]) -> bool:
     """
     Check if a file type is structured data (Excel, CSV, etc.)
-    
+
     Args:
         file_type: File extension (e.g., ".xlsx", ".csv")
-        
+
     Returns:
         True if file is structured data type
     """
@@ -159,11 +135,11 @@ def is_structured_file_type(file_type: Optional[str]) -> bool:
 def is_tabular_pdf(parser_id: str = "", parser_config: Optional[dict] = None) -> bool:
     """
     Check if a PDF is being parsed as tabular data.
-    
+
     Args:
         parser_id: Parser ID (e.g., "table", "naive")
         parser_config: Parser configuration dict
-        
+
     Returns:
         True if PDF is being parsed as tabular data
     """
@@ -180,25 +156,20 @@ def is_tabular_pdf(parser_id: str = "", parser_config: Optional[dict] = None) ->
     return False
 
 
-def should_skip_raptor(
-        file_type: Optional[str] = None,
-        parser_id: str = "",
-        parser_config: Optional[dict] = None,
-        raptor_config: Optional[dict] = None
-) -> bool:
+def should_skip_raptor(file_type: Optional[str] = None, parser_id: str = "", parser_config: Optional[dict] = None, raptor_config: Optional[dict] = None) -> bool:
     """
     Determine if Raptor should be skipped for a given document.
-    
+
     This function implements the logic to automatically disable Raptor for:
     1. Excel files (.xls, .xlsx, .csv, etc.)
     2. PDFs with tabular data (using table parser or html4excel)
-    
+
     Args:
         file_type: File extension (e.g., ".xlsx", ".pdf")
         parser_id: Parser ID being used
         parser_config: Parser configuration dict
         raptor_config: Raptor configuration dict (can override with auto_disable_for_structured_data)
-        
+
     Returns:
         True if Raptor should be skipped, False otherwise
     """
@@ -224,19 +195,15 @@ def should_skip_raptor(
     return False
 
 
-def get_skip_reason(
-        file_type: Optional[str] = None,
-        parser_id: str = "",
-        parser_config: Optional[dict] = None
-) -> str:
+def get_skip_reason(file_type: Optional[str] = None, parser_id: str = "", parser_config: Optional[dict] = None) -> str:
     """
     Get a human-readable reason why Raptor was skipped.
-    
+
     Args:
         file_type: File extension
         parser_id: Parser ID being used
         parser_config: Parser configuration dict
-        
+
     Returns:
         Reason string, or empty string if Raptor should not be skipped
     """

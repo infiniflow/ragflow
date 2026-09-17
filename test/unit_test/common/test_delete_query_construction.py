@@ -16,11 +16,11 @@
 """
 Unit tests for delete query construction in ES/OpenSearch connectors.
 
-These tests verify that the delete method correctly combines chunk IDs with 
+These tests verify that the delete method correctly combines chunk IDs with
 other filter conditions (doc_id, kb_id) to scope deletions properly.
 
-This addresses issue #12520: "Files of deleted slices can still be searched 
-and displayed in 'reference'" - caused by delete queries not properly 
+This addresses issue #12520: "Files of deleted slices can still be searched
+and displayed in 'reference'" - caused by delete queries not properly
 combining all filter conditions.
 
 Run with: python -m pytest test/unit/test_delete_query_construction.py -v
@@ -85,20 +85,20 @@ class TestDeleteQueryConstruction:
     def test_delete_with_chunk_ids_includes_kb_id(self):
         """
         CRITICAL: When deleting by chunk IDs, kb_id MUST be included in the query.
-        
-        This was the root cause of issue #12520 - the original code would 
+
+        This was the root cause of issue #12520 - the original code would
         only use Q("ids") and ignore kb_id.
         """
         condition = {"id": ["chunk1", "chunk2"]}
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
-        
+
         # Verify chunk IDs filter is present
         ids_filter = [f for f in query_dict.get("filter", []) if "ids" in f]
         assert len(ids_filter) == 1, "Should have ids filter"
         assert set(ids_filter[0]["ids"]["values"]) == {"chunk1", "chunk2"}
-        
+
         # Verify kb_id is also in the query (CRITICAL FIX)
         must_terms = query_dict.get("must", [])
         kb_id_terms = [t for t in must_terms if "term" in t and "kb_id" in t.get("term", {})]
@@ -112,19 +112,19 @@ class TestDeleteQueryConstruction:
         """
         condition = {"id": ["chunk1"], "doc_id": "doc456"}
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
-        
+
         # Verify all three conditions are present
         ids_filter = [f for f in query_dict.get("filter", []) if "ids" in f]
         assert len(ids_filter) == 1, "Should have ids filter"
-        
+
         must_terms = query_dict.get("must", [])
-        
+
         # Check kb_id
         kb_id_terms = [t for t in must_terms if "term" in t and "kb_id" in t.get("term", {})]
         assert len(kb_id_terms) == 1, "kb_id must be present"
-        
+
         # Check doc_id
         doc_id_terms = [t for t in must_terms if "term" in t and "doc_id" in t.get("term", {})]
         assert len(doc_id_terms) == 1, "doc_id must be present"
@@ -136,7 +136,7 @@ class TestDeleteQueryConstruction:
         """
         condition = {"id": "single_chunk"}
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
         ids_filter = [f for f in query_dict.get("filter", []) if "ids" in f]
         assert len(ids_filter) == 1
@@ -149,13 +149,13 @@ class TestDeleteQueryConstruction:
         """
         condition = {"id": [], "doc_id": "doc456"}
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
-        
+
         # Empty chunk_ids should NOT add an ids filter
         ids_filter = [f for f in query_dict.get("filter", []) if "ids" in f]
         assert len(ids_filter) == 0, "Empty chunk_ids should not create ids filter"
-        
+
         # But kb_id and doc_id should still be present
         must_terms = query_dict.get("must", [])
         assert any("kb_id" in str(t) for t in must_terms), "kb_id must be present"
@@ -167,14 +167,14 @@ class TestDeleteQueryConstruction:
         """
         condition = {"doc_id": "doc456"}
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
         must_terms = query_dict.get("must", [])
-        
+
         # Both doc_id and kb_id should be in query
         doc_terms = [t for t in must_terms if "term" in t and "doc_id" in t.get("term", {})]
         kb_terms = [t for t in must_terms if "term" in t and "kb_id" in t.get("term", {})]
-        
+
         assert len(doc_terms) == 1
         assert len(kb_terms) == 1
 
@@ -184,13 +184,13 @@ class TestDeleteQueryConstruction:
         """
         condition = {
             "kb_id": "kb123",  # Will be overwritten
-            "must_not": {"exists": "source_id"}
+            "must_not": {"exists": "source_id"},
         }
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
         must_not = query_dict.get("must_not", [])
-        
+
         exists_filters = [f for f in must_not if "exists" in f]
         assert len(exists_filters) == 1
         assert exists_filters[0]["exists"]["field"] == "source_id"
@@ -201,10 +201,10 @@ class TestDeleteQueryConstruction:
         """
         condition = {"knowledge_graph_kwd": ["entity", "relation"]}
         query = self.build_delete_query(condition, "kb123")
-        
+
         query_dict = query["query"]["bool"]
         must_terms = query_dict.get("must", [])
-        
+
         terms_query = [t for t in must_terms if "terms" in t]
         assert len(terms_query) >= 1
         # Find the knowledge_graph_kwd terms
@@ -225,21 +225,18 @@ class TestChunkApiDeleteCondition:
         passed to settings.docStoreConn.delete.
         """
         # Simulate what the rm endpoint should construct
-        req = {
-            "doc_id": "doc123",
-            "chunk_ids": ["chunk1", "chunk2"]
-        }
-        
+        req = {"doc_id": "doc123", "chunk_ids": ["chunk1", "chunk2"]}
+
         # This is what the FIXED code should produce:
         correct_condition = {
             "id": req["chunk_ids"],
-            "doc_id": req["doc_id"]  # <-- CRITICAL: doc_id must be included
+            "doc_id": req["doc_id"],  # <-- CRITICAL: doc_id must be included
         }
-        
+
         # Verify doc_id is in the condition
         assert "doc_id" in correct_condition, "doc_id MUST be in delete condition"
         assert correct_condition["doc_id"] == "doc123"
-        
+
         # Verify chunk IDs are in the condition
         assert "id" in correct_condition
         assert correct_condition["id"] == ["chunk1", "chunk2"]
@@ -259,16 +256,13 @@ class TestSDKDocDeleteCondition:
         # Simulate SDK request
         document_id = "doc456"
         chunk_ids = ["chunk1", "chunk2"]
-        
+
         # The CORRECT condition construction (from restful_apis/chunk_api.py):
         condition = {"doc_id": document_id}
         if chunk_ids:
             condition["id"] = chunk_ids
-        
-        assert condition == {
-            "doc_id": "doc456",
-            "id": ["chunk1", "chunk2"]
-        }
+
+        assert condition == {"doc_id": "doc456", "id": ["chunk1", "chunk2"]}
 
     def test_sdk_rm_chunk_all_chunks(self):
         """
@@ -276,11 +270,11 @@ class TestSDKDocDeleteCondition:
         """
         document_id = "doc456"
         chunk_ids = []  # Delete all
-        
+
         condition = {"doc_id": document_id}
         if chunk_ids:
             condition["id"] = chunk_ids
-        
+
         # When no chunk_ids, only doc_id should be in condition
         assert condition == {"doc_id": "doc456"}
         assert "id" not in condition

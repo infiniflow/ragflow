@@ -13,6 +13,7 @@ const FormatPreserveEditor = ({
   textMode,
   clickChunk,
   isReadonly,
+  newChunkIndex,
 }: FormatPreserveEditorProps) => {
   console.log('initialValue', initialValue);
 
@@ -41,6 +42,7 @@ const FormatPreserveEditor = ({
           textMode={textMode}
           isChunck={isChunck}
           clickChunk={clickChunk}
+          newChunkIndex={newChunkIndex}
         />
       )}
 

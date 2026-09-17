@@ -149,7 +149,7 @@ func (s *GitHubSource) fetchFileContent(owner, repo, filePath string) (string, e
 	}
 
 	var result struct {
-		Content string `json:"content"`
+		Content  string `json:"content"`
 		Encoding string `json:"encoding"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -194,9 +194,9 @@ func (s *GitHubSource) fetchDirectoryContents(owner, repo, dirPath string) (map[
 	}
 
 	var items []struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-		Type string `json:"type"`
+		Name        string `json:"name"`
+		Path        string `json:"path"`
+		Type        string `json:"type"`
 		DownloadURL string `json:"download_url"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
