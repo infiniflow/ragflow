@@ -23,7 +23,55 @@ import re
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks, DEFAULT_DELIMITER
 from deepdoc.parser import HtmlParser, TxtParser
 from timeit import default_timer as timer
-import io
+from pathlib import Path
+import subprocess
+import tempfile
+from extract_msg import Message as OutlookMessage
+
+
+_OLE_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_INDEXED_HEADERS = frozenset(("date", "from", "to", "cc", "bcc", "reply-to", "subject"))
+
+
+def _parse_message(filename, binary):
+    original_body = None
+    original_html = None
+    is_msg = filename.lower().endswith(".msg") or binary.startswith(_OLE_SIGNATURE)
+    if is_msg:
+        if not binary.startswith(_OLE_SIGNATURE):
+            raise ValueError("Invalid Outlook MSG signature")
+        try:
+            with tempfile.TemporaryDirectory(prefix="ragflow-msg-") as directory:
+                source = Path(directory) / "input.msg"
+                destination = Path(directory) / "output.eml"
+                source.write_bytes(binary)
+                subprocess.run(
+                    ["msgconvert", "--outfile", str(destination), str(source)],
+                    cwd=directory,
+                    check=True,
+                    timeout=300,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                binary = destination.read_bytes()
+                with OutlookMessage(str(source), delayAttachments=True) as original:
+                    original_body = original.body
+                    original_html = original.getStream("__substg1.0_10130102")
+        except Exception:
+            raise RuntimeError("MSG conversion failed; verify msgconvert is installed and the Outlook file is valid") from None
+    message = BytesParser(policy=policy.default).parsebytes(binary)
+    if is_msg and (message.defects or not any(header.lower() in _INDEXED_HEADERS for header in message.keys())):
+        raise ValueError("Invalid converted email")
+    if original_body is not None:
+        plain_part = message.get_body(preferencelist=("plain",))
+        if plain_part is not None:
+            plain_part.set_content(original_body)
+    if original_html is not None:
+        html_part = message.get_body(preferencelist=("html",))
+        if html_part is not None:
+            charset = html_part.get_content_charset() or "utf-8"
+            html_part.set_content(original_html, maintype="text", subtype="html", params={"charset": charset})
+    return message
 
 
 def chunk(
@@ -36,7 +84,7 @@ def chunk(
     **kwargs,
 ):
     """
-    Only eml is supported
+    RFC822 emails and Outlook MSG files are supported
     """
     eng = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
@@ -51,17 +99,16 @@ def chunk(
     main_res = []
     attachment_res = []
 
-    if binary is not None:
-        with io.BytesIO(binary) as buffer:
-            msg = BytesParser(policy=policy.default).parse(buffer)
-    else:
+    if binary is None:
         with open(filename, "rb") as buffer:
-            msg = BytesParser(policy=policy.default).parse(buffer)
+            binary = buffer.read()
+    msg = _parse_message(filename, binary)
 
     text_txt, html_txt = [], []
     # get the email header info
     for header, value in msg.items():
-        text_txt.append(f"{header}: {value}")
+        if header.lower() in _INDEXED_HEADERS:
+            text_txt.append(f"{header}: {value}")
 
     #  get the email main info
     def _add_content(msg, content_type):
@@ -113,7 +160,7 @@ def chunk(
                 filename = part.get_filename()
                 payload = part.get_payload(decode=True)
                 try:
-                    attachment_res.extend(naive_chunk(filename, payload, callback=callback, **kwargs))
+                    attachment_res.extend(naive_chunk(filename, payload, lang=lang, callback=callback, **kwargs))
                 except Exception:
                     pass
 
