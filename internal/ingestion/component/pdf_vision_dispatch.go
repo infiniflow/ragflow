@@ -106,11 +106,14 @@ func maybeDispatchPDFVision(
 	}
 
 	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
-	// MinerU, or a bare tenant model UUID (in either field) that resolves to
-	// a MinerU OCR model.
-	isMinerUMatch := strings.EqualFold(strings.TrimSpace(method), "mineru") ||
+	// MinerU, a composite model@instance@provider selector naming MinerU in
+	// either field, or a bare tenant model UUID (in either field) that
+	// resolves to a MinerU OCR model.
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+	isMinerUMatch := methodLower == "mineru" ||
 		strings.HasPrefix(layoutLower, "mineru") ||
-		strings.Contains(layoutLower, "@mineru")
+		strings.Contains(layoutLower, "@mineru") ||
+		strings.Contains(methodLower, "@mineru")
 	minerUSelector := layout
 	if strings.TrimSpace(minerUSelector) == "" {
 		minerUSelector = method
@@ -130,7 +133,7 @@ func maybeDispatchPDFVision(
 				fmt.Errorf("parser: MinerU requires tenant_id")
 		}
 		dispatchModelID := ""
-		if isMinerUByUUID {
+		if isMinerUByUUID || strings.Contains(minerUSelector, "@") {
 			dispatchModelID = minerUSelector
 		}
 		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
@@ -520,7 +523,7 @@ func dispatchMinerUPDF(
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
-	parseMethod := mineruAPIParseMethod(getStringOr(setup, "parse_method", ""))
+	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
 	lang := getStringOr(setup, "mineru_lang", "English")
 	mineruLang := mineruLangCode(lang)
 	backend := getStringOr(setup, "mineru_backend", "pipeline")
@@ -548,17 +551,24 @@ func dispatchMinerUPDF(
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
 // dispatch. modelID is the raw selector value: a bare tenant model UUID (no
-// "@") selects that exact model regardless of the tenant's default OCR model;
-// a composite name or empty value falls back to the tenant's default OCR
-// model.
+// "@") selects that exact model, a composite model@instance@provider name
+// resolves through the provider-instance chain, and an empty value falls back
+// to the tenant's first MinerU OCR model — mirroring Python's by_mineru,
+// which falls back to get_first_provider_model_name(tenant_id, "MinerU",
+// LLMType.OCR) for the named "mineru" selector.
 var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
 
 func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
-	if strings.TrimSpace(modelID) != "" && !strings.Contains(modelID, "@") {
+	modelID = strings.TrimSpace(modelID)
+	if modelID != "" && !strings.Contains(modelID, "@") {
 		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return driver, modelName, apiConfig, err
 	}
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeOCR)
+	if modelID != "" {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MinerU")
 	return driver, modelName, apiConfig, err
 }
 
@@ -661,9 +671,10 @@ func mineruLangCode(lang string) string {
 
 // mineruAPIParseMethod constrains the /file_parse form field to the values
 // the MinerU API accepts (auto, txt, ocr), mirroring Python's
-// MinerUParseMethod. The parser setup's parse_method is a dispatch selector
-// ("mineru" or a tenant model UUID), never an API method, so anything
-// unrecognized falls back to the API default.
+// MinerUParseMethod. The value comes from the parser setup's dedicated
+// mineru_parse_method option; the setup's parse_method is a dispatch
+// selector ("mineru", a composite selector, or a tenant model UUID), never
+// an API method, so anything unrecognized falls back to the API default.
 func mineruAPIParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
 	switch method {
