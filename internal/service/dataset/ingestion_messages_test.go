@@ -67,6 +67,35 @@ func TestListIngestionMessagesTreatsLegacyRunAsTerminalAndEmpty(t *testing.T) {
 	}
 }
 
+func TestListIngestionLogsEmbedsLatestRunEventWithoutRewritingLegacyMessage(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+	insertMessageRun(t, "run-2", "kb-1", "doc-2", entity.TaskStatusDone, 1)
+	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, "first")
+	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeTerminal, "latest first")
+	insertMessageEvent(t, db, "run-2", "task-2", dao.EventTypeMessage, "latest second")
+
+	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	logs, ok := result["logs"].([]map[string]interface{})
+	if !ok || len(logs) != 2 {
+		t.Fatalf("logs = %#v, want two file logs", result["logs"])
+	}
+	byID := make(map[string]map[string]interface{}, len(logs))
+	for _, log := range logs {
+		byID[log["id"].(string)] = log
+	}
+	assertLatestEventMap(t, byID["run-1"], 2, "latest first")
+	assertLatestEventMap(t, byID["run-2"], 3, "latest second")
+}
+
 func insertMessageRun(t *testing.T, id, kbID, documentID string, status entity.TaskStatus, runCount int) {
 	t.Helper()
 	runCountPtr := &runCount
@@ -112,5 +141,19 @@ func assertMessageEventIDs(t *testing.T, items []service.IngestionEventItem, wan
 		if item.ID != want[i] {
 			t.Fatalf("item %d ID = %d, want %d", i, item.ID, want[i])
 		}
+	}
+}
+
+func assertLatestEventMap(t *testing.T, log map[string]interface{}, wantID int, wantMessage string) {
+	t.Helper()
+	event, ok := log["latest_ingestion_event"].(*service.IngestionEventItem)
+	if !ok {
+		t.Fatalf("latest_ingestion_event = %#v, want event item", log["latest_ingestion_event"])
+	}
+	if event.ID != wantID {
+		t.Fatalf("latest event ID = %d, want %d", event.ID, wantID)
+	}
+	if event.Message != wantMessage {
+		t.Fatalf("latest event message = %q, want %q", event.Message, wantMessage)
 	}
 }

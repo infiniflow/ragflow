@@ -350,6 +350,30 @@ func (dao *IngestionTaskLogDAO) ListLogsByPipelineLogID(ctx context.Context, db 
 	return tasks, err
 }
 
+// LatestEventsByPipelineLogIDs returns each requested run's latest persisted
+// event in one query. It never falls back to task_id because a task can be
+// reused by a later run.
+func (dao *IngestionTaskLogDAO) LatestEventsByPipelineLogIDs(ctx context.Context, db *gorm.DB, pipelineLogIDs []string) (map[string]*entity.IngestionTaskLog, error) {
+	if len(pipelineLogIDs) == 0 {
+		return map[string]*entity.IngestionTaskLog{}, nil
+	}
+	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+		Select("MAX(id)").
+		Where("pipeline_log_id IN ?", pipelineLogIDs).
+		Group("pipeline_log_id")
+	var events []*entity.IngestionTaskLog
+	if err := db.WithContext(ctx).Where("id IN (?)", latestIDs).Find(&events).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]*entity.IngestionTaskLog, len(events))
+	for _, event := range events {
+		if event != nil && event.PipelineLogID != nil && *event.PipelineLogID != "" {
+			result[*event.PipelineLogID] = event
+		}
+	}
+	return result, nil
+}
+
 // ListEventsPageByPipelineLogID returns one page for a run's immutable event
 // stream. afterID and beforeID are mutually exclusive keyset cursors; callers
 // validate public request parameters before invoking this DAO method.

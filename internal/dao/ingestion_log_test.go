@@ -80,6 +80,31 @@ func TestListEventsPageByPipelineLogIDUsesStableKeysets(t *testing.T) {
 	}
 }
 
+func TestLatestEventsByPipelineLogIDsReturnsOneRealRowPerRun(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.IngestionTaskLog{}); err != nil {
+		t.Fatalf("migrate event table: %v", err)
+	}
+	for _, runID := range []string{"run-1", "run-1", "run-2"} {
+		if err := db.Exec(`INSERT INTO ingestion_task_log
+			(task_id, pipeline_log_id, event_type, checkpoint, component, phase, message)
+			VALUES (?, ?, ?, '{}', '', 0, ?)`, "task-1", runID, EventTypeMessage, runID).Error; err != nil {
+			t.Fatalf("insert event for %s: %v", runID, err)
+		}
+	}
+
+	latest, err := NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(t.Context(), db, []string{"run-1", "run-2", "missing"})
+	if err != nil {
+		t.Fatalf("LatestEventsByPipelineLogIDs: %v", err)
+	}
+	if len(latest) != 2 || latest["run-1"] == nil || latest["run-1"].ID != 2 || latest["run-2"] == nil || latest["run-2"].ID != 3 {
+		t.Fatalf("latest events = %+v, want IDs run-1=2 run-2=3", latest)
+	}
+}
+
 func assertEventIDs(t *testing.T, events []*entity.IngestionTaskLog, want ...int) {
 	t.Helper()
 	if len(events) != len(want) {
