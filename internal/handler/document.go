@@ -1774,6 +1774,12 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
+	if present["parser_config"] && req.ParserConfig != nil {
+		if err := dataset.ValidateDocumentParserConfig(req.ParserConfig); err != nil {
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+			return
+		}
+	}
 	ctx := c.Request.Context()
 	data, code, err := h.documentService.UpdateDatasetDocument(ctx, user.ID, datasetID, documentID, &req, present)
 	if err != nil {
