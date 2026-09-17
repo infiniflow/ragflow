@@ -283,7 +283,7 @@ func TestIngestionTaskServiceStartRunningFromCreatedTask(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
-	task, err := NewIngestionTaskService().StartRunning(t.Context(), "task-1")
+	task, err := NewIngestionTaskService().TransitionTaskToRunning(t.Context(), "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}

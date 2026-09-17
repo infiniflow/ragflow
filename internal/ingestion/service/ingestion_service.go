@@ -969,6 +969,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 			// poison messages.
 			common.Error(fmt.Sprintf("task %s panicked: %v", taskCtx.IngestionTask.ID, r), fmt.Errorf("%v", r))
 			e.markFailed(ctx, taskCtx.IngestionTask.ID)
+			e.recordTerminalPipelineLog(ctx, taskCtx.IngestionTask, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
 			terminal = false
 		}
 		if e.leaseAbandoned(hb) {

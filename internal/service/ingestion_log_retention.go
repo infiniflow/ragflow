@@ -14,11 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	defaultIngestionLogHeadRows = 999
-	defaultIngestionLogTailRows = 4_000
-)
-
 type ingestionLogFoldResult struct {
 	Before        int
 	Protected     int
@@ -183,10 +178,14 @@ func (s *IngestionTaskService) foldIngestionRun(ctx context.Context, pipelineLog
 		}
 
 		// Keep the newest ordinary messages first, then use the remaining
-		// budget for the oldest ordinary messages. With the default cap this
-		// is 4,000 tail rows plus 999 head rows, less any protected rows.
-		tailBudget := minInt(defaultIngestionLogTailRows, ordinaryBudget)
-		headBudget := minInt(defaultIngestionLogHeadRows, ordinaryBudget-tailBudget)
+		// budget for the oldest ordinary messages. Dynamic 4/5 tail and 1/5
+		// head allocation scales to any configured cap while preserving the
+		// 4,000 / 999 balance under the default 5,000-row cap.
+		tailBudget := (ordinaryBudget*4 + 4) / 5
+		if tailBudget > ordinaryBudget {
+			tailBudget = ordinaryBudget
+		}
+		headBudget := ordinaryBudget - tailBudget
 		keepOrdinary := make(map[int]struct{}, headBudget+tailBudget)
 		for _, event := range ordinary[:headBudget] {
 			keepOrdinary[event.ID] = struct{}{}
@@ -349,13 +348,6 @@ func foldEventTime(event *entity.IngestionTaskLog) string {
 		return time.UnixMilli(*event.CreateTime).Local().Format("15:04:05")
 	}
 	return "unknown"
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func boolToInt(value bool) int {

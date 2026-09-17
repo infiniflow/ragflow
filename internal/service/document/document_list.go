@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
@@ -46,7 +47,8 @@ func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int)
 	}
 	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, taskMap)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get latest ingestion events for documents: %w", err)
+		common.Warn(fmt.Sprintf("failed to get latest ingestion events for documents: %v", err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
 	}
 
 	responses := make([]*DocumentResponse, len(documents))
@@ -219,7 +221,8 @@ func (s *DocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, 
 	}
 	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, taskMap)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get latest ingestion events for documents: %w", err)
+		common.Warn(fmt.Sprintf("failed to get latest ingestion events for documents: %v", err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
 	}
 
 	responses := make([]*DocumentResponse, len(documents))
@@ -247,7 +250,8 @@ func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) 
 	}
 	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, map[string]*entity.IngestionTask{doc.ID: task})
 	if err != nil {
-		return nil, fmt.Errorf("get latest ingestion event for document %s: %w", doc.ID, err)
+		common.Warn(fmt.Sprintf("get latest ingestion event for document %s: %v", doc.ID, err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
 	}
 	return s.toResponseWithTask(doc, task, latestEventsByDocument[doc.ID]), nil
 }

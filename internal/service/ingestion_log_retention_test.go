@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -244,6 +245,40 @@ func TestTrimIngestionDocumentNeverDeletesRunningRun(t *testing.T) {
 	}
 	if got := countFoldEvents(t, db, "run-2"); got != 4 {
 		t.Fatalf("running run event count = %d, want untouched", got)
+	}
+}
+
+func TestFoldIngestionRunScalesBudgetBeyondDefaultCap(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertFoldPipelineLog(t, db, "run-1", entity.TaskStatusDone, 1)
+
+	for i := 0; i < 12; i++ {
+		insertFoldEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, 0, "", fmt.Sprintf("msg-%d", i))
+	}
+
+	result, err := NewIngestionTaskService().foldIngestionRun(t.Context(), "run-1", 10)
+	if err != nil {
+		t.Fatalf("foldIngestionRun failed: %v", err)
+	}
+	if result.Before != 12 || result.After != 10 || result.SummaryID == 0 {
+		t.Fatalf("result = %+v, want 12 -> 10 with summary", result)
+	}
+	if got := countFoldEvents(t, db, "run-1"); got != 10 {
+		t.Fatalf("event count = %d, want 10", got)
+	}
+	events := listFoldEvents(t, db, "run-1")
+	var hasHead, hasTailLast bool
+	for _, ev := range events {
+		if ev.Message == "msg-0" {
+			hasHead = true
+		}
+		if ev.Message == "msg-11" {
+			hasTailLast = true
+		}
+	}
+	if !hasHead || !hasTailLast {
+		t.Fatalf("events missing expected head or tail: %+v", events)
 	}
 }
 

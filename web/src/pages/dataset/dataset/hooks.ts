@@ -59,7 +59,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
           // share a name.
           document_id: sourceDoc?.id,
           log_type: 'file',
-          orderby: 'create_time',
+          orderby: 'run_count',
           desc: true,
           page_size: 1,
         },

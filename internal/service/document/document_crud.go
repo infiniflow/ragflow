@@ -306,6 +306,9 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	if err := s.deleteDocEngineData(cleanupCtx, docID, kb.TenantID, doc.KbID); err != nil {
 		return err
 	}
+	if err := s.finishCleanupBatch(cleanupCtx, docID, claim.Token); err != nil {
+		return fmt.Errorf("cleanup claim for document %s was lost: %w", docID, err)
+	}
 	if err = s.deleteDocRecordWithCounters(cleanupCtx, doc, kb.ID); err != nil {
 		return err
 	}
@@ -364,6 +367,9 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+	}
+	if err := s.finishCleanupBatch(cleanupCtx, docID, claim.Token); err != nil {
+		return fmt.Errorf("cleanup claim for document %s was lost: %w", docID, err)
 	}
 	if err := s.deleteDocRecordWithCounters(cleanupCtx, doc, kb.ID); err != nil {
 		return err

@@ -306,6 +306,9 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if taskExisted && deleted == 0 {
 		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
+	if err := s.finishCleanupBatch(ctx, doc.ID, claimToken); err != nil {
+		return fmt.Errorf("cleanup claim for document %s was lost: %w", doc.ID, err)
+	}
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
 	}

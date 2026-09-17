@@ -491,7 +491,8 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 	}
 	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, map[string]*entity.IngestionTask{doc.ID: task})
 	if err != nil {
-		return nil, fmt.Errorf("get latest ingestion event for document %s: %w", doc.ID, err)
+		common.Warn(fmt.Sprintf("get latest ingestion event for document %s: %v", doc.ID, err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
 	}
 	return &UpdateDatasetDocumentResponse{
 		ID:                   doc.ID,
