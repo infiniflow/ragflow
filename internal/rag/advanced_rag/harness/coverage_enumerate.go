@@ -169,6 +169,36 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 	return set
 }
 
+// CoverageActsMeetActor reports whether a passage ALREADY HELD carries both an act word and the
+// actor — the conjunction every window the enumeration builds is filtered by (see EnumerateCoverage:
+// a recalled passage is kept only when an act word is in it AND, when the direction declares an
+// actor, the actor is named in it too).
+//
+// Read only by the last-resort enrollment (see enrollEnumeration), where the recall it would pay for
+// comes out of the ANSWER's own clock: measured (2026-09-17, FRAMES, resolve node) 13 operands asked,
+// 724 passages recalled, 0 windows found — the direction's words had never met in what the run held,
+// so nothing a recall brought back could survive the filter.
+//
+// It is a probe, not a verdict: a recall may still return the first passage where they do meet, which
+// is exactly what the enrollment is for. It answers only "have we ever seen these words together".
+func CoverageActsMeetActor(kb *Kbinfos, cov Coverage) bool {
+	if kb == nil {
+		return false
+	}
+	actors := cov.Actors()
+	for _, c := range kb.Chunks {
+		text := ChunkTextOf(c)
+		if coverageFirstAct(text, cov.Acts) == "" {
+			continue
+		}
+		if len(actors) > 0 && !coverageMentionsAny(text, actors) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // Render is the seed text: the enumeration stated as a FACT with what came back.
 //
 // A list of queries in a prompt is advice, and advice may simply not be taken. A window is

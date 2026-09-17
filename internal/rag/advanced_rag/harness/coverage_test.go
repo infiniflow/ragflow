@@ -190,28 +190,67 @@ func (m *stubCoverageModel) Complete(_ context.Context, messages []schema.Messag
 //
 // GrepSearch's second value is its DOC AGGREGATIONS, not an error, and DocAggs builds that
 // slice with make() — so it is non-nil whether or not anything came back. Read as an error,
-// TestCoverageOfReadsTheValueAsADeclaration pins where a direction can be declared FROM: the
-// planner's type words, or the table's own value. The value wins, because it is the fact — a slot
-// holding items says the answer is a set whatever the planner typed it.
-func TestCoverageOfReadsTheValueAsADeclaration(t *testing.T) {
-	items := slots.Items(slots.Item{Value: "华雄", ChunkID: "c1"})
-	untyped := NewState([]Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩"}, Value: &items},
-	}, 0, nil)
-	cov := CoverageOf(untyped)
-	if !cov.Ok() {
-		t.Fatalf("cov = %+v, want a table whose VALUE holds items to be an enumeration whatever its type word says", cov)
+// TestCoverageActsMeetActorPinsTheEnumerationFilter pins the probe against the SAME conjunction the
+// enumeration's window builder uses: an act word AND, when the direction names one, the actor.
+func TestCoverageActsMeetActorPinsTheEnumerationFilter(t *testing.T) {
+	kb := &Kbinfos{}
+	kb.Admit(func(p *PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "c1", "content_with_weight": "Colin Beashel sailed the Soling class."})
+		p.Add(map[string]any{"chunk_id": "c2", "content_with_weight": "Their partner was crewing that year."})
+	})
+	cov := Coverage{Acts: []string{"crewing"}}
+	if !CoverageActsMeetActor(kb, cov) {
+		t.Fatal("want true: an act word is held and no actor was declared")
 	}
-	if cov.ItemKind != CoverageItemKindItems {
-		t.Fatalf("itemKind = %q, want %q when only the value names the kind", cov.ItemKind, CoverageItemKindItems)
+	withActor := cov
+	withActor.Actor = "Colin Beashel"
+	if CoverageActsMeetActor(kb, withActor) {
+		t.Fatal("want false: the two words sit in DIFFERENT passages, so no window could carry both")
 	}
+	kb.Admit(func(p *PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "c3", "content_with_weight": "Colin Beashel was crewing the Soling."})
+	})
+	if !CoverageActsMeetActor(kb, withActor) {
+		t.Fatal("want true once ONE passage carries both")
+	}
+}
 
-	// A declared kind is kept: nothing here overrides the planner's word.
-	typed := NewState([]Variable{
+// TestCoverageOfKeepsTheDeclaredReadingNarrow pins the split the FRAMES regression forced: the value
+// may declare the direction to the node that runs LAST, and to nothing else.
+//
+// Set is what the planner said, and two readers depend on that being all it is — the record's set
+// block and a session's parentSet. Read from the value instead, a table whose slots happen to hold
+// people reads as an enumeration: measured (2026-09-17, FRAMES q759) a one-person question's record
+// lost its own draft answer and gained a member count to state.
+func TestCoverageOfKeepsTheDeclaredReadingNarrow(t *testing.T) {
+	items := slots.Items(slots.Item{Value: "Lanee Butler", ChunkID: "c1", Quote: "Mistral (sailboard) | Lanee Butler"})
+	valueOnly := NewState([]Variable{
 		{ID: 0, Type: "person", Terms: []string{"斩"}, Value: &items},
 	}, 0, nil)
-	if kind := CoverageOf(typed).ItemKind; kind != "person" {
-		t.Fatalf("itemKind = %q, want the planner's kind kept when it named one", kind)
+	cov := CoverageOf(valueOnly)
+	if cov.Set || cov.Ok() {
+		t.Fatalf("set=%v ok=%v, want the DECLARED reading still false for a person slot", cov.Set, cov.Ok())
+	}
+	if !cov.ItemsInValue() {
+		t.Fatal("itemsInValue = false, want the value that holds items readable by the node with no plan-time word")
+	}
+	if cov.ItemKind != "person" {
+		t.Fatalf("itemKind = %q, want the planner's word kept — the value only names the kind when the type did not", cov.ItemKind)
+	}
+	// A slot whose type names no kind still gets one from the value.
+	nameless := NewState([]Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩"}, Value: &items},
+	}, 0, nil)
+	if cov := CoverageOf(nameless); cov.ItemKind != CoverageItemKindItems || !cov.ItemsInValue() {
+		t.Fatalf("cov = %+v, want the value to name the kind when the type did not", cov)
+	}
+
+	// A declared shape is untouched: the planner's word still opens the gate.
+	declared := NewState([]Variable{
+		{ID: 0, Type: "list", Terms: []string{"斩"}},
+	}, 0, nil)
+	if cov := CoverageOf(declared); !cov.Ok() || cov.ItemsInValue() {
+		t.Fatalf("cov = %+v, want a declared list slot to open the gate on the declaration alone", cov)
 	}
 }
 

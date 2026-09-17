@@ -3217,6 +3217,29 @@ func TestSyncCountSlotsCountsOnlyMembersWithAPassage(t *testing.T) {
 	}
 }
 
+// TestValueQuestionRecordKeepsItsOwnDraft pins the FRAMES regression of 2026-09-17 (q759): a table
+// whose slots hold one person each is NOT an enumeration, and the record is the only place the run's
+// own draft answer reaches the answer model.
+//
+// Rendered as a set, the record dropped "Candidate answer:" — the one line carrying the run's own
+// finding — and asked the answer to state a count of members instead. That is the failure the
+// record's gate was written against ("the session's own draft answer is then demoted below a line
+// that does not apply to it"), and it is why Set stays the planner's declaration.
+func TestValueQuestionRecordKeepsItsOwnDraft(t *testing.T) {
+	items := slots.Items(slots.Item{Value: "Lanee Butler", ChunkID: "c1", Quote: "Mistral (sailboard) | Lanee Butler United States"})
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "person", Value: &items},
+		{ID: 1, Type: "person"},
+	}, 0, nil)
+	rec := RenderSlotRecord(table, "The person is Richard Coxon, crewed with Colin Beashel in the Soling class.")
+	if !strings.Contains(rec, "Candidate answer: The person is Richard Coxon") {
+		t.Fatalf("record = %q, want the run's own draft kept for a question whose answer is one value", rec)
+	}
+	if strings.Contains(rec, "enumerated members across the slots above") {
+		t.Fatalf("record = %q, want no set block on a value question", rec)
+	}
+}
+
 // TestMemberLineCarriesTheItemsOwnWords pins that an enumerated member reaches the answer WITH its
 // words, not as a bare name.
 //
@@ -3258,6 +3281,12 @@ func TestRunCoverageResolveEnrollsTheEnumerationThePlannerSkipped(t *testing.T) 
 	exec := &coverageStubExec{}
 	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
 	st.KB = &harness.Kbinfos{}
+	// The direction's words must already have MET in what the run holds, or the enrollment is spent
+	// on a recall whose windows the enumeration's own filter would drop (see
+	// CoverageActsMeetActor). Here 斩 is held; the stub's window then survives.
+	st.KB.Admit(func(p *harness.PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "held", "content_with_weight": "云长提刀直取，斩之"})
+	})
 	st.SlotTable = table
 	st.Deadline = time.Now().Add(120 * time.Second)
 
@@ -3274,6 +3303,41 @@ func TestRunCoverageResolveEnrollsTheEnumerationThePlannerSkipped(t *testing.T) 
 	names := strings.Join(harness.ItemValues(&st.SlotTable), "、")
 	if !strings.Contains(names, "孔秀") {
 		t.Fatalf("items = %q, want the window the enrolled enumeration admitted judged into the table", names)
+	}
+}
+
+// TestRunCoverageResolveSkipsTheEnumerationWhenTheWordsNeverMet pins the guard the measured waste
+// bought: on 2026-09-17 (FRAMES, resolve node) the enrollment asked 13 operands, recalled 724
+// passages and produced ZERO windows, because every window the enumeration builds must carry an act
+// word AND the actor, and this direction's two words had never met in anything the run held.
+//
+// The enrollment spends the ANSWER's clock, so the same conjunction is now probed against the
+// passages in hand first: a recall that cannot survive the filter is not made.
+func TestRunCoverageResolveSkipsTheEnumerationWhenTheWordsNeverMet(t *testing.T) {
+	items := slots.Items(slots.Item{Value: "Lanee Butler", ChunkID: "c-Lanee"})
+	rendered := slots.Render(items)
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "person", Terms: []string{"partner"}, Subject: "Colin Beashel", Candidate: &rendered, Value: &items},
+	}, 0, nil)
+
+	exec := &coverageStubExec{}
+	st := NewAgenticState("who is the partner of the 1984 keelboat sailor?", "", 3, nil)
+	st.KB = &harness.Kbinfos{}
+	// Held passages mention the actor, and passages carry the act word — never both in one.
+	st.KB.Admit(func(p *harness.PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "held-actor", "content_with_weight": "Colin Beashel sailed the Soling class."})
+		p.Add(map[string]any{"chunk_id": "held-act", "content_with_weight": "Their partner was crewing that year."})
+	})
+	st.SlotTable = table
+	st.Deadline = time.Now().Add(120 * time.Second)
+
+	RunCoverageResolve(context.Background(), RAGTools{
+		Model: &scriptedModel{},
+		Tools: &harness.Toolset{Exec: exec},
+	}, st, nil)
+
+	if exec.ran() != 0 {
+		t.Fatalf("enumeration ran %d time(s), want no recall for a direction whose words have never met in one passage", exec.ran())
 	}
 }
 

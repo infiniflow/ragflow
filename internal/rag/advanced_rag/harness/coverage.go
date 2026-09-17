@@ -58,6 +58,16 @@ type Coverage struct {
 	// ItemKind is what the answer's elements are, when the table declares it: "person", "entity",
 	// "dataset", or the bare "list"/"set". Empty when the answer is not a list of elements.
 	ItemKind string
+	// itemsInValue: a slot's value IS a list of items — the direction declared by the run's own
+	// output rather than by the planner's word.
+	//
+	// Read by the point-of-naming node ALONE (see RunCoverageResolve), which runs last: a plan-time
+	// type word must not be the only way a set can be completed. Deliberately NOT folded into Set —
+	// the two readers of Set ask what the planner DECLARED (RenderSlotRecord's set block and
+	// SessionState.parentSet), and read from the value they demote a value question's own draft
+	// answer: measured (2026-09-17, FRAMES q759) a one-person question's record lost its
+	// "Candidate answer:" line and gained "enumerated members across the slots above: 1".
+	itemsInValue bool
 }
 
 // CoverageItemKindItems is the element kind a slot declares BY ITS OWN VALUE: a slot holding a
@@ -95,13 +105,13 @@ func CoverageOf(table State) Coverage {
 		if k, ok := CoverageItemKinds[kind]; ok && c.ItemKind == "" {
 			c.ItemKind = k
 		}
-		// The VALUE declares the direction too, and it is the stronger word of the two: a slot
-		// holding a list of items says the answer is a set whatever the planner typed it.
-		// Measured (2026-09-17, 三国/关羽): the members were patched into the slot typed "count",
-		// so no type word asked for a set — and the run then skipped BOTH the enumeration and the
-		// point-of-naming node, judging only the ten names a session happened to write down.
+		// The VALUE declares the direction too, but to a NARROWER audience than Set: a slot holding
+		// a list of items says the answer is a set, and that is what lets the point-of-naming node
+		// complete a set the planner never typed (measured 2026-09-17, 三国/关羽: the members were
+		// patched into a slot typed "count" and the run judged only the ten names a session wrote).
+		// It is NOT Set: see the field's note for the question that read it too widely.
 		if v.Typed().Kind == slots.KindItems {
-			c.Set = true
+			c.itemsInValue = true
 			if c.ItemKind == "" {
 				c.ItemKind = CoverageItemKindItems
 			}
@@ -129,6 +139,11 @@ func CoverageOf(table State) Coverage {
 func (c Coverage) Ok() bool {
 	return c.Set && c.ItemKind != "" && len(c.Acts) > 0
 }
+
+// ItemsInValue reports whether the table's own slots HOLD items — the direction the run's output
+// declares where the planner's word did not. The point-of-naming node reads it and nothing else
+// does (see Coverage.itemsInValue for why the record and a session must not).
+func (c Coverage) ItemsInValue() bool { return c.itemsInValue }
 
 // Actors splits the declared actor into its alternatives, which are what the corpus has
 // to be read with: one source words one person several ways.

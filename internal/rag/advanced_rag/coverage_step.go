@@ -51,11 +51,15 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	// The node belongs to the ENUMERATION strategy: a question whose answer is one value
 	// even one that contains a count — pays nothing for it (see harness.Coverage.Ok).
 	cov := harness.CoverageOf(st.SlotTable)
-	if !cov.Ok() {
+	// Two ways in, and the second is why this node is the last one: the planner declared a set, OR
+	// the table's own slots hold items (see Coverage.ItemsInValue). A session patching members into
+	// a slot the planner typed "person" does not make the QUESTION a set — the record and the
+	// sessions keep reading the declaration — but it does mean this node has a set to complete.
+	if !cov.Ok() && !cov.ItemsInValue() {
 		// Said out loud. A node that returns in silence is indistinguishable from one that judged
 		// and found nothing, and this was the whole reason a run could enumerate ten names while
 		// the corpus stated sixteen (see enrollEnumeration).
-		logger.Printf("[Coverage] resolve skipped: this table is not an enumeration (set=%v itemKind=%q acts=%d) — nothing to judge here.", cov.Set, cov.ItemKind, len(cov.Acts))
+		logger.Printf("[Coverage] resolve skipped: this table is not an enumeration (set=%v itemKind=%q acts=%d items=%v) — nothing to judge here.", cov.Set, cov.ItemKind, len(cov.Acts), cov.ItemsInValue())
 		return stats
 	}
 	enrollEnumeration(ctx, deps, st, cov, logger)
@@ -266,6 +270,13 @@ func enrollEnumeration(ctx context.Context, deps RAGTools, st *AgenticState, cov
 	}
 	if st.RemainingS() < CoverageEnrollHeadroomS {
 		logger.Printf("[Coverage] enumeration not enrolled: %.0fs left (needs %.0fs for it and the answer beside it); judging what the run already holds.", st.RemainingS(), CoverageEnrollHeadroomS)
+		return
+	}
+	if !harness.CoverageActsMeetActor(st.KB, cov) {
+		// The recall would be filtered by a conjunction the run has never seen hold: an act word and
+		// the actor in ONE passage. Spending it here spends the answer's clock to return nothing —
+		// measured, this exact pass cost 724 recalled passages and produced zero windows.
+		logger.Printf("[Coverage] enumeration not enrolled: the direction's words have never met in the passages already held (no act word and actor in one passage), so no window could survive its own filter.")
 		return
 	}
 	runner, ok := deps.Tools.Exec.(harness.CoverageRunner)
