@@ -70,6 +70,20 @@ func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm
 	return result.RowsAffected == 1, nil
 }
 
+// UpdateStatusIfCurrentIn updates the task status if its current status matches any of the given fromStatuses.
+func (dao *IngestionTaskDAO) UpdateStatusIfCurrentIn(ctx context.Context, db *gorm.DB, taskID string, fromStatuses []string, toStatus string) (bool, error) {
+	if len(fromStatuses) == 0 {
+		return false, nil
+	}
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status IN (?)", taskID, fromStatuses).
+		Update("status", toStatus)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // UpdateComponentTotal records the number of components in the task's DSL
 // graph. It is the authoritative denominator for progress percentage.
 func (dao *IngestionTaskDAO) UpdateComponentTotal(ctx context.Context, db *gorm.DB, taskID string, total int) error {

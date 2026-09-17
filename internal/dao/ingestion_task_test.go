@@ -46,6 +46,76 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentSucceeds(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskDAOUpdateStatusIfCurrentInSucceeds(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	task := &entity.IngestionTask{
+		ID:         "task-1",
+		UserID:     "user-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+		Status:     common.SCHEDULED,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	ctx := t.Context()
+	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrentIn(ctx, db, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
+	if err != nil {
+		t.Fatalf("UpdateStatusIfCurrentIn failed: %v", err)
+	}
+	if !updated {
+		t.Fatal("expected update to succeed")
+	}
+
+	reloaded, err := NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if reloaded.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", reloaded.Status, common.RUNNING)
+	}
+}
+
+func TestIngestionTaskDAOUpdateStatusIfCurrentInRejectsMismatchedStatus(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	task := &entity.IngestionTask{
+		ID:         "task-1",
+		UserID:     "user-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+		Status:     common.STOPPING,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	ctx := t.Context()
+	updated, err := NewIngestionTaskDAO().UpdateStatusIfCurrentIn(ctx, db, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
+	if err != nil {
+		t.Fatalf("UpdateStatusIfCurrentIn failed: %v", err)
+	}
+	if updated {
+		t.Fatal("expected update to be rejected")
+	}
+
+	reloaded, err := NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if reloaded.Status != common.STOPPING {
+		t.Fatalf("status = %q, want %q", reloaded.Status, common.STOPPING)
+	}
+}
+
 func TestIngestionTaskDAOCreateRejectsExistingTerminalTask(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB

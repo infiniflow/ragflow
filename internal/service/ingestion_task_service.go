@@ -216,7 +216,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 	}
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		task, err = s.transition(ctx, taskID, common.RUNNING)
+		task, err = s.transitionFrom(ctx, taskID, []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +263,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	}
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		stopped, err := s.transition(ctx, taskID, common.STOPPED)
+		stopped, err := s.transitionFrom(ctx, taskID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
 		if err != nil {
 			return nil, err
 		}
@@ -392,6 +392,27 @@ func (s *IngestionTaskService) newTaskStatusConflictError(ctx context.Context, t
 		AttemptedTo:   attemptedTo,
 		ActualCurrent: current.Status,
 	}
+}
+
+func (s *IngestionTaskService) transitionFrom(ctx context.Context, taskID string, fromStatuses []string, to string) (*entity.IngestionTask, error) {
+	for _, from := range fromStatuses {
+		if err := validateTransition(from, to); err != nil {
+			var transitionErr *InvalidTaskTransitionError
+			if errors.As(err, &transitionErr) {
+				return nil, &InvalidTaskTransitionError{TaskID: taskID, From: transitionErr.From, To: transitionErr.To}
+			}
+			return nil, err
+		}
+	}
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrentIn(ctx, dao.DB, taskID, fromStatuses, to)
+	if err != nil {
+		return nil, err
+	}
+	if !updated {
+		expected := strings.Join(fromStatuses, "/")
+		return nil, s.newTaskStatusConflictError(ctx, taskID, expected, to)
+	}
+	return s.GetTask(ctx, taskID)
 }
 
 func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to string) (*entity.IngestionTask, error) {
