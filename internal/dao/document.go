@@ -169,7 +169,7 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 	// only the newest row, with ID as a deterministic tie-breaker for equal
 	// create times. This ordering must match IngestionTaskDAO's task lookups.
 	listQuery := db.WithContext(ctx).Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status`).
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").

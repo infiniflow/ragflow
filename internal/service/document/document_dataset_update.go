@@ -478,8 +478,10 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		metaFields = map[string]interface{}{}
 	}
 	ingestionStatus := "UNSTART"
+	var task *entity.IngestionTask
 	if s.ingestionTaskDAO != nil && doc != nil && doc.ID != "" {
-		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+		var err error
+		task, err = s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
 		}
@@ -487,34 +489,39 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 			ingestionStatus = task.Status
 		}
 	}
+	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, map[string]*entity.IngestionTask{doc.ID: task})
+	if err != nil {
+		return nil, fmt.Errorf("get latest ingestion event for document %s: %w", doc.ID, err)
+	}
 	return &UpdateDatasetDocumentResponse{
-		ID:              doc.ID,
-		Thumbnail:       doc.Thumbnail,
-		DatasetID:       doc.KbID,
-		ParserID:        doc.ParserID,
-		PipelineID:      doc.PipelineID,
-		ParserConfig:    doc.ParserConfig,
-		SourceType:      doc.SourceType,
-		Type:            doc.Type,
-		CreatedBy:       doc.CreatedBy,
-		Name:            doc.Name,
-		Location:        doc.Location,
-		Size:            doc.Size,
-		TokenCount:      doc.TokenNum,
-		ChunkCount:      doc.ChunkNum,
-		Progress:        doc.Progress,
-		ProgressMsg:     doc.ProgressMsg,
-		ProcessBeginAt:  doc.ProcessBeginAt,
-		ProcessDuration: doc.ProcessDuration,
-		ContentHash:     doc.ContentHash,
-		MetaFields:      metaFields,
-		Suffix:          doc.Suffix,
-		IngestionStatus: ingestionStatus,
-		Status:          doc.Status,
-		CreateTime:      doc.CreateTime,
-		CreateDate:      doc.CreateDate,
-		UpdateTime:      doc.UpdateTime,
-		UpdateDate:      doc.UpdateDate,
+		ID:                   doc.ID,
+		Thumbnail:            doc.Thumbnail,
+		DatasetID:            doc.KbID,
+		ParserID:             doc.ParserID,
+		PipelineID:           doc.PipelineID,
+		ParserConfig:         doc.ParserConfig,
+		SourceType:           doc.SourceType,
+		Type:                 doc.Type,
+		CreatedBy:            doc.CreatedBy,
+		Name:                 doc.Name,
+		Location:             doc.Location,
+		Size:                 doc.Size,
+		TokenCount:           doc.TokenNum,
+		ChunkCount:           doc.ChunkNum,
+		Progress:             doc.Progress,
+		ProgressMsg:          doc.ProgressMsg,
+		LatestIngestionEvent: latestEventsByDocument[doc.ID],
+		ProcessBeginAt:       doc.ProcessBeginAt,
+		ProcessDuration:      doc.ProcessDuration,
+		ContentHash:          doc.ContentHash,
+		MetaFields:           metaFields,
+		Suffix:               doc.Suffix,
+		IngestionStatus:      ingestionStatus,
+		Status:               doc.Status,
+		CreateTime:           doc.CreateTime,
+		CreateDate:           doc.CreateDate,
+		UpdateTime:           doc.UpdateTime,
+		UpdateDate:           doc.UpdateDate,
 	}, nil
 }
 

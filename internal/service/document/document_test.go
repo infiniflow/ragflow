@@ -3711,6 +3711,58 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	}
 }
 
+func TestDocumentResponseEmbedsLatestEventForCurrentRun(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "doc.txt",
+		DocumentSuffix:  ".txt",
+		DocumentType:    "text",
+		SourceFrom:      "local",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
+		t.Fatalf("bind run: %v", err)
+	}
+	for _, message := range []string{"first", "latest"} {
+		if err := db.Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
+			"task_id":         "task-1",
+			"pipeline_log_id": "run-1",
+			"checkpoint":      entity.JSONMap{},
+			"event_type":      dao.EventTypeMessage,
+			"component":       "",
+			"phase":           0,
+			"message":         message,
+		}).Error; err != nil {
+			t.Fatalf("insert event: %v", err)
+		}
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	response, err := testDocumentService(t).toResponse(t.Context(), doc)
+	if err != nil {
+		t.Fatalf("toResponse: %v", err)
+	}
+	if response.LatestIngestionEvent == nil || response.LatestIngestionEvent.ID != 2 || response.LatestIngestionEvent.Message != "latest" {
+		t.Fatalf("response = %+v, want latest current-run event", response)
+	}
+}
+
 func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
