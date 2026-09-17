@@ -1,5 +1,6 @@
 import { RunningStatus, RunningStatusMap } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
+import { IngestionEventItem } from '@/interfaces/database/ingestion';
 
 export interface DocumentLog {
   fileName: string;
@@ -50,6 +51,7 @@ export interface IFileLogItem {
   process_duration: number;
   progress: number;
   progress_msg: string;
+  latest_ingestion_event?: IngestionEventItem | null;
   source_type?: string;
   source_from?: string;
   status: string;

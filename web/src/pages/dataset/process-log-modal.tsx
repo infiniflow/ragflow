@@ -12,6 +12,7 @@ import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
+import { IngestionEventItem } from '@/interfaces/database/ingestion';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -29,6 +30,7 @@ export interface ILogInfo {
   endTime?: string;
   duration?: string;
   details: string;
+  events?: IngestionEventItem[];
 }
 
 interface ProcessLogModalProps {
@@ -117,6 +119,31 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
             ) {
               return null;
             }
+            if (key === 'events') {
+              return (
+                <div className="w-full mt-2" key={key}>
+                  <InfoItem
+                    label={t('details')}
+                    value={
+                      <div className="w-full whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto p-2.5">
+                        {logInfo.events?.map((event) => (
+                          <div
+                            className={
+                              event.event_type === 3
+                                ? 'text-text-secondary'
+                                : undefined
+                            }
+                            key={event.id}
+                          >
+                            {replaceText(event.message)}
+                          </div>
+                        ))}
+                      </div>
+                    }
+                  />
+                </div>
+              );
+            }
             if (key === 'details') {
               return (
                 <div className="w-full  mt-2" key={key}>
@@ -151,7 +178,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                 <InfoItem
                   overflowTip={true}
                   label={t(key)}
-                  value={logInfo[key as keyof typeof logInfo]}
+                  value={logInfo[key as keyof typeof logInfo] as string}
                 />
               </div>
             );

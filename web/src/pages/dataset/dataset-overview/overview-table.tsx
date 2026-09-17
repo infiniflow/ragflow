@@ -26,6 +26,8 @@ import {
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
@@ -43,8 +45,10 @@ import {
 import { TFunction } from 'i18next';
 import { ArrowUpDown, Eye, MonitorUp } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
+import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
+import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
@@ -343,7 +347,17 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const { t: tDatasetOverview } = useTranslate('datasetOverview');
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [logInfo, setLogInfo] = useState<IFileLogItem>();
+  const [logInfo, setLogInfo] = useState<ILogInfo>();
+  const [selectedLogID, setSelectedLogID] = useState<string>();
+  const { id: routeId } = useParams();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const datasetId = knowledgeId || routeId;
+  const isGoBackend = useIsGoBackend();
+  const { data: messages } = useIngestionMessages(
+    datasetId,
+    selectedLogID,
+    isModalVisible,
+  );
   const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
@@ -356,11 +370,24 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
         row.original.process_duration || 0,
       ),
       details: row.original.progress_msg,
-    } as unknown as IFileLogItem;
-    console.log('logDetail', logDetail);
+    } as ILogInfo;
     setLogInfo(logDetail);
+    setSelectedLogID(row.original.id);
     setIsModalVisible(true);
   };
+  const modalLogInfo = useMemo<ILogInfo | undefined>(() => {
+    if (!logInfo) {
+      return undefined;
+    }
+    if (!isGoBackend) {
+      return logInfo;
+    }
+    return {
+      ...logInfo,
+      details: '',
+      events: messages?.items ?? [],
+    };
+  }, [isGoBackend, logInfo, messages]);
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
@@ -459,7 +486,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
-          logInfo={logInfo as unknown as ILogInfo}
+          logInfo={modalLogInfo as ILogInfo}
         />
       )}
     </div>

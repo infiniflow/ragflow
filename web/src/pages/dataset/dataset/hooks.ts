@@ -1,7 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { IngestionMessagesResponse } from '@/interfaces/database/ingestion';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
@@ -9,21 +8,17 @@ import { formatBytes } from '@/utils/file-util';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
-import {
-  listDataPipelineLogDocument,
-  listIngestionMessages,
-} from '@/services/knowledge-service';
+import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import { ILogInfo } from '../process-log-modal';
 import { getDocumentProgressMessage, getDocumentRunningStatus } from './utils';
 import type { IFileLogList } from '../dataset-overview/interface';
+import { useIngestionMessages } from '../ingestion-message-hooks';
 
 const PollIntervalMs = 5000;
 
 export const DocumentLogKeys = {
   queued: (datasetId: string | undefined, documentId: string | undefined) =>
     ['documentLog', datasetId, documentId] as const,
-  messages: (datasetId: string | undefined, logId: string | undefined) =>
-    ['ingestionMessages', datasetId, logId] as const,
 };
 
 export const useShowLog = (documents: IDocumentInfo[]) => {
@@ -73,20 +68,11 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     },
   });
   const logID = documentLog?.logs[0]?.id;
-  const { data: messages } = useQuery<IngestionMessagesResponse>({
-    queryKey: DocumentLogKeys.messages(datasetId, logID),
-    enabled: visible && isGoBackend && !!datasetId && !!logID,
-    refetchInterval: (query) =>
-      query.state.data?.terminal ? false : PollIntervalMs,
-    queryFn: async () => {
-      const { data: res = {} } = await listIngestionMessages(
-        datasetId || '',
-        logID || '',
-        { limit: 200 },
-      );
-      return res.data as IngestionMessagesResponse;
-    },
-  });
+  const { data: messages } = useIngestionMessages(
+    datasetId,
+    logID,
+    visible,
+  );
   const latestEvent = useMemo(() => {
     const items = messages?.items ?? [];
     return items[items.length - 1];
