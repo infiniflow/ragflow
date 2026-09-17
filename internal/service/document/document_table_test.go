@@ -185,3 +185,56 @@ func TestSaveKBTableState_NilFieldMapLeavesFieldMapAlone(t *testing.T) {
 		t.Errorf("table_column_names = %#v, want [name]", updated.ParserConfig["table_column_names"])
 	}
 }
+
+// A document parser_config update rebuilds the configuration from the pipeline
+// DSL, which only carries component-scoped entries. The root-level table schema
+// this document already carries — the columns the last run discovered, and the
+// roles configured against them — has to survive that write, or the next parse
+// silently reverts to the canvas' auto mode.
+func TestUpdateDatasetDocumentKeepsPublishedTableSchema(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_id", "table").Error; err != nil {
+		t.Fatalf("seed table dataset: %v", err)
+	}
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"table_column_mode":  "manual",
+		"table_column_names": []interface{}{"Name", "City"},
+		"table_column_roles": map[string]interface{}{"Name": "metadata"},
+	}).Error; err != nil {
+		t.Fatalf("seed published table schema: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1",
+		&UpdateDatasetDocumentRequest{ParserConfig: map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"spreadsheet": map[string]any{"output_format": "markdown"},
+			},
+		}}, map[string]bool{"parser_config": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument: code=%v err=%v", code, err)
+	}
+
+	var updated entity.Document
+	if err := db.First(&updated, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+	if updated.ParserConfig["table_column_mode"] != "manual" {
+		t.Fatalf("table_column_mode = %#v, want manual", updated.ParserConfig["table_column_mode"])
+	}
+	names, ok := updated.ParserConfig["table_column_names"].([]interface{})
+	if !ok || !reflect.DeepEqual(names, []interface{}{"Name", "City"}) {
+		t.Fatalf("table_column_names = %#v, want [Name City]", updated.ParserConfig["table_column_names"])
+	}
+	roles, ok := updated.ParserConfig["table_column_roles"].(map[string]interface{})
+	if !ok || roles["Name"] != "metadata" {
+		t.Fatalf("table_column_roles = %#v, want the stored metadata role", updated.ParserConfig["table_column_roles"])
+	}
+	spreadsheet, ok := updated.ParserConfig["Parser:HipSignsRhyme"].(map[string]any)["spreadsheet"].(map[string]any)
+	if !ok || spreadsheet["output_format"] != "markdown" {
+		t.Fatalf("requested spreadsheet override lost: %#v", updated.ParserConfig["Parser:HipSignsRhyme"])
+	}
+}

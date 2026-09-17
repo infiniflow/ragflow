@@ -186,3 +186,48 @@ func TestApplyComponentScopedParserConfig_PreservesNodeOnlyMetadata(t *testing.T
 		t.Fatalf("expected node_doc_title preserved, got %#v", meta["built_in_metadata"])
 	}
 }
+
+func TestPreserveTableSchemaConfig_IncomingWinsAndMissingKeysSurvive(t *testing.T) {
+	rebuilt := entity.JSONMap{
+		"Parser:HipSignsRhyme": map[string]any{
+			"spreadsheet": map[string]any{"column_mode": "auto"},
+		},
+	}
+	incoming := map[string]interface{}{
+		"table_column_mode":  "manual",
+		"table_column_roles": map[string]interface{}{"Name": "metadata"},
+	}
+	existing := entity.JSONMap{
+		"table_column_mode":   "auto",
+		"table_column_names":  []any{"Name", "City"},
+		"table_column_roles":  map[string]interface{}{"Name": "indexing"},
+		"field_map":           map[string]interface{}{"Name": "Name"},
+		"unrelated_component": map[string]any{},
+	}
+
+	got := PreserveTableSchemaConfig(rebuilt, incoming, existing)
+
+	if got["table_column_mode"] != "manual" {
+		t.Fatalf("table_column_mode = %#v, want the requested manual", got["table_column_mode"])
+	}
+	roles, ok := got["table_column_roles"].(map[string]interface{})
+	if !ok || roles["Name"] != "metadata" {
+		t.Fatalf("table_column_roles = %#v, want the requested metadata role", got["table_column_roles"])
+	}
+	if names, ok := got["table_column_names"].([]any); !ok || len(names) != 2 {
+		t.Fatalf("table_column_names = %#v, want the schema the last run published", got["table_column_names"])
+	}
+	if _, ok := got["field_map"].(map[string]interface{}); !ok {
+		t.Fatalf("field_map = %#v, want the stored field map kept", got["field_map"])
+	}
+	if _, ok := got["unrelated_component"]; ok {
+		t.Fatal("only the table schema keys are carried over")
+	}
+}
+
+func TestPreserveTableSchemaConfig_NilRebuiltBecomesEmptyConfig(t *testing.T) {
+	got := PreserveTableSchemaConfig(nil, nil, entity.JSONMap{"table_column_names": []any{"Name"}})
+	if _, ok := got["table_column_names"].([]any); !ok {
+		t.Fatalf("table_column_names = %#v, want the stored schema kept", got["table_column_names"])
+	}
+}

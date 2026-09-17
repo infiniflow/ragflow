@@ -293,6 +293,94 @@ func TestUpdateDatasetRejectsUnknownTableColumnRole(t *testing.T) {
 	}
 }
 
+// A dataset update rebuilds parser_config from the pipeline DSL's component
+// entries, so the root-level table column keys a request states are not part of
+// that rebuild. They must still land on the row: they are the shape Python's
+// dataset settings use, and the resolver stops at the root level, so dropping
+// them silently reverts the dataset to the canvas' auto mode.
+func TestUpdateDatasetPersistsRootTableColumnKeys(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Table KB")
+
+	parserID := string(entity.ParserTypeTable)
+	parseType := 1
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:  &parserID,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"table_column_mode":  "manual",
+			"table_column_names": []interface{}{"Name", "City"},
+			"table_column_roles": map[string]interface{}{"Name": "metadata", "City": "indexing"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset: code=%v err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.ParserConfig["table_column_mode"] != "manual" {
+		t.Fatalf("table_column_mode = %#v, want manual", persisted.ParserConfig["table_column_mode"])
+	}
+	names, _ := json.Marshal(persisted.ParserConfig["table_column_names"])
+	if string(names) != `["Name","City"]` {
+		t.Fatalf("table_column_names = %s, want the requested schema", names)
+	}
+	roles, _ := json.Marshal(persisted.ParserConfig["table_column_roles"])
+	if string(roles) != `{"City":"indexing","Name":"metadata"}` {
+		t.Fatalf("table_column_roles = %s, want the requested roles", roles)
+	}
+}
+
+// The table run publishes its discovered schema onto the dataset row directly
+// (DocumentService.SaveKBTableState). An update that touches only the canvas
+// parameters must not erase it: the dataset role selector and the SQL retrieval
+// field_map both read it.
+func TestUpdateDatasetKeepsPublishedTableSchema(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Table KB")
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"table_column_names": []interface{}{"Name", "City"},
+		"field_map":          map[string]interface{}{"Name": "Name"},
+	}).Error; err != nil {
+		t.Fatalf("seed published table schema: %v", err)
+	}
+
+	parserID := string(entity.ParserTypeTable)
+	parseType := 1
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserID:  &parserID,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"spreadsheet": map[string]interface{}{"output_format": "markdown"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset: code=%v err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	names, _ := json.Marshal(persisted.ParserConfig["table_column_names"])
+	if string(names) != `["Name","City"]` {
+		t.Fatalf("table_column_names = %s, want the schema the last run published", names)
+	}
+	fieldMap, _ := json.Marshal(persisted.ParserConfig["field_map"])
+	if string(fieldMap) != `{"Name":"Name"}` {
+		t.Fatalf("field_map = %s, want the field map the last run published", fieldMap)
+	}
+}
+
 func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)

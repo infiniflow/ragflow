@@ -310,7 +310,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				effectiveParserConfig,
 				llmID,
 			)
-			updates["parser_config"] = effectiveParserConfig
+			updates["parser_config"] = service.PreserveTableSchemaConfig(
+				effectiveParserConfig,
+				req.ParserConfig,
+				lockedKB.ParserConfig,
+			)
 		}
 
 		if len(updates) > 0 {

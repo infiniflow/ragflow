@@ -74,6 +74,49 @@ func ApplyComponentScopedParserConfig(
 	return parserConfig
 }
 
+// tableSchemaParserConfigKeys are a table parser run's own entries in a
+// dataset's or document's parser_config: the mode and the per-column roles a
+// caller configures, plus the schema the run publishes back (the discovered
+// table_column_names, and the field_map the SQL retrieval prompt builds from
+// them).
+//
+// They live at the root of parser_config, outside the component-scoped shape a
+// parser dialog writes, so a rebuild from the pipeline DSL does not carry them.
+var tableSchemaParserConfigKeys = []string{
+	"table_column_mode",
+	"table_column_names",
+	"table_column_roles",
+	"field_map",
+}
+
+// PreserveTableSchemaConfig re-attaches the root-level table schema keys that
+// rebuilding a parser_config from the pipeline DSL drops.
+//
+// A value the request itself supplied wins over the stored one, so an update can
+// still change or clear a setting; a key the request does not mention keeps its
+// stored value, so editing any other parser_config section — topn, the embedding
+// model, the canvas parameters — cannot erase the schema the last table run
+// published.
+func PreserveTableSchemaConfig(
+	rebuilt entity.JSONMap,
+	incoming map[string]interface{},
+	existing entity.JSONMap,
+) entity.JSONMap {
+	if rebuilt == nil {
+		rebuilt = entity.JSONMap{}
+	}
+	for _, key := range tableSchemaParserConfigKeys {
+		if value, ok := incoming[key]; ok {
+			rebuilt[key] = value
+			continue
+		}
+		if value, ok := existing[key]; ok {
+			rebuilt[key] = value
+		}
+	}
+	return rebuilt
+}
+
 func cloneJSONMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {

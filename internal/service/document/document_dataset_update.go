@@ -175,6 +175,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 					tenant.LLMID,
 				)
 			}
+			cleaned = service.PreserveTableSchemaConfig(cleaned, req.ParserConfig, doc.ParserConfig)
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {
