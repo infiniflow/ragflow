@@ -355,22 +355,23 @@ func isBareTenantModelID(s string) bool {
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and
-// provider segments.
+// provider segments. The split is right-anchored so '@' characters embedded
+// in the model name (e.g. LM Studio quant suffixes) are preserved.
 //
-//	"model@provider"          -> ("model", "default", "provider")
-//	"model@instance@provider" -> ("model", "instance", "provider")
-//	4+ parts                  -> ("parts[0]", "parts[1]", "parts[2]")
+//	"model@provider"               -> ("model", "default", "provider")
+//	"model@instance@provider"      -> ("model", "instance", "provider")
+//	"model@quant@instance@prov"    -> ("model@quant", "instance", "prov")
 func parseLLMIDParts(s string) (modelName, instanceName, providerName string) {
 	parts := strings.Split(strings.TrimSpace(s), "@")
-	switch len(parts) {
-	case 2:
+	n := len(parts)
+	switch {
+	case n == 2:
 		return parts[0], "default", parts[1]
-	case 3:
+	case n == 3:
 		return parts[0], parts[1], parts[2]
+	case n >= 4:
+		return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
 	default:
-		if len(parts) >= 4 {
-			return parts[0], parts[1], parts[2]
-		}
 		return s, "", ""
 	}
 }

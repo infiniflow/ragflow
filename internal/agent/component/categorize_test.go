@@ -359,12 +359,38 @@ func TestSplitCompositeLLMID(t *testing.T) {
 		{"gpt-4o", "gpt-4o", "", false},
 		{"gpt-4o@OpenAI", "gpt-4o", "OpenAI", true},
 		{"Qwen/Qwen3-8B@default@SILICONFLOW", "Qwen/Qwen3-8B", "SILICONFLOW", true},
+		// Model names may embed '@' (LM Studio quant suffixes). Right-anchor
+		// the provider so the quant stays in the model name (#19751).
+		{"text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio", "text-embedding-nomic-embed-text-v1.5@q8_0", "LM-Studio", true},
+		{"a@b@c@d@e", "a@b@c", "e", true},
 	}
 	for _, tc := range cases {
 		gotModel, gotDrv, gotOK := splitCompositeLLMID(tc.in)
 		if gotModel != tc.wantModel || gotDrv != tc.wantDrv || gotOK != tc.wantOK {
 			t.Fatalf("splitCompositeLLMID(%q) = (%q, %q, %v), want (%q, %q, %v)",
 				tc.in, gotModel, gotDrv, gotOK, tc.wantModel, tc.wantDrv, tc.wantOK)
+		}
+	}
+}
+
+func TestParseLLMIDParts(t *testing.T) {
+	cases := []struct {
+		in           string
+		wantModel    string
+		wantInstance string
+		wantProvider string
+	}{
+		{"gpt-4o@OpenAI", "gpt-4o", "default", "OpenAI"},
+		{"Qwen/Qwen3-8B@default@SILICONFLOW", "Qwen/Qwen3-8B", "default", "SILICONFLOW"},
+		{"text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio", "text-embedding-nomic-embed-text-v1.5@q8_0", "lmstudio", "LM-Studio"},
+		{"a@b@c@d@e", "a@b@c", "d", "e"},
+		{"bare", "bare", "", ""},
+	}
+	for _, tc := range cases {
+		gotModel, gotInst, gotProv := parseLLMIDParts(tc.in)
+		if gotModel != tc.wantModel || gotInst != tc.wantInstance || gotProv != tc.wantProvider {
+			t.Fatalf("parseLLMIDParts(%q) = (%q, %q, %q), want (%q, %q, %q)",
+				tc.in, gotModel, gotInst, gotProv, tc.wantModel, tc.wantInstance, tc.wantProvider)
 		}
 	}
 }
@@ -410,6 +436,53 @@ func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 	}
 	if stub.captured.BaseURL != "https://instance.example" {
 		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "https://instance.example")
+	}
+}
+
+func TestCategorize_ResolvesInstanceCredentialsModelNameWithAt(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "LM-Studio",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "lmstudio",
+		APIKey:       "lmstudio-key",
+		Status:       "active",
+		Extra:        `{"base_url":"http://localhost:1234/v1"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "support", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:         "text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio",
+		Categories:      []string{"sales", "support"},
+		DefaultCategory: "support",
+	})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if stub.captured.Driver != "LM-Studio" {
+		t.Fatalf("Driver=%q, want %q", stub.captured.Driver, "LM-Studio")
+	}
+	if stub.captured.ModelName != "text-embedding-nomic-embed-text-v1.5@q8_0" {
+		t.Fatalf("ModelName=%q, want model with embedded @", stub.captured.ModelName)
+	}
+	if stub.captured.APIKey != "lmstudio-key" {
+		t.Fatalf("APIKey=%q, want %q", stub.captured.APIKey, "lmstudio-key")
 	}
 }
 

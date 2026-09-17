@@ -58,14 +58,11 @@ const defaultAgentDeferredTimeout = 10 * time.Minute
 // drivers and the tenant_llm lookup both key on the bare model
 // name + factory, not on the instance.
 //
-// Mirrors Python's split_model_name at
-// api/db/joint_services/tenant_model_service.py:163-178:
-//   - "model"                     → ("model", "",       false)
-//   - "model@provider"            → ("model", "provider", true)
-//   - "model@instance@provider"   → ("model", "provider", true)
-//   - 4+ parts                    → ("parts[0]", "parts[2]", true) —
-//     the trailing segment wins, anything between instance and
-//     provider is dropped (Python uses parts[2] unconditionally).
+// Mirrors Python's split_model_name (rsplit("@", 2)) and splitCompositeLLMID:
+//   - "model"                          → ("model", "", false)
+//   - "model@provider"                 → ("model", "provider", true)
+//   - "model@instance@provider"        → ("model", "provider", true)
+//   - "model@quant@instance@provider"  → ("model@quant", "provider", true)
 func agentProviderLastSegmentSplit(s string) (modelName, providerName string, hasProvider bool) {
 	return splitCompositeLLMID(s)
 }
