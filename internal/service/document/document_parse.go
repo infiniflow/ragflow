@@ -29,6 +29,11 @@ var documentParseLocks = struct {
 	locks map[string]*documentParseLock
 }{locks: make(map[string]*documentParseLock)}
 
+const (
+	cleanupClaimLeaseSeconds int64 = 120
+	cleanupTakeoverGraceSecs int64 = 45
+)
+
 func lockDocumentParse(docID string) func() {
 	documentParseLocks.Lock()
 	lock := documentParseLocks.locks[docID]
@@ -51,6 +56,33 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
+func (s *DocumentService) acquireCleanupClaim(ctx context.Context, documentID, owner string) (*entity.DocumentCleanupClaim, error) {
+	if s.cleanupClaimDAO == nil {
+		return nil, errors.New("document cleanup claim DAO is nil")
+	}
+	var claim *entity.DocumentCleanupClaim
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := s.documentDAO.GetByIDForUpdate(ctx, tx, documentID); err != nil {
+			return err
+		}
+		now, err := dao.CurrentUnixTime(ctx, tx)
+		if err != nil {
+			return err
+		}
+		claim, err = s.cleanupClaimDAO.Acquire(ctx, tx, documentID, owner, now, cleanupClaimLeaseSeconds, cleanupTakeoverGraceSecs)
+		return err
+	})
+	return claim, err
+}
+
+func (s *DocumentService) renewCleanupClaim(ctx context.Context, documentID, token string) error {
+	now, err := dao.CurrentUnixTime(ctx, dao.DB)
+	if err != nil {
+		return err
+	}
+	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds)
+}
+
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
@@ -65,14 +97,28 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	}
 	unlock := lockDocumentParse(doc.ID)
 	defer unlock()
+	runContext := ctx
 
 	if opts.RerunWithDelete {
-		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
+		claim, err := s.acquireCleanupClaim(ctx, doc.ID, fmt.Sprintf("document-service:%s", userID))
+		if err != nil {
+			return fmt.Errorf("acquire cleanup claim for document %s: %w", doc.ID, err)
+		}
+		defer func() {
+			if _, err := s.cleanupClaimDAO.Release(context.WithoutCancel(ctx), dao.DB, doc.ID, claim.Token); err != nil {
+				common.Warn(fmt.Sprintf("release cleanup claim for document %s: %v", doc.ID, err))
+			}
+		}()
+		runContext = service.WithDocumentCleanupClaim(ctx, doc.ID, claim.Token)
+		if err := s.clearDocumentParseResults(runContext, doc, kb.TenantID); err != nil {
 			return err
+		}
+		if err := s.renewCleanupClaim(runContext, doc.ID, claim.Token); err != nil {
+			return fmt.Errorf("renew cleanup claim for document %s: %w", doc.ID, err)
 		}
 	}
 
-	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	responses, err := s.IngestDocuments(runContext, doc.KbID, userID, []string{doc.ID})
 	if err != nil {
 		return err
 	}

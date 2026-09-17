@@ -496,6 +496,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		cleanupClaimDAO:  dao.NewDocumentCleanupClaimDAO(),
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
@@ -1404,6 +1405,13 @@ func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
 	}
 	if terminal.Message != "Task superseded by a new parse request." {
 		t.Fatalf("terminal message = %q", terminal.Message)
+	}
+	var claimCount int64
+	if err = db.Model(&entity.DocumentCleanupClaim{}).Where("document_id = ?", "doc-1").Count(&claimCount).Error; err != nil {
+		t.Fatalf("count cleanup claims: %v", err)
+	}
+	if claimCount != 0 {
+		t.Fatalf("cleanup claims = %d, want none after enqueue", claimCount)
 	}
 }
 

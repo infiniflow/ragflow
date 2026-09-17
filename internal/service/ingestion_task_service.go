@@ -74,6 +74,27 @@ type IngestionTaskService struct {
 	logSettings         IngestionLogSettings
 }
 
+type cleanupClaimContextKey struct{}
+
+type cleanupClaimContextValue struct {
+	DocumentID string
+	Token      string
+}
+
+// WithDocumentCleanupClaim marks a new-run request as the current cleanup
+// owner. It is only used by the document cleanup workflow before enqueueing.
+func WithDocumentCleanupClaim(ctx context.Context, documentID, token string) context.Context {
+	return context.WithValue(ctx, cleanupClaimContextKey{}, cleanupClaimContextValue{
+		DocumentID: documentID,
+		Token:      token,
+	})
+}
+
+func cleanupClaimFromContext(ctx context.Context, documentID string) (string, bool) {
+	claim, ok := ctx.Value(cleanupClaimContextKey{}).(cleanupClaimContextValue)
+	return claim.Token, ok && claim.DocumentID == documentID && claim.Token != ""
+}
+
 func NewIngestionTaskService() *IngestionTaskService {
 	return &IngestionTaskService{
 		documentDAO:         dao.NewDocumentDAO(),
@@ -733,7 +754,10 @@ func (s *IngestionTaskService) ensureRunIdentity(ctx context.Context, task *enti
 			return err
 		}
 		if claim != nil {
-			return fmt.Errorf("document %s cleanup claim is active", lockedDocument.ID)
+			token, owned := cleanupClaimFromContext(ctx, lockedDocument.ID)
+			if !owned || token != claim.Token {
+				return fmt.Errorf("document %s cleanup claim is active", lockedDocument.ID)
+			}
 		}
 		lockedTask, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
 		if err != nil {
