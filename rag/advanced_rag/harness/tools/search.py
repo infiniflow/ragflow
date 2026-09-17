@@ -8,6 +8,7 @@ module owns the retrieval implementations they call.
 import logging
 import re
 from typing import Any
+
 from common import settings
 from rag.advanced_rag.harness.chunk_utils import (  # noqa: F401
     _chunk_attr,
@@ -43,7 +44,6 @@ from rag.advanced_rag.harness.tools.text_processing import (  # noqa: F401
     _split_sentences,
     _stem,
 )
-
 
 # Fallbacks for callers that supply no retrieval configuration: the values the
 # search tools used unconditionally before RAGTools carried settings.
@@ -181,7 +181,7 @@ async def hybrid_search(
         from rag.advanced_rag.harness.memory import add as _memory_add
 
         _memory_add(tools, kbinfos.get("chunks", []) or [])
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass  # memory is best-effort; never fail the search over it.
     # Narrow-or-keep: if the query keywords match any chunk, keep only the
     # matching passages (shrinking the evidence handed to the LLM so a single
@@ -243,7 +243,7 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         from rag.advanced_rag.harness.memory import add as _memory_add
 
         _memory_add(tools, kbinfos.get("chunks", []) or [])
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Vector search")
     return kbinfos
@@ -281,10 +281,78 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         from rag.advanced_rag.harness.memory import add as _memory_add
 
         _memory_add(tools, kbinfos.get("chunks", []) or [])
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "BM25 search")
     return kbinfos
+
+
+async def metadata_search(
+    tools,
+    query: str,
+    filters: list[dict],
+    logic: str = "and",
+    kb_ids: list[str] | None = None,
+    top_n: int | None = None,
+    keywords: str = "",
+    doc_scope: list[str] | None = None,
+) -> dict:
+    """Hybrid retrieval restricted to documents whose metadata matches ``filters``.
+
+    Programmatic counterpart of the ``metadata_search`` tool (the tool's dispatch
+    lives in ``action_session``; this is the retrieval leg the pre-search stage
+    reuses). Pipeline: resolve matching doc_ids via the metadata-index push-down
+    (ES / Infinity), fall back to the in-memory ``meta_filter`` when push-down is
+    not viable -> intersect with the session document scope -> ``hybrid_search``
+    scoped to exactly those documents.
+
+    ``filters`` is a list of ``{key, value, op}`` conditions (e.g.
+    ``[{"key": "title", "op": "contains", "value": "New York"}]``). An empty
+    match (or no dataset metadata) is a normal empty result, never an exception.
+    """
+    top_n = _resolve_top_n(tools, top_n)
+    target_ids = kb_ids or list(dict.fromkeys(tools.kb_ids + [kb.id for kb in tools.sql_kbs]))
+    if not target_ids or not filters:
+        return {"chunks": [], "doc_aggs": []}
+
+    from api.db.services.doc_metadata_service import DocMetadataService
+    from common.metadata_utils import meta_filter
+    from common.misc_utils import thread_pool_exec
+
+    # 1) Resolve matching doc_ids: metadata-index push-down, in-memory fallback.
+    try:
+        doc_ids = await thread_pool_exec(DocMetadataService.filter_doc_ids_by_meta_pushdown, target_ids, filters, logic)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[Metadata search] push-down failed; falling back to in-memory meta_filter", exc_info=True)
+        doc_ids = None
+    if doc_ids is None:
+        try:
+            metas = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, target_ids)
+            doc_ids = meta_filter(metas, filters, logic) or []
+        except Exception:  # noqa: BLE001
+            _LOG.warning("[Metadata search] in-memory fallback failed", exc_info=True)
+            doc_ids = []
+    doc_ids = [str(d) for d in (doc_ids or [])]
+
+    # 2) Intersect with the session's global document scope (if any).
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_ids = tools.scoped_doc_ids(doc_ids) or []
+    if not doc_ids:
+        _LOG.info("[Metadata search] no documents matched filters=%s logic=%s", filters, logic)
+        return {"chunks": [], "doc_aggs": []}
+
+    # 3) Hybrid search restricted to exactly those documents (compiled expansion
+    #    would pull in out-of-scope chunks and break the "only these docs" contract).
+    _LOG.info('[Metadata search] "%s" matched %d doc(s) via filters=%s', str(query)[:80], len(doc_ids), filters)
+    return await hybrid_search(
+        tools,
+        query,
+        kb_ids=target_ids,
+        top_n=top_n,
+        doc_scope=doc_ids,
+        keywords=keywords,
+        use_compiled=False,
+    )
 
 
 # Compiled-product expansion lives in ``compiled_expansion`` and is
@@ -311,7 +379,7 @@ async def web_search(tools, query: str, keywords: str = "", retrieval_query: str
         effective_query = f"{query} {retrieval_query}".strip()[:400] if retrieval_query else f"{query} {keywords}".strip() if keywords else query
         web_res = await thread_pool_exec(tools.web_search.retrieve_chunks, effective_query)
         return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("web_search failed")
         return {"chunks": [], "doc_aggs": []}
 
@@ -335,7 +403,7 @@ async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[s
     sql_kb_ids = [kb.id for kb in sql_kbs]
     try:
         ans = await use_sql(query, tools.field_map, tenant_id, tools.chat_mdl, quota=True, kb_ids=sql_kb_ids, doc_ids=doc_scope)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("structured_query failed")
         return {"answer": "", "chunks": [], "doc_aggs": []}
     if not ans:
@@ -353,8 +421,12 @@ async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[s
 # ─── do exact keyword/pattern locate + full-document deep-read like dynamic. ───
 
 _GREP_TERMS_MAX = 10
-_GREP_OUT_CHARS_PER_CHUNK = 700
-_GREP_OUT_TOTAL_CHARS = 8000
+# Per-chunk window for a grep hit. 700 chars was measured to hide mid-section
+# answer rows (a rank row at 62% of a 14.7K-char table, a "her father was an ice
+# hockey player" clause in an Early-life section); the window is now centred on
+# the matched line (see the narrow call below) and doubled.
+_GREP_OUT_CHARS_PER_CHUNK = 1500
+_GREP_OUT_TOTAL_CHARS = 12000
 _LIST_CHUNKS_MAX_CHUNKS = 80
 
 
@@ -443,7 +515,10 @@ async def grep_search(
                 prose_chunks,
                 terms,
                 keywords=str(query).strip(),
-                context={"before": 1, "after": 0},
+                # Centre the window on the matched line instead of showing the
+                # match alone: the fact that answers the question usually sits
+                # one or two lines around the grep hit, not on it.
+                context={"before": 2, "after": 3},
                 max_out_chars_per_chunk=_GREP_OUT_CHARS_PER_CHUNK,
                 max_out_total_chars=_GREP_OUT_TOTAL_CHARS,
             )
@@ -459,7 +534,7 @@ async def grep_search(
                 sum(len(str(c.get("content_with_weight") or c.get("content") or "")) for c in kept) / 1000.0,
             )
             res["chunks"] = kept
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Grep search] narrow failed; using raw BM25 candidates.")
     _g = res.get("chunks") or []
     if _g:
@@ -492,7 +567,7 @@ async def list_chunks(tools, doc_id: str) -> dict:
     _LOG.info("[List chunks] Deep-reading document %s", doc_id)
     try:
         full = await tools.fetch_full_document(str(doc_id).strip())
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[List chunks] fetch_full_document failed doc=%s", doc_id)
         return {"chunks": [], "doc_aggs": []}
     chunks = (full.get("chunks") or [])[:_LIST_CHUNKS_MAX_CHUNKS]
@@ -529,7 +604,7 @@ async def _load_specific_chunks(tools_slot, chunk_ids: list[str], doc_scope: lis
     for doc_id in doc_scope[:8]:
         try:
             full = await tools_slot.fetch_full_document(doc_id)
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.exception("[grep_chunks] fetch_full_document failed for doc_id=%s", doc_id)
             continue
         for c in full.get("chunks", []) or []:
@@ -640,7 +715,7 @@ def _base_chat_mdl(tools_slot):
             )
             return None
         return mdl
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[dynamic] failed to resolve base chat model")
         return None
 

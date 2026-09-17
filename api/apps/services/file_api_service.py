@@ -41,10 +41,10 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
     :return: (success, result_list) or (success, error_message)
     """
     if not pf_id:
-        root_folder = FileService.get_root_folder(tenant_id)
+        root_folder = await thread_pool_exec(FileService.get_root_folder, tenant_id)
         pf_id = root_folder["id"]
 
-    e, pf_folder = FileService.get_by_id(pf_id)
+    e, pf_folder = await thread_pool_exec(FileService.get_by_id, pf_id)
     if not e:
         return False, "Can't find this folder!"
 
@@ -114,6 +114,11 @@ async def create_folder(tenant_id: str, name: str, pf_id: str | None = None, fil
     if "/" in name:
         return False, 'Folder name cannot contain "/"'
 
+    return await thread_pool_exec(_create_folder_sync, tenant_id, name, pf_id, file_type)
+
+
+def _create_folder_sync(tenant_id: str, name: str, pf_id: str | None, file_type: str | None):
+    """Insert a folder or virtual file; intended to run off the Quart event loop."""
     if not pf_id:
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]

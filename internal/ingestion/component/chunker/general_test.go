@@ -534,6 +534,11 @@ func assertMaterializedMediaContext(t *testing.T, chunk map[string]any, wantText
 			t.Errorf("media chunk must not carry %s after materialization: %+v", key, chunk)
 		}
 	}
+	// The folded body and its token count must agree: a media chunk is never
+	// merged, so TKNums is a count of exactly this text.
+	if count, ok := chunk["tk_nums"].(float64); !ok || count != float64(tokenizeStr(wantText)) {
+		t.Errorf("media chunk tk_nums = %v, want %d (its own text)", chunk["tk_nums"], tokenizeStr(wantText))
+	}
 }
 
 func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
@@ -861,9 +866,12 @@ func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
 	}
 
 	const wantText = "before<table><tr><td>A</td></tr></table>after"
+	// The table chunk is selected by the STORED type column: ck_type is chunker
+	// bookkeeping and the index boundary strips it (it has no chunk-store
+	// column, and a strict engine rejects the whole insert over one).
 	var table map[string]any
 	for _, ck := range chunks {
-		if ck["ck_type"] == "table" {
+		if ck["doc_type_kwd"] == "table" {
 			table = ck
 			break
 		}

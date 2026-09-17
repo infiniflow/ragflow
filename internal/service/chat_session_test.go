@@ -573,7 +573,7 @@ func TestUpdateSession_NotFound(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "missing", map[string]interface{}{"name": "renamed"})
-	if err == nil || err.Error() != "session not found" {
+	if err == nil || err.Error() != "Session not found!" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeDataError {

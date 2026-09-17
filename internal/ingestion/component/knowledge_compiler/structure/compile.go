@@ -220,6 +220,9 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 		specs = append(specs, spec{kind: "entity", payload: p})
 	}
 	for _, p := range edges {
+		if isSelfLoopRelation(p, srcField, tgtField) {
+			continue
+		}
 		specs = append(specs, spec{kind: "relation", payload: p})
 	}
 	if len(specs) == 0 {
@@ -287,6 +290,40 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 		})
 	}
 	return rows, nil
+}
+
+func isSelfLoopRelation(payload map[string]any, sourceField, targetField string) bool {
+	from := relationEndpoint(payload, sourceField, "source", "src", "from")
+	to := relationEndpoint(payload, targetField, "target", "tgt", "to")
+	return isSelfLoop(from, to)
+}
+
+func isSelfLoop(from, to string) bool {
+	from, to = strings.TrimSpace(from), strings.TrimSpace(to)
+	return from != "" && from == to
+}
+
+func filterSelfLoopRelations(rows []common.Product) []common.Product {
+	filtered := make([]common.Product, 0, len(rows))
+	for _, row := range rows {
+		if kind, _ := row.Meta["kind"].(string); kind == "relation" {
+			from, _ := row.Meta["from"].(string)
+			to, _ := row.Meta["to"].(string)
+			if payload := parsePayload(row.Content); payload != nil {
+				if payloadFrom := relationEndpoint(payload, "", "source", "src", "from"); payloadFrom != "" {
+					from = payloadFrom
+				}
+				if payloadTo := relationEndpoint(payload, "", "target", "tgt", "to"); payloadTo != "" {
+					to = payloadTo
+				}
+			}
+			if isSelfLoop(from, to) {
+				continue
+			}
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
 }
 
 // entityName mirrors _struct_graph_entity's name resolution
