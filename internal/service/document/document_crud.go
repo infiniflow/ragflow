@@ -298,12 +298,9 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		if err := s.purgeTaskStateForCleanup(cleanupCtx, ingestionTask.ID); err != nil {
 			return fmt.Errorf("purge task state for document %s: %w", docID, err)
 		}
-		taskInfo, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, &ingestionTask.UserID)
-		if err != nil {
+		if _, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
 			return err
 		}
-		// FIXME: need to add logic to delete files in taskInfo
-		common.Warn(fmt.Sprintf("need to delete files from taskInfo: %v", taskInfo))
 	}
 
 	if err := s.deleteDocEngineData(cleanupCtx, docID, kb.TenantID, doc.KbID); err != nil {

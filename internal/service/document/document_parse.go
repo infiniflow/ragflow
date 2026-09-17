@@ -387,10 +387,6 @@ func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 }
 
 func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	// create document parse id
-	// save to task table
-	// send to message queue
-
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
@@ -427,26 +423,6 @@ func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID 
 			})
 			continue
 		}
-
-		// create task for each document
-		//task := &entity.IngestionTask{
-		//	ID:         utility.GenerateToken(),
-		//	DocumentID: docID,
-		//	UserID:     userID,
-		//}
-
-		// save the task to database
-		//err = s.ingestionTaskDAO.Create(task)
-		//if err != nil {
-		//	errorMessage := err.Error()
-		//	responses = append(responses, &service.ParseDocumentResponse{
-		//		DocumentID: docID,
-		//		Result:     &errorMessage,
-		//	})
-		//	continue
-		//}
-
-		// Send task to message queue
 
 	}
 
