@@ -98,7 +98,11 @@ def settings(monkeypatch):
     # ``sys.modules["common.settings"]`` leaves that parent attribute pointing
     # at this test's stub-backed module and contaminates later tests.
     monkeypatch.setattr(common, "settings", getattr(common, "settings", None), raising=False)
-    monkeypatch.delitem(sys.modules, "common.settings", raising=False)
+    # ``delitem`` records nothing when the key is absent, so the stub-backed
+    # module imported below would outlive the test. ``setitem`` always records
+    # the previous state, and teardown then removes or restores the entry.
+    monkeypatch.setitem(sys.modules, "common.settings", None)
+    del sys.modules["common.settings"]
     return importlib.import_module("common.settings")
 
 
