@@ -34,6 +34,9 @@ func TestDocumentCleanupClaimDAOFencesExpiredOwners(t *testing.T) {
 	if _, err = claims.Acquire(t.Context(), db, "doc-1", "api-b", 200, 120, 45); !errors.Is(err, ErrDocumentCleanupClaimHeld) {
 		t.Fatalf("acquire during lease error = %v, want ErrDocumentCleanupClaimHeld", err)
 	}
+	if _, err = claims.Acquire(t.Context(), db, "doc-1", "api-b", 264, 120, 45); !errors.Is(err, ErrDocumentCleanupClaimHeld) {
+		t.Fatalf("acquire during takeover grace error = %v, want ErrDocumentCleanupClaimHeld", err)
+	}
 	if err = claims.Renew(t.Context(), db, "doc-1", "wrong-token", 200, 120); !errors.Is(err, ErrDocumentCleanupClaimLost) {
 		t.Fatalf("renew with old token error = %v, want ErrDocumentCleanupClaimLost", err)
 	}
