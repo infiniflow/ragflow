@@ -9,7 +9,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { SwitchLogicOperator } from '@/constants/agent';
@@ -198,7 +197,7 @@ function ConditionCards({
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <RAGFlowSelect
+                          <SelectWithSearch
                             {...field}
                             options={switchOperatorOptions}
                             onlyShowSelectedIcon
