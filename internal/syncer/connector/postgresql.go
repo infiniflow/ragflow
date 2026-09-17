@@ -24,13 +24,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
@@ -80,9 +82,11 @@ func NewPostgreSQLConnector(config map[string]any) (*PostgreSQLConnector, error)
 		password:        stringConfig(credentials["password"]),
 		sslmode:         strings.TrimSpace(stringConfig(config["sslmode"])),
 		connectTimeout:  configInt(config["connect_timeout"], defaultPostgresConnectTimeout),
-		openDB: func(dsn string) (*sql.DB, error) {
-			return sql.Open("pgx", dsn)
-		},
+	}
+	// Production dials through the SSRF-guarded, DNS-pinned openDB. Tests
+	// replace it with an injected openDB that avoids the real network.
+	connector.openDB = func(dsn string) (*sql.DB, error) {
+		return connector.openPinned(dsn)
 	}
 	if connector.sslmode == "" {
 		connector.sslmode = "prefer"
@@ -177,6 +181,35 @@ func (c *PostgreSQLConnector) open() (*sql.DB, error) {
 	query.Set("connect_timeout", strconv.Itoa(c.connectTimeout))
 	dsn.RawQuery = query.Encode()
 	return c.openDB(dsn.String())
+}
+
+// openPinned is the production openDB: it validates the configured host with
+// the shared host-type SSRF guard and installs a pgx DialFunc pinned to the
+// validated IP, closing the DNS-rebinding window between validation and the
+// TCP connect. The DSN keeps the original hostname so TLS ServerName /
+// host-based authentication are unchanged; only the underlying TCP dial is
+// rewritten.
+func (c *PostgreSQLConnector) openPinned(dsn string) (*sql.DB, error) {
+	pinIP, err := assertConnectorHostSafe(c.host)
+	if err != nil {
+		return nil, err
+	}
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	timeout := time.Duration(c.connectTimeout) * time.Second
+	port := strconv.Itoa(int(config.Port))
+	config.DialFunc = postgresPinnedDial(pinIP, port, timeout)
+	return stdlib.OpenDB(*config), nil
+}
+
+// postgresPinnedDial returns a pgx DialFunc that connects every dial to
+// pinIP:port, ignoring the host parsed from the DSN.
+func postgresPinnedDial(pinIP net.IP, port string, timeout time.Duration) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: timeout}).DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
+	}
 }
 
 // baseQueries returns the configured query or a SELECT per table.

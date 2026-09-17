@@ -63,6 +63,21 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	}
 }
 
+func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	parserID := "qa"
+	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:     "ds-parser-only",
+		ParserID: &parserID,
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+}
+
 func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

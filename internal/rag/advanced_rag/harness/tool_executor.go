@@ -36,6 +36,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/service/nav"
@@ -99,19 +101,128 @@ func NewSearchExecutor(deps SearchDeps, req RunRequest) ToolExecutor {
 	return &searchExecutor{deps: deps, req: req}
 }
 
+// RunPattern executes ONE completeness pattern and returns the windows it matched, already
+// narrowed (see ScanPatterns / RunCompletenessPass).
+//
+// It goes through the same grep path a retrieve call uses, so a pattern is treated as a
+// pattern: its operands are recalled on their own (patternRecallTopN — a pattern's recall
+// must not stop at a ranking's head, see that constant's measurement), the pattern decides
+// which candidates are windows (matchGrepPattern), and the windows come back narrowed to
+// the match (GrepOutCharsPerChunk / GrepOutTotalChars). The runtime runs this itself
+// because the same queries handed to the model as a list went unrun (see
+// RunCompletenessPass).
+func (e *searchExecutor) RunPattern(ctx context.Context, pattern string) []map[string]any {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return nil
+	}
+	chunks, _ := GrepSearch(ctx, e.deps, SearchParams{
+		Question: pattern,
+		// A pattern is an expression for the MATCHER, not for the engine (see
+		// GrepSearch): recall gets the operands, the pattern stays here and decides.
+		Keywords: strings.Join(GrepPatternOperands(pattern), " "),
+		TopN:     patternRecallTopN,
+		KbIDs:    e.req.DatasetIDs,
+		// The pass asks about the ACTOR and the ACT WORDS, never about candidate names
+		// (see SearchParams.SkipReachLedger).
+		SkipReachLedger: true,
+	})
+	return chunks
+}
+
 // Execute implements ToolExecutor for the wired tools. Tools whose port has not
 // landed are classified, not errored: they report MISS (the tool is valid, this
 // call reached nothing) so the model falls back to a different tool instead of
 // stalling.
+//
+// One tool step is reported as its two halves: the invocation before dispatch
+// and the outcome after it, each to the developer log AND as a step (think text +
+// structured event). Python logs only the invocation (tool_decorator.py:311) and
+// hands the raw payload to the model, which leaves the visible trace one-sided —
+// a call that reached nothing reads exactly like one that found the answer, and
+// the reader cannot tell which evidence the answer was built from.
 func (e *searchExecutor) Execute(ctx context.Context, name string, args map[string]any) (ToolOutcome, error) {
+	logger := e.deps.Logger
+	renderedArgs := RenderToolArgs(args)
 	// Mirror Python rag/llm/tool_decorator.py:tool "[Function tool] Running the
-	// {name} tool with: {args}", one of the three namespaces Python's
-	// _SCOPED_PREFIXES forwarded into the think block. Python emitted it from a
-	// root-logging handler; Go has no root logger, so it is logged through the
-	// wrapped deps.Logger, which thinkLogger forwards to the think block.
-	if logger := e.deps.Logger; logger != nil && name != "" {
-		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderToolArgs(args))
+	// {name} tool with: {args}". The log line and the step below are the same
+	// call site on purpose: a tool step is a step because this method says so,
+	// not because a tagged line matched a pattern.
+	//
+	// The two projections then part: the log and the event's Args keep the argument
+	// object Python logs and a developer greps, while the step reports the query
+	// (ToolCallLine) — see there for why.
+	if logger != nil && name != "" {
+		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderedArgs)
 	}
+	if name != "" {
+		StepsFrom(ctx).Emit(ThinkEvent{
+			Kind:    ThinkKindToolCall,
+			Stage:   thinkToolStage,
+			Tool:    name,
+			Args:    renderedArgs,
+			Summary: fmt.Sprintf("[%s] %s", thinkToolStage, ToolCallLine(name, args)),
+		})
+	}
+
+	started := time.Now()
+	// The tool's own work reports one level deeper: the search legs it runs (and
+	// anything they run) belong to the call line above, not to the caller's level.
+	// The result line below stays at the OUTER depth — it closes the call line, so
+	// it is a sibling of it, not a child.
+	outcome, err := e.dispatch(Nested(ctx), name, args)
+	// One sentence template, two labels: the query names the call for both
+	// audiences, and the fallback for a document-scoped call (no query argument)
+	// exists only on the developer side — the think copy says nothing rather than
+	// print an id a reader cannot use.
+	label := ArgsLabel(args)
+	human := renderToolOutcome(name, label, outcome, err)
+	dev := human
+	if label == "" {
+		if devLabel := docIDLabel(args); devLabel != "" {
+			dev = renderToolOutcome(name, devLabel, outcome, err)
+		}
+	}
+	if logger != nil && name != "" {
+		logger.Printf("[Function tool] %s", dev)
+	}
+	if name != "" {
+		status := outcome.Status
+		if err != nil && status == "" {
+			// A transport failure is an error even when the executor returned a
+			// zero ToolOutcome (its contract is to set one; this keeps a client
+			// from seeing an unset status).
+			status = StatusError
+		}
+		cause := outcome.Diagnostic
+		if cause == "" && err != nil {
+			cause = err.Error()
+		}
+		StepsFrom(ctx).Emit(ThinkEvent{
+			Kind:       ThinkKindToolResult,
+			Stage:      thinkToolStage,
+			Tool:       name,
+			Args:       renderedArgs,
+			Status:     status,
+			Reason:     outcome.Reason,
+			Cause:      cause,
+			Results:    len(outcome.Payload),
+			Documents:  len(payloadDocIDs(outcome.Payload)),
+			Sources:    eventSources(outcome, ThinkMaxSources),
+			DurationMS: time.Since(started).Milliseconds(),
+			Summary:    fmt.Sprintf("[%s] %s", thinkToolStage, human),
+		})
+	}
+	return outcome, err
+}
+
+// thinkToolStage is the stage every tool step is reported under. The two
+// sentences below are logged AND reported as steps here, so no other producer
+// synthesizes a stage event for them.
+const thinkToolStage = "Function tool"
+
+// dispatch routes one tool call to its implementation.
+func (e *searchExecutor) dispatch(ctx context.Context, name string, args map[string]any) (ToolOutcome, error) {
 	switch name {
 	case "retrieve", "search_chunks", "grep_search", "grep_chunks":
 		return e.search(ctx, name, args)
@@ -140,24 +251,369 @@ func (e *searchExecutor) Execute(ctx context.Context, name string, args map[stri
 			"note": fmt.Sprintf("%s is not wired in this deployment yet. Use retrieve, search_chunks, navigate_tree or navigate_structure.", name),
 		}},
 		Status:  StatusMiss,
-		Reason:  ReasonNoDoc,
+		Reason:  ReasonUnwired,
 		Metrics: map[string]any{},
 	}, nil
 }
 
-// renderToolArgs renders a tool's arguments for the "[Function tool]" think-log
-// line. Python interpolated the raw args dict; Go marshals to JSON so nested
-// values (scopes, tag maps) stay readable. Empty args render as "{}" to match
-// Python's look rather than an empty string.
-func renderToolArgs(args map[string]any) string {
+// RenderToolArgs renders a tool's arguments for the "[Function tool]" think-log
+// line and the event's Args field. Python interpolated the raw args dict; Go
+// marshals to JSON so nested values (scopes, tag maps) stay readable. Empty args
+// render as "{}" to match Python's look rather than an empty string.
+//
+// String values are capped (capForThink): this field is rendered for display, and
+// one uncapped slot-evidence query turns a single call into a paragraph repeated
+// on every line of its round.
+//
+// Exported because the outer react loop (advanced_rag.outerReactSession) logs the
+// same line for the tools it dispatches itself (rag / summarize_document).
+func RenderToolArgs(args map[string]any) string {
 	if len(args) == 0 {
 		return "{}"
 	}
-	b, err := json.Marshal(args)
+	b, err := json.Marshal(capArgs(args))
 	if err != nil {
 		return "{}"
 	}
 	return string(b)
+}
+
+// QueryLabel renders a tool call's query argument(s) as bare quoted text
+// ("\"曹操是谁\"" or "\"曹操的逝世日期\", \"曹操是谁\""), or "" when the call carries
+// none. It is the ONE place the query-ish keys are listed, so a tool that renames
+// its question field cannot make the think block and the result labels disagree
+// about which calls have a query.
+func QueryLabel(args map[string]any) string {
+	for _, key := range []string{"query", "queries", "question"} {
+		if label := quoteQueries(args[key]); label != "" {
+			return label
+		}
+	}
+	return ""
+}
+
+// ToolCallLine renders the think block's call step for a tool invocation:
+// "Running the retrieve tool with \"曹操是谁\"." — a sentence, not a label.
+//
+// It carries the query and NOTHING else. The arguments the model emitted are a
+// developer's record — document ids, nav hints, kind switches, scope lists — and
+// printing them put raw JSON in front of a reader who only needs to know what was
+// asked. A call with no query names only the tool ("Running the summarize_document
+// tool.") rather than trailing an empty "with" or a document id, and the log keeps
+// the full argument object for the developer who needs to correlate it.
+//
+// No colon after "with": the log line's colon (`with: {json}`, Python
+// tool_decorator.py:311) introduces a dump, and this introduces a name — the
+// sentence reads "running the tool with X". The log keeps its own punctuation.
+//
+// Exported because the outer react loop dispatches its own tools (rag /
+// summarize_document) and reports the same line.
+func ToolCallLine(name string, args map[string]any) string {
+	if q := QueryLabel(args); q != "" {
+		return fmt.Sprintf("Running the %s tool with %s.", name, q)
+	}
+	return fmt.Sprintf("Running the %s tool.", name)
+}
+
+// capArgs returns a copy of args with every string capped, walking the shapes a
+// tool argument actually takes: a string, a list of them (a query list), or a
+// nested object.
+func capArgs(args map[string]any) map[string]any {
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = capArgValue(v)
+	}
+	return out
+}
+
+// capArgValue caps one argument value, recursing through the container shapes.
+func capArgValue(v any) any {
+	switch val := v.(type) {
+	case string:
+		return capForThink(val)
+	case []string:
+		out := make([]string, len(val))
+		for i, s := range val {
+			out[i] = capForThink(s)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = capArgValue(item)
+		}
+		return out
+	case map[string]any:
+		return capArgs(val)
+	}
+	return v
+}
+
+// renderToolOutcome renders one tool call's result as a sentence for the think
+// block: the outcome status, how many results came back and — for passage-shaped
+// results — how many documents they came from. It closes the "[Function tool]"
+// narration opened by Execute, so one tool step reads as a whole.
+//
+// The sentence names the call's OWN arguments (the caller passes ArgsLabel, or
+// docIDLabel for the developer copy) because a round runs several tool calls
+// concurrently: with fan-out goals in flight, "Running navigate_tree with …" and
+// "The navigate_tree tool returned …" lines interleave, and a result that does not
+// say WHICH query it answers cannot be paired back to the call that produced it —
+// two goals that both returned 1 result from 1 document read identically, which is
+// exactly what a reader must be able to tell apart.
+//
+// The label is the ONLY thing that varies between the two audiences, so the
+// wording above is written once: the same template renders the think sentence and
+// the developer line, and they can never drift.
+//
+// The machine-readable reason is NOT spelled into the sentence. It stays in the
+// tool_result event (Reason/Cause): "no_structure" is a routing token for the
+// session's strike logic, while the sentence says what happened in words and, for
+// failures, carries the producer's own diagnostic via causeSuffix.
+func renderToolOutcome(name, label string, oc ToolOutcome, err error) string {
+	if err != nil {
+		return fmt.Sprintf("The %s tool failed%s: %v.", name, label, err)
+	}
+	results := CountOf(len(oc.Payload), "result")
+	switch oc.Status {
+	case StatusOK:
+		return fmt.Sprintf("The %s tool returned %s%s%s.", name, results, documentSuffix(oc.Payload), label)
+	case StatusRedundant:
+		return fmt.Sprintf("The %s tool returned %s%s, already in the evidence pool.", name, results, label)
+	case StatusMiss:
+		if oc.Reason == ReasonUnwired {
+			return fmt.Sprintf("The %s tool is not wired in this deployment, so nothing ran%s.", name, label)
+		}
+		return fmt.Sprintf("The %s tool matched nothing%s.", name, orForThisQuery(label))
+	case StatusEmpty:
+		if oc.Reason == ReasonNoStructure {
+			return fmt.Sprintf("The %s tool has no compiled structure to read%s%s.", name, label, causeSuffix(oc.Diagnostic))
+		}
+		return fmt.Sprintf("The %s tool found nothing available%s%s.", name, label, causeSuffix(oc.Diagnostic))
+	case StatusPoor:
+		return fmt.Sprintf("The %s tool produced a result too weak to use%s%s.", name, label, causeSuffix(oc.Diagnostic))
+	case StatusError:
+		return fmt.Sprintf("The %s tool could not run%s%s.", name, label, causeSuffix(oc.Diagnostic))
+	}
+	return fmt.Sprintf("The %s tool returned %s%s.", name, results, label)
+}
+
+// ArgsLabel renders a tool call's identifying arguments as a trailing clause
+// (" for \"曹操是谁\""), or "" when the call carries nothing that names it. It is
+// what pairs a result line with its call line: the query (or question) is what
+// distinguishes concurrent calls, and it is also the half a reader understands.
+// Exact pairing stays possible in every case because the tool_result event
+// carries the FULL arguments in Args.
+//
+// A document id is deliberately NOT a fallback here: it names nothing a reader
+// knows. Where a document-scoped call has no query, the human sentence simply
+// goes unlabelled and the developer copy uses docIDLabel.
+func ArgsLabel(args map[string]any) string {
+	if q := QueryLabel(args); q != "" {
+		return " for " + q
+	}
+	return ""
+}
+
+// docIDLabel is the developer-log fallback ArgsLabel refuses: " for document
+// 95a7aee3…" for a call that named a document and nothing else. It rides the log
+// copy of a sentence only (never the think block), so a developer can pair a
+// document-scoped call with the file it touched.
+func docIDLabel(args map[string]any) string {
+	if id, ok := args["doc_id"].(string); ok {
+		if id = strings.TrimSpace(id); id != "" {
+			return " for document " + id
+		}
+	}
+	return ""
+}
+
+// quoteQueries renders a query argument as a quoted label: a single string, or a
+// list of them rendered as a list. Each entry is capped (capForThink) because the
+// slot-research driver searches a paragraph of evidence as its "query". It returns
+// "" when the argument holds no text, so the caller falls back to the next
+// identifying field.
+func quoteQueries(raw any) string {
+	var items []string
+	switch v := raw.(type) {
+	case string:
+		items = []string{v}
+	case []string:
+		items = v
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				items = append(items, s)
+			}
+		}
+	default:
+		return ""
+	}
+	quoted := make([]string, 0, len(items))
+	for _, s := range items {
+		if strings.TrimSpace(s) != "" {
+			quoted = append(quoted, fmt.Sprintf("%q", capForThink(s)))
+		}
+	}
+	if len(quoted) == 0 {
+		return ""
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// orForThisQuery keeps a sentence from ending on a dangling preposition when the
+// call named no query: "matched nothing for \"q\"" once labelled, "matched nothing
+// for this query" otherwise.
+func orForThisQuery(label string) string {
+	if label == "" {
+		return " for this query"
+	}
+	return label
+}
+
+// causeSuffix renders a tool's own failure explanation as a trailing clause.
+// "reason: infra" answers WHICH bucket the failure fell in; this answers what
+// actually happened, which is the part a reader can act on.
+func causeSuffix(diagnostic string) string {
+	if strings.TrimSpace(diagnostic) == "" {
+		return ""
+	}
+	return ": " + diagnostic
+}
+
+// CountOf renders a count with a singular/plural noun ("1 result", "3 results").
+// Shared with the outer react loop's narration (advanced_rag.outerReactSession)
+// so both layers word their "[Function tool]" result lines identically.
+func CountOf(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %s", n, pluralOf(noun))
+}
+
+// pluralOf pluralizes the LAST word of noun ("passage" → "passages"), including
+// the consonant+y rule: appending a bare "s" is what printed "3 first-hop querys"
+// and "3 targeted querys" in the trace.
+func pluralOf(noun string) string {
+	if len(noun) >= 2 && noun[len(noun)-1] == 'y' {
+		switch noun[len(noun)-2] {
+		case 'a', 'e', 'i', 'o', 'u':
+		default:
+			return noun[:len(noun)-1] + "ies"
+		}
+	}
+	return noun + "s"
+}
+
+// ThinkLabelMaxRunes caps the piece of ONE argument a step's sentence and a tool
+// call's rendering may carry.
+//
+// A tool's "query" is not always a question: the slot-research driver searches a
+// paragraph of slot evidence, and an uncapped label put the same 200 characters
+// on six lines of a single round (running / matched nothing / locate / searching
+// / returned …) until the round was unreadable. The cap is per VALUE, so the
+// sentence stays a sentence.
+const ThinkLabelMaxRunes = 60
+
+// capForThink caps one string for the think block: rune-safe (it never cuts a
+// character in half) and marked with an ellipsis when it was cut.
+func capForThink(s string) string {
+	if utf8.RuneCountInString(s) <= ThinkLabelMaxRunes {
+		return s
+	}
+	return truncateRunes(s, ThinkLabelMaxRunes) + "…"
+}
+
+// documentSuffix renders " from N document(s)" for the distinct doc ids a
+// payload carries, or "" when it names none (a computed number or a note has no
+// documents to name).
+func documentSuffix(payload []any) string {
+	n := len(payloadDocIDs(payload))
+	if n == 0 {
+		return ""
+	}
+	return " from " + CountOf(n, "document")
+}
+
+// payloadDocIDs lists the distinct documents a payload names, in first-seen
+// order. Retrieval payloads carry one doc id per passage ("doc_id");
+// navigate_tree's routed payload names the documents it routed to as a list
+// ("doc_ids"), which is the only thing that outcome reports about the corpus.
+// The structured event and the human sentence are both built from this, so the
+// count a client shows always matches the count in the sentence.
+func payloadDocIDs(payload []any) []string {
+	seen := make(map[string]struct{}, len(payload))
+	out := make([]string, 0, len(payload))
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, item := range payload {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, _ := m["doc_id"].(string); id != "" {
+			add(id)
+		}
+		for _, id := range payloadStringList(m["doc_ids"]) {
+			add(id)
+		}
+	}
+	return out
+}
+
+// eventSources lists the evidence anchors a tool outcome produced: the chunk ids
+// it admitted, or — for a tool that returns no passages (navigate_tree routes
+// documents, it does not quote them) — the documents it reached. Capped at
+// limit.
+func eventSources(oc ToolOutcome, limit int) []string {
+	seen := make(map[string]struct{}, len(oc.EvidenceIDs))
+	sources := make([]string, 0, len(oc.EvidenceIDs))
+	for _, s := range oc.EvidenceIDs {
+		if s == "" {
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		sources = append(sources, s)
+	}
+	if len(sources) == 0 {
+		sources = payloadDocIDs(oc.Payload)
+	}
+	if limit > 0 && len(sources) > limit {
+		sources = sources[:limit]
+	}
+	return sources
+}
+
+// payloadStringList reads a string-list FIELD of a tool payload: the executor
+// builds it as []string, but a payload that made a round trip through a decoded
+// message carries []any. Unlike toolStringList (an ARG reader that also accepts a
+// lone string and coerces scalars), this is a payload read: only real strings
+// count, so a malformed entry is skipped instead of being stringified.
+func payloadStringList(raw any) []string {
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func (e *searchExecutor) fetchFullDocument(ctx context.Context, args map[string]any) (ToolOutcome, error) {
@@ -288,6 +744,9 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 			Payload: []any{},
 			Status:  ReasonStatus(res.EmptyReason),
 			Reason:  res.EmptyReason,
+			// Carry WHY the descent failed: the reason bucket alone ("infra")
+			// leaves a reader with nothing to act on.
+			Diagnostic: res.Diagnostic,
 		}, nil
 	}
 
@@ -330,6 +789,21 @@ func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
 			TenantID:   tenantID,
 			DocScope:   docScope,
 			TopN:       topN,
+			// page_size here IS the pool (Python passes `pool` positionally as
+			// page_size, dataset_api_service.py:4106-4129), and the retrieval
+			// service refuses `page * page_size > rerank_candidates_count`
+			// (nlp/retrieval.go:126, mirroring rag/nlp/search.py:745). Python
+			// therefore raises the candidate count to the same pool for this
+			// leg (`rerank_candidates_count=pool`); omitting it left the default
+			// 64 against a 256-wide pool, so EVERY nav-tree descent failed with
+			// "rerank_candidates_count(64) must be greater than or equal to
+			// page(1) * page_size(256)" and reported infra.
+			RerankCandidatesCount: topN,
+			// `must_not={"exists": "compile_kwd"}` (_NAV_CHUNK_AGG_EXCLUDE_COMPILED
+			// = True): this leg aggregates ORIGINAL chunks per document, and a
+			// compiled product row would otherwise be attributed to a document
+			// as if it were a passage.
+			ExcludeCompiled: true,
 		})
 		if err != nil {
 			// Surface the failure instead of folding it into an empty result:
@@ -390,7 +864,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 			KbIDs:    e.deps.KbIDs,
 		})
 		if res.EmptyReason == ReasonInfra {
-			return ToolOutcome{Payload: []any{}, Status: ReasonStatus(res.EmptyReason), Reason: res.EmptyReason}, nil
+			return ToolOutcome{Payload: []any{}, Status: ReasonStatus(res.EmptyReason), Reason: res.EmptyReason, Diagnostic: res.Diagnostic}, nil
 		}
 		docIDs = res.DocIDs
 		if len(docIDs) > navTreeMaxDocs {
@@ -521,11 +995,89 @@ func argString(args map[string]any, key string) string {
 // Claim pseudo-chunks BYPASS this cap: Python's _claim_prefetch appends them
 // directly to kbinfos["chunks"] (:755), and the cap check (:657) only guards
 // _admit_evidence's regular chunks.
-const evidencePoolCap = 120
+//
+// 200, not Python's 120. The 120 was sized for a consumer that no longer exists —
+// the round-level sweep that rendered the WHOLE pool into one prompt, where the cap
+// and that prompt's budget were the same number. Nothing renders the pool whole any
+// more (the SCA reads a ranked 60-chunk view, the session seed injects a bounded
+// digest, the draft is bounded), so the cap is a storage-discipline number again —
+// and on an enumeration it is the NEXT ceiling rather than a prompt limit. Measured
+// (2026-09-14, fixrecall): a round of batch name probing ended at 117 chunks, three
+// below the cap, with the question's members still arriving; at 200 the same shape
+// reached seventeen. Measured here (2026-09-16, 三国/关羽): the run's own line
+// `pool at the cap 120 but the batch asked about "管亥"; admitting the passage that
+// reaches it (pool 121, novelty slack 1/40)` — the tail members' passages are what
+// the cap refuses.
+const evidencePoolCap = 200
 
 // The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
 // the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
 // while another session appends.
+
+// probeTerms returns the terms of a PROBE query — the caller's own alternation,
+// "荀正|管亥|车胄" — and nil for every other query shape.
+//
+// An alternation is the one place the model states explicitly WHICH individuals
+// it is asking about, which makes its per-term result the batch's answer and not
+// just another search: a name that comes back empty is a name this corpus does
+// not carry, and a name that comes back with a window is a member. Both facts are
+// destroyed by a cap that drops the window (see PoolAdmitter.Novelty), so a probe
+// is exempt while a topic query is not — a topic query names no individuals, so
+// its hits compete for the cap like everything else.
+func probeTerms(q string) []string {
+	if !strings.Contains(q, "|") {
+		return nil
+	}
+	return GrepTermsFromQuery(q)
+}
+
+// namedTermsOf is the call's own statement of WHICH individuals it asked about:
+// the terms of the queries it carried, deduped and capped.
+//
+// Every shape the model uses lands here — an alternation ("A|B|C"), a
+// space-separated list inside one string, or a list of query strings — because
+// GrepTermsFromQuery already reads all three. That is the point: the seat
+// mechanism is attached to the FACT that the call named terms, not to a syntax
+// the model may never write. Measured (2026-09-15): fifteen calls, every one of
+// them naming people, zero of them using `|` — a `|`-triggered mechanism fires
+// never.
+//
+// The cap (GrepTermsMax) bounds the seat pass, which runs one cheap keyword
+// search per unreached term; the caller logs how many named terms were dropped
+// so the ceiling is visible in the run.
+//
+// The terms are the caller's OWN WORDS (GrepWordsFromQuery), not the CJK windows
+// the locate step derives from them: a window is our guess at where a name can be
+// found, and probing one spends a retrieval on a fragment nobody asked about
+// (measured 2026-09-15: 羽斩 / 杀的 / 的有 / 领名, fourteen of twenty probes
+// "absent").
+func namedTermsOf(queries []string) []string {
+	var out []string
+	seen := make(map[string]bool, len(queries)*2)
+	for _, q := range queries {
+		for _, t := range GrepWordsFromQuery(q) {
+			// A PIECE OF A PATTERN is a phrase, not a name: "关公.*斩" asks how a
+			// deed is written, and probing 关公 or 斩 as a name spends a retrieval
+			// on a word nobody proposed as a member (measured: a pass built from
+			// such fragments probed 羽斩 / 杀的 / 的有 and reported fourteen
+			// "absent"). An alternation of PLAIN words ("华雄|颜良|蔡阳") is exactly
+			// what the seat exists for, so the test is pattern OPERATORS, not "|".
+			if strings.ContainsAny(t, ".*+?()[]{}^$\\") {
+				continue
+			}
+			low := strings.ToLower(strings.TrimSpace(t))
+			if low == "" || seen[low] {
+				continue
+			}
+			seen[low] = true
+			out = append(out, t)
+			if len(out) >= GrepTermsMax {
+				return out
+			}
+		}
+	}
+	return out
+}
 
 // search runs one retrieval call for a tool invocation.
 //
@@ -553,11 +1105,21 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	if e.deps.KB == nil {
 		e.deps.KB = &Kbinfos{}
 	}
+	logger := searchLogger(e.deps)
 
 	// Max queries per tool call mirrors Python action_session.execute_tool
 	// (_arg_query_list): retrieve=3, search_chunks=2. grep_search/grep_chunks
 	// are Go-internal tools (Python exposes no such session tool), so they are
 	// left uncapped.
+	//
+	// A direction assembling a SET/COUNT raises the ceiling. There the call's
+	// queries are facets of one list rather than rephrasings of one question, so
+	// a dropped query is not a spared repeat — it is a member nobody searched.
+	// The flag is set by the same gate that hands the model the set method (see
+	// Kbinfos.MarkSetDirection), so a VALUE direction keeps the small cap it had.
+	// Measured (2026-09-16, medium mode): every call asked 3-5 queries against
+	// these caps, nine calls were cut, and the names the run then failed to
+	// record had been named only in the dropped ones.
 	maxQ := len(queries)
 	switch name {
 	case "retrieve":
@@ -565,8 +1127,26 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	case "search_chunks":
 		maxQ = 2
 	}
+	if e.deps.KB.IsSetDirection() {
+		switch name {
+		case "retrieve":
+			maxQ = 6
+		case "search_chunks":
+			maxQ = 4
+		}
+	}
+	// The full list is kept: maxQ bounds how many EXPENSIVE queries run, but the
+	// terms of the dropped ones still get their own cheap seat below. Dropping a
+	// list item silently (as this cut used to) drops the individuals it named
+	// before any retrieval happens — measured (2026-09-15): a run named 29
+	// queries, 8 never executed, and those 8 included the only mentions of the
+	// names it was missing.
+	allQueries := queries
+	dropped := 0
 	if len(queries) > maxQ {
 		queries = queries[:maxQ]
+		dropped = len(allQueries) - maxQ
+		logger.Printf("[Action Session] %s asked %d quer(ies); running %d and taking named-term seats for the rest.", name, len(allQueries), maxQ)
 	}
 
 	var payload []any
@@ -578,6 +1158,15 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
 	// nothing can interleave, and another session appending makes it stale.
 	seen := map[string]bool{}
+	// reached accumulates every candidate the call's own searches returned. It is
+	// what the seat pass below asks "which of the named terms did this retrieval
+	// NOT reach?" — the question whose answer is a search of its own.
+	var reached []map[string]any
+	// Per-call reach notes: what each query reached term by term, and which of its
+	// terms nothing reached (see ToolOutcome.Note / GrepReachLine). A batch of
+	// names is exactly where this matters — the passages alone cannot say whether
+	// a member was missing or simply never asked about.
+	var reachNotes []string
 	// Claim-first, MUTUALLY EXCLUSIVE (Python _run_search: _claim_prefetch +
 	// _CLAIM_PREFETCH_EXCLUSIVE): when claim rows hit, their verbatim evidence
 	// IS the answer material — chunk snippets on top would echo the same
@@ -686,11 +1275,26 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		if len(chunks) == 0 {
 			continue
 		}
-		// Only the first snippetsPerQuery (4) hits of each query are considered
-		// (Python cands[:_SNIPPETS_PER_QUERY]).
-		if len(chunks) > snippetsPerQuery {
-			chunks = chunks[:snippetsPerQuery]
+		// Computed on the LEG's candidates, not on the payload below: the payload is
+		// truncated to the per-query snippet cap, and a term whose window was cut is
+		// still a term this query reached.
+		if line := GrepReachLine(q, chunks, ReachTermsOf(q)); line != "" {
+			reachNotes = append(reachNotes, line)
 		}
+		// Only the first snippetsPerQueryFor(mode) hits of each query are considered
+		// (Python cands[:_SNIPPETS_PER_QUERY]) — EXCEPT for a query that NAMES
+		// terms, which keeps one candidate per named term first. The locate step
+		// hands back one window per term, and a flat cut is what turns a six-name
+		// call into "the names that matched most": the rarest lose their seat to the
+		// ones the ranking already preferred.
+		limit := snippetsPerQueryFor(e.req.ThinkingMode)
+		if n := len(namedTermsOf([]string{q})); n > limit {
+			limit = n
+		}
+		if len(chunks) > limit {
+			chunks = chunks[:limit]
+		}
+		reached = append(reached, chunks...)
 		// Admittance mirrors _admit_evidence exactly: per-call dedup by chunk
 		// id, the chunk ID as the evidence reference (Python's `ids` holds ids,
 		// not pool positions), and only chunks NEW to the shared pool appended
@@ -705,10 +1309,17 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			// LIVE pool once per call; compute it once per batch under the same
 			// critical section.
 			covered := p.ClaimCoveredIDs()
+			// The cap exemption for this batch, derived from the probe's own terms
+			// (see probeTerms / PoolAdmitter.Novelty): a full pool still takes the
+			// window that answers a name nothing in the pool has reached yet,
+			// because that window is the batch's result rather than one more
+			// passage.
+			novel := p.Novelty(probeTerms(q))
 			for _, c := range chunks {
 				// Python _admit_evidence early-stops at the top once the shared pool
-				// reaches the cap, BEFORE the per-call dedup.
-				if p.Full() {
+				// reaches the cap, BEFORE the per-call dedup — except for the probe
+				// window above, which IS the answer the caller asked for.
+				if p.Full() && !novel.Admits(c) {
 					continue
 				}
 				cid := ChunkIDOf(c)
@@ -737,6 +1348,100 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		e.deps.KB.MergeDocAggs(aggs)
 	}
 
+	// ── Named-term seats ─────────────────────────────────────────────────────
+	// The individuals this call named are honored IN FULL, independent of the
+	// expensive leg's own limits: one cheap keyword search per term the call's
+	// retrievals did not reach, each keeping the window that carries it (see
+	// TermSeat). The terms of list items maxQ dropped are included — "the model
+	// already said the name" should mean the name was looked for, whatever
+	// syntax carried it and whichever leg ran.
+	//
+	// A term that reaches nothing is RECORDED, not retried (Kbinfos.RecordProbedAbsent):
+	// "this corpus has no 荀正" is the answer to a probe, and it is what the
+	// rewrite reads before choosing its next angle.
+	if named := namedTermsOf(allQueries); len(named) > 0 {
+		seatScope := []string(nil)
+		if name != "search_chunks" {
+			// doc_scope is a retrieve-family argument; search_chunks takes none
+			// (see the query loop above).
+			seatScope = toolDocScope(args)
+		}
+		unreached := termsNotCarried(reached, named)
+		// Every named term is PROBED (recall: its own window enters the pool), but
+		// only the ones the call proposed as ITEMS are RECORDED — the ledger is read
+		// back as the session's to-do list, and a question's words are not members
+		// it could record (see probeItemsOf).
+		proposed := probeItemsOf(allQueries)
+		seats, absent := 0, 0
+		for _, term := range unreached {
+			record := proposed[strings.ToLower(term)]
+			seat, found := TermSeat(ctx, e.deps, SearchParams{
+				KbIDs:    e.req.DatasetIDs,
+				DocScope: seatScope,
+			}, term)
+			if !found {
+				absent++
+				if record {
+					e.deps.KB.RecordProbedAbsent(term)
+				}
+				continue
+			}
+			// The seat's ids are collected here and recorded AFTER the batch: the
+			// ledger has its own lock, so writing it inside the critical section
+			// would be safe, but keeping the pool lock to pool work costs nothing
+			// and leaves the locking order (pool → ledger) exercised in one place
+			// only.
+			var seatedIDs []string
+			e.deps.KB.Admit(func(p *PoolAdmitter) {
+				// A seat is a probe's answer, so it is exempt from the pool cap
+				// on the same grounds as the weave above (see Novelty).
+				novel := p.Novelty([]string{term})
+				for _, c := range seat {
+					if p.Full() && !novel.Admits(c) {
+						continue
+					}
+					cid := ChunkIDOf(c)
+					if cid != "" && seen[cid] {
+						continue
+					}
+					if cid != "" {
+						seen[cid] = true
+					}
+					evidenceIDs = append(evidenceIDs, cid)
+					payload = append(payload, passageFromChunk(c))
+					if p.Add(c) {
+						newChunks++
+					}
+					if cid != "" {
+						seatedIDs = append(seatedIDs, cid)
+					}
+					seats++
+				}
+			})
+			// A seat IS the proof that this name is a member: record the pair
+			// (term, passage) so the round's record holds the members with their
+			// evidence, not just the count — again only for a proposed item.
+			if record {
+				for _, cid := range seatedIDs {
+					e.deps.KB.RecordReachedTerm(term, cid)
+				}
+			}
+		}
+		if len(unreached) > 0 {
+			logger.Printf("[Action Session] named-term seats: %d named, %d unreached, %d seat(s) admitted, %d absent.",
+				len(named), len(unreached), seats, absent)
+		}
+	}
+
+	// A cut is a fact about the SEARCH, not about the corpus, and the model cannot
+	// read it off the passages: every dropped query's terms were seated above, so
+	// a name it asked about still came back, while the query's own wording never
+	// ran. Say so, so a dropped facet is re-asked instead of forgotten.
+	if dropped > 0 {
+		reachNotes = append(reachNotes, fmt.Sprintf(
+			"only %d of this call's %d queries were searched — %d were dropped, and a dropped query's own wording was never run (the terms it named were each probed on their own, so a term that came back is proven to occur). Re-ask a dropped one directly if you need its wording.",
+			maxQ, len(allQueries), dropped))
+	}
 	if len(payload) == 0 {
 		return ToolOutcome{
 			Payload:     []any{},
@@ -744,6 +1449,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			Status:      StatusMiss,
 			Reason:      ReasonNoDoc,
 			Metrics:     map[string]any{"hits": 0, "new_evidence": 0},
+			Note:        strings.Join(reachNotes, "\n"),
 		}, nil
 	}
 	// Zero new evidence (every hit was already in the pool) is REDUNDANT, not
@@ -760,6 +1466,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			Status:      StatusRedundant,
 			Reason:      ReasonNone,
 			Metrics:     map[string]any{"hits": len(payload), "new_evidence": 0},
+			Note:        strings.Join(reachNotes, "\n"),
 		}, nil
 	}
 	return ToolOutcome{
@@ -768,6 +1475,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		Status:      StatusOK,
 		Reason:      ReasonNone,
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
+		Note:        strings.Join(reachNotes, "\n"),
 	}, nil
 }
 

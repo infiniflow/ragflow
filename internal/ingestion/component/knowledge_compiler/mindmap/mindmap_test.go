@@ -116,6 +116,23 @@ func TestTreeToProducts_EmptyAndNil(t *testing.T) {
 	}
 }
 
+func TestTreeToProducts_SkipsSelfLoop(t *testing.T) {
+	root := &utility.Node{ID: "root", Children: []*utility.Node{
+		{ID: "root"},
+		{ID: "child"},
+	}}
+	products := treeToProducts("t1", "d1", root, nil)
+
+	if len(products) != 3 {
+		t.Fatalf("products = %d, want root entity, child entity, and one relation", len(products))
+	}
+	for _, product := range products {
+		if product.Meta["kind"] == "relation" && product.Meta["from"] == product.Meta["to"] {
+			t.Fatalf("self-loop relation was emitted: %+v", product.Meta)
+		}
+	}
+}
+
 func TestParseJSONTree_SourceChunkIDs(t *testing.T) {
 	content := `{"id":"root","source_chunk_ids":["c1","outside"],"children":[{"id":"child","source_chunk_ids":["c2"],"children":[]}]}`
 	root, ok := parseJSONTree(content, []string{"c1", "c2"})

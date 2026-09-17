@@ -94,7 +94,10 @@ class RAGFlowExcelParser:
 
     @staticmethod
     def _dataframe_to_workbook(df):
-        if isinstance(df, dict) and len(df) > 1:
+        # `pd.read_excel(sheet_name=None)` returns a dict whatever the sheet count,
+        # and a one-entry dict has no `.apply`, so it must not fall through to the
+        # single-frame path below.
+        if isinstance(df, dict):
             return RAGFlowExcelParser._dataframes_to_workbook(df)
 
         df = RAGFlowExcelParser._clean_dataframe(df)

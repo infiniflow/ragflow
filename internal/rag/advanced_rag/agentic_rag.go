@@ -38,6 +38,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -246,16 +247,17 @@ type RAGTools struct {
 	// ToolStarted is called once research begins, before any retrieval, so the
 	// caller can show progress (Python tools.tool_started_sink).
 	ToolStarted func()
-	// Progress receives engine-stage progress lines tagged like Python's
-	// think-log entries (e.g. "[Planner] Splitting the research question into
-	// tasks", "[Hybrid search] Searching for answers in the knowledge base") as
-	// the agentic loop runs. It is the Go counterpart of Python's
-	// rag/advanced_rag/think_log.py — those tagged lines used to be fished out of
-	// the log stream and forwarded into the <think> block of the chat UI. Nil
-	// disables streaming progress; the pipeline still completes with the answer.
-	// A caller that also sets AnswerSink typically routes each line as a
-	// isThink=true delta so the reasoning block shows live research progress.
-	Progress func(line string)
+	// Steps reports the run's reasoning steps. Each stage declares its own step
+	// where it happens and each tool reports both halves of its call; Text feeds
+	// the think block and Events feeds structured clients, either may be nil.
+	//
+	// This replaces Python's think_log mechanism (a root logging handler that
+	// fished bracket-tagged lines out of the log stream and forwarded them into
+	// the <think> block). Visibility is now the producer's decision: the
+	// developer log keeps the diagnostics, and a step is a step because a stage
+	// SAYS so — not because a tag matched a pattern — so rewording a log line
+	// can never silently hide a step.
+	Steps harness.StepReporter
 	// Retrieval tuning, mirroring Python RAGTools.retrieve: an explicit tool
 	// argument still wins over these, and zero selects the harness defaults.
 	TopN                int
@@ -1140,23 +1142,15 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 		deps.Stats = stats
 	}
 	ctx = harness.WithStats(ctx, stats)
-	// Bind the caller's per-request progress sink (Python think_log counterpart)
-	// so engine stages and every search beneath can forward tagged lines to the
-	// live reasoning block. It flows through the whole RunAgenticRAG ctx lineage,
-	// which runSearch / CurrentProgress read.
-	if deps.Progress != nil {
-		ctx = harness.WithProgress(ctx, deps.Progress)
-	}
-	// Mirror Python think_log (rag/advanced_rag/think_log.py): rebuild the run's
-	// logger on top of the progress sink so every bracket-tagged stage line
-	// streams into the chat <think> block. Python did this with a root
-	// logging.Handler; Go has no per-record hook on *log.Logger, so the same
-	// filtering happens at the writer instead. This logger is threaded into
-	// SearchDeps below and into every graph node by RunAgenticRAG, so one wrap
-	// here covers the whole pipeline without touching individual call sites.
-	if deps.Progress != nil {
-		logger = thinkLogger(logger, deps.Progress)
-	}
+	// Bind the caller's step reporter for the whole run: every stage and every
+	// tool beneath reads it (harness.StepsFrom) and reports its own step, so the
+	// per-request trace is assembled from the stages that actually run.
+	ctx = harness.WithSteps(ctx, deps.Steps)
+	// The run's logger stays the DEVELOPER log — nothing intercepts it. The
+	// user-visible trace comes from the steps stages report themselves
+	// (deps.Steps), so a diagnostic line can never leak into the think block and
+	// a reworded line can never silently drop a step.
+	//
 	// Python :267 wraps the chat model in CountingChatModel(chat_mdl.clone(),
 	// self.llm_stats). Go wraps the session model's invoker the same way, so
 	// calls made through deps.Model are counted per phase too.
@@ -1244,7 +1238,7 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	cacheable := deps.TextAttachments == ""
 	if cacheable && cache != nil {
 		if cached, hit := cache.Lookup(req.Question); hit {
-			logger.Printf("[Agentic RAG] cache hit — reused prior answer for near-identical question %q; skipped research", trunc(req.Question, 80))
+			step(ctx, logger, "Agentic RAG", "Cache hit: reused the answer for the near-identical question %q and skipped research.", trunc(req.Question, 80))
 			return &RunResponse{Answer: cached, Mode: spec}
 		}
 	}
@@ -1293,6 +1287,19 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 		composeFinalAnswer(ctx, deps, req, kb, resp, logger, partialAnswer, emptyResult, question)
 	}
 	deps.Finalize = compose
+
+	// Say why this run goes straight to the research graph — DEVELOPER LOG ONLY.
+	// The decision is recorded where it is taken (the outer branch above did not
+	// fire, and no cache hit short-circuited), because a capability probe that fails
+	// closed is otherwise invisible: nothing in the run says whether the outer model
+	// was absent or merely reported no tool support.
+	//
+	// It stays out of the think block on purpose: it describes the harness' wiring,
+	// not the question or the research, and a reader gets one of these on every run
+	// in a deployment without an outer loop. The reader-visible trace simply has no
+	// "[Tool loop]" section in that configuration, which is the honest shape — the
+	// section exists when a loop ran.
+	logger.Printf("[Agentic RAG] %s", outerLoopAbsentLine(deps))
 
 	RunAgenticRAG(ctx, deps, req, searchDeps, kb, resp, logger, spec)
 
@@ -1728,8 +1735,17 @@ func runOuterReact(ctx context.Context, deps RAGTools, req harness.RunRequest, l
 	outer.BindTools(session, p.tools)
 	outer.SetTerminalTools("rag")
 
+	// The loop's opening and closing steps are reported HERE — where the loop
+	// actually is. The chat pipeline used to synthesize these lines before
+	// calling the harness, so they appeared even when no outer loop ran and the
+	// research came from the direct graph: the trace described a loop that had
+	// not happened.
+	loop := harness.StepsFrom(ctx)
+	loop.Stage(logger, "Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
+
 	answer, _, err := outer.ChatWithTools(ctx, p.system, p.history, &models.ChatConfig{})
 	if err != nil {
+		loop.StageLine(logger, "Tool loop", "The outer model call failed; running the research graph directly.")
 		logger.Printf("[Agentic RAG] outer react failed: %v; falling back to direct graph", err)
 		// Fall back to the inner graph directly so the user still gets an
 		// answer. The graph composes inside its last node with the FORMALIZED
@@ -1756,6 +1772,7 @@ func runOuterReact(ctx context.Context, deps RAGTools, req harness.RunRequest, l
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
+	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
 }
 
@@ -1774,11 +1791,11 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 	p := prepareOuterReact(ctx, deps, req, logger)
 	mux := &outerStreamMux{sink: deps.AnswerSink}
 
-	// Route the inner run's progress and answer through the mux so they share
-	// one think/answer block with the outer model's stream.
+	// Route the inner run's ANSWER through the mux so it shares one block with
+	// the outer model's stream. The inner run's STEPS are not routed here: the
+	// reporter was already bound on ctx by Rag, and steps read it from there
+	// (overwriting a copy's Steps would have no effect).
 	inner := deps
-	// Same separator as thinkWriter: the block is HTML, so "\n" would collapse.
-	inner.Progress = func(line string) { mux.deliver(line+ThinkLineBreak, true) }
 	inner.AnswerSink = &AnswerSink{OnDelta: func(delta string, isThink bool) { mux.deliver(delta, isThink) }}
 
 	session := &outerReactSession{
@@ -1797,9 +1814,14 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 	outer.BindTools(session, p.tools)
 	outer.SetTerminalTools("rag")
 
+	// Same opening step as runOuterReact, reported where the loop is.
+	loop := harness.StepsFrom(ctx)
+	loop.Stage(logger, "Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
+
 	stream := true
 	_, err := outer.ChatStreamlyWithTools(ctx, p.system, p.history, &models.ChatConfig{Stream: &stream}, mux.sender)
 	if err != nil {
+		loop.StageLine(logger, "Tool loop", "The outer model call failed; running the research graph directly.")
 		logger.Printf("[Agentic RAG] outer react stream failed: %v; falling back to direct graph", err)
 		// Fall back with the caller's own sink so the answer still streams out.
 		// Same guarded compose as runOuterReact: the graph composes inside its
@@ -1834,7 +1856,57 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
+	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
+}
+
+// outerToolNames renders the bound tool list for the loop's opening step: the
+// OpenAI-style schemas the outer model was actually given.
+func outerToolNames(tools []map[string]any) string {
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		fn, _ := t["function"].(map[string]any)
+		name, _ := fn["name"].(string)
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+// outerLoopEndLine closes the loop's narration with what actually ended it. Its two
+// inputs are independent — whether the `rag` tool was called at all, and whether the
+// reply ended up carrying an answer — so there are four endings, not two: the
+// terminal `rag` call produced the cited answer, or it ran and produced nothing,
+// while the outer model may also have answered on its own, with no research behind
+// it, which is why THAT reply can legitimately carry no citations.
+func outerLoopEndLine(ragCalls int, answered bool) string {
+	switch {
+	case ragCalls == 0 && answered:
+		return "The outer model produced the answer without running research."
+	case ragCalls == 0:
+		return "The outer model returned no answer and ran no research."
+	case !answered:
+		return "The rag tool ran but produced no answer."
+	default:
+		return "The rag tool produced the final answer, done."
+	}
+}
+
+// outerLoopAbsentLine says why a run has NO "[Tool loop]" section — which is the
+// normal shape of a deployment that never wires an outer model, and the shape of a
+// tool-incapable one.
+//
+// It is reported to the DEVELOPER LOG only (see the call site in Rag). The two cases
+// are kept apart because they are different situations: a model that merely failed
+// to report its tool capability looks identical to one that has none (the probe
+// fails closed in cmd/ragflow_server.go), so this line is what tells an operator
+// which of the two they are looking at.
+func outerLoopAbsentLine(deps RAGTools) string {
+	if deps.Outer == nil {
+		return "No outer model is wired, so this run has no outer tool loop."
+	}
+	return "The outer model cannot call tools, so this run has no outer tool loop."
 }
 
 // outerReactSession implements models.ToolCallSession for the outer react loop.
@@ -1921,6 +1993,28 @@ func (s *outerReactSession) endRagFlight(question string, flight *ragFlight) {
 // its own request/evidence/response and publishes the outcome under mu; sharing
 // the session's would let two calls mix questions, evidence and answers.
 func (s *outerReactSession) ToolCall(name string, arguments map[string]interface{}) (string, error) {
+	// Mirror Python's FunctionToolSession (rag/llm/tool_decorator.py:311), which
+	// logs "[Function tool] Running the {name} tool with: {args}" for the OUTER
+	// tools too — the inner retrieval tools log the same line from
+	// harness.searchExecutor.Execute. Without it the outer loop's only trace is
+	// chat_pipeline's synthetic "[Tool loop] Step N: running rag…", which never
+	// shows the arguments the outer model actually chose.
+	renderedArgs := harness.RenderToolArgs(arguments)
+	// Same split as the inner executor: the log and the event's Args keep the
+	// arguments verbatim, the step reports the query (harness.ToolCallLine).
+	if s.logger != nil && name != "" {
+		s.logger.Printf("[Function tool] Running the %s tool with: %s", name, renderedArgs)
+	}
+	if name != "" {
+		harness.StepsFrom(s.ctx).Emit(harness.ThinkEvent{
+			Kind:    harness.ThinkKindToolCall,
+			Stage:   "Function tool",
+			Tool:    name,
+			Args:    renderedArgs,
+			Summary: "[Function tool] " + harness.ToolCallLine(name, arguments),
+		})
+	}
+	started := time.Now()
 	switch name {
 	case "rag":
 		// Work on a COPY of the request: this call must not rewrite the
@@ -1953,6 +2047,14 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		flight, wait := s.beginRagFlight(req.Question)
 		if wait != nil {
 			<-wait.done
+			// A waiting duplicate still closes its own call/result pair, so a
+			// client rendering steps never sees a dangling tool_call.
+			s.narrateToolStep(harness.ThinkEvent{
+				Tool:       name,
+				Args:       renderedArgs,
+				Status:     harness.StatusOK,
+				DurationMS: time.Since(started).Milliseconds(),
+			}, fmt.Sprintf("The rag tool reused the answer of an identical concurrent call%s.", harness.ArgsLabel(arguments)))
 			return wait.answer, nil
 		}
 		defer s.endRagFlight(req.Question, flight)
@@ -1994,7 +2096,10 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 			// short-circuit.
 			inner.AnswerSink = nil
 		}
-		RunAgenticRAG(s.ctx, inner, req, sd, kb, resp, s.logger, s.spec)
+		// Nested: this whole research graph runs INSIDE the `rag` tool call reported
+		// above, so its steps (and everything beneath them) are indented under that
+		// call line.
+		RunAgenticRAG(harness.Nested(s.ctx), inner, req, sd, kb, resp, s.logger, s.spec)
 		if !composed {
 			composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger, resp.Partial, true, "")
 		}
@@ -2009,6 +2114,18 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 			resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
 		}
 		s.publish(resp, kb)
+		// Close the "[Function tool] Running the rag tool with: …" line. The
+		// result IS the cited answer — far too long to repeat in a log line — so
+		// narrate what it was grounded in instead.
+		s.narrateToolStep(harness.ThinkEvent{
+			Tool:       name,
+			Args:       renderedArgs,
+			Status:     harness.StatusOK,
+			Results:    len(kb.Chunks),
+			Documents:  len(harness.ChunkDocIDs(kb.Chunks)),
+			Sources:    harness.ChunkEvidenceIDs(kb.Chunks, harness.ThinkMaxSources),
+			DurationMS: time.Since(started).Milliseconds(),
+		}, ragToolResultLine(resp, kb, harness.ArgsLabel(arguments)))
 		if s.mux != nil {
 			// The answer already streamed through the shared mux; waiters
 			// return "" too — sendTerminal's empty guard keeps the fold from
@@ -2024,6 +2141,10 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 	case "summarize_document":
 		docID, _ := arguments["doc_id"].(string)
 		if docID == "" {
+			s.narrateToolStep(harness.ThinkEvent{
+				Tool: name, Args: renderedArgs, Status: harness.StatusError, Reason: harness.ReasonBadArgs,
+				DurationMS: time.Since(started).Milliseconds(),
+			}, "The summarize_document tool could not run: it was called without a doc_id.")
 			return "Error: missing doc_id argument.", nil
 		}
 		// Python budgets the document read and its kb_prompt at
@@ -2033,11 +2154,92 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		// summarize_document returns bare blocks there.
 		blocks := harness.SummarizeDocument(s.ctx, s.sd, docID, s.deps.MaxLength)
 		if len(blocks) == 0 {
+			s.narrateToolStepDetail(harness.ThinkEvent{
+				Tool: name, Args: renderedArgs, Status: harness.StatusEmpty, Reason: harness.ReasonNoDoc,
+				Sources:    []string{docID},
+				DurationMS: time.Since(started).Milliseconds(),
+			}, "The summarize_document tool found nothing readable in the requested document.",
+				fmt.Sprintf("The summarize_document tool found nothing readable in document %s.", docID))
 			return "The document is unavailable or has no readable chunks.", nil
 		}
+		// Only the summary knows the id (the blocks are the document's own text),
+		// so the think copy names what was read — "the requested document" — and
+		// the log copy carries the id.
+		s.narrateToolStepDetail(harness.ThinkEvent{
+			Tool: name, Args: renderedArgs, Status: harness.StatusOK,
+			// The blocks are the document's own text, so "results" is the block
+			// count and there is exactly one source document.
+			Results:    len(blocks),
+			Documents:  1,
+			Sources:    []string{docID},
+			DurationMS: time.Since(started).Milliseconds(),
+		}, fmt.Sprintf("The summarize_document tool read %s from the requested document.",
+			harness.CountOf(len(blocks), "evidence block")),
+			fmt.Sprintf("The summarize_document tool read %s from document %s.",
+				harness.CountOf(len(blocks), "evidence block"), docID))
 		return strings.Join(blocks, "\n\n"), nil
 	}
+	// An unknown name is a tool this deployment has no binding for: nothing ran,
+	// which is MISS-level (ReasonUnwired), not an infra failure. Same wording as
+	// the inner executor's unwired branch so both layers read alike.
+	s.narrateToolStep(harness.ThinkEvent{
+		Tool: name, Args: renderedArgs, Status: harness.StatusMiss, Reason: harness.ReasonUnwired,
+		DurationMS: time.Since(started).Milliseconds(),
+	}, fmt.Sprintf("The %s tool is not wired in this deployment, so nothing ran.", name))
 	return fmt.Sprintf("unknown tool %q", name), nil
+}
+
+// narrateToolStep closes one outer "[Function tool] Running the …" line: it logs
+// what the call returned (the developer log) and reports the step (think block +
+// structured twin), so the trace records a whole tool step instead of only its
+// invocation.
+// ragCalls reports how many rag executions this session published, i.e. whether
+// the outer loop actually ran research instead of the model answering on its own.
+func (s *outerReactSession) ragCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.calls)
+}
+
+func (s *outerReactSession) narrateToolStep(ev harness.ThinkEvent, line string) {
+	s.narrateToolStepDetail(ev, line, line)
+}
+
+// narrateToolStepDetail is narrateToolStep for the steps whose two audiences need
+// different words: `human` is what the think block reports, `dev` is what the
+// developer log records. It mirrors the inner executor's split
+// (harness.StageLineDetail and the two labels renderToolOutcome accepts) and
+// exists for the same reason: a 32-hex document id is a developer's handle and a
+// reader's noise, so summarize_document names the document in words in the think
+// block and by id in the log.
+func (s *outerReactSession) narrateToolStepDetail(ev harness.ThinkEvent, human, dev string) {
+	if s.logger != nil {
+		s.logger.Printf("[Function tool] %s", dev)
+	}
+	ev.Kind = harness.ThinkKindToolResult
+	ev.Stage = "Function tool"
+	ev.Summary = "[Function tool] " + human
+	harness.StepsFrom(s.ctx).Emit(ev)
+}
+
+// ragToolResultLine summarises one outer `rag` call for the think block. The
+// result is the cited answer itself, so the line reports what it was grounded in
+// and whether research came back empty instead. `label` names the sub-question
+// this call researched (harness.ArgsLabel): the outer loop can run several `rag`
+// calls concurrently, and without it two parallel calls' result lines are
+// indistinguishable.
+func ragToolResultLine(resp *RunResponse, kb *harness.Kbinfos, label string) string {
+	chunks := 0
+	if kb != nil {
+		chunks = len(kb.Chunks)
+	}
+	if chunks == 0 {
+		return fmt.Sprintf("The rag tool returned no answer%s: research gathered no evidence.", label)
+	}
+	if strings.TrimSpace(resp.Answer) == "" {
+		return fmt.Sprintf("The rag tool gathered %s but composed no answer%s.", harness.CountOf(chunks, "passage"), label)
+	}
+	return fmt.Sprintf("The rag tool returned a cited answer grounded in %s%s.", harness.CountOf(chunks, "passage"), label)
 }
 
 // publish merges one rag call's outcome into the session state. The inner run

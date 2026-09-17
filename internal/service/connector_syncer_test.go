@@ -139,7 +139,7 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		TaskType:      dao.TaskTypeSync,
 		Status:        string(entity.TaskStatusFail),
 		FromBeginning: stringPtr("1"),
-		ErrorMsg:      "sync task failed after 3 transient retries: unexpected EOF",
+		ErrorMsg:      "sync task failed after 2 retries, last error: unexpected EOF",
 		ErrorCount:    3,
 	}).Error; err != nil {
 		t.Fatalf("insert sync log: %v", err)

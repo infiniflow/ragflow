@@ -53,9 +53,10 @@ func TestValidateSystemSettingValue(t *testing.T) {
 
 func TestInferSystemSettingDataType(t *testing.T) {
 	tests := map[string]string{
-		"sandbox.self_managed": "json",
-		"mail.enabled":         "bool",
-		"mail.server":          "string",
+		"sandbox.provider_type": "string",
+		"sandbox.self_managed":  "json",
+		"mail.enabled":          "bool",
+		"mail.server":           "string",
 	}
 
 	for name, want := range tests {
