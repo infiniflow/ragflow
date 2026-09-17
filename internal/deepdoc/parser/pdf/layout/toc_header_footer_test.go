@@ -1,0 +1,300 @@
+package layout
+
+import (
+	"strings"
+	"testing"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+)
+
+func tb(text string, page int, x0, x1, top, bottom float64) pdf.TextBox {
+	return pdf.TextBox{
+		Text:       text,
+		PageNumber: page,
+		X0:         x0,
+		X1:         x1,
+		Top:        top,
+		Bottom:     bottom,
+	}
+}
+
+func texts(boxes []pdf.TextBox) []string {
+	out := make([]string, 0, len(boxes))
+	for _, b := range boxes {
+		out = append(out, b.Text)
+	}
+	return out
+}
+
+func equalText(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestRemoveTOCBoxes_DropsDottedTOCPage: a page made of leader-dot entries is
+// removed entirely, while a body page on a different page is untouched.
+func TestRemoveTOCBoxes_DropsDottedTOCPage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		// page 0: TOC with leader dots in their own boxes.
+		tb("Contents", 0, 72, 150, 100, 120),
+		tb("Chapter One", 0, 72, 175, 160, 175),
+		tb("..........................", 0, 175, 400, 160, 175),
+		tb("3", 0, 500, 520, 160, 175),
+		tb("Chapter Two", 0, 72, 175, 190, 205),
+		tb("..........................", 0, 175, 400, 190, 205),
+		tb("4", 0, 500, 520, 190, 205),
+		tb("Chapter Three", 0, 72, 180, 220, 235),
+		tb("..........................", 0, 175, 400, 220, 235),
+		tb("5", 0, 500, 520, 220, 235),
+		// page 1: normal body with multiple prose paragraphs.
+		tb("The way that can be told of is not the eternal way; the name that can be named is not the eternal name. The nameless is the origin of heaven and earth.", 1, 72, 500, 160, 180),
+		tb("The named is the mother of ten thousand things. Ever desireless, one can see the mystery. Ever desiring, one can see the manifestations.", 1, 72, 500, 190, 210),
+		tb("These two spring from the same source but differ in name. This appears as darkness. Darkness within darkness. The gate to all mystery.", 1, 72, 500, 220, 240),
+	}
+	got := RemoveTOCBoxes(boxes)
+	// Only the body paragraphs on page 1 should survive.
+	want := []string{
+		"The way that can be told of is not the eternal way; the name that can be named is not the eternal name. The nameless is the origin of heaven and earth.",
+		"The named is the mother of ten thousand things. Ever desireless, one can see the mystery. Ever desiring, one can see the manifestations.",
+		"These two spring from the same source but differ in name. This appears as darkness. Darkness within darkness. The gate to all mystery.",
+	}
+	if !equalText(texts(got), want) {
+		t.Fatalf("got %v, want %v", texts(got), want)
+	}
+}
+
+// TestRemoveTOCBoxes_KeepsBodyPage: a page without leader dots is never removed.
+func TestRemoveTOCBoxes_KeepsBodyPage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("Section 1.1 Overview", 0, 72, 200, 100, 120),
+		tb("This paragraph explains the background of the work in some detail so the reader can follow.", 0, 72, 500, 130, 150),
+		tb("It continues with more context and supporting material for the main argument.", 0, 72, 500, 160, 180),
+	}
+	got := RemoveTOCBoxes(boxes)
+	if len(got) != len(boxes) {
+		t.Fatalf("body page should be untouched, got %d boxes, want %d", len(got), len(boxes))
+	}
+}
+
+// TestRemoveTOCBoxes_ThresholdBoundary: 2 entries (below min) keeps the page,
+// 3 entries removes it.
+func TestRemoveTOCBoxes_ThresholdBoundary(t *testing.T) {
+	mkPage := func(n int, page int) []pdf.TextBox {
+		var boxes []pdf.TextBox
+		boxes = append(boxes, tb("Contents", page, 72, 150, 100, 120))
+		for i := 0; i < n; i++ {
+			y := float64(160 + i*30)
+			boxes = append(boxes,
+				tb("Item", page, 72, 120, y, y+15),
+				tb("..........................", page, 175, 400, y, y+15),
+				tb(string(rune('0'+i+1)), page, 500, 520, y, y+15),
+			)
+		}
+		return boxes
+	}
+	below := append(mkPage(2, 0),
+		tb("Body text here that is long enough to matter and exceeds sixty runes for sure absolutely yes it does.", 1, 72, 400, 160, 180),
+		tb("Another paragraph of body text that is also quite long and exceeds the thirty rune threshold easily.", 1, 72, 400, 190, 210),
+		tb("A third paragraph of body text that ensures the book is not classified as compact by the detector.", 1, 72, 400, 220, 240),
+	)
+	if got := RemoveTOCBoxes(below); len(got) != len(below) {
+		t.Fatalf("2 entries should keep page: got %d boxes, want %d", len(got), len(below))
+	}
+	above := append(mkPage(3, 0),
+		tb("Body text here that is long enough to matter and exceeds sixty runes for sure absolutely yes it does.", 1, 72, 400, 160, 180),
+		tb("Another paragraph of body text that is also quite long and exceeds the thirty rune threshold easily.", 1, 72, 400, 190, 210),
+		tb("A third paragraph of body text that ensures the book is not classified as compact by the detector.", 1, 72, 400, 220, 240),
+	)
+	if got := RemoveTOCBoxes(above); len(got) != 3 {
+		t.Fatalf("3 entries should drop the whole TOC page: got %d boxes, want 3", len(got))
+	}
+}
+
+// TestRemoveTOCBoxes_LeaderMergedIntoBox: when the leader dots are merged into
+// the same box as the title+page-number, the entry is still detected.
+func TestRemoveTOCBoxes_LeaderMergedIntoBox(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("Contents", 0, 72, 150, 100, 120),
+		tb("Chapter One .......................... 3", 0, 72, 520, 160, 175),
+		tb("Chapter Two .......................... 4", 0, 72, 520, 190, 205),
+		tb("Chapter Three .......................... 5", 0, 72, 520, 220, 235),
+		tb("Body paragraph that must survive on page 1 and is definitely longer than thirty runes.", 1, 72, 400, 160, 180),
+		tb("Another body paragraph that ensures the book has enough long boxes to not be compact.", 1, 72, 400, 190, 210),
+	}
+	got := RemoveTOCBoxes(boxes)
+	want := []string{
+		"Body paragraph that must survive on page 1 and is definitely longer than thirty runes.",
+		"Another body paragraph that ensures the book has enough long boxes to not be compact.",
+	}
+	if !equalText(texts(got), want) {
+		t.Fatalf("got %v, want %v", texts(got), want)
+	}
+}
+
+// TestRemoveTOCBoxes_ChineseChapterMarkers: Chinese "第N章" style TOC.
+func TestRemoveTOCBoxes_ChineseChapterMarkers(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb("第一章 道可道", 0, 72, 200, 160, 175),
+		tb("..........................", 0, 200, 420, 160, 175),
+		tb("1", 0, 500, 520, 160, 175),
+		tb("第二章 天下皆知", 0, 72, 210, 190, 205),
+		tb("..........................", 0, 200, 420, 190, 205),
+		tb("5", 0, 500, 520, 190, 205),
+		tb("第三章 不尚贤", 0, 72, 200, 220, 235),
+		tb("..........................", 0, 200, 420, 220, 235),
+		tb("9", 0, 500, 520, 220, 235),
+		tb("正文内容，道可道，非常道。名可名，非常名。无名天地之始，有名万物之母。故常无欲以观其妙，常有欲以观其徼。此两者同出而异名，同谓之玄。玄之又玄，众妙之门。", 1, 72, 500, 160, 180),
+		tb("天下皆知美之为美，斯恶已。皆知善之为善，斯不善已。故有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。", 1, 72, 500, 190, 210),
+		tb("是以圣人处无为之事，行不言之教。万物作焉而不辞，生而不有，为而不恃，功成而弗居。夫唯弗居，是以不去。", 1, 72, 500, 220, 240),
+	}
+	got := RemoveTOCBoxes(boxes)
+	want := []string{
+		"正文内容，道可道，非常道。名可名，非常名。无名天地之始，有名万物之母。故常无欲以观其妙，常有欲以观其徼。此两者同出而异名，同谓之玄。玄之又玄，众妙之门。",
+		"天下皆知美之为美，斯恶已。皆知善之为善，斯不善已。故有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。",
+		"是以圣人处无为之事，行不言之教。万物作焉而不辞，生而不有，为而不恃，功成而弗居。夫唯弗居，是以不去。",
+	}
+	if !equalText(texts(got), want) {
+		t.Fatalf("got %v, want %v", texts(got), want)
+	}
+}
+
+// TestRemoveTOCBoxes_BodyPageWithLongBoxIsNotTOC: a page with long prose boxes
+// is never mistaken for a TOC even if it happens to contain a short dot line.
+func TestRemoveTOCBoxes_BodyPageWithLongBoxIsNotTOC(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("This is a long body paragraph that clearly belongs to the main content of the document and should never be classified as a table of contents entry under any reasonable heuristic.", 0, 72, 500, 100, 120),
+		tb("Another sentence here to make the point clear and ensure the page is recognized as a body page.", 0, 72, 500, 130, 150),
+	}
+	got := RemoveTOCBoxes(boxes)
+	if len(got) != len(boxes) {
+		t.Fatalf("body page with long boxes must be kept, got %d, want %d", len(got), len(boxes))
+	}
+}
+
+func TestRemoveTOCText_Normalize(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Hello   World", "hello world"},
+		{"- 12 -", "- # -"},
+		{"Chapter 1: Intro", "chapter #: intro"},
+	}
+	for _, c := range cases {
+		if got := normalizeRunningText(c.in); got != c.want {
+			t.Fatalf("normalizeRunningText(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_DropsRepeatedHeader: identical header box on every
+// page is removed; body is kept.
+func TestRemoveHeaderFooterBoxes_DropsRepeatedHeader(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		// identical header in top 10% on every page
+		tb("THE WAY OF GO", 0, 72, 200, 30, 45),
+		tb("Body text on page zero that is long enough.", 0, 72, 400, 160, 180),
+		tb("THE WAY OF GO", 1, 72, 200, 30, 45),
+		tb("Body text on page one that is long enough.", 1, 72, 400, 160, 180),
+		tb("THE WAY OF GO", 2, 72, 200, 30, 45),
+		tb("Body text on page two that is long enough.", 2, 72, 400, 160, 180),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var headers, bodies int
+	for _, b := range got {
+		if strings.Contains(b.Text, "THE WAY") {
+			headers++
+		} else {
+			bodies++
+		}
+	}
+	if headers != 0 {
+		t.Fatalf("expected all repeated headers removed, got %d", headers)
+	}
+	if bodies != 3 {
+		t.Fatalf("expected 3 body boxes kept, got %d", bodies)
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_KeepsUniqueZoneText: per-page unique headers are
+// kept (the repetition guard must not delete genuine content).
+func TestRemoveHeaderFooterBoxes_KeepsUniqueZoneText(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Chapter One: Getting Started", 0, 72, 250, 30, 45),
+		tb("Body zero.", 0, 72, 400, 160, 180),
+		tb("Chapter Two: Types and Values", 1, 72, 250, 30, 45),
+		tb("Body one.", 1, 72, 400, 160, 180),
+		tb("Chapter Three: Concurrency", 2, 72, 260, 30, 45),
+		tb("Body two.", 2, 72, 400, 160, 180),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != len(boxes) {
+		t.Fatalf("unique per-page headers must be kept, got %d, want %d", len(got), len(boxes))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_PageCountGuard: documents with < 3 pages are not
+// touched.
+func TestRemoveHeaderFooterBoxes_PageCountGuard(t *testing.T) {
+	heights := map[int]float64{0: 842, 1: 842}
+	boxes := []pdf.TextBox{
+		tb("Repeated", 0, 72, 150, 30, 45),
+		tb("Body zero.", 0, 72, 400, 160, 180),
+		tb("Repeated", 1, 72, 150, 30, 45),
+		tb("Body one.", 1, 72, 400, 160, 180),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != len(boxes) {
+		t.Fatalf("short documents must be untouched, got %d, want %d", len(got), len(boxes))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_SkipsNonTextLayout: a table/figure box in the
+// header zone must not be treated as a running header.
+func TestRemoveHeaderFooterBoxes_SkipsNonTextLayout(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		{Text: "table header", PageNumber: 0, X0: 72, X1: 200, Top: 30, Bottom: 45, LayoutType: "table"},
+		tb("Body zero.", 0, 72, 400, 160, 180),
+		{Text: "table header", PageNumber: 1, X0: 72, X1: 200, Top: 30, Bottom: 45, LayoutType: "table"},
+		tb("Body one.", 1, 72, 400, 160, 180),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != len(boxes) {
+		t.Fatalf("non-text zone boxes must be kept, got %d, want %d", len(got), len(boxes))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_DropsPageNumberFooter: identical "- N -" footers
+// (digit-masked to the same key) are removed.
+func TestRemoveHeaderFooterBoxes_DropsPageNumberFooter(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Body zero.", 0, 72, 400, 160, 180),
+		tb("- 1 -", 0, 280, 320, 820, 835),
+		tb("Body one.", 1, 72, 400, 160, 180),
+		tb("- 2 -", 1, 280, 320, 820, 835),
+		tb("Body two.", 2, 72, 400, 160, 180),
+		tb("- 3 -", 2, 280, 320, 820, 835),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "- ") && strings.Contains(b.Text, " -") {
+			t.Fatalf("footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected only the 3 body boxes, got %d", len(got))
+	}
+}

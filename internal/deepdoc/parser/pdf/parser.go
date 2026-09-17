@@ -524,6 +524,17 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// filter would have only caught the former.
 	boxes = lyt.FilterWatermarkBoxes(boxes)
 
+	// Page-level content removal on intact box geometry. These MUST run before
+	// TextMerge: RemoveTOCBoxes relies on leader-dot boxes (which TextMerge
+	// folds into adjacent text) and RemoveHeaderFooterBoxes relies on header
+	// boxes that TextMerge would otherwise merge into the first body section.
+	if p.Config.RemoveTOC {
+		boxes = lyt.RemoveTOCBoxes(boxes)
+	}
+	if p.Config.RemoveHeaderFooter {
+		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight)
+	}
+
 	boxes = lyt.TextMerge(boxes, medianHeights)
 	result.Metrics.BoxesTextMerge = len(boxes)
 

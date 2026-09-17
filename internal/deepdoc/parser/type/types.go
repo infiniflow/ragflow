@@ -237,6 +237,17 @@ type ParserConfig struct {
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
 	Pages [][]int
+	// RemoveTOC enables box-level table-of-contents page removal in
+	// Parser.buildLayout. Detection relies on leader-dot boxes and per-box
+	// geometry that are destroyed by the later TextMerge pass, so it is gated
+	// onto the box-level pipeline there rather than the section-level
+	// post-process.
+	RemoveTOC bool
+	// RemoveHeaderFooter enables box-level running header / footer removal in
+	// Parser.buildLayout. It operates on intact box geometry (page zones and
+	// cross-page text repetition) before TextMerge can fold a header box into
+	// a body section.
+	RemoveHeaderFooter bool
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
