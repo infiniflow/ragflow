@@ -58,6 +58,7 @@ Common fields on the settings page include:
 - **Refresh interval**: The interval at which RAGFlow checks the external system for newly added or updated content.
 - **Cleanup interval**: The interval at which RAGFlow checks the external system for deleted content. It takes effect only when sync deleted files is enabled.
 - **Timeout**: The maximum time that a single connection or synchronization task is allowed to wait.
+- **Test connection**: Verifies whether the current configuration can successfully connect to the external data source. It is recommended to test the connection before saving the configuration or starting a sync task.
 
 After completing the modification, click **Save**. The new configuration is used for subsequent synchronization tasks. Content that has already been synchronized to the knowledge base is gradually updated according to the next synchronization or cleanup task.
 
