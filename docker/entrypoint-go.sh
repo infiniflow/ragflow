@@ -14,6 +14,7 @@ function usage() {
     echo "  --disable-webserver                     Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor                  Disables task executor workers."
     echo "  --disable-datasync                      Disables synchronization of datasource workers."
+    echo "  --enable-mcpserver                      Enables the MCP server."
     echo "  --enable-adminserver                    Enables the Admin server."
     echo "  --init-model-provider-tables            Run model provider table migrations and exit."
     echo "  --init-superuser                        Initializes the superuser (needs --enable-adminserver)."
@@ -21,11 +22,21 @@ function usage() {
     echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
     echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --mcp-host=<string>                     Address the MCP server binds to (default: 127.0.0.1)."
+    echo "  --mcp-port=<num>                        Port the MCP server listens on (default: 9382)."
+    echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
+    echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
+    echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
+    echo "  --no-transport-streamable-http-enabled  Disables the MCP streamable HTTP transport. Disabling"
+    echo "                                          both transports re-enables this one, since the server"
+    echo "                                          requires at least one."
+    echo "  --no-json-response                      Disables JSON responses from the MCP server."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
+    echo "  $0 --enable-mcpserver"
     echo "  $0 --enable-adminserver"
     echo "  $0 --enable-adminserver --init-superuser"
     exit 1
@@ -34,12 +45,21 @@ function usage() {
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_DATASYNC=1
+ENABLE_MCP_SERVER=0
 ENABLE_ADMIN_SERVER=0 # Default close admin server
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
 INIT_MODEL_PROVIDER_TABLES=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
+
+MCP_HOST="127.0.0.1"
+MCP_PORT=9382
+MCP_MODE="self-host"
+MCP_HOST_API_KEY=""
+MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
+MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
+MCP_JSON_RESPONSE_FLAG="--json-response"
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -70,6 +90,10 @@ for arg in "$@"; do
       ENABLE_DATASYNC=0
       shift
       ;;
+    --enable-mcpserver)
+      ENABLE_MCP_SERVER=1
+      shift
+      ;;
     --enable-adminserver)
       ENABLE_ADMIN_SERVER=1
       shift
@@ -80,6 +104,34 @@ for arg in "$@"; do
       ;;
     --init-superuser)
       INIT_SUPERUSER_ARGS="--init-superuser"
+      shift
+      ;;
+    --mcp-host=*)
+      MCP_HOST="${arg#*=}"
+      shift
+      ;;
+    --mcp-port=*)
+      MCP_PORT="${arg#*=}"
+      shift
+      ;;
+    --mcp-mode=*)
+      MCP_MODE="${arg#*=}"
+      shift
+      ;;
+    --mcp-host-api-key=*)
+      MCP_HOST_API_KEY="${arg#*=}"
+      shift
+      ;;
+    --transport-sse-enabled|--no-transport-sse-enabled)
+      MCP_TRANSPORT_SSE_FLAG="$arg"
+      shift
+      ;;
+    --transport-streamable-http-enabled|--no-transport-streamable-http-enabled)
+      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="$arg"
+      shift
+      ;;
+    --json-response|--no-json-response)
+      MCP_JSON_RESPONSE_FLAG="$arg"
       shift
       ;;
     --consumer-no-beg=*)
@@ -218,7 +270,20 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
 
     echo "Starting RAGFlow go server..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --api &
+    MCP_ARGS=()
+    if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+        MCP_ARGS=(
+            --enable-mcpserver
+            --mcp-host="${MCP_HOST}"
+            --mcp-port="${MCP_PORT}"
+            --mcp-mode="${MCP_MODE}"
+            --mcp-host-api-key="${MCP_HOST_API_KEY}"
+            "${MCP_TRANSPORT_SSE_FLAG}"
+            "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}"
+            "${MCP_JSON_RESPONSE_FLAG}"
+        )
+    fi
+    run_with_restart "RAGFlow go server" bin/ragflow_server --api "${MCP_ARGS[@]}" &
 fi
 
 # MCP needs no separate process: --api serves it in-process at POST /mcp on the
