@@ -100,16 +100,13 @@ def _parse_retrieval_options(retrieval_setting):
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
         raise ValueError("retrieval_setting must be an object")  # noqa: TRY004
-    raw_top = retrieval_setting.get("top_k", 1024)
-    if isinstance(raw_top, bool):
-        raise ValueError("top_k must be an integer, not a boolean")  # noqa: TRY004
-    if isinstance(raw_top, float) and not raw_top.is_integer():
-        raise ValueError("top_k must be a whole number")
+    top = retrieval_setting.get("top_k", 1024)
+    if isinstance(top, bool) or not isinstance(top, int):
+        raise ValueError("top_k must be integer")  # noqa: TRY004
     try:
         similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
-        top = int(raw_top)
     except (TypeError, ValueError):
-        raise ValueError("top_k must be integer and score_threshold must be numeric")
+        raise ValueError("score_threshold must be numeric")
     if top < 1 or top > 1024:
         raise ValueError("top_k must be between 1 and 1024")
     return retrieval_setting, similarity_threshold, top
@@ -317,7 +314,7 @@ async def retrieval(tenant_id):
     except Exception as e:
         if "not_found" in str(e):
             return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
-        logger.exception("Dify retrieval failed")
+        logger.exception("Dify retrieval failed: %s", e)  # noqa: TRY401
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
