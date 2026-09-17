@@ -8,7 +8,26 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
+
+const (
+	defaultIngestionMessagesLimit = 200
+	maxIngestionMessagesLimit     = 500
+)
+
+// IngestionMessagesResponse is one immutable run's keyset-paginated event
+// stream. IDs are database event IDs and must be returned unchanged by clients
+// when requesting adjacent pages.
+type IngestionMessagesResponse struct {
+	RunCount      int                          `json:"run_count"`
+	Items         []service.IngestionEventItem `json:"items"`
+	OldestID      int                          `json:"oldest_id"`
+	NewestID      int                          `json:"newest_id"`
+	HasMoreBefore bool                         `json:"has_more_before"`
+	HasMoreAfter  bool                         `json:"has_more_after"`
+	Terminal      bool                         `json:"terminal"`
+}
 
 func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
@@ -37,6 +56,76 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 		"token_num": kb.TokenNum,
 		"status":    status,
 	}, common.CodeSuccess, nil
+}
+
+// ListIngestionMessages returns only events owned by the requested immutable
+// pipeline log. A legacy log (run_count <= 0) intentionally exposes no event
+// history and is terminal so clients never poll it forever after rollout.
+func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, userID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeArgumentError, errors.New(`lack of "Dataset ID"`)
+	}
+	if logID == "" {
+		return nil, common.CodeArgumentError, errors.New(`lack of "Log ID"`)
+	}
+	if afterID != nil && beforeID != nil {
+		return nil, common.CodeArgumentError, errors.New("after_id and before_id are mutually exclusive")
+	}
+	if afterID != nil && *afterID <= 0 {
+		return nil, common.CodeArgumentError, errors.New("after_id must be a positive integer")
+	}
+	if beforeID != nil && *beforeID <= 0 {
+		return nil, common.CodeArgumentError, errors.New("before_id must be a positive integer")
+	}
+	if limit == 0 {
+		limit = defaultIngestionMessagesLimit
+	}
+	if limit < 0 || limit > maxIngestionMessagesLimit {
+		return nil, common.CodeArgumentError, fmt.Errorf("limit must be between 1 and %d", maxIngestionMessagesLimit)
+	}
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("no authorization")
+	}
+
+	run, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("log not found")
+		}
+		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
+	}
+	response := &IngestionMessagesResponse{}
+	if run.RunCount == nil || *run.RunCount <= 0 {
+		response.Terminal = true
+		return response, common.CodeSuccess, nil
+	}
+	response.RunCount = *run.RunCount
+	response.Terminal = isTerminalIngestionLogStatus(run.OperationStatus)
+
+	page, err := dao.NewIngestionTaskLogDAO().ListEventsPageByPipelineLogID(ctx, dao.DB, logID, limit, afterID, beforeID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list ingestion messages: %w", err)
+	}
+	response.Items = make([]service.IngestionEventItem, 0, len(page.Events))
+	for _, event := range page.Events {
+		response.Items = append(response.Items, service.IngestionEventItemFromLog(event))
+	}
+	if len(response.Items) > 0 {
+		response.OldestID = response.Items[0].ID
+		response.NewestID = response.Items[len(response.Items)-1].ID
+	}
+	response.HasMoreBefore = page.HasMoreBefore
+	response.HasMoreAfter = page.HasMoreAfter
+	return response, common.CodeSuccess, nil
+}
+
+func isTerminalIngestionLogStatus(status string) bool {
+	switch status {
+	case string(entity.TaskStatusDone), string(entity.TaskStatusFail), string(entity.TaskStatusCancel), "DONE", "FAIL", "CANCEL":
+		return true
+	default:
+		return false
+	}
 }
 
 func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {

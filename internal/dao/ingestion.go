@@ -309,6 +309,15 @@ func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, 
 
 type IngestionTaskLogDAO struct{}
 
+// IngestionEventPage is one keyset-paginated segment of an immutable run's
+// event stream. Events are always returned in ascending ID order so callers
+// can append or prepend them without re-sorting.
+type IngestionEventPage struct {
+	Events        []*entity.IngestionTaskLog
+	HasMoreBefore bool
+	HasMoreAfter  bool
+}
+
 // Event types stored in ingestion_task_log.event_type. Only lifecycle events
 // participate in component progress aggregation; the remaining kinds are the
 // immutable run event stream rendered by the UI.
@@ -339,6 +348,103 @@ func (dao *IngestionTaskLogDAO) ListLogsByPipelineLogID(ctx context.Context, db 
 	var tasks []*entity.IngestionTaskLog
 	err := db.WithContext(ctx).Where("pipeline_log_id = ?", pipelineLogID).Order("id ASC").Find(&tasks).Error
 	return tasks, err
+}
+
+// ListEventsPageByPipelineLogID returns one page for a run's immutable event
+// stream. afterID and beforeID are mutually exclusive keyset cursors; callers
+// validate public request parameters before invoking this DAO method.
+func (dao *IngestionTaskLogDAO) ListEventsPageByPipelineLogID(ctx context.Context, db *gorm.DB, pipelineLogID string, limit int, afterID, beforeID *int) (*IngestionEventPage, error) {
+	if limit <= 0 {
+		return nil, errors.New("ingestion event page limit must be positive")
+	}
+	if afterID != nil && beforeID != nil {
+		return nil, errors.New("ingestion event page cursors are mutually exclusive")
+	}
+
+	query := db.WithContext(ctx).Where("pipeline_log_id = ?", pipelineLogID)
+	descending := false
+	switch {
+	case afterID != nil:
+		query = query.Where("id > ?", *afterID).Order("id ASC")
+	case beforeID != nil:
+		query = query.Where("id < ?", *beforeID).Order("id DESC")
+		descending = true
+	default:
+		query = query.Order("id DESC")
+		descending = true
+	}
+
+	var events []*entity.IngestionTaskLog
+	if err := query.Limit(limit + 1).Find(&events).Error; err != nil {
+		return nil, err
+	}
+	page := &IngestionEventPage{}
+	if len(events) > limit {
+		if descending {
+			page.HasMoreBefore = true
+		} else {
+			page.HasMoreAfter = true
+		}
+		events = events[:limit]
+	}
+	if descending {
+		for left, right := 0, len(events)-1; left < right; left, right = left+1, right-1 {
+			events[left], events[right] = events[right], events[left]
+		}
+	}
+	page.Events = events
+
+	if len(events) == 0 {
+		switch {
+		case afterID != nil:
+			page.HasMoreBefore, _ = dao.hasEventBeforeOrEqual(ctx, db, pipelineLogID, *afterID)
+		case beforeID != nil:
+			page.HasMoreAfter, _ = dao.hasEventAfterOrEqual(ctx, db, pipelineLogID, *beforeID)
+		}
+		return page, nil
+	}
+
+	oldestID := events[0].ID
+	newestID := events[len(events)-1].ID
+	if !page.HasMoreBefore {
+		var err error
+		page.HasMoreBefore, err = dao.hasEventBefore(ctx, db, pipelineLogID, oldestID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !page.HasMoreAfter {
+		var err error
+		page.HasMoreAfter, err = dao.hasEventAfter(ctx, db, pipelineLogID, newestID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return page, nil
+}
+
+func (dao *IngestionTaskLogDAO) hasEventBefore(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id < ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEventAfter(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id > ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEventBeforeOrEqual(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id <= ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEventAfterOrEqual(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id >= ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEvent(ctx context.Context, db *gorm.DB, pipelineLogID, condition string, id int) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND "+condition, pipelineLogID, id).
+		Limit(1).Count(&count).Error
+	return count > 0, err
 }
 
 // TaskProgress is the server-side aggregate of a task's component progress,

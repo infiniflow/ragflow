@@ -594,6 +594,56 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
+// ListIngestionMessages handles GET
+// /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
+func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	limit := 0
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be an integer")
+			return
+		}
+		limit = parsed
+	}
+	afterID, ok := ingestionEventCursor(c, "after_id")
+	if !ok {
+		return
+	}
+	beforeID, ok := ingestionEventCursor(c, "before_id")
+	if !ok {
+		return
+	}
+
+	result, code, err := h.datasetsService.ListIngestionMessages(
+		c.Request.Context(), c.Param("dataset_id"), user.ID, c.Param("log_id"), limit, afterID, beforeID,
+	)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
+	raw := c.Query(name)
+	if raw == "" {
+		return nil, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, name+" must be a positive integer")
+		return nil, false
+	}
+	return &value, true
+}
+
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
