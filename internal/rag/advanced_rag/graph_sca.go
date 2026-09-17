@@ -274,7 +274,8 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 	} else {
 		st.Verdict = VerdictInsufficient
 	}
-	logger.Printf("[SCA] verdict=%s (confidence=%.2f; view=%d/%d)", st.Verdict, res.Confidence, len(view), len(chunks))
+	step(ctx, logger, "SCA", "Evidence check: %s (confidence %.2f, reviewed %d of %s).",
+		st.Verdict, res.Confidence, len(view), harness.CountOf(len(chunks), "passage"))
 }
 
 // unresolvedClueGaps is the gap fallback: the first two question_clues of every unresolved

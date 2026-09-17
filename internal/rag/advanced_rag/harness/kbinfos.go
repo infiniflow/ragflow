@@ -153,6 +153,23 @@ type Kbinfos struct {
 	// Guarded by ledgerMu.
 	coverageSet   CoverageSet
 	coverageReady bool
+	// CiteChunkIDs is the ordered id list of the chunks the final-answer call
+	// rendered as numbered evidence — Python's tools._rag_cite_chunk_ids
+	// (agentic_rag_graph.py:870). The renderer puts the passages behind enumerated
+	// items first and fills the rest by similarity, capped (citeChunkCap), so this
+	// list is NOT Chunks in pool order, and a "[ID:n]" the model writes refers to
+	// position n in THIS list — one entry per RENDERED block, so a chunk the
+	// renderer skipped (no content) holds no position here either. The chat pipeline
+	// resolves citations against it
+	// (RunResponse.CiteChunkIDs → HarnessResult.CiteChunkIDs →
+	// decorateHarnessAnswer); without it, a marker was resolved against Chunks by
+	// position and landed on the wrong chunk — or past the end when the pool held
+	// fewer chunks than the cap.
+	//
+	// Written once per final-answer call, on the goroutine that composes it (the
+	// concurrent research slots have already joined), and read by the caller after
+	// the call returns — it is not part of the pool lock's protected state.
+	CiteChunkIDs []string
 	// cache is the per-request retrieval cache. It is initialised lazily via
 	// cacheOnce so a zero-value Kbinfos is usable.
 	cache     *searchCache

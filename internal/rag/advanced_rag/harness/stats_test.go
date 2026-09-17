@@ -93,26 +93,7 @@ func TestLogHierarchicalRounds(t *testing.T) {
 	}
 }
 
-// TestProgressCtxRoundTrip verifies WithProgress binds a per-request progress
-// sink on ctx and CurrentProgress retrieves the same callback.
-func TestProgressCtxRoundTrip(t *testing.T) {
-	ctx := context.Background()
-	if p := CurrentProgress(ctx); p != nil {
-		t.Fatal("no progress bound on a bare ctx")
-	}
-	var got string
-	ctx = WithProgress(ctx, func(line string) { got = line })
-	p := CurrentProgress(ctx)
-	if p == nil {
-		t.Fatal("WithProgress must bind a sink")
-	}
-	p("[Hybrid search] test")
-	if got != "[Hybrid search] test" {
-		t.Fatalf("sink did not fire: got %q", got)
-	}
-}
-
-// TestCountingInvokerCountsStreaming
+// TestCountingInvokerCountsStreaming mirrors Python CountingChatModel
 // async_chat_streamly / async_chat_streamly_delta: a wrapped invoker that DOES
 // stream must keep streaming AND be counted. Before CountingInvoker gained a
 // Stream method, StreamComplete's type assertion (m.Invoker.(chat.StreamingInvoker))

@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/agent/chat"
@@ -279,6 +281,20 @@ type AnswerDeps struct {
 // and for the degradation instructions in the prompt. The extra `emptyResult` term is the
 // agentic loop's own "nothing was found" signal, distinct from "we abstained" and from
 // "the pool happens to be empty".
+type finalizeAnnouncedKey struct{}
+
+// markFinalizeAnnounced records that [Finalize] has been reported for this run's
+// composition.
+func markFinalizeAnnounced(ctx context.Context) context.Context {
+	return context.WithValue(ctx, finalizeAnnouncedKey{}, true)
+}
+
+// finalizeAnnounced reports whether [Finalize] was reported for this composition.
+func finalizeAnnounced(ctx context.Context) bool {
+	v, _ := ctx.Value(finalizeAnnouncedKey{}).(bool)
+	return v
+}
+
 func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos, question string, partial, abstain, emptyResult bool) AnswerResult {
 	logger := deps.Logger
 	if logger == nil {
@@ -288,20 +304,24 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 	if kb != nil {
 		chunks = kb.Chunks
 	}
-	note := ""
-	if partial {
-		note = " — partial answer, some gaps remain"
-	} else if abstain {
-		note = " — not enough evidence to answer"
+	started := time.Now()
+	// The kickoff step is suppressed when the graph already reported [Finalize]
+	// (finalizeAnnounced): the verdict and the evidence have been said, and a line
+	// repeating their numbers only made the block longer. The paths that have no
+	// [Finalize] — the low graph's last node, every fallback compose — keep it.
+	if !finalizeAnnounced(ctx) {
+		step(ctx, logger, "Composing the answer", "Composing the answer from %s.",
+			harness.CountOf(len(chunks), "gathered passage"))
 	}
-	logger.Printf("[Composing the answer] Writing the final answer to %q from %d gathered passage(s)%s.",
-		trunc(question, 60), len(chunks), note)
+
+	// The step kept below either way is the no-evidence short circuit: "no model was
+	// called" is a fact no other line carries.
 
 	// 1. No-evidence short circuit.
 	// _compose_answer_from_evidence: no_evidence = abstain or empty_result or not chunks.
 	noEvidence := abstain || emptyResult || len(chunks) == 0
 	if noEvidence && deps.EmptyResponse != "" {
-		logger.Printf("[Composing the answer] No supporting evidence was found; returning the configured empty response without calling the answer model.")
+		step(ctx, logger, "Composing the answer", "No supporting evidence was found, so the configured empty response is returned without calling the model.")
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}
 	}
 	if deps.Model == nil {
@@ -351,7 +371,9 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 		logger.Printf("[Composing the answer] composition failed: %v", err)
 		return AnswerResult{Answer: answerErrorFallback, Failed: true}
 	}
-	return AnswerResult{Answer: cleanAnswer(reply.Content), Partial: partial}
+	answer := cleanAnswer(reply.Content)
+	logComposeDone(logger, started, answer, len(chunks))
+	return AnswerResult{Answer: answer, Partial: partial}
 }
 
 // fitComposePrompt is the compose-time fit: min(model window, evidence budget). The fit
@@ -441,15 +463,14 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	// Same no-evidence rule as the one-shot path: the prompt must carry the degradation
 	// instruction even when no empty_response short-circuits.
 	noEvidence := emptyResult || len(chunks) == 0
-	// The compose kickoff line. The
+	started := time.Now()
+	// Same gated kickoff step as the one-shot path above (finalizeAnnounced). The
 	// streaming path has no separate `abstain` signal (Go threads only
 	// partial/emptyResult), so the abstain note term cannot fire here.
-	note := ""
-	if partial {
-		note = " — partial answer, some gaps remain"
+	if !finalizeAnnounced(ctx) {
+		step(ctx, logger, "Composing the answer", "Composing the answer from %s.",
+			harness.CountOf(len(chunks), "gathered passage"))
 	}
-	logger.Printf("[Composing the answer] Writing the final answer to %q from %d gathered passage(s)%s.",
-		trunc(question, 60), len(chunks), note)
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)
 	if noEvidence && deps.EmptyResponse != "" {
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}, nil
@@ -500,7 +521,9 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	if reply == nil {
 		return AnswerResult{Answer: "", Failed: true}, errors.New("streaming composition returned no reply")
 	}
-	return AnswerResult{Answer: cleanAnswer(reply.Content), Partial: partial}, nil
+	answer := cleanAnswer(reply.Content)
+	logComposeDone(logger, started, answer, len(chunks))
+	return AnswerResult{Answer: answer, Partial: partial}, nil
 }
 
 // composeSystem builds the system prompt, applying the precedence rules.
@@ -510,10 +533,62 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 // replace, so it must not be listed as protected. What stays protected is the
 // evidence contract: citing sources, answering the exact attribute asked for,
 // and never substituting prior knowledge for missing evidence.
+// citeChunkIDsAt returns the citation id of every chunk that rendered a block, in
+// render order, from the render's source indices.
+//
+// It takes the SOURCE INDICES rather than the chunk list because the renderer emits
+// no block for a chunk without content: one id per RENDERED block, or the published
+// list runs ahead of the numbering at every skip and each marker past it lands on
+// the wrong passage. A chunk without an id keeps its slot as an empty string —
+// dropped, it would shift the later blocks the same way (citePoolIdx resolves "" to
+// -1, so that block's own citation is dropped, but the blocks after it stay put).
+func citeChunkIDsAt(chunks []map[string]any, sources []int) []string {
+	out := make([]string, len(sources))
+	for i, src := range sources {
+		if src >= 0 && src < len(chunks) {
+			out[i] = harness.ChunkIDOf(chunks[src])
+		}
+	}
+	return out
+}
+
+// logComposeDone reports the compose's own cost and size.
+//
+// It is a LOG line, not a step: the compose finishes after the answer has already
+// started streaming, and the chat pipeline drops think lines emitted past that point
+// (so a thought block never reopens after the answer) — a "composed …" step visible
+// in the non-streaming path but not the streaming one would be worse than none.
+//
+// The count is in RUNES, not bytes: a Chinese answer is two to three times its rune
+// count in bytes, and this number is read as "how much text came out".
+func logComposeDone(logger *log.Logger, started time.Time, answer string, chunks int) {
+	logger.Printf("[Composing the answer] composed %s from %s in %.1fs",
+		harness.CountOf(utf8.RuneCountInString(answer), "char"),
+		harness.CountOf(chunks, "gathered passage"),
+		time.Since(started).Seconds())
+}
+
+// zeroBasedEvidenceRule states the evidence numbering for the compose model.
+//
+// The blocks this call renders are numbered from 0 because the client resolves a
+// marker by indexing reference.chunks with its number, and the answer reaches that
+// client as the model streams it. Saying so guards against the "the first source is
+// 1" habit: a model that falls back on it cites the second passage and leaves the
+// first one unreachable (its markers are still openable, they just point one block
+// off).
+//
+// It belongs at the call site, not in CitationPrompt: that text is shared with the
+// agent canvas, which numbers its blocks by hash id (component/prompts/citation.go).
+const zeroBasedEvidenceRule = "\n\n# Evidence ids\n" +
+	"The evidence blocks below are numbered from 0: the FIRST block is [ID:0]. " +
+	"Cite the id printed at the start of the block you used, exactly as printed — " +
+	"do not renumber the blocks yourself."
+
 func (d AnswerDeps) composeSystem() string {
 	// The citation rules are the citation_prompt template with an optional user-defined
-	// override (RAGConfig.CiteRules).
-	rules := prompts.CitationPrompt(d.CiteRules)
+	// override (RAGConfig.CiteRules), plus the 0-based evidence-numbering rule the
+	// compose path renders with (see zeroBasedEvidenceRule).
+	rules := prompts.CitationPrompt(d.CiteRules) + zeroBasedEvidenceRule
 	system := strings.ReplaceAll(harness.FinalAnswerSystem, "{cite_rules}", rules)
 	if sp := strings.TrimSpace(d.SystemPrompt); sp != "" {
 		system = fmt.Sprintf("%s\n\n# Assistant configuration (set by the user)\n%s\n\nFollow the configuration above for language, tone, style, format and any other presentational instruction, including where it overrides the language rule above. Where it conflicts with the citation rules, attribute fidelity, or the requirement to answer only from the provided evidence, those three take precedence.",

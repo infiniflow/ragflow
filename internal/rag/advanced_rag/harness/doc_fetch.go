@@ -146,7 +146,13 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 		deps.KB = &Kbinfos{}
 	}
 	added := deps.KB.Merge(chunks, aggs)
-	blocks, sources := prompts.KBPromptWithSourceIndices(deps.KB.Chunks, budget)
+	// Pool positions, not rendered positions, are the block ids — 0-based, like every
+	// other evidence render. These are the tool's evidence, not the final answer's:
+	// the compose re-renders the pool it wants to cite with its own numbering
+	// (CiteChunkIDs) and the chat pipeline resolves the answer's markers against that
+	// list. What the ids must do here is stay addressable, which a pool position does
+	// whatever the render skipped.
+	blocks, sources := prompts.KBPromptPoolIndexed(deps.KB.Chunks, budget)
 	blockAt := make(map[int]string, len(sources))
 	for i, src := range sources {
 		if _, seen := blockAt[src]; !seen {
@@ -179,6 +185,10 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 	if !deps.DoRefer {
 		return fresh
 	}
+	// The blocks are numbered by pool position: were this path ever reached with
+	// do_refer=true, the rules would need the same 0-based sentence the compose adds
+	// (advanced_rag.zeroBasedEvidenceRule) — CitationPrompt itself cannot carry it,
+	// the canvas renders hash ids.
 	header := "# Citation rules\nApply the following rules VERBATIM to your final answer.\n\n" +
 		prompts.CitationPrompt(deps.CiteRules) + "\n\n----\n\n"
 	return append([]string{header}, fresh...)

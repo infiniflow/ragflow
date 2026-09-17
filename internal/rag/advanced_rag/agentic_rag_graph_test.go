@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/advanced_rag/harness"
 	"ragflow/internal/rag/advanced_rag/slots"
+	"ragflow/internal/rag/prompts"
 )
 
 // Test doubles
@@ -1208,17 +1210,16 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"Built 1865, Geneva."}],"doc_aggs":[]}`, harness.StatusOK)
 
 	var lines []string
-	// Mirror production: Rag wraps the run logger with thinkLogger using the
-	// same Progress sink. There is no explicit "push" API: the think block is fed purely by
-	// intercepting tagged logger lines, so everything asserted here must come from a
-	// logger.Printf.
+	// Mirror production: the run's step reporter carries the think-block text.
+	// Each stage declares its own step, so everything asserted here is a step a
+	// node reported — never a log line that happened to match a pattern.
 	sink := func(line string) { lines = append(lines, line) }
+	ctx = harness.WithSteps(ctx, harness.StepReporter{Text: sink})
 	st, err := BuildAgenticGraph(ctx, RAGTools{
-		Model:    mdl,
-		Tools:    newToolset(exec),
-		Search:   harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-		Logger:   thinkLogger(log.Default(), sink),
-		Progress: sink,
+		Model:  mdl,
+		Tools:  newToolset(exec),
+		Search: harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
+		Logger: log.Default(),
 	}, "When and where was it built?", "", 3, nil)
 	if err != nil {
 		t.Fatalf("BuildAgenticGraph: %v", err)
@@ -1232,15 +1233,28 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	// assert on what the nodes actually log.
 	for _, want := range []string{
 		"[Agentic RAG] Starting research",
-		"[Planner] Decomposing",
-		"[RAGAgent] ROUND 1 start",
-		"[Draft] intermediate draft",
-		"[SCA] verdict=",
-		"[Finalize] partial=",
+		"[Planner] Split the question into",
+		// prefetchSummary's opener has two branches (a plan larger than the opening
+		// queries vs not), so assert the half both share plus the closing step.
+		"up front.",
+		"[Prefetch] Added",
+		"[RAGAgent] Round 1 begins",
+		"[Draft] Drafted an intermediate answer",
+		"[SCA] Evidence check:",
+		"[Finalize] Finalizing",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("think-log lines missing %q; got:\n%s", want, joined)
 		}
+	}
+	// Nesting: the prefetch's search legs are indented under the prefetch line —
+	// that is what makes "what did this line run" readable — while the graph's own
+	// nodes stay flush (this run has no outer rag call above them).
+	if !strings.Contains(joined, harness.StepIndentUnit+"[BM25 search] Searching by keyword for") {
+		t.Errorf("the prefetch's legs must be indented under it; got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "\n[Planner] Split the question into") {
+		t.Errorf("the graph's own steps must stay flush; got:\n%s", joined)
 	}
 }
 
@@ -1258,12 +1272,12 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	var buf bytes.Buffer
 	var lines []string
 	sink := func(line string) { lines = append(lines, line) }
+	ctx = harness.WithSteps(ctx, harness.StepReporter{Text: sink})
 	st, err := BuildAgenticGraph(ctx, RAGTools{
-		Model:    mdl,
-		Tools:    newToolset(exec),
-		Search:   harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-		Logger:   thinkLogger(log.New(&buf, "", 0), sink),
-		Progress: sink,
+		Model:  mdl,
+		Tools:  newToolset(exec),
+		Search: harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
+		Logger: log.New(&buf, "", 0),
 	}, "When and where was it built?", "", 3, nil)
 	if err != nil {
 		t.Fatalf("BuildAgenticGraph: %v", err)
@@ -1275,8 +1289,8 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{
 		"[QueryRewriter]",
-		"[RAGAgent] ROUND 2 start",
-		"[Finalize] partial=",
+		"[RAGAgent] Round 2 begins",
+		"[Finalize] Finalizing",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("cycle not driven: missing %q; got:\n%s", want, joined)
@@ -1284,7 +1298,7 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	}
 	// The second research round must actually run: the SCA is only reached again
 	// through query_rewrite → rag_agent, i.e. the graph's only cycle.
-	if !strings.Contains(joined, "[SCA] verdict=INSUFFICIENT") {
+	if !strings.Contains(joined, "[SCA] Evidence check: INSUFFICIENT") {
 		t.Errorf("expected the first SCA to be insufficient:\n%s", joined)
 	}
 }
@@ -1296,8 +1310,10 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
-	mdl.push("When was Culdcept released?")        // Formalize
-	mdl.push(`{"keywords": "Culdcept, released"}`) // weighted keyword extraction
+	// The multi-turn formalize asks for the rewrite AND the keywords in one JSON
+	// reply, so the rewrite below is what the node actually searches for.
+	mdl.push(`{"question": "When was Culdcept released?", "keywords": "Culdcept, released"}`) // Formalize
+	mdl.push("Culdcept was released in 1999.")                                                // compose
 
 	kb := &harness.Kbinfos{}
 	sd := harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true}
@@ -1319,9 +1335,248 @@ func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 	if !kb.HasChunks() {
 		t.Fatalf("direct_search did not deposit any chunk; log:\n%s", buf.String())
 	}
-	// formalize ran and rewrote the question (the graph's first node).
-	if !strings.Contains(buf.String(), "[Agentic RAG] formalized the question") {
-		t.Errorf("formalize_question node did not run; log:\n%s", buf.String())
+	// formalize ran and rewrote the follow-up (the graph's first node), reported
+	// under its own [Formalize] stage with BOTH the question asked and the one
+	// actually searched.
+	if want := `[Formalize] Rewrote the follow-up into a standalone question: "when was it made?" → "When was Culdcept released?"`; !strings.Contains(buf.String(), want) {
+		t.Errorf("formalize_question node did not narrate its rewrite; log:\n%s", buf.String())
+	}
+}
+
+// TestLogComposeDone pins the compose completion line: it is a LOG line, not a
+// step — a compose finishes after the answer has begun streaming, where the chat
+// pipeline drops think lines — and it counts RUNES, so a Chinese answer is not
+// reported at three times its length.
+func TestLogComposeDone(t *testing.T) {
+	var buf bytes.Buffer
+	logComposeDone(log.New(&buf, "", 0), time.Now(), "曹操是谁？", 3)
+	got := buf.String()
+	// 5 runes, 15 bytes: the line must say 5.
+	if !strings.Contains(got, "[Composing the answer] composed 5 chars from 3 gathered passages in ") {
+		t.Errorf("compose completion line = %q", got)
+	}
+	if strings.Contains(got, "15 chars") {
+		t.Errorf("byte count leaked into the line: %q", got)
+	}
+	// An answer that came back empty is exactly the case this line exists for: it
+	// must be reported, not skipped.
+	var empty bytes.Buffer
+	logComposeDone(log.New(&empty, "", 0), time.Now(), "", 0)
+	if !strings.Contains(empty.String(), "composed 0 chars from 0 gathered passages") {
+		t.Errorf("empty answer = %q", empty.String())
+	}
+}
+
+// TestBuildLowGraphNarratesAnUnchangedQuestion covers the common case end to end:
+// single-turn input is never rewritten, so the formalize step names the question
+// as asked instead of claiming a rewrite that did not happen.
+func TestBuildLowGraphNarratesAnUnchangedQuestion(t *testing.T) {
+	ctx := context.Background()
+	mdl := &scriptedModel{}
+	mdl.push(`{"keywords": "Culdcept, released"}`) // single-turn: keywords only
+	mdl.push("Culdcept was released in 1999.")     // compose
+
+	kb := &harness.Kbinfos{}
+	sd := harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true}
+	resp := &RunResponse{Mode: harness.ResolveMode(&harness.Toolset{ThinkingMode: "low"})}
+	req := harness.RunRequest{Question: "when was Culdcept made?", TopN: 8}
+
+	var buf bytes.Buffer
+	BuildLowGraph(ctx, RAGTools{
+		Model: mdl,
+		Messages: []schema.Message{
+			{Role: schema.User, Content: "when was Culdcept made?"},
+		},
+		Search: sd,
+		Logger: log.New(&buf, "", 0),
+	}, req, sd, kb, resp, log.New(&buf, "", 0))
+
+	if want := `[Formalize] Kept the question as asked: "when was Culdcept made?"`; !strings.Contains(buf.String(), want) {
+		t.Errorf("formalize did not name the unchanged question; log:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), "Rewrote") {
+		t.Errorf("no rewrite happened, the step must not say so; log:\n%s", buf.String())
+	}
+}
+
+// TestFanoutSummary pins what the planner reports: the sub-questions themselves,
+// not an announcement that it is about to decompose. The fallback case (the model
+// refused to decompose, so the question is searched as asked) must not be dressed
+// up as a sub-question.
+//
+// The wording carries no "first-hop": a reader has no hop to count, and these are
+// just the questions the plan set out to research.
+func TestFanoutSummary(t *testing.T) {
+	cases := []struct {
+		name     string
+		question string
+		fanouts  []string
+		want     string
+	}{
+		{"three", "曹操是谁？", []string{"曹操是谁", "曹操生平简介", "曹操历史地位"},
+			`Split the question into 3 sub-questions to research: "曹操是谁", "曹操生平简介", "曹操历史地位".`},
+		{"one-sub-question", "曹操是谁？", []string{"曹操"},
+			`Split the question into 1 sub-question to research: "曹操".`},
+		{"kept-as-asked", "曹操是谁？", []string{"曹操是谁？"},
+			"The question is already a single searchable sub-question; searching it as asked."},
+		{"nothing", "曹操是谁？", nil,
+			"Could not decompose the question; searching it as asked."},
+	}
+	for _, tc := range cases {
+		if got := fanoutSummary(tc.question, tc.fanouts); got != tc.want {
+			t.Errorf("%s: fanoutSummary = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestFinalizeSummary pins the finalize step's four states, including the evidence
+// size on the two that have evidence to report. The compose step no longer repeats
+// the count (it is suppressed after this node), so this line is where the reader
+// learns what the answer is being written from.
+func TestFinalizeSummary(t *testing.T) {
+	cases := []struct {
+		name           string
+		partial, empty bool
+		chunks         int
+		want           string
+	}{
+		{"complete", false, false, 5, "Finalizing a complete answer from 5 passages."},
+		{"complete-singular", false, false, 1, "Finalizing a complete answer from 1 passage."},
+		{"partial", true, false, 5, "Finalizing a partial answer from 5 passages; some gaps remain unanswered."},
+		{"empty", false, true, 0, "Finalizing with no supporting evidence: the answer will say so."},
+		{"partial-and-empty", true, true, 0,
+			"Finalizing a partial answer with no supporting evidence: research exhausted its attempts."},
+	}
+	for _, tc := range cases {
+		if got := finalizeSummary(tc.partial, tc.empty, tc.chunks); got != tc.want {
+			t.Errorf("%s: finalizeSummary = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if got := chunkCount(nil); got != 0 {
+		t.Errorf("chunkCount(nil) = %d, want 0 (a failed graph still reports Finalize)", got)
+	}
+}
+
+// TestPrefetchSummary pins the two numbers a reader sees back to back in high/ultra
+// mode: what the planner decomposed the question into, and how many queries the
+// upfront search runs (initialize_state caps first_queries at three, the rest stay
+// as slots). A bare "searching 3" after "split into 5" reads like two sub-questions
+// were dropped.
+//
+// The sentence must NOT call those queries the plan's sub-questions: they are the
+// slot table's own first_queries, written by a model that only sees the plan as a
+// hint and may reword it (see prefetchSummary). The two numbers are still both
+// named, which is the property this test protects.
+func TestPrefetchSummary(t *testing.T) {
+	cases := []struct {
+		name               string
+		planned, searching int
+		want               string
+	}{
+		{"all-searched", 3, 3, "Searching 3 opening queries up front."},
+		{"singular", 1, 1, "Searching 1 opening query up front."},
+		// The cap: the plan is bigger than the opening queries, so the line names
+		// the plan's total (the rest stay as slots for later rounds).
+		{"capped", 5, 3, "The plan lists 5 sub-questions; searching 3 opening queries up front."},
+		{"capped-singular", 2, 1, "The plan lists 2 sub-questions; searching 1 opening query up front."},
+		// Decomposition failed: no plan, one query as asked.
+		{"no-plan", 0, 1, "Searching 1 opening query up front."},
+	}
+	for _, tc := range cases {
+		if got := prefetchSummary(tc.planned, tc.searching); got != tc.want {
+			t.Errorf("%s: prefetchSummary = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestSlotPrefillSummary pins what the evidence prefill leaves to research. The
+// zero case matters most: it is the one that explains a round re-searching queries
+// the upfront prefetch already ran.
+//
+// The count in the sentence is the number of sessions that will RUN
+// (slotSessionsPerRound), not the number of open slots: the round opens a bounded
+// number of them and re-answers the rest from the pooled evidence, so promising the
+// open count sent a reader looking for searches that were never going to happen.
+func TestSlotPrefillSummary(t *testing.T) {
+	cases := []struct {
+		name                        string
+		prefilled, total, remaining int
+		want                        string
+	}{
+		{"nothing-prefilled", 0, 5, 5,
+			"The pooled evidence answers none of the 5 slots; opening 3 research sessions this round."},
+		{"some-prefilled", 1, 5, 4,
+			"The pooled evidence already answers 1 of the 5 slots; opening 3 research sessions for the rest."},
+		// Fewer open slots than the per-round cap: 1 is what runs, not 1 capped.
+		{"one-open", 4, 5, 1,
+			"The pooled evidence already answers 4 of the 5 slots; opening 1 research session for the rest."},
+		{"all-prefilled", 5, 5, 0,
+			"The pooled evidence already answers all 5 slots; no session to run."},
+	}
+	for _, tc := range cases {
+		if got := slotPrefillSummary(tc.prefilled, tc.total, tc.remaining); got != tc.want {
+			t.Errorf("%s: slotPrefillSummary = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestRagRoundEndLine pins the round's closing sentence, including the zero case:
+// "0 slots still unresolved" read as a double negative.
+//
+// The clause says "slots", not "sub-questions": the number is the slot table's
+// backlog, and the plan's sub-questions are a different count printed earlier in
+// the same block.
+func TestRagRoundEndLine(t *testing.T) {
+	cases := []struct {
+		name                                 string
+		round, newPassages, pool, unresolved int
+		want                                 string
+	}{
+		{"zero-unresolved", 1, 0, 6, 0,
+			"Round 1 finished: 0 new passages added; the pool now holds 6 passages, and no unresolved slots."},
+		{"some-unresolved", 2, 0, 6, 2,
+			"Round 2 finished: 0 new passages added; the pool now holds 6 passages, and 2 slots still unresolved."},
+		{"one-added-one-open", 3, 1, 7, 1,
+			"Round 3 finished: 1 new passage added; the pool now holds 7 passages, and 1 slot still unresolved."},
+	}
+	for _, tc := range cases {
+		if got := ragRoundEndLine(tc.round, tc.newPassages, tc.pool, tc.unresolved); got != tc.want {
+			t.Errorf("%s: ragRoundEndLine = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestFormalizeStepLine pins the formalize step's wording per outcome: a question
+// kept as asked names the question, a rewritten one gets the pair (asked →
+// searched), and only a formalize that produced no question stays silent.
+//
+// The node used to announce `Formalized the question into "曹操是谁？".` for every
+// outcome — which reads as a rewrite that did not happen, since single-turn runs
+// never rewrite and the multi-turn prompt asks for the question unchanged "in
+// most cases".
+func TestFormalizeStepLine(t *testing.T) {
+	cases := []struct {
+		name       string
+		asAsked    string
+		standalone string
+		want       string
+	}{
+		{"unchanged", "曹操是谁？", "曹操是谁？", `Kept the question as asked: "曹操是谁？"`},
+		{"only-whitespace-differs", "曹操是谁？", "  曹操是谁？ ", `Kept the question as asked: "曹操是谁？"`},
+		{"empty-standalone", "曹操是谁？", "", ""},
+		{"nothing-asked-either", "", "", ""},
+		{"rewritten", "他死于哪年？", "曹操死于哪年？",
+			`Rewrote the follow-up into a standalone question: "他死于哪年？" → "曹操死于哪年？"`},
+		{"nothing-asked", "", "曹操是谁？", `Standalone question for this turn: "曹操是谁？"`},
+	}
+	for _, tc := range cases {
+		got := formalizeStepLine(tc.asAsked, tc.standalone)
+		if got != tc.want {
+			t.Errorf("%s: formalizeStepLine = %q, want %q", tc.name, got, tc.want)
+		}
+		if strings.HasSuffix(got, "。") || strings.HasSuffix(got, "？.") || strings.HasSuffix(got, "?.") {
+			t.Errorf("%s: %q ends on a doubled terminator", tc.name, got)
+		}
 	}
 }
 
@@ -2113,10 +2368,12 @@ func TestRunUnknownModeReturnsComposedAnswer(t *testing.T) {
 
 func TestRunEmptyResponseShortCircuits(t *testing.T) {
 	mdl := &fakeModel{}
+	var buf bytes.Buffer
 	resp := Rag(context.Background(), RAGTools{
 		Retriever:     &emptyRetriever{},
 		Model:         mdl,
 		EmptyResponse: "I don't have enough information.",
+		Logger:        log.New(&buf, "", 0),
 	}, harness.RunRequest{
 		Question:     "Who created Culdcept?",
 		ThinkingMode: "low",
@@ -2130,6 +2387,77 @@ func TestRunEmptyResponseShortCircuits(t *testing.T) {
 	}
 	if mdl.calls != 0 {
 		t.Errorf("model calls = %d, want 0 (short-circuited before composition)", mdl.calls)
+	}
+	// The short circuit is narrated, and the line says what was returned AND that
+	// no model was called — the two facts a reader needs to know why there is no
+	// composed answer.
+	want := "[Composing the answer] No supporting evidence was found, so the configured empty response is returned without calling the model."
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("think line missing %q; log:\n%s", want, buf.String())
+	}
+	// This is the LOW graph, whose last node has no [Finalize] step of its own, so
+	// the compose kickoff is the only line saying an answer is being written — it
+	// must stay. The question used to be quoted here too, which in this branch (no
+	// question threaded through) rendered as an empty "".
+	if got := buf.String(); !strings.Contains(got, "[Composing the answer] Composing the answer from 0 gathered passages.") {
+		t.Errorf("compose kickoff line missing; log:\n%s", got)
+	}
+}
+
+// TestAgenticFinalizeMarksItsComposition pins the first half of that split: the
+// finalize node hands the compose closure a context that SAYS the [Finalize] step
+// was reported, which is what lets the compose stay silent about the evidence.
+func TestAgenticFinalizeMarksItsComposition(t *testing.T) {
+	var announced []bool
+	st := NewAgenticState("q", "", 3, nil)
+	st.KB = &harness.Kbinfos{}
+	deps := RAGTools{Finalize: func(fctx context.Context, partial, empty bool, question string) {
+		announced = append(announced, finalizeAnnounced(fctx))
+	}}
+
+	formalizeAnswerNode(context.Background(), deps, st, nil)
+
+	if len(announced) != 1 || !announced[0] {
+		t.Fatalf("the finalize node must mark the composition it triggers; got %v", announced)
+	}
+}
+
+// TestComposeKickoffFollowsTheAnnouncement pins the second half, in both
+// directions: when [Finalize] has been reported the compose must NOT repeat its
+// numbers, and when it has not — the low graph's last node, every fallback — the
+// kickoff line is the only thing saying an answer is being written, so it stays.
+//
+// The composition is driven into its no-evidence short circuit so the assertion
+// needs no model: the kickoff step is emitted before that branch either way.
+func TestComposeKickoffFollowsTheAnnouncement(t *testing.T) {
+	cases := []struct {
+		name string
+		mark bool
+		want bool
+	}{
+		{"after-finalize", true, false},
+		{"without-finalize", false, true},
+	}
+	for _, tc := range cases {
+		var lines []string
+		ctx := harness.WithSteps(context.Background(),
+			harness.StepReporter{Text: func(line string) { lines = append(lines, line) }})
+		if tc.mark {
+			ctx = markFinalizeAnnounced(ctx)
+		}
+		ComposeAnswerWith(ctx, AnswerDeps{EmptyResponse: "nothing found"},
+			&harness.Kbinfos{}, "q", false, false, true)
+
+		got := strings.Join(lines, "\n")
+		has := strings.Contains(got, "Composing the answer from")
+		if has != tc.want {
+			t.Errorf("%s: kickoff line present = %v, want %v; steps:\n%s", tc.name, has, tc.want, got)
+		}
+		// The short circuit is reported on both paths: "no model was called" is a
+		// fact nothing else carries.
+		if !strings.Contains(got, "No supporting evidence was found") {
+			t.Errorf("%s: the short circuit must be narrated; steps:\n%s", tc.name, got)
+		}
 	}
 }
 
@@ -2217,6 +2545,64 @@ func TestRunAgenticComposesFromResearchFindings(t *testing.T) {
 	}
 	if !strings.Contains(mdl.lastUserPrompt(), "Culdcept was created by OmiyaSoft and released in 1999.") {
 		t.Errorf("prompt missing the research findings:\n%s", mdl.lastUserPrompt())
+	}
+}
+
+// TestComposePublishesCiteChunkIDs pins the evidence contract the chat pipeline
+// resolves citations against: the compose numbers the blocks 0-based (the client
+// indexes reference.chunks with the marker's number, and the answer is streamed
+// before any rewrite could apply) and publishes THAT order — similarity-ranked
+// and capped — on harness.Kbinfos.CiteChunkIDs, because the reference is built in
+// that order and a marker against the pool by position would land on the wrong
+// chunk (or past the end when the pool is shorter than the render cap, which is
+// how an agentic answer came back with no reference at all).
+func TestComposePublishesCiteChunkIDs(t *testing.T) {
+	kb := &harness.Kbinfos{
+		Chunks: []map[string]any{
+			{"chunk_id": "c1", "content": "the wolf is grey", "similarity": 0.1},
+			{"chunk_id": "c2", "content": "the wolf is small", "similarity": 0.9},
+			// No content: kbpBlock renders no block for it, so it must not take a
+			// slot in the published list either — an id for it would put every
+			// marker after it one block off the passage the model cited.
+			{"chunk_id": "c3", "content": "   ", "similarity": 0.5},
+		},
+	}
+	mdl := &fakeModel{replies: []*harness.ModelReply{{Content: "it is grey [ID:0]."}}}
+	if res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "what colour is it?", false, false); res.Failed {
+		t.Fatal("composition must succeed")
+	}
+	got := mdl.lastUserPrompt()
+	for _, want := range []string{"ID: 0", "ID: 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("evidence missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ID: 2") {
+		t.Errorf("evidence numbering ran past the rendered blocks:\n%s", got)
+	}
+	// The rendered order is the similarity ranking, not the pool order: the
+	// higher-similarity chunk is block 0. The blank chunk sits between the two
+	// rendered blocks and contributes no id.
+	want := []string{"c2", "c1"}
+	if !reflect.DeepEqual(kb.CiteChunkIDs, want) {
+		t.Fatalf("CiteChunkIDs = %v, want one id per rendered block in render order %v", kb.CiteChunkIDs, want)
+	}
+}
+
+// TestComposeSystemDeclaresZeroBasedEvidence pins the prompt-side guard for the
+// evidence numbering: the compose renders 0-based block ids and the client indexes
+// reference.chunks with the marker's number, so the model has to be told — one on
+// "the first source is 1" cites the second passage and never the first. The rule
+// belongs to the callers that render 0-based blocks, not to CitationPrompt:
+// CitationPrompt is shared with the agent canvas, which numbers its blocks by hash
+// id, so a base declared there would be wrong.
+func TestComposeSystemDeclaresZeroBasedEvidence(t *testing.T) {
+	sys := AnswerDeps{}.composeSystem()
+	if !strings.Contains(sys, "the FIRST block is [ID:0]") {
+		t.Fatalf("compose system prompt must state the 0-based evidence numbering:\n%s", sys)
+	}
+	if strings.Contains(prompts.CitationPrompt(""), "the FIRST block is [ID:0]") {
+		t.Fatal("CitationPrompt must not declare a base: the canvas render numbers its blocks by hash id")
 	}
 }
 
@@ -2723,11 +3109,48 @@ func TestFormalizeQuestionNodeArmsBudget(t *testing.T) {
 	}
 }
 
-// TestRecordConsecutiveUnanswerableAcrossOuterRagCalls covers the outer react loop: the
-// model may call rag() several times within one user turn, and each unsatisfying verdict
-// should bump the shared consecutive-unanswerable counter. The counter lives on the
-// *RAGCache that Rag() builds before the outer-react branch, so the same cache is reused
-// across the outer loop's multiple rag() calls. This test
+// delayedFormalizeModel answers a formalization call only after a delay, so a
+// test can tell whether that call was charged to the research budget.
+type delayedFormalizeModel struct {
+	delay time.Duration
+}
+
+func (m delayedFormalizeModel) Complete(_ context.Context, _ []schema.Message, _ []harness.ToolSpec) (*harness.ModelReply, error) {
+	time.Sleep(m.delay)
+	return &harness.ModelReply{Content: `{"keywords": ["曹操"]}`}, nil
+}
+
+// TestFormalizeQuestionNodeDoesNotChargeTheBudget pins WHEN the budget starts:
+// Python stamps the deadline in formalize_question's return dict
+// (agentic_rag_graph.py:1061) — after the formalization call — so that call is
+// not charged to the research budget. Arming on entry shortened every downstream
+// timeout by one LLM call, which is exactly enough to flip the
+// MinRoundHeadroomS guard near the boundary and skip a round Python would run.
+func TestFormalizeQuestionNodeDoesNotChargeTheBudget(t *testing.T) {
+	const delay = 300 * time.Millisecond
+	st := NewAgenticState("曹操是谁？", "", 3, []schema.Message{*schema.UserMessage("曹操是谁？")})
+	deps := RAGTools{Model: delayedFormalizeModel{delay: delay}}
+
+	started := time.Now()
+	formalizeQuestionNode(context.Background(), deps, st, nil)
+	if elapsed := time.Since(started); elapsed < delay {
+		t.Fatalf("the stub model did not run (%v elapsed): the assertion below would be vacuous", elapsed)
+	}
+
+	// The clock is armed on the way OUT, so what remains is the whole budget
+	// minus the moment the defer ran — not minus the model call.
+	if got := st.RemainingS(); got < TotalBudgetS-0.15 {
+		t.Errorf("RemainingS = %.2fs after a %v formalization, want ~%.0fs: the call must not be charged to the budget",
+			got, delay, TotalBudgetS)
+	}
+}
+
+// TestRecordConsecutiveUnanswerableAcrossOuterRagCalls mirrors the Python
+// outer react loop in dialog_service.rag_agent: the model may call rag()
+// several times within one user turn, and each unsatisfying verdict should
+// bump the shared _consecutive_unanswerable counter. Go keeps that counter on
+// the *RAGCache that Rag() now builds before the outer-react branch, so the
+// same cache is reused across the outer loop's multiple rag() calls. This test
 // simulates two such outer rag() calls with INSUFFICIENT verdicts and asserts
 // the counter reaches 2 — the threshold at which Rag() tells the outer agent to
 // STOP calling rag again.

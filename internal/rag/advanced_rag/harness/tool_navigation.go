@@ -332,6 +332,11 @@ type NavResult struct {
 	// (dataset-level: no compiled structure of this kind here), "no_doc"
 	// (query-level: structure exists but THIS query reached nothing).
 	EmptyReason string
+	// Diagnostic is the underlying failure message behind EmptyReason (Go-only,
+	// mirroring ToolOutcome.Diagnostic). "infra" alone does not say what broke,
+	// so the router's own error is carried here instead of only in a log line.
+	// Never part of Text: that keeps Python's error="..." attribute intact.
+	Diagnostic string
 }
 
 // HasStructure reports whether the dataset has the compiled structure at all.
@@ -409,7 +414,12 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 	if router == nil {
 		// A missing retriever is the infra case: the router IS the retrieval backend, and
 		// the error label is verbatim.
-		return navEmpty(ReasonInfra, "no retriever")
+		//
+		// The label is also carried as the Diagnostic: "infra" alone tells a client
+		// nothing about what actually broke.
+		res := navEmpty(ReasonInfra, "no retriever")
+		res.Diagnostic = "no retriever"
+		return res
 	}
 	// Descend on the topic + keywords: routing descends on similarity and does
 	// not require keyword hits, so keywords only enrich the query.
@@ -456,7 +466,11 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 			// produces no_structure either: the nav-tree route yields only infra / bad_args /
 			// no_doc, while no_structure belongs to the STRUCTURE path, where a successful
 			// read found zero entities.
-			return navEmpty(ReasonInfra, "nav tree descent failed")
+			//
+			// The error travels as the Diagnostic: "infra" alone does not say what broke.
+			res := navEmpty(ReasonInfra, "nav tree descent failed")
+			res.Diagnostic = anyError.Error()
+			return res
 		}
 		// No compiled tree is a DATASET-level fact: there is deliberately NO fallback here
 		// (re-inventing dataset_nav's work through the generic retriever was the most

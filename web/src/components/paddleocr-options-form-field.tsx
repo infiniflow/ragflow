@@ -16,7 +16,7 @@
 
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from './originui/select-with-search';
 import { LLMFactory } from '@/constants/llm';
 import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -113,7 +113,7 @@ export function PaddleOCROptionsFormField({
         horizontal={true}
       >
         {(field) => (
-          <RAGFlowSelect
+          <SelectWithSearch
             value={field.value || undefined}
             onChange={field.onChange}
             options={algorithmOptions}

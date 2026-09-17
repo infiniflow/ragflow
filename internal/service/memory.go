@@ -1563,18 +1563,39 @@ func (s *MemoryService) requireMemoryAccess(ctx context.Context, userID string, 
 //
 //	resp, err := service.ListMemories("user123", []string{}, []string{"semantic"}, "table", "test", 1, 10)
 func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) (*ListMemoryResponse, error) {
-	// If tenantIDs is empty, get all tenants associated with the user
+	// The tenant filter may only name tenants the caller belongs to: Python's
+	// list_memory intersects the requested ids with the caller's joined
+	// tenants and returns an empty page when nothing survives. Without the
+	// clamp a caller could list another tenant's team-shared memories by
+	// passing its id in the tenant_id query parameter.
+	userTenantService := NewUserTenantService()
+	userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	joinedIDs := make([]string, 0, len(userTenants)+1)
+	joinedIDs = append(joinedIDs, userID)
+	for _, tenant := range userTenants {
+		joinedIDs = append(joinedIDs, tenant.TenantID)
+	}
+
 	if len(tenantIDs) == 0 {
-		userTenantService := NewUserTenantService()
-		userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user tenants: %w", err)
+		tenantIDs = joinedIDs
+	} else {
+		joined := make(map[string]struct{}, len(joinedIDs))
+		for _, id := range joinedIDs {
+			joined[id] = struct{}{}
 		}
-		tenantIDs = make([]string, 0, len(userTenants)+1)
-		tenantIDs = append(tenantIDs, userID)
-		for _, tenant := range userTenants {
-			tenantIDs = append(tenantIDs, tenant.TenantID)
+		allowed := make([]string, 0, len(tenantIDs))
+		for _, id := range tenantIDs {
+			if _, ok := joined[id]; ok {
+				allowed = append(allowed, id)
+			}
 		}
+		if len(allowed) == 0 {
+			return &ListMemoryResponse{MemoryList: []map[string]interface{}{}}, nil
+		}
+		tenantIDs = allowed
 	}
 
 	memories, total, err := s.memoryDAO.GetByFilter(ctx, dao.DB, userID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
