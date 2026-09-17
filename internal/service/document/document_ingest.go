@@ -89,9 +89,11 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		for _, vd := range validated {
 			task := taskMap[vd.doc.ID]
 			if task != nil && common.IsActiveTaskStatus(task.Status) {
+				common.Debug(fmt.Sprintf("skip document %s ingestion, active task status: %s", vd.doc.ID, task.Status))
 				continue
 			}
 			if !req.Delete && task != nil && task.Status == common.COMPLETED {
+				common.Debug(fmt.Sprintf("skip document %s ingestion, already completed and delete is false", vd.doc.ID))
 				continue
 			}
 			toStart = append(toStart, vd)
