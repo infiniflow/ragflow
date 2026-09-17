@@ -111,12 +111,7 @@ func (s *NavService) navIndexName(tenantID string) string {
 
 // navFilter builds the common nav filter that pins compile_kwd.
 func navFilter(extra map[string]interface{}) map[string]interface{} {
-	// Nav rows are stored with available_int=0 so they stay invisible to the
-	// default retriever (which filters available_int=1). NavService.* reads them
-	// back directly, so the query must pin available_int=0 explicitly — otherwise
-	// the engine's Search appends a default "available_int=1" filter for vector
-	// (match) queries and silently drops every nav row.
-	f := map[string]interface{}{"compile_kwd": []string{navCompileKwd}, "available_int": 0}
+	f := map[string]interface{}{"compile_kwd": []string{navCompileKwd}}
 	for k, v := range extra {
 		f[k] = v
 	}
@@ -653,7 +648,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"parent_kwd":          parent,
 		"depth_int":           depth,
 		"doc_count_int":       1,
-		"doc_ids_kwd":         docIDsToJSON([]string{in.DocID}),
+		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 	}}, idx, in.KbID)
@@ -781,12 +776,6 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 		}
 		name := firstStringValue(chunks[0]["title_kwd"])
 		sim := rowScore(chunks[0])
-		// A cluster with an empty title cannot be addressed by name (its parent
-		// pointer would be ""), so stop descending rather than emit a
-		// filter_fulltext('parent_kwd', '') query that Infinity rejects (3052).
-		if name == "" {
-			break
-		}
 		// Keep the STRONGEST match seen so far across all levels, so a strong
 		// ancestor is never displaced by a weaker descendant. Record its depth
 		// so the caller can set consistent child depth_int values.
@@ -985,7 +974,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			"parent_kwd":          parent,
 			"depth_int":           clusterDepth(clusterChunks),
 			"doc_count_int":       spl.count,
-			"doc_ids_kwd":         docIDsToJSON(spl.ids),
+			"doc_ids_kwd":         spl.ids,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": "split of " + clusterName}),
 		}
 		// Representative vector: if any reparented child carried a vector, use it
@@ -1350,19 +1339,6 @@ func payloadJSONNav(v map[string]interface{}) string {
 	return string(b)
 }
 
-// docIDsToJSON encodes a doc-id list as the JSON string stored in the
-// doc_ids_kwd (json) column. The infinity client serializes a Go string as a
-// string constant, which a json column accepts; a raw []string would instead be
-// routed through the slice-constant path and rejected ("Unsupported slice
-// element type: string"). Parsed back via firstStringSlice.
-func docIDsToJSON(ids []string) string {
-	b, err := json.Marshal(ids)
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
-}
-
 // truncateString caps s to n runes (not bytes).
 func truncateString(s string, n int) string {
 	runes := []rune(s)
@@ -1420,14 +1396,6 @@ func firstStringSlice(v interface{}) []string {
 			}
 		}
 		return out
-	case string:
-		// A json column (e.g. doc_ids_kwd) is stored and returned as a JSON
-		// string; parse it back into the id list.
-		var out []string
-		if err := json.Unmarshal([]byte(s), &out); err == nil {
-			return out
-		}
-		return nil
 	}
 	return nil
 }

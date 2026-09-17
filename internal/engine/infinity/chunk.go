@@ -799,22 +799,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// When both text and vector matches exist (hybrid search with Fusion),
 		// only score() is valid — Fusion produces a unified SCORE column.
 		if hasVectorMatch && !hasTextMatch {
-			// A pure vector match (match_dense / match_tensor) produces a
-			// similarity() score, never SCORE(). Infinity rejects SCORE() with
-			// "InfinityException(3013) ... requires Fusion or MATCH TEXT or MATCH
-			// TENSOR" unless a TEXT/TENSOR match or Fusion is present. Callers
-			// conventionally request "_score", which the Infinity client emits as
-			// SCORE(), so rewrite it to "_similarity" (emitted as similarity()).
-			// The engine reads the SIMILARITY result column and maps it back to
-			// "_score" downstream, so consumers see no difference.
-			for i, c := range outputColumns {
-				if c == "_score" {
-					outputColumns[i] = "_similarity"
-				}
-			}
-			if !slices.Contains(outputColumns, "similarity()") && !slices.Contains(outputColumns, "_similarity") {
-				outputColumns = append(outputColumns, "similarity()")
-			}
+			outputColumns = append(outputColumns, "similarity()")
 		}
 		// Skill index does not have pagerank_fea and tag_feas columns
 		if !isSkillIndex {
@@ -2206,19 +2191,11 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 
 		// Handle keyword fields (using full-text filter)
 		if fieldKeyword(k) {
-			// For keyword fields, values are always treated as strings for filter_fulltext.
-			// An empty value yields filter_fulltext('field', '') which Infinity rejects
-			// with 3052 ("Trying to match: on fields: <field> failed") during the
-			// dense-filter push-down. Skip empty values so a nav query that filters on
-			// an empty string (e.g. descending into a cluster whose title is empty)
-			// degrades to "no such constraint" instead of crashing the whole query.
+			// For keyword fields, values are always treated as strings for filter_fulltext
 			switch val := v.(type) {
 			case []string:
 				var inCond []string
 				for _, item := range val {
-					if item == "" {
-						continue
-					}
 					inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
 						convertMatchingField(k), escapeFilterValue(item)))
 				}
@@ -2229,9 +2206,6 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 				var inCond []string
 				for _, item := range val {
 					if s, ok := item.(string); ok {
-						if s == "" {
-							continue
-						}
 						inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
 							convertMatchingField(k), escapeFilterValue(s)))
 					} else {
@@ -2243,15 +2217,9 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 					cond = append(cond, "("+strings.Join(inCond, " or ")+")")
 				}
 			case string:
-				if val == "" {
-					continue
-				}
 				cond = append(cond, fmt.Sprintf("filter_fulltext('%s', '%s')",
 					convertMatchingField(k), escapeFilterValue(val)))
 			default:
-				if fmt.Sprintf("%v", v) == "" {
-					continue
-				}
 				cond = append(cond, fmt.Sprintf("filter_fulltext('%s', '%s')",
 					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
 			}

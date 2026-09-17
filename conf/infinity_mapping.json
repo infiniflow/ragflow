@@ -47,6 +47,7 @@
 	"compile_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"plan_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"scope_kwd": {"type": "varchar", "default": "doc", "analyzer": "whitespace-#"},
+	"deleted_doc_id": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"source_chunk_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"source_doc_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"compilation_template_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
