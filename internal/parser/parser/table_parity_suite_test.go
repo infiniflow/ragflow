@@ -34,7 +34,7 @@ var standardTableRows = [][]string{
 }
 
 // Case: row bookkeeping columns are dropped before rendering, mirroring
-// rag/app/table.py (`for n in ["id", "_id", "index", "idx"]: del df[n]`).
+// rag/app/table.py (`TABLE_BOOKKEEPING_COLUMNS`, deleted at :614-616).
 // Keeping them would index the primary key into the chunk text and into
 // chunk_data, and would give the chunk a different id than Python's.
 func TestParity_ReservedColumnsDropped(t *testing.T) {
@@ -332,7 +332,7 @@ func TestParity_Manual_UnknownRoleShapeIsExcluded(t *testing.T) {
 }
 
 // Case 8b: the mode is compared exactly, as Python's
-// `parser_config.get("table_column_mode") == "manual"` does (rag/app/table.py:586),
+// `parser_config.get("table_column_mode") == "manual"` does (rag/app/table.py:604),
 // so a differently cased mode is auto -- and auto ignores the roles entirely.
 func TestParity_Manual_MisCasedModeIsAuto(t *testing.T) {
 	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "Manual", map[string]string{"Title": "metadata"}, TableHeaderRuleSpreadsheet)
@@ -352,7 +352,7 @@ func TestParity_Manual_MisCasedModeIsAuto(t *testing.T) {
 
 // Case: a column configured with an EMPTY role is excluded, while a column the
 // map leaves out keeps the "both" default. Python's `column_roles.get(col, "both")`
-// (rag/app/table.py:687) tells these apart -- a present-but-empty value matches
+// (rag/app/table.py:701) tells these apart -- a present-but-empty value matches
 // neither membership test, an omitted key returns the default.
 func TestParity_Manual_PresentEmptyRoleIsExcluded(t *testing.T) {
 	roles := map[string]string{"Title": "", "Content": "metadata"}

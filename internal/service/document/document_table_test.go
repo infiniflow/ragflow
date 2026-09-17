@@ -23,6 +23,29 @@ import (
 	"ragflow/internal/entity"
 )
 
+// The upload path shares this filter with the post-ingestion state save: both
+// narrow the dataset's roles to the columns one file actually has. Anything that
+// is not a role map collapses to an empty map, which the resolvers read the same
+// way as an absent key.
+func TestFilterTableColumnRoles(t *testing.T) {
+	columns := map[string]struct{}{"Name": {}, "City": {}}
+	tests := []struct {
+		name string
+		raw  any
+		want map[string]interface{}
+	}{
+		{"object", map[string]interface{}{"Name": "metadata", "Stale": "both"}, map[string]interface{}{"Name": "metadata"}},
+		{"string map", map[string]string{"City": "indexing", "Stale": "both"}, map[string]interface{}{"City": "indexing"}},
+		{"absent", nil, map[string]interface{}{}},
+		{"not an object", "manual", map[string]interface{}{}},
+	}
+	for _, tt := range tests {
+		if got := filterTableColumnRoles(tt.raw, columns); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: filterTableColumnRoles(%#v) = %#v, want %#v", tt.name, tt.raw, got, tt.want)
+		}
+	}
+}
+
 func TestSaveDocumentTableColumns_PersistsAndFiltersRoles(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

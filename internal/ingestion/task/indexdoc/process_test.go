@@ -666,9 +666,11 @@ func TestAggregateTableDocMetadata_ManualMode(t *testing.T) {
 	}
 }
 
-// Python compares the stored role as is (rag/app/table.py:688-689), so a
-// differently cased role excludes the column from document metadata too, while
-// the canonical spellings -- and the legacy "vectorize" alias -- aggregate.
+// Python compares the stored role as is (rag/utils/table_es_metadata.py:187,
+// like the chunk-body membership tests at rag/app/table.py:704-706), so a
+// differently cased role excludes the column from document metadata. Only
+// "metadata" and "both" aggregate, so the indexing alias "vectorize" excludes
+// it as well.
 func TestAggregateTableDocMetadata_RoleIsCaseSensitive(t *testing.T) {
 	chunks := []map[string]any{
 		{

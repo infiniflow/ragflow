@@ -83,7 +83,7 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 // (knowledgebase) parser_config: the discovered column names, plus the
 // field_map the SQL retrieval path reads. Mirrors Python's table chunker, which
 // updates the knowledgebase with table_column_names + field_map on every parse
-// (rag/app/table.py:596-602).
+// (rag/app/table.py:675-678).
 //
 // Both keys are REPLACED rather than merged: the discovered schema is the
 // current file's schema, so a column that disappeared, or whose role changed
@@ -129,6 +129,11 @@ func (s *DocumentService) SaveKBTableState(ctx context.Context, kbID string, nam
 	})
 }
 
+// filterTableColumnRoles keeps only the roles whose column survives a file's own
+// schema, so a role configured against another file's column cannot reach
+// ingestion through this document's config. A value that is not a role map — the
+// key is absent, or it holds a non-object — filters to an empty map, which every
+// resolver reads as "no column carries a role".
 func filterTableColumnRoles(raw any, columns map[string]struct{}) map[string]interface{} {
 	filtered := make(map[string]interface{})
 	switch roles := raw.(type) {

@@ -154,23 +154,7 @@ func tableDocumentConfigForFile(base entity.JSONMap, namesByFile []interface{}, 
 		}
 	}
 	config["table_column_names"] = names
-	if roles, ok := config["table_column_roles"].(map[string]interface{}); ok {
-		filtered := make(map[string]interface{}, len(roles))
-		for column, role := range roles {
-			if _, exists := columns[column]; exists {
-				filtered[column] = role
-			}
-		}
-		config["table_column_roles"] = filtered
-	} else if roles, ok := config["table_column_roles"].(map[string]string); ok {
-		filtered := make(map[string]interface{}, len(roles))
-		for column, role := range roles {
-			if _, exists := columns[column]; exists {
-				filtered[column] = role
-			}
-		}
-		config["table_column_roles"] = filtered
-	}
+	config["table_column_roles"] = filterTableColumnRoles(config["table_column_roles"], columns)
 	return config
 }
 

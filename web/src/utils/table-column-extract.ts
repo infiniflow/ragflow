@@ -181,10 +181,11 @@ export type DatasetTableColumnSettings = {
 };
 
 // normalizeRole canonicalises a stored role for display only. The comparison is
-// exact because the runtime compares it exactly: the table parser matches the
-// stored string without trimming or case-folding (rag/app/table.py), so a value
-// like " Indexing " is excluded from indexing rather than honoured, and the
-// dialog must not show a match ingestion will not make.
+// exact because the runtime compares exactly: the chunk body and the dataset
+// field_map test the stored string with `role in (...)`, without trimming or
+// case-folding (rag/app/table.py:701-706, and Go common.NormalizeColumnRole
+// ports the same rule), so a value like " Indexing " excludes the column rather
+// than honouring it. The dialog must not show a match ingestion will not make.
 function normalizeRole(raw: unknown): 'indexing' | 'metadata' | 'both' {
   const role = String(raw ?? '');
   if (role === 'indexing' || role === 'vectorize') {
@@ -201,10 +202,11 @@ function collectRoles(raw: unknown): DatasetTableColumnSettings['roles'] {
     return {};
   }
   const roles: DatasetTableColumnSettings['roles'] = {};
-  // Keep every stored key: the backend matches a role to a column by exact name
-  // (internal/service/document, filterTableColumnRoles), and a delimited header
-  // can legitimately name a column "" or " ", so dropping a blank key would hide
-  // a role that ingestion honours.
+  // Keep every stored key: the lookup is by exact column name
+  // (`column_roles.get(col, "both")`, rag/app/table.py:701), and a delimited
+  // header is the first record as read (rag/app/table.py:582), which can
+  // legitimately name a column "" or " ". Dropping a blank key would hide a
+  // role ingestion honours.
   for (const [column, role] of Object.entries(raw as Record<string, unknown>)) {
     roles[column] = normalizeRole(role);
   }

@@ -50,8 +50,8 @@ const (
 	// ColumnRoleNone is the outcome for a role value the vocabulary does not
 	// know. It is an internal sentinel, never persisted: the written value is
 	// always what the caller supplied. Python's table chunker classifies an
-	// unknown role by membership tests (rag/app/table.py:687-689 for the chunk
-	// body, rag/app/table.py:616 for the dataset field_map), so such a column
+	// unknown role by membership tests (rag/app/table.py:704-706 for the chunk
+	// body, rag/app/table.py:633 for the dataset field_map), so such a column
 	// is excluded from text, chunk_data and the field_map alike — NOT treated
 	// as "both".
 	ColumnRoleNone ColumnRole = "none"
@@ -62,7 +62,7 @@ const (
 // vocabulary does not know — the empty string, a different case, surrounding
 // whitespace included — is ColumnRoleNone, so such a value is excluded rather
 // than silently promoted to "both". This is Python's membership test verbatim
-// (rag/app/table.py:688-689), which compares the stored string and neither
+// (rag/app/table.py:704-706), which compares the stored string and neither
 // trims nor case-folds it. The default "both" belongs to the lookup, not to
 // this function: it applies to a column the roles map does not carry, which is
 // what Python's `column_roles.get(col, "both")` expresses.
@@ -82,7 +82,7 @@ func NormalizeColumnRole(role string) ColumnRole {
 // NormalizeTableColumnMode maps a persisted mode onto the vocabulary. Only the
 // exact "manual" selects manual, matching Python's
 // `parser_config.get("table_column_mode") == "manual"`
-// (rag/app/table.py:586); every other value — absent, blank, unknown or
+// (rag/app/table.py:604); every other value — absent, blank, unknown or
 // differently cased — is auto.
 func NormalizeTableColumnMode(mode string) TableColumnMode {
 	if mode == string(TableColumnModeManual) {

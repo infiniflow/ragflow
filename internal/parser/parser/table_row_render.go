@@ -46,7 +46,7 @@ func DecodeTableColumnConfig(setup map[string]any) (string, map[string]string) {
 	return mode, roles
 }
 
-// DeduplicateColumnNames ports Python's _deduplicate_column_names (rag/app/table.py:43-60).
+// DeduplicateColumnNames ports Python's _deduplicate_column_names (rag/app/table.py:43-63).
 // Ensures all column header names are unique by appending _2, _3, etc.,
 // avoiding collisions with both already-used and existing reserved headers.
 func DeduplicateColumnNames(columns []string) []string {
@@ -94,10 +94,11 @@ func TableRowHasContent(row []string) bool {
 }
 
 // tableBookkeepingColumns are the columns Python deletes from every table
-// before rendering (rag/app/table.py:596-599, `TABLE_BOOKKEEPING_COLUMNS`). They
-// carry no content, and keeping them would index the row's primary key into the
-// chunk text and into chunk_data. The schema probe drops them too, so the
-// columns it reports are the columns ingestion can index.
+// before rendering (`TABLE_BOOKKEEPING_COLUMNS` at rag/app/table.py:70, dropped
+// at rag/app/table.py:614-616). They carry no content, and keeping them would
+// index the row's primary key into the chunk text and into chunk_data. The
+// schema probe drops them too, so the columns it reports are the columns
+// ingestion can index.
 var tableBookkeepingColumns = map[string]struct{}{
 	"id": {}, "_id": {}, "index": {}, "idx": {},
 }
@@ -105,10 +106,11 @@ var tableBookkeepingColumns = map[string]struct{}{
 // TableHeaderRule selects the header rules of a file family. The table parser
 // does not read a spreadsheet and a delimited file the same way: Excel headers
 // go through _parse_simple_headers, which trims each cell and names an empty
-// one Column_<position> (rag/app/table.py:263-285), while a CSV/TSV header is
-// the first record as read and is only deduplicated (rag/app/table.py:560-577).
-// The schema probe applies the rule of the file it is shown, so the columns it
-// offers for configuration are the columns ingestion indexes.
+// one Column_<position> (rag/app/table.py:280-302), while a CSV/TSV header is
+// the first record as read and is only deduplicated
+// (rag/app/table.py:582, deduplicated at :594). The schema probe applies the
+// rule of the file it is shown, so the columns it offers for configuration are
+// the columns ingestion indexes.
 type TableHeaderRule int
 
 const (
@@ -195,7 +197,7 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 			}
 
 			// The "both" default belongs to the lookup, not to the normalizer:
-			// Python's `column_roles.get(col, "both")` (rag/app/table.py:687)
+			// Python's `column_roles.get(col, "both")` (rag/app/table.py:701)
 			// defaults only a column the map does not carry, so a column
 			// carried with a blank or unknown value is excluded. common owns
 			// that classification, which the indexdoc aggregation shares.
