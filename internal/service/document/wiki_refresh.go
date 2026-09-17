@@ -58,8 +58,13 @@ func (s *DocumentService) updateSourceChunkAvailability(ctx context.Context, ten
 
 func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, datasetID, documentID string) ([]string, error) {
 	ids := make([]string, 0)
+	claimToken := s.cleanupClaimToken(ctx, documentID)
 	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
-		result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		if err := s.beginCleanupBatch(ctx, documentID, claimToken); err != nil {
+			return nil, err
+		}
+		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(searchCtx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{datasetID},
 			Offset:       offset,
@@ -67,7 +72,11 @@ func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, dat
 			SelectFields: []string{"id", "compile_kwd"},
 			Filter:       map[string]any{"doc_id": []string{documentID}},
 		})
+		cancel()
 		if err != nil {
+			return nil, err
+		}
+		if err := s.finishCleanupBatch(ctx, documentID, claimToken); err != nil {
 			return nil, err
 		}
 		if result == nil || len(result.Chunks) == 0 {
@@ -93,16 +102,26 @@ func (s *DocumentService) deleteSourceChunks(ctx context.Context, tenantID, data
 		return nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	claimToken := s.cleanupClaimToken(ctx, documentID)
 	ids, err := s.loadSourceChunkIDs(ctx, indexName, datasetID, documentID)
 	if err != nil || len(ids) == 0 {
 		return err
 	}
 	for start := 0; start < len(ids); start += sourceChunkAvailabilityBatchSize {
 		end := min(start+sourceChunkAvailabilityBatchSize, len(ids))
-		if _, err := s.docEngine.DeleteChunks(ctx, map[string]any{
+		if err := s.beginCleanupBatch(ctx, documentID, claimToken); err != nil {
+			return err
+		}
+		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		_, err = s.docEngine.DeleteChunks(batchCtx, map[string]any{
 			"id":    ids[start:end],
 			"kb_id": datasetID,
-		}, indexName, datasetID); err != nil {
+		}, indexName, datasetID)
+		cancel()
+		if err != nil {
+			return err
+		}
+		if err := s.finishCleanupBatch(ctx, documentID, claimToken); err != nil {
 			return err
 		}
 	}

@@ -237,6 +237,38 @@ type rerunDeleteDocEngine struct {
 	datasetID   string
 }
 
+type claimFencingDocEngine struct {
+	fakeChatDocEngine
+	db          *gorm.DB
+	deleteCalls int
+}
+
+func (e *claimFencingDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func (e *claimFencingDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if req.Offset >= 1000 {
+		return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "source-1000"}}, Total: 1001}, nil
+	}
+	chunks := make([]map[string]interface{}, 1000)
+	for i := range chunks {
+		chunks[i] = map[string]interface{}{"id": fmt.Sprintf("source-%d", i)}
+	}
+	return &types.SearchResult{Chunks: chunks, Total: 1001}, nil
+}
+
+func (e *claimFencingDocEngine) DeleteChunks(_ context.Context, _ map[string]interface{}, _, _ string) (int64, error) {
+	e.deleteCalls++
+	if e.deleteCalls == 1 {
+		if err := e.db.Model(&entity.DocumentCleanupClaim{}).
+			Where("document_id = ?", "doc-1").Update("token", "replacement-token").Error; err != nil {
+			return 0, err
+		}
+	}
+	return 1000, nil
+}
+
 func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return true, nil
 }
@@ -2364,6 +2396,40 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	}
 	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+}
+
+func TestClearDocumentParseResultsStopsAfterCleanupClaimIsFenced(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	claimDAO := dao.NewDocumentCleanupClaimDAO()
+	now, err := dao.CurrentUnixTime(t.Context(), db)
+	if err != nil {
+		t.Fatalf("read database time: %v", err)
+	}
+	claim, err := claimDAO.Acquire(t.Context(), db, "doc-1", "owner-a", now, 120, 45)
+	if err != nil {
+		t.Fatalf("acquire cleanup claim: %v", err)
+	}
+
+	engine := &claimFencingDocEngine{db: db}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	cleanupCtx := service.WithDocumentCleanupClaim(t.Context(), "doc-1", claim.Token)
+	doc, err := svc.documentDAO.GetByID(cleanupCtx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	err = svc.clearDocumentParseResults(cleanupCtx, doc, "tenant-1")
+	if !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
+		t.Fatalf("clearDocumentParseResults error = %v, want cleanup claim lost", err)
+	}
+	if engine.deleteCalls != 1 {
+		t.Fatalf("DeleteChunks calls = %d, want 1 after fencing", engine.deleteCalls)
 	}
 }
 

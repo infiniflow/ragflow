@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -32,6 +33,7 @@ var documentParseLocks = struct {
 const (
 	cleanupClaimLeaseSeconds int64 = 120
 	cleanupTakeoverGraceSecs int64 = 45
+	cleanupBatchTimeout            = 30 * time.Second
 )
 
 func lockDocumentParse(docID string) func() {
@@ -81,6 +83,41 @@ func (s *DocumentService) renewCleanupClaim(ctx context.Context, documentID, tok
 		return err
 	}
 	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds)
+}
+
+func (s *DocumentService) cleanupClaimToken(ctx context.Context, documentID string) string {
+	token, ok := service.DocumentCleanupClaimFromContext(ctx, documentID)
+	if !ok || s.cleanupClaimDAO == nil {
+		return ""
+	}
+	return token
+}
+
+// beginCleanupBatch renews the request's fencing claim immediately before an
+// external storage operation. A missing token means this helper is being used
+// by an internal path that does not hold a cleanup claim.
+func (s *DocumentService) beginCleanupBatch(ctx context.Context, documentID, token string) error {
+	if token == "" {
+		return nil
+	}
+	return s.renewCleanupClaim(ctx, documentID, token)
+}
+
+// finishCleanupBatch verifies that the same fencing token still owns an
+// unexpired claim after an external operation. A takeover during the call
+// therefore stops the cleanup before another batch can mutate storage.
+func (s *DocumentService) finishCleanupBatch(ctx context.Context, documentID, token string) error {
+	if token == "" {
+		return nil
+	}
+	now, err := dao.CurrentUnixTime(ctx, dao.DB)
+	if err != nil {
+		return err
+	}
+	if !s.cleanupClaimDAO.Validate(ctx, dao.DB, documentID, token, now) {
+		return dao.ErrDocumentCleanupClaimLost
+	}
+	return nil
 }
 
 // StartParseDocuments starts parsing a document via the DSL ingestion
@@ -155,6 +192,10 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
+	claimToken := s.cleanupClaimToken(ctx, doc.ID)
+	if err := s.beginCleanupBatch(ctx, doc.ID, claimToken); err != nil {
+		return fmt.Errorf("begin cleanup for document %s: %w", doc.ID, err)
+	}
 
 	// Refuse to clear a non-terminal ingestion task. An in-flight worker
 	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
@@ -196,6 +237,9 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 
 	if s.docEngine == nil {
 		return nil
+	}
+	if err := s.finishCleanupBatch(ctx, doc.ID, claimToken); err != nil {
+		return fmt.Errorf("cleanup claim for document %s was lost: %w", doc.ID, err)
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)

@@ -95,6 +95,14 @@ func cleanupClaimFromContext(ctx context.Context, documentID string) (string, bo
 	return claim.Token, ok && claim.DocumentID == documentID && claim.Token != ""
 }
 
+// DocumentCleanupClaimFromContext returns the fencing token attached to a
+// document cleanup request. Storage-facing cleanup code uses this accessor to
+// renew and verify ownership around each bounded external operation without
+// exposing the context key or value type.
+func DocumentCleanupClaimFromContext(ctx context.Context, documentID string) (string, bool) {
+	return cleanupClaimFromContext(ctx, documentID)
+}
+
 func NewIngestionTaskService() *IngestionTaskService {
 	return &IngestionTaskService{
 		documentDAO:         dao.NewDocumentDAO(),
