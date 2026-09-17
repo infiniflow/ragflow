@@ -33,9 +33,10 @@ var documentParseLocks = struct {
 }{locks: make(map[string]*documentParseLock)}
 
 const (
-	cleanupClaimLeaseSeconds int64 = 120
-	cleanupTakeoverGraceSecs int64 = 45
-	cleanupBatchTimeout            = 30 * time.Second
+	cleanupClaimLeaseSeconds  int64 = 120
+	cleanupTakeoverGraceSecs  int64 = 45
+	cleanupClaimRenewInterval       = 30 * time.Second
+	cleanupBatchTimeout             = 30 * time.Second
 )
 
 func lockDocumentParse(docID string) func() {
@@ -85,6 +86,38 @@ func (s *DocumentService) renewCleanupClaim(ctx context.Context, documentID, tok
 		return err
 	}
 	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds)
+}
+
+// startCleanupClaimHeartbeat keeps a cleanup claim alive while the workflow
+// performs database work and external I/O between its fenced batch
+// boundaries. Each destructive batch still renews and validates independently;
+// the heartbeat only prevents a healthy long-running owner from expiring in
+// the gaps between those batches.
+func (s *DocumentService) startCleanupClaimHeartbeat(ctx context.Context, documentID, token string) func() {
+	if token == "" || s.cleanupClaimDAO == nil {
+		return func() {}
+	}
+	heartbeatCtx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(cleanupClaimRenewInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				if err := s.renewCleanupClaim(heartbeatCtx, documentID, token); err != nil {
+					common.Warn(fmt.Sprintf("renew cleanup claim for document %s: %v", documentID, err))
+				}
+			}
+		}
+	}()
+	return func() {
+		stop()
+		<-done
+	}
 }
 
 func (s *DocumentService) cleanupClaimToken(ctx context.Context, documentID string) string {
@@ -143,6 +176,8 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		if err != nil {
 			return fmt.Errorf("acquire cleanup claim for document %s: %w", doc.ID, err)
 		}
+		stopHeartbeat := s.startCleanupClaimHeartbeat(ctx, doc.ID, claim.Token)
+		defer stopHeartbeat()
 		defer func() {
 			if _, err := s.cleanupClaimDAO.Release(context.WithoutCancel(ctx), dao.DB, doc.ID, claim.Token); err != nil {
 				common.Warn(fmt.Sprintf("release cleanup claim for document %s: %v", doc.ID, err))

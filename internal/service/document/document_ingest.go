@@ -136,12 +136,15 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 				return common.CodeExceptionError, fmt.Errorf("acquire cleanup claim for document %s: %w", doc.ID, err)
 			}
 			cleanupContext := service.WithDocumentCleanupClaim(ctx, doc.ID, claim.Token)
+			stopHeartbeat := s.startCleanupClaimHeartbeat(ctx, doc.ID, claim.Token)
 			if err := s.clearDocumentParseResults(cleanupContext, doc, kb.TenantID); err != nil {
+				stopHeartbeat()
 				if _, releaseErr := s.cleanupClaimDAO.Release(context.WithoutCancel(ctx), dao.DB, doc.ID, claim.Token); releaseErr != nil {
 					common.Warn(fmt.Sprintf("release cleanup claim for document %s: %v", doc.ID, releaseErr))
 				}
 				return common.CodeExceptionError, err
 			}
+			stopHeartbeat()
 			if _, err := s.cleanupClaimDAO.Release(context.WithoutCancel(ctx), dao.DB, doc.ID, claim.Token); err != nil {
 				return common.CodeExceptionError, fmt.Errorf("release cleanup claim for document %s: %w", doc.ID, err)
 			}

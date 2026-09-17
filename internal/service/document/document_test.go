@@ -297,6 +297,15 @@ func TestDocumentKnowledgeCompileTypesStopsWhenCleanupClaimIsFenced(t *testing.T
 	}
 }
 
+func TestCleanupClaimLeaseInvariants(t *testing.T) {
+	if cleanupClaimLeaseSeconds <= int64(2*(cleanupClaimRenewInterval/time.Second)+cleanupBatchTimeout/time.Second) {
+		t.Fatalf("cleanup claim lease = %d seconds, want greater than two renew intervals plus batch timeout", cleanupClaimLeaseSeconds)
+	}
+	if cleanupTakeoverGraceSecs <= int64(cleanupBatchTimeout/time.Second) {
+		t.Fatalf("cleanup takeover grace = %d seconds, want greater than batch timeout", cleanupTakeoverGraceSecs)
+	}
+}
+
 func (e *generatedCleanupDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return true, nil
 }
