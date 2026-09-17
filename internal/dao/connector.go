@@ -516,6 +516,18 @@ func connectorConfigBool(config map[string]interface{}, key string) bool {
 	}
 }
 
+// syncLogsStatusPriorityOrder orders sync log rows by status priority:
+// SCHEDULE first, RUNNING second, then the rest, newest update first within
+// each group. Returned as a single raw ORDER BY fragment because gorm.Expr is
+// silently dropped by gorm's Order and repeated Order calls merge in reverse.
+func syncLogsStatusPriorityOrder() string {
+	return fmt.Sprintf(
+		"CASE WHEN sync_logs.status = '%s' THEN 0 WHEN sync_logs.status = '%s' THEN 1 ELSE 2 END, sync_logs.update_time DESC",
+		string(entity.TaskStatusSchedule),
+		string(entity.TaskStatusRunning),
+	)
+}
+
 // ListLogsByConnectorID lists sync logs for one connector with pagination.
 func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB, connectorID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
 	baseQuery := db.WithContext(ctx).Model(&entity.SyncLogs{}).
@@ -549,7 +561,7 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB,
 			"sync_logs.status",
 		).
 		Distinct().
-		Order("sync_logs.update_date DESC").
+		Order(syncLogsStatusPriorityOrder()).
 		Offset(offset).
 		Limit(limit).
 		Scan(&logs).Error
@@ -598,7 +610,7 @@ func (dao *ConnectorDAO) ListLogs(ctx context.Context, db *gorm.DB, tenantIDs []
 			"sync_logs.status",
 		).
 		Distinct().
-		Order("sync_logs.update_date DESC")
+		Order(syncLogsStatusPriorityOrder())
 	if limit > 0 {
 		query = query.Offset(offset).Limit(limit)
 	}
