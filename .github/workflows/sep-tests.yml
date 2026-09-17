@@ -2280,9 +2280,15 @@ jobs:
           # skipping — the runner bakes MODEL_DIR=/opt/ragflow-deepdoc-models.
           # The ./test/api HTTP e2e suite needs a live ragflow-cpu server, which
           # this job does not start.
+          # Like the per-engine go jobs (ragflow_tests_{infinity,elasticsearch}),
+          # we also drop internal/storage: its MinIO-backed integration tests need
+          # a fully-ready MinIO that this CI stack does not reliably provide
+          # (the compose /live probe passes while the S3 API still 502s), so they
+          # are exercised elsewhere, not here.
           PKGS=$(go list ./... \
             | grep -v '/test/api' \
-            | grep -v '^ragflow/internal/deepdoc')
+            | grep -v '^ragflow/internal/deepdoc' \
+            | grep -v '/internal/storage$')
           ./build.sh --test-integration-go $PKGS
 
       - name: Tear down
