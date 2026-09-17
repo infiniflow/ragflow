@@ -569,7 +569,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 	session, err := s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID)
 	if err != nil {
 		if isChatSessionNotFound(err) {
-			return nil, common.CodeDataError, errors.New("session not found")
+			return nil, common.CodeDataError, errors.New("Session not found!")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -1543,6 +1543,10 @@ func (s *ChatSessionService) ChatCompletions(
 				ans["end_to_think"] = nil
 				delete(ans, "start_to_think")
 				delete(ans, "end_to_think")
+				// Same structured step channel as the non-legacy path.
+				if result.ThinkEvent != nil {
+					ans["think_event"] = result.ThinkEvent
+				}
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
@@ -1597,6 +1601,14 @@ func (s *ChatSessionService) ChatCompletions(
 				ans := s.structureAnswer(session, deltaAnswer, messageID, sessionID, reference)
 				ans["start_to_think"] = result.StartToThink
 				ans["end_to_think"] = result.EndToThink
+				// The structured twin of a reasoning step rides the chunk that
+				// carries it. An event-only chunk (no delta) is a no-op for a
+				// client that only reads answer/think markers, and gives a
+				// step-rendering client the fields the sentence cannot convey
+				// (tool, status, sources, duration).
+				if result.ThinkEvent != nil {
+					ans["think_event"] = result.ThinkEvent
+				}
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
@@ -1937,6 +1949,7 @@ type sseAnswerChunk struct {
 	ChatID       string                 `json:"chat_id,omitempty"`
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
+	ThinkEvent   interface{}            `json:"think_event,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order matching Python:
@@ -2051,6 +2064,7 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 		ChatID:       chatID,
 		StartToThink: startToThink,
 		EndToThink:   endToThink,
+		ThinkEvent:   ans["think_event"],
 	}
 	wrapper := sseWrapper{Code: 0, Message: "", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)

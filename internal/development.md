@@ -203,17 +203,29 @@ docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile 
 
 
 - Start RAGFlow
-Note: admin server must be started first; otherwise, api server will encounter errors when sending heartbeats.
+Note: Database migrations must complete before starting any server mode.
+After migration, start the admin server before the API and ingestor servers;
+otherwise, they will encounter errors when sending heartbeats.
+
+```bash
+# Run database migrations (standalone action; does not start a server)
+./bin/ragflow_server --migrate
+```
+`--migrate` writes the database version marker that server modes check on
+startup, and a development branch regularly records a version for a release
+that has not been tagged yet — a build from a `v0.27.x` commit that writes
+`v1.0.0-rc1.dev1` refuses to start afterwards, because the recorded version
+looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
+such a checkout: it turns the "code version must not be older than the database
+version" guard off. Leave it off in production.
+
 
 ```bash
 # Start admin server
 ./bin/ragflow_server --admin
 ```
 
-```bash
-# Run database migrations (standalone action; does not start a server)
-./bin/ragflow_server --migrate
-```
+
 
 ```bash
 # Start RAGFlow server

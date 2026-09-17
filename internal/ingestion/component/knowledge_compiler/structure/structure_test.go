@@ -557,6 +557,34 @@ func TestStructureAliasRewrite(t *testing.T) {
 	}
 }
 
+func TestStructureSkipsSelfLoopRelations(t *testing.T) {
+	deps := common.Deps{Embed: hashEmbedder{dim: 4}}
+	cfg := CompileConfig{
+		TenantID:     "t1",
+		DocID:        "d1",
+		Type:         TypeHypergraph,
+		ParserConfig: graphParserConfig(),
+	}
+	rows, err := buildRows(context.Background(), deps, cfg, nil, []map[string]any{
+		{"type": "linked", "source": "Root", "target": "Root"},
+		{"type": "linked", "source": "Root", "target": "Child"},
+	}, []string{"c1"})
+	if err != nil {
+		t.Fatalf("buildRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want only the non-self relation", len(rows))
+	}
+
+	filtered := filterSelfLoopRelations(append(rows, common.Product{
+		Content: payloadJSON(map[string]any{"source": "Child", "target": "Child", "type": "linked"}),
+		Meta:    map[string]any{"kind": "relation", "from": "Child", "to": "Child"},
+	}))
+	if len(filtered) != 1 {
+		t.Fatalf("filtered rows = %d, want self-loop removed", len(filtered))
+	}
+}
+
 // ---- merge unit tests ----
 
 func TestLLMMergeDeciderContracts(t *testing.T) {

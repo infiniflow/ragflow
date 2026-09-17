@@ -60,6 +60,11 @@ class RAGFlowPptParser:
             # Handle table
             if shape_type == 19:
                 tb = shape.table
+                if len(tb.rows) == 1:
+                    # The loop below pairs every row with the first one, so a table
+                    # that only has that row produces nothing at all. There is no
+                    # header to pair against, so the row itself is the content.
+                    return "; ".join(tb.cell(0, j).text for j in range(len(tb.columns)))
                 rows = []
                 for i in range(1, len(tb.rows)):
                     rows.append("; ".join([tb.cell(0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))

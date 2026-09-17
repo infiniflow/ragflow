@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"ragflow/internal/utility"
 )
 
 func TestS3CompatibleConnectorOpenSyncUsesFingerprintAndFetch(t *testing.T) {
@@ -240,6 +242,7 @@ func TestS3CompatibleConnectorOpenPruneReturnsSlimSnapshot(t *testing.T) {
 }
 
 func TestS3CompatibleConnectorOpenPruneStreamsAcrossPages(t *testing.T) {
+	stubS3EndpointResolver(t)
 	connector, err := NewS3CompatibleConnector(map[string]any{
 		"bucket_name": "bucket",
 		"batch_size":  2,
@@ -301,6 +304,7 @@ func TestS3CompatibleConnectorOpenPruneStreamsAcrossPages(t *testing.T) {
 
 func TestS3CompatibleConnectorValidate(t *testing.T) {
 	ctx := context.Background()
+	stubS3EndpointResolver(t)
 	missingBucket := &S3CompatibleConnector{endpointURL: "https://s3.example.com", accessKeyID: "access", secretKey: "secret", addressingStyle: "virtual", batchSize: 2}
 	if err := missingBucket.Validate(ctx); err == nil {
 		t.Fatalf("expected bucket name validation error")
@@ -416,8 +420,25 @@ func TestS3CompatibleHelpers(t *testing.T) {
 	}
 }
 
+// stubS3EndpointResolver makes the shared SSRF guard resolve the
+// s3.example.com test endpoint to a stable public IP without touching the
+// network. The production guard resolves real endpoints; unit tests must not
+// depend on DNS.
+func stubS3EndpointResolver(t *testing.T) {
+	t.Helper()
+	orig := utility.LookupHost
+	utility.LookupHost = func(host string) ([]string, error) {
+		if host == "s3.example.com" {
+			return []string{"93.184.216.34"}, nil
+		}
+		return orig(host)
+	}
+	t.Cleanup(func() { utility.LookupHost = orig })
+}
+
 func newTestS3CompatibleConnector(t *testing.T, objects []s3Object) *S3CompatibleConnector {
 	t.Helper()
+	stubS3EndpointResolver(t)
 	connector, err := NewS3CompatibleConnector(map[string]any{
 		"bucket_name": "bucket",
 		"prefix":      "docs",

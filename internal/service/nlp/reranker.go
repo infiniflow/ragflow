@@ -1017,7 +1017,7 @@ func RerankWithKNN(
 	for i, chunkID := range ids {
 		vsim[i] = knnScores[chunkID] // Returns 0.0 if not found (Go map default)
 	}
-	common.Info("RerankWithKNN knnScores", zap.Int("knnScoreCount", len(knnScores)), zap.Float64s("vsim", vsim), zap.Strings("ids", ids), zap.Float64s("knnScores", func() []float64 {
+	common.Debug("RerankWithKNN knnScores", zap.Int("knnScoreCount", len(knnScores)), zap.Float64s("vsim", vsim), zap.Strings("ids", ids), zap.Float64s("knnScores", func() []float64 {
 		scores := make([]float64, 0, len(knnScores))
 		for _, id := range ids {
 			if s, ok := knnScores[id]; ok {
