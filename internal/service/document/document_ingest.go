@@ -85,7 +85,6 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		toStart := make([]validatedDoc, 0, len(validated))
-		toStartIDs := make([]string, 0, len(validatedIDs))
 		for _, vd := range validated {
 			task := taskMap[vd.doc.ID]
 			if task != nil && common.IsActiveTaskStatus(task.Status) {
@@ -97,17 +96,14 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 				continue
 			}
 			toStart = append(toStart, vd)
-			toStartIDs = append(toStartIDs, vd.doc.ID)
+		}
+
+		if skipped := len(validated) - len(toStart); skipped > 0 {
+			common.Info(fmt.Sprintf("batch ingest: requested %d, started %d, skipped %d", len(validated), len(toStart), skipped))
 		}
 
 		if len(toStart) == 0 {
 			return common.CodeSuccess, nil
-		}
-
-		if req.Delete {
-			if err = s.AssertIngestionTasksTerminal(ctx, toStartIDs); err != nil {
-				return common.CodeDataError, err
-			}
 		}
 
 		for _, vd := range toStart {
