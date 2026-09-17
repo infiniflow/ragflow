@@ -530,19 +530,33 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// folds into adjacent text) and RemoveHeaderFooterBoxes relies on header
 	// boxes that TextMerge would otherwise merge into the first body section.
 	//
+	// Header/footer removal runs FIRST because its evidence is cross-page: it
+	// counts how many of the document's pages carry the same margin text, while
+	// TOC removal deletes whole pages. Running the TOC pass first would take
+	// that margin text off the pages it deletes, dropping the count below the
+	// half-the-pages bar, so a document with both options on would keep a
+	// running header that either option removes on its own.
+	//
+	// The TOC pass is nearly indifferent to the order. It decides on page shapes
+	// and absolute bookmark numbers, and the only boxes header/footer removal
+	// takes from a TOC page are margin boxes, which never carried an entry
+	// marker. They do count towards tocMinShortBoxes, so a TOC page sitting
+	// exactly on that threshold can fall below it and be kept — a missed TOC
+	// page, which is the direction this detector errs in regardless.
+	//
 	// coversDocumentStart gates the TOC box-shape signal: a TOC is a document
 	// prefix, so a parse restricted to a later page range must not read its own
 	// first page as one. The outline signal uses absolute page numbers and needs
 	// no such gate.
 	boxesBefore := len(boxes)
-	if p.Config.RemoveTOC {
-		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), coversDocumentStart)
-		result.Metrics.BoxesTOCRemoved = boxesBefore - len(boxes)
-		boxesBefore = len(boxes)
-	}
 	if p.Config.RemoveHeaderFooter {
 		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight)
 		result.Metrics.BoxesHeaderFooterRemoved = boxesBefore - len(boxes)
+		boxesBefore = len(boxes)
+	}
+	if p.Config.RemoveTOC {
+		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), coversDocumentStart)
+		result.Metrics.BoxesTOCRemoved = boxesBefore - len(boxes)
 	}
 
 	boxes = lyt.TextMerge(boxes, medianHeights)
