@@ -65,6 +65,7 @@ func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 			&entity.IngestionTask{},
 			&entity.IngestionTaskLog{},
 			&entity.PipelineOperationLog{},
+			&entity.DocumentCleanupClaim{},
 			&entity.Task{},
 			&entity.Document{},
 			&entity.Knowledgebase{},
