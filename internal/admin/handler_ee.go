@@ -1092,6 +1092,10 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 
 	datasets, err := h.service.ListUserDatasets(ctx, username)
 	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
+			return
+		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1109,6 +1113,10 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 
 	agents, err := h.service.ListUserAgents(ctx, username)
 	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
+			return
+		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -1203,14 +1211,8 @@ func (h *Handler) ListUserProviders(c *gin.Context) {
 
 // ListUserProviderInstances handle show user provider instances
 func (h *Handler) ListUserProviderInstances(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	userName, err := common.DecodeFromBase64(encodedUsername)
+	userName, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if userName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1232,14 +1234,8 @@ func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 
 // ListUserProviderInstanceModels handle show user provider instance models
 func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	userName, err := common.DecodeFromBase64(encodedUsername)
+	userName, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if userName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 
@@ -1267,14 +1263,8 @@ func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 
 // ListUserDefaultModels handle show user default models
 func (h *Handler) ListUserDefaultModels(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	userName, err := common.DecodeFromBase64(encodedUsername)
+	userName, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if userName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
 	ctx := c.Request.Context()
@@ -1735,10 +1725,8 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 
 // GenerateUserAPIKey handle create tenant API key
 func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1755,14 +1743,12 @@ func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 
 // DeleteUserAPIKey handle delete user API key
 func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	key := c.Param("key")
-	if username == "" || key == "" {
+	if key == "" {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Username and key are required")
 		return
 	}

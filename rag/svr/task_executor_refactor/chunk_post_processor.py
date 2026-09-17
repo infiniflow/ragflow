@@ -30,22 +30,62 @@ import random
 import re
 from datetime import datetime
 from timeit import default_timer as timer
-from typing import Dict, List
 
-from common.constants import TAG_FLD, LLMType
-from common.metadata_utils import turn2jsonschema, update_metadata_to
-from common import settings
-from rag.nlp import rag_tokenizer
-from rag.svr.task_executor_refactor.task_context import TaskContext
-
+from api.db.joint_services.tenant_model_service import resolve_model_config
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import resolve_model_config
-from rag.prompts.generator import gen_metadata, keyword_extraction, question_proposal, content_tagging
-from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from common import settings
+from common.constants import TAG_FLD, LLMType
+from common.metadata_utils import turn2jsonschema, update_metadata_to
+from rag.graphrag.utils import get_llm_cache, get_tags_from_cache, set_llm_cache, set_tags_to_cache
+from rag.nlp import rag_tokenizer
+from rag.prompts.generator import content_tagging, gen_metadata, keyword_extraction, question_proposal
+from rag.svr.task_executor_refactor.task_context import TaskContext
 
 
-async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
+# Elasticsearch keyword fields reject terms whose UTF-8 encoding exceeds
+# 32766 bytes. Split oversized terms so ingestion never fails because a
+# malformed LLM response produced a single huge "keyword".
+_ES_KEYWORD_MAX_TERM_BYTES = 32766
+
+
+def _sanitize_keyword_term(term: str) -> list[str]:
+    """Return keyword pieces that fit into an Elasticsearch keyword field.
+
+    If ``term`` is small enough it is returned as-is. Otherwise it is
+    truncated at a character boundary so the UTF-8 encoding never exceeds
+    the ES keyword limit. This avoids corrupting multi-byte characters by
+    slicing raw bytes.
+    """
+    term = term.strip()
+    if not term:
+        return []
+    term_byte_length = len(term.encode("utf-8"))
+    if term_byte_length <= _ES_KEYWORD_MAX_TERM_BYTES:
+        return [term]
+
+    logging.warning(
+        "Sanitizing oversized keyword term (%d bytes, limit %d)",
+        term_byte_length,
+        _ES_KEYWORD_MAX_TERM_BYTES,
+    )
+    length = 0
+    end = 0
+    for index, character in enumerate(term):
+        character_bytes = len(character.encode("utf-8"))
+        if length + character_bytes > _ES_KEYWORD_MAX_TERM_BYTES:
+            end = index
+            break
+        length += character_bytes
+    else:
+        end = len(term)
+    truncated = term[:end].rstrip()
+    if not truncated:
+        return []
+    return [truncated]
+
+
+async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
     """Extract keywords for chunks.
 
     Args:
@@ -69,7 +109,7 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
+                d["important_kwd"] = [kw for k in re.split(r"[,，;；、\r\n]+", cached) for kw in _sanitize_keyword_term(k)]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 
@@ -79,15 +119,15 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error in doc_keyword_extraction: {}".format(e))
+            logging.error(f"Error in doc_keyword_extraction: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        ctx.progress_cb(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Keywords generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
-async def generate_questions(docs: List[Dict], ctx: TaskContext) -> None:
+async def generate_questions(docs: list[dict], ctx: TaskContext) -> None:
     """Generate questions for chunks.
 
     Args:
@@ -125,7 +165,7 @@ async def generate_questions(docs: List[Dict], ctx: TaskContext) -> None:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        ctx.progress_cb(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Question generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
 def build_metadata_config(parser_config: dict) -> list:
@@ -167,7 +207,7 @@ def build_metadata_config(parser_config: dict) -> list:
     return metadata_conf
 
 
-async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
+async def generate_metadata(docs: list[dict], ctx: TaskContext) -> None:
     """Generate metadata for chunks.
 
     Args:
@@ -219,7 +259,7 @@ async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
                 ctx.write_interceptor.intercept("DocMetadataService.update_document_metadata")
             else:
                 DocMetadataService.update_document_metadata(ctx.doc_id, metadata)
-        ctx.progress_cb(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Metadata generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
 def apply_built_in_metadata(ctx: TaskContext) -> None:
@@ -244,7 +284,7 @@ def apply_built_in_metadata(ctx: TaskContext) -> None:
             DocMetadataService.update_document_metadata(ctx.doc_id, existing_meta)
 
 
-async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
+async def apply_tags(docs: list[dict], ctx: TaskContext) -> None:
     """Apply tags to chunks.
 
     Args:
@@ -307,25 +347,12 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error tagging docs: {}".format(e))
+            logging.error(f"Error tagging docs: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        ctx.progress_cb(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
-
-
-def count_with_key(docs: List[Dict], key: str) -> int:
-    """Count docs that have a specific key.
-
-    Args:
-        docs: List of chunk dictionaries.
-        key: The key to check for.
-
-    Returns:
-        Count of docs that have the key.
-    """
-    return sum(1 for d in docs if d.get(key))
+        ctx.progress_cb(msg=f"Tagging {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
 # =====================================================================
@@ -348,36 +375,38 @@ def count_with_key(docs: List[Dict], key: str) -> int:
 # ``_load_chunks_for_doc`` without a circular import.
 # =====================================================================
 
-import numpy as np  # noqa: E402
-from typing import Callable, Optional  # noqa: E402
+from collections.abc import Callable
 
-from common.misc_utils import thread_pool_exec  # noqa: E402
-from common.token_utils import num_tokens_from_string  # noqa: E402
-from rag.nlp import search  # noqa: E402
-from api.db.services.document_service import DocumentService  # noqa: E402
-from api.db.services.compilation_template_group_service import (  # noqa: E402
+import numpy as np
+
+from api.db.services.compilation_template_group_service import (
     CompilationTemplateGroupService,
 )
-from api.db.services.task_service import (  # noqa: E402
+from api.db.services.document_service import DocumentService
+from api.db.services.task_service import (
     abort_doc_chunking_counter,
     clear_doc_chunking_counter,
     credit_doc_chunking_task,
     is_doc_chunking_aborted,
 )
-
+from common.misc_utils import thread_pool_exec
+from common.token_utils import num_tokens_from_string
 
 # ----- tunables ------------------------------------------------------
 # The structure-compile batching / merge-flush / chain-correction tunables
 # and the non-tree compilation core moved to
 # ``rag.advanced_rag.knowlege_compile.runner`` so the ``rag.flow`` Compiler
 # component can share them. Re-exported here for backwards compatibility.
-from rag.advanced_rag.knowlege_compile.runner import (  # noqa: E402
+from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
+    DOC_STRUCTURE_LLM_POOL_SIZE,
     DOC_STRUCTURE_MERGE_MAX_DOCS,  # noqa: F401
     STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,  # noqa: F401
     load_active_templates,
     run_structure_compile_over_batches,
 )
+from rag.nlp import search
+
 # ----- parser_config helpers -----------------------------------------
 
 
@@ -402,9 +431,6 @@ def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
         return []
     if "compilation_template_group_id" in parser_config:
         return _normalize(parser_config.get("compilation_template_group_id"))
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict):
-        return _normalize(ext.get("compilation_template_group_id"))
     return []
 
 
@@ -423,16 +449,8 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order: template ``llm_id`` → doc ``parser_config.llm_id``
-    → ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
+def _resolve_ingestion_chat_llm_id(ctx) -> str:
+    """Pick the ingestion model id for a knowledge-compilation template."""
     doc_cfg = getattr(ctx, "parser_config", None) or {}
     if isinstance(doc_cfg, dict):
         did = doc_cfg.get("llm_id")
@@ -467,7 +485,7 @@ def cap_done_progress(progress_cb: Callable) -> Callable:
 # ----- tree helpers --------------------------------------------------
 
 
-def raptor_tree_to_graph(tree: Dict) -> Dict:
+def raptor_tree_to_graph(tree: dict) -> dict:
     """Project a RAPTOR tree dict (from ``Raptor(is_tree=True)``) onto
     the ``{entities, relations}`` shape the document-structure graph
     endpoint already serves for ``page_index``-kind rows."""
@@ -507,7 +525,7 @@ def raptor_tree_to_graph(tree: Dict) -> Dict:
 
     tree = _collapse_unary(tree) if isinstance(tree, dict) else tree
 
-    def _walk(node: dict, parent_id: Optional[str]) -> None:
+    def _walk(node: dict, parent_id: str | None) -> None:
         if not isinstance(node, dict):
             return
         title = node.get("title") or ""
@@ -534,7 +552,7 @@ def raptor_tree_to_graph(tree: Dict) -> Dict:
     return {"entities": entities, "relations": relations}
 
 
-async def rewrite_duplicate_tree_names(tree: Dict, chat_mdl) -> None:
+async def rewrite_duplicate_tree_names(tree: dict, chat_mdl) -> None:
     """Rewrite only duplicate tree titles whose descriptions differ."""
     from rag.advanced_rag.knowlege_compile._common import knowledge_compile_gen_conf
     from rag.prompts.generator import gen_json
@@ -625,7 +643,7 @@ async def load_chunks_with_vec(
     order_by.asc("page_num_int")
     order_by.asc("top_int")
 
-    out: list[tuple[str, "np.ndarray", str]] = []
+    out: list[tuple[str, np.ndarray, str]] = []
     offset = 0
     PAGE = 500
     while True:
@@ -680,13 +698,19 @@ async def rechunk_doc_by_tree(
     tree: dict,
     template_id: str,
     embedding_model,
-) -> None:
+) -> dict[str, str]:
     """Merge each leaf cluster's source chunks into a single
     replacement chunk and rewrite the tree's leaf-cluster
     ``source_chunk_ids`` in-place. Original chunks are soft-deleted
     via ``available_int=0`` and stamped with ``superseded_by_chunk_id``.
+
+    Returns the old-to-new chunk id mapping for every original chunk that was
+    folded into a replacement, so callers can re-point data attached to the old
+    ids (tree claims key their claims by source chunk id). Chunks that were not
+    remapped are absent — callers keep those ids as they are.
     """
     from datetime import datetime
+
     from common.misc_utils import get_uuid
 
     ctx = handler._task_context
@@ -720,7 +744,7 @@ async def rechunk_doc_by_tree(
 
     _walk(tree)
     if not cluster_id_map:
-        return
+        return {}
 
     all_source_ids = sorted({sid for _, ids in cluster_id_map.values() for sid in ids})
 
@@ -728,7 +752,7 @@ async def rechunk_doc_by_tree(
 
     index_nm = search.index_name(ctx.tenant_id)
     if not settings.docStoreConn.index_exist(index_nm, ctx.kb_id):
-        return
+        return {}
 
     vctr_nm = "q_%d_vec" % len(embedding_model.encode(["x"])[0][0])
     select_fields = [
@@ -764,9 +788,9 @@ async def rechunk_doc_by_tree(
             ctx.doc_id,
             template_id,
         )
-        return
+        return {}
     if not field_map:
-        return
+        return {}
 
     chunks_by_id: dict[str, dict] = {str(rid): {**row, "id": str(rid)} for rid, row in field_map.items()}
 
@@ -819,7 +843,7 @@ async def rechunk_doc_by_tree(
         merged_rows.append(base)
 
     if not merged_rows:
-        return
+        return {}
 
     contents = [r["content_with_weight"] for r in merged_rows]
     try:
@@ -830,7 +854,7 @@ async def rechunk_doc_by_tree(
             ctx.doc_id,
             template_id,
         )
-        return
+        return {}
     for row, vec in zip(merged_rows, vectors):
         try:
             row[vctr_nm] = np.asarray(vec, dtype=np.float32).tolist()
@@ -841,8 +865,13 @@ async def rechunk_doc_by_tree(
             )
             row[vctr_nm] = None
     merged_rows = [r for r in merged_rows if r.get(vctr_nm) is not None]
+    # Drop clusters whose replacement chunk will not be stored: a tree node must
+    # not point at a filtered-out id, and the returned map must not send callers
+    # to a chunk that does not exist.
+    inserted_ids = {r["id"] for r in merged_rows}
+    cluster_new_id = {nid: cid for nid, cid in cluster_new_id.items() if cid in inserted_ids}
     if not merged_rows:
-        return
+        return {}
 
     try:
         await thread_pool_exec(
@@ -857,7 +886,7 @@ async def rechunk_doc_by_tree(
             ctx.doc_id,
             template_id,
         )
-        return
+        return {}
 
     for node_id_int, new_chunk_id in cluster_new_id.items():
         node, _ = cluster_id_map[node_id_int]
@@ -887,6 +916,35 @@ async def rechunk_doc_by_tree(
                     new_chunk_id,
                 )
 
+    # Every original chunk of a merged cluster now resolves to the replacement
+    # chunk, so callers can re-point data keyed by the old ids.
+    return {cid: new_chunk_id for node_id_int, new_chunk_id in cluster_new_id.items() for cid in cluster_id_map[node_id_int][1]}
+
+
+def _remap_claims_by_chunk(claims_by_chunk, chunk_id_remap: dict[str, str]):
+    """Re-key claims onto the chunk that replaced their source chunk.
+
+    Re-chunking folds several original chunks into one replacement and soft-
+    deletes the originals, so a claim still keyed by an old id cites text that
+    can no longer be retrieved. Claims whose id was not remapped are kept as-is:
+    their chunk is untouched and still valid.
+    """
+    if not claims_by_chunk or not chunk_id_remap:
+        return claims_by_chunk
+
+    remapped: dict[str, list] = {}
+    for chunk_id, claims in claims_by_chunk.items():
+        new_id = chunk_id_remap.get(chunk_id) or chunk_id
+        bucket = remapped.setdefault(new_id, [])
+        for claim in claims or []:
+            if isinstance(claim, dict):
+                claim["source_chunk_ids"] = [chunk_id_remap.get(sid) or sid for sid in claim.get("source_chunk_ids") or []]
+                for evidence in claim.get("evidence") or []:
+                    if isinstance(evidence, dict) and evidence.get("chunk_id"):
+                        evidence["chunk_id"] = chunk_id_remap.get(evidence["chunk_id"]) or evidence["chunk_id"]
+            bucket.append(claim)
+    return remapped
+
 
 async def run_tree_templates(
     handler,
@@ -894,13 +952,18 @@ async def run_tree_templates(
     chat_mdl_by_tid: dict[str, "LLMBundle"],
     embedding_model,
     doc_name: str,
+    llm_pool,
 ) -> None:
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
     ``RaptorService.build_doc_tree`` and persists a single graph row
-    via ``_struct_upsert_graph_json``."""
+    via ``_struct_upsert_tree_graph_rows`` (per-row entity/relation rows --
+    the compact graph blob no longer exists)."""
+    from rag.advanced_rag.knowlege_compile.structure import (
+        _struct_upsert_tree_claim_rows,
+        _struct_upsert_tree_graph_rows,
+    )
     from rag.svr.task_executor_refactor.raptor_service import RaptorService
-    from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
 
     ctx = handler._task_context
     progress_cb = ctx.progress_cb
@@ -927,6 +990,12 @@ async def run_tree_templates(
     raptor_service = RaptorService(ctx)
 
     for idx, (template_id, parser_cfg) in enumerate(templates):
+        pooled_chat_mdl = llm_pool.wrap(
+            chat_mdl_by_tid[template_id],
+            priority=30,
+            label=f"tree:{template_id}",
+            context=f"{doc_id}:{template_id}:tree",
+        )
         raptor_cfg = (parser_cfg or {}).get("raptor") or {}
         raptor_config = {
             "prompt": raptor_cfg.get("prompt") or "Please write a concise summary of the following texts:\n{cluster_content}",
@@ -934,7 +1003,10 @@ async def run_tree_templates(
             "threshold": float(raptor_cfg.get("threshold") or 0.1),
             "random_seed": int(raptor_cfg.get("random_seed") or 0),
             "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
-            "ext": raptor_cfg.get("ext") or {},
+            # Template-declared claim/evidence extraction contract (tree.yaml's
+            # raptor.claim_prompt). None = built-in defaults. Batch sizing is a
+            # pipeline concern, so it stays out of the template.
+            "claim_prompt": raptor_cfg.get("claim_prompt") or None,
         }
         progress_cb(
             msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}",
@@ -943,7 +1015,7 @@ async def run_tree_templates(
             tree = await raptor_service.build_doc_tree(
                 chunks=chunks,
                 raptor_config=raptor_config,
-                chat_mdl=chat_mdl_by_tid[template_id],
+                chat_mdl=pooled_chat_mdl,
                 embd_mdl=embedding_model,
                 max_errors=3,
             )
@@ -962,13 +1034,17 @@ async def run_tree_templates(
             )
             continue
 
+        chunk_id_remap: dict[str, str] = {}
         if bool((raptor_cfg or {}).get("rechunk")):
             try:
-                await rechunk_doc_by_tree(
-                    handler=handler,
-                    tree=tree,
-                    template_id=template_id,
-                    embedding_model=embedding_model,
+                chunk_id_remap = (
+                    await rechunk_doc_by_tree(
+                        handler=handler,
+                        tree=tree,
+                        template_id=template_id,
+                        embedding_model=embedding_model,
+                    )
+                    or {}
                 )
             except Exception:
                 logging.exception(
@@ -977,16 +1053,22 @@ async def run_tree_templates(
                     doc_id,
                 )
 
-        await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
+        await rewrite_duplicate_tree_names(tree, pooled_chat_mdl)
+        # Claims are keyed by chunk id on the tree dict (see
+        # RaptorService.build_doc_tree); pull them off before projecting so the
+        # graph blob stays a pure structure payload.
+        claims_by_chunk = tree.pop("claims_by_chunk", None) if isinstance(tree, dict) else None
+        if chunk_id_remap:
+            claims_by_chunk = _remap_claims_by_chunk(claims_by_chunk, chunk_id_remap)
         graph = raptor_tree_to_graph(tree)
         try:
-            await _struct_upsert_graph_json(
+            await _struct_upsert_tree_graph_rows(
                 graph,
                 ctx.tenant_id,
                 ctx.kb_id,
                 doc_id,
                 doc_name,
-                compile_kwd="tree",
+                embedding_model,
                 compilation_template_id=template_id,
             )
         except Exception:
@@ -997,19 +1079,54 @@ async def run_tree_templates(
             )
             continue
 
+        # Claims get their own searchable rows (entity_type_kwd="claim") so they
+        # can be hit directly by global KNN instead of only via beam descent.
+        # This is best-effort: a failure here must not cost us the tree. Called
+        # even when there are no claims, so a recompile that yields none (and a
+        # rechunk that remapped every claim away) clears the rows a previous run
+        # wrote instead of leaving them to answer for a document that changed.
         try:
-            from rag.advanced_rag.knowlege_compile.dataset_nav import (
-                upsert_dataset_nav_doc,
-            )
-
-            await upsert_dataset_nav_doc(
+            await _struct_upsert_tree_claim_rows(
+                claims_by_chunk,
                 ctx.tenant_id,
                 ctx.kb_id,
                 doc_id,
-                tree,
-                embd_mdl=embedding_model,
-                chat_mdl=chat_mdl_by_tid[template_id],
+                doc_name,
+                embedding_model,
+                compile_kwd="tree",
+                compilation_template_id=template_id,
             )
+        except Exception:
+            logging.exception(
+                "tree-template %s: claim rows upsert failed for doc %s",
+                template_id,
+                doc_id,
+            )
+
+        # Persist the per-doc nav_doc right after the graph node, so parsing a
+        # file yields a nav_doc with the FULL entity descriptions as
+        # graph_content -- without needing to run GENERATE NAVIGATION separately
+        # and without changing the nav clustering input. The `title` keeps using
+        # tree["title"] (what upsert_dataset_nav_doc used to derive from `tree`
+        # before this change), so the parse cluster-title logic is unchanged.
+        # Only do this when the graph actually contains entities, otherwise skip
+        # (avoid empty graph_content when RAPTOR produced nothing).
+        try:
+            if graph.get("entities"):
+                from rag.advanced_rag.knowlege_compile.dataset_nav import (
+                    build_nav_graph_text,
+                    upsert_dataset_nav_doc,
+                )
+
+                _, nav_graph_text = build_nav_graph_text(graph)
+                await upsert_dataset_nav_doc(
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    doc_id,
+                    {"title": tree.get("title"), "graph_text": nav_graph_text},
+                    embd_mdl=embedding_model,
+                    chat_mdl=pooled_chat_mdl,
+                )
         except Exception:
             logging.exception(
                 "tree-template %s: dataset_nav upsert failed for doc %s",
@@ -1047,36 +1164,23 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     if not active_templates:
         return
 
-    llm_bundle_cache: dict[str, LLMBundle] = {}
-    chat_mdl_by_tid: dict[str, LLMBundle] = {}
-    filtered_templates: list[tuple[str, dict]] = []
-    for template_id, parser_cfg in active_templates:
-        chat_llm_id = _resolve_template_chat_llm_id(parser_cfg, ctx)
-        if chat_llm_id not in llm_bundle_cache:
-            try:
-                cfg = resolve_model_config(
-                    ctx.tenant_id,
-                    LLMType.CHAT,
-                    chat_llm_id,
-                )
-                llm_bundle_cache[chat_llm_id] = LLMBundle(
-                    ctx.tenant_id,
-                    cfg,
-                    lang=ctx.language,
-                )
-            except Exception:
-                logging.exception(
-                    "document_structure_compile: cannot resolve chat model %s for template %s; skipping",
-                    chat_llm_id,
-                    template_id,
-                )
-                continue
-        chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-        filtered_templates.append((template_id, parser_cfg))
-
-    if not filtered_templates:
+    chat_llm_id = _resolve_ingestion_chat_llm_id(ctx)
+    try:
+        cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, chat_llm_id)
+        chat_mdl = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+    except Exception:
+        logging.exception("document_structure_compile: cannot resolve ingestion chat model %s", chat_llm_id)
         return
-    active_templates = filtered_templates
+    chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
+    from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+
+    def _on_llm_error(label: str, context: str | None, error_type: str) -> None:
+        ctx.progress_cb(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
+
+    llm_pool = LLMCallPool(
+        DOC_STRUCTURE_LLM_POOL_SIZE,
+        on_error=_on_llm_error,
+    )
 
     tree_templates: list[tuple[str, dict]] = []
     non_tree_templates: list[tuple[str, dict]] = []
@@ -1093,6 +1197,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
             chat_mdl_by_tid,
             embedding_model,
             doc_name,
+            llm_pool,
         )
 
     if not non_tree_templates:
@@ -1120,6 +1225,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         progress_cb=ctx.progress_cb,
         cancel_check=lambda: ctx.has_canceled_func(ctx.id),
         record=ctx.recording_context.record,
+        llm_pool=llm_pool,
     )
 
 

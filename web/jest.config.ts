@@ -3,17 +3,14 @@ import type { Config } from 'jest';
 const config: Config = {
   testEnvironment: 'jsdom',
   transform: {
-    '^.+\\.(ts|tsx|js|jsx)$': [
-      'esbuild-jest',
-      {
-        sourcemap: true,
-        loaders: {
-          '.ts': 'tsx',
-        },
-      },
-    ],
+    // Local wrapper around esbuild-jest that also defines import.meta.env;
+    // see jest-esbuild-transformer.cjs
+    '^.+\\.(ts|tsx|js|jsx)$': '<rootDir>/jest-esbuild-transformer.cjs',
   },
   moduleNameMapper: {
+    // Drags the app shell (routes/react-router) into jsdom; see __mocks__
+    '^@/components/layout-recognize-form-field$':
+      '<rootDir>/__mocks__/layout-recognize-form-field.js',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^human-id$': '<rootDir>/__mocks__/human-id.js',
     '\\.(css|less|scss|sass)$': '<rootDir>/__mocks__/styleMock.js',

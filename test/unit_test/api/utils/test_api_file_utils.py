@@ -40,6 +40,8 @@ class TestFilenameType:
             ("doc.pdf", FileType.PDF.value),
             ("a.PDF", FileType.PDF.value),
             ("x.png", FileType.VISUAL.value),
+            ("test.wmf", FileType.VISUAL.value),
+            ("TEST.WMF", FileType.VISUAL.value),
             ("file.docx", FileType.DOC.value),
             ("a/b/c.pdf", FileType.PDF.value),
             ("path/to/file.txt", FileType.DOC.value),

@@ -69,6 +69,15 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		return
 	}
 
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	}
+
 	// Messages presence
 	if len(req.Messages) == 0 {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You have to provide messages.")

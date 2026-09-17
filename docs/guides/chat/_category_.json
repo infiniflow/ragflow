@@ -3,7 +3,7 @@
   "position": 2,
   "link": {
     "type": "generated-index",
-    "description": "Chat-specific guides."
+    "description": "Learn how to create, use, configure, and test Chat applications."
   },
   "customProps": {
     "categoryIcon": "LucideMessagesSquare"

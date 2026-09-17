@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"regexp"
 	"strings"
 	"testing"
@@ -37,10 +36,10 @@ func TestDropChunkStoreIgnoresMissingSharedTable(t *testing.T) {
 		WithArgs("legacy_doc", "memory_tenant_1").
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
 
-	if err := engine.DropChunkStore(context.Background(), "memory_tenant_1", "memory_1"); err != nil {
+	if err = engine.DropChunkStore(t.Context(), "memory_tenant_1", "memory_1"); err != nil {
 		t.Fatalf("DropChunkStore() error = %v", err)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -72,10 +71,10 @@ func TestDropChunkStoreDeletesOnlyScopedRows(t *testing.T) {
 				WithArgs(test.datasetID).
 				WillReturnResult(sqlmock.NewResult(0, 0))
 
-			if err := engine.DropChunkStore(context.Background(), test.tableName, test.datasetID); err != nil {
+			if err = engine.DropChunkStore(t.Context(), test.tableName, test.datasetID); err != nil {
 				t.Fatalf("DropChunkStore() error = %v", err)
 			}
-			if err := mock.ExpectationsWereMet(); err != nil {
+			if err = mock.ExpectationsWereMet(); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -102,10 +101,10 @@ func TestDropChunkStoreDropsTableForUnscopedDataset(t *testing.T) {
 			mock.ExpectExec(regexp.QuoteMeta("DROP TABLE IF EXISTS `ragflow_tenant_1`")).
 				WillReturnResult(sqlmock.NewResult(0, 0))
 
-			if err := engine.DropChunkStore(context.Background(), "ragflow_tenant_1", test.datasetID); err != nil {
+			if err = engine.DropChunkStore(t.Context(), "ragflow_tenant_1", test.datasetID); err != nil {
 				t.Fatalf("DropChunkStore() error = %v", err)
 			}
-			if err := mock.ExpectationsWereMet(); err != nil {
+			if err = mock.ExpectationsWereMet(); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -149,14 +148,14 @@ func TestFindVectorColumnUsesExpectedColumn(t *testing.T) {
 		WithArgs("legacy_doc", "memory_tenant_1", "q_1024_vec").
 		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME"}).AddRow("q_1024_vec"))
 
-	column, err := engine.findVectorColumn(context.Background(), "memory_tenant_1", "q_1024_vec")
+	column, err := engine.findVectorColumn(t.Context(), "memory_tenant_1", "q_1024_vec")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if column != "q_1024_vec" {
 		t.Fatalf("findVectorColumn() = %q, want q_1024_vec", column)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 }

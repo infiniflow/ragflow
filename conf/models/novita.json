@@ -14,7 +14,7 @@
   "models": [
     {
       "name": "deepseek/deepseek-v4-pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -25,7 +25,7 @@
     },
     {
       "name": "meta-llama/llama-3.3-70b-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 120000,
       "model_types": [
         "chat"
@@ -36,7 +36,7 @@
     },
     {
       "name": "qwen/qwen3-30b-a3b-fp8",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -47,7 +47,7 @@
     },
     {
       "name": "qwen/qwen3-235b-a22b-fp8",
-      "content_length": 40960,
+      "context_length": 40960,
       "max_output": 20000,
       "model_types": [
         "chat"
@@ -58,7 +58,7 @@
     },
     {
       "name": "moonshotai/kimi-k2-instruct",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -69,7 +69,7 @@
     },
     {
       "name": "google/gemma-3-27b-it",
-      "content_length": 98304,
+      "context_length": 98304,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -80,7 +80,7 @@
     },
     {
       "name": "mistralai/mistral-nemo",
-      "content_length": 60288,
+      "context_length": 60288,
       "max_output": 16000,
       "model_types": [
         "chat"

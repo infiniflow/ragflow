@@ -70,6 +70,7 @@ class _FakeRetriever:
         self._raise_exc = raise_exc
         self.retrieval_calls = []
         self.last_kwargs = None
+        self.by_children_tenant_ids = None
 
     async def retrieval(self, question, embd_mdl, tenant_id, kb_ids, **kwargs):
         if self._raise_exc is not None:
@@ -78,15 +79,18 @@ class _FakeRetriever:
         self.last_kwargs = kwargs
         return {"chunks": list(self._chunks)}
 
-    def retrieval_by_children(self, chunks, _tenant_ids):
+    def retrieval_by_children(self, chunks, tenant_ids):
+        self.by_children_tenant_ids = list(tenant_ids)
         return chunks
 
 
 class _FakeKGRetriever:
     def __init__(self, content=""):
         self._content = content
+        self.tenant_ids = None
 
-    async def retrieval(self, *_a, **_k):
+    async def retrieval(self, _question, tenant_ids, *_a, **_k):
+        self.tenant_ids = list(tenant_ids)
         if not self._content:
             return {"content_with_weight": ""}
         return {
@@ -109,6 +113,7 @@ def _load_dify_retrieval(
     request_args=None,
     kg_content="",
     meta_filter_ids=None,
+    doc_metadata=None,
 ):
     """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
 
@@ -138,14 +143,20 @@ def _load_dify_retrieval(
         monkeypatch,
         "api.db.services.document_service",
         DocumentService=SimpleNamespace(
-            get_by_id=lambda _id: (True, SimpleNamespace(id=_id, meta_fields={})),
-            get_by_ids=lambda ids, cols=None: [SimpleNamespace(id=doc_id, meta_fields={}) for doc_id in ids],
+            get_by_id=lambda _id: (True, SimpleNamespace(id=_id)),
+            get_by_ids=lambda ids, cols=None: [SimpleNamespace(id=doc_id) for doc_id in ids],
         ),
     )
+    # Keyed by doc_id, and the same dict object is handed back on every lookup,
+    # which is what DocMetadataService.get_metadata_for_documents does.
+    doc_metadata = doc_metadata or {}
     _stub(
         monkeypatch,
         "api.db.services.doc_metadata_service",
-        DocMetadataService=SimpleNamespace(get_flatted_meta_by_kbs=lambda _ids: {}),
+        DocMetadataService=SimpleNamespace(
+            get_flatted_meta_by_kbs=lambda _ids: {},
+            get_metadata_for_documents=lambda ids, kb_id: {i: doc_metadata[i] for i in ids if i in doc_metadata},
+        ),
     )
 
     acc_fn = accessible if callable(accessible) else (lambda *_a, **_k: accessible)
@@ -155,7 +166,12 @@ def _load_dify_retrieval(
         KnowledgebaseService=SimpleNamespace(get_by_id=lambda _id: kb, accessible=acc_fn),
     )
 
-    _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=lambda *_a, **_k: SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=lambda *_a, **_k: SimpleNamespace(),
+        resolve_llm_setting=lambda *_a, **_k: {},
+    )
 
     _stub(
         monkeypatch,
@@ -175,11 +191,13 @@ def _load_dify_retrieval(
     _stub(monkeypatch, "rag.app.tag", label_question=lambda *_a, **_k: {})
 
     fake_retriever = _FakeRetriever(chunks=chunks)
+
+    fake_kg = _FakeKGRetriever(kg_content)
     _stub(
         monkeypatch,
         "common.settings",
         retriever=fake_retriever,
-        kg_retriever=_FakeKGRetriever(kg_content),
+        kg_retriever=fake_kg,
     )
 
     quart_stub = ModuleType("quart")
@@ -195,6 +213,7 @@ def _load_dify_retrieval(
     monkeypatch.setitem(sys.modules, "test_dify_retrieval_module", module)
     spec.loader.exec_module(module)
     module._fake_retriever = fake_retriever
+    module._fake_kg = fake_kg
     return module
 
 
@@ -271,6 +290,37 @@ class TestDifyRetrievalTenantCheck:
         assert len(result["records"]) == 1
         assert result["records"][0]["content"] == "hello world"
         assert module._fake_retriever.retrieval_calls, "retriever was not called on legitimate request"
+
+    @pytest.mark.p1
+    def test_team_member_searches_the_owner_index_not_their_own(self, monkeypatch):
+        """A permitted cross-tenant caller must search the KB owner's index.
+
+        ``KnowledgebaseService.accessible`` admits the owning tenant and, for a
+        ``TEAM`` KB, a member of that tenant. In the second case the caller's tenant
+        is not the KB's, so an index named after the caller holds none of its chunks.
+        """
+        team_kb = SimpleNamespace(id="kb-shared", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, team_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-shared",
+                "query": "shared question",
+                "use_kg": True,
+                "retrieval_setting": {"top_k": 5, "score_threshold": 0.0},
+            },
+            tenant_id="tenant-member",
+            chunks=[{"doc_id": "d1", "content_with_weight": "chunk", "similarity": 0.9, "docnm_kwd": "doc.txt"}],
+            kg_content="graph answer",
+        )
+
+        asyncio.run(module.retrieval())
+
+        assert module._fake_retriever.retrieval_calls, "retriever was not called"
+        assert module._fake_retriever.retrieval_calls[0]["tenant_id"] == "tenant-owner"
+        assert module._fake_retriever.by_children_tenant_ids == ["tenant-owner"], "retrieval_by_children searched the caller's tenant instead of the KB owner's"
+        assert module._fake_kg.tenant_ids == ["tenant-owner"], "kg_retriever searched the caller's tenant instead of the KB owner's"
 
     @pytest.mark.p1
     def test_missing_knowledge_base_returns_not_found(self, monkeypatch):
@@ -422,7 +472,7 @@ class TestDifyRetrievalArgumentValidation:
 
         kwargs = module._fake_retriever.last_kwargs
         assert kwargs["page_size"] == 7
-        assert kwargs["top"] == 7
+        assert kwargs["knn_top_k"] == 7
         assert kwargs["similarity_threshold"] == 0.3
 
     @pytest.mark.p1
@@ -582,6 +632,49 @@ class TestDifyRetrievalRetrievalBehavior:
         assert record["title"] == "doc.txt"
         assert record["metadata"]["doc_id"] == "d1"
         assert record["metadata"]["document_id"] == "d1"
+
+    @pytest.mark.p1
+    def test_records_carry_the_document_metadata(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello world", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+            doc_metadata={"d1": {"author": "kb-owner", "year": "2025"}},
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        metadata = result["records"][0]["metadata"]
+        assert metadata["author"] == "kb-owner"
+        assert metadata["year"] == "2025"
+        assert metadata["doc_id"] == "d1"
+        assert metadata["document_id"] == "d1"
+
+    @pytest.mark.p1
+    def test_chunks_of_one_document_get_separate_metadata_dicts(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+            chunks=[
+                {"doc_id": "d1", "content_with_weight": "first", "similarity": 0.8, "docnm_kwd": "doc.txt"},
+                {"doc_id": "d1", "content_with_weight": "second", "similarity": 0.7, "docnm_kwd": "doc.txt"},
+            ],
+            doc_metadata={"d1": {"author": "kb-owner"}},
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        first, second = result["records"]
+        assert first["metadata"] is not second["metadata"]
+        assert first["metadata"] == second["metadata"] == {"author": "kb-owner", "doc_id": "d1", "document_id": "d1"}
 
     @pytest.mark.p1
     def test_no_chunks_returns_empty_records(self, monkeypatch):

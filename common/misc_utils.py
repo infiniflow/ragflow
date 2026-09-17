@@ -288,3 +288,58 @@ async def thread_pool_exec_long_time(func, *args, **kwargs):
         inner = functools.partial(func, *args, **kwargs)
         return await loop.run_in_executor(_LONG_TIME_THREAD_POOL_EXECUTOR, ctx.run, inner)
     return await loop.run_in_executor(_LONG_TIME_THREAD_POOL_EXECUTOR, ctx.run, func, *args)
+
+
+class _CanonKey:
+    """Wraps a canonicalized structure so it can never collide with an
+    unrelated plain hashable value (e.g. a string equal to another value's
+    repr())."""
+
+    __slots__ = ("_key",)
+
+    def __init__(self, key):
+        self._key = key
+
+    def __eq__(self, other):
+        return isinstance(other, _CanonKey) and self._key == other._key
+
+    def __hash__(self):
+        return hash(self._key)
+
+
+def _canonicalize(value):
+    """Recursively convert JSON-like unhashable values (dict/list/set) into an
+    equality-preserving hashable form: dict equality ignores key order, list
+    equality doesn't. Distinct types that are never equal to each other in
+    Python (list vs. tuple) get distinct tags; types that compare equal by
+    value (set vs. frozenset) share one."""
+    if isinstance(value, dict):
+        return ("__dict__", frozenset((k, _canonicalize(v)) for k, v in value.items()))
+    if isinstance(value, list):
+        return ("__list__", tuple(_canonicalize(v) for v in value))
+    if isinstance(value, tuple):
+        return ("__tuple__", tuple(_canonicalize(v) for v in value))
+    if isinstance(value, (set, frozenset)):
+        return ("__set__", frozenset(_canonicalize(v) for v in value))
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return ("__repr__", repr(value))
+
+
+def hashable_key(value):
+    """Return a value usable as a set/dict key, falling back to a recursive
+    canonicalization for unhashable (malformed) values instead of raising
+    TypeError.
+
+    Already-hashable values are returned as-is, so canonicalization only ever
+    applies inside an unhashable value. A top-level ``frozenset`` therefore
+    keeps its own key rather than sharing one with an equal ``set``; provenance
+    values (ids, descriptions) are never sets, so this costs nothing on the hot
+    path."""
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return _CanonKey(_canonicalize(value))

@@ -20,11 +20,13 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	textparser "ragflow/internal/parser/parser"
 )
 
 // TestTokenChunker_Registered asserts the registry has a CategoryIngestion
@@ -65,6 +67,69 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	}
 	if out["_ERROR"] == nil {
 		t.Fatalf("_ERROR missing: %v", out)
+	}
+}
+
+func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 1},
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 2},
+			{"text": "ID: B-1; Status: open", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want one row chunk per sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "ID: B-1; Status: open" {
+		t.Fatalf("row chunks = %#v", chunks)
+	}
+	for i, chunk := range chunks {
+		if chunk["ck_type"] != "table_row" {
+			t.Errorf("chunk[%d] ck_type = %v, want table_row", i, chunk["ck_type"])
+		}
+	}
+}
+
+func TestTokenChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "Name; Owner", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-2", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want data row and header-only sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "Name; Owner" {
+		t.Fatalf("chunks = %#v, want row followed by header-only sheet", chunks)
 	}
 }
 
@@ -227,6 +292,68 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+func TestTokenChunkerTextParserJSONKeepsSentenceBoundaries(t *testing.T) {
+	parsed := textparser.NewTextParser().ParseWithResult(t.Context(), "doc.txt", []byte("first!second!"))
+	if parsed.Err != nil {
+		t.Fatalf("TextParser.ParseWithResult: %v", parsed.Err)
+	}
+
+	c, err := NewTokenChunker(map[string]any{
+		"chunk_token_size": 128,
+		"delimiters":       []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc.txt",
+		"file_type":     "txt",
+		"output_format": "json",
+		"json":          parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("TokenChunker.Invoke: %v", err)
+	}
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first!\nsecond!"}) {
+		t.Fatalf("text parser JSON chunks = %q, want sentence boundary between parser units", texts)
+	}
+}
+
+func TestTokenChunker_InvokeJSONPayload_IndexesHeaderOnlyEmail(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	// Email's structured body item can have no text for a header-only
+	// message. Parser emits the second text item specifically so headers are
+	// still indexed through the JSON path.
+	items := []map[string]any{
+		{"from": "sender@example.com", "subject": "Status", "doc_type_kwd": "text"},
+		{"text": "from:sender@example.com\nsubject:Status\n", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "message.eml",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("chunks missing: %#v", out["chunks"])
+	}
+	for _, chunk := range chunks {
+		if text, _ := chunk["text"].(string); strings.Contains(text, "subject:Status") {
+			return
+		}
+	}
+	t.Fatalf("header item was not indexed: %#v", chunks)
+}
+
 // TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone is the
 // regression lock for #17889: when merging adjacent segments, only
 // "text" segments may be merged; "table"/"image" (any non-text type)
@@ -280,6 +407,10 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 		if got != wantTypes[i] {
 			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
 		}
+		ckType, _ := ch["ck_type"].(string)
+		if ckType != wantTypes[i] {
+			t.Errorf("chunk %d: ck_type = %q, want %q (derived from doc_type_kwd)", i, ckType, wantTypes[i])
+		}
 	}
 	// The two text segments on either side of the table/image must remain
 	// distinct — they must NOT be merged across the non-text segments.
@@ -292,6 +423,205 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 	if got, _ := chunks[4]["text"].(string); !strings.Contains(got, "Gamma") {
 		t.Errorf("chunk 4 text = %q, want it to contain Gamma", got)
 	}
+}
+
+// TestTokenChunkerMediaContextSpansUpstreamItems pins the flat attach contract
+// on the canvas path: Python collects a media chunk's context from the flat
+// chunk list (token_chunker.py:537, :545), so the text units of *other*
+// upstream items are in scope. The context is also what keeps a caption-less
+// media chunk alive — its own body is empty — and what that chunk indexes.
+func TestTokenChunkerMediaContextSpansUpstreamItems(t *testing.T) {
+	cases := []struct {
+		name      string
+		params    map[string]any
+		mediaItem map[string]any
+		mediaType string
+		wantText  string
+	}{
+		{
+			name:      "image without a body",
+			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "image_context_size": 20},
+			mediaItem: map[string]any{"text": "", "image": "figure-bytes", "doc_type_kwd": "image"},
+			mediaType: "image",
+			wantText:  "abovebelow",
+		},
+		{
+			name:      "table",
+			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "table_context_size": 20},
+			mediaItem: map[string]any{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			mediaType: "table",
+			wantText:  "above<table><tr><td>A</td></tr></table>below",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewTokenChunker(tc.params)
+			if err != nil {
+				t.Fatalf("NewTokenChunker: %v", err)
+			}
+			out, err := c.Invoke(context.Background(), nil, map[string]any{
+				"name":          "fig.pdf",
+				"file_type":     "pdf",
+				"output_format": "json",
+				"json": []map[string]any{
+					{"text": "above", "doc_type_kwd": "text"},
+					tc.mediaItem,
+					{"text": "below", "doc_type_kwd": "text"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := outputChunks(t, out)
+			var media map[string]any
+			for _, ck := range chunks {
+				if ck["ck_type"] == tc.mediaType {
+					media = ck
+					break
+				}
+			}
+			if media == nil {
+				t.Fatalf("%s chunk missing from %d chunks: %+v", tc.mediaType, len(chunks), chunks)
+			}
+			assertMaterializedMediaContext(t, media, tc.wantText)
+		})
+	}
+}
+
+// TestTokenChunkerDropsMediaChunkWithTagOnlyContext pins the drop filter
+// against Python's finalize, which strips parser position tags from the merged
+// body before the empty check (token_chunker.py:343). A media chunk whose only
+// surrounding context is a position tag has nothing retrievable left, so it
+// must not survive — the fold would otherwise emit a chunk with an empty body.
+func TestTokenChunkerDropsMediaChunkWithTagOnlyContext(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":     "delimiter",
+		"chunk_token_size":   512,
+		"table_context_size": 20,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "@@1\t0.0\t10.0\t10.0\t20.0##", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if chunks := outputChunks(t, out); len(chunks) != 0 {
+		t.Fatalf("chunks = %+v, want none: the media chunk's only context is a position tag", chunks)
+	}
+}
+
+// TestTokenChunkerDelimiterWindowUsesChildTokenCounts pins the effect the
+// children's token counts have on the media window: the delimiter branch
+// attaches the context after the children split, so the budget walk is charged
+// with whatever count the children carry. A child that inherits its parent's
+// count spends the whole window on the first neighbour and the configured
+// window silently under-collects.
+func TestTokenChunkerDelimiterWindowUsesChildTokenCounts(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":      "delimiter",
+		"delimiters":          []string{"`|`"},
+		"children_delimiters": []string{". "},
+		"chunk_token_size":    512,
+		"table_context_size":  7,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "gamma delta. alpha beta.", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var media map[string]any
+	for _, ck := range outputChunks(t, out) {
+		if ck["ck_type"] == "table" {
+			media = ck
+		}
+	}
+	if media == nil {
+		t.Fatalf("table chunk missing: %+v", out)
+	}
+	// Each child is 3 tokens, so the 7-token window holds both of them.
+	assertMaterializedMediaContext(t, media, "gamma deltaalpha beta.")
+}
+
+// TestMaterializeMediaContextKeepsTokenCountInSync pins the invariant the fold
+// must preserve: once the context is folded into the body, TKNums describes
+// that body rather than the media payload it replaced. The count is read as a
+// budget by the merge and window walks and emitted as tk_nums on the chunk.
+func TestMaterializeMediaContextKeepsTokenCountInSync(t *testing.T) {
+	const body = "<table><tr><td>A</td></tr></table>"
+	ck := schema.ChunkDoc{
+		Text:         body,
+		DocType:      "table",
+		CKType:       "table",
+		TKNums:       intPtr(tokenizeStr(body)),
+		ContextAbove: "above",
+		ContextBelow: "below",
+	}
+
+	got := materializeMediaContext(ck)
+	if want := "above" + body + "below"; got.Text != want {
+		t.Fatalf("folded text = %q, want %q", got.Text, want)
+	}
+	if want := tokenizeStr(got.Text); intValue(got.TKNums) != want {
+		t.Errorf("tk_nums = %d, want %d (the folded body)", intValue(got.TKNums), want)
+	}
+}
+
+// TestTokenChunkerWindowTruncatesOnSentenceBoundary pins that a neighbour
+// larger than the remaining window is trimmed on a sentence boundary. A cut
+// inside the sentence would hand the index a fragment: the removed rune-level
+// helper returned "zeta." for this fixture, a piece of "epsilon zeta.".
+func TestTokenChunkerWindowTruncatesOnSentenceBoundary(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":     "delimiter",
+		"chunk_token_size":   512,
+		"table_context_size": 3,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "epsilon zeta.", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var media map[string]any
+	for _, ck := range outputChunks(t, out) {
+		if ck["ck_type"] == "table" {
+			media = ck
+		}
+	}
+	if media == nil {
+		t.Fatalf("table chunk missing: %+v", out)
+	}
+	// "epsilon zeta." is one sentence of 4 tokens, so the 3-token window takes
+	// it whole rather than cutting into it.
+	assertMaterializedMediaContext(t, media, "epsilon zeta.")
 }
 
 // TestTokenChunker_InvokeDeterministic runs a 20-item structured
@@ -353,6 +683,41 @@ func TestTokenChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 	if len(meta.Outputs) == 0 {
 		t.Error("outputs metadata is empty")
+	}
+}
+
+// TestTokenChunker_SpreadsheetTablePreservesSelectionRange guards the Parser
+// JSON path: spreadsheet positions describe a sheet selection, not a PDF
+// bounding box, and a table item must pass through without proportional text
+// splitting or coordinate rewriting.
+func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"delimiter": "\n"})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	wantPositions := [][]float64{{1, 2, 10, 1, 5}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "book.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"text":         "<table><tr><td>A</td></tr>\n<tr><td>B</td></tr></table>",
+			"doc_type_kwd": "table",
+			"positions":    wantPositions,
+			"sheet":        "Sheet1",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want one unsplit table item", len(chunks))
+	}
+	if got := chunks[0]["ck_type"]; got != "table" {
+		t.Errorf("ck_type = %v, want table", got)
+	}
+	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
+		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
 	}
 }
 
@@ -725,5 +1090,145 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	}
 	if got := joined.String(); strings.Contains(got, "\n\n") {
 		t.Errorf("blank line survived in oversize path (Python drops it): got chunk text %q, want no blank line (\\n\\n)", got)
+	}
+}
+
+// TestSplitByChildrenRecomputesTokenCounts pins that a child carries the count
+// of its own text. The count is a budget input for the media window in the
+// delimiter branch, where the attach runs after this split.
+func TestSplitByChildrenRecomputesTokenCounts(t *testing.T) {
+	const parentText = "gamma delta. alpha beta."
+	children := splitByChildren([]schema.ChunkDoc{{
+		Text:    parentText,
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(tokenizeStr(parentText)),
+	}}, regexp.MustCompile(`\. `))
+
+	if len(children) != 2 {
+		t.Fatalf("children = %d, want 2", len(children))
+	}
+	for _, child := range children {
+		if got, want := intValue(child.TKNums), tokenizeStr(child.Text); got != want {
+			t.Errorf("child %q tk_nums = %d, want %d (its own text)", child.Text, got, want)
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_RecomputesTokenCounts pins that the text-path
+// children carry their own count, so a consumer that budgets with TKNums does
+// not read a stale or missing value.
+func TestApplyChildrenDelimText_RecomputesTokenCounts(t *testing.T) {
+	const parentText = "gamma delta. alpha beta."
+	out := applyChildrenDelimText([]schema.ChunkDoc{{
+		Text:    parentText,
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(tokenizeStr(parentText)),
+	}}, regexp.MustCompile(`\. `))
+
+	if len(out) != 2 {
+		t.Fatalf("children = %d, want 2", len(out))
+	}
+	for _, child := range out {
+		if got, want := intValue(child.TKNums), tokenizeStr(child.Text); got != want {
+			t.Errorf("child %q tk_nums = %d, want %d (its own text)", child.Text, got, want)
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_DefaultsMomToCurrentChunk verifies that when an
+// incoming chunk has no Mom, the children fall back to the current chunk's
+// text (the historical behaviour preserved by the fix for #17876).
+func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q", i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_OverwritesIncomingMom documents the
+// CURRENT behaviour: when a chunk flowing into applyChildrenDelimText
+// already has a non-empty Mom, the function OVERWRITES it with
+// TrimPrefix(d.Text, "\n") of the current chunk's text. This is
+// the divergence that #17876 item 2 (multi-chunk text-path Mom
+// granularity) is tracking. Once the merge-granularity fix lands,
+// this test should be updated (or the PreservesIncomingMom version
+// added back).
+func TestApplyChildrenDelimText_OverwritesIncomingMom(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma", Mom: "incoming-mom-from-upstream"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Children must NOT carry the incoming Mom; the function
+		// overwrites it with TrimPrefix(d.Text, "\n") of the current
+		// chunk's text. This pins the current behavior; a future
+		// merge-granularity fix should update this test (or the test
+		// itself flips to assert the new preserved Mom behavior).
+		if c.Mom == "incoming-mom-from-upstream" {
+			t.Errorf("child %d: Mom=%q, expected overwrite to %q (not preserved)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (TrimPrefix(d.Text, \"\\n\"))",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_NilPatternIsNoop verifies the early return so
+// callers that pass a nil pattern don't accidentally clear Mom.
+func TestApplyChildrenDelimText_NilPatternIsNoop(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta", Mom: "kept"},
+	}
+	out := applyChildrenDelimText(docs, nil)
+	if len(out) != 1 {
+		t.Fatalf("want 1 chunk unchanged, got %d", len(out))
+	}
+	if out[0].Mom != "kept" || out[0].Text != "alpha. beta" {
+		t.Errorf("input mutated under nil pattern: %+v", out[0])
+	}
+}
+
+// TestApplyChildrenDelimText_FallbackStripsLeadingNewline verifies that
+// when no incoming Mom is set, the fallback Mom uses
+// strings.TrimPrefix(t, "\n") — i.e. it strips a single leading newline
+// from the current chunk's text. The historical default this PR
+// preserves; if a child path forgets to strip, JSON-keyed SQL
+// downstream could see an extra leading "\n" in the Mom value.
+func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "\nalpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Each child Mom must be the text-path parent segment with
+		// the leading "\n" stripped, NOT the raw text-with-newline.
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (leading newline must be stripped)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
 	}
 }

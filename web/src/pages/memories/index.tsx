@@ -4,6 +4,7 @@ import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { pick } from 'lodash';
@@ -26,10 +27,12 @@ export default function MemoryList() {
     isLoading,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch: refetchList,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   } = useFetchMemoryList();
 
@@ -58,10 +61,16 @@ export default function MemoryList() {
     },
     [setPagination],
   );
-  useGoToPreviousPageOnEmpty(list?.data?.memory_list?.length, isLoading);
+  useGoToPreviousPageOnEmpty(list?.data?.memory_list?.length, isLoading, {
+    deletionKey: ListDeletionKey.MemoryList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const [searchUrl, setMemoryUrl] = useSearchParams();
-  const { filters } = useSelectFilters();
+  const { filters } = useSelectFilters(list?.data?.memory_list ?? []);
   const isCreate = searchUrl.get('isCreate') === 'true';
   useEffect(() => {
     if (isCreate) {

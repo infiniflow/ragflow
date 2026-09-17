@@ -154,3 +154,12 @@ func TestRunRefine_CancelledCtxAborts(t *testing.T) {
 		t.Fatalf("runRefine err = nil, want context cancelled")
 	}
 }
+
+func TestShouldReportRefineProgress(t *testing.T) {
+	for completed := 1; completed <= 12; completed++ {
+		want := completed == 5 || completed == 10 || completed == 12
+		if got := shouldReportRefineProgress(completed, 12); got != want {
+			t.Fatalf("completed=%d: got %t, want %t", completed, got, want)
+		}
+	}
+}

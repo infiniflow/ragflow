@@ -29,9 +29,9 @@ import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 import {
   DataSourceFormDefaultValues,
-  DataSourceKey,
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
@@ -45,10 +45,13 @@ import {
   useUpdateDataSourceStatus,
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
+import BackButton from '@/components/back-button';
 
 const SourceDetailPage = () => {
   const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
+  const [searchParams] = useSearchParams();
+  const connectorId = searchParams.get('id')!;
 
   const { data: detail } = useFetchDataSourceDetail();
   const { updateStatus, loading: statusUpdateLoading } =
@@ -158,7 +161,11 @@ const SourceDetailPage = () => {
   }, [detail]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
-  const { loading: testLoading, handleTest } = useTestDataSource();
+  const { loading: testLoading, handleTest } = useTestDataSource(
+    formRef,
+    connectorId,
+    fields,
+  );
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
@@ -231,8 +238,10 @@ const SourceDetailPage = () => {
       {/* <BackButton /> */}
       <Card className="bg-transparent border border-border-button px-5 pt-[10px] pb-5 rounded-md mt-5">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-3">
-          {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
           <CardTitle className="text-2xl text-text-primary flex gap-1 items-center font-normal pb-3">
+            <BackButton className="border-none">
+              <></>
+            </BackButton>
             {detailInfo?.icon}
             {detail?.name}
           </CardTitle>
@@ -248,18 +257,15 @@ const SourceDetailPage = () => {
             />
           </div>
           <div className="max-w-[1200px] flex justify-end gap-2">
-            {(detail?.source === DataSourceKey.REST_API ||
-              detail?.source === DataSourceKey.BIGQUERY) && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleTest}
-                disabled={testLoading}
-                loading={testLoading}
-              >
-                {t('setting.restApiTestConnection')}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testLoading}
+              loading={testLoading}
+            >
+              {t('setting.dataSourceTestConnection')}
+            </Button>
             <Button
               type="button"
               onClick={handlePrimaryAction}

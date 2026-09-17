@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -23,8 +24,12 @@ import (
 // so the frontend should test `error != ""` on its own (and hide the counts)
 // rather than treating it as a peer of state.
 type CompilationStatus struct {
+	Kind            string     `json:"kind"`                        // normalized requested compile kind
 	State           string     `json:"state"`                       // idle | pending | running | completed
 	Error           string     `json:"error,omitempty"`             // most recent batch diagnostic (empty when none)
+	Progress        float64    `json:"progress"`                    // current claimed batch progress
+	CurrentPhase    string     `json:"current_phase,omitempty"`     // current compiler phase
+	ProgressMsg     string     `json:"progress_msg,omitempty"`      // bounded phase log for the UI
 	Inflight        int        `json:"inflight"`                    // entries currently claimed (in-flight batch)
 	Backlog         int        `json:"backlog"`                     // entries still waiting to be claimed
 	LastCompletedAt *time.Time `json:"last_completed_at,omitempty"` // last backlog drain
@@ -34,14 +39,19 @@ type CompilationStatus struct {
 // GetDatasetCompilationStatus returns the scheduling-row lifecycle state for a
 // dataset after verifying the calling user owns it. When no row exists the
 // dataset has never had any compile work, so the state is idle.
-func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID, datasetID string) (CompilationStatus, common.ErrorCode, error) {
+func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID, datasetID, kind string) (CompilationStatus, common.ErrorCode, error) {
 	if datasetID == "" {
 		return CompilationStatus{}, common.CodeDataError, errors.New("dataset_id is required")
 	}
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return CompilationStatus{}, common.CodeDataError, errors.New("no authorization")
 	}
-	st := CompilationStatus{State: entity.DatasetStateIdle}
+	requestedKind := strings.ToLower(strings.TrimSpace(kind))
+	normalizedKind := normalizeCompilationKind(requestedKind)
+	if requestedKind != "" && normalizedKind == "" {
+		return CompilationStatus{}, common.CodeDataError, errors.New("unsupported compilation kind")
+	}
+	st := CompilationStatus{Kind: requestedKind, State: entity.DatasetStateIdle}
 	db := dao.GetDB()
 	if db == nil {
 		return st, common.CodeSuccess, nil
@@ -61,11 +71,102 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 		st.State = entity.DatasetStateIdle
 	}
 	st.Error = row.ErrorMsg
-	st.Inflight = jsonArrayLen(row.InflightDocIDs)
-	st.Backlog = jsonArrayLen(row.BacklogDocIDs)
+	st.Progress = row.Progress
+	st.CurrentPhase = row.CurrentPhase
+	st.ProgressMsg = row.ProgressMsg
+	if requestedKind != "" {
+		inflight, backlog := compilationStatusCounts(row.InflightDocIDs, row.BacklogDocIDs, normalizedKind)
+		if inflight == 0 && backlog == 0 && (row.InflightDocIDs != "" || row.BacklogDocIDs != "") {
+			st.State = entity.DatasetStateIdle
+			st.Error = ""
+			st.Progress = 0
+			st.CurrentPhase = ""
+			st.ProgressMsg = ""
+		}
+		st.Inflight = inflight
+		st.Backlog = backlog
+	} else {
+		st.Inflight = jsonArrayLen(row.InflightDocIDs)
+		st.Backlog = jsonArrayLen(row.BacklogDocIDs)
+	}
 	st.LastCompletedAt = row.LastCompletedAt
 	st.UpdatedAt = row.UpdatedAt
 	return st, common.CodeSuccess, nil
+}
+
+type compilationStatusEntry struct {
+	Variants  []string `json:"variants"`
+	TaskTypes []string `json:"task_types"`
+}
+
+func compilationStatusCounts(inflightJSON, backlogJSON, kind string) (int, int) {
+	return countCompilationStatusEntries(inflightJSON, kind), countCompilationStatusEntries(backlogJSON, kind)
+}
+
+func countCompilationStatusEntries(raw, kind string) int {
+	entries := parseCompilationStatusEntries(raw)
+	count := 0
+	for _, entry := range entries {
+		if compilationStatusEntryMatches(entry, kind) {
+			count++
+		}
+	}
+	return count
+}
+
+func parseCompilationStatusEntries(raw string) []compilationStatusEntry {
+	if raw == "" {
+		return nil
+	}
+	var entries []compilationStatusEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil
+	}
+	return entries
+}
+
+func compilationStatusEntryMatches(entry compilationStatusEntry, kind string) bool {
+	for _, taskType := range entry.TaskTypes {
+		if normalizeCompilationKind(taskType) == kind {
+			return true
+		}
+	}
+	if len(entry.TaskTypes) > 0 {
+		return false
+	}
+	if len(entry.Variants) == 0 {
+		// Legacy entries without routing metadata can affect every product kind.
+		return true
+	}
+	for _, variant := range entry.Variants {
+		if normalizeCompilationKind(variant) == kind {
+			return true
+		}
+		if strings.EqualFold(strings.TrimSpace(variant), "structure") &&
+			(kind == "Graph" || kind == "Timeline" || kind == "PageIndex") {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeCompilationKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "wiki", "artifact":
+		return "Wiki"
+	case "tree", "raptor":
+		return "Tree"
+	case "graph", "knowledge_graph", "knowledgegraph":
+		return "Graph"
+	case "mindmap", "mind_map":
+		return "Mindmap"
+	case "timeline":
+		return "Timeline"
+	case "pageindex", "page_index", "skill":
+		return "PageIndex"
+	default:
+		return ""
+	}
 }
 
 // jsonArrayLen counts the top-level elements of a JSON array stored as TEXT.

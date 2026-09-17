@@ -124,6 +124,8 @@ func NewOpenAIChatService() *OpenAIChatService {
 // OpenAIChatRequest mirrors the OpenAI Chat Completions request body.
 // `stop` and `user` are omitted intentionally — JSON unmarshal silently drops them.
 type OpenAIChatRequest struct {
+	Question  string                   `json:"question,omitempty"`
+	Query     string                   `json:"query,omitempty"`
 	Model     string                   `json:"model"`
 	Messages  []map[string]interface{} `json:"messages"`
 	Stream    *bool                    `json:"stream,omitempty"`
@@ -142,6 +144,17 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		s.writeArgError(c, err.Error())
 		return
 	}
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		s.writeDataError(c, err.Error())
+		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
+	}
 	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
 
 	normalizedMessages, err := normalizeOpenAIMessages(req.Messages)
@@ -151,6 +164,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	}
 	if len(normalizedMessages) == 0 {
 		s.writeDataError(c, "You have to provide messages.")
+		return
+	}
+	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
+		s.writeArgError(c, "`max_tokens` must be greater than 0.")
 		return
 	}
 
@@ -563,8 +580,9 @@ func extractGenerationConfig(req *OpenAIChatRequest) map[string]interface{} {
 	return cfg
 }
 
-// normalizeMessageContent coerces content to string (drops non-text parts).
-func normalizeMessageContent(content interface{}) (string, error) {
+// NormalizeOpenAIMessageContent coerces OpenAI message content to text and
+// drops unsupported non-text parts.
+func NormalizeOpenAIMessageContent(content interface{}) (string, error) {
 	if content == nil {
 		return "", nil
 	}
@@ -597,7 +615,7 @@ func normalizeOpenAIMessages(messages []map[string]interface{}) ([]map[string]in
 		for k, v := range m {
 			normalized[k] = v
 		}
-		c, err := normalizeMessageContent(m["content"])
+		c, err := NormalizeOpenAIMessageContent(m["content"])
 		if err != nil {
 			return nil, err
 		}
@@ -646,7 +664,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 	for _, chunk := range chunks {
 		out = append(out, FormattedChunk{
 			ID:               strVal(getValue(chunk, "chunk_id", "id")),
-			Content:          strVal(getValue(chunk, "content_with_weight", "content")),
+			Content:          strVal(getValue(chunk, "content", "content_with_weight")),
 			DocumentID:       strVal(getValue(chunk, "doc_id", "document_id")),
 			DocumentName:     strVal(getValue(chunk, "docnm_kwd", "document_name")),
 			DatasetID:        strVal(getValue(chunk, "kb_id", "dataset_id")),

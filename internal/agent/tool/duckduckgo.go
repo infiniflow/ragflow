@@ -513,7 +513,7 @@ func hasClassToken(n *xhtml.Node, want string) bool {
 		if a.Key != "class" {
 			continue
 		}
-		for _, token := range strings.Fields(a.Val) {
+		for token := range strings.FieldsSeq(a.Val) {
 			if token == want {
 				return true
 			}

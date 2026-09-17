@@ -4,7 +4,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 import json
 
 import pytest
@@ -109,6 +109,91 @@ def test_parse_pdf_forwards_normalized_dataset_language_to_image_enhancement(mon
     enhance.assert_called_once_with([], vision_model, callback=None, language=expected_language)
 
 
+def test_parse_pdf_forwards_page_range_and_callback_to_page_rendering(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    callback = Mock()
+    render_pages = Mock()
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", render_pages)
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+
+    parser.parse_pdf(
+        filepath=str(pdf_path),
+        binary=None,
+        callback=callback,
+        output_dir=str(output_dir),
+        delete_output=False,
+        page_from=12,
+        page_to=15,
+    )
+
+    render_pages.assert_called_once_with(pdf_path, zoomin=1, page_from=12, page_to=15, callback=callback)
+
+
+def test_page_rendering_only_renders_requested_range(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    class _Page:
+        def __init__(self, page_number):
+            self.page_number = page_number
+
+        def to_image(self, **_kwargs):
+            rendered_pages.append(self.page_number)
+            return type("RenderedPage", (), {"original": module.Image.new("RGB", (10, 20))})()
+
+    class _Pdf:
+        pages = [_Page(page_number) for page_number in range(15)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    rendered_pages = []
+    monkeypatch.setattr(module.pdfplumber, "open", lambda *_args, **_kwargs: _Pdf())
+
+    parser.__images__(b"pdf", page_from=12, page_to=15)
+
+    assert rendered_pages == [12, 13, 14]
+    assert parser.page_images is not None
+    assert len(parser.page_images) == 3
+    assert parser.page_from == 12
+
+
+def test_crop_converts_local_page_to_document_page(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 12
+    parser.page_images = [module.Image.new("RGB", (100, 200), "white")]
+
+    image, positions = parser.crop("@@1\t10\t40\t50\t80##", need_position=True)
+
+    assert image is not None
+    assert positions == [(12, 10, 40, 50, 80)]
+
+
+def test_page_rendering_failure_is_reported_to_callback(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    callback = Mock()
+    monkeypatch.setattr(module.pdfplumber, "open", Mock(side_effect=ValueError("bad pdf")))
+
+    parser.__images__(b"pdf", page_from=2, page_to=4, callback=callback)
+
+    assert callback.call_args_list == [
+        call(0.16, "[MinerU] Rendering PDF pages..."),
+        call(0.16, "[MinerU] PDF page rendering failed for pages 2:4: bad pdf"),
+    ]
+
+
 def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
     module = _load_mineru_parser(monkeypatch)
     text = "&lt;table&gt;&lt;tr&gt;&lt;td&gt;Alpha&lt;/td&gt;&lt;td&gt;Beta&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"
@@ -120,13 +205,112 @@ def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
     assert "</td>" not in sanitized
 
 
+def test_parse_pdf_emits_image_coverage_final_log_with_vlm_configured_flag(monkeypatch, tmp_path, caplog):
+    """Regression for issue #16978: parse_pdf must
+    emit the final ``[MinerU] image_coverage final ... vlm_configured=...``
+    log line so operators can see the image-coverage stamp at the parser
+    boundary, including whether a vision model was configured."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    # Three images: one captioned, one dropped, one VLM-described.
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Exhibit A"],
+            "image_footnote": [],
+            "img_path": "/tmp/a.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/b.jpg",
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/c.jpg",
+            "page_idx": 2,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "VLM description for image C.",
+        },
+    ]
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=outputs))
+    monkeypatch.setattr(parser, "_enhance_images_with_vlm", Mock())
+    monkeypatch.setattr(parser, "_transfer_to_tables", Mock(return_value=[]))
+    # Do NOT mock _transfer_to_sections — the real method must run so it
+    # populates parser.last_image_coverage with the actual detected/chunked/
+    # described/dropped counts before the summary log line is emitted.
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        parser.parse_pdf(
+            filepath=pdf_path,
+            binary=None,
+            output_dir=str(output_dir),
+            delete_output=False,
+            vision_model=object(),  # a configured vision model
+        )
+
+    # The summary log line must include the vlm_configured flag and
+    # reflect the actual coverage the real _transfer_to_sections
+    # accumulated.
+    assert "image_coverage final" in caplog.text
+    assert "vlm_configured=True" in caplog.text
+    assert "detected=3" in caplog.text
+    assert "described=1" in caplog.text
+
+
+def test_parse_pdf_image_coverage_final_log_reflects_no_vision_model(monkeypatch, tmp_path, caplog):
+    """When parse_pdf is called without a vision_model kwarg, the final
+    log must reflect vlm_configured=False so operators know downstream
+    chunks could NOT have been VLM-enriched."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "_enhance_images_with_vlm", Mock())
+    monkeypatch.setattr(parser, "_transfer_to_tables", Mock(return_value=[]))
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        parser.parse_pdf(
+            filepath=pdf_path,
+            binary=None,
+            output_dir=str(output_dir),
+            delete_output=False,
+            # no vision_model kwarg
+        )
+
+    assert "image_coverage final" in caplog.text
+    assert "vlm_configured=False" in caplog.text
+
+
 def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypatch, caplog):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
     outputs = [
         {
-            "type": module.MinerUContentType.TEXT,
-            "text": "&lt;td&gt;&lt;/td&gt;",
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "&lt;td&gt;&lt;/td&gt;",
+            "table_caption": [],
+            "table_footnote": [],
             "page_idx": 0,
             "bbox": (0, 0, 1, 1),
         }
@@ -137,7 +321,83 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypat
 
     assert sections == []
     assert "Skip section after sanitization" in caplog.text
-    assert f"type={module.MinerUContentType.TEXT}" in caplog.text
+    assert f"type={module.MinerUContentType.TABLE}" in caplog.text
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ({"type": "text", "text": "Use List<String> and a<b. 5 &lt; 6"}, "Use List<String> and a<b. 5 &lt; 6"),
+        ({"type": "code", "code_body": "template<typename T> void f();", "code_caption": []}, "template<typename T> void f();"),
+        ({"type": "equation", "text": "x < y > z"}, "x < y > z"),
+    ],
+)
+def test_transfer_to_sections_only_sanitizes_tables(monkeypatch, output, expected):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    output = {**output, "page_idx": 0, "bbox": (0, 0, 1, 1)}
+
+    sections = parser._transfer_to_sections([output], parse_method="raw", table_enable=False)
+
+    assert sections[0][0] == expected
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("code_body", "expected_body"),
+    [
+        ("```txt\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```txt\nList<String> names = new ArrayList<String>();\n``` trailing", "```txt\nList<String> names = new ArrayList<String>();\n``` trailing"),
+    ],
+)
+def test_transfer_to_sections_wraps_caption_and_unwrapped_body_in_fence(
+    monkeypatch: pytest.MonkeyPatch,
+    code_body: str,
+    expected_body: str,
+) -> None:
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    caption = "Java / C# style"
+    output = {
+        "type": module.MinerUContentType.CODE,
+        "code_body": code_body,
+        "code_caption": [caption],
+        "page_idx": 0,
+        "bbox": (97, 195, 579, 252),
+    }
+
+    sections = parser._transfer_to_sections([output], parse_method="raw")
+
+    assert len(sections) == 1
+    assert sections[0][0] == f"```{caption}\n{expected_body}\n```"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("transfer", ["sections", "tables"])
+def test_empty_table_fallback_is_logged(monkeypatch, caplog, transfer):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    output = {
+        "type": module.MinerUContentType.TABLE,
+        "table_body": "",
+        "table_caption": [],
+        "table_footnote": [],
+        "page_idx": 2,
+        "bbox": (0, 0, 1, 1),
+    }
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        if transfer == "sections":
+            result = parser._transfer_to_sections([output], parse_method="raw", table_enable=True)
+            fallback = result[0][0]
+        else:
+            result = parser._transfer_to_tables([output])
+            fallback = result[0][0][1]
+
+    assert fallback == "FAILED TO PARSE TABLE"
+    assert "Empty table content at page_idx=2; using fallback text." in caplog.text
 
 
 def test_transfer_to_sections_skips_page_chrome_without_duplicating_text(monkeypatch):
@@ -187,20 +447,249 @@ def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monke
     assert "Skip unsupported section type=sidebar" in caplog.text
 
 
+@pytest.mark.p1
+def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
+    from rag.nlp import tokenize_table
+
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 12
+    image_path = tmp_path / "figure.png"
+    module.Image.new("RGB", (2, 2), "red").save(image_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>first</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+            "_mineru_positions": [
+                {"page_idx": 0, "bbox": (1, 2, 3, 4)},
+                {"page_idx": 1, "bbox": (1, 0, 3, 2)},
+            ],
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "img_path": str(image_path),
+            "image_caption": ["Figure 1"],
+            "image_footnote": ["Source"],
+            "vlm_description": "A red square",
+            "page_idx": 0,
+            "bbox": (5, 6, 7, 8),
+        },
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "second table",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 1,
+            "bbox": (9, 10, 11, 12),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption without image"],
+            "image_footnote": [],
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    assert len(media) == 3
+    assert media[0][0] == (None, "<table><tr><td>first</td></tr></table>")
+    assert media[2][0] == (None, "second table")
+    image, texts = media[1][0]
+    image_path.unlink()
+    assert isinstance(image, module.Image.Image)
+    assert image.getpixel((0, 0)) == (255, 0, 0)
+    assert texts == ["Figure 1", "Source", "A red square"]
+    assert [[position[0] for position in item[1]] for item in media] == [[12, 13], [12], [13]]
+    chunks = tokenize_table(media, {}, False)
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["table", "image", "table"]
+    assert [chunk["page_num_int"] for chunk in chunks] == [[13, 14], [13], [14]]
+
+
+@pytest.mark.p1
+def test_transfer_to_tables_emits_chart_as_image_chunk(monkeypatch, tmp_path):
+    """MinerU 3.4.x VLM chart blocks (chart_caption/chart_footnote/img_path)
+    must surface as image chunks instead of being silently dropped (#19080)."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    chart_path = tmp_path / "chart.png"
+    module.Image.new("RGB", (2, 2), "blue").save(chart_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "img_path": str(chart_path),
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": ["Source: dataset"],
+            "sub_type": "line",
+            "vlm_description": "A blue square",
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+        },
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Caption without image"],
+            "chart_footnote": [],
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    # The chart with a readable image becomes an image chunk; the chart without
+    # an img_path is skipped (mirrors how IMAGE blocks behave).
+    assert len(media) == 1
+    image, texts = media[0][0]
+    chart_path.unlink()
+    assert isinstance(image, module.Image.Image)
+    assert image.getpixel((0, 0)) == (0, 0, 255)
+    assert texts == ["Figure 3", "Source: dataset", "A blue square"]
+
+
+@pytest.mark.p1
+def test_transfer_to_sections_routes_chart_like_image_per_parse_method(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": module.MinerUContentType.TEXT, "text": "Body", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["figure"],
+            "chart_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 2, 1, 3),
+        },
+    ]
+
+    # app chunkers consume media separately: the chart is excluded from text sections.
+    for app_method in ("naive", "manual", "paper"):
+        sections = parser._transfer_to_sections(outputs, parse_method=app_method, table_enable=True)
+        assert len(sections) == 1
+        assert sections[0][0].startswith("Body")
+
+    # raw consumers keep the chart as a text section (caption/footnote), like IMAGE.
+    raw_sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+    assert len(raw_sections) == 2
+    assert raw_sections[1][0].strip() == "figure"
+
+
+@pytest.mark.p1
+def test_transfer_to_sections_warns_on_unknown_type(monkeypatch, caplog):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": "sidebar", "text": "ignored", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+    ]
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert "Skip unsupported section type=sidebar" in caplog.text
+
+
+@pytest.mark.p1
+def test_tokenize_table_uses_payload_type_instead_of_html_content():
+    from PIL import Image
+
+    from rag.nlp import tokenize_table
+
+    image = Image.new("RGB", (1, 1))
+    media = [((image, "plain table"), []), ((image, ["caption with <tr> text"]), [])]
+
+    chunks = tokenize_table(media, {}, False)
+
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["table", "image"]
+    assert [chunk["image"] for chunk in chunks] == [image, image]
+
+
+@pytest.mark.p1
+def test_media_context_preserves_media_without_positions(monkeypatch):
+    from rag.nlp import append_context2table_image4pdf
+
+    parser_module = ModuleType("deepdoc.parser")
+    parser_module.PdfParser = Mock()
+    monkeypatch.setitem(sys.modules, "deepdoc.parser", parser_module)
+
+    image = object()
+    media = [((None, "table"), []), ((image, ["figure"]), [])]
+
+    assert append_context2table_image4pdf([], media, 1) == media
+    assert append_context2table_image4pdf([], media, 1, return_context=True) == [("", ""), ("", "")]
+
+
+@pytest.mark.p1
+def test_media_context_preserves_image_payload_type(monkeypatch):
+    import rag.nlp as nlp
+    from PIL import Image
+
+    image = Image.new("RGB", (1, 1))
+    sections = [("Context before.", "@@1\t0\t10\t0\t5##")]
+    media = [((image, ["Figure 1"]), [(12, 0, 1, 10, 20)])]
+
+    monkeypatch.setattr(nlp, "tokenize", lambda d, text, _eng, language="English": d.update({"content_with_weight": text}))
+    contextualized = nlp.append_context2table_image4pdf(sections, media, 1, section_page_offset=12)
+
+    rows = contextualized[0][0][1]
+    assert isinstance(rows, list)
+    assert "Context before." in rows[0]
+    assert "Figure 1" in rows[0]
+    chunks = nlp.tokenize_table(contextualized, {}, False)
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["image"]
+    assert chunks[0]["page_num_int"] == [13]
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("parse_method", ["naive", "manual", "paper"])
+def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_method):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": module.MinerUContentType.TEXT, "text": "Body", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "table",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 1, 1, 2),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["figure"],
+            "image_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 2, 1, 3),
+        },
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method=parse_method, table_enable=True)
+
+    assert len(sections) == 1
+    assert sections[0][0].startswith("Body")
+    assert len(parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)) == 3
+
+
 class _FakeZipResponse:
     """Stand-in for the streaming response returned by requests.post.
 
-    Provides the minimum surface that _run_mineru_api touches: status code,
-    headers (Content-Type), and a `.raw` stream that copyfileobj can drain.
+    Provides the minimum surface that _run_mineru_api touches: status_code,
+    ok, text, headers (Content-Type), and a `.raw` stream that copyfileobj
+    can drain.
     """
 
-    def __init__(self, body: bytes = b"zip-bytes"):
+    def __init__(self, body: bytes = b"zip-bytes", *, status_code: int = 200, text: str = ""):
         self._body = body
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 400
+        self.text = text
         self.headers = {"Content-Type": "application/zip"}
         self.raw = BytesIO(body)
 
     def raise_for_status(self):
-        return None
+        if not self.ok:
+            raise RuntimeError(f"HTTP {self.status_code}")
 
 
 class _FakePostContext:
@@ -215,7 +704,15 @@ class _FakePostContext:
         return False
 
 
-def _capture_run_mineru_api(monkeypatch, module, *, pdf_path: Path, extracted_dir: Path):
+def _capture_run_mineru_api(
+    monkeypatch,
+    module,
+    *,
+    pdf_path: Path,
+    extracted_dir: Path,
+    status_code: int = 200,
+    text: str = "",
+):
     """Stub everything around requests.post so _run_mineru_api runs end-to-end
     against an in-memory response. Returns the captured kwargs dict.
     """
@@ -225,7 +722,7 @@ def _capture_run_mineru_api(monkeypatch, module, *, pdf_path: Path, extracted_di
         captured["url"] = url
         captured["data"] = data
         captured["files"] = files
-        return _FakePostContext(_FakeZipResponse(), captured)
+        return _FakePostContext(_FakeZipResponse(status_code=status_code, text=text), captured)
 
     monkeypatch.setattr(module.requests, "post", fake_post)
     monkeypatch.setattr(module.os.path, "exists", lambda _p: True)
@@ -331,6 +828,61 @@ def test_end_page_minus_one_normalizes_for_mineru_api(monkeypatch, tmp_path):
     )
 
     assert captured["data"]["end_page_id"] == 12
+
+
+def test_run_mineru_api_raises_with_status_and_body_on_non_ok(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    parser.mineru_server_url = ""
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    _capture_run_mineru_api(
+        monkeypatch,
+        module,
+        pdf_path=pdf_path,
+        extracted_dir=extracted_dir,
+        status_code=502,
+        text='{"error":"upstream timeout"}',
+    )
+    options = module.MinerUParseOptions()
+
+    with pytest.raises(RuntimeError, match=r"status=502.*upstream timeout") as exc_info:
+        parser._run_mineru_api(pdf_path, extracted_dir, options, callback=None)
+
+    assert "body=" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("options_server_url", "parser_server_url", "expected"),
+    [
+        (None, "", None),
+        ("http://options.server", "", "http://options.server"),
+        (None, "http://parser.server", "http://parser.server"),
+        ("http://options.server", "http://parser.server", "http://options.server"),
+    ],
+)
+def test_run_mineru_api_server_url_only_when_set(monkeypatch, tmp_path, options_server_url, parser_server_url, expected):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local", mineru_server_url=parser_server_url)
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    captured = _capture_run_mineru_api(monkeypatch, module, pdf_path=pdf_path, extracted_dir=extracted_dir)
+    options = module.MinerUParseOptions(server_url=options_server_url)
+
+    parser._run_mineru_api(pdf_path, extracted_dir, options, callback=None)
+
+    if expected is None:
+        assert "server_url" not in captured["data"]
+    else:
+        assert captured["data"]["server_url"] == expected
 
 
 class _FakePageImage:
@@ -541,3 +1093,733 @@ def test_read_output_keeps_original_tag_when_middle_json_has_single_table_positi
     assert module.MinerUParser.extract_positions(line_tag) == [
         ([0], 20.0, 170.0, 40.0, 340.0),
     ]
+
+
+def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypatch, caplog):
+    """An IMAGE block with a caption should count as detected and chunked, but
+    not as described (no VLM). The coverage dict should be visible on the
+    parser instance so callers can inspect silent loss (issue #16978)."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Exhibit A: signature page"],
+            "image_footnote": [],
+            "img_path": "/tmp/example.jpg",
+            "page_idx": 0,
+            "bbox": (10, 10, 100, 100),
+        }
+    ]
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert len(sections) == 1
+    # The upstream section construction joins caption + "\n" + footnote, so a
+    # captioned image with no footnote yields a trailing newline; the
+    # substantive text must still be retrievable.
+    assert "Exhibit A: signature page" in sections[0][0]
+    coverage = parser.last_image_coverage
+    assert coverage == {
+        "images_detected": 1,
+        "images_chunked": 1,
+        "images_dropped_no_text": 0,
+        "images_described": 0,
+        "images_unreadable_resource": 0,
+        "vlm_configured": False,
+    }
+    # The intermediate INFO log that used to fire from
+    # _transfer_to_sections has been removed.
+    # The authoritative coverage is now emitted by parse_pdf only,
+    # after both transfer paths have run. The per-method counter
+    # assertions still cover that final path below.
+    assert "image_coverage detected=1 chunked=1 described=0 dropped_no_text=0 unreadable=0" not in caplog.text
+
+
+def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch, caplog):
+    """When an embedded PDF image has no caption, no footnote, and no VLM
+    description, it must not silently disappear from the chunk stream —
+    the loss must be visible in logs (DEBUG level, since a PDF can have
+    many decorative images) and in the coverage stamp.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/silent_drop.jpg",
+            "page_idx": 2,
+            "bbox": (0, 0, 50, 50),
+        }
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert sections == []
+    coverage = parser.last_image_coverage
+    assert coverage == {
+        "images_detected": 1,
+        "images_chunked": 0,
+        "images_dropped_no_text": 1,
+        "images_described": 0,
+        "images_unreadable_resource": 0,
+        "vlm_configured": False,
+    }
+    assert "Dropped embedded image" in caplog.text
+    assert "page_idx=2" in caplog.text
+    assert "Configure an IMAGE2TEXT vision model" in caplog.text
+
+
+def test_transfer_to_sections_counts_vlm_description(monkeypatch):
+    """An IMAGE block enriched by _enhance_images_with_vlm must be counted
+    as described so operators can tell the gap between detected and
+    described."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/described.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "A scanned signature in cursive.",
+        }
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert len(sections) == 1
+    assert "A scanned signature in cursive." in sections[0][0]
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 1
+    assert coverage["images_described"] == 1
+    assert coverage["images_dropped_no_text"] == 0
+    assert coverage["images_unreadable_resource"] == 0
+
+
+def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
+    """Mixed batch: one captioned, one described, one dropped. The coverage
+    stamp must reflect the truth so the regression fixture can assert on
+    the loss invariant (images_detected >= images_chunked)."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption 1"],
+            "image_footnote": [],
+            "img_path": "/tmp/c1.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/d1.jpg",
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "Described by VLM.",
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/x1.jpg",
+            "page_idx": 2,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.TEXT,
+            "text": "Body text between images.",
+            "page_idx": 2,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert len(sections) == 3  # captioned + described + text (the dropped image yields no section)
+    coverage = parser.last_image_coverage
+    assert coverage == {
+        "images_detected": 3,
+        "images_chunked": 2,
+        "images_dropped_no_text": 1,
+        "images_described": 1,
+        "images_unreadable_resource": 0,
+        "vlm_configured": False,
+    }
+    # The intermediate INFO log was removed; the authoritative coverage
+    # summary now lives in parse_pdf. The per-image Dropped warning
+    # still fires from _transfer_to_sections.
+    assert "image_coverage detected=3" not in caplog.text
+    assert "Dropped embedded image" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# App-media modes (issue #16978): naive/manual/paper coverage invariants
+# --------------------------------------------------------------------------- #
+#
+# Naive/manual/paper route IMAGE blocks through _transfer_to_tables and
+# skip them in _transfer_to_sections. The coverage stamp must still
+# report every IMAGE block the parser saw as `images_detected` so
+# operators can spot the gap between detection and chunking.
+
+
+@pytest.mark.parametrize(
+    "parse_method",
+    ["naive", "manual", "paper"],
+)
+def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeypatch, tmp_path, parse_method):
+    """App-media modes (issue #16978): naive, manual, and paper all
+    route IMAGE blocks through _transfer_to_tables and skip them in
+    _transfer_to_sections. The image_coverage stamp must still report
+    images_detected correctly for these modes so operators can see how
+    many images the parser saw."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    a_path = tmp_path / "a.jpg"
+    b_path = tmp_path / "b.jpg"
+    module.Image.new("RGB", (2, 2), "red").save(a_path)
+    module.Image.new("RGB", (2, 2), "blue").save(b_path)
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["A"],
+            "image_footnote": [],
+            "img_path": str(a_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["B"],
+            "image_footnote": [],
+            "img_path": str(b_path),
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    # _transfer_to_sections returns no IMAGE sections for app-media
+    # modes — they go to _transfer_to_tables instead.
+    sections = parser._transfer_to_sections(outputs, parse_method=parse_method)
+    assert sections == []
+
+    # The coverage stamp must report every IMAGE block the parser saw
+    # and emitted via the table path. We invoke _transfer_to_tables to
+    # mirror what parse_pdf does for naive/manual/paper.
+    parser._transfer_to_tables(outputs, table_enable=True)
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 2
+    assert coverage["images_chunked"] == 2
+    assert coverage["images_dropped_no_text"] == 0
+    assert coverage["images_unreadable_resource"] == 0
+
+
+def test_transfer_to_sections_app_media_mode_with_image_dropped_after_sanitization(monkeypatch, caplog):
+    """Regression for #16978: even in naive/manual/paper modes, an IMAGE
+    block whose caption/footnote/VLM description is empty would still
+    register as `images_dropped_no_text` if it ever reached the
+    section-building branch. App-media modes skip IMAGE entirely before
+    the branch, so this case is a no-op — but the helper must not
+    raise or misreport counters."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/silent.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        }
+    ]
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        parser._transfer_to_sections(outputs, parse_method="naive")
+
+    coverage = parser.last_image_coverage
+    # Detected is correct (1); the IMAGE block was skipped at the
+    # naive/manual/paper branch, not at the empty-section branch.
+    assert coverage["images_detected"] == 1
+    assert coverage["images_dropped_no_text"] == 0
+    # App-media modes do not warn per-image — _transfer_to_tables handles
+    # them instead, so the warning channel here stays quiet.
+    assert "Dropped embedded image" not in caplog.text
+
+
+def test_mineruparser_initializes_last_image_coverage_in_constructor(monkeypatch):
+    """Regression for issue #16978: the attribute
+    must exist from construction, independent of whether parse_pdf has
+    run yet — no more getattr(self, ..., None) fallback in the
+    caller."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    # Direct attribute access — not a getattr with a default — must work.
+    assert isinstance(parser.last_image_coverage, dict)
+    assert parser.last_image_coverage == {
+        "images_detected": 0,
+        "images_chunked": 0,
+        "images_described": 0,
+        "images_dropped_no_text": 0,
+        "images_unreadable_resource": 0,
+        "vlm_configured": False,
+    }
+
+
+def test_transfer_to_sections_app_media_image_with_only_vlm_description(monkeypatch, caplog):
+    """Even when an IMAGE block has a vlm_description and no
+    caption/footnote, app-media modes (naive/manual/paper) must still
+    register the image as detected so the operator sees the count
+    matches what the VLM model produced."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/vlm.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "A description from the vision model.",
+        }
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method="naive")
+    assert sections == []
+
+    coverage = parser.last_image_coverage
+    # _transfer_to_sections increments images_detected before it skips
+    # the IMAGE block in app-media modes (naive/manual/paper), so the
+    # detection count is correct even though the section path returned
+    # nothing for the IMAGE. The chunked/described counters advance only
+    # via _transfer_to_tables.
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 0
+    assert coverage["images_described"] == 0
+    assert coverage["images_unreadable_resource"] == 0
+
+
+def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
+    """_transfer_to_tables is the path that emits IMAGE blocks for
+    naive/manual/paper. The final coverage stamp must reflect that
+    emission (chunked += 1, described += 1 when vlm_description is set)
+    so operators can see the full pipeline outcome — not just the
+    section path."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    # Create real image files on disk so PIL.Image.open succeeds.
+    a_path = tmp_path / "a.jpg"
+    b_path = tmp_path / "b.jpg"
+    module.Image.new("RGB", (2, 2), "red").save(a_path)
+    module.Image.new("RGB", (2, 2), "blue").save(b_path)
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption A"],
+            "image_footnote": [],
+            "img_path": str(a_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "VLM description for A.",
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": str(b_path),
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    tables = parser._transfer_to_tables(outputs, table_enable=True)
+    assert len(tables) == 2
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_chunked"] == 2
+    assert coverage["images_described"] == 1  # only the first had a vlm_description
+    assert coverage["images_dropped_no_text"] == 0
+    assert coverage["images_unreadable_resource"] == 0
+
+
+def test_raw_mode_counts_unreadable_resource_in_sections(monkeypatch, tmp_path):
+    """Raw mode (parse_method='raw') does NOT call _transfer_to_tables
+    in production — parse_pdf gates that on naive/manual/paper (see
+    mineru_parser.py:~1201). The unreadable-resource counter in raw
+    mode therefore only gets populated by _transfer_to_sections'
+    raw-mode text path, which never reaches Image.open().
+
+    The realistic raw-mode failure that maps to
+    images_unreadable_resource is the *download-time* one — text got
+    produced but the resource itself never landed. That is a parser
+    upstream of MinerU. In raw mode at this layer the corresponding
+    raw-mode counter stays at 0; the field is present so callers can
+    read it without KeyError (issue #16978 review).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    good_path = tmp_path / "good.jpg"
+    module.Image.new("RGB", (2, 2), "red").save(good_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption A"],
+            "image_footnote": [],
+            "img_path": str(good_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 1  # section emitted, so chunked
+    assert coverage["images_unreadable_resource"] == 0
+    assert coverage["images_dropped_no_text"] == 0
+
+
+def test_app_media_mode_counts_unreadable_resource(monkeypatch, tmp_path):
+    """App-media modes (naive/manual/paper) skip IMAGE blocks in
+    _transfer_to_sections and route them through _transfer_to_tables.
+    An IMAGE with a non-empty caption but a missing/corrupted binary
+    must route to images_unreadable_resource — NOT
+    images_dropped_no_text (which is reserved for textless+unreadable).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    missing_path = tmp_path / "missing.jpg"  # never created on disk
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption B"],
+            "image_footnote": [],
+            "img_path": str(missing_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    # Mirror parse_pdf's call order: _transfer_to_sections first (app-media
+    # mode skips images), then _transfer_to_tables (handles them).
+    parser._transfer_to_sections(outputs, parse_method="naive")
+    tables = parser._transfer_to_tables(outputs, table_enable=True)
+    # The image is unreadable, so it does not reach tables.
+    assert len(tables) == 0
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    # app-media mode: images_chunked is only incremented in
+    # _transfer_to_tables when the image actually reaches the tables
+    # list — this one doesn't, so chunked stays at 0.
+    assert coverage["images_chunked"] == 0
+    assert coverage["images_unreadable_resource"] == 1  # the missing file
+    assert coverage["images_dropped_no_text"] == 0  # text was non-empty
+
+
+def test_app_media_mode_counts_dropped_no_text_for_unreadable_textless_image(
+    monkeypatch,
+    tmp_path,
+):
+    """App-media IMAGE block whose caption/footnote/vlm_description are
+    all empty AND whose binary can't be read must route to
+    images_dropped_no_text (text was never going to make it), NOT
+    images_unreadable_resource (which is reserved for the case where
+    text WAS there but the binary was unreadable).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    missing_path = tmp_path / "missing.jpg"  # never created on disk
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": str(missing_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="naive")
+    parser._transfer_to_tables(outputs, table_enable=True)
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    # The textless + unreadable combo routes to images_dropped_no_text,
+    # NOT images_unreadable_resource.
+    assert coverage["images_dropped_no_text"] == 1
+    assert coverage["images_unreadable_resource"] == 0
+    # chunked is only incremented on confirmed emit — this image
+    # never reached tables, so chunked stays at 0.
+    assert coverage["images_chunked"] == 0
+
+
+def test_images_detected_counts_chart_blocks(monkeypatch):
+    """CHART blocks share the visual pipeline with IMAGE (caption → text
+    section, binary → image chunk via _transfer_to_tables). The detected
+    counter must include them so the detected/chunked/described totals
+    are symmetric — otherwise a chart-only PDF would show detected=0
+    chunked=N which is misleading.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1, f"CHART blocks must count toward images_detected; got {coverage!r}"
+
+
+def test_transfer_to_tables_counts_chart_chunked_and_described(monkeypatch, tmp_path):
+    """CHART blocks that survive _transfer_to_tables must be counted
+    symmetrically with IMAGE in chunked and described. VLM
+    descriptions on chart blocks must count too (raw-mode text path
+    also reads vlm_description for charts and now increments described).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    chart_path = tmp_path / "chart.png"
+    module.Image.new("RGB", (2, 2), "blue").save(chart_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "img_path": str(chart_path),
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "vlm_description": "A blue square",
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+        },
+    ]
+
+    parser._transfer_to_tables(outputs)
+    coverage = parser.last_image_coverage
+    chart_path.unlink()
+    assert coverage["images_chunked"] == 1
+    assert coverage["images_described"] == 1
+
+
+def test_transfer_to_sections_counts_chart_described_in_raw_mode(monkeypatch):
+    """Raw-mode text path: when a chart has a vlm_description it folds
+    into the chunk text. The described counter must reflect that, the
+    same way IMAGE does on the same code path.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "vlm_description": "Trend line rising.",
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+    coverage = parser.last_image_coverage
+    assert coverage["images_described"] == 1, f"CHART with vlm_description must count toward images_described in raw mode; got {coverage!r}"
+
+
+def test_raw_mode_counts_chart_block_as_chunked(monkeypatch):
+    """CHART blocks emitted into a raw-mode text section must count as
+    chunked, the same way IMAGE does. Without this, a chart-only raw
+    PDF reports detected > 0 but chunked = 0, which fires a systematic
+    false positive on the headline detected - chunked gap.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 1, f"CHART emitted as a raw-mode text section must count as chunked; got {coverage!r}"
+    assert coverage["images_dropped_no_text"] == 0
+
+
+def test_initial_last_image_coverage_has_vlm_configured_key(monkeypatch):
+    """Pre-seed vlm_configured=False on the parser instance so callers
+    that read last_image_coverage["vlm_configured"] after only
+    _transfer_to_sections (without parse_pdf having filled it in) get
+    False instead of KeyError (issue #16978 review).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    assert "vlm_configured" in parser.last_image_coverage
+    assert parser.last_image_coverage["vlm_configured"] is False
+
+
+def _page_filter_parser(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    return module.MinerUParser(mineru_api="http://mineru.local")
+
+
+def test_select_configured_pages_drops_blocks_between_the_ranges(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # One request covers the merged span, so MinerU also returns pages 10..19.
+    outputs = [{"page_idx": i, "text": f"p{i + 1}"} for i in range(29)]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept] == [f"p{n}" for n in list(range(1, 10)) + list(range(20, 30))]
+
+
+def test_select_configured_pages_matches_one_task_per_range(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # queue_tasks turns a range (s, e) into a task stop of e - 1, so one task per
+    # range covered 1..9 and 20..29. The merged span must select the same pages.
+    outputs = [{"page_idx": i, "text": f"p{i + 1}"} for i in range(29)]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept][-1] == "p29"
+    assert "p10" not in [o["text"] for o in kept]
+
+
+def test_select_configured_pages_offsets_page_idx_by_page_from(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # The task starts at page_from=5, so page_idx 0 is document page 6.
+    outputs = [{"page_idx": i, "text": f"p{5 + i + 1}"} for i in range(10)]
+    kept = parser._select_configured_pages(outputs, [(6, 7), (12, 14)], 5)
+
+    assert [o["text"] for o in kept] == ["p6", "p12", "p13"]
+
+
+def test_select_configured_pages_keeps_everything_without_ranges(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    outputs = [{"page_idx": 0, "text": "a"}, {"page_idx": 9, "text": "b"}]
+
+    assert parser._select_configured_pages(outputs, None, 0) == outputs
+    assert parser._select_configured_pages(outputs, [], 0) == outputs
+
+
+def test_select_configured_pages_keeps_a_block_with_no_page(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    outputs = [{"page_idx": 0, "text": "in"}, {"text": "unplaced"}, {"page_idx": 14, "text": "gap"}]
+    kept = parser._select_configured_pages(outputs, [(1, 10)], 0)
+
+    assert [o["text"] for o in kept] == ["in", "unplaced"]
+
+
+def test_parse_pdf_sends_one_merged_span_to_the_mineru_api(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    posted = {}
+
+    def fake_post(**kwargs):
+        posted.update(kwargs["data"])
+        return _FakePostContext(_FakeZipResponse(), posted)
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(parser, "_extract_zip_no_root", Mock())
+    # MinerU parses the whole merged span, so it returns the gap pages as well.
+    monkeypatch.setattr(
+        parser,
+        "_read_output",
+        Mock(return_value=[{"type": module.MinerUContentType.TEXT, "page_idx": i, "bbox": [0, 0, 1, 1], "text": f"p{i + 1}"} for i in range(29)]),
+    )
+
+    sections, _tables = parser.parse_pdf(
+        filepath=pdf_path,
+        binary=None,
+        output_dir=str(output_dir),
+        delete_output=False,
+        page_from=0,
+        page_to=29,
+        parser_config={"pages": [(1, 10), (20, 30)]},
+    )
+
+    # One request for the merged span. start_page_id is 0-based, end_page_id is
+    # 0-based inclusive, so pages 1 to 29 become 0 and 28.
+    assert posted["start_page_id"] == 0
+    assert posted["end_page_id"] == 28
+
+    kept = [section for section, _tag in sections]
+    assert kept == [f"p{n}" for n in list(range(1, 10)) + list(range(20, 30))]
+
+
+def test_select_configured_pages_keeps_a_table_that_reaches_into_a_range(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # _enrich_outputs_with_middle_positions gives a cross-page table every page it
+    # covers. This one starts on gap page 19 and continues onto configured page 20.
+    outputs = [
+        {"page_idx": 18, "text": "gap only"},
+        {
+            "page_idx": 18,
+            "text": "table 19-20",
+            "_mineru_positions": [{"page_idx": 18}, {"page_idx": 19}],
+        },
+    ]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept] == ["table 19-20"]
+
+
+def test_select_configured_pages_keeps_a_table_that_reaches_out_of_a_range(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # The mirror case: the table starts on configured page 9 and runs onto gap page 10.
+    outputs = [
+        {
+            "page_idx": 8,
+            "text": "table 9-10",
+            "_mineru_positions": [{"page_idx": 8}, {"page_idx": 9}],
+        },
+        {"page_idx": 9, "text": "gap only"},
+    ]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept] == ["table 9-10"]

@@ -57,9 +57,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 
 	// File operations.
 	g.GET("/download", h.DownloadAgentFile)
-	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
 	g.GET("/attachments/:attachment_id/preview", h.PreviewAttachment)
-	g.POST("/:canvas_id/upload", h.UploadAgentFile)
 
 	// Component introspection + debug.
 	g.GET("/:canvas_id/components/:component_id/input-form", h.GetComponentInputForm)
@@ -96,7 +94,6 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// (api/apps/restful_apis/agent_api.py) has since removed the route.
 	// See plan: .claude/plans/agent-api-gaps-go-port.md §Gap E.
 	g.POST("/chat/completions", h.AgentChatCompletions)
-	g.POST("/rerun", h.RerunAgent)
 	g.POST("/test_db_connection", h.TestDBConnection)
 }
 

@@ -38,7 +38,7 @@ export function TemplatePreviewHeader({
   return (
     <section className="shrink-0 flex justify-between items-center px-5 py-4 border-b border-border-button">
       <span className="text-lg font-medium text-text-primary">
-        {templateName || t('setting.templateName')}
+        {templateName || t('common.name')}
       </span>
       <div className="flex items-center gap-2">
         <JsonPreviewSheet

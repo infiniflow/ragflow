@@ -16,6 +16,11 @@
 
 /* floating-chat-widget-markdown.less */
 
+.referenceIcon {
+  cursor: help;
+  vertical-align: -0.125em;
+}
+
 .widget-citation-popover {
   max-width: 90vw;
   /* Use viewport width for better responsiveness */
@@ -57,6 +62,32 @@
   ol,
   blockquote {
     line-height: 1.6;
+  }
+
+  :global(details.think),
+  :global(details.retrieving) {
+    padding-inline-start: 0px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: rgb(var(--text-secondary));
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+      user-select: none;
+      color: var(--text-secondary);
+      &:hover {
+        color: rgb(var(--text-secondary));
+      }
+    }
+  }
+
+  :global(details.think) {
+    border-inline-start: 2px solid var(--border-default);
+  }
+
+  :global(details.retrieving) {
+    border-inline-start: 2px solid var(--border-button);
   }
 
   /* Enhanced image styles */

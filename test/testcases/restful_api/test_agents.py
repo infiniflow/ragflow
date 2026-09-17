@@ -18,7 +18,6 @@ import json
 
 import pytest
 
-
 MINIMAL_DSL = {
     "components": {
         "begin": {
@@ -277,8 +276,7 @@ def test_agent_openai_compatible_mode(rest_client, create_agent_resource):
     assert nonstream.status_code == 200
     nonstream_payload = nonstream.json()
     assert isinstance(nonstream_payload, dict), nonstream_payload
-    if "choices" not in nonstream_payload and nonstream_payload.get("code") == 0 and "choices" in (nonstream_payload.get("data") or {}):
-        pytest.skip("Go agent OpenAI-compatible response is incorrectly wrapped in the REST envelope")
+    assert nonstream_payload.get("object") == "chat.completion", nonstream_payload
     assert "choices" in nonstream_payload, nonstream_payload
 
     stream = rest_client.post(
@@ -345,15 +343,6 @@ def test_agent_webhook_logs_empty_poll_contract(rest_client, create_agent_resour
 @pytest.mark.p2
 def test_agent_db_connection_validates_required_fields(rest_client):
     res = rest_client.post("/agents/test_db_connection", json={"db_type": "mysql"})
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["code"] == 101, payload
-    assert "required argument are missing" in payload["message"], payload
-
-
-@pytest.mark.p2
-def test_agent_rerun_requires_required_fields(rest_client):
-    res = rest_client.post("/agents/rerun", json={"id": "flow-1"})
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 101, payload

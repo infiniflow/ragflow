@@ -159,3 +159,140 @@ describe('useGraphStore.deleteIterationNodeById', () => {
     expect(state.edges.map((edge) => edge.id)).toEqual(['branch-edge']);
   });
 });
+
+describe('useGraphStore.toggleBottomCollapse', () => {
+  const buildSubgraph = () => {
+    const nodes = [
+      createNode('agent:0', Operator.Agent),
+      createNode('agent:1', Operator.Agent),
+      createNode('tool:0', Operator.Tool),
+      createNode('tool:1', Operator.Tool),
+      createNode('message:0', Operator.Message),
+    ];
+
+    const edges = [
+      createEdge('e-sub', 'agent:0', 'agent:1', {
+        sourceHandle: NodeHandleId.AgentBottom,
+        targetHandle: NodeHandleId.AgentTop,
+      }),
+      createEdge('e-tool-0', 'agent:0', 'tool:0', {
+        sourceHandle: NodeHandleId.Tool,
+      }),
+      createEdge('e-tool-1', 'agent:1', 'tool:1', {
+        sourceHandle: NodeHandleId.Tool,
+      }),
+      createEdge('e-goto', 'agent:1', 'message:0', {
+        sourceHandle: NodeHandleId.AgentException,
+      }),
+      createEdge('e-main', 'agent:0', 'message:0', {
+        sourceHandle: NodeHandleId.Start,
+      }),
+    ];
+
+    return { nodes, edges };
+  };
+
+  const hiddenIds = (items: { id: string; hidden?: boolean }[]) =>
+    items
+      .filter((x) => x.hidden)
+      .map((x) => x.id)
+      .sort();
+
+  beforeEach(() => {
+    useGraphStore.setState({
+      nodes: [],
+      edges: [],
+      selectedNodeIds: [],
+      selectedEdgeIds: [],
+      clickedNodeId: '',
+      clickedToolId: '',
+      collapsedBottomHandles: {},
+    });
+  });
+
+  it('hides the handle subtree and restores it on a second toggle', () => {
+    const { nodes, edges } = buildSubgraph();
+
+    useGraphStore.setState({
+      nodes,
+      edges,
+      selectedNodeIds: ['agent:1'],
+      selectedEdgeIds: ['e-tool-1'],
+    });
+
+    useGraphStore
+      .getState()
+      .toggleBottomCollapse('agent:0', NodeHandleId.AgentBottom);
+
+    let state = useGraphStore.getState();
+    expect(state.collapsedBottomHandles).toEqual({
+      'agent:0': [NodeHandleId.AgentBottom],
+    });
+    // The sub-agent's whole subtree is hidden, including its tool node
+    expect(hiddenIds(state.nodes)).toEqual(['agent:1', 'tool:1']);
+    // The goto edge from a hidden node is hidden too,
+    // while the right-side main-flow edge stays visible
+    expect(hiddenIds(state.edges)).toEqual(['e-goto', 'e-sub', 'e-tool-1']);
+    expect(state.selectedNodeIds).toEqual([]);
+    expect(state.selectedEdgeIds).toEqual([]);
+
+    useGraphStore
+      .getState()
+      .toggleBottomCollapse('agent:0', NodeHandleId.AgentBottom);
+
+    state = useGraphStore.getState();
+    expect(state.collapsedBottomHandles).toEqual({});
+    expect(state.nodes.every((x) => !x.hidden)).toBe(true);
+    expect(state.edges.every((x) => !x.hidden)).toBe(true);
+  });
+
+  it('collapses the two bottom handles independently', () => {
+    const { nodes, edges } = buildSubgraph();
+
+    useGraphStore.setState({ nodes, edges });
+
+    useGraphStore
+      .getState()
+      .toggleBottomCollapse('agent:0', NodeHandleId.Tool);
+
+    let state = useGraphStore.getState();
+    // Only the tool node is hidden; the sub-agent subtree stays visible
+    expect(hiddenIds(state.nodes)).toEqual(['tool:0']);
+    expect(hiddenIds(state.edges)).toEqual(['e-tool-0']);
+
+    useGraphStore
+      .getState()
+      .toggleBottomCollapse('agent:0', NodeHandleId.AgentBottom);
+
+    state = useGraphStore.getState();
+    expect(hiddenIds(state.nodes)).toEqual(['agent:1', 'tool:0', 'tool:1']);
+    expect(hiddenIds(state.edges)).toEqual([
+      'e-goto',
+      'e-sub',
+      'e-tool-0',
+      'e-tool-1',
+    ]);
+
+    // Expanding one handle keeps the other handle's subtree hidden
+    useGraphStore
+      .getState()
+      .toggleBottomCollapse('agent:0', NodeHandleId.Tool);
+
+    state = useGraphStore.getState();
+    expect(hiddenIds(state.nodes)).toEqual(['agent:1', 'tool:1']);
+    expect(hiddenIds(state.edges)).toEqual(['e-goto', 'e-sub', 'e-tool-1']);
+  });
+
+  it('does nothing when there is no bottom subtree', () => {
+    useGraphStore.setState({
+      nodes: [createNode('agent:0', Operator.Agent)],
+      edges: [],
+    });
+
+    useGraphStore
+      .getState()
+      .toggleBottomCollapse('agent:0', NodeHandleId.AgentBottom);
+
+    expect(useGraphStore.getState().collapsedBottomHandles).toEqual({});
+  });
+});

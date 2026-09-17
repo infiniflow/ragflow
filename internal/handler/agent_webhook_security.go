@@ -202,8 +202,16 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 
 // validateIPWhitelist mirrors python agent_api.py:1660-1679. Empty
 // list → allow. Supports CIDR ("10.0.0.0/8") and exact ("1.2.3.4").
-// The client IP comes from gin's c.ClientIP() which honours
-// X-Forwarded-For when trusted proxies are configured.
+//
+// This is a security gate, so the address it checks must be one the
+// caller cannot choose. c.ClientIP() takes X-Forwarded-For / X-Real-IP
+// only when the direct peer is in the engine's trusted proxy list and
+// falls back to the socket peer otherwise; the engine is configured via
+// common.ConfigureTrustedProxies (default: loopback, the nginx bundled
+// in the image) instead of gin's trust-everything default, which let any
+// caller send "X-Forwarded-For: <an-allowed-ip>" and pass. The socket
+// peer alone (c.RemoteIP()) is not usable here because behind that
+// bundled nginx it is 127.0.0.1 for every request.
 func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 	whitelist, _ := cfg["ip_whitelist"].([]any)
 	if len(whitelist) == 0 {
@@ -294,7 +302,7 @@ func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any)
 				zap.String("canvas_id", canvasID), zap.Error(err))
 			return nil
 		}
-		return fmt.Errorf("rate limit error: %s", err.Error())
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	if !allowed {
 		return fmt.Errorf("too many requests (rate limit exceeded)")
@@ -463,7 +471,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 
 	token, err := jwt.Parse(tokenStr, keyFunc, parserOpts...)
 	if err != nil {
-		return fmt.Errorf("invalid jwt: %s", err.Error())
+		return fmt.Errorf("invalid jwt: %w", err)
 	}
 	if !token.Valid {
 		return fmt.Errorf("invalid jwt")
@@ -499,13 +507,13 @@ func jwtKeyFunc(alg, secret string) (jwt.Keyfunc, error) {
 	case "RS256", "RS384", "RS512":
 		pub, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt rsa public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt rsa public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	case "ES256", "ES384", "ES512":
 		pub, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt ec public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt ec public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	}

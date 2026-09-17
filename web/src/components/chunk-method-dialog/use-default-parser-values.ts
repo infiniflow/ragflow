@@ -33,12 +33,7 @@ export function useDefaultParserValues() {
       auto_keywords: 0,
       auto_questions: 0,
       html4excel: false,
-      toc_extraction: false,
       image_table_context_window: 0,
-      mineru_parse_method: 'auto',
-      mineru_formula_enable: true,
-      mineru_table_enable: true,
-      mineru_lang: 'English',
       raptor: {
         use_raptor: false,
         prompt: t('knowledgeConfiguration.promptText'),

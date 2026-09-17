@@ -155,6 +155,9 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		if req.Keywords != "AI" {
 			t.Fatalf("keywords = %q, want AI", req.Keywords)
 		}
+		if !reflect.DeepEqual(req.ChunkIDs, []string{"chunk-1", "chunk-2", "chunk-3"}) {
+			t.Fatalf("chunk_ids = %#v, want %#v", req.ChunkIDs, []string{"chunk-1", "chunk-2", "chunk-3"})
+		}
 		if req.AvailableInt == nil || *req.AvailableInt != 1 {
 			t.Fatalf("available_int = %v, want 1", req.AvailableInt)
 		}
@@ -167,7 +170,7 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		}, nil
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

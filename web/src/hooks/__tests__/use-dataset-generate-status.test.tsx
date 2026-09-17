@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
-import { GenerateType } from '@/constants/knowledge';
+import { GenerateType, TraceType } from '@/constants/knowledge';
 
 import { useTraceRunData } from '../use-dataset-generate';
 
@@ -9,8 +9,8 @@ jest.mock('react-router', () => ({
   useParams: jest.fn(() => ({ id: 'kb1' })),
 }));
 
-jest.mock('@/utils/api-proxy-scheme', () => ({
-  isGoDatasetBackend: jest.fn(() => true),
+jest.mock('@/utils/backend-variant', () => ({
+  useIsGoBackend: jest.fn(() => true),
 }));
 
 jest.mock('@/services/knowledge-service', () => ({
@@ -30,7 +30,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 import { getDatasetCompilationStatus } from '@/services/knowledge-service';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
 
 const mockStatus = jest.mocked(getDatasetCompilationStatus);
 
@@ -53,10 +53,10 @@ function makeWrapper() {
   return Wrapper;
 }
 
-describe('useTraceRunData (Go/hybrid compile-status contract)', () => {
+describe('useTraceRunData (Go compile-status contract)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (isGoDatasetBackend as jest.Mock).mockReturnValue(true);
+    (useIsGoBackend as jest.Mock).mockReturnValue(true);
   });
 
   it('maps a successful status to the scheduler contract fields', async () => {
@@ -83,6 +83,9 @@ describe('useTraceRunData (Go/hybrid compile-status contract)', () => {
     expect(info?.inflight).toBe(2);
     expect(info?.backlog).toBe(1);
     expect(info?.compilationError).toBe('');
+    // The trace type doubles as the backend `kind` alias, so each view's
+    // status request is scoped to its own compile type.
+    expect(mockStatus).toHaveBeenCalledWith('kb1', TraceType.Artifact);
   });
 
   it('rejects a non-zero business code instead of mapping to idle', async () => {

@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Any
 import os
+from typing import Any
 
-from common.connection_utils import timeout
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.connection_utils import timeout
 
 
 class VariableAggregatorParam(ComponentParamBase):
@@ -40,7 +40,7 @@ class VariableAggregatorParam(ComponentParamBase):
             if not g.get("variables"):
                 raise ValueError(f"[VariableAggregator] variables of group `{g.get('group_name')}` can not be empty")
             if not isinstance(g.get("variables"), list):
-                raise ValueError(f"[VariableAggregator] variables of group `{g.get('group_name')}` should be a list of strings")
+                raise TypeError(f"[VariableAggregator] variables of group `{g.get('group_name')}` should be a list of strings")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
@@ -54,7 +54,10 @@ class VariableAggregatorParam(ComponentParamBase):
 class VariableAggregator(ComponentBase):
     component_name = "VariableAggregator"
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
+    def param_refs(self) -> list[str]:
+        return [selector.get("value") if isinstance(selector, dict) else selector for group in self._param.groups for selector in group.get("variables", [])]
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", "3")))
     def _invoke(self, **kwargs):
         # Group mode: for each group, pick the first available variable
         for group in self._param.groups:
@@ -63,7 +66,16 @@ class VariableAggregator(ComponentBase):
             # record candidate selectors within this group
             self.set_input_value(f"{gname}.variables", list(group.get("variables", [])))
             for selector in group.get("variables", []):
-                val = self._canvas.get_variable_value(selector["value"])
+                # Selectors may be {"value": ref} dicts (UI form) or plain
+                # reference strings (SDK/API-built canvases); param_refs
+                # already accepts both, so resolve them the same way here.
+                ref = selector.get("value") if isinstance(selector, dict) else selector
+                if not isinstance(ref, str):
+                    continue
+                ref = ref.strip("{}").strip()
+                if not ref:
+                    continue
+                val = self._canvas.get_variable_value(ref)
                 if val:
                     self.set_output(gname, val)
                     break
@@ -73,7 +85,7 @@ class VariableAggregator(ComponentBase):
         # Try to convert value to serializable object if it has to_object()
         try:
             return value.to_object()  # type: ignore[attr-defined]
-        except Exception:
+        except (AttributeError, TypeError):
             return value
 
     def thoughts(self) -> str:

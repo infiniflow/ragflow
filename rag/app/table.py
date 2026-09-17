@@ -74,7 +74,7 @@ class Excel(ExcelParser):
         lang="English",
         **kwargs,
     ):
-        if not binary:
+        if binary is None:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
@@ -408,6 +408,7 @@ def column_data_type(arr):
         type_priority = {"text": 0, "datetime": 1, "float": 2, "int": 3, "bool": 4}
         counts = sorted(counts.items(), key=lambda x: (x[1] * -1, type_priority[x[0]]))
         ty = counts[0][0]
+    conversion_failures = 0
     for i in range(len(arr)):
         if arr[i] is None:
             continue
@@ -418,13 +419,21 @@ def column_data_type(arr):
             arr[i] = None
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
-        except Exception as e:
-            arr[i] = None
-            logging.warning(f"Column {i}: {e}")
+            converted = trans[ty](str(arr[i]))
+        except ValueError:
+            conversion_failures += 1
             # Keep original value from openpyxl/pandas instead of dropping to None.
             # This preserves cells (e.g. text in numeric columns) that would
             # otherwise be silently discarded by forced column-level conversion.
+            continue
+        if converted is None:
+            continue
+        arr[i] = converted
+    if conversion_failures:
+        # Aggregate rather than log per-cell: individual cell values must not
+        # be written to application logs, and per-cell warnings would flood
+        # logs on large uploads.
+        logging.warning(f"column_data_type: kept {conversion_failures} cell(s) that could not convert to {ty}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -547,10 +556,22 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [i for i in range(len(clmns)) if column_roles.get(clmns[i], "both") in ("metadata", "both")]
-        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
-            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in stored_indices}
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
+            # Regression for #18287: Infinity/OceanBase/SereneDB store
+            # chunk_data keyed by the original column name, and the SQL
+            # prompt examples reference those exact keys via
+            # `json_extract_string(chunk_data, '$.FieldName')`. Apply
+            # the underscore-to-space formatting only to the displayed
+            # value; the key remains the raw column name verbatim so
+            # that columns like `row_id` continue to map to `$.row_id`
+            # in `chunk_data` instead of the unreachable `$.row id`.
+            # GaussDB's pinyin-keyed contract is preserved by the
+            # override block below.
+            field_map = {str(clmns[i]): str(clmns[i]).replace("_", " ") for i in stored_indices}
         else:
             field_map = {clmns_map[i][0]: clmns_map[i][1] for i in stored_indices}
+        if settings.DOC_ENGINE_GAUSSDB:
+            field_map = {py_clmns[i].lower(): str(clmns[i]) for i in stored_indices}
         logging.debug(f"Field map (sheet): {field_map}")
         sheet_specs.append(
             {
@@ -608,20 +629,16 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 if role in ("indexing", "vectorize", "both"):
                     text_fields.append((col_name, row[col_name]))
                 if role in ("metadata", "both"):
-                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
                         stored[str(col_name)] = row[col_name]
                     else:
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
                             val = row[col_name]
-                            # If a string value ended up in a non-text column,
-                            # it was preserved from a failed conversion in
-                            # column_data_type. Skip storing in the typed ES
-                            # field to avoid type mapping errors; the value is
-                            # already in text_fields for chunk content.
-                            if isinstance(val, str):
-                                pass
-                            else:
+                            # Valid datetime and bool conversions are strings;
+                            # other strings in typed columns are failed conversions.
+                            valid_typed_string = isinstance(val, str) and (clmn_tys[j] == "datetime" and trans_datatime(val) or clmn_tys[j] == "bool" and trans_bool(val))
+                            if not isinstance(val, str) or valid_typed_string:
                                 stored[fld] = val
                         else:
                             cell = row[col_name]
@@ -631,7 +648,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                                 stored[f"{py_clmns[j].lower()}_raw"] = raw_s
             if not text_fields and not stored:
                 continue
-            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
                 if stored:
                     d["chunk_data"] = stored
             else:
@@ -642,7 +659,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk content_with_weight length: {len(d.get('content_with_weight', '') or '')}")
                 _cd = d.get("chunk_data")
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk chunk_data keys: {list(_cd.keys()) if isinstance(_cd, dict) else 'N/A'}")
-                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB):
+                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB):
                     _extra = [k for k in d if k not in ("docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks")]
                     logger.debug(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)

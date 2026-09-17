@@ -8,6 +8,7 @@ import {
   DatasetNavNode,
 } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { FileText, Folder, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +28,7 @@ function NavNodeDeleteAction({
   onDelete,
 }: NavNodeDeleteActionProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const handleTriggerClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -41,10 +43,13 @@ function NavNodeDeleteAction({
     onDelete(name, parentName);
   }, [name, parentName, onDelete]);
 
+  // The Go backend does not support deleting nav nodes; don't mount the action.
+  if (isGo) return null;
+
   return (
     <ConfirmDeleteDialog
-      title={t('datasetNav.deleteNodeTitle')}
-      content={{ title: t('datasetNav.deleteNodeDescription') }}
+      title={t('knowledgeCompilation.navDeleteNodeTitle')}
+      content={{ title: t('knowledgeCompilation.navDeleteNodeDescription') }}
       onOk={handleConfirmDelete}
     >
       <Button
@@ -66,8 +71,16 @@ function NavNodeDeleteAction({
 type NavTreeLeftPanelProps = {
   navList: DatasetNavList | null;
   navLoading: boolean;
+  navError?: boolean;
   keywords: string;
+  // The debounced filter applied to the nav/children/graph requests. Used as
+  // the TreeView key so a filter change remounts the tree: expansion state is
+  // uncontrolled per node and onExpand only fires on opening, so without a
+  // remount an already-open node whose cached children were dropped would sit
+  // on the loading placeholder forever.
+  activeKeywords: string;
   childrenMap: Record<string, DatasetNavNode[]>;
+  childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
@@ -82,8 +95,11 @@ type NavTreeLeftPanelProps = {
 export function NavTreeLeftPanel({
   navList,
   navLoading,
+  navError = false,
   keywords,
+  activeKeywords,
   childrenMap,
+  childrenErrorParents = {},
   structureMap,
   deleteNavLoading,
   deleteNodeLoading,
@@ -95,6 +111,7 @@ export function NavTreeLeftPanel({
   onDeleteNode,
 }: NavTreeLeftPanelProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const renderNavActions = useCallback(
     (node: DatasetNavNode, parentName: string | null) => (
@@ -112,16 +129,19 @@ export function NavTreeLeftPanel({
     () =>
       buildNavTreeData(navList?.items, {
         childrenMap,
+        childrenErrorParents,
         structureMap,
         getActions: renderNavActions,
         onNodeClick,
         onNodeExpand,
         onEntityClick,
-        loadingPlaceholder: t('datasetNav.loading'),
+        loadingPlaceholder: t('knowledgeCompilation.navLoading'),
+        errorPlaceholder: t('knowledgeCompilation.navChildLoadFailed'),
       }),
     [
       navList?.items,
       childrenMap,
+      childrenErrorParents,
       structureMap,
       renderNavActions,
       onNodeClick,
@@ -135,12 +155,14 @@ export function NavTreeLeftPanel({
     <aside className="size-full flex flex-col">
       <section className="flex items-center justify-between px-3 pt-3">
         <span className="text-sm font-medium text-text-primary">
-          {t('datasetNav.title')} ({navList?.total ?? 0})
+          {t('knowledgeCompilation.navTitle')} ({navList?.total ?? 0})
         </span>
-        {treeData.length > 0 && (
+        {!isGo && treeData.length > 0 && (
           <ConfirmDeleteDialog
-            title={t('datasetNav.deleteAllTitle')}
-            content={{ title: t('datasetNav.deleteAllDescription') }}
+            title={t('knowledgeCompilation.navDeleteAllTitle')}
+            content={{
+              title: t('knowledgeCompilation.navDeleteAllDescription'),
+            }}
             onOk={onDeleteAll}
           >
             <Button
@@ -166,15 +188,27 @@ export function NavTreeLeftPanel({
           </div>
         ) : treeData.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-secondary">
-            {t('datasetNav.empty')}
+            {t(
+              navError
+                ? 'knowledgeCompilation.navLoadFailed'
+                : 'knowledgeCompilation.navEmpty',
+            )}
           </div>
         ) : (
-          <TreeView
-            data={treeData}
-            expandOnRowClick={false}
-            defaultNodeIcon={Folder}
-            defaultLeafIcon={FileText}
-          />
+          <>
+            {navError ? (
+              <div className="px-2 pb-2 text-center text-sm text-text-secondary">
+                {t('knowledgeCompilation.navLoadFailed')}
+              </div>
+            ) : null}
+            <TreeView
+              key={activeKeywords}
+              data={treeData}
+              expandOnRowClick={false}
+              defaultNodeIcon={Folder}
+              defaultLeafIcon={FileText}
+            />
+          </>
         )}
       </div>
     </aside>

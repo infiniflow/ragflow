@@ -17,10 +17,14 @@
 package common
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -35,6 +39,9 @@ var (
 	Logger      *zap.Logger
 	Sugar       *zap.SugaredLogger
 	atomicLevel zap.AtomicLevel
+
+	stdLogOnce sync.Once
+	stdLogger  *log.Logger
 )
 
 // FileOutput describes the rotated log file destination.
@@ -60,7 +67,48 @@ const (
 	defaultMaxSizeMB  = 100
 	defaultMaxBackups = 10
 	defaultMaxAgeDays = 30
+	cyanLogMarker     = "[[RAGFLOW_CYAN_LOG]]"
+	greenLogMarker    = "[[RAGFLOW_GREEN_LOG]]"
+	redLogMarker      = "[[RAGFLOW_RED_LOG]]"
+	resetLogMarker    = "[[RAGFLOW_RESET_LOG]]"
+	ansiBrightCyan    = "\x1b[96m"
+	ansiGreen         = "\x1b[32m"
+	ansiRed           = "\x1b[31m"
+	ansiReset         = "\x1b[0m"
 )
+
+type coloredLineWriteSyncer struct {
+	zapcore.WriteSyncer
+	color bool
+}
+
+func (s coloredLineWriteSyncer) Write(p []byte) (int, error) {
+	if !bytes.Contains(p, []byte(cyanLogMarker)) && !bytes.Contains(p, []byte(greenLogMarker)) && !bytes.Contains(p, []byte(redLogMarker)) {
+		return s.WriteSyncer.Write(p)
+	}
+
+	line := bytes.Clone(p)
+	if s.color {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), []byte(ansiBrightCyan))
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), []byte(ansiGreen))
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), []byte(ansiRed))
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), []byte(ansiReset))
+	} else {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), nil)
+	}
+
+	n, err := s.WriteSyncer.Write(line)
+	if err != nil {
+		return 0, err
+	}
+	if n != len(line) {
+		return 0, io.ErrShortWrite
+	}
+	return len(p), nil
+}
 
 func parseZapLevel(level string) (zapcore.Level, error) {
 	switch strings.ToLower(strings.TrimSpace(level)) {
@@ -139,7 +187,6 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		maxAge = defaultMaxAgeDays
 	}
 
-	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
 	ljLogger := &lumberjack.Logger{
 		Filename:   filepath.Join(file.Path, file.Filename),
 		MaxSize:    maxSize,
@@ -148,13 +195,29 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		Compress:   file.Compress,
 		LocalTime:  true,
 	}
-	syncers = append(syncers, zapcore.AddSync(ljLogger))
-
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zap.CombineWriteSyncers(syncers...),
-		atomicLevel,
-	)
+	stdoutSyncer := zapcore.AddSync(os.Stdout)
+	fileSyncer := zapcore.AddSync(ljLogger)
+	var core zapcore.Core
+	if IsLLMDebugEnabled() {
+		core = zapcore.NewTee(
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: stdoutSyncer, color: true},
+				atomicLevel,
+			),
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: fileSyncer},
+				atomicLevel,
+			),
+		)
+	} else {
+		core = zapcore.NewCore(
+			zapcore.NewConsoleEncoder(encoderConfig),
+			zap.CombineWriteSyncers(stdoutSyncer, fileSyncer),
+			atomicLevel,
+		)
+	}
 
 	if serviceName != "" {
 		Logger = zap.New(core,
@@ -193,6 +256,20 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
+// LogRequestResponseInfo writes the request portion in bright cyan. The
+// response portion is green for success and red for failure on stdout. File
+// output remains uncolored.
+func LogRequestResponseInfo(request, response string, responseSucceeded bool) {
+	if Logger == nil {
+		return
+	}
+	responseMarker := redLogMarker
+	if responseSucceeded {
+		responseMarker = greenLogMarker
+	}
+	Logger.Info(cyanLogMarker + request + responseMarker + " " + response + resetLogMarker)
+}
+
 func Error(msg string, err error, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -217,6 +294,36 @@ func Warn(msg string, fields ...zap.Field) {
 		return
 	}
 	Logger.Warn(msg, fields...)
+}
+
+// StdLogger returns a *log.Logger that routes writes through the global zap
+// logger, so call sites that keep a *log.Logger facade still land in the
+// project's structured logs. When the project logger has not been initialized
+// yet (e.g. before InitLogger runs or in standalone tests) it falls back to the
+// standard-library default. The returned logger writes at Info level.
+//
+// The returned *log.Logger resolves the write target LAZILY on every write.
+// Package-level variables like `var _LOG = common.StdLogger()` are evaluated
+// during package init, long before InitLogger runs; a logger captured eagerly
+// at that moment would be log.Default() forever and its output would vanish
+// into stderr, never reaching the structured log files.
+func StdLogger() *log.Logger {
+	stdLogOnce.Do(func() {
+		stdLogger = log.New(stdLogRouter{}, "", 0)
+	})
+	return stdLogger
+}
+
+// stdLogRouter dispatches *log.Logger writes to the current global logger on
+// every write (see StdLogger).
+type stdLogRouter struct{}
+
+func (stdLogRouter) Write(p []byte) (int, error) {
+	if Logger == nil {
+		return os.Stderr.Write(p)
+	}
+	Logger.Info(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
 
 // IsDebugEnabled returns true if debug logging is enabled.
