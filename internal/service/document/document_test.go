@@ -250,6 +250,53 @@ type generatedCleanupDocEngine struct {
 	generatedCond    map[string]interface{}
 }
 
+type knowledgeCompileClaimFencingEngine struct {
+	fakeChatDocEngine
+	db          *gorm.DB
+	searchCalls int
+}
+
+func (e *knowledgeCompileClaimFencingEngine) Search(_ context.Context, _ *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchCalls++
+	if e.searchCalls == 1 {
+		if err := e.db.Model(&entity.DocumentCleanupClaim{}).
+			Where("document_id = ?", "doc-1").Update("token", "replacement-token").Error; err != nil {
+			return nil, err
+		}
+	}
+	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "wiki-1", "compile_kwd": "wiki_page"}}, Total: 1}, nil
+}
+
+func TestDocumentKnowledgeCompileTypesStopsWhenCleanupClaimIsFenced(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	claimDAO := dao.NewDocumentCleanupClaimDAO()
+	now, err := dao.CurrentUnixTime(t.Context(), db)
+	if err != nil {
+		t.Fatalf("read database time: %v", err)
+	}
+	claim, err := claimDAO.Acquire(t.Context(), db, "doc-1", "owner-a", now, 120, 45)
+	if err != nil {
+		t.Fatalf("acquire cleanup claim: %v", err)
+	}
+
+	engine := &knowledgeCompileClaimFencingEngine{db: db}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	cleanupCtx := service.WithDocumentCleanupClaim(t.Context(), "doc-1", claim.Token)
+
+	_, _, err = svc.documentKnowledgeCompileTypes(cleanupCtx, "tenant-1", "kb-1", "doc-1")
+	if !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
+		t.Fatalf("documentKnowledgeCompileTypes error = %v, want cleanup claim lost", err)
+	}
+	if engine.searchCalls != 1 {
+		t.Fatalf("Search calls = %d, want 1 after fencing", engine.searchCalls)
+	}
+}
+
 func (e *generatedCleanupDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return true, nil
 }
