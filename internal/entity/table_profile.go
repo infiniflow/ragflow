@@ -35,10 +35,20 @@ const (
 	ColumnRoleIndexing ColumnRole = "indexing"
 	ColumnRoleMetadata ColumnRole = "metadata"
 	ColumnRoleBoth     ColumnRole = "both"
+	// ColumnRoleNone is the outcome for a role value the vocabulary does not
+	// know. It is an internal sentinel, never persisted: the written value is
+	// always what the caller supplied. Python's table chunker classifies an
+	// unknown role by membership tests (rag/app/table.py:626-635 for the chunk
+	// body, rag/app/table.py:558 for the dataset field_map), so such a column
+	// is excluded from text, chunk_data and the field_map alike — NOT treated
+	// as "both".
+	ColumnRoleNone ColumnRole = "none"
 )
 
 // NormalizeColumnRole converts a role string into a canonical ColumnRole.
-// "vectorize" is an alias for "indexing". Empty or unrecognized roles default to "both".
+// "vectorize" is an alias for "indexing"; an empty (or absent) role is the
+// default "both"; any other value is ColumnRoleNone so that a misspelled role
+// is excluded rather than silently promoted to "both" (Python parity).
 func NormalizeColumnRole(role string) ColumnRole {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "indexing", "vectorize":
@@ -47,8 +57,10 @@ func NormalizeColumnRole(role string) ColumnRole {
 		return ColumnRoleMetadata
 	case "both":
 		return ColumnRoleBoth
-	default:
+	case "":
 		return ColumnRoleBoth
+	default:
+		return ColumnRoleNone
 	}
 }
 
@@ -60,7 +72,10 @@ func NormalizeTableColumnMode(mode string) TableColumnMode {
 	return TableColumnModeAuto
 }
 
-// TableProfile captures the strongly-typed schema and column configuration for table ingestion.
+// TableProfile captures the schema and column configuration of a table
+// ingestion run. The behaviour derived from it (role resolution, field_map
+// projection) lives with the ingestion rules that apply it, in
+// internal/ingestion/task/indexdoc.
 type TableProfile struct {
 	Mode     TableColumnMode       `json:"table_column_mode"`
 	Roles    map[string]ColumnRole `json:"table_column_roles,omitempty"`
@@ -76,38 +91,6 @@ func NewTableProfile(mode TableColumnMode) *TableProfile {
 		RawRoles: make(map[string]any),
 		Columns:  make([]string, 0),
 	}
-}
-
-// IsManual returns true if the table column mode is manual.
-func (p *TableProfile) IsManual() bool {
-	return p != nil && p.Mode == TableColumnModeManual
-}
-
-// RoleFor returns the effective ColumnRole for the given column.
-// In auto mode, all columns default to ColumnRoleBoth.
-// In manual mode, unspecified columns default to ColumnRoleBoth.
-func (p *TableProfile) RoleFor(column string) ColumnRole {
-	if p == nil || !p.IsManual() || p.Roles == nil {
-		return ColumnRoleBoth
-	}
-	if role, ok := p.Roles[column]; ok && role != "" {
-		return role
-	}
-	return ColumnRoleBoth
-}
-
-// FilterRoles returns a map of roles filtered only to columns present in knownColumns.
-func (p *TableProfile) FilterRoles(knownColumns map[string]struct{}) map[string]ColumnRole {
-	if p == nil || len(p.Roles) == 0 {
-		return nil
-	}
-	filtered := make(map[string]ColumnRole)
-	for col, role := range p.Roles {
-		if _, ok := knownColumns[col]; ok {
-			filtered[col] = role
-		}
-	}
-	return filtered
 }
 
 // ToRolesInterfaceMap returns the column roles formatted as map[string]interface{}.
@@ -126,39 +109,4 @@ func (p *TableProfile) ToRolesInterfaceMap() map[string]interface{} {
 		out[k] = string(v)
 	}
 	return out
-}
-
-// ToRolesStringMap returns the column roles formatted as map[string]string.
-func (p *TableProfile) ToRolesStringMap() map[string]string {
-	if p == nil || len(p.Roles) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(p.Roles))
-	for k, v := range p.Roles {
-		out[k] = string(v)
-	}
-	return out
-}
-
-// BuildFieldMap constructs a field_map mapping stored columns ("metadata" or "both")
-// to human-readable names with spaces replacing underscores.
-func (p *TableProfile) BuildFieldMap(columns []string) map[string]interface{} {
-	if p == nil || len(columns) == 0 {
-		return nil
-	}
-	fieldMap := make(map[string]interface{})
-	for _, col := range columns {
-		col = strings.TrimSpace(col)
-		if col == "" {
-			continue
-		}
-		role := p.RoleFor(col)
-		if role == ColumnRoleMetadata || role == ColumnRoleBoth {
-			fieldMap[col] = strings.ReplaceAll(col, "_", " ")
-		}
-	}
-	if len(fieldMap) == 0 {
-		return nil
-	}
-	return fieldMap
 }

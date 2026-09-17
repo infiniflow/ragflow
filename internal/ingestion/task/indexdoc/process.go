@@ -252,7 +252,7 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 			}
 		}
 	}
-	if len(cols) == 0 && !profile.IsManual() {
+	if len(cols) == 0 && !isManualProfile(profile) {
 		seen := make(map[string]struct{})
 		for _, ck := range chunks {
 			if cd, ok := ck["chunk_data"].(map[string]interface{}); ok {
@@ -273,7 +273,7 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 			if col == "" {
 				continue
 			}
-			role := profile.RoleFor(col)
+			role := roleFor(profile, col)
 			if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
 				metaCols = append(metaCols, col)
 			}
@@ -389,6 +389,50 @@ func ResolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 		}
 	}
 	return mode, roles, names
+}
+
+// roleFor returns the effective entity.ColumnRole for a column.
+// In auto mode every column is "both"; in manual mode an unconfigured column is
+// "both" too, while a configured value the vocabulary does not know normalizes
+// to entity.ColumnRoleNone and is therefore excluded everywhere (text,
+// chunk_data, field_map) — the same classification the table parser's row
+// renderer applies (internal/parser/parser/table_row_render.go).
+func roleFor(profile *entity.TableProfile, column string) entity.ColumnRole {
+	if profile == nil || !isManualProfile(profile) || profile.Roles == nil {
+		return entity.ColumnRoleBoth
+	}
+	if role, ok := profile.Roles[column]; ok && role != "" {
+		return role
+	}
+	return entity.ColumnRoleBoth
+}
+
+func isManualProfile(profile *entity.TableProfile) bool {
+	return profile != nil && profile.Mode == entity.TableColumnModeManual
+}
+
+// BuildFieldMap projects the columns the SQL retrieval path can address into
+// the dataset's field_map, mapping each stored column ("metadata" or "both") to
+// its human-readable name (underscores become spaces).
+func BuildFieldMap(profile *entity.TableProfile, columns []string) map[string]interface{} {
+	if profile == nil || len(columns) == 0 {
+		return nil
+	}
+	fieldMap := make(map[string]interface{})
+	for _, col := range columns {
+		col = strings.TrimSpace(col)
+		if col == "" {
+			continue
+		}
+		role := roleFor(profile, col)
+		if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
+			fieldMap[col] = strings.ReplaceAll(col, "_", " ")
+		}
+	}
+	if len(fieldMap) == 0 {
+		return nil
+	}
+	return fieldMap
 }
 
 func parseTableColumnRoles(raw any) (map[string]entity.ColumnRole, map[string]any) {

@@ -302,7 +302,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 				if profile == nil {
 					profile = entity.NewTableProfile(entity.TableColumnModeAuto)
 				}
-				fieldMapUpdates = profile.BuildFieldMap(names)
+				fieldMapUpdates = indexdoc.BuildFieldMap(profile, names)
 				if fieldMapUpdates == nil {
 					fieldMapUpdates = map[string]interface{}{}
 				}
