@@ -559,6 +559,7 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB,
 			"connector.prune_freq AS prune_freq",
 			"knowledgebase.name AS kb_name",
 			"sync_logs.status",
+			"sync_logs.update_time",
 		).
 		Distinct().
 		Order(syncLogsStatusPriorityOrder()).
@@ -608,6 +609,7 @@ func (dao *ConnectorDAO) ListLogs(ctx context.Context, db *gorm.DB, tenantIDs []
 			"connector.prune_freq AS prune_freq",
 			"knowledgebase.name AS kb_name",
 			"sync_logs.status",
+			"sync_logs.update_time",
 		).
 		Distinct().
 		Order(syncLogsStatusPriorityOrder())
