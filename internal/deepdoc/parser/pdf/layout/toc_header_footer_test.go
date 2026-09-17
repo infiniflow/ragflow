@@ -243,11 +243,12 @@ func TestTOCPageRangeFromOutlines(t *testing.T) {
 	}
 }
 
-// TestRemoveTOCBoxes_OutlineCoversMergedBlock: a TOC whose entries arrived as a
-// single merged box is invisible to the box signal and is covered by the
+// TestRemoveTOCBoxes_OutlineCoversLeaderlessMergedBlock: a TOC whose entries
+// were merged into one box with no leader runs left is invisible to the box
+// signal — neither short boxes nor leader runs survive — and is covered by the
 // outline signal alone.
-func TestRemoveTOCBoxes_OutlineCoversMergedBlock(t *testing.T) {
-	merged := "目录 第一章 道可道 3 第二章 天下皆知美之为美 7 第三章 不尚贤使民不争 15 第四章 道冲而用之或不盈 21"
+func TestRemoveTOCBoxes_OutlineCoversLeaderlessMergedBlock(t *testing.T) {
+	merged := "目录 第一章 道可道非常道名可名非常名 3 第二章 天下皆知美之为美斯恶已皆知善 7 第三章 不尚贤使民不争不贵难得之货 15 第四章 道冲而用之或不盈渊兮似万物之宗 21"
 	boxes := []pdf.TextBox{
 		tb("目录", 0, 72, 110, 100, 120),
 		tb(merged, 0, 72, 520, 160, 200),
@@ -256,11 +257,89 @@ func TestRemoveTOCBoxes_OutlineCoversMergedBlock(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
 	if got := RemoveTOCBoxes(boxes, nil); len(got) != len(boxes) {
-		t.Fatalf("box shape alone cannot see a merged TOC block, got %d of %d", len(got), len(boxes))
+		t.Fatalf("box shape alone cannot see a leaderless merged TOC block, got %d of %d", len(got), len(boxes))
 	}
 	got := RemoveTOCBoxes(boxes, map[int]bool{0: true})
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("an outline-selected page must be dropped, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_MergedBlockWithLeaders: DeepDoc joins the lines of a text
+// block into one box, so a TOC page can arrive as a single long box. Its leader
+// runs are the only evidence left, and the page must still be dropped without
+// any bookmark.
+func TestRemoveTOCBoxes_MergedBlockWithLeaders(t *testing.T) {
+	merged := "目录 第一章 道可道非常道名可名非常名 ..........3 第二章 天下皆知美之为美斯恶已皆知善 ..........7 第三章 不尚贤使民不争不贵难得之货 ..........15"
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb(merged, 0, 72, 520, 160, 200),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("a merged TOC block carrying leader runs must be dropped, %d boxes survived", n)
+	}
+	if n := countPage(got, 1); n != 3 {
+		t.Fatalf("the body page must be kept, %d of 3 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_MergedBlockNeedsThreeRuns: two leader runs in a long box
+// are not enough. A paragraph can pick up the odd "……12", so the threshold sits
+// above that rather than at the first run.
+func TestRemoveTOCBoxes_MergedBlockNeedsThreeRuns(t *testing.T) {
+	merged := "目录 第一章 道可道非常道名可名非常名 ..........3 第二章 天下皆知美之为美斯恶已皆知善 ..........7 第三章 不尚贤使民不争不贵难得之货"
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb(merged, 0, 72, 520, 160, 200),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	if got := RemoveTOCBoxes(boxes, nil); len(got) != len(boxes) {
+		t.Fatalf("two leader runs are below the merged-block threshold, got %d of %d", len(got), len(boxes))
+	}
+}
+
+// TestRemoveTOCBoxes_MergedBlockFullWidthPageNumbers: the leader-run count uses
+// the same digit class as pageNumberPattern, so a CJK TOC numbering its entries
+// in full-width digits is still recognised.
+func TestRemoveTOCBoxes_MergedBlockFullWidthPageNumbers(t *testing.T) {
+	merged := "目录 第一章 道可道非常道名可名非常名 …………３ 第二章 天下皆知美之为美斯恶已皆知善 …………７ 第三章 不尚贤使民不争不贵难得之货 …………１５"
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb(merged, 0, 72, 520, 160, 200),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("full-width page numbers in a merged TOC block must be counted, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_MergedBlockRespectsProseGuard: a page that carries body
+// text is kept even when one of its boxes is a merged TOC block. The merged
+// signal is the one that could plausibly be talked into deleting a prose page,
+// so the guard is asserted against it rather than against the short-box shape.
+func TestRemoveTOCBoxes_MergedBlockRespectsProseGuard(t *testing.T) {
+	merged := "目录 第一章 道可道 ..........3 第二章 天下皆知美之为美 ..........7 第三章 不尚贤使民不争 ..........15"
+	boxes := []pdf.TextBox{
+		tb(merged, 0, 72, 520, 100, 140),
+		tb("This is a long body paragraph that certainly belongs to the main content of the document and would be lost.", 0, 72, 520, 160, 180),
+		tb("This is a second long body paragraph that certainly belongs to the main content of the document as well.", 0, 72, 520, 190, 210),
+		tb("This is a third long body paragraph that certainly belongs to the main content of the document too.", 0, 72, 520, 220, 240),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := RemoveTOCBoxes(boxes, nil)
+	if n := countPage(got, 0); n != 4 {
+		t.Fatalf("a page carrying prose must never be dropped, %d of 4 boxes survived", n)
 	}
 }
 

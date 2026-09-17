@@ -24,13 +24,19 @@ const (
 	// tocMaxProseRunes a page may carry and still be classified as TOC.
 	tocMaxLongBoxes = 2
 	// tocMinShortBoxes is the minimum number of short boxes a TOC page carries.
-	// A TOC is a list, so its entries stay separate boxes; a page whose text
-	// arrived as one merged block is not detected here and is covered by the
-	// outline signal instead.
+	// A TOC is a list, so its entries usually stay separate boxes. A page whose
+	// entries were merged into one long box is covered by tocMinMergedRuns, and
+	// one merged without leader runs at all is covered by the outline signal.
 	tocMinShortBoxes = 4
 	// tocMinEntries is the minimum number of confirming entry markers (chapter
 	// markers plus page numbers) a page must carry to be classified as TOC.
 	tocMinEntries = 3
+	// tocMinMergedRuns is the number of leader+page-number runs a single long
+	// box must carry before that box is read as a whole TOC block rather than as
+	// prose. A merged block confirms itself — three leader runs are three
+	// entries — so it needs no separate marker count. Prose can accumulate the
+	// occasional run, which is why the threshold is three and not one.
+	tocMinMergedRuns = 3
 	// tocMaxLeadPages bounds how many leading pages without body text may
 	// precede the TOC. A cover, copyright page or frontispiece carries no body
 	// text and is skipped, so a TOC that is not physically page one is still
@@ -60,6 +66,13 @@ var (
 	// "致谢"/"acknowledge" are accepted as end-of-TOC markers alongside the
 	// heading itself.
 	tocTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
+	// tocEntryRunPattern matches one TOC entry's tail: a leader run (two or more
+	// dots, ellipses or middots, never wide spaces — those are too common in
+	// prose ending in a number), a page number and an optional roman-numeral
+	// fragment. Counting these runs tells a TOC block that upstream merged into
+	// one long box apart from a paragraph. Digits accept the full-width forms
+	// pageNumberPattern accepts, for the same reason.
+	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*[0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}`)
 )
 
 // ---------------------------------------------------------------------------
@@ -133,10 +146,11 @@ func outlineTitle(title string) string {
 //
 //  1. outlinePages — the pages the PDF bookmarks identify as TOC (see
 //     TOCPageRangeFromOutlines). Strongest, and the only one that still sees a
-//     TOC whose entries were already merged into a single box.
+//     TOC whose entries were merged into one box with no leader runs left.
 //  2. Box shape — the leading run of pages that read as a TOC list: a page
 //     carrying at least tocMinShortBoxes short boxes and tocMinEntries
-//     confirming markers (chapter markers or page numbers), preceded only by
+//     confirming markers (chapter markers or page numbers), or one long box
+//     that is itself tocMinMergedRuns leader+page-number runs, preceded only by
 //     pages without body text and spanning at most tocMaxTOCPages pages. Kept
 //     for documents that carry no usable bookmark.
 //
@@ -230,7 +244,8 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBo
 type pageShape struct {
 	prose   int // boxes longer than tocMaxProseRunes
 	short   int
-	markers int // short boxes opening with a chapter marker or holding a page number
+	markers int  // short boxes opening with a chapter marker or holding a page number
+	merged  bool // a long box carrying tocMinMergedRuns leader+page-number runs
 }
 
 func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
@@ -242,6 +257,12 @@ func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
 		}
 		if utf8.RuneCountInString(text) > tocMaxProseRunes {
 			s.prose++
+			// A merged TOC block is long by definition, so the run count is the
+			// only evidence it can carry. Cap the search: the answer is a
+			// three-way comparison, not the exact number of runs.
+			if len(tocEntryRunPattern.FindAllStringIndex(text, tocMinMergedRuns)) >= tocMinMergedRuns {
+				s.merged = true
+			}
 			continue
 		}
 		s.short++
@@ -253,9 +274,13 @@ func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
 }
 
 // isTOC reports whether the page reads as a table of contents: a list of short
-// boxes carrying entry markers, and no body text.
+// boxes carrying entry markers, or one long box that is itself a run of
+// entries, and no body text either way.
 func (s pageShape) isTOC() bool {
-	return !s.carriesProse() && s.short >= tocMinShortBoxes && s.markers >= tocMinEntries
+	if s.carriesProse() {
+		return false
+	}
+	return s.merged || (s.short >= tocMinShortBoxes && s.markers >= tocMinEntries)
 }
 
 // carriesProse reports whether the page carries body text. No signal may drop
