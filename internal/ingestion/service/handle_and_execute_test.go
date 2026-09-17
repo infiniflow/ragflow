@@ -291,6 +291,14 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	if !ingestor.claimTask(taskID) {
 		t.Fatal("first claim should succeed")
 	}
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"progress":         0.42,
+		"chunk_num":        7,
+		"token_num":        9,
+		"process_duration": 12.5,
+	}).Error; err != nil {
+		t.Fatalf("seed in-flight document state: %v", err)
+	}
 
 	pipelineRan := false
 	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
@@ -313,6 +321,13 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	}
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack for duplicate delivery, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Progress != 0.42 || doc.ChunkNum != 7 || doc.TokenNum != 9 || doc.ProcessDuration != 12.5 {
+		t.Fatalf("duplicate delivery rewrote document state: progress=%v chunks=%d tokens=%d duration=%v", doc.Progress, doc.ChunkNum, doc.TokenNum, doc.ProcessDuration)
 	}
 }
 

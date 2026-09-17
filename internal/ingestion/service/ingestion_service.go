@@ -530,13 +530,16 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			return
 		}
 		task = validatedTask
-		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
 		if !e.claimTask(task.ID) {
 			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
 			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
 			return
 		}
+		// Claim the task before applying document/log side effects. A duplicate
+		// delivery must only renew its broker lease; resetting the document here
+		// would race the owning worker and erase its in-flight progress.
+		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
