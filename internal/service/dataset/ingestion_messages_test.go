@@ -130,6 +130,38 @@ func TestGetIngestionLogEmbedsLatestRunEvent(t *testing.T) {
 	assertLatestEventMap(t, result, 1, "latest detail")
 }
 
+func TestIngestionEventWriterFeedsRunScopedLogReaders(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusRunning, 1)
+
+	writer := service.NewIngestionTaskService()
+	if err := writer.RecordLifecycle(t.Context(), "run-1", "task-1", "Parser", 0, "Parser started"); err != nil {
+		t.Fatalf("record lifecycle event: %v", err)
+	}
+	if err := writer.RecordMessage(t.Context(), "run-1", "task-1", "Parsing pages 2/8"); err != nil {
+		t.Fatalf("record progress event: %v", err)
+	}
+
+	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "run-1", 200, nil, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", messages, code, err)
+	}
+	if len(messages.Items) != 2 || messages.Items[0].Message != "Parser started" || messages.Items[1].Message != "Parsing pages 2/8" {
+		t.Fatalf("messages = %+v, want lifecycle then latest progress", messages.Items)
+	}
+
+	log, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "run-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", log, code, err)
+	}
+	assertLatestEventMap(t, log, messages.Items[1].ID, "Parsing pages 2/8")
+}
+
 func insertMessageRun(t *testing.T, id, kbID, documentID string, status entity.TaskStatus, runCount int) {
 	t.Helper()
 	runCountPtr := &runCount
