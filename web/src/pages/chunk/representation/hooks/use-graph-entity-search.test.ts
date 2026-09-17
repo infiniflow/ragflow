@@ -34,7 +34,7 @@ describe('useGraphEntitySearch handleNoMatchEnter', () => {
     jest.clearAllMocks();
   });
 
-  it('treats Enter on an existing entity name like a dropdown selection: highlight + dim, no keyword refetch', () => {
+  it('treats Enter on an existing entity name like a dropdown selection: highlight + keyword refetch', () => {
     const { result } = setupHook([
       { id: 'e1', name: 'swallow' },
       { id: 'e2', name: 'owl tree' },
@@ -46,8 +46,9 @@ describe('useGraphEntitySearch handleNoMatchEnter', () => {
 
     expect(result.current.highlightNodeId).toBe('swallow');
     expect(result.current.graphSelectValue).toBe('swallow');
-    // The keyword subgraph refetch must NOT be armed for a name hit.
-    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('');
+    // The keyword subgraph refetch is armed with the entity name, so the
+    // graph and the entity count refresh from the server.
+    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('swallow');
   });
 
   it('matches entity names case-insensitively and returns the canonical name', () => {
@@ -86,5 +87,43 @@ describe('useGraphEntitySearch handleNoMatchEnter', () => {
     expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith(
       'something else',
     );
+  });
+});
+
+describe('useGraphEntitySearch handleSelectEntity', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('refetches the keyword subgraph for the picked entity and keeps it highlighted', () => {
+    const { result } = setupHook([
+      { id: 'e1', name: 'swallow' },
+      { id: 'e2', name: 'owl tree' },
+    ]);
+
+    act(() => {
+      result.current.handleSelectEntity('owl tree');
+    });
+
+    expect(result.current.highlightNodeId).toBe('owl tree');
+    expect(result.current.graphSelectValue).toBe('owl tree');
+    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith(
+      'owl tree',
+    );
+  });
+
+  it('clearing the selection refetches the full graph', () => {
+    const { result } = setupHook([{ id: 'e1', name: 'swallow' }]);
+
+    act(() => {
+      result.current.handleSelectEntity('swallow');
+    });
+    act(() => {
+      result.current.handleSelectEntity('');
+    });
+
+    expect(result.current.highlightNodeId).toBeNull();
+    expect(result.current.graphSelectValue).toBe('');
+    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('');
   });
 });

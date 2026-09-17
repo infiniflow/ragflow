@@ -138,7 +138,7 @@ func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
 	ctx := t.Context()
-	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, "create_time", true, nil)
+	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
 	ctx := t.Context()
-	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, "create_time", true, nil)
+	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}

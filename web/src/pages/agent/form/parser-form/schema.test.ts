@@ -1,4 +1,5 @@
-import { FileType, ParserFields } from '../../constant/pipeline';
+import { FileType } from '@/constants/file';
+import { ParserFields } from '../../constant/pipeline';
 import { FormSchema } from './schema';
 
 describe('parser FormSchema', () => {

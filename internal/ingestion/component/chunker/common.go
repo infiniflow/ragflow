@@ -181,6 +181,16 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 // swizzle the count strategy in one place if needed.
 func tokenizeStr(s string) int { return tokenizer.NumTokensFromString(s) }
 
+// setChunkText replaces a chunk's body together with the token count that
+// describes it, so a caller cannot leave the two out of sync. TKNums is read as
+// a budget by the media window walk and by the merge thresholds, and it is
+// emitted as tk_nums, so a body replaced on its own silently misreports the
+// chunk's size. Merge paths that join several units keep their summed count.
+func setChunkText(ck *schema.ChunkDoc, text string) {
+	ck.Text = text
+	ck.TKNums = intPtr(tokenizeStr(text))
+}
+
 // toString normalises a chunk-map field to a string. Empty strings
 // for missing fields.
 func toString(v any) string {
@@ -208,11 +218,46 @@ func emptyOutputs() map[string]any {
 // model resolution) is NOT re-emitted here — it lives in the workflow-wide
 // CanvasState.Globals bag (seeded at pipeline start, published by the File
 // component) and read directly from ctx. See runtime.CanvasState.Globals.
+//
+// Media context is materialized into the chunk body here, the chunker's last
+// step: every variant passes through this builder, so the folded text is what
+// the chunk id, the extractor, the tokenizer and the index write all see.
 func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
+	materialized := make([]schema.ChunkDoc, len(chunks))
+	for i := range chunks {
+		materialized[i] = materializeMediaContext(chunks[i])
+	}
 	return map[string]any{
 		"output_format": "chunks",
-		"chunks":        schema.ChunkDocsToMaps(chunks),
+		"chunks":        schema.ChunkDocsToMaps(materialized),
 	}
+}
+
+// materializeMediaContext folds a media chunk's surrounding context into its
+// body and clears the two fields that carried it. Python's chunker emits the
+// same shape — its finalize builds remove_tag(context_above + text +
+// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
+// 359) — which is why Python persists the context inside the chunk body.
+// Folding here also puts the context into the chunk id (ChunkID hashes the
+// body), matching Python's id, which hashes the context-bearing body.
+//
+// Tag stripping runs after the merge, as in Python: the payload was already
+// stripped by the chunker, so this only covers the context, which is collected
+// from neighbouring units.
+//
+// The body goes through setChunkText, so TKNums keeps describing the body the
+// chunk carries now instead of the bare payload it replaced.
+//
+// Only media chunks carry context (attachMediaContext and
+// attachGeneralMediaContext write it), so text chunks pass through untouched.
+func materializeMediaContext(ck schema.ChunkDoc) schema.ChunkDoc {
+	if ck.ContextAbove == "" && ck.ContextBelow == "" {
+		return ck
+	}
+	setChunkText(&ck, removeTag(schema.ContextualText(ck)))
+	ck.ContextAbove = ""
+	ck.ContextBelow = ""
+	return ck
 }
 
 // withName returns a shallow copy of inputs with name set, so a component can

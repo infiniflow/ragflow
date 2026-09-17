@@ -290,7 +290,7 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "finance", nil, "", nil)
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "finance", nil, "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestUserCanvasDAOListByTenantIDsCategoryUnion(t *testing.T) {
 		}
 	}
 
-	rows, total, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "", []string{"dataflow_canvas", "agent_canvas"}, "", nil)
+	rows, total, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "", []string{"dataflow_canvas", "agent_canvas"}, "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestUserCanvasDAOListByTenantIDsCategoryUnion(t *testing.T) {
 		t.Fatalf("category union returned total=%d rows=%d, want 3/3", total, len(rows))
 	}
 
-	rows, total, err = d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "", []string{"agent_canvas"}, "", nil)
+	rows, total, err = d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "", []string{"agent_canvas"}, "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs (single category): %v", err)
 	}
@@ -369,7 +369,7 @@ func TestUserCanvasDAOOrderByTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "tags", false, "", nil, "", nil)
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "tags"}}, "", nil, "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}

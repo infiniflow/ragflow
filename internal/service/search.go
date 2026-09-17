@@ -80,13 +80,13 @@ type SearchShareDetail struct {
 }
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
-func (s *SearchService) ListSearches(ctx context.Context, userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
+func (s *SearchService) ListSearches(ctx context.Context, userID string, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListSearchAppsResponse, error) {
 	var searches []*entity.SearchListItem
 	var total int64
 	var err error
 
 	if len(ownerIDs) == 0 {
-		searches, total, err = s.searchDAO.ListByTenantIDs(ctx, dao.DB, nil, userID, page, pageSize, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByTenantIDs(ctx, dao.DB, nil, userID, page, pageSize, terms, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +102,7 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 			}, nil
 		}
 
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, terms, keywords)
 		if err != nil {
 			return nil, err
 		}

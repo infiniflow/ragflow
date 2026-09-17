@@ -586,6 +586,36 @@ func TestExtractorOutputsJSONRoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// ContextualText
+// ---------------------------------------------------------------------------
+
+// TestContextualTextConcatenatesMediaContext pins the single join rule shared
+// by the chunker's output fold and the tokenizer's retrieval text: the context
+// boundaries are concatenated as-is, mirroring Python's finalize
+// (rag/flow/chunker/token_chunker.py:343) — no separator is inserted.
+func TestContextualTextConcatenatesMediaContext(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  ChunkDoc
+		want string
+	}{
+		{"body only", ChunkDoc{Text: "body"}, "body"},
+		{"both sides", ChunkDoc{ContextAbove: "before", Text: "<table/>", ContextBelow: "after"}, "before<table/>after"},
+		{"keeps producer whitespace", ChunkDoc{ContextAbove: "before ", Text: "body", ContextBelow: " after"}, "before body after"},
+		{"above only", ChunkDoc{ContextAbove: "before", Text: "body"}, "beforebody"},
+		{"below only", ChunkDoc{Text: "body", ContextBelow: "after"}, "bodyafter"},
+		{"empty chunk", ChunkDoc{}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ContextualText(tc.doc); got != tc.want {
+				t.Errorf("ContextualText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 

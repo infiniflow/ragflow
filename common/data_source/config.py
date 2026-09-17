@@ -1,6 +1,7 @@
 """Configuration constants and enum definitions"""
 
 import json
+import math
 import os
 from datetime import datetime, timezone
 from enum import Enum
@@ -118,12 +119,42 @@ _PAGE_EXPANSION_FIELDS = [
 ]
 
 
+def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
+    """Parse a positive integer env var, returning ``default`` when unset or invalid."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value >= minimum else default
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    """Parse a finite float env var, returning ``default`` when unset or invalid."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value) or value < minimum:
+        return default
+    return value
+
+
 # Configuration constants
 try:
     BLOB_STORAGE_SIZE_THRESHOLD = int(os.environ.get("BLOB_STORAGE_SIZE_THRESHOLD", 20 * 1024 * 1024))
 except ValueError as error:
     raise ValueError("BLOB_STORAGE_SIZE_THRESHOLD must be an integer number of bytes") from error
-INDEX_BATCH_SIZE = 2
+# Connector ingest batch size (rows/files handed to duplicate_and_parse at once).
+INDEX_BATCH_SIZE = _env_int("INDEX_BATCH_SIZE", 2)
+# Yield the sync worker event loop (and MySQL) between nonempty write batches.
+# 0 still schedules sleep(0) between batches, not after the last one.
+SYNC_BATCH_PAUSE_SECONDS = _env_float("SYNC_BATCH_PAUSE_SECONDS", 0.0)
 SLACK_NUM_THREADS = 4
 ENABLE_EXPENSIVE_EXPERT_CALLS = False
 

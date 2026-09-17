@@ -1664,6 +1664,19 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: '.txt',
       tooltip: t('setting.mysqlFileExtensionTip'),
     },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '2',
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -1745,6 +1758,19 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: '.txt',
       tooltip: t('setting.postgresqlFileExtensionTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '2',
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
     },
   ],
   [DataSourceKey.BIGQUERY]: [
@@ -2619,6 +2645,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
+      batch_size: 2,
       credentials: {
         username: '',
         password: '',
@@ -2637,6 +2664,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
+      batch_size: 2,
       credentials: {
         username: '',
         password: '',

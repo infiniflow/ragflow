@@ -913,14 +913,14 @@ Failure:
 
 ### List datasets
 
-**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
+**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 
 Lists datasets.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
+- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -928,7 +928,7 @@ Lists datasets.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={dataset_name}&id={dataset_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -951,6 +951,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*)
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*)
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `name`: (*Filter parameter*)
   The name of the dataset to retrieve.
 - `id`: (*Filter parameter*)
@@ -3168,14 +3170,14 @@ Failure:
 
 ### List chat assistants
 
-**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
+**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
 
 Lists chat assistants.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
+- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -3183,7 +3185,7 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id} \
+     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3199,6 +3201,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `keywords`: (*Filter parameter*), `string`
   Case-insensitive fuzzy match against chat assistant names.
 - `owner_ids`: (*Filter parameter*), `string` (repeatable)
@@ -3435,14 +3439,14 @@ Failure:
 
 ### List chat assistant's sessions
 
-**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
+**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={session_name}&id={session_id}&user_id={user_id}`
 
 Lists sessions associated with a specified chat assistant.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
+- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={session_name}&id={session_id}&user_id={user_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -3450,7 +3454,7 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={session_name}&id={session_id}&user_id={user_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3468,6 +3472,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `name`: (*Filter parameter*) `string`
   The name of the chat session to retrieve.
 - `id`: (*Filter parameter*), `string`
@@ -5213,6 +5219,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `keywords`: (*Filter parameter*), `string`
   Fuzzy-searches agents by title.
 - `canvas_category`: (*Filter parameter*), `string`
@@ -6872,7 +6880,7 @@ Failure:
 
 ### List files
 
-**GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}`
 
 Lists files and folders under a specific folder.
 
@@ -6883,7 +6891,7 @@ Lists files and folders under a specific folder.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6910,6 +6918,8 @@ curl --request GET \
   - `create_time` (default)
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 
 #### Response
 
@@ -7989,14 +7999,14 @@ Failure:
 
 ### List search apps
 
-**GET** `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&owner_ids={owner_ids}`
+**GET** `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&owner_ids={owner_ids}`
 
 Lists search apps for the current user.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&owner_ids={owner_ids}`
+- URL: `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&owner_ids={owner_ids}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8020,6 +8030,8 @@ curl --request GET \
   The field to sort by. Defaults to `create_time`.
 - `desc`: (*Filter parameter*), `boolean`
   Whether to sort in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `owner_ids`: (*Filter parameter*), `string` (repeatable)
   Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
 

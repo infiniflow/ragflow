@@ -644,3 +644,30 @@ func TrimContentToTokenLimit(s string, limit int) string {
 	}
 	return enc.Decode(tokens[:limit])
 }
+
+// EncodeCL100KTokens returns the cl100k_base token ids of s, from the same
+// cached encoder NumTokensFromString and TrimContentToTokenLimit use. ok is
+// false when the encoder is unavailable — the same degraded world where those
+// two degrade — so callers can run their own fallback instead of mistaking an
+// empty result for "zero tokens".
+func EncodeCL100KTokens(s string) (tokens []int, ok bool) {
+	enc, err := getCL100KEncoder()
+	if err != nil || enc == nil {
+		return nil, false
+	}
+	return enc.Encode(s, nil, nil), true
+}
+
+// DecodeCL100KTokens concatenates the raw byte sequences of tokens. Decoding
+// is a plain vocabulary-table concat (no re-segmentation), so
+// Decode(Encode(s)) == s and Decode(tokens[a:b]) is exactly the corresponding
+// byte slice of s — including a slice whose ends cut a multibyte rune, which
+// comes back as raw continuation bytes rather than U+FFFD. Returns "" when
+// the encoder is unavailable (callers gate on EncodeCL100KTokens first).
+func DecodeCL100KTokens(tokens []int) string {
+	enc, err := getCL100KEncoder()
+	if err != nil || enc == nil {
+		return ""
+	}
+	return enc.Decode(tokens)
+}

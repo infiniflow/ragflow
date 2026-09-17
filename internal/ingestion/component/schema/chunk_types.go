@@ -269,6 +269,15 @@ func ChunkDocsToMaps(in []ChunkDoc) []map[string]any {
 	return out
 }
 
+// ContextualText joins a chunk's body with its surrounding media context in
+// the order Python materializes it (rag/flow/chunker/token_chunker.py:343):
+// context_above, text, context_below, concatenated as they are. No separator
+// is inserted: Python's finalize concatenates directly, and the context
+// collectors keep their own boundary punctuation and newlines.
+func ContextualText(d ChunkDoc) string {
+	return d.ContextAbove + d.Text + d.ContextBelow
+}
+
 func (d *ChunkDoc) SetExtraValue(key string, value any) error {
 	if d.Extra == nil {
 		d.Extra = make(map[string]json.RawMessage)
