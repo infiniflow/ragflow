@@ -495,7 +495,6 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
-		pipelineLogDAO:   dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped

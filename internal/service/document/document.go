@@ -35,7 +35,6 @@ type DocumentService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
-	pipelineLogDAO      *dao.PipelineOperationLogDAO
 	ingestionTaskSvc    *service.IngestionTaskService
 	docEngine           engine.DocEngine
 	metadataSvc         *service.MetadataService
@@ -59,7 +58,6 @@ func NewDocumentService() *DocumentService {
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
-		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
