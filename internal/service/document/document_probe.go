@@ -30,6 +30,12 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// probeXLSXMaxBytes bounds the workbook stream the probe reads, mirroring the
+// Python endpoint's max_excel_probe_bytes. A larger upload cannot be opened
+// from a truncated archive, so the probe reports an error and the client falls
+// back to local extraction instead of the server reading an unbounded stream.
+const probeXLSXMaxBytes = 32 * 1024 * 1024
+
 // ProbeTable extracts the column names from a table file (CSV, TSV, XLSX)
 // by reading only the initial rows, skipping leading empty rows, and applying
 // the same header rules as ingestion (parser.TableColumnHeaderNames), so the
@@ -43,7 +49,7 @@ func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, er
 		// Bound header probing to the first 1MB of text stream.
 		return probeCSV(io.LimitReader(r, 1024*1024), ext == ".tsv")
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
-		return probeXLSX(r)
+		return probeXLSX(io.LimitReader(r, probeXLSXMaxBytes))
 	case ".xls":
 		return nil, fmt.Errorf("server probe does not support binary xls format: fallback to client probe")
 	default:

@@ -116,11 +116,11 @@ func TableColumnHeaderNames(headerRow []string) (names []string, sourceIndexes [
 // respecting column_mode and column_roles.
 // Text lines are formatted as "- col: val" and stored in the "text" field.
 // Structured metadata fields are stored in the "chunk_data" map.
-// Auto mode (the default, matching Python's table chunker where every column
-// defaults to "both") indexes every column into text and stores nothing in
-// chunk_data. Manual mode honors column_roles; columns without an explicit
-// role default to "both". Empty headers are named Column_N, matching Python's
-// _parse_simple_headers fallback.
+// Auto mode (the default, matching Python's table chunker) gives every column
+// the "both" role, so all columns land in text and in chunk_data. Manual mode
+// honors column_roles; columns without an explicit role default to "both".
+// Empty headers are named Column_N, matching Python's _parse_simple_headers
+// fallback.
 func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string, columnRoles map[string]string) ([]map[string]any, []string) {
 	if len(rows) == 0 {
 		return nil, nil

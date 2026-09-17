@@ -18,6 +18,7 @@ package document
 
 import (
 	"bytes"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -84,6 +85,46 @@ func TestProbeTable_TSV(t *testing.T) {
 	want := []string{"col1", "Column_2", "col3"}
 	if !reflect.DeepEqual(cols, want) {
 		t.Fatalf("got %#v, want %#v", cols, want)
+	}
+}
+
+// countingReader records how many bytes a probe pulls from the stream.
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+// The probe must not read an unbounded workbook: like the Python endpoint
+// (max_excel_probe_bytes), it stops at the cap. The archive is then truncated,
+// the open fails, and the client falls back to local extraction instead of the
+// server reading an arbitrarily large upload.
+func TestProbeTable_XLSXStopsAtProbeLimit(t *testing.T) {
+	f := excelize.NewFile()
+	if err := f.SetCellValue("Sheet1", "A1", "Product"); err != nil {
+		t.Fatalf("set cell: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		t.Fatalf("write xlsx: %v", err)
+	}
+
+	payload := make([]byte, 0, buf.Len()+probeXLSXMaxBytes+1)
+	payload = append(payload, buf.Bytes()...)
+	payload = append(payload, make([]byte, probeXLSXMaxBytes+1)...)
+
+	counter := &countingReader{r: bytes.NewReader(payload)}
+	svc := &DocumentService{}
+	if _, err := svc.ProbeTable(counter, "huge.xlsx"); err == nil {
+		t.Fatal("expected the oversized workbook stream to be rejected")
+	}
+	if counter.n > probeXLSXMaxBytes {
+		t.Fatalf("probe read %d bytes, want at most %d", counter.n, probeXLSXMaxBytes)
 	}
 }
 
