@@ -165,6 +165,31 @@ func TestIngestionTaskServiceCreateForDocumentsRejectsForeignCleanupClaim(t *tes
 	}
 }
 
+func TestIngestionTaskServiceCreateForDocumentsRejectsCleanupClaimDuringTakeoverGrace(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	now := time.Now().Unix()
+	if _, err := dao.NewDocumentCleanupClaimDAO().Acquire(t.Context(), db, "doc-1", "cleanup-a", now-20, 10, 45); err != nil {
+		t.Fatalf("acquire expired cleanup claim: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments returns per-document failures: %v", err)
+	}
+	if len(responses) != 1 || !strings.Contains(responses[0].Result, "cleanup claim") {
+		t.Fatalf("unexpected responses: %+v", responses)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want 0 during takeover grace", len(publisher.messages))
+	}
+}
+
 func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

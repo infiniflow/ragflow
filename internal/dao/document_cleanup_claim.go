@@ -101,8 +101,19 @@ func (dao *DocumentCleanupClaimDAO) Validate(ctx context.Context, db *gorm.DB, d
 
 // GetActive returns the currently unexpired claim for a document.
 func (dao *DocumentCleanupClaimDAO) GetActive(ctx context.Context, db *gorm.DB, documentID string, now int64) (*entity.DocumentCleanupClaim, error) {
+	return dao.GetBlocking(ctx, db, documentID, now, 0)
+}
+
+// GetBlocking returns a claim that still blocks a new owner, including the
+// takeover-grace interval after its lease expires. Callers that are about to
+// create a new run must use this method rather than GetActive: an expired
+// claim may still have an external cleanup batch in flight until grace ends.
+func (dao *DocumentCleanupClaimDAO) GetBlocking(ctx context.Context, db *gorm.DB, documentID string, now, grace int64) (*entity.DocumentCleanupClaim, error) {
+	if documentID == "" || grace < 0 {
+		return nil, fmt.Errorf("invalid document cleanup claim lookup")
+	}
 	var claim entity.DocumentCleanupClaim
-	err := db.WithContext(ctx).Where("document_id = ? AND expires_at > ?", documentID, now).First(&claim).Error
+	err := db.WithContext(ctx).Where("document_id = ? AND expires_at + ? > ?", documentID, grace, now).First(&claim).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
