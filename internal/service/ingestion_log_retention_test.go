@@ -150,6 +150,44 @@ func TestFoldIngestionRunSkipsWhenProtectedRowsReachLimit(t *testing.T) {
 	}
 }
 
+func TestRecordTerminalFoldsTerminalRunAfterWritingEvent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertFoldPipelineLog(t, db, "run-1", entity.TaskStatusDone, 1)
+	for i := 0; i < 8; i++ {
+		insertFoldEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, 0, "", "detail")
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.SetIngestionLogSettings(IngestionLogSettings{
+		MaxRowsPerRun:      5,
+		MaxRowsPerDocument: 20,
+		MaxMessageChars:    4_000,
+		MaxMessageBytes:    16_384,
+	}); err != nil {
+		t.Fatalf("SetIngestionLogSettings failed: %v", err)
+	}
+	if err := svc.RecordTerminal(t.Context(), "run-1", "task-1", "Task completed."); err != nil {
+		t.Fatalf("RecordTerminal failed: %v", err)
+	}
+	if got := countFoldEvents(t, db, "run-1"); got != 5 {
+		t.Fatalf("event count = %d, want folded cap 5", got)
+	}
+	events := listFoldEvents(t, db, "run-1")
+	if !containsFoldMessage(events, "omitted 5 process messages") {
+		t.Fatalf("fold summary missing five omitted events: %+v", events)
+	}
+	var terminals int
+	for _, event := range events {
+		if event.EventType == dao.EventTypeTerminal && event.Message == "Task completed." {
+			terminals++
+		}
+	}
+	if terminals != 1 {
+		t.Fatalf("terminal events = %d, want 1", terminals)
+	}
+}
+
 func insertFoldPipelineLog(t *testing.T, db *gorm.DB, id string, status entity.TaskStatus, runCount int) {
 	t.Helper()
 	if err := db.Create(&entity.PipelineOperationLog{

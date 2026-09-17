@@ -900,7 +900,13 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 
 // RecordTerminal writes the terminal explanation associated with a run.
 func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
-	return s.insertEvent(ctx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message)
+	if err := s.insertEvent(ctx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message); err != nil {
+		return err
+	}
+	if _, err := s.foldIngestionRun(context.WithoutCancel(ctx), pipelineLogID, s.logSettings.MaxRowsPerRun); err != nil {
+		common.Warn(fmt.Sprintf("fold terminal ingestion run %s: %v", pipelineLogID, err))
+	}
+	return nil
 }
 
 func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
