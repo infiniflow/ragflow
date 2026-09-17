@@ -125,6 +125,31 @@ def normalize_pdf_items_metadata(items):
     return items
 
 
+def _embedded_image_region_key(page_number, x0, top, x1, bottom):
+    return (
+        int(page_number),
+        round(float(x0), 1),
+        round(float(top), 1),
+        round(float(x1), 1),
+        round(float(bottom), 1),
+    )
+
+
+def _collect_represented_embedded_regions(bboxes):
+    regions = set()
+    for box in bboxes or []:
+        if box.get("image") is None:
+            continue
+        page_number = box.get("page_number")
+        if page_number is not None and all(box.get(key) is not None for key in ("x0", "x1", "top", "bottom")):
+            regions.add(_embedded_image_region_key(page_number, box["x0"], box["top"], box["x1"], box["bottom"]))
+        for pos in box.get("positions") or []:
+            if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+                continue
+            regions.add(_embedded_image_region_key(pos[0], pos[1], pos[3], pos[2], pos[4]))
+    return regions
+
+
 def supplement_deepdoc_bboxes_with_embedded_images(
     blob,
     bboxes,
@@ -139,9 +164,8 @@ def supplement_deepdoc_bboxes_with_embedded_images(
     ``to_page`` is an exclusive end index; 1-based PDF page numbers are included when
     ``from_page + 1 <= page_number <= to_page``).
     """
-    if bboxes and any(b.get("image") is not None for b in bboxes):
-        return bboxes
-
+    merged = list(bboxes or [])
+    represented = _collect_represented_embedded_regions(merged)
     supplemented = []
     with _pdfplumber_shared_lock():
         with pdfplumber.open(io.BytesIO(blob)) as pdf:
@@ -153,6 +177,10 @@ def supplement_deepdoc_bboxes_with_embedded_images(
                         x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
                         if x1 <= x0 or bottom <= top:
                             continue
+                        region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
+                        if region in represented:
+                            continue
+                        represented.add(region)
                         cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
                         supplemented.append(
                             {
@@ -171,6 +199,10 @@ def supplement_deepdoc_bboxes_with_embedded_images(
                 elif not page.chars:
                     pil = page.to_image(resolution=72 * zoom, antialias=True).original
                     width, height = pil.size
+                    region = _embedded_image_region_key(page_number, 0, 0, width, height)
+                    if region in represented:
+                        continue
+                    represented.add(region)
                     supplemented.append(
                         {
                             "page_number": page_number,
@@ -183,10 +215,8 @@ def supplement_deepdoc_bboxes_with_embedded_images(
                     )
 
     if not supplemented:
-        return bboxes or []
-    if not bboxes:
-        return supplemented
-    return list(bboxes) + supplemented
+        return merged
+    return merged + supplemented
 
 
 def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):

@@ -18,6 +18,26 @@
 from __future__ import annotations
 
 
+def naive_deepdoc_vision_available(tenant_id, parser_config=None) -> bool:
+    """Return whether tenant VLM config (explicit or default) can run figure enhancement."""
+    if not tenant_id:
+        return False
+    parser_config = parser_config or {}
+    vlm_conf = parser_config.get("vlm") or {}
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
+    from common.constants import LLMType
+
+    try:
+        resolve_model_config(tenant_id, LLMType.VISION, vlm_conf["llm_id"])
+        return True
+    except Exception:
+        try:
+            get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
+            return True
+        except Exception:
+            return False
+
+
 def _bbox_positions_for_naive_tables(box):
     positions = []
     for pos in box.get("positions") or []:
@@ -121,11 +141,14 @@ def enhance_naive_deepdoc_pdf_media(
     if not tenant_id or not binary:
         return sections, tables
 
+    parser_config = kwargs.get("parser_config") or {}
+    if not naive_deepdoc_vision_available(tenant_id, parser_config):
+        return sections, tables
+
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     from rag.flow.parser.pdf_chunk_metadata import supplement_deepdoc_bboxes_with_embedded_images
     from rag.flow.parser.utils import enhance_media_sections_with_vision
 
-    parser_config = kwargs.get("parser_config") or {}
     vlm_conf = parser_config.get("vlm")
 
     zoomin = 3
