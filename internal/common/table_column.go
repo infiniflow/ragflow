@@ -14,11 +14,19 @@
 //  limitations under the License.
 //
 
-package entity
+package common
 
-import (
-	"strings"
-)
+import "strings"
+
+// The table column vocabulary below is the persisted contract of the
+// `table_column_mode` / `table_column_roles` keys in a dataset's or document's
+// `parser_config` JSON. It lives in this shared-kernel package because the
+// layers that must agree on it sit on both sides of the parser: the table
+// parser decodes the values while rendering rows
+// (internal/parser/parser/table_row_render.go), and the ingestion layer
+// resolves a profile from parser_config to aggregate document metadata and the
+// dataset field_map (internal/ingestion/task/indexdoc). Keeping one
+// implementation here is what makes those two classify every value identically.
 
 // TableColumnMode specifies whether table columns are indexed automatically or manually.
 type TableColumnMode string
@@ -70,43 +78,4 @@ func NormalizeTableColumnMode(mode string) TableColumnMode {
 		return TableColumnModeManual
 	}
 	return TableColumnModeAuto
-}
-
-// TableProfile captures the schema and column configuration of a table
-// ingestion run. The behaviour derived from it (role resolution, field_map
-// projection) lives with the ingestion rules that apply it, in
-// internal/ingestion/task/indexdoc.
-type TableProfile struct {
-	Mode     TableColumnMode       `json:"table_column_mode"`
-	Roles    map[string]ColumnRole `json:"table_column_roles,omitempty"`
-	RawRoles map[string]any        `json:"-"`
-	Columns  []string              `json:"table_column_names,omitempty"`
-}
-
-// NewTableProfile creates a TableProfile with initialized maps.
-func NewTableProfile(mode TableColumnMode) *TableProfile {
-	return &TableProfile{
-		Mode:     mode,
-		Roles:    make(map[string]ColumnRole),
-		RawRoles: make(map[string]any),
-		Columns:  make([]string, 0),
-	}
-}
-
-// ToRolesInterfaceMap returns the column roles formatted as map[string]interface{}.
-func (p *TableProfile) ToRolesInterfaceMap() map[string]interface{} {
-	if p == nil {
-		return nil
-	}
-	if len(p.RawRoles) > 0 {
-		return p.RawRoles
-	}
-	if len(p.Roles) == 0 {
-		return nil
-	}
-	out := make(map[string]interface{}, len(p.Roles))
-	for k, v := range p.Roles {
-		out[k] = string(v)
-	}
-	return out
 }

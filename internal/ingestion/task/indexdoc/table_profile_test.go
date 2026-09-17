@@ -21,36 +21,36 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/entity"
+	"ragflow/internal/common"
 	"ragflow/internal/parser/parser"
 )
 
 func TestRoleFor(t *testing.T) {
 	tests := []struct {
 		name    string
-		profile *entity.TableProfile
+		profile *TableProfile
 		col     string
-		want    entity.ColumnRole
+		want    common.ColumnRole
 	}{
-		{"nil profile defaults to both", nil, "name", entity.ColumnRoleBoth},
-		{"auto mode defaults every column to both", &entity.TableProfile{Mode: entity.TableColumnModeAuto}, "name", entity.ColumnRoleBoth},
+		{"nil profile defaults to both", nil, "name", common.ColumnRoleBoth},
+		{"auto mode defaults every column to both", &TableProfile{Mode: common.TableColumnModeAuto}, "name", common.ColumnRoleBoth},
 		{
 			"manual mode returns the configured role",
-			&entity.TableProfile{Mode: entity.TableColumnModeManual, Roles: map[string]entity.ColumnRole{"name": entity.ColumnRoleIndexing}},
+			&TableProfile{Mode: common.TableColumnModeManual, Roles: map[string]common.ColumnRole{"name": common.ColumnRoleIndexing}},
 			"name",
-			entity.ColumnRoleIndexing,
+			common.ColumnRoleIndexing,
 		},
 		{
 			"manual mode unconfigured column defaults to both",
-			&entity.TableProfile{Mode: entity.TableColumnModeManual, Roles: map[string]entity.ColumnRole{"name": entity.ColumnRoleIndexing}},
+			&TableProfile{Mode: common.TableColumnModeManual, Roles: map[string]common.ColumnRole{"name": common.ColumnRoleIndexing}},
 			"city",
-			entity.ColumnRoleBoth,
+			common.ColumnRoleBoth,
 		},
 		{
 			"an unknown role stays excluded",
-			&entity.TableProfile{Mode: entity.TableColumnModeManual, Roles: map[string]entity.ColumnRole{"name": entity.ColumnRoleNone}},
+			&TableProfile{Mode: common.TableColumnModeManual, Roles: map[string]common.ColumnRole{"name": common.ColumnRoleNone}},
 			"name",
-			entity.ColumnRoleNone,
+			common.ColumnRoleNone,
 		},
 	}
 
@@ -64,13 +64,13 @@ func TestRoleFor(t *testing.T) {
 }
 
 func TestBuildFieldMap(t *testing.T) {
-	profile := &entity.TableProfile{
-		Mode: entity.TableColumnModeManual,
-		Roles: map[string]entity.ColumnRole{
-			"user_name": entity.ColumnRoleIndexing, // indexing only: not addressable
-			"user_age":  entity.ColumnRoleMetadata,
-			"user_city": entity.ColumnRoleBoth,
-			"user_note": entity.ColumnRoleNone, // unknown role: excluded, as Python does
+	profile := &TableProfile{
+		Mode: common.TableColumnModeManual,
+		Roles: map[string]common.ColumnRole{
+			"user_name": common.ColumnRoleIndexing, // indexing only: not addressable
+			"user_age":  common.ColumnRoleMetadata,
+			"user_city": common.ColumnRoleBoth,
+			"user_note": common.ColumnRoleNone, // unknown role: excluded, as Python does
 		},
 	}
 
@@ -148,8 +148,8 @@ func TestTableColumnRoleClassification_MatchesRenderLayer(t *testing.T) {
 
 	for _, col := range headers {
 		role := roleFor(profile, col)
-		wantText := role == entity.ColumnRoleIndexing || role == entity.ColumnRoleBoth
-		wantStored := role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth
+		wantText := role == common.ColumnRoleIndexing || role == common.ColumnRoleBoth
+		wantStored := role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth
 
 		gotText := strings.Contains(text, "- "+col+": ")
 		_, gotStored := chunkData[col]

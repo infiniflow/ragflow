@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/entity"
+	"ragflow/internal/common"
 )
 
 // DecodeTableColumnConfig extracts column_mode and column_roles from a setup map.
@@ -148,7 +148,7 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 	// rag/app/table.py (`for n in ["id", "_id", "index", "idx"]: del df[n]`).
 	headers, headerIndexes := TableColumnHeaderNames(rows[headerRowIdx])
 
-	isManual := entity.NormalizeTableColumnMode(columnMode) == entity.TableColumnModeManual
+	isManual := common.NormalizeTableColumnMode(columnMode) == common.TableColumnModeManual
 	items := make([]map[string]any, 0, len(rows)-headerRowIdx-1)
 
 	for r := headerRowIdx + 1; r < len(rows); r++ {
@@ -170,16 +170,16 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 			// this renderer and the ingestion layer that aggregates the same
 			// rows (internal/ingestion/task/indexdoc) classify every value
 			// identically — including a value neither knows, which both treat
-			// as excluded (entity.ColumnRoleNone) rather than as "both".
-			role := entity.ColumnRoleBoth
+			// as excluded (common.ColumnRoleNone) rather than as "both".
+			role := common.ColumnRoleBoth
 			if isManual {
-				role = entity.NormalizeColumnRole(columnRoles[col])
+				role = common.NormalizeColumnRole(columnRoles[col])
 			}
 
-			if role == entity.ColumnRoleIndexing || role == entity.ColumnRoleBoth {
+			if role == common.ColumnRoleIndexing || role == common.ColumnRoleBoth {
 				textLines = append(textLines, fmt.Sprintf("- %s: %s", col, val))
 			}
-			if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
+			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
 				chunkData[col] = val
 			}
 		}

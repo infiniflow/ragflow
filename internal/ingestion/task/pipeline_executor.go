@@ -300,7 +300,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 			if s.taskCtx.Doc.KbID != "" && engine.StoresTableChunkData(engine.GetEngineType()) {
 				profile := indexdoc.ResolveTableProfile(parserConfigForTable)
 				if profile == nil {
-					profile = entity.NewTableProfile(entity.TableColumnModeAuto)
+					profile = indexdoc.NewTableProfile(common.TableColumnModeAuto)
 				}
 				fieldMapUpdates = indexdoc.BuildFieldMap(profile, names)
 				if fieldMapUpdates == nil {
@@ -1202,7 +1202,7 @@ func cloneParserConfig(in map[string]interface{}) map[string]interface{} {
 //  3. nothing, leaving the parser's own default in place.
 //
 // A document-level mode is honored only when it is "manual": "auto" is the
-// absence of a column configuration (entity.NormalizeTableColumnMode maps an
+// absence of a column configuration (common.NormalizeTableColumnMode maps an
 // empty mode to auto, and both dialogs emit "auto" for a form the user never
 // touched), so a bare "auto" must not shadow the dataset's manual mode and
 // roles — that would make dataset-level column settings unreachable for every
@@ -1219,7 +1219,7 @@ func resolveTableColumnSettings(docConfig, kbConfig map[string]interface{}) map[
 	}
 
 	mode := docMode
-	if mode != string(entity.TableColumnModeManual) {
+	if mode != string(common.TableColumnModeManual) {
 		mode = kbMode
 	}
 	if mode != "" {

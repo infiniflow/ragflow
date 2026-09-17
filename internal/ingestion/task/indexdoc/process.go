@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 )
 
@@ -233,7 +232,7 @@ func processChunkPositions(ck map[string]any) {
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
 	profile := ResolveTableProfile(parserConfig)
 	if profile == nil {
-		profile = entity.NewTableProfile(entity.TableColumnModeAuto)
+		profile = NewTableProfile(common.TableColumnModeAuto)
 	}
 	cols := profile.Columns
 	if len(cols) == 0 {
@@ -274,13 +273,13 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 				continue
 			}
 			role := roleFor(profile, col)
-			if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
+			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
 				metaCols = append(metaCols, col)
 			}
 		}
 	} else if len(profile.Roles) > 0 {
 		for col, role := range profile.Roles {
-			if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
+			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
 				metaCols = append(metaCols, col)
 			}
 		}
@@ -328,7 +327,7 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 // ResolveTableProfile extracts the strongly-typed TableProfile from parser_config.
 // Tries root-level flat keys first; falls back to resolving from a Parser
 // component entry's spreadsheet config in a component-ID-keyed parser_config.
-func ResolveTableProfile(parserConfig map[string]interface{}) *entity.TableProfile {
+func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 	if parserConfig == nil {
 		return nil
 	}
@@ -336,8 +335,8 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *entity.TableProfi
 	roles, rawRoles := parseTableColumnRoles(parserConfig["table_column_roles"])
 	names := parseTableColumnNames(parserConfig["table_column_names"])
 	if modeStr != "" || len(roles) > 0 || len(names) > 0 {
-		return &entity.TableProfile{
-			Mode:     entity.NormalizeTableColumnMode(modeStr),
+		return &TableProfile{
+			Mode:     common.NormalizeTableColumnMode(modeStr),
 			Roles:    roles,
 			RawRoles: rawRoles,
 			Columns:  names,
@@ -362,8 +361,8 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *entity.TableProfi
 		if n := parseTableColumnNames(ss["column_names"]); len(n) > 0 {
 			names = n
 		}
-		return &entity.TableProfile{
-			Mode:     entity.NormalizeTableColumnMode(modeStr),
+		return &TableProfile{
+			Mode:     common.NormalizeTableColumnMode(modeStr),
 			Roles:    roles,
 			RawRoles: rawRoles,
 			Columns:  names,
@@ -391,56 +390,12 @@ func ResolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 	return mode, roles, names
 }
 
-// roleFor returns the effective entity.ColumnRole for a column.
-// In auto mode every column is "both"; in manual mode an unconfigured column is
-// "both" too, while a configured value the vocabulary does not know normalizes
-// to entity.ColumnRoleNone and is therefore excluded everywhere (text,
-// chunk_data, field_map) — the same classification the table parser's row
-// renderer applies (internal/parser/parser/table_row_render.go).
-func roleFor(profile *entity.TableProfile, column string) entity.ColumnRole {
-	if profile == nil || !isManualProfile(profile) || profile.Roles == nil {
-		return entity.ColumnRoleBoth
-	}
-	if role, ok := profile.Roles[column]; ok && role != "" {
-		return role
-	}
-	return entity.ColumnRoleBoth
-}
-
-func isManualProfile(profile *entity.TableProfile) bool {
-	return profile != nil && profile.Mode == entity.TableColumnModeManual
-}
-
-// BuildFieldMap projects the columns the SQL retrieval path can address into
-// the dataset's field_map, mapping each stored column ("metadata" or "both") to
-// its human-readable name (underscores become spaces).
-func BuildFieldMap(profile *entity.TableProfile, columns []string) map[string]interface{} {
-	if profile == nil || len(columns) == 0 {
-		return nil
-	}
-	fieldMap := make(map[string]interface{})
-	for _, col := range columns {
-		col = strings.TrimSpace(col)
-		if col == "" {
-			continue
-		}
-		role := roleFor(profile, col)
-		if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
-			fieldMap[col] = strings.ReplaceAll(col, "_", " ")
-		}
-	}
-	if len(fieldMap) == 0 {
-		return nil
-	}
-	return fieldMap
-}
-
-func parseTableColumnRoles(raw any) (map[string]entity.ColumnRole, map[string]any) {
+func parseTableColumnRoles(raw any) (map[string]common.ColumnRole, map[string]any) {
 	if raw == nil {
 		return nil, nil
 	}
 	switch m := raw.(type) {
-	case map[string]entity.ColumnRole:
+	case map[string]common.ColumnRole:
 		if len(m) == 0 {
 			return nil, nil
 		}
@@ -453,10 +408,10 @@ func parseTableColumnRoles(raw any) (map[string]entity.ColumnRole, map[string]an
 		if len(m) == 0 {
 			return nil, nil
 		}
-		out := make(map[string]entity.ColumnRole, len(m))
+		out := make(map[string]common.ColumnRole, len(m))
 		rawMap := make(map[string]any, len(m))
 		for k, v := range m {
-			out[k] = entity.NormalizeColumnRole(v)
+			out[k] = common.NormalizeColumnRole(v)
 			rawMap[k] = v
 		}
 		return out, rawMap
@@ -464,10 +419,10 @@ func parseTableColumnRoles(raw any) (map[string]entity.ColumnRole, map[string]an
 		if len(m) == 0 {
 			return nil, nil
 		}
-		out := make(map[string]entity.ColumnRole, len(m))
+		out := make(map[string]common.ColumnRole, len(m))
 		for k, v := range m {
 			if s, ok := v.(string); ok {
-				out[k] = entity.NormalizeColumnRole(s)
+				out[k] = common.NormalizeColumnRole(s)
 			}
 		}
 		return out, m

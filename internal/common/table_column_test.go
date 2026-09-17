@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package entity
+package common
 
 import (
 	"testing"
@@ -64,23 +64,5 @@ func TestNormalizeTableColumnMode(t *testing.T) {
 		if got := NormalizeTableColumnMode(tc.in); got != tc.want {
 			t.Errorf("NormalizeTableColumnMode(%q) = %q, want %q", tc.in, got, tc.want)
 		}
-	}
-}
-
-func TestTableProfile_ToRolesInterfaceMap(t *testing.T) {
-	typed := &TableProfile{Mode: TableColumnModeManual, Roles: map[string]ColumnRole{"a": ColumnRoleMetadata}}
-	if got := typed.ToRolesInterfaceMap(); got["a"] != "metadata" || len(got) != 1 {
-		t.Errorf("typed roles = %#v, want map[a:metadata]", got)
-	}
-
-	// The raw shape a caller supplied wins, so a value the vocabulary does not
-	// know survives the round trip into the parser setup untouched.
-	raw := &TableProfile{RawRoles: map[string]any{"a": "skip"}}
-	if got := raw.ToRolesInterfaceMap(); got["a"] != "skip" {
-		t.Errorf("raw roles = %#v, want the caller's value", got)
-	}
-
-	if got := (*TableProfile)(nil).ToRolesInterfaceMap(); got != nil {
-		t.Errorf("nil profile = %#v, want nil", got)
 	}
 }
