@@ -193,6 +193,8 @@ class Retrieval(ToolBase, ABC):
             query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
 
         if kbs:
+            from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
             kbinfos = await settings.retriever.retrieval(
                 query,
@@ -209,6 +211,7 @@ class Retrieval(ToolBase, ABC):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
                 rerank_candidates_count=self._param.rerank_candidates_count,
+                language=dataset_language(kbs),
             )
             if self.check_if_canceled("Retrieval processing"):
                 return
