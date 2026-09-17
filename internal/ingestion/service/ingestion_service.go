@@ -519,6 +519,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			if errors.As(validateErr, &identityErr) {
 				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
 				if e.markFailed(e.ctx, task.ID) {
+					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason))
 					e.ackHandle(hb, handle, taskMessage.TaskID)
 				} else {
 					e.nackHandle(hb, handle, taskMessage.TaskID)
@@ -1164,6 +1165,15 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	ctx = context.WithoutCancel(ctx)
 	if ingestionTask.PipelineLogID == nil || *ingestionTask.PipelineLogID == "" {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: missing run identity", ingestionTask.ID))
+		return
+	}
+	run, err := dao.NewPipelineOperationLogDAO().GetByID(ctx, dao.DB, *ingestionTask.PipelineLogID)
+	if err != nil {
+		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: load run %s: %v", ingestionTask.ID, *ingestionTask.PipelineLogID, err))
+		return
+	}
+	if run.DocumentID != ingestionTask.DocumentID || run.KbID != ingestionTask.DatasetID {
+		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: run %s belongs to document %s/dataset %s, expected %s/%s", ingestionTask.ID, run.ID, run.DocumentID, run.KbID, ingestionTask.DocumentID, ingestionTask.DatasetID))
 		return
 	}
 	input := taskpkg.PipelineLogInput{
