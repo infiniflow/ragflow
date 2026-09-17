@@ -18,6 +18,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	runID := "run-" + taskID
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocCalled bool
@@ -30,7 +31,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	cancel()
 
 	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
-		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1",
+		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,
 	})
 
 	if !terminal {
@@ -40,13 +41,14 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")
 	}
 	testCtx := t.Context()
-	// No event should be written before the pipeline starts.
+	// Cancellation is terminal for the bound run even when it happens before
+	// pipeline execution begins.
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(testCtx, db, "run-"+taskID)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
-	if len(logs) != 0 {
-		t.Fatalf("expected 0 events (ctx cancelled before pipeline), got %d", len(logs))
+	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message != "Task stopped by user." {
+		t.Fatalf("terminal events = %+v, want one stopped event", logs)
 	}
 	// Task must be STOPPED, not left in RUNNING.
 	task, err := dao.NewIngestionTaskDAO().GetByID(testCtx, db, taskID)

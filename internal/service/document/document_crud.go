@@ -295,8 +295,8 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		return err
 	}
 	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(cleanupCtx, ingestionTask.ID); err != nil {
-			return fmt.Errorf("purge task state for document %s: %w", docID, err)
+		if err := s.purgeTaskStateWithCleanupClaim(cleanupCtx, docID, ingestionTask.ID); err != nil {
+			return err
 		}
 		if _, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
 			return err
@@ -352,8 +352,8 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
 	}
 	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(cleanupCtx, ingestionTask.ID); err != nil {
-			return fmt.Errorf("purge task state for document %s: %w", docID, err)
+		if err := s.purgeTaskStateWithCleanupClaim(cleanupCtx, docID, ingestionTask.ID); err != nil {
+			return err
 		}
 		if _, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, nil); err != nil {
 			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)

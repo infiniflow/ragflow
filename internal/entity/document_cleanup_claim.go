@@ -16,8 +16,9 @@
 
 package entity
 
-// DocumentCleanupClaim fences cross-instance document cleanup. A replacement
-// token invalidates every operation still holding the previous claim.
+// DocumentCleanupClaim fences cross-instance document cleanup at batch
+// boundaries. A replacement token prevents the prior holder from starting a
+// later batch.
 type DocumentCleanupClaim struct {
 	DocumentID string `gorm:"column:document_id;primaryKey;size:32" json:"document_id"`
 	Token      string `gorm:"column:token;size:64;not null" json:"token"`

@@ -142,6 +142,20 @@ func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID s
 	return purgeTaskState(batchCtx, taskID)
 }
 
+func (s *DocumentService) purgeTaskStateWithCleanupClaim(ctx context.Context, documentID, taskID string) error {
+	token := s.cleanupClaimToken(ctx, documentID)
+	if err := s.beginCleanupBatch(ctx, documentID, token); err != nil {
+		return fmt.Errorf("begin task state cleanup for document %s: %w", documentID, err)
+	}
+	if err := s.purgeTaskStateForCleanup(ctx, taskID); err != nil {
+		return fmt.Errorf("purge task state for document %s: %w", documentID, err)
+	}
+	if err := s.finishCleanupBatch(ctx, documentID, token); err != nil {
+		return fmt.Errorf("finish task state cleanup for document %s: %w", documentID, err)
+	}
+	return nil
+}
+
 // beginCleanupBatch renews the request's fencing claim immediately before an
 // external storage operation. A missing token means this helper is being used
 // by an internal path that does not hold a cleanup claim.

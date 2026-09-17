@@ -84,7 +84,7 @@ func TestListIngestionLogsExcludesUnnumberedRuns(t *testing.T) {
 	}
 }
 
-func TestListIngestionLogsEmbedsLatestRunEventWithoutRewritingLegacyMessage(t *testing.T) {
+func TestListIngestionLogsEmbedsLatestRunEventWithoutProgressMessage(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {

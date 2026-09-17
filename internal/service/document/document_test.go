@@ -846,6 +846,33 @@ func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentFullStopsWhenCleanupClaimIsLostDuringTaskStatePurge(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error {
+		return db.Model(&entity.DocumentCleanupClaim{}).
+			Where("document_id = ?", "doc-1").
+			Update("token", "replacement-token").Error
+	}
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
+		t.Fatalf("deleteDocumentFull error = %v, want cleanup claim lost", err)
+	}
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task == nil {
+		t.Fatal("ingestion task was deleted after cleanup claim loss during state purge")
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted after cleanup claim loss during state purge: %v", err)
+	}
+}
+
 func TestDeleteDocumentFullStopsWhenCleanupClaimIsFenced(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -904,6 +931,33 @@ func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+	}
+}
+
+func TestRemoveDocumentKeepFileStopsWhenCleanupClaimIsLostDuringTaskStatePurge(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error {
+		return db.Model(&entity.DocumentCleanupClaim{}).
+			Where("document_id = ?", "doc-1").
+			Update("token", "replacement-token").Error
+	}
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
+		t.Fatalf("RemoveDocumentKeepFile error = %v, want cleanup claim lost", err)
+	}
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task == nil {
+		t.Fatal("ingestion task was deleted after cleanup claim loss during state purge")
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted after cleanup claim loss during state purge: %v", err)
 	}
 }
 
