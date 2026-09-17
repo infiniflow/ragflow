@@ -98,6 +98,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	// a single WAV before being written.
 	var wavFmt *wavFormat
 	var wavPCM []byte
+	var firstSynthErr error
 	for i, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
@@ -105,6 +106,9 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		}
 		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
+			if firstSynthErr == nil {
+				firstSynthErr = err
+			}
 			common.Warn("chat TTS synthesis failed",
 				zap.Int("segmentIndex", i),
 				zap.Int("segmentLen", len(seg)),
@@ -165,7 +169,13 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		c.Writer.Flush()
 	}
 	if !headerWritten {
-		common.ErrorWithCode(c, common.CodeServerError, "TTS synthesis produced no audio")
+		if firstSynthErr != nil {
+			common.ErrorWithCode(c, common.CodeServerError,
+				fmt.Sprintf("TTS synthesis failed for model %s (%s): %v", modelName, driver.Name(), firstSynthErr))
+			return
+		}
+		common.ErrorWithCode(c, common.CodeServerError,
+			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, driver.Name()))
 	}
 }
 
