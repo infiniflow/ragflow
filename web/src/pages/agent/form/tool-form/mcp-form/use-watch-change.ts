@@ -21,6 +21,7 @@ export function useWatchFormChange(form?: UseFormReturn<any>) {
       loading ||
       data.id !== clickedToolId ||
       !mcpTools ||
+      Object.keys(mcpTools).length === 0 ||
       !Array.isArray(items) ||
       items.some(
         (name) => !Object.prototype.hasOwnProperty.call(mcpTools, name),

@@ -65,6 +65,17 @@ describe('MCP form persistence', () => {
     },
   );
 
+  it('preserves configured tools for a dirty empty selection and an empty catalog', () => {
+    mockResponse = {
+      data: { id: 'mcp:1', variables: { tools: {} } },
+      loading: false,
+    };
+    const { result } = renderHook(useWatcher);
+    act(() => result.current.setValue('items', [], { shouldDirty: true }));
+    expect(mockUpdateNodeForm).not.toHaveBeenCalled();
+    expect(mockAgent.mcp[0].tools).toEqual(mockTools);
+  });
+
   it('persists an explicit valid selection', () => {
     const { result } = renderHook(useWatcher);
     act(() =>
