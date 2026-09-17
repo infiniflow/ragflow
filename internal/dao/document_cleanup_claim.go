@@ -17,6 +17,8 @@ var (
 	ErrDocumentCleanupClaimLost = errors.New("document cleanup claim was lost")
 )
 
+const DefaultDocumentCleanupTakeoverGraceSeconds int64 = 45
+
 // DocumentCleanupClaimDAO persists fencing claims for document cleanup.
 type DocumentCleanupClaimDAO struct{}
 

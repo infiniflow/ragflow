@@ -1645,17 +1645,58 @@ func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskServiceReloadAndValidateRunIdentityRejectsMissingBinding(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+func TestIngestionTaskServiceReloadAndValidateRunIdentityRejectsInvalidBindings(t *testing.T) {
+	validRunCount := 1
+	invalidRunCount := 0
+	testCases := []struct {
+		name          string
+		pipelineLogID *string
+		createRun     bool
+		runDocumentID string
+		runDatasetID  string
+		runCount      *int
+		wantReason    string
+	}{
+		{name: "missing pipeline log ID", wantReason: "missing_pipeline_log_id"},
+		{name: "pipeline log not found", pipelineLogID: sptr("missing-run"), wantReason: "pipeline_log_not_found"},
+		{name: "pipeline log document mismatch", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "other-doc", runDatasetID: "kb-1", runCount: &validRunCount, wantReason: "pipeline_log_document_mismatch"},
+		{name: "pipeline log dataset mismatch", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "doc-1", runDatasetID: "other-kb", runCount: &validRunCount, wantReason: "pipeline_log_dataset_mismatch"},
+		{name: "missing run count", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "doc-1", runDatasetID: "kb-1", wantReason: "invalid_run_count"},
+		{name: "non-positive run count", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "doc-1", runDatasetID: "kb-1", runCount: &invalidRunCount, wantReason: "invalid_run_count"},
+	}
 
-	_, err := NewIngestionTaskService().ReloadAndValidateRunIdentity(t.Context(), "task-1")
-	var identityErr *InvalidRunIdentityError
-	if !errors.As(err, &identityErr) || identityErr.Reason != "missing_pipeline_log_id" {
-		t.Fatalf("error = %v, want missing pipeline-log identity error", err)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+			if testCase.createRun {
+				if err := db.Create(&entity.PipelineOperationLog{
+					ID:              *testCase.pipelineLogID,
+					DocumentID:      testCase.runDocumentID,
+					KbID:            testCase.runDatasetID,
+					TaskType:        string(entity.PipelineTaskTypeParse),
+					OperationStatus: string(entity.TaskStatusRunning),
+					RunCount:        testCase.runCount,
+				}).Error; err != nil {
+					t.Fatalf("create pipeline operation log: %v", err)
+				}
+			}
+			if testCase.pipelineLogID != nil {
+				if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", *testCase.pipelineLogID).Error; err != nil {
+					t.Fatalf("bind pipeline operation log: %v", err)
+				}
+			}
+
+			_, err := NewIngestionTaskService().ReloadAndValidateRunIdentity(t.Context(), "task-1")
+			var identityErr *InvalidRunIdentityError
+			if !errors.As(err, &identityErr) || identityErr.Reason != testCase.wantReason {
+				t.Fatalf("error = %v, want invalid run identity reason %q", err, testCase.wantReason)
+			}
+		})
 	}
 }
 

@@ -34,7 +34,6 @@ var documentParseLocks = struct {
 
 const (
 	cleanupClaimLeaseSeconds  int64 = 120
-	cleanupTakeoverGraceSecs  int64 = 45
 	cleanupClaimRenewInterval       = 30 * time.Second
 	cleanupBatchTimeout             = 30 * time.Second
 )
@@ -74,7 +73,7 @@ func (s *DocumentService) acquireCleanupClaim(ctx context.Context, documentID, o
 		if err != nil {
 			return err
 		}
-		claim, err = s.cleanupClaimDAO.Acquire(ctx, tx, documentID, owner, now, cleanupClaimLeaseSeconds, cleanupTakeoverGraceSecs)
+		claim, err = s.cleanupClaimDAO.Acquire(ctx, tx, documentID, owner, now, cleanupClaimLeaseSeconds, dao.DefaultDocumentCleanupTakeoverGraceSeconds)
 		return err
 	})
 	return claim, err
@@ -85,7 +84,7 @@ func (s *DocumentService) renewCleanupClaim(ctx context.Context, documentID, tok
 	if err != nil {
 		return err
 	}
-	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds, cleanupTakeoverGraceSecs)
+	return s.cleanupClaimDAO.Renew(ctx, dao.DB, documentID, token, now, cleanupClaimLeaseSeconds, dao.DefaultDocumentCleanupTakeoverGraceSeconds)
 }
 
 // startCleanupClaimHeartbeat keeps a cleanup claim alive while the workflow

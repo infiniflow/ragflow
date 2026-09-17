@@ -774,7 +774,7 @@ func (s *IngestionTaskService) ensureRunIdentity(ctx context.Context, task *enti
 		if err != nil {
 			return err
 		}
-		claim, err := s.cleanupClaimDAO.GetBlocking(ctx, tx, lockedDocument.ID, now, 45)
+		claim, err := s.cleanupClaimDAO.GetBlocking(ctx, tx, lockedDocument.ID, now, dao.DefaultDocumentCleanupTakeoverGraceSeconds)
 		if err != nil {
 			return err
 		}
