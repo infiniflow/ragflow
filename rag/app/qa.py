@@ -41,7 +41,7 @@ class Excel(ExcelParser):
         if binary is None:
             with open(fnm, "rb") as f:
                 binary = f.read()
-        wb = Excel._load_excel_to_workbook(BytesIO(binary))
+        wb = Excel._load_excel_to_workbook(binary)
         total = 0
         for sheetname in wb.sheetnames:
             total += len(list(wb[sheetname].rows))
