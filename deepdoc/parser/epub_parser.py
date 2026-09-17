@@ -79,10 +79,11 @@ class RAGFlowEpubParser:
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=UserWarning)
                         sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
-                except (UnicodeError, ParserRejectedMarkup, RecursionError) as e:
-                    # decode_text refuses a weak codec guess, html.parser rejects some
-                    # malformed markup, and the HTML walker recurses once per element.
-                    # Same reasoning as above; any other error is a bug and propagates.
+                except (ValueError, ParserRejectedMarkup, RecursionError) as e:
+                    # decode_text refuses a weak codec guess (UnicodeError is a ValueError),
+                    # a numeric character reference past 4300 digits fails int(), html.parser
+                    # rejects some malformed markup, and the HTML walker recurses once per
+                    # element. Same reasoning as above; any other error is a bug and propagates.
                     logger.warning("Skipping EPUB content item '%s' that failed to parse: %s", item_path, e)
                     failures.append(f"{item_path}: {e}")
                     continue

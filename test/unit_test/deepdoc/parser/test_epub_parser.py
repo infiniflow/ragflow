@@ -491,6 +491,20 @@ class TestEpubParserUnreadableChapter:
         assert "CHARLIE" in combined
         assert "BRAVO" not in combined
 
+    def test_a_chapter_with_an_oversized_character_reference_is_skipped(self):
+        """A numeric character reference past Python's 4300-digit int limit raises ValueError."""
+        chapters = [
+            ("ch1.xhtml", _simple_html("ALPHA chapter")),
+            ("ch2.xhtml", _simple_html("BRAVO &#" + "1" * 5000 + "; chapter")),
+            ("ch3.xhtml", _simple_html("CHARLIE chapter")),
+        ]
+
+        combined = self._parse(_make_epub(chapters))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
     def test_a_parser_bug_is_not_skipped_as_an_unreadable_chapter(self):
         """Only failures caused by the chapter itself are skipped; any other error propagates."""
         with mock.patch.object(_epub_mod.RAGFlowHtmlParser, "parser_txt", side_effect=TypeError("parser bug")), pytest.raises(TypeError, match="parser bug"):
