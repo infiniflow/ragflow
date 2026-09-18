@@ -243,13 +243,25 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error) {
 	f.tenantID = tenantID
-	f.llmID = llmID
+	f.llmID = modelRef
 	if f.err != nil {
-		return nil, "", nil, 0, f.err
+		return nil, f.err
 	}
-	return nil, "resolved-model", &modelModule.APIConfig{}, 8192, nil
+	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+}
+
+func (f *fakeChatModelConfigResolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error) {
+	f.tenantID = tenantID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+}
+
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
+	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 
 type feedbackContextKey struct{}
