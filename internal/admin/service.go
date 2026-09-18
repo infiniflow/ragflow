@@ -1087,7 +1087,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		mysqlStatus := s.getRedisInfo(ctx)
 		results = append(results, mysqlStatus)
 	default:
-		redisConfig := globalConfig.GetRedisConfig()
+		redisConfig := globalConfig.GetKvrocksConfig()
 		results = append(results, newServiceStatus("cache", cacheType, redisConfig.Host, redisConfig.Port, "not available", time.Now(), "not supported cache type"))
 	}
 
@@ -1191,7 +1191,7 @@ func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
 	name := "redis"
 
 	startTime := time.Now()
-	redisConfig := server.GetConfig().GetRedisConfig()
+	redisConfig := server.GetConfig().GetKvrocksConfig()
 
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
