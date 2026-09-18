@@ -251,9 +251,7 @@ describe('useGraphStore.toggleBottomCollapse', () => {
 
     useGraphStore.setState({ nodes, edges });
 
-    useGraphStore
-      .getState()
-      .toggleBottomCollapse('agent:0', NodeHandleId.Tool);
+    useGraphStore.getState().toggleBottomCollapse('agent:0', NodeHandleId.Tool);
 
     let state = useGraphStore.getState();
     // Only the tool node is hidden; the sub-agent subtree stays visible
@@ -274,9 +272,7 @@ describe('useGraphStore.toggleBottomCollapse', () => {
     ]);
 
     // Expanding one handle keeps the other handle's subtree hidden
-    useGraphStore
-      .getState()
-      .toggleBottomCollapse('agent:0', NodeHandleId.Tool);
+    useGraphStore.getState().toggleBottomCollapse('agent:0', NodeHandleId.Tool);
 
     state = useGraphStore.getState();
     expect(hiddenIds(state.nodes)).toEqual(['agent:1', 'tool:1']);
@@ -294,5 +290,56 @@ describe('useGraphStore.toggleBottomCollapse', () => {
       .toggleBottomCollapse('agent:0', NodeHandleId.AgentBottom);
 
     expect(useGraphStore.getState().collapsedBottomHandles).toEqual({});
+  });
+});
+
+describe('useGraphStore.hasDownstreamNode', () => {
+  beforeEach(() => {
+    useGraphStore.setState({
+      nodes: [],
+      edges: [],
+    });
+  });
+
+  it('detects a committed downstream node', () => {
+    useGraphStore.setState({
+      nodes: [
+        createNode('compiler:0', Operator.Compiler),
+        createNode('tokenizer:0', Operator.Tokenizer),
+      ],
+      edges: [createEdge('e1', 'compiler:0', 'tokenizer:0')],
+    });
+
+    expect(useGraphStore.getState().hasDownstreamNode('compiler:0')).toBe(true);
+  });
+
+  it('ignores a pending placeholder so it does not occupy its source', () => {
+    useGraphStore.setState({
+      nodes: [
+        createNode('compiler:0', Operator.Compiler),
+        createNode('placeholder:0', Operator.Placeholder),
+      ],
+      edges: [createEdge('e1', 'compiler:0', 'placeholder:0')],
+    });
+
+    expect(useGraphStore.getState().hasDownstreamNode('compiler:0')).toBe(
+      false,
+    );
+  });
+
+  it('stays true when a real successor coexists with a placeholder', () => {
+    useGraphStore.setState({
+      nodes: [
+        createNode('compiler:0', Operator.Compiler),
+        createNode('tokenizer:0', Operator.Tokenizer),
+        createNode('placeholder:0', Operator.Placeholder),
+      ],
+      edges: [
+        createEdge('e1', 'compiler:0', 'tokenizer:0'),
+        createEdge('e2', 'compiler:0', 'placeholder:0'),
+      ],
+    });
+
+    expect(useGraphStore.getState().hasDownstreamNode('compiler:0')).toBe(true);
   });
 });

@@ -780,8 +780,13 @@ const useGraphStore = create<RFState>()(
         });
       },
       hasDownstreamNode: (nodeId) => {
-        const { edges } = get();
-        return edges.some((edge) => edge.source === nodeId);
+        const { edges, nodes } = get();
+        return edges.some(
+          (edge) =>
+            edge.source === nodeId &&
+            nodes.find((node) => node.id === edge.target)?.data?.label !==
+              Operator.Placeholder,
+        );
       },
       hasUpstreamNode: (nodeId) => {
         const { edges } = get();
