@@ -34,6 +34,7 @@ import {
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
 import { pickByBackend } from '@/utils/backend-variant';
+import { resolveTableColumnSettings } from '@/utils/table-column-settings';
 import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -349,9 +350,11 @@ export function transformApiConfigToForm(
  * form format used by the operator tabs. Configs without pipeline keys
  * (built-in parse type) are returned as-is.
  *
- * The dataset-level metadata group is authoritative for Extractor nodes,
- * mirroring buildOperatorNode, so the values seeded into the outer form match
- * what the operator tabs initialize from.
+ * Two dataset-level groups are authoritative over the per-node copies the
+ * config was built from, mirroring buildOperatorNode, so the values seeded into
+ * the outer form match what the operator tabs initialize from: the metadata
+ * group for Extractor nodes, and the resolved table column settings for the
+ * parser's spreadsheet setup.
  */
 export function transformSavedParserConfigToForm(
   parserConfig?: Record<string, any>,
@@ -373,10 +376,14 @@ export function transformSavedParserConfigToForm(
       isDatasetMetadataGroup(parserConfig.metadata)
         ? { ...config, metadata: parserConfig.metadata }
         : (config as Record<string, any>);
-    formParserConfig[operatorId] = transformApiConfigToForm(
-      operatorType,
-      apiConfig,
-    );
+    const formConfig = transformApiConfigToForm(operatorType, apiConfig);
+    formParserConfig[operatorId] =
+      operatorType === Operator.Parser && Array.isArray(formConfig.setups)
+        ? {
+            ...formConfig,
+            setups: withResolvedTableColumns(formConfig.setups, parserConfig),
+          }
+        : formConfig;
   }
   return formParserConfig;
 }
@@ -407,6 +414,43 @@ export function transformFormConfigToApi(
     default:
       return config;
   }
+}
+
+/**
+ * Copies the column intent a parser form states onto the root `table_column_*`
+ * keys, which are the only level ingestion reads user intent from. Both parser
+ * dialogs call it, so saving the same setting from either place writes the same
+ * config.
+ *
+ * Only what a parser actually states is written: an unconfigured dialog stays
+ * silent instead of pinning the value to "auto". Discovered column names are not
+ * copied — the root list is published by parsing, not authored here.
+ */
+export function persistTableColumnSettings(
+  transformedConfig: Record<string, any>,
+): Record<string, any> {
+  for (const [operatorId, config] of Object.entries(transformedConfig)) {
+    if (getOperatorType(operatorId) !== Operator.Parser) {
+      continue;
+    }
+    // The saved parser config carries the spreadsheet setup flattened at the
+    // top level under Go and nested under `setups` under Python.
+    const entry = config as Record<string, any>;
+    const spreadsheet =
+      entry?.[FileType.Spreadsheet] ?? entry?.setups?.[FileType.Spreadsheet];
+    if (!spreadsheet || typeof spreadsheet !== 'object') {
+      continue;
+    }
+    if (spreadsheet.column_mode) {
+      transformedConfig.table_column_mode = spreadsheet.column_mode;
+    }
+    const roles = spreadsheet.column_roles;
+    if (roles && Object.keys(roles).length > 0) {
+      transformedConfig.table_column_roles = roles;
+    }
+    break;
+  }
+  return transformedConfig;
 }
 
 export function normalizeOperatorForm(
@@ -455,6 +499,28 @@ export function normalizeOperatorForm(
   }
 }
 
+// Seeds the spreadsheet setup's column fields with the settings ingestion will
+// actually use, so one dialog displays, saves and runs the same value. A config
+// that states no mode leaves the field unset rather than claiming "auto": a
+// stated mode is user intent, and an unconfigured form must not write one that
+// outranks a profile set elsewhere.
+function withResolvedTableColumns(
+  setups: any[],
+  parserConfig: Record<string, any>,
+): any[] {
+  const settings = resolveTableColumnSettings(parserConfig);
+  return setups.map((setup: any) =>
+    setup?.fileFormat === FileType.Spreadsheet
+      ? {
+          ...setup,
+          column_mode: settings.mode,
+          column_roles: settings.roles,
+          column_names: settings.names,
+        }
+      : setup,
+  );
+}
+
 export function buildOperatorNode(
   dslNode: RAGFlowNodeType,
   pipelineParserConfig: Record<string, any> = {},
@@ -490,66 +556,10 @@ export function buildOperatorNode(
       transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
     if (operatorType === Operator.Parser && Array.isArray(rawForm.setups)) {
-      rawForm.setups = rawForm.setups.map((setup: any) => {
-        if (setup.fileFormat === FileType.Spreadsheet) {
-          // Saved API/DSL configs may carry either convention: Go saves
-          // column_* on the spreadsheet setup, Python saves table_column_*
-          // at the parser_config root. Accept both so the role selector
-          // initializes on either backend without clobbering explicit values.
-          //
-          // Priority (highest → lowest):
-          //   1. Root-level table_column_* — per-document user override set at
-          //      upload time or via the document parser dialog save.
-          //   2. setup.column_* — from the component entry in parser_config
-          //      (written when the dialog is saved under the Go backend).
-          //   3. setup.table_column_* — Python backend compat keys.
-          //   4. Nothing, which leaves the setting unset.
-          //
-          // The old code evaluated setup.column_mode first; a canvas saved with
-          // the earlier template default carries column_mode:"auto" in the
-          // component entry, and that truthy "auto" short-circuited the
-          // root-level "manual", so the dialog always displayed "auto" even
-          // after the user had explicitly chosen "manual" at upload time.
-          const columnModeValue =
-            pipelineParserConfig.table_column_mode ||
-            setup.column_mode ||
-            setup.table_column_mode;
-          const rootNames = pipelineParserConfig.table_column_names;
-          const columnNamesValue =
-            Array.isArray(rootNames) && rootNames.length > 0
-              ? rootNames
-              : setup.column_names?.length > 0
-                ? setup.column_names
-                : Array.isArray(setup.table_column_names) &&
-                    setup.table_column_names.length > 0
-                  ? setup.table_column_names
-                  : undefined;
-          const rootRoles = pipelineParserConfig.table_column_roles;
-          const columnRolesValue =
-            rootRoles && Object.keys(rootRoles).length > 0
-              ? rootRoles
-              : setup.column_roles && Object.keys(setup.column_roles).length > 0
-                ? setup.column_roles
-                : setup.table_column_roles &&
-                    Object.keys(setup.table_column_roles).length > 0
-                  ? setup.table_column_roles
-                  : undefined;
-          const column_names = columnNamesValue ?? [];
-          // An untouched setup stays unset rather than becoming "auto": the form
-          // renders "auto" for an empty value (spreadsheet-form-fields), while a
-          // value here is saved back into the component and lifted to the dataset
-          // root, where it would outrank a manual profile configured later.
-          const column_mode = columnModeValue;
-          const column_roles = columnRolesValue ?? {};
-          return {
-            ...setup,
-            column_names,
-            column_mode,
-            column_roles,
-          };
-        }
-        return setup;
-      });
+      rawForm.setups = withResolvedTableColumns(
+        rawForm.setups,
+        pipelineParserConfig,
+      );
     }
   }
 

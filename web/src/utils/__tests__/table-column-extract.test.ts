@@ -1,9 +1,5 @@
 import { probeTableColumns } from '@/services/knowledge-service';
-import {
-  extractTableColumns,
-  isTableFile,
-  resolveDatasetTableColumnSettings,
-} from '../table-column-extract';
+import { extractTableColumns, isTableFile } from '../table-column-extract';
 
 jest.mock('@/services/knowledge-service', () => ({
   probeTableColumns: jest.fn(),
@@ -26,112 +22,6 @@ describe('table-column-extract', () => {
       expect(isTableFile(new File([], 'test.pdf'))).toBe(false);
       expect(isTableFile(new File([], 'test.docx'))).toBe(false);
       expect(isTableFile(new File([], 'test.png'))).toBe(false);
-    });
-  });
-
-  describe('resolveDatasetTableColumnSettings', () => {
-    it('prefers root-level dataset settings', () => {
-      expect(
-        resolveDatasetTableColumnSettings({
-          table_column_mode: 'manual',
-          table_column_roles: { a: 'vectorize', b: 'nonsense' },
-          'Parser:Table': {
-            spreadsheet: { column_mode: 'auto', column_roles: { a: 'both' } },
-          },
-        }),
-      ).toEqual({ mode: 'manual', roles: { a: 'indexing', b: 'both' } });
-    });
-
-    it('falls back to the component-shaped entry', () => {
-      expect(
-        resolveDatasetTableColumnSettings({
-          'Parser:Table': {
-            spreadsheet: {
-              column_mode: 'manual',
-              column_roles: { a: 'metadata' },
-            },
-          },
-        }),
-      ).toEqual({ mode: 'manual', roles: { a: 'metadata' } });
-    });
-
-    // The runtime compares both values verbatim: only the exact "manual"
-    // selects manual (common.NormalizeTableColumnMode) and a role is matched
-    // without trimming or case-folding, so the dialog must not show a choice
-    // ingestion will not honour, nor drop a column name that is merely blank.
-    it('reads a stored mode and stored roles exactly', () => {
-      expect(
-        resolveDatasetTableColumnSettings({ table_column_mode: ' Manual ' }),
-      ).toEqual({ mode: 'auto', roles: {} });
-
-      expect(
-        resolveDatasetTableColumnSettings({
-          table_column_roles: { ' Indexing ': ' INDEXING ', '': 'metadata' },
-        }),
-      ).toEqual({
-        mode: 'auto',
-        roles: { ' Indexing ': 'both', '': 'metadata' },
-      });
-    });
-
-    // Any of mode, roles or names makes the root level authoritative, even when
-    // the manual profile is on the canvas (indexdoc.ResolveTableProfile).
-    it('treats stored column names alone as a root-level setting', () => {
-      expect(
-        resolveDatasetTableColumnSettings({
-          table_column_names: ['a'],
-          'Parser:Table': {
-            spreadsheet: {
-              column_mode: 'manual',
-              column_roles: { a: 'metadata' },
-            },
-          },
-        }),
-      ).toEqual({ mode: 'auto', roles: {} });
-    });
-
-    // A blank name is still a column of the schema, so a list holding only one
-    // counts as stated: indexdoc.parseTableColumnNames keeps it verbatim.
-    it('counts a blank column name as a stated schema', () => {
-      expect(
-        resolveDatasetTableColumnSettings({
-          table_column_names: [''],
-          'Parser:Table': {
-            spreadsheet: {
-              column_mode: 'manual',
-              column_roles: { a: 'metadata' },
-            },
-          },
-        }),
-      ).toEqual({ mode: 'auto', roles: {} });
-    });
-
-    // A component entry that states nothing is not a profile either: a canvas
-    // can carry an empty spreadsheet block, and the resolution has to reach the
-    // component that does declare one.
-    it('skips a component entry that states nothing', () => {
-      expect(
-        resolveDatasetTableColumnSettings({
-          'Parser:A': { spreadsheet: {} },
-          'Parser:B': {
-            spreadsheet: {
-              column_mode: 'manual',
-              column_roles: { a: 'metadata' },
-            },
-          },
-        }),
-      ).toEqual({ mode: 'manual', roles: { a: 'metadata' } });
-    });
-
-    it('defaults to auto with no settings', () => {
-      expect(resolveDatasetTableColumnSettings(undefined)).toEqual({
-        mode: 'auto',
-        roles: {},
-      });
-      expect(resolveDatasetTableColumnSettings({})).toEqual({
-        mode: 'auto',
-        roles: {},
-      });
     });
   });
 

@@ -65,6 +65,7 @@ export function DocumentPipelineDialog({
     handleOperatorValuesChange,
     operatorValues,
     showOperatorTabs,
+    isTableParser,
     buildSubmitData,
   } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
 
@@ -129,6 +130,7 @@ export function DocumentPipelineDialog({
                     | undefined
                 }
                 fixedFileFormats
+                isTableParser={isTableParser}
               />
             )}
           </form>

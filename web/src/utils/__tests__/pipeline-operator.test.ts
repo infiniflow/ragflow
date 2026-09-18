@@ -1,8 +1,10 @@
 import {
   buildOperatorNode,
   getOperatorType,
+  persistTableColumnSettings,
   transformApiConfigToForm,
   transformFormConfigToApi,
+  transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
 
 let mockIsGoBackend = true;
@@ -144,8 +146,8 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
 });
 
 // A minimal DSL-shaped Parser node whose component spreadsheet config carries
-// column_mode:"auto" — the value a canvas saved by an earlier template wrote,
-// which previously masked the user's upload-time "manual" selection.
+// column_mode:"auto" — the value a canvas wrote, which must not mask the user's
+// upload-time "manual" selection.
 const parserNodeWithAutoColumnMode = {
   id: 'Parser:HipSignsRhyme',
   data: {
@@ -153,7 +155,7 @@ const parserNodeWithAutoColumnMode = {
       setups: [
         {
           fileFormat: 'spreadsheet',
-          column_mode: 'auto', // ← written by a canvas saved with the old default
+          column_mode: 'auto',
           column_names: [],
           column_roles: {},
           parse_method: 'DeepDOC',
@@ -164,14 +166,11 @@ const parserNodeWithAutoColumnMode = {
   },
 } as any;
 
-describe('buildOperatorNode spreadsheet column_mode priority', () => {
+describe('buildOperatorNode spreadsheet column settings', () => {
   beforeEach(() => {
     mockIsGoBackend = true;
   });
 
-  // Regression test: before the fix, the DSL component's column_mode:"auto" was
-  // evaluated first (truthy), causing root-level table_column_mode:"manual" to
-  // be silently ignored and the dialog to always display "auto".
   it('root-level table_column_mode wins over DSL component column_mode:"auto"', () => {
     const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
       'Parser:HipSignsRhyme': {
@@ -277,5 +276,129 @@ describe('buildOperatorNode spreadsheet column_mode priority', () => {
       'fresh_col_a',
       'fresh_col_b',
     ]);
+  });
+
+  // Published names alone do not pin the parser to auto: the component profile
+  // stays reachable so a document can be reconfigured after its first parse.
+  it('keeps a component profile when the root only carries published names', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_names: ['col_a'],
+          column_roles: { col_a: 'metadata' },
+        },
+      },
+      table_column_names: ['col_a'],
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_mode).toBe('manual');
+    expect(spreadsheetSetup.column_roles).toEqual({ col_a: 'metadata' });
+  });
+});
+
+// The document dialog seeds its outer form from transformSavedParserConfigToForm
+// and then lets that value override the operator tab, so the resolver has to run
+// there too or the dialog shows the component's stale mode.
+describe('transformSavedParserConfigToForm table column settings', () => {
+  beforeEach(() => {
+    mockIsGoBackend = true;
+  });
+
+  it('seeds the spreadsheet setup with the root-level manual profile', () => {
+    const form = transformSavedParserConfigToForm({
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'auto',
+          column_roles: {},
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_names: ['col_a'],
+      table_column_roles: { col_a: 'metadata' },
+    });
+
+    const setup = form?.['Parser:HipSignsRhyme'].setups.find(
+      (entry: any) => entry.fileFormat === 'spreadsheet',
+    );
+    expect(setup.column_mode).toBe('manual');
+    expect(setup.column_roles).toEqual({ col_a: 'metadata' });
+    expect(setup.column_names).toEqual(['col_a']);
+  });
+
+  it('leaves a built-in config untouched', () => {
+    const parserConfig = { chunk_token_num: 256 };
+    expect(transformSavedParserConfigToForm(parserConfig)).toBe(parserConfig);
+  });
+});
+
+describe('persistTableColumnSettings', () => {
+  it('lifts the parser form intent to the root keys', () => {
+    expect(
+      persistTableColumnSettings({
+        'Parser:HipSignsRhyme': {
+          spreadsheet: {
+            column_mode: 'manual',
+            column_roles: { col_a: 'metadata' },
+            column_names: ['col_a'],
+          },
+        },
+      }),
+    ).toEqual({
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_roles: { col_a: 'metadata' },
+          column_names: ['col_a'],
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_roles: { col_a: 'metadata' },
+    });
+  });
+
+  // Writing an unconfigured "auto" to the root would outrank a profile set on
+  // the other path, and copying published names would make the dialog the
+  // author of a schema it only reads.
+  it('stays silent for a parser that states no mode or roles', () => {
+    expect(
+      persistTableColumnSettings({
+        'Parser:HipSignsRhyme': {
+          spreadsheet: { column_names: ['col_a'], output_format: 'markdown' },
+        },
+        'Tokenizer:SomeNode': { fields: 'text' },
+      }),
+    ).toEqual({
+      'Parser:HipSignsRhyme': {
+        spreadsheet: { column_names: ['col_a'], output_format: 'markdown' },
+      },
+      'Tokenizer:SomeNode': { fields: 'text' },
+    });
+  });
+
+  // The Python backend nests the same setup under `setups`, and its table
+  // parser reads the root keys the same way.
+  it('lifts from the nested spreadsheet setup', () => {
+    expect(
+      persistTableColumnSettings({
+        'Parser:HipSignsRhyme': {
+          setups: {
+            spreadsheet: { column_mode: 'manual', column_roles: { a: 'both' } },
+          },
+        },
+      }),
+    ).toEqual({
+      'Parser:HipSignsRhyme': {
+        setups: {
+          spreadsheet: { column_mode: 'manual', column_roles: { a: 'both' } },
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_roles: { a: 'both' },
+    });
   });
 });

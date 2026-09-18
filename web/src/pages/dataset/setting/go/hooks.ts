@@ -9,6 +9,7 @@ import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { checkEmbedding } from '@/services/knowledge-service';
 import {
   getOperatorType,
+  persistTableColumnSettings,
   transformFormConfigToApi,
   transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
@@ -109,7 +110,6 @@ export const useSaveDatasetSetting = () => {
       if (payload.parser_config) {
         const transformedConfig: Record<string, any> = {};
         let extractorMetadataGroup: Record<string, any> | undefined;
-        let spreadsheetConfig: Record<string, any> | undefined;
         for (const [operatorId, config] of Object.entries(
           payload.parser_config,
         )) {
@@ -125,13 +125,6 @@ export const useSaveDatasetSetting = () => {
           ) {
             extractorMetadataGroup = transformed?.metadata;
           }
-          if (
-            operatorType === Operator.Parser &&
-            transformed?.spreadsheet &&
-            spreadsheetConfig === undefined
-          ) {
-            spreadsheetConfig = transformed.spreadsheet;
-          }
         }
         // parser_config.metadata is the dataset-level object the backend
         // preserves and re-scopes into every Extractor node. The extractor
@@ -141,25 +134,7 @@ export const useSaveDatasetSetting = () => {
         if (extractorMetadataGroup) {
           transformedConfig.metadata = extractorMetadataGroup;
         }
-        if (spreadsheetConfig) {
-          // Lift only what the canvas actually states. The backend takes the
-          // root keys as authoritative as soon as any of mode, roles or names
-          // is set there, so writing an untouched "auto" with an empty map
-          // would pin the dataset to auto and hide a manual profile configured
-          // on the canvas afterwards.
-          if (spreadsheetConfig.column_mode) {
-            transformedConfig.table_column_mode = spreadsheetConfig.column_mode;
-          }
-          const columnRoles = spreadsheetConfig.column_roles;
-          if (columnRoles && Object.keys(columnRoles).length > 0) {
-            transformedConfig.table_column_roles = columnRoles;
-          }
-          if (spreadsheetConfig.column_names?.length > 0) {
-            transformedConfig.table_column_names =
-              spreadsheetConfig.column_names;
-          }
-        }
-        payload.parser_config = transformedConfig;
+        payload.parser_config = persistTableColumnSettings(transformedConfig);
       }
 
       if (payload.parse_type === ParseType.BuiltIn) {

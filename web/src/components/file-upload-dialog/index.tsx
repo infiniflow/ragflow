@@ -30,11 +30,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
-import {
-  DatasetTableColumnSettings,
-  extractTableColumns,
-  isTableFile,
-} from '@/utils/table-column-extract';
+import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
+import { TableColumnSettings } from '@/utils/table-column-settings';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -102,7 +99,7 @@ type UploadFormProps = {
   // NOT submitted: only a mode/role the user changed in this dialog is sent,
   // otherwise the document would pin the dataset's default and later dataset
   // changes could never reach it.
-  defaultTableColumnSettings?: DatasetTableColumnSettings;
+  defaultTableColumnSettings?: TableColumnSettings;
 };
 function UploadForm({
   submit,

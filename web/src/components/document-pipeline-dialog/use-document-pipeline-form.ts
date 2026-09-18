@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { ParseType } from '@/constants/knowledge';
+import { DocumentParserType, ParseType } from '@/constants/knowledge';
 import {
   useActiveTab,
   usePipelineOperatorNodes,
@@ -23,6 +23,7 @@ import {
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import {
   getOperatorType,
+  persistTableColumnSettings,
   transformFormConfigToApi,
   transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
@@ -165,6 +166,12 @@ export function useDocumentPipelineForm({
     ((parseType === ParseType.Pipeline && !!selectedDataFlowId) ||
       (parseType === ParseType.BuiltIn && !!selectedBuiltinId));
 
+  // Column settings belong to the table parser, so a built-in document that
+  // parses another way hides them. A pipeline document keeps them: the canvas
+  // parser, not the document's chunk method, decides which file types it reads.
+  const isTableParser =
+    isPipelineMode || selectedBuiltinId === DocumentParserType.Table;
+
   const buildSubmitData = useCallback(
     (data: z.infer<typeof FormSchema>): IChangeParserRequestBody => {
       const transformedConfig: Record<string, any> = {};
@@ -176,6 +183,7 @@ export function useDocumentPipelineForm({
           config as Record<string, any>,
         );
       }
+      persistTableColumnSettings(transformedConfig);
 
       const isPipeline = data.parseType === ParseType.Pipeline;
       return {
@@ -198,6 +206,7 @@ export function useDocumentPipelineForm({
     handleOperatorValuesChange,
     operatorValues,
     showOperatorTabs,
+    isTableParser,
     buildSubmitData,
   };
 }
