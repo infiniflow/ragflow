@@ -22,10 +22,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -131,7 +133,26 @@ func (c *MySQLConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 		return nil, err
 	}
 	queries := c.buildSyncQueries(bases, request)
-	return &mysqlSyncSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
+	orderColumn := c.syncOrderColumn(request)
+	session := &mysqlSyncSession{
+		connector:         c,
+		db:                db,
+		batchSize:         c.batchSize,
+		orderColumn:       orderColumn,
+		checkpointEnabled: orderColumn != "",
+		lastDocQuery:      -1,
+	}
+	for _, q := range queries {
+		session.queries = append(session.queries, q.sql)
+		session.queryNames = append(session.queryNames, q.name)
+		session.orderedFlags = append(session.orderedFlags, q.ordered)
+		session.fallbackQueries = append(session.fallbackQueries, q.fallback)
+	}
+	if err := session.applyResume(request.Resume); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return session, nil
 }
 
 // OpenPrune opens one complete MySQL prune snapshot session.
@@ -147,7 +168,7 @@ func (c *MySQLConnector) OpenPrune(ctx context.Context, request PruneRequest) (P
 	}
 	queries := make([]string, 0, len(bases))
 	for _, base := range bases {
-		queries = append(queries, c.buildSlimQuery(base))
+		queries = append(queries, c.buildSlimQuery(base.sql))
 	}
 	return &mysqlPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
@@ -212,10 +233,12 @@ func mysqlPinnedDial(pinIP net.IP, port int) mysql.DialContextFunc {
 	}
 }
 
-// baseQueries returns the configured query or a SELECT per table.
-func (c *MySQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string, error) {
+// baseQueries returns the configured query or a SELECT per table. Table names
+// are sorted so the sync stream order is stable across runs and a resume
+// cursor can reliably skip already-processed tables.
+func (c *MySQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]rdbmsQuery, error) {
 	if c.query != "" {
-		return []string{c.query}, nil
+		return []rdbmsQuery{{name: "", sql: c.query}}, nil
 	}
 	rows, err := db.QueryContext(ctx, "SHOW TABLES")
 	if err != nil {
@@ -233,28 +256,67 @@ func (c *MySQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	queries := make([]string, 0, len(tables))
+	sort.Strings(tables)
+	queries := make([]rdbmsQuery, 0, len(tables))
 	for _, table := range tables {
-		queries = append(queries, fmt.Sprintf("SELECT * FROM %s", table))
+		queries = append(queries, rdbmsQuery{name: table, sql: fmt.Sprintf("SELECT * FROM %s", table)})
 	}
 	return queries, nil
 }
 
-// buildSyncQueries applies the incremental window when a timestamp column exists.
-func (c *MySQLConnector) buildSyncQueries(bases []string, request SyncRequest) []string {
-	var start, end *time.Time
-	if !request.FromBeginning {
-		start = request.WindowStart
-		end = &request.WindowEnd
-	}
-	if c.timestampColumn == "" || (start == nil && end == nil) {
-		return bases
-	}
-	queries := make([]string, 0, len(bases))
-	for _, base := range bases {
-		queries = append(queries, c.buildTimeFilteredQuery(base, start, end))
+// buildSyncQueries applies the incremental window and a stable ordering when
+// one is available, so a checkpoint can resume the stream from an anchor.
+// Each query carries an unordered fallback used when a custom SQL query does
+// not expose the configured ordering column.
+func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncRequest) []rdbmsSyncQuery {
+	queries := make([]rdbmsSyncQuery, 0, len(bases))
+	switch {
+	case !request.FromBeginning && c.timestampColumn != "":
+		start := request.WindowStart
+		end := &request.WindowEnd
+		for _, base := range bases {
+			queries = append(queries, rdbmsSyncQuery{
+				name:     base.name,
+				sql:      c.buildTimeFilteredOrderedQuery(base.sql, start, end),
+				ordered:  true,
+				fallback: c.buildTimeFilteredQuery(base.sql, start, end),
+			})
+		}
+	case request.FromBeginning && c.idColumn != "":
+		for _, base := range bases {
+			queries = append(queries, rdbmsSyncQuery{
+				name:     base.name,
+				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
+				ordered:  true,
+				fallback: c.wrapQuery(base.sql),
+			})
+		}
+	default:
+		for _, base := range bases {
+			queries = append(queries, rdbmsSyncQuery{name: base.name, sql: base.sql})
+		}
 	}
 	return queries
+}
+
+// syncOrderColumn returns the ordering key that makes this sync window
+// deterministic, or "" when the connector cannot checkpoint/resume the
+// stream (no stable ordering key). Incremental windows order by timestamp
+// plus id so rows sharing a timestamp still resume deterministically.
+func (c *MySQLConnector) syncOrderColumn(request SyncRequest) string {
+	switch {
+	case !request.FromBeginning && c.timestampColumn != "" && c.idColumn != "":
+		return c.timestampColumn + "," + c.idColumn
+	case request.FromBeginning && c.idColumn != "":
+		return c.idColumn
+	}
+	return ""
+}
+
+// buildOrderedQuery wraps the base query and orders it by a stable column so
+// connector sync can resume from a checkpoint.
+func (c *MySQLConnector) buildOrderedQuery(base, orderColumn string) string {
+	return c.wrapQuery(base) + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -269,6 +331,18 @@ func (c *MySQLConnector) buildTimeFilteredQuery(base string, start, end *time.Ti
 	query := c.wrapQuery(base)
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
+	}
+	return query
+}
+
+// buildTimeFilteredOrderedQuery is the incremental query plus a deterministic
+// ORDER BY on the timestamp and id columns, which resume relies on. Without a
+// configured id column the order is timestamp-only and the stream is not
+// checkpointed.
+func (c *MySQLConnector) buildTimeFilteredOrderedQuery(base string, start, end *time.Time) string {
+	query := c.buildTimeFilteredQuery(base, start, end) + " ORDER BY ragflow_src." + c.timestampColumn + " ASC"
+	if c.idColumn != "" {
+		query += ", ragflow_src." + c.idColumn + " ASC"
 	}
 	return query
 }
@@ -518,9 +592,25 @@ type mysqlSyncSession struct {
 	connector  *MySQLConnector
 	db         *sql.DB
 	queries    []string
-	queryIndex int
-	rows       *sql.Rows
-	batchSize  int
+	queryNames []string
+	// orderedFlags[i] reports whether queries[i] carries a stable ORDER BY.
+	orderedFlags []bool
+	// fallbackQueries[i] is the unordered variant of queries[i], used when a
+	// custom SQL query does not expose the configured ordering column.
+	fallbackQueries []string
+	queryIndex      int
+	// lastDocQuery is the index of the query that produced the most recently
+	// appended document, used to checkpoint against the right query name even
+	// when later queries in the batch contributed no documents.
+	lastDocQuery int
+	rows         *sql.Rows
+	batchSize    int
+
+	orderColumn       string
+	checkpointEnabled bool
+	orderable         bool
+	resume            *rdbmsResumeCursor
+	resumePending     bool
 }
 
 // NextBatch returns the next MySQL document batch.
@@ -530,7 +620,7 @@ func (s *mysqlSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		if s.rows == nil {
 			if s.queryIndex >= len(s.queries) {
 				if len(documents) == 0 {
-					return SyncBatch{}, io.EOF
+					return s.endOfStream()
 				}
 				break
 			}
@@ -552,10 +642,17 @@ func (s *mysqlSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			continue
 		}
 		if doc, ok := s.connector.rowToSourceDocument(row, columns); ok {
+			if !s.includeResumed(doc) {
+				continue
+			}
 			documents = append(documents, doc)
+			s.lastDocQuery = s.queryIndex - 1
 		}
 	}
-	return SyncBatch{Documents: documents}, nil
+	if len(documents) == 0 {
+		return s.endOfStream()
+	}
+	return SyncBatch{Documents: documents, Checkpoint: s.batchCheckpoint(documents[len(documents)-1])}, nil
 }
 
 // Close closes the MySQL sync session.
@@ -564,14 +661,32 @@ func (s *mysqlSyncSession) Close() error {
 	return s.db.Close()
 }
 
-// openNextQuery runs the next base query.
+// openNextQuery runs the next base query. When a custom SQL query does not
+// expose the configured ordering column (MySQL error 1054), it falls back to
+// the unordered query and stops checkpointing so the remaining stream is never
+// resumed against a non-deterministic order. A pending resume never falls back:
+// the ordering that produced the anchor is gone, so the window restarts.
 func (s *mysqlSyncSession) openNextQuery(ctx context.Context) error {
-	query := s.queries[s.queryIndex]
+	idx := s.queryIndex
 	s.queryIndex++
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, s.queries[idx])
 	if err != nil {
+		if s.orderedFlags[idx] && isMySQLUnknownColumn(err) {
+			if s.resumePending {
+				return fmt.Errorf("MySQL sync resume query lost its ordering column: %w", ErrSyncResumeInvalid)
+			}
+			s.checkpointEnabled = false
+			rows, err = s.db.QueryContext(ctx, s.fallbackQueries[idx])
+			if err != nil {
+				return fmt.Errorf("MySQL query failed: %w", err)
+			}
+			s.orderable = false
+			s.rows = rows
+			return nil
+		}
 		return fmt.Errorf("MySQL query failed: %w", err)
 	}
+	s.orderable = s.orderedFlags[idx]
 	s.rows = rows
 	return nil
 }
@@ -582,6 +697,89 @@ func (s *mysqlSyncSession) closeRows() {
 		s.rows.Close()
 		s.rows = nil
 	}
+}
+
+// applyResume positions the session after the last committed batch. The
+// cursor's query and ordering column must still exist, otherwise the runner
+// restarts the task window.
+func (s *mysqlSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	cursor, err := parseRDBMSCursor(checkpoint.Cursor)
+	if err != nil {
+		return err
+	}
+	if s.orderColumn == "" || cursor.Order != s.orderColumn {
+		return fmt.Errorf("MySQL sync resume ordering changed from %q to %q: %w", cursor.Order, s.orderColumn, ErrSyncResumeInvalid)
+	}
+	idx := -1
+	for i, name := range s.queryNames {
+		if name == cursor.Query {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("MySQL sync resume query %q no longer exists: %w", cursor.Query, ErrSyncResumeInvalid)
+	}
+	s.queryIndex = idx
+	s.resume = &cursor
+	s.resumePending = true
+	return nil
+}
+
+// includeResumed reports whether doc should be emitted. While a resume is
+// pending, every row before (and including) the anchor is skipped because it
+// was already committed.
+func (s *mysqlSyncSession) includeResumed(doc SourceDocument) bool {
+	if !s.resumePending {
+		return true
+	}
+	if s.resume != nil && doc.SourceID == s.resume.SourceID {
+		s.resumePending = false
+		return false
+	}
+	return false
+}
+
+// batchCheckpoint builds the checkpoint for a batch whose last row is doc.
+// Batches from a non-deterministic (unordered) query never carry a checkpoint.
+func (s *mysqlSyncSession) batchCheckpoint(doc SourceDocument) *SyncCheckpoint {
+	if !s.checkpointEnabled || !s.orderable {
+		return nil
+	}
+	queryName := ""
+	if idx := s.lastDocQuery; idx >= 0 && idx < len(s.queryNames) {
+		queryName = s.queryNames[idx]
+	}
+	updatedAt := doc.UpdatedAt
+	return &SyncCheckpoint{
+		Cursor:    encodeRDBMSCursor(queryName, s.orderColumn, doc.SourceID),
+		SourceID:  doc.SourceID,
+		UpdatedAt: &updatedAt,
+	}
+}
+
+// endOfStream returns io.EOF when the stream is exhausted, or
+// ErrSyncResumeInvalid when a pending resume anchor was never found.
+func (s *mysqlSyncSession) endOfStream() (SyncBatch, error) {
+	if s.resumePending {
+		anchor := ""
+		if s.resume != nil {
+			anchor = s.resume.SourceID
+		}
+		return SyncBatch{}, fmt.Errorf("MySQL resume anchor %q was not found in the current result: %w", anchor, ErrSyncResumeInvalid)
+	}
+	return SyncBatch{}, io.EOF
+}
+
+// isMySQLUnknownColumn reports whether err is MySQL error 1054 (unknown column
+// in the order/result), used to detect custom queries that do not expose the
+// configured ordering column.
+func isMySQLUnknownColumn(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1054
 }
 
 type mysqlPruneSession struct {

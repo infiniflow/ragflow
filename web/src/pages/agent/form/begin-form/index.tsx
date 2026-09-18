@@ -4,7 +4,7 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { Button } from '@/components/ui/button';
 import { Form, FormField } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -101,15 +101,15 @@ function BeginForm({ node }: INextOperatorForm) {
           tooltip={t('flow.modeTip')}
         >
           {(field) => (
-            <RAGFlowSelect
+            <SelectWithSearch
               placeholder={t('common.pleaseSelect')}
               options={ModeOptions}
               {...field}
               onChange={(val) => {
-                handleModeChange(val);
+                handleModeChange(val as AgentDialogueMode);
                 field.onChange(val);
               }}
-            ></RAGFlowSelect>
+            ></SelectWithSearch>
           )}
         </RAGFlowFormItem>
         {mode === AgentDialogueMode.Conversational && (

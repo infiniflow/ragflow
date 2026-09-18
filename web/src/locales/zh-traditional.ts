@@ -368,6 +368,8 @@ export default {
       pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '標籤',
       frequency: '頻次',
+      frequencyMinMessage: '頻次最小為 {{min}}',
+      frequencyMaxMessage: '頻次最大為 {{max}}',
       searchTags: '搜尋標籤',
       tagCloud: '雲端',
       tagTable: '表',
