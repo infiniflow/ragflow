@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -170,5 +171,15 @@ func TestPipelineDSLVersionDAORejectsInvalidInput(t *testing.T) {
 	}
 	if err := db.Create(duplicate).Error; !errors.Is(err, gorm.ErrDuplicatedKey) {
 		t.Fatalf("duplicate composite key error = %v, want gorm.ErrDuplicatedKey", err)
+	}
+}
+
+func TestWaitForPipelineDSLVersionRetryHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := waitForPipelineDSLVersionRetry(ctx, 0)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("retry wait error = %v, want context.Canceled", err)
 	}
 }

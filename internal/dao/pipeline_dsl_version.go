@@ -22,15 +22,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"ragflow/internal/entity"
 )
 
-const maxPipelineDSLVersionInsertAttempts = 16
+const (
+	maxPipelineDSLVersionInsertAttempts = 8
+	pipelineDSLVersionRetryBaseDelay    = 2 * time.Millisecond
+	pipelineDSLVersionRetryMaxDelay     = 25 * time.Millisecond
+)
 
 // ErrPipelineDSLVersionContention is returned when concurrent writers prevent
 // a version from being selected or inserted within the bounded retry budget.
@@ -77,7 +82,7 @@ func (dao *PipelineDSLVersionDAO) GetOrCreate(ctx context.Context, db *gorm.DB, 
 		return nil, fmt.Errorf("pipeline_dsl_version: encode dsl: %w", err)
 	}
 
-	for range maxPipelineDSLVersionInsertAttempts {
+	for attempt := range maxPipelineDSLVersionInsertAttempts {
 		latest, err := dao.GetLatest(ctx, db, dslID)
 		if err != nil {
 			return nil, err
@@ -101,19 +106,42 @@ func (dao *PipelineDSLVersionDAO) GetOrCreate(ctx context.Context, db *gorm.DB, 
 			Version: nextVersion,
 			DSL:     dsl,
 		}
-		result := db.WithContext(ctx).Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "dsl_id"}, {Name: "version"}},
-			DoNothing: true,
-		}).Create(candidate)
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 1 {
+		err = db.WithContext(ctx).Create(candidate).Error
+		if err == nil {
 			return candidate, nil
+		}
+		if !errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, err
+		}
+		if attempt+1 < maxPipelineDSLVersionInsertAttempts {
+			if err = waitForPipelineDSLVersionRetry(ctx, attempt); err != nil {
+				return nil, fmt.Errorf("pipeline_dsl_version: wait to retry insert: %w", err)
+			}
 		}
 	}
 
 	return nil, fmt.Errorf("%w: dsl_id=%s attempts=%d", ErrPipelineDSLVersionContention, dslID, maxPipelineDSLVersionInsertAttempts)
+}
+
+func waitForPipelineDSLVersionRetry(ctx context.Context, attempt int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	delayCap := pipelineDSLVersionRetryBaseDelay << attempt
+	if delayCap > pipelineDSLVersionRetryMaxDelay {
+		delayCap = pipelineDSLVersionRetryMaxDelay
+	}
+	delay := time.Duration(rand.Int64N(int64(delayCap) + 1))
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func equalJSONMaps(left, right entity.JSONMap) (bool, error) {

@@ -15,15 +15,38 @@
 #
 
 import json
+import random
+import time
 from datetime import datetime
 
 from peewee import IntegrityError
 
 from api.db.db_models import DB, PipelineDSLVersion
+from api.db.gaussdb_error_utils import exception_text, mysql_errno_from_exception, sqlstate_from_exception
 from common.time_utils import current_timestamp, datetime_format
 
 
-MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS = 16
+MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS = 8
+PIPELINE_DSL_VERSION_RETRY_BASE_DELAY_SECONDS = 0.002
+PIPELINE_DSL_VERSION_RETRY_MAX_DELAY_SECONDS = 0.025
+
+
+def _is_duplicate_key_error(exc):
+    if mysql_errno_from_exception(exc) == 1062:
+        return True
+    if sqlstate_from_exception(exc) == "23505":
+        return True
+
+    text = exception_text(exc)
+    return "unique constraint failed" in text or "duplicate key" in text or "duplicate entry" in text
+
+
+def _sleep_before_retry(attempt):
+    delay_cap = min(
+        PIPELINE_DSL_VERSION_RETRY_BASE_DELAY_SECONDS * (2**attempt),
+        PIPELINE_DSL_VERSION_RETRY_MAX_DELAY_SECONDS,
+    )
+    time.sleep(random.uniform(0, delay_cap))
 
 
 class PipelineDSLVersionService:
@@ -57,7 +80,7 @@ class PipelineDSLVersionService:
             raise ValueError("Pipeline DSL ID is required.")
         normalized = cls._normalize_dsl(dsl)
 
-        for _ in range(MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS):
+        for attempt in range(MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS):
             latest = cls._get_latest(dsl_id)
             if latest is not None and latest.dsl == normalized:
                 return latest
@@ -80,11 +103,14 @@ class PipelineDSLVersionService:
                         update_time=timestamp,
                         update_date=now,
                     )
-            except IntegrityError:
+            except IntegrityError as exc:
+                if not _is_duplicate_key_error(exc):
+                    raise
                 # Another writer inserted this version after our read. Re-read
                 # the head: identical DSL will be reused, while a different DSL
                 # advances once more.
-                continue
+                if attempt + 1 < MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS:
+                    _sleep_before_retry(attempt)
 
         raise RuntimeError(
             f"Could not store pipeline DSL version for {dsl_id!r} after "
