@@ -205,7 +205,7 @@ func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 			return nil // Component-scoped DSL parameters are validated by BuildParserConfig.
 		}
 	}
-	allowed := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
+	allowed := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
 	for key := range parserConfig {
 		if !allowed[key] {
 			return fmt.Errorf("Extra inputs are not permitted: %s", key)
@@ -389,7 +389,7 @@ func ValidateParserConfig(parserConfig map[string]interface{}) error {
 // ValidateDocumentParserConfig validates known public parser_config fields.
 // Documents retain unknown parser settings for parser-specific consumers.
 func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
-	known := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
+	known := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
 	config := make(map[string]interface{}, len(parserConfig))
 	for key, value := range parserConfig {
 		if known[key] || strings.Contains(key, ":") {

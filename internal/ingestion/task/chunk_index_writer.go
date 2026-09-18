@@ -16,7 +16,12 @@
 
 package task
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+const chunkInsertAttempts = 3
 
 // InsertFunc is the signature of the chunk insertion backend (e.g. engine.InsertChunks).
 type InsertFunc func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error)
@@ -65,8 +70,18 @@ func (w *chunkIndexWriter) Write(ctx context.Context, chunks []map[string]any) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, err := w.insertFunc(ctx, chunks[b:end], w.baseName, w.datasetID); err != nil {
-			return err
+		var err error
+		for attempt := 1; attempt <= chunkInsertAttempts; attempt++ {
+			_, err = w.insertFunc(ctx, chunks[b:end], w.baseName, w.datasetID)
+			if err == nil {
+				break
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("insert chunk batch %d-%d after %d attempts: %w", b, end, chunkInsertAttempts, err)
 		}
 	}
 	return nil

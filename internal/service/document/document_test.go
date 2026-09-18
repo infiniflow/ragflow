@@ -235,6 +235,7 @@ type rerunDeleteDocEngine struct {
 	condition   map[string]interface{}
 	indexName   string
 	datasetID   string
+	search      *types.SearchRequest
 }
 
 type failingDeleteDocEngine struct {
@@ -273,11 +274,13 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
-func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *rerunDeleteDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "parent-1", "available_int": 0},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
-	}, Total: 2}, nil
+	}, Total: 3}, nil
 }
 
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -295,9 +298,11 @@ func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interf
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
 }
 
-func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
@@ -2455,8 +2460,11 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 2 {
 		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1", "parent-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+	if engine.search == nil || !engine.search.IncludeUnavailable {
+		t.Fatalf("reparse search = %#v, want hidden parent rows included", engine.search)
 	}
 }
 
@@ -2556,6 +2564,9 @@ func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
 	ids, ok := docEngine.updateConditions[0]["id"].([]string)
 	if !ok || len(ids) != 1 || ids[0] != "source-1" {
 		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
+	}
+	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
 	}
 }
 

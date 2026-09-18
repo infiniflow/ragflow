@@ -438,8 +438,8 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 
 func TestApplyParentChildChunkerConfig(t *testing.T) {
 	config := entity.JSONMap{
-		"GeneralChunker:one": map[string]interface{}{"chunk_token_num": 256},
-		"TokenChunker:two":   map[string]interface{}{"chunk_token_num": 128},
+		"GeneralChunker:one": map[string]interface{}{"chunk_token_num": 256, "children_delimiters": []string{"wrong"}},
+		"TokenChunker:two":   map[string]interface{}{"chunk_token_num": 128, "children_delimiters": []string{"wrong"}},
 		"Extractor:three":    map[string]interface{}{"llm_id": "llm-1"},
 	}
 

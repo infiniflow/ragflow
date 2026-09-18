@@ -715,8 +715,10 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 // independently retrievable child rows, which is the parent-child regression.
 func TestPipelineExecutor_ProcessOutputMaterializesParentChunk(t *testing.T) {
 	var inserted []map[string]any
+	writeCalls := 0
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertFunc(
 		func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+			writeCalls++
 			inserted = append(inserted, chunks...)
 			return nil, nil
 		},
@@ -733,6 +735,9 @@ func TestPipelineExecutor_ProcessOutputMaterializesParentChunk(t *testing.T) {
 	}
 	if len(inserted) != 3 {
 		t.Fatalf("persisted rows = %d, want two children and one parent", len(inserted))
+	}
+	if writeCalls != 1 {
+		t.Fatalf("write calls = %d, want children and parents in one write", writeCalls)
 	}
 
 	var parent map[string]any
@@ -758,6 +763,29 @@ func TestPipelineExecutor_ProcessOutputMaterializesParentChunk(t *testing.T) {
 		if _, exists := child["mom"]; exists {
 			t.Errorf("child retained pipeline-only mom field: %#v", child)
 		}
+	}
+}
+
+func TestPipelineExecutorCompensatesAfterExhaustingCombinedWriteRetries(t *testing.T) {
+	var deleted map[string]any
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithInsertFunc(func(context.Context, []map[string]any, string, string) ([]string, error) {
+			return nil, errors.New("index unavailable")
+		}).
+		WithDeleteChunksFunc(func(_ context.Context, condition map[string]any, _, _ string) (int64, error) {
+			deleted = condition
+			return 0, nil
+		})
+
+	_, err := svc.processOutput(t.Context(), map[string]any{
+		"chunks": []map[string]any{{"text": "child", "mom": "parent"}},
+	}, time.Now())
+	if err == nil {
+		t.Fatal("processOutput succeeded after exhausted writes")
+	}
+	ids, ok := deleted["id"].([]string)
+	if !ok || len(ids) != 2 {
+		t.Fatalf("compensation ids = %#v, want child and parent IDs", deleted)
 	}
 }
 

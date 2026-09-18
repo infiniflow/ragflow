@@ -232,6 +232,13 @@ func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestValidateParserConfigRejectsFlatParentChildDelimiter(t *testing.T) {
+	err := validateDatasetParserConfig(map[string]interface{}{"children_delimiter": "|"})
+	if err == nil {
+		t.Fatal("flat children_delimiter was accepted; parent_child must be the only public source")
+	}
+}
+
 // --- normalizeDatasetID ---
 
 func TestNormalizeDatasetID_Invalid(t *testing.T) {

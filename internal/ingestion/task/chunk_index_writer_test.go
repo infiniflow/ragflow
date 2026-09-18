@@ -18,6 +18,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -31,9 +32,7 @@ func TestChunkIndexWriter_EmptyChunks(t *testing.T) {
 			}
 			return nil, nil
 		},
-		"test-base",
-		"kb-1",
-		10,
+		"test-base", "kb-1", 10,
 	)
 	if err := w.Write(t.Context(), nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,9 +55,7 @@ func TestChunkIndexWriter_SingleBatch(t *testing.T) {
 			}
 			return nil, nil
 		},
-		"test-base",
-		"kb-1",
-		10,
+		"test-base", "kb-1", 10,
 	)
 	chunks := make([]map[string]any, 5)
 	if err := w.Write(t.Context(), chunks); err != nil {
@@ -79,9 +76,7 @@ func TestChunkIndexWriter_MultipleBatches(t *testing.T) {
 			batchSizes = append(batchSizes, len(chunks))
 			return nil, nil
 		},
-		"base",
-		"kb-1",
-		3,
+		"base", "kb-1", 3,
 	)
 	chunks := make([]map[string]any, 7)
 	if err := w.Write(t.Context(), chunks); err != nil {
@@ -102,9 +97,7 @@ func TestChunkIndexWriter_BulkSizeZero(t *testing.T) {
 			lastBatchSize = len(chunks)
 			return nil, nil
 		},
-		"base",
-		"kb-1",
-		0, // bulkSize=0 → should use len(chunks)
+		"base", "kb-1", 0,
 	)
 	chunks := make([]map[string]any, 20)
 	if err := w.Write(t.Context(), chunks); err != nil {
@@ -112,5 +105,23 @@ func TestChunkIndexWriter_BulkSizeZero(t *testing.T) {
 	}
 	if lastBatchSize != 20 {
 		t.Fatalf("batch size = %d, want 20 (bulkSize=0 should degrade to len(chunks))", lastBatchSize)
+	}
+}
+
+func TestChunkIndexWriterRetriesFailedBatch(t *testing.T) {
+	attempts := 0
+	writer := newChunkIndexWriter(func(_ context.Context, _ []map[string]any, _, _ string) ([]string, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("temporary parent write failure")
+		}
+		return nil, nil
+	}, "ragflow_tenant", "kb", 0)
+
+	if err := writer.Write(t.Context(), []map[string]any{{"id": "child"}, {"id": "parent", "available_int": 0}}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("insert attempts = %d, want 2", attempts)
 	}
 }

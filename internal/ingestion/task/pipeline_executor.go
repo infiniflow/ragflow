@@ -69,11 +69,12 @@ type PipelineExecutor struct {
 	canvasID    string
 	docBulkSize int
 
-	indexWriter     *chunkIndexWriter
-	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
-	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
-	progressSink    pipelinepkg.ProgressSink
-	requireResume   bool // when true, the pipeline run passes WithRequireResume
+	indexWriter      *chunkIndexWriter
+	deleteChunksFunc DeleteChunksFunc
+	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
+	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
+	progressSink     pipelinepkg.ProgressSink
+	requireResume    bool // when true, the pipeline run passes WithRequireResume
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -120,17 +121,29 @@ func NewPipelineExecutor(
 			taskCtx.Doc.KbID,
 			docBulkSize,
 		),
+		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
+			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
+		},
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
 	return svc, nil
 }
 
+// DeleteChunksFunc removes partially written rows after a failed index write.
+type DeleteChunksFunc func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error)
+
 func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	s.indexWriter.insertFunc = f
 	return s
 }
 
+// WithDeleteChunksFunc replaces index-write compensation. It is used by the
+// in-memory pipeline tests; production uses the configured document engine.
+func (s *PipelineExecutor) WithDeleteChunksFunc(f DeleteChunksFunc) *PipelineExecutor {
+	s.deleteChunksFunc = f
+	return s
+}
 func (s *PipelineExecutor) WithLoadDSLFunc(f func(ctx context.Context, canvasID string) (string, string, error)) *PipelineExecutor {
 	s.loadDSLFunc = f
 	return s
@@ -276,13 +289,12 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
-	if err := s.indexWriter.Write(ctx, chunks); err != nil {
-		return nil, err
-	}
-	if len(parentChunks) > 0 {
-		if err := s.indexWriter.Write(ctx, parentChunks); err != nil {
-			return nil, err
+	indexChunks := append(chunks, parentChunks...)
+	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
+		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
+			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
 		}
+		return nil, fmt.Errorf("write chunks: %w", err)
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err
@@ -347,6 +359,35 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		BuiltInMetadataConfig: builtInMetadata,
 		AutoMetadataEnabled:   autoMetaEnabled,
 	}, nil
+}
+
+func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunks []map[string]any) error {
+	if s.deleteChunksFunc == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(chunks))
+	seen := make(map[string]struct{}, len(chunks))
+	for _, chunk := range chunks {
+		id, _ := chunk["id"].(string)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := s.deleteChunksFunc(
+		context.WithoutCancel(ctx),
+		map[string]any{"id": ids, "kb_id": s.taskCtx.Doc.KbID},
+		s.indexWriter.baseName,
+		s.taskCtx.Doc.KbID,
+	)
+	return err
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config

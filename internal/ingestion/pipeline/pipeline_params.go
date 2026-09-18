@@ -287,8 +287,10 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 	return result
 }
 
-// ApplyParentChildChunkerConfig maps the dataset-level parent-child setting
-// to the chunker parameter consumed by the ingestion runtime.
+// ApplyParentChildChunkerConfig derives runtime children_delimiters from the
+// top-level parent_child setting. parent_child is the sole public source of
+// truth; chunker fields are generated runtime parameters and must not be
+// accepted as an independent dataset setting.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
 	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
 	if !ok {

@@ -43,6 +43,7 @@ from api.db.services.task_service import TaskService
 from rag.nlp import search, DEFAULT_DELIMITER
 from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 from rag.svr.task_executor_refactor.task_context import TaskContext
+from rag.svr.parent_chunk import parent_chunk_id
 from rag.utils.base64_image import image2id
 
 # Re-export for backward compatibility
@@ -351,7 +352,7 @@ class ChunkService:
             if not mom:
                 continue
 
-            mom_id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+            mom_id = parent_chunk_id(str(ck.get("doc_id") or ""), mom)
             ck["mom_id"] = mom_id
 
             if mom_id in mother_ids:

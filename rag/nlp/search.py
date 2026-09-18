@@ -1086,6 +1086,9 @@ class Dealer:
         if not chunks:
             return []
         idx_nms = [index_name(tid) for tid in tenant_ids]
+        # The ID is document-scoped for newly written rows. Keep document and
+        # dataset in the grouping key as well so legacy hash(mom) rows cannot
+        # combine children from separate documents.
         mom_chunks = defaultdict(list)
         i = 0
         while i < len(chunks):
@@ -1094,7 +1097,7 @@ class Dealer:
             if not isinstance(mom_id, str) or not mom_id.strip():
                 i += 1
                 continue
-            mom_chunks[ck["mom_id"]].append(chunks.pop(i))
+            mom_chunks[(ck["mom_id"], ck.get("doc_id", ""), ck.get("kb_id", ""))].append(chunks.pop(i))
 
         if not mom_chunks:
             return chunks
@@ -1103,12 +1106,13 @@ class Dealer:
             chunks = []
 
         vector_size = 1024
-        for id, cks in mom_chunks.items():
-            chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
-            if chunk is None:
+        for (id, doc_id, kb_id), cks in mom_chunks.items():
+            chunk = self.dataStore.get(id, idx_nms[0], [kb_id])
+            if chunk is None or chunk.get("doc_id") != doc_id:
                 logging.warning(
-                    "Parent chunk '%s' not found in the index; falling back to %d child chunk(s).",
+                    "Parent chunk '%s' not found for document '%s'; falling back to %d child chunk(s).",
                     id,
+                    doc_id,
                     len(cks),
                 )
                 chunks.extend(cks)
