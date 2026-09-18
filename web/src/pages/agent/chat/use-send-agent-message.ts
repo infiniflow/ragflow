@@ -51,6 +51,16 @@ export function findMessageFromList(eventList: IEventList) {
   let startIndex = -1;
   let endIndex = -1;
   let audioBinary = undefined;
+  // memory_error is surfaced by the backend in the Message component's
+  // output, which lands in a node_finished frame's `outputs` (and possibly
+  // on a message frame). Scan every event so the toast fires regardless of
+  // which frame carries it.
+  const memoryErrorHit = (eventList as any[])
+    .map((x) => x.data)
+    .find((d) => d?.memory_error || d?.outputs?.memory_error);
+  const memoryError = memoryErrorHit
+    ? (memoryErrorHit.memory_error || memoryErrorHit.outputs?.memory_error) as string | undefined
+    : undefined;
   messageEventList.forEach((x, idx) => {
     const { data } = x;
     const { content, start_to_think, end_to_think, audio_binary } = data;
@@ -89,6 +99,7 @@ export function findMessageFromList(eventList: IEventList) {
     id: eventList[0]?.message_id,
     content: nextContent,
     audio_binary: audioBinary,
+    memory_error: memoryError,
     attachment:
       workflowFinished?.data?.outputs?.attachment ||
       messageEndEvent?.data?.attachment ||
@@ -282,6 +293,9 @@ export const useSendAgentMessage = ({
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
   }, [firstAnswer]);
+  // Guards the memory-save-failure toast so it fires once per (message, error)
+  // instead of repeatedly on every SSE append.
+  const memoryErrorShownRef = useRef<string | undefined>(undefined);
 
   const isTaskMode = useIsTaskMode(isTask);
 
@@ -503,8 +517,14 @@ export const useSendAgentMessage = ({
     ) {
       return;
     }
-    const { content, id, attachment, audio_binary, downloads } =
+    const { content, id, attachment, audio_binary, memory_error, downloads } =
       findMessageFromList(answerList);
+    // Surface memory-save failure (e.g. unavailable embedding model) as a
+    // toast, mirroring the prompt style used for LLM-unavailable errors.
+    if (memory_error && memoryErrorShownRef.current !== `${id}:${memory_error}`) {
+      sonnerMessage.warning(memory_error);
+      memoryErrorShownRef.current = `${id}:${memory_error}`;
+    }
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
 
