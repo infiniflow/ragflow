@@ -17,7 +17,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -38,7 +37,7 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 		t.Skip("Skipping ES integration test; set ES_TEST=1 to run")
 	}
 
-	engine, err := NewEngine(getESTestConfig())
+	engine, err := NewEngine(t.Context(), getESTestConfig())
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}

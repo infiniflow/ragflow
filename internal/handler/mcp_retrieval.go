@@ -144,7 +144,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if err != nil {
 				fields = map[string]any{}
 			}
-			doc := mapDocumentListItem(docs[0], fields)
+			doc := mapDocumentListItem(docs[0], fields, nil)
 			metadata := map[string]any{"document_id": docID}
 			for _, key := range []string{"name", "location", "type", "size", "chunk_count", "create_date", "update_date", "token_count", "thumbnail", "dataset_id", "meta_fields"} {
 				metadata[key] = doc[key]

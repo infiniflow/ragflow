@@ -1108,6 +1108,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
+	modelSolver := service.NewModelSolver()
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
@@ -1117,12 +1118,26 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
 	retrievalEnhancer := retrievalbridge.NewEnhancer(docEngine, metadataService)
-	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(
+	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
 		docEngine,
 		documentDAO,
-		modelProviderService,
+		nil,
 		retrievalEnhancer,
-	))
+	)
+	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		var target *service.ModelTarget
+		var err error
+		if strings.TrimSpace(modelRef) == "" {
+			target, err = modelSolver.ResolveDefaultModelConfig(ctx, tenantID, modelType)
+		} else {
+			target, err = modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
+		}
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
+	})
+	agenttool.SetRetrievalService(retrievalAdapter)
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
 
@@ -1150,16 +1165,16 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// key's model component; empty disables that cache.
 		resolvedModelName := ""
 		if req.ModelID != "" {
-			if driver, modelName, apiCfg, contentLen, mErr := modelProviderService.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); mErr == nil {
-				if inv := component.NewResolvedInvoker(driver, modelName, apiCfg); inv != nil {
+			if target, mErr := modelSolver.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); mErr == nil {
+				if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
 					// MaxLength mirrors Python LLMBundle.max_length (the model's
 					// context window in tokens); message-fitting nodes (calculate,
 					// structure_qa) use it as their chat.FitMessages budget.
-					model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: contentLen}
-					resolvedModelName = modelName
+					model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
+					resolvedModelName = target.ModelName
 					// Reuse the same resolved driver/name/api as the invoker so
 					// the outer loop and the inner tool calls share one model.
-					outerModel = modelModule.NewChatModel(driver, &modelName, apiCfg)
+					outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			} else {
 				common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))

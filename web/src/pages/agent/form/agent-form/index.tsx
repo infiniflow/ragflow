@@ -165,14 +165,6 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
-          <SliderInputSwitchFormField
-            name="max_tokens"
-            checkName="maxTokensEnabled"
-            label="maxTokens"
-            numberInputClassName="w-24 shrink-0"
-            min={0}
-            max={128000}
-          />
           {(mcpIds.length > 0 || hasSubAgentOrTool(edges, node?.id)) && (
             <FormField
               control={form.control}
@@ -342,7 +334,6 @@ function AgentForm({ node }: INextOperatorForm) {
               )}
             </section>
           </Collapse>
-
           <Output list={outputList}>
             <RAGFlowFormItem name="showStructuredOutput">
               {(field) => (

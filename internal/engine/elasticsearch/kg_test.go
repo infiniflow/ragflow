@@ -35,7 +35,7 @@ func TestKGSearchSelectFields(t *testing.T) {
 		t.Skip("Skipping ES integration test; set ES_TEST=1 to run")
 	}
 
-	engine, err := NewEngine(getTestConfig())
+	engine, err := NewEngine(t.Context(), getTestConfig())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}

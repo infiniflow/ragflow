@@ -106,12 +106,12 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 		zap.String("llmID", llmID),
 		zap.Strings("languages", languages))
 
-	modelProviderSvc := NewModelProviderService()
+	modelSolver := NewModelSolver()
 	var chatModel *modelModule.ChatModel
 	var err error
 
 	if llmID != "" {
-		modelTypes, err := modelProviderSvc.ResolveModelType(ctx, tenantID, llmID)
+		modelTypes, err := modelSolver.ResolveModelType(ctx, tenantID, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get model type: %w", err)
 		}
@@ -122,17 +122,17 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 				break
 			}
 		}
-		driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
+		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	} else {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantID, entity.ModelTypeChat)
+		target, err := modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	}
 	if chatModel == nil {
 		return query, fmt.Errorf("failed to get chat model: nil chat model")
