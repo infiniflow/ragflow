@@ -122,11 +122,11 @@ describe('similarity slider locales', () => {
   it.each([
     ['en', en.translation.knowledgeDetails],
     ['zh', zh.translation.knowledgeDetails],
-  ])('states the default threshold on the 0-1 score scale for %s', (
-    _lang,
-    details,
-  ) => {
-    const tips = details as unknown as Record<string, string>;
-    expect(tips.similarityThresholdTip).toContain('0.2');
-  });
+  ])(
+    'states the default threshold on the 0-1 score scale for %s',
+    (_lang, details) => {
+      const tips = details as unknown as Record<string, string>;
+      expect(tips.similarityThresholdTip).toContain('0.2');
+    },
+  );
 });
