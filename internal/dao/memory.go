@@ -348,7 +348,6 @@ func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, userID strin
 		return nil, 0, err
 	}
 
-	offset := (page - 1) * pageSize
 	querySQL := fmt.Sprintf(`
 		SELECT m.id, m.name, m.avatar, m.tenant_id, m.memory_type,
 			m.storage_type, m.embd_id, m.tenant_embd_id, m.llm_id, m.tenant_llm_id,
@@ -360,10 +359,12 @@ func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, userID strin
 		LEFT JOIN user u ON m.tenant_id = u.id
 		%s
 		ORDER BY m.create_time DESC
-		LIMIT ? OFFSET ?
 	`, whereClause)
-
-	queryArgs := append(args, pageSize, offset)
+	queryArgs := args
+	if pageSize > 0 {
+		querySQL += " LIMIT ? OFFSET ?"
+		queryArgs = append(queryArgs, pageSize, (page-1)*pageSize)
+	}
 
 	var rawResults []struct {
 		entity.Memory
