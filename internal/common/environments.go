@@ -31,6 +31,16 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// SandboxArtifactBucket is the object-storage bucket that holds
+// code-exec sandbox artifacts, served back through
+// /api/v1/documents/artifact/<name>.
+func SandboxArtifactBucket() string {
+	if bucket := GetEnv(EnvSandboxArtifactBucket); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
 func IsLLMDebugEnabled() bool {
 	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
 	return err == nil && enabled
