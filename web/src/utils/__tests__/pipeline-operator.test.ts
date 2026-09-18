@@ -379,26 +379,4 @@ describe('persistTableColumnSettings', () => {
       'Tokenizer:SomeNode': { fields: 'text' },
     });
   });
-
-  // The Python backend nests the same setup under `setups`, and its table
-  // parser reads the root keys the same way.
-  it('lifts from the nested spreadsheet setup', () => {
-    expect(
-      persistTableColumnSettings({
-        'Parser:HipSignsRhyme': {
-          setups: {
-            spreadsheet: { column_mode: 'manual', column_roles: { a: 'both' } },
-          },
-        },
-      }),
-    ).toEqual({
-      'Parser:HipSignsRhyme': {
-        setups: {
-          spreadsheet: { column_mode: 'manual', column_roles: { a: 'both' } },
-        },
-      },
-      table_column_mode: 'manual',
-      table_column_roles: { a: 'both' },
-    });
-  });
 });

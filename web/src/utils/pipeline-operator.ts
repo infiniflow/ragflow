@@ -433,11 +433,9 @@ export function persistTableColumnSettings(
     if (getOperatorType(operatorId) !== Operator.Parser) {
       continue;
     }
-    // The saved parser config carries the spreadsheet setup flattened at the
-    // top level under Go and nested under `setups` under Python.
-    const entry = config as Record<string, any>;
-    const spreadsheet =
-      entry?.[FileType.Spreadsheet] ?? entry?.setups?.[FileType.Spreadsheet];
+    // A parser's API-format config carries each file family's setup at the top
+    // level, keyed by file format.
+    const spreadsheet = (config as Record<string, any>)?.[FileType.Spreadsheet];
     if (!spreadsheet || typeof spreadsheet !== 'object') {
       continue;
     }

@@ -14,6 +14,7 @@ describe('table-column-extract', () => {
     it('returns true for table file extensions', () => {
       expect(isTableFile(new File([], 'test.csv'))).toBe(true);
       expect(isTableFile(new File([], 'test.tsv'))).toBe(true);
+      expect(isTableFile(new File([], 'test.txt'))).toBe(true);
       expect(isTableFile(new File([], 'test.xlsx'))).toBe(true);
       expect(isTableFile(new File([], 'test.xls'))).toBe(true);
     });

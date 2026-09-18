@@ -168,9 +168,10 @@ function tableColumnHeaderNames(
 }
 
 /**
- * Check if a file is a table file (CSV, TSV, or Excel).
+ * Check if a file is a table file: every format the table parser reads
+ * (rag/app/table.py), which is also what the schema probe accepts.
  */
 export function isTableFile(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  return ['csv', 'xlsx', 'xls', 'tsv'].includes(ext);
+  return ['csv', 'tsv', 'txt', 'xlsx', 'xls'].includes(ext);
 }

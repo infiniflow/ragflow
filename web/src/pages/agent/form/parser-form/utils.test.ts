@@ -1,11 +1,7 @@
 import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
 import { initialParserValues } from '../../constant/pipeline';
-import {
-  buildInitialParserSetup,
-  buildInitialParserValues,
-  isTableColumnSettingsVisible,
-} from './utils';
+import { buildInitialParserSetup, buildInitialParserValues } from './utils';
 
 describe('parser-form utils', () => {
   describe('buildInitialParserSetup', () => {
@@ -78,22 +74,6 @@ describe('parser-form utils', () => {
       expect(initialParserValues.setups).toEqual(
         buildInitialParserValues({}).setups,
       );
-    });
-  });
-
-  describe('isTableColumnSettingsVisible', () => {
-    it('hides the table column fields for a non-table dataset', () => {
-      expect(isTableColumnSettingsVisible(false)).toBe(false);
-    });
-
-    it('shows them for a table dataset', () => {
-      expect(isTableColumnSettingsVisible(true)).toBe(true);
-    });
-
-    // The canvas editor owns no dataset, so it must keep the previous
-    // behaviour rather than silently losing the controls.
-    it('shows them when the owner does not declare a parser', () => {
-      expect(isTableColumnSettingsVisible(undefined)).toBe(true);
     });
   });
 });

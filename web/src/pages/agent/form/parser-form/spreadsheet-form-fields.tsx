@@ -27,10 +27,7 @@ import {
   ParserMethodFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
-import {
-  buildFieldNameWithPrefix,
-  isTableColumnSettingsVisible,
-} from './utils';
+import { buildFieldNameWithPrefix } from './utils';
 
 const ROLE_OPTIONS = [
   { value: 'both', labelKey: 'tableColumnRoleBoth' },
@@ -200,7 +197,7 @@ export function SpreadsheetFormFields({ prefix, isTableParser }: CommonProps) {
           </RAGFlowFormItem>
         </>
       )}
-      {isTableColumnSettingsVisible(isTableParser) && (
+      {isTableParser !== false && (
         <>
           <FormItem className="space-y-2">
             <FormLabel className="text-sm font-medium">
