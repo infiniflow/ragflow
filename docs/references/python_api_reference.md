@@ -843,7 +843,7 @@ An optional keyword-only, synchronous callback. Defaults to `None`.
 - Receives a `Document` snapshot on its first observation and when `run`, `progress`, or `progress_msg` changes. Identical consecutive snapshots for the same document do not trigger another callback.
 - The snapshot includes `id`, `run`, `progress`, `progress_msg`, `chunk_count`, and `token_count`. Values reflect the server response; for example, `run` can still be `RUNNING` when `progress` reaches `1.0` and the returned result is treated as `DONE`.
 - Reports observed terminal states (`DONE`, `FAIL`, or `CANCEL`) even if parsing finishes before the first poll. Polling can skip intermediate states that change between requests; it is not an event stream.
-- Runs in the calling thread, so slow callbacks delay polling. Keep the callback short; coroutine callbacks are not supported.
+- Runs in the calling thread, so slow callbacks delay polling. Keep the callback short. Coroutine functions (including callable objects with an asynchronous `__call__`) raise `TypeError` before parsing starts. If a synchronous callback returns an awaitable, `TypeError` is raised when that callback is invoked; parsing is not cancelled.
 - Callback exceptions stop the wait and propagate without cancelling server-side parsing. `KeyboardInterrupt`, including one raised by the callback, retains the cancellation behavior described above. After cancellation is requested, observation restarts and the first snapshot is reported again.
 - Does not change the final result type or ordering. Notifications for different documents have no guaranteed relative order.
 

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -112,6 +113,7 @@ class DataSet(Base):
             raise Exception(res["message"])
 
     def _get_documents_status(self, document_ids, *, on_progress: Callable[[Document], None] | None = None):
+        """Poll pending documents and synchronously report changed snapshots."""
         import time
 
         terminal_states = {"DONE", "FAIL", "CANCEL"}
@@ -136,7 +138,11 @@ class DataSet(Base):
                     if previous_status.get(doc_id) != status:
                         previous_status[doc_id] = status
                         # Capture completion before handing the snapshot to user code.
-                        on_progress(doc)
+                        result = on_progress(doc)
+                        if inspect.isawaitable(result):
+                            if inspect.iscoroutine(result):
+                                result.close()
+                            raise TypeError("on_progress must not return an awaitable")
             if pending:
                 time.sleep(interval_sec)
         return finished
@@ -155,8 +161,11 @@ class DataSet(Base):
         Callback exceptions propagate; KeyboardInterrupt requests cancellation
         and continues observing the final statuses.
         """
-        if on_progress is not None and not callable(on_progress):
-            raise TypeError("on_progress must be callable or None")
+        if on_progress is not None:
+            if not callable(on_progress):
+                raise TypeError("on_progress must be callable or None")
+            if inspect.iscoroutinefunction(on_progress) or inspect.iscoroutinefunction(on_progress.__call__):
+                raise TypeError("on_progress must be a synchronous callable")
         try:
             self.async_parse_documents(document_ids)
             return self._get_documents_status(document_ids, on_progress=on_progress)

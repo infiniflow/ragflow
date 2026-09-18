@@ -16,8 +16,10 @@
 
 """Synchronous parsing reports progress and stops when a lookup cannot succeed."""
 
+import inspect
 import json
 import time
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlsplit
@@ -31,13 +33,15 @@ pytestmark = pytest.mark.p2
 
 @pytest.fixture
 def parsing_api(monkeypatch):
+    """Serve scripted parsing responses and record real SDK HTTP requests."""
     state = {"responses": {}, "requests": [], "sleeps": 0}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
-            pass
+            """Keep the local HTTP server quiet during tests."""
 
         def reply(self, payload):
+            """Send a JSON or raw response through the local HTTP server."""
             body = json.dumps(payload).encode() if isinstance(payload, dict) else payload
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -46,22 +50,26 @@ def parsing_api(monkeypatch):
             self.wfile.write(body)
 
         def do_POST(self):
+            """Record the parsing start request and acknowledge it."""
             self.rfile.read(int(self.headers.get("Content-Length", "0")))
             state["requests"].append(("POST", self.path))
             self.reply({"code": 0})
 
         def do_DELETE(self):
+            """Record the cancellation request and acknowledge it."""
             self.rfile.read(int(self.headers.get("Content-Length", "0")))
             state["requests"].append(("DELETE", self.path))
             self.reply({"code": 0})
 
         def do_GET(self):
+            """Return the next scripted status for the requested document."""
             doc_id = parse_qs(urlsplit(self.path).query)["id"][0]
             state["requests"].append(("GET", doc_id))
             replies = state["responses"][doc_id]
             self.reply(replies.pop(0) if len(replies) > 1 else replies[0])
 
     def bounded_sleep(_seconds):
+        """Record polling delays and fail instead of polling indefinitely."""
         state["sleeps"] += 1
         if state["sleeps"] > state.get("max_sleeps", 2):
             pytest.fail("status polling exceeded the test limit")
@@ -80,11 +88,13 @@ def parsing_api(monkeypatch):
 
 
 def document_status(doc_id="doc", run="DONE", progress=1.0, progress_msg=""):
+    """Build a document-list response with a single parsing snapshot."""
     return {"code": 0, "data": {"docs": [{"id": doc_id, "run": run, "progress": progress, "progress_msg": progress_msg, "chunk_count": 2, "token_count": 10}]}}
 
 
 @pytest.mark.parametrize("message", ["Permission denied", "Dataset not found"])
 def test_parse_propagates_status_api_error(parsing_api, message):
+    """Preserve server errors when status polling fails."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [{"code": 102, "message": message}]
     with pytest.raises(Exception, match=message):
@@ -94,6 +104,7 @@ def test_parse_propagates_status_api_error(parsing_api, message):
 
 
 def test_parse_stops_if_document_disappears(parsing_api):
+    """Stop polling when the requested document no longer exists."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [{"code": 0, "data": {"docs": []}}]
     with pytest.raises(RuntimeError, match="doc.*not found"):
@@ -102,6 +113,7 @@ def test_parse_stops_if_document_disappears(parsing_api):
 
 
 def test_parse_propagates_invalid_status_response(parsing_api):
+    """Surface malformed status JSON instead of retrying it."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [b"invalid json"]
     with pytest.raises(requests.exceptions.JSONDecodeError):
@@ -110,10 +122,12 @@ def test_parse_propagates_invalid_status_response(parsing_api):
 
 
 def test_parse_preserves_transport_error(parsing_api, monkeypatch):
+    """Propagate the original connection error without another poll."""
     dataset, state = parsing_api
     error = requests.ConnectionError("connection lost")
 
     def fail_lookup(**_kwargs):
+        """Simulate a transport failure during status lookup."""
         raise error
 
     monkeypatch.setattr(dataset, "list_documents", fail_lookup)
@@ -125,6 +139,7 @@ def test_parse_preserves_transport_error(parsing_api, monkeypatch):
 
 @pytest.mark.parametrize("run,progress", [("DONE", 1.0), ("FAIL", -1.0), ("CANCEL", 0.3), ("RUNNING", 1.0)])
 def test_parse_returns_first_completed_status_without_polling_again(parsing_api, run, progress):
+    """Return terminal results without requesting another snapshot."""
     dataset, state = parsing_api
     # Once terminal status is observed, a later missing document must not erase
     # the result or restart the wait.
@@ -135,6 +150,7 @@ def test_parse_returns_first_completed_status_without_polling_again(parsing_api,
 
 
 def test_parse_still_polls_running_documents(parsing_api):
+    """Continue polling until a running document finishes."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.4), document_status()]
     assert dataset.parse_documents(["doc"]) == [("doc", "DONE", 2, 10)]
@@ -143,12 +159,14 @@ def test_parse_still_polls_running_documents(parsing_api):
 
 
 def test_keyboard_interrupt_still_cancels_and_collects_status(monkeypatch):
+    """Cancel once after an interrupt and collect the final status."""
     dataset = DataSet(None, {"id": "kb"})
     calls = []
     monkeypatch.setattr(dataset, "async_parse_documents", lambda ids: calls.append(("start", ids)))
     monkeypatch.setattr(dataset, "async_cancel_parse_documents", lambda ids: calls.append(("cancel", ids)))
 
     def status(ids, *, on_progress=None):
+        """Interrupt the first poll and complete the cancellation poll."""
         calls.append(("status", ids))
         if len(calls) == 2:
             raise KeyboardInterrupt
@@ -160,6 +178,7 @@ def test_keyboard_interrupt_still_cancels_and_collects_status(monkeypatch):
 
 
 def test_parse_does_not_requery_finished_documents_in_a_batch(parsing_api):
+    """Poll only pending documents after another document completes."""
     dataset, state = parsing_api
     state["responses"]["finished"] = [document_status("finished")]
     state["responses"]["running"] = [document_status("running", "RUNNING", 0.2), document_status("running")]
@@ -170,20 +189,23 @@ def test_parse_does_not_requery_finished_documents_in_a_batch(parsing_api):
 
 
 def test_parse_start_error_is_not_replaced_by_polling(monkeypatch):
+    """Preserve a rejected start without querying document status."""
     dataset = DataSet(None, {"id": "kb"})
     error = RuntimeError("parse request rejected")
 
     def reject_start(_ids):
+        """Simulate an API error while starting document parsing."""
         raise error
 
     monkeypatch.setattr(dataset, "async_parse_documents", reject_start)
-    monkeypatch.setattr(dataset, "_get_documents_status", lambda _ids: pytest.fail("must not poll after a rejected start"))
+    monkeypatch.setattr(dataset, "_get_documents_status", lambda _ids, **_kwargs: pytest.fail("must not poll after a rejected start"))
     with pytest.raises(RuntimeError) as exc:
         dataset.parse_documents(["doc"])
     assert exc.value is error
 
 
 def test_progress_reports_first_changed_and_terminal_snapshots(parsing_api):
+    """Notify on the first snapshot and changed fields, suppressing duplicates."""
     dataset, state = parsing_api
     state["max_sleeps"] = 5
     state["responses"]["doc"] = [
@@ -206,6 +228,7 @@ def test_progress_reports_first_changed_and_terminal_snapshots(parsing_api):
 
 
 def test_progress_is_tracked_per_document_in_a_batch(parsing_api):
+    """Deduplicate progress independently for each document in a batch."""
     dataset, state = parsing_api
     for doc_id in ("first", "second"):
         state["responses"][doc_id] = [document_status(doc_id, "RUNNING", 0.2), document_status(doc_id)]
@@ -220,6 +243,7 @@ def test_progress_is_tracked_per_document_in_a_batch(parsing_api):
 
 @pytest.mark.parametrize("run,progress", [("DONE", 1.0), ("FAIL", -1.0), ("CANCEL", 0.3), ("RUNNING", 1.0)])
 def test_progress_reports_a_document_that_is_already_terminal(parsing_api, run, progress):
+    """Report the raw terminal snapshot while preserving result inference."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status(run=run, progress=progress)]
     updates = []
@@ -239,6 +263,7 @@ def test_progress_reports_a_document_that_is_already_terminal(parsing_api, run, 
     ],
 )
 def test_progress_preserves_lookup_errors_without_synthesizing_updates(parsing_api, response, error, match):
+    """Propagate failed lookups without fabricated progress or cancellation."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2), response]
     updates = []
@@ -249,11 +274,13 @@ def test_progress_preserves_lookup_errors_without_synthesizing_updates(parsing_a
 
 
 def test_progress_callback_error_propagates_without_cancelling(parsing_api):
+    """Stop local polling on a callback error without cancelling parsing."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2)]
     error = RuntimeError("progress consumer failed")
 
     def report(_doc):
+        """Raise the progress consumer error."""
         raise error
 
     with pytest.raises(RuntimeError) as exc:
@@ -264,10 +291,12 @@ def test_progress_callback_error_propagates_without_cancelling(parsing_api):
 
 
 def test_progress_callback_cannot_change_polling_results(parsing_api):
+    """Keep callback mutations from changing captured completion results."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2), document_status()]
 
     def report(doc):
+        """Mutate the snapshot passed to user code."""
         doc.run = "FAIL"
         doc.progress = -1.0
         doc.chunk_count = 999
@@ -278,14 +307,17 @@ def test_progress_callback_cannot_change_polling_results(parsing_api):
 
 @pytest.mark.parametrize("interrupt_from_callback", [False, True])
 def test_progress_continues_after_keyboard_interrupt_requests_cancellation(parsing_api, monkeypatch, interrupt_from_callback):
+    """Continue progress reporting after cancellation from polling or a callback."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2), document_status(run="CANCEL", progress=0.2)]
     updates = []
 
     def interrupt(_seconds):
+        """Simulate a keyboard interrupt between status requests."""
         raise KeyboardInterrupt
 
     def report(doc):
+        """Record progress and optionally interrupt the first callback."""
         updates.append(doc)
         if interrupt_from_callback and doc.run == "RUNNING":
             raise KeyboardInterrupt
@@ -303,15 +335,18 @@ def test_progress_continues_after_keyboard_interrupt_requests_cancellation(parsi
 
 
 def test_progress_accepts_a_falsey_callable(parsing_api):
+    """Invoke callable objects even when their boolean value is false."""
     dataset, state = parsing_api
     state["responses"]["doc"] = [document_status()]
     updates = []
 
     class Reporter:
         def __bool__(self):
+            """Make the reporter falsey without changing its callable behavior."""
             return False
 
         def __call__(self, doc):
+            """Record the snapshot received by the falsey reporter."""
             updates.append(doc.id)
 
     dataset.parse_documents(["doc"], on_progress=Reporter())
@@ -319,8 +354,72 @@ def test_progress_accepts_a_falsey_callable(parsing_api):
 
 
 def test_progress_is_not_called_for_an_empty_batch(parsing_api):
+    """Return an empty result without emitting progress snapshots."""
     dataset, state = parsing_api
     updates = []
     assert dataset.parse_documents([], on_progress=updates.append) == []
     assert updates == []
     assert state["requests"] == [("POST", "/api/v1/datasets/kb/chunks")]
+
+
+@pytest.mark.parametrize("callback_kind", ["function", "partial", "method", "callable_object"])
+def test_progress_rejects_coroutine_callbacks_before_starting(parsing_api, callback_kind):
+    """Known coroutine callbacks fail before any parsing or status request."""
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status()]
+
+    async def report(_doc):
+        """Fail if the SDK executes a coroutine callback."""
+        pytest.fail("coroutine callbacks must not run")
+
+    class Reporter:
+        async def __call__(self, _doc):
+            """Fail if the SDK executes an asynchronous callable object."""
+            pytest.fail("coroutine callbacks must not run")
+
+    reporter = Reporter()
+    callback = {"function": report, "partial": partial(report), "method": reporter.__call__, "callable_object": reporter}[callback_kind]
+    with pytest.raises(TypeError, match="synchronous callable"):
+        dataset.parse_documents(["doc"], on_progress=callback)
+    assert state["requests"] == []
+
+
+@pytest.mark.parametrize("result_kind", ["coroutine", "custom_awaitable"])
+def test_progress_rejects_awaitable_results_without_cancelling(parsing_api, result_kind):
+    """Reject hidden awaitables and close native coroutines without running them."""
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2)]
+    results = []
+
+    async def report(_doc):
+        """Fail if the SDK executes a returned coroutine."""
+        pytest.fail("returned coroutines must not run")
+
+    class Awaitable:
+        def __await__(self):
+            """Fail if the SDK attempts to execute an unsupported awaitable."""
+            pytest.fail("returned awaitables must not run")
+
+        def close(self):
+            """Fail if the SDK tries to close an arbitrary user-owned awaitable."""
+            pytest.fail("custom awaitables are not owned by the SDK")
+
+    def callback(doc):
+        """Hide an awaitable behind an otherwise synchronous callback."""
+        result = report(doc) if result_kind == "coroutine" else Awaitable()
+        results.append(result)
+        return result
+
+    try:
+        with pytest.raises(TypeError, match="must not return an awaitable"):
+            dataset.parse_documents(["doc"], on_progress=callback)
+        assert len(results) == 1
+        if result_kind == "coroutine":
+            assert inspect.getcoroutinestate(results[0]) == inspect.CORO_CLOSED
+        assert state["requests"] == [("POST", "/api/v1/datasets/kb/chunks"), ("GET", "doc")]
+        assert state["sleeps"] == 0
+    finally:
+        # Also keep a failing regression run free from unawaited-coroutine noise.
+        for result in results:
+            if inspect.iscoroutine(result):
+                result.close()
