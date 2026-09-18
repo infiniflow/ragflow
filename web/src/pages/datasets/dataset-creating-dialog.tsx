@@ -145,7 +145,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
         />
 
         <EmbeddingModelItem line={2} isEdit={false} />
-        <ParseTypeItem />
+        <ParseTypeItem
+          builtInLabelKey="knowledgeList.builtInTemplate"
+          pipelineLabelKey="knowledgeList.ingestionPipeline"
+        />
         {parseType === ParseType.BuiltIn && (
           <BackendVariant
             go={<BuiltinPipelineItem name={ChunkMethodName} />}
