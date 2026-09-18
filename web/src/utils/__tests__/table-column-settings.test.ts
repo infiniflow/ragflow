@@ -30,10 +30,11 @@ describe('resolveTableColumnSettings', () => {
     ).toEqual({ mode: 'manual', roles: { a: 'metadata' }, names: [] });
   });
 
-  // The runtime compares both values verbatim: only the exact "manual"
-  // selects manual (common.NormalizeTableColumnMode) and a role is matched
-  // without trimming or case-folding, so the dialog must not show a choice
-  // ingestion will not honour, nor drop a column name that is merely blank.
+  // The runtime compares both values verbatim: only the exact "manual" selects
+  // manual (common.NormalizeTableColumnMode), and a role entry is keyed by the
+  // column name as stored. So a padded name is still a column, and a role that
+  // merely resembles one of the three is not one: it resolves to the default,
+  // which is the only value a dialog can offer for it.
   it('reads a stored mode and stored roles exactly', () => {
     expect(
       resolveTableColumnSettings({ table_column_mode: ' Manual ' }),

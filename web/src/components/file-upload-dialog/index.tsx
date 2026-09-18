@@ -25,7 +25,10 @@ import {
 } from '@/components/ui/dialog';
 import { IModalProps } from '@/interfaces/common';
 import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
-import { TableColumnSettings } from '@/utils/table-column-settings';
+import {
+  TableColumnRole,
+  TableColumnSettings,
+} from '@/utils/table-column-settings';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -36,8 +39,6 @@ import { FileUploader } from '../file-uploader';
 import { RAGFlowFormItem } from '../ragflow-form';
 import { Form } from '../ui/form';
 import { Switch } from '../ui/switch';
-
-export type TableColumnRoles = Record<string, 'indexing' | 'metadata' | 'both'>;
 
 function buildUploadFormSchema(t: TFunction) {
   const FormSchema = z.object({
@@ -106,7 +107,7 @@ function UploadForm({
   const [columnMode, setColumnMode] = useState<'auto' | 'manual'>(
     defaultTableColumnSettings?.mode ?? 'auto',
   );
-  const [columnRoles, setColumnRoles] = useState<TableColumnRoles>(
+  const [columnRoles, setColumnRoles] = useState<TableColumnSettings['roles']>(
     defaultTableColumnSettings?.roles ?? {},
   );
   // Guards the async column-extraction loop: rapid file-list changes must not
@@ -151,11 +152,8 @@ function UploadForm({
     form.setValue('tableColumnMode', value);
   };
 
-  const handleRoleChange = (col: string, role: string) => {
-    const updated = {
-      ...columnRoles,
-      [col]: role as 'indexing' | 'metadata' | 'both',
-    };
+  const handleRoleChange = (col: string, role: TableColumnRole) => {
+    const updated = { ...columnRoles, [col]: role };
     setColumnRoles(updated);
     form.setValue('tableColumnRoles', updated);
   };
@@ -163,7 +161,7 @@ function UploadForm({
   // Sync column roles to form when columns are extracted
   useEffect(() => {
     if (columnMode === 'manual' && extractedColumns.length > 0) {
-      const roles: TableColumnRoles = {};
+      const roles: TableColumnSettings['roles'] = {};
       extractedColumns.forEach((col) => {
         roles[col] = columnRoles[col] || 'both';
       });

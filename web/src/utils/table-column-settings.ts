@@ -14,20 +14,30 @@
  *  limitations under the License.
  */
 
+export type TableColumnRole = 'indexing' | 'metadata' | 'both';
+
 export type TableColumnSettings = {
   /** The mode a level states; absent means nothing chose one yet. */
   mode?: 'auto' | 'manual';
-  roles: Record<string, 'indexing' | 'metadata' | 'both'>;
+  roles: Record<string, TableColumnRole>;
   names: string[];
 };
 
-// normalizeRole canonicalises a stored role for display only. The comparison is
-// exact because the runtime compares exactly: the chunk body and the dataset
-// field_map test the stored string with `role in (...)`, without trimming or
-// case-folding (rag/app/table.py:701-706, and Go common.NormalizeColumnRole
-// ports the same rule), so a value like " Indexing " excludes the column rather
-// than honouring it. The dialog must not show a match ingestion will not make.
-function normalizeRole(raw: unknown): 'indexing' | 'metadata' | 'both' {
+/**
+ * The role a column displays and is saved with, whatever a stored
+ * configuration carries for it.
+ *
+ * The comparison is exact, because both runtimes compare the stored string
+ * exactly — no trimming, no case-folding — and only "vectorize" carries a second
+ * spelling, as the legacy name of "indexing"
+ * (rag/app/table.py:704-706, ported by common.NormalizeColumnRole).
+ *
+ * A value outside the three roles is something no dialog can express: it can
+ * only come from a configuration that never passed the write boundary's check.
+ * It shows as the default "both" and the next save overwrites it: until then
+ * ingestion excludes that column, which is the one thing the UI cannot offer.
+ */
+export function canonicalTableColumnRole(raw: unknown): TableColumnRole {
   const role = String(raw ?? '');
   if (role === 'indexing' || role === 'vectorize') {
     return 'indexing';
@@ -49,7 +59,7 @@ function collectRoles(raw: unknown): TableColumnSettings['roles'] {
   // legitimately name a column "" or " ". Dropping a blank key would hide a
   // role ingestion honours.
   for (const [column, role] of Object.entries(raw as Record<string, unknown>)) {
-    roles[column] = normalizeRole(role);
+    roles[column] = canonicalTableColumnRole(role);
   }
   return roles;
 }

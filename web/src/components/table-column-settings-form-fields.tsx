@@ -15,6 +15,10 @@
  */
 
 import { useTranslate } from '@/hooks/common-hooks';
+import {
+  canonicalTableColumnRole,
+  TableColumnRole,
+} from '@/utils/table-column-settings';
 import { FormControl, FormItem, FormLabel } from './ui/form';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import {
@@ -25,33 +29,24 @@ import {
   SelectValue,
 } from './ui/select';
 
-const RoleOptions = [
+const RoleOptions: { value: TableColumnRole; labelKey: string }[] = [
   { value: 'both', labelKey: 'tableColumnRoleBoth' },
   { value: 'indexing', labelKey: 'tableColumnRoleIndexing' },
   { value: 'metadata', labelKey: 'tableColumnRoleMetadata' },
-] as const;
-
-// Only a stored spelling of the role vocabulary selects a role, and "vectorize"
-// is the legacy spelling of "indexing". A value outside it displays as "both",
-// the role ingestion gives a column the roles map does not carry.
-function displayedRole(stored: unknown): string {
-  if (typeof stored !== 'string' || !stored) {
-    return 'both';
-  }
-  return stored === 'vectorize' ? 'indexing' : stored;
-}
+];
 
 type TableColumnSettingsFieldsProps = {
   // The radio inputs are labelled by id, so each host passes a prefix that
   // keeps them unique when one page shows the settings more than once.
   idPrefix: string;
-  // The persisted mode, taken verbatim: only the exact "manual" selects
-  // manual, so an absent, blank or unknown value renders as auto.
+  // The persisted mode and roles, taken verbatim: only the exact "manual"
+  // selects manual, and a stored role is canonicalised the way the resolver
+  // reads it, so what a host shows is what it will save.
   mode: unknown;
   columns: unknown;
   roles: Record<string, string | undefined> | null | undefined;
   onModeChange: (mode: 'auto' | 'manual') => void;
-  onRoleChange: (column: string, role: string) => void;
+  onRoleChange: (column: string, role: TableColumnRole) => void;
 };
 
 /**
@@ -141,8 +136,10 @@ export function TableColumnSettingsFields({
                 </FormLabel>
                 <FormControl>
                   <Select
-                    value={displayedRole(roles?.[column])}
-                    onValueChange={(value) => onRoleChange(column, value)}
+                    value={canonicalTableColumnRole(roles?.[column])}
+                    onValueChange={(value) =>
+                      onRoleChange(column, value as TableColumnRole)
+                    }
                   >
                     <SelectTrigger className="w-[160px]">
                       <SelectValue />
