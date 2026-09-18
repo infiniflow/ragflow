@@ -250,10 +250,11 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 }
 
 // TestUpdateChunksPreservesStringSliceCondition guards the document
-// availability switch: updateSourceChunkAvailability passes a typed []string id
-// list, and a builder that only understands []interface{} silently drops the id
-// clause, widening the update-by-query to every chunk of the dataset (kb_id is
-// then the only remaining filter).
+// availability switch: the doc-service caller of UpdateChunks
+// (updateDocumentChunkAvailability) passes a typed []string id list, and a
+// builder that only understands []interface{} silently drops the id clause,
+// widening the update-by-query to every chunk of the dataset (kb_id is then the
+// only remaining filter).
 func TestUpdateChunksPreservesStringSliceCondition(t *testing.T) {
 	var updateQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
