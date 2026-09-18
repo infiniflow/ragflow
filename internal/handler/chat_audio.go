@@ -171,7 +171,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	if !headerWritten {
 		if firstSynthErr != nil {
 			common.ErrorWithCode(c, common.CodeServerError,
-				fmt.Sprintf("TTS synthesis failed for model %s (%s): %v", modelName, driver.Name(), firstSynthErr))
+				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, driver.Name()))
 			return
 		}
 		common.ErrorWithCode(c, common.CodeServerError,
