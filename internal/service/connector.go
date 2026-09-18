@@ -28,7 +28,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	syncerconnector "ragflow/internal/syncer/connector"
 	"ragflow/internal/utility"
 	"strings"
@@ -68,7 +68,7 @@ var (
 		"https://www.googleapis.com/auth/admin.directory.user.readonly",
 		"https://www.googleapis.com/auth/admin.directory.group.readonly",
 	}
-	connectorRedisGet = redis.Get
+	connectorRedisGet = kvrocks.Get
 )
 
 // Sentinel errors so handlers can map to the proper response codes.
@@ -544,7 +544,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, sour
 		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return nil, common.CodeServerError, fmt.Errorf("no configure Redis on the server")
 	}
@@ -578,7 +578,7 @@ func (s *ConnectorService) GoogleWebOAuthCallback(ctx context.Context, source, s
 		return renderWebOAuthPopup("", false, "Missing OAuth state parameter.", source)
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return renderWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
 	}
@@ -639,7 +639,7 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, userID,
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return nil, common.CodeRunning, fmt.Errorf("authorization is still pending")
 	}

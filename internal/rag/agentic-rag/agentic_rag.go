@@ -231,13 +231,13 @@ type RAGTools struct {
 	// the runtime defaults.
 	TopN                int
 	SimilarityThreshold float64
-	// VectorSimilarityWeight is the vector leg's weight. A pointer so an explicit 0 —
-	// keyword-only, which is what the agentic retrieve channel uses — is distinguishable
-	// from "not configured". Nil selects DefaultAgenticVectorWeight (0).
-	VectorSimilarityWeight *float64
-	// UsingEmbedding: when false (the agentic default) retrieval is keyword-only (vector
-	// weight 0); when true the embedder is engaged and VectorSimilarityWeight (default 0.7)
-	// applies.
+	// KeywordsSimilarityWeight is the keyword leg's weight. A pointer keeps an
+	// explicit zero (pure vector search) distinct from an unset value.
+	KeywordsSimilarityWeight *float64
+	// UsingEmbedding is the Go spelling of Python RAGTools.retrieve's
+	// `using_embedding: bool = False` (agentic_rag.py:599). When false (the
+	// agentic default) retrieval is keyword-only; when true the embedder is
+	// engaged and KeywordsSimilarityWeight (default 0.3) applies.
 	//
 	// SCOPE: only the retrieve channel honours it.
 	UsingEmbedding bool
@@ -974,18 +974,18 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req runtime.RunRequest, d
 		DocTenantResolver: dbDocTenantResolver{},
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
-		// Configuration is the middle precedence level, between an explicit tool argument
-		// and the module defaults.
-		TopN:                   deps.TopN,
-		SimilarityThreshold:    deps.SimilarityThreshold,
-		VectorSimilarityWeight: deps.VectorSimilarityWeight,
-		UsingEmbedding:         deps.UsingEmbedding,
-		HasEmbedder:            deps.HasEmbedder,
-		RerankCandidatesCount:  deps.RerankCandidatesCount,
-		TopK:                   deps.TopK,
-		MetaDataFilter:         deps.MetaDataFilter,
-		// RAGTools carries the KB objects and a tagger, so the tag boost can be
-		// computed.
+		// Python retrieve:614-646 — configuration is the middle precedence
+		// level, between an explicit tool argument and the module defaults.
+		TopN:                     deps.TopN,
+		SimilarityThreshold:      deps.SimilarityThreshold,
+		KeywordsSimilarityWeight: deps.KeywordsSimilarityWeight,
+		UsingEmbedding:           deps.UsingEmbedding,
+		HasEmbedder:              deps.HasEmbedder,
+		RerankCandidatesCount:    deps.RerankCandidatesCount,
+		TopK:                     deps.TopK,
+		MetaDataFilter:           deps.MetaDataFilter,
+		// rank_feature (Python retrieve:668): RAGTools carries the KB objects
+		// and a tagger, mirroring rank_feature=label_question(question, self.kbs).
 		KBs:    deps.KBs,
 		Tagger: deps.Tagger,
 		// External embedding handle. When the caller supplied one on RAGTools it is used

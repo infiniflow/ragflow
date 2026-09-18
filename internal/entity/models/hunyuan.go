@@ -89,7 +89,7 @@ func (h *HunyuanModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender opens the SSE chat-completions

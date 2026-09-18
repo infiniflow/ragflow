@@ -14,21 +14,22 @@
 #  limitations under the License.
 #
 
-import logging
 import copy
+import logging
 import re
-
-from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from io import BytesIO
-from deepdoc.parser.utils import extract_pdf_outlines
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img, DEFAULT_DELIMITER
-from common.token_utils import num_tokens_from_string
-from deepdoc.parser import PdfParser, DocxParser
-from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
+
 from docx import Document
+
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
-from rag.app.naive import by_plaintext, PARSERS
+from common.constants import MAXIMUM_PAGE_NUMBER, ParserType
 from common.parser_config_utils import normalize_layout_recognizer
+from common.token_utils import num_tokens_from_string
+from deepdoc.parser import DocxParser, PdfParser
+from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper, vision_figure_parser_pdf_wrapper
+from deepdoc.parser.utils import extract_pdf_outlines
+from rag.app.naive import PARSERS, by_plaintext
+from rag.nlp import DEFAULT_DELIMITER, attach_media_context, bullets_category, concat_img, docx_question_level, rag_tokenizer, title_frequency, tokenize, tokenize_chunks, tokenize_table
 
 
 class Pdf(PdfParser):
@@ -42,24 +43,24 @@ class Pdf(PdfParser):
         start = timer()
         callback(msg="OCR started")
         self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        logging.debug("OCR: {}".format(timer() - start))
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
+        logging.debug(f"OCR: {timer() - start}")
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
-        logging.debug("layouts: {}".format(timer() - start))
+        callback(0.65, f"Layout analysis ({timer() - start:.2f}s)")
+        logging.debug(f"layouts: {timer() - start}")
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
+        callback(0.67, f"Table analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
         self._filter_forpages()
-        callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
+        callback(0.68, f"Text merged ({timer() - start:.2f}s)")
 
         # clean mess
         for b in self.boxes:
@@ -258,7 +259,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 # MinerU tags stay local and one-based for crop(); crop() adds
                 # the task's page offset when it emits final positions.
                 pn += 1
-            return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, left, right, top, bottom)
+            return f"@@{pn}\t{left:.1f}\t{right:.1f}\t{top:.1f}\t{bottom:.1f}##"
 
         chunks = []
         last_sid = -2

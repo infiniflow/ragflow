@@ -91,6 +91,12 @@ func (s *IngestionTaskService) foldIngestionRun(ctx context.Context, pipelineLog
 	if maxRows < 2 {
 		return ingestionLogFoldResult{}, errors.New("fold ingestion run requires max rows >= 2")
 	}
+	if dao.DB == nil {
+		// This runs on the ingestor's terminal-log path, so a nil handle used to
+		// crash a worker goroutine (and, via the panic-recovery handler, the
+		// whole process) instead of degrading to a logged error.
+		return ingestionLogFoldResult{}, errors.New("fold ingestion run: nil database")
+	}
 
 	var result ingestionLogFoldResult
 	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

@@ -29,7 +29,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -768,7 +768,7 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
-	if rc := redis2.Get(); rc != nil {
+	if rc := kvrocks.Get(); rc != nil {
 		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
 			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
 			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
@@ -818,7 +818,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	// by the DB status (STOPPING), which defaultCancelCheck falls back to
 	// when the Redis flag is absent. Clearing a stale flag here is safe:
 	// a genuine concurrent cancel sets the task to STOPPING in DB.
-	if rc := redis2.Get(); rc != nil {
+	if rc := kvrocks.Get(); rc != nil {
 		key := fmt.Sprintf("%s-cancel", task.ID)
 		utility.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
 			rc.Delete(ctx, key)
@@ -958,9 +958,30 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 			// (handleAndExecute Ack-skips an already-FAILED task); Nack for
 			// redelivery. The broker's redelivery limit handles deterministic
 			// poison messages.
-			common.Error(fmt.Sprintf("task %s panicked: %v", taskCtx.IngestionTask.ID, r), fmt.Errorf("%v", r))
-			e.markFailed(ctx, taskCtx.IngestionTask.ID)
-			e.recordTerminalPipelineLog(ctx, taskCtx.IngestionTask, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+			//
+			// The bookkeeping below reaches the DB, so it is guarded in turn: a
+			// panic raised inside a deferred function is unrecoverable and would
+			// take the worker process down — the exact outcome this handler
+			// exists to prevent. taskCtx is read defensively as well, since a
+			// panic is proof that an assumption upstream already broke.
+			var task *entity.IngestionTask
+			if taskCtx != nil {
+				task = taskCtx.IngestionTask
+			}
+			taskID := ""
+			if task != nil {
+				taskID = task.ID
+			}
+			func() {
+				defer func() {
+					if r2 := recover(); r2 != nil {
+						common.Error(fmt.Sprintf("task %s: failure handler panicked: %v", taskID, r2), fmt.Errorf("%v", r2))
+					}
+				}()
+				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
+				e.markFailed(ctx, taskID)
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+			}()
 			terminal = false
 		}
 		if e.leaseAbandoned(hb) {
@@ -1015,7 +1036,7 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 // task status in DB when Redis is unavailable — a STOPPING status
 // (set by RequestStop) is treated as a cancel signal.
 func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
-	rc := redis2.Get()
+	rc := kvrocks.Get()
 	if rc != nil {
 		if ok, _ := rc.Exist(ctx, fmt.Sprintf("%s-cancel", taskID)); ok {
 			return true
@@ -1076,6 +1097,32 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 				}
 			}
 		}
+	}
+}
+
+// docRunFromTasks maps the doc's latest ingestion task to the document-level
+// run label. tasks is a single-element slice holding the newest task (as
+// returned by IngestionTaskDAO.GetByDocumentID, ordered by create_time DESC);
+// tasks[0] is the current parse round and its status is authoritative. A
+// document can be parsed multiple times over its lifetime, but document.run
+// reflects the latest parse round, so historical tasks are ignored. An empty
+// task set means UNSTART.
+func docRunFromTasks(tasks []*entity.IngestionTask) string {
+	if len(tasks) == 0 {
+		return string(entity.TaskStatusUnstart)
+	}
+	latest := tasks[0]
+	switch latest.Status {
+	case common.CREATED, common.RUNNING, common.STOPPING:
+		return string(entity.TaskStatusRunning)
+	case common.FAILED:
+		return string(entity.TaskStatusFail)
+	case common.STOPPED:
+		return string(entity.TaskStatusCancel)
+	case common.COMPLETED:
+		return string(entity.TaskStatusDone)
+	default:
+		return string(entity.TaskStatusUnstart)
 	}
 }
 

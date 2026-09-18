@@ -18,18 +18,18 @@ import logging
 import re
 from html import escape as html_escape
 from io import BytesIO
+
 from docx import Document
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
 
-from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
-from deepdoc.parser.utils import get_text
-from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge, DEFAULT_DELIMITER
-from rag.nlp import rag_tokenizer, Node
-from deepdoc.parser import PdfParser, DocxParser, HtmlParser
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
-from rag.app.naive import by_plaintext, PARSERS
+from common.constants import MAXIMUM_PAGE_NUMBER, ParserType
 from common.parser_config_utils import normalize_layout_recognizer
+from deepdoc.parser import DocxParser, HtmlParser, PdfParser
+from deepdoc.parser.utils import get_text
+from rag.app.naive import PARSERS, by_plaintext
+from rag.nlp import DEFAULT_DELIMITER, Node, bullets_category, docx_question_level, make_colon_as_title, rag_tokenizer, remove_contents_table, tokenize_chunks, tree_merge
 
 
 class Docx(DocxParser):
@@ -136,15 +136,15 @@ class Pdf(PdfParser):
         start = timer()
         callback(msg="OCR started")
         self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
-        logging.debug("layouts: {}".format((timer() - start)))
+        callback(0.67, f"Layout analysis ({timer() - start:.2f}s)")
+        logging.debug(f"layouts: {timer() - start}")
         self._naive_vertical_merge()
 
-        callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
+        callback(0.8, f"Text extraction ({timer() - start:.2f}s)")
 
         return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], None
 

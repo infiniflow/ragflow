@@ -98,6 +98,32 @@ func validateTaskContext(taskCtx *TaskContext) error {
 	return nil
 }
 
+// noRefreshChunkInserter is the narrower inserter the ingestion path prefers:
+// an engine that implements it can write chunks without waiting for an index
+// refresh.
+type noRefreshChunkInserter interface {
+	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+}
+
+// insertChunksForIngestion writes chunks through the engine's no-refresh path
+// when it offers one, falling back to the plain inserter otherwise.
+//
+// Waiting for a refresh costs ~0.5s per write (median; p90 1.0s, max 5.0s) with
+// the KB index's refresh_interval=1000ms, and it buys nothing during ingestion:
+// the index publishes the chunks on its own refresh cycle a moment later, so the
+// only difference is up to a second before they are searchable. It is also what
+// Python's ingestion does - it inserts with refresh=False
+// (rag/svr/task_executor_refactor/chunk_service.py:386 and :423) while its API
+// default stays "wait_for" - so this keeps the two ingestion paths in step.
+func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
+	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+		if bulk, ok := eng.(noRefreshChunkInserter); ok {
+			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
+		}
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+	}
+}
+
 func NewPipelineExecutor(
 	taskCtx *TaskContext,
 	canvasID string,
@@ -113,14 +139,7 @@ func NewPipelineExecutor(
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
-		indexWriter: newChunkIndexWriter(
-			func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-				return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
-			},
-			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
-			taskCtx.Doc.KbID,
-			docBulkSize,
-		),
+		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
 			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
 		},
@@ -205,7 +224,18 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" && s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil && *s.taskCtx.IngestionTask.PipelineLogID != "" {
-		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone))
+		var terminalDuration *float64
+		if result != nil {
+			terminalDuration = &result.Duration
+		} else {
+			// A successful run with no chunks never wrote a terminal duration
+			// to the document, so recompute from the same process_begin_at
+			// anchor here instead of letting the log copy the stale mid-run
+			// value.
+			d := s.terminalDuration(start)
+			terminalDuration = &d
+		}
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
 	}
 
 	return result, nil
@@ -353,7 +383,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		Metadata:              metadata,
 		ChunkCount:            chunkCount,
 		TokenConsumption:      embeddingTokenConsumption,
-		Duration:              time.Since(start).Seconds(),
+		Duration:              s.terminalDuration(start),
 		DocName:               docNameValue(s.taskCtx.Doc.Name),
 		BuiltInMetadataConfig: builtInMetadata,
 		AutoMetadataEnabled:   autoMetaEnabled,
@@ -389,6 +419,23 @@ func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunk
 		s.taskCtx.Doc.KbID,
 	)
 	return err
+}
+
+// terminalDuration measures the run from the document's process_begin_at —
+// the anchor PrepareValidatedRun stamped before the run and the one every
+// mid-run progress-sink duration write uses — so the terminal value applied
+// to document.process_duration and the value recorded in the pipeline
+// operation log are the same number. Runs whose document carries no begin
+// time fall back to the executor start.
+func (s *PipelineExecutor) terminalDuration(start time.Time) float64 {
+	if begin := s.taskCtx.Doc.ProcessBeginAt; begin != nil {
+		duration := time.Since(*begin).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		return duration
+	}
+	return time.Since(start).Seconds()
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config
@@ -815,6 +862,14 @@ type PipelineLogInput struct {
 	// exactly that row, never creating a second one — so a superseded run whose
 	// row was deleted cannot adopt the replacement run's row.
 	PipelineLogID string
+	// TerminalDuration, when set, is this run's final duration in seconds,
+	// measured from the document's process_begin_at. updateOpenLogRow records
+	// it instead of the reloaded document's last mid-run value, so
+	// pipeline_operation_log and document.process_duration hold one number.
+	// Writers without it (failure/cancel, or a run that produced no chunks)
+	// copy the document's stored value — still the last thing any writer put
+	// there, so the tables stay aligned on those paths too.
+	TerminalDuration *float64
 }
 
 // ErrMissingRunIdentity reports an attempt to persist an ingestion terminal
@@ -947,6 +1002,9 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 	if doc.Name != nil {
 		updates["document_name"] = *doc.Name
 	}
+	if input.TerminalDuration != nil {
+		updates["process_duration"] = *input.TerminalDuration
+	}
 	// The open row was created with a timestamp. Keep it when the reloaded
 	// document carries none (a run that never reached the progress sink), so
 	// the queued entry does not lose its start time.
@@ -969,7 +1027,7 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 	return nil
 }
 
-func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string, terminalDuration *float64) {
 	pipelineID := ""
 	if s.taskCtx.PipelineID != "" {
 		pipelineID = s.canvasID
@@ -979,14 +1037,15 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		pipelineLogID = *s.taskCtx.IngestionTask.PipelineLogID
 	}
 	if err := recordPipelineLog(ctx, db, PipelineLogInput{
-		TenantID:      s.Tenant().ID,
-		KbID:          s.KB().ID,
-		DocumentID:    docID,
-		PipelineID:    pipelineID,
-		DSL:           dsl,
-		Status:        status,
-		Document:      s.taskCtx.Doc,
-		PipelineLogID: pipelineLogID,
+		TenantID:         s.Tenant().ID,
+		KbID:             s.KB().ID,
+		DocumentID:       docID,
+		PipelineID:       pipelineID,
+		DSL:              dsl,
+		Status:           status,
+		Document:         s.taskCtx.Doc,
+		PipelineLogID:    pipelineLogID,
+		TerminalDuration: terminalDuration,
 	}); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}

@@ -289,7 +289,17 @@ func (s *ModelSolver) resolveModel(ctx context.Context, tenantID string, modelTy
 	modelEntity, err := s.lookupTenantModel(ctx, tenantID, modelRef)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return s.resolveCompositeModel(ctx, tenantID, modelType, modelRef)
+			// A bare ref that is BOTH unknown as a tenant model id AND rejected as
+			// a composite name is almost always a DANGLING REFERENCE — a knowledge
+			// base or chat pointing at a tenant_model row that was deleted. Say so
+			// explicitly: the underlying "provider name missing in model name:
+			// <uuid>" reads like a naming-format mistake and sends the operator to
+			// look at the model's name instead of at the row that no longer exists.
+			composite, compositeErr := s.resolveCompositeModel(ctx, tenantID, modelType, modelRef)
+			if compositeErr != nil && !strings.Contains(modelRef, "@") {
+				return nil, fmt.Errorf("model %q is neither a tenant model id (no tenant_model row) nor a valid composite name — the reference is dangling: %w", modelRef, compositeErr)
+			}
+			return composite, compositeErr
 		}
 		return nil, err
 	}

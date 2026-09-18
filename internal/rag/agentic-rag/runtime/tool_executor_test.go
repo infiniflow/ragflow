@@ -25,10 +25,11 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+
+	"gorm.io/gorm"
 )
 
 // stubRetrievalService returns a fixed set of child chunks so the runtime
@@ -78,24 +79,24 @@ func TestRuntimeRetrieverPreservesUnsetControls(t *testing.T) {
 	if _, err := r.Retrieve(context.Background(), RetrieveRequest{Query: "q", DatasetIDs: []string{"kb-1"}}); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
-	if got.SimilarityThreshold != nil || got.VectorSimilarityWeight != nil {
+	if got.SimilarityThreshold != nil || got.KeywordsSimilarityWeight != nil {
 		t.Errorf("omitted controls = %v / %v, want nil so the service keeps its defaults",
-			got.SimilarityThreshold, got.VectorSimilarityWeight)
+			got.SimilarityThreshold, got.KeywordsSimilarityWeight)
 	}
 
-	threshold, weight := 0.35, 0.3
+	threshold, keywordsWeight := 0.35, 0.7
 	if _, err := r.Retrieve(context.Background(), RetrieveRequest{
-		Query:                  "q",
-		SimilarityThreshold:    &threshold,
-		VectorSimilarityWeight: &weight,
+		Query:                    "q",
+		SimilarityThreshold:      &threshold,
+		KeywordsSimilarityWeight: &keywordsWeight,
 	}); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != threshold {
 		t.Errorf("SimilarityThreshold = %v, want %v", got.SimilarityThreshold, threshold)
 	}
-	if got.VectorSimilarityWeight == nil || *got.VectorSimilarityWeight != weight {
-		t.Errorf("VectorSimilarityWeight = %v, want %v", got.VectorSimilarityWeight, weight)
+	if got.KeywordsSimilarityWeight == nil || *got.KeywordsSimilarityWeight != keywordsWeight {
+		t.Errorf("KeywordsSimilarityWeight = %v, want %v", got.KeywordsSimilarityWeight, keywordsWeight)
 	}
 }
 
@@ -113,9 +114,9 @@ func TestChunkAggRetrieveLeavesControlsUnset(t *testing.T) {
 		t.Fatalf("chunks = %d, want the retrieved chunk", len(chunks))
 	}
 	req := r.lastReq(t)
-	if req.SimilarityThreshold != nil || req.VectorSimilarityWeight != nil {
+	if req.SimilarityThreshold != nil || req.KeywordsSimilarityWeight != nil {
 		t.Errorf("controls = %v / %v, want nil (zero is a valid value, not an unset marker)",
-			req.SimilarityThreshold, req.VectorSimilarityWeight)
+			req.SimilarityThreshold, req.KeywordsSimilarityWeight)
 	}
 }
 
@@ -476,14 +477,15 @@ func TestExecuteNarratesToolOutcome(t *testing.T) {
 			t.Errorf("search-leg step missing %q; legs:\n%s", want, legs)
 		}
 	}
-	// The log keeps its own terse form: the same verb without the method clause and
-	// without a period.
-	if !strings.Contains(out, `[Hybrid search] Searching for "q"`) {
+	// The log keeps Python's own wording (search.py:122): it names the corpus, not
+	// the method, and ends without a period.
+	if !strings.Contains(out, `[Hybrid search] Searching the knowledge base for "q"`) {
 		t.Errorf("the log must keep its searching line:\n%s", out)
 	}
 	// ...and the log form must not be what the block got: the two sentences differ
-	// by design (the log has no method clause and no period).
-	if strings.Contains(legs, `Searching for "q"`) {
+	// by design (the log names the corpus, the block names the method, and only the
+	// block ends in a period).
+	if strings.Contains(legs, `Searching the knowledge base for`) {
 		t.Errorf("the think block got the log line instead of the sentence:\n%s", legs)
 	}
 	// The per-document breakdown the sentence is derived from stays in the
