@@ -466,7 +466,7 @@ class LLM(ComponentBase):
             output_structure = self._param.outputs["structured"]
         except Exception:
             pass
-        if output_structure and isinstance(output_structure, dict) and output_structure.get("properties") and len(output_structure["properties"]) > 0:
+        if isinstance(output_structure, dict) and any(key != "value" for key in output_structure):
             self.set_output("structured", None)
             validator = self._structured_output_validator(output_structure)
             schema = json.dumps(validator.schema, ensure_ascii=False, indent=2)

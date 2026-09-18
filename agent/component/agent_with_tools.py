@@ -164,11 +164,12 @@ class Agent(LLM, ToolBase):
             return None
 
         if isinstance(cand, dict):
-            if isinstance(cand.get("properties"), dict) and len(cand["properties"]) > 0:
+            nested_schemas = [cand[key] for key in ("schema", "structured") if isinstance(cand.get(key), dict)]
+            for schema in nested_schemas:
+                if any(key != "value" for key in schema):
+                    return schema
+            if not nested_schemas and any(key != "value" for key in cand):
                 return cand
-            for k in ("schema", "structured"):
-                if isinstance(cand.get(k), dict) and isinstance(cand[k].get("properties"), dict) and len(cand[k]["properties"]) > 0:
-                    return cand[k]
 
         return None
 

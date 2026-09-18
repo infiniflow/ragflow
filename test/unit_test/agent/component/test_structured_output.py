@@ -207,12 +207,32 @@ async def test_missing_root_type_is_normalized_to_object(component):
     assert '\\"type\\": \\"object\\"' in json.dumps(provider.calls[0])
 
 
+async def test_object_schema_without_properties_is_validated(component):
+    schema = {"type": "object", "additionalProperties": {"type": "string"}}
+    obj, provider = component(['{"count":1}', '{"count":"one"}'], retries=1, schema=schema)
+    await obj.invoke_async()
+    assert obj.output("structured") == {"count": "one"}
+    assert not obj.error()
+    assert len(provider.calls) == 2
+    assert provider.calls[1]["mode"] == "plain"
+    assert "$.count" in json.dumps(provider.calls[1])
+
+
+async def test_empty_structured_output_config_keeps_plain_generation(component):
+    obj, provider = component(["plain answer"], schema={})
+    await obj.invoke_async()
+    assert obj.output("content") == "plain answer"
+    assert not obj.error()
+    assert len(provider.calls) == 1
+    assert provider.calls[0]["mode"] == ("tools" if obj.tools else "plain")
+
+
 @pytest.mark.parametrize(
     "schema",
     [
         {**SCHEMA, "required": "amount"},
         {**SCHEMA, "$schema": "https://example.invalid/unknown-schema"},
-        {**SCHEMA, "type": "array"},
+        {"type": "array", "items": {"type": "string"}},
         {**SCHEMA, "type": ["object", "null"]},
     ],
 )
@@ -222,6 +242,13 @@ async def test_invalid_schema_fails_before_generation(component, schema):
     assert obj.output("structured") is None
     assert obj.error()
     assert provider.calls == []
+
+
+@pytest.mark.parametrize("wrapper", ["schema", "structured"])
+def test_agent_extracts_nested_schema_without_properties(modules, wrapper):
+    schema = {"type": "object", "additionalProperties": {"type": "string"}}
+    obj = SimpleNamespace(_param=SimpleNamespace(outputs={"structured": {wrapper: schema}}))
+    assert modules.agent.Agent._get_output_schema(obj) == schema
 
 
 async def test_local_schema_reference_is_validated(component):
