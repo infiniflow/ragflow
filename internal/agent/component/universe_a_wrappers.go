@@ -826,7 +826,7 @@ func codeExecArtifactBucket() string {
 func uploadCodeExecArtifacts(ctx context.Context, artifacts []any, sessionID string, st storage.Storage) (uploaded []map[string]any, markdown []string, attachmentContent string) {
 	bucket := codeExecArtifactBucket()
 	sections := make([]string, 0, len(artifacts))
-	for idx, raw := range artifacts {
+	for _, raw := range artifacts {
 		m, ok := raw.(map[string]any)
 		if !ok {
 			continue
