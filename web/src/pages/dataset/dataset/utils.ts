@@ -197,11 +197,14 @@ export const hasUnsupportedTypeGap = (gaps: ParserGap[]) =>
 
 // Modal copy keyed by gap kind: missing models steer to adding the model,
 // unsupported types to reselecting the parse method.
-export const pickByGapKind = <T,>(
+export function pickByGapKind<T>(
   gaps: ParserGap[],
   options: { missingModel: T; unsupportedType: T },
-): T =>
-  hasUnsupportedTypeGap(gaps) ? options.unsupportedType : options.missingModel;
+): T {
+  return hasUnsupportedTypeGap(gaps)
+    ? options.unsupportedType
+    : options.missingModel;
+}
 
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 
