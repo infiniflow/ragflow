@@ -346,6 +346,8 @@ export default {
       welcome: '欢迎回来',
       description: '今天我们要使用哪个知识库？',
       createKnowledgeBase: '创建知识库',
+      builtInTemplate: '内置模板',
+      ingestionPipeline: 'Ingestion pipeline',
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
@@ -476,7 +478,7 @@ export default {
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
-      datasetDescription: '解析成功后才能问答哦。',
+      datasetDescription: '只有解析成功后才能问答。',
       addFile: '新增文件',
       searchFiles: '搜索文件',
       localFiles: '本地文件',
@@ -607,7 +609,7 @@ export default {
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
-      overlappedPercentTip: '相邻两个块之间的重叠比例',
+      overlappedPercentTip: '相邻两个块之间的重叠百分比',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（Chunk 将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
@@ -687,7 +689,7 @@ export default {
       titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
-      photoTip: '你可以上传 4MB 的文件',
+      photoTip: '可以上传 4MB 以内的文件',
       description: '描述',
       language: '文档语言',
       languageMessage: '请输入语言',
@@ -748,7 +750,7 @@ export default {
       这样做的好处是 LLM 可以更好的概括论文中相关章节的内容，
       产生更全面的答案，帮助读者更好地理解论文。
       缺点是它增加了 LLM 对话的背景并增加了计算成本，
-      所以在对话过程中，你可以考虑减少‘<b>topN</b>’的设置。</p>`,
+      所以在对话过程中，可以考虑减少‘<b>topN</b>’的设置。</p>`,
       presentation: `<p>支持的文件格式为<b>PDF</b>、<b>PPTX</b>。</p><p>
       每个页面都将被视为一个块。 并且每个页面的缩略图都会被存储。</p><p>
       <i>您上传的所有 PPT 文件都会使用此方法自动分块，无需为每个PPT文件进行设置。</i></p>`,
@@ -808,7 +810,7 @@ export default {
       </p><p>
       对于一个文档，它将被视为一个完整的块，根本不会被分割。
       </p><p>
-      如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
+      如果需要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，可以尝试这种方法。
       </p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
@@ -857,7 +859,7 @@ export default {
       compilationTemplateRequired: '请选择算子',
       createTemplate: '创建模板',
       scopeFile: '文件',
-      pageRank: 'PageRank 权重',
+      pageRank: '页面排名',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
       tagMessage: '请选择标签',
@@ -876,7 +878,7 @@ export default {
       <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
       <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
-      <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
+      <li>在给知识库文本块批量打标签之前，需要先生成标签集作为样本。 </li>
       <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
       <p> 详见：https://ragflow.io/docs/dataset_configuration#basic-information </p>
@@ -957,7 +959,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       send: '发送',
       sendPlaceholder: '给助理发送消息...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '为你的知识库配置专属聊天助手！ 💕',
+      chatConfigurationDescription: '为知识库配置知识问答聊天！ 💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填项',
       namePlaceholder: '例如 贾维斯简历',
@@ -1124,6 +1126,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       reasoning: '推理',
       reasoningTip:
         '在问答过程中是否启用推理工作流，类似 Deepseek-R1 等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
+      tavilyApiKeyTip:
+        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
+      tavilyApiKeyMessage: '请输入 Tavily API Key',
       webSearch: '网络搜索',
       webSearchProvider: '网络搜索服务',
       webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
@@ -1149,13 +1154,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       parallelApiKeyMessage: '请输入你的 Parallel API Key',
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
-      queritApiKeyMessage: '请输入你的 Querit API Key',
+      queritApiKeyMessage: '请输入 Querit API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
-      serplyApiKeyMessage: '请输入你的 Serply API Key',
-      tavilyApiKeyTip:
-        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
-      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      serplyApiKeyMessage: '请输入 Serply API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
@@ -2492,7 +2494,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       baiduDescription: `此组件用于从 www.baidu.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',
+        '此组件用于从 [www.duckduckgo.com](http://www.duckduckgo.com) 获取搜索结果。通常，它作为知识库的补充。Top N 指定需要调整的搜索结果数量。',
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
@@ -2923,7 +2925,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         upload: '上传',
         photo: '照片',
         permissions: '权限',
-        permissionsTip: '你可以在这里设置团队访问权限。',
+        permissionsTip: '可以在这里设置团队访问权限。',
         me: '仅限自己',
         team: '团队',
       },
@@ -2933,7 +2935,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
-        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。可以通过斜杠或者 (x) 按钮显示可用的 key。',
       knowledgeBasesTip: '选择关联的知识库，或者在下方选择包含知识库ID的变量。',
       knowledgeBaseVars: '知识库变量',
       code: '代码',
