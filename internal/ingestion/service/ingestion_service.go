@@ -186,15 +186,6 @@ func (e *Ingestor) ID() string {
 	return e.id
 }
 
-// SetIngestionLogSettings applies startup-validated event and retention
-// limits to the task service used by this ingestor.
-func (e *Ingestor) SetIngestionLogSettings(settings servicepkg.IngestionLogSettings) error {
-	if e == nil || e.ingestionTaskSvc == nil {
-		return errors.New("ingestor task service is unavailable")
-	}
-	return e.ingestionTaskSvc.SetIngestionLogSettings(settings)
-}
-
 // consumeErrorBackoff paces failed Pull requests so a persistent MQ failure
 // does not pin a CPU. The backoff is cancellable and does not block another
 // idle worker from making its own Pull request.

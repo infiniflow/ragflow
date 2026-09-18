@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/observability"
-	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -46,18 +46,15 @@ func logIngestionFoldResult(taskID, pipelineLogID string, result ingestionLogFol
 		zap.Duration("duration", duration),
 	}
 	if err != nil {
-		observability.RecordIngestionLogFoldFailure()
 		fields = append(fields, zap.String("result", "failure"))
 		common.Error("ingestion log fold failed", err, fields...)
 		return
 	}
 	if result.Skipped {
-		observability.RecordIngestionLogFoldSkipped(result.SkipReason)
 		fields = append(fields, zap.String("result", "skipped"), zap.String("reason", result.SkipReason))
 		common.Info("ingestion log fold skipped", fields...)
 		return
 	}
-	observability.RecordIngestionLogFoldSuccess(result.DeletedRows)
 	fields = append(fields, zap.String("result", "success"))
 	common.Info("ingestion log fold completed", fields...)
 }
@@ -79,7 +76,6 @@ func logIngestionTrimResult(documentID, taskID, preservePipelineLogID string, re
 		common.Error("ingestion log run deletion failed", err, fields...)
 		return
 	}
-	observability.RecordIngestionLogRunDelete(result.DeletedRuns, result.DeletedEvents)
 	fields = append(fields, zap.String("result", "success"), zap.String("reason", "document_event_cap"))
 	common.Info("ingestion log run deletion completed", fields...)
 }

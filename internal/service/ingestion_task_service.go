@@ -11,7 +11,6 @@ import (
 	"ragflow/internal/dao"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	"ragflow/internal/observability"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -960,7 +959,6 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 }
 
 func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error {
-	observability.RecordIngestionLogEventRejected(reason)
 	common.Warn("ingestion_log_event_rejected",
 		zap.String("event", "ingestion_log_event_rejected"),
 		zap.String("reason", reason),
