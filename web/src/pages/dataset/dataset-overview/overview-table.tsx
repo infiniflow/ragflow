@@ -389,7 +389,9 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       // details unconditionally flashes an empty modal while the messages
       // query is still loading (mirrors the dataset page's useShowLog).
       details: messages?.items.length ? '' : logInfo.details,
-      events: messages?.items,
+      // An empty array is truthy, so passing it through would render a blank
+      // events pane next to the seeded details; collapse it to undefined.
+      events: messages?.items.length ? messages.items : undefined,
       loadPreviousEvents: hasPreviousPage
         ? () => fetchPreviousPage()
         : undefined,
