@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service"
 )
 
 const (
@@ -73,11 +74,14 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeTTS)
+	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeTTS)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
+	driver := target.Driver
+	modelName := target.ModelName
+	apiConfig := target.APIConfig
 
 	writeAudioHeaders := func(mediaType string) {
 		c.Header("Content-Type", mediaType)
@@ -254,11 +258,14 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeSpeech2Text)
+	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeSpeech2Text)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
+	driver := target.Driver
+	modelName := target.ModelName
+	apiConfig := target.APIConfig
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {

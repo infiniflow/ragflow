@@ -25,7 +25,6 @@ import (
 	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
@@ -61,7 +60,9 @@ type chatPipelineRunner interface {
 }
 
 type chatModelConfigResolver interface {
-	GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error)
+	ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error)
+	ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -97,7 +98,7 @@ func NewChatSessionService() *ChatSessionService {
 		chatSessionDAO:   dao.NewChatSessionDAO(),
 		userTenantDAO:    dao.NewUserTenantDAO(),
 		pipeline:         NewChatPipelineService(),
-		modelProviderSvc: NewModelProviderService(),
+		modelProviderSvc: NewModelSolver(),
 		docEngine:        engine.Get(),
 	}
 }
@@ -1927,9 +1928,23 @@ func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []
 func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID, modelName string) (bool, error) {
 	resolver := s.modelProviderSvc
 	if resolver == nil {
-		resolver = NewModelProviderService()
+		resolver = NewModelSolver()
 	}
-	_, _, _, _, err := resolver.GetChatModelConfig(ctx, tenantID, modelName)
+	var err error
+	if modelName == "" {
+		_, err = resolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+	} else {
+		modelType := entity.ModelTypeChat
+		if modelTypes, typeErr := resolver.ResolveModelType(ctx, tenantID, modelName); typeErr == nil {
+			for _, resolvedType := range modelTypes {
+				if resolvedType.Has(entity.ModelTypeImage2Text) {
+					modelType = entity.ModelTypeImage2Text
+					break
+				}
+			}
+		}
+		_, err = resolver.ResolveModelConfig(ctx, tenantID, modelType, modelName)
+	}
 	if err != nil {
 		return false, err
 	}

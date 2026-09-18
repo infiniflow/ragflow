@@ -430,7 +430,7 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				EmbdID:       "embedding@provider",
 				TenantEmbdID: &tenantEmbeddingID,
 			},
-			wantCall: "id:tenant-embedding-1",
+			wantCall: "resolve:tenant-embedding-1",
 		},
 		{
 			name: "knowledge base embedding reference",
@@ -447,14 +447,24 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				ID:       "kb-1",
 				TenantID: "tenant-1",
 			},
-			wantCall: "default",
+			wantCall: "resolve:",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			resolver := &fakeModelResolver{modelName: "resolved-model"}
-			adapter := &NLPRetrievalAdapter{modelResolver: resolver}
+			adapter := &NLPRetrievalAdapter{
+				modelConfigResolver: func(
+					_ context.Context,
+					_ string,
+					_ entity.ModelType,
+					modelRef string,
+				) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+					resolver.call = "resolve:" + modelRef
+					return nil, resolver.modelName, &modelModule.APIConfig{}, 512, resolver.err
+				},
+			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
@@ -512,35 +522,6 @@ type fakeModelResolver struct {
 	call      string
 	modelName string
 	err       error
-}
-
-func (f *fakeModelResolver) GetModelConfigByID(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelID string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "id:" + modelID
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) ResolveModelConfig(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelRef string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "resolve:" + modelRef
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) GetTenantDefaultModelByType(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "default"
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
 }
 
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {

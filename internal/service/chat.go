@@ -435,15 +435,12 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 			}
 		}
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, modelType, llmID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	tenantLLMID, err := modelProvider.ResolveModelID(ctx, tenantID, modelType, llmID)
-	if err != nil {
-		return "", err
-	}
-	return tenantLLMID, nil
+	return target.ModelID, nil
 }
 
 func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -454,15 +451,12 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 	if _, ok := DefaultRerankModels[llmName]; ok {
 		return "", nil
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	tenantRerankID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeRerank, rerankID)
-	if err != nil {
-		return "", err
-	}
-	return tenantRerankID, nil
+	return target.ModelID, nil
 }
 
 func applyCreatePromptDefaults(req map[string]interface{}) {
@@ -1095,15 +1089,12 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 			}
 		}
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, modelType, llmID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	tenantLLMID, err := modelProvider.ResolveModelID(ctx, tenantID, modelType, llmID)
-	if err != nil {
-		return "", err
-	}
-	return tenantLLMID, nil
+	return target.ModelID, nil
 }
 
 func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -1114,15 +1105,12 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 	if _, ok := defaultRerankModels[baseName]; ok {
 		return "", nil
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	tenantRerankID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeRerank, rerankID)
-	if err != nil {
-		return "", err
-	}
-	return tenantRerankID, nil
+	return target.ModelID, nil
 }
 
 func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
