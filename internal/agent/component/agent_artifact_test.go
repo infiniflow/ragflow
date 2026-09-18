@@ -138,11 +138,11 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 	}
 }
 
-func TestExtractArtifactsFromToolMessageAcceptsSandboxContent(t *testing.T) {
-	msg := &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="}]}`}
+func TestExtractArtifactsFromToolMessageSkipsUnhostedPayloads(t *testing.T) {
+	msg := &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="},{"name":"hosted.png","mime_type":"image/png","url":"/api/v1/documents/artifact/1.png"}]}`}
 	got := extractArtifactsFromToolMessage(msg)
-	if len(got) != 1 || got[0].URL != "data:image/png;base64,aW1hZ2U=" {
-		t.Fatalf("got %#v, want sandbox data URL", got)
+	if len(got) != 1 || got[0].URL != "/api/v1/documents/artifact/1.png" || got[0].MimeType != "image/png" {
+		t.Fatalf("got %#v, want only the hosted entry with its mime type", got)
 	}
 }
 
@@ -152,10 +152,10 @@ func TestArtifactCollectorPreparedByInvokeReceivesRunnerFuture(t *testing.T) {
 	if getArtifactCollector(ctx) == nil {
 		t.Fatal("runner future was not visible to Agent.Invoke")
 	}
-	recordArtifactsFromToolMessage(ctx, &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="}]}`})
+	recordArtifactsFromToolMessage(ctx, &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","url":"/api/v1/documents/artifact/2.png"}]}`})
 	got := collectArtifactsFromToolCalls(ctx, nil)
-	if len(got) != 1 || got[0].URL != "data:image/png;base64,aW1hZ2U=" {
-		t.Fatalf("got %#v, want streamed sandbox artifact", got)
+	if len(got) != 1 || got[0].URL != "/api/v1/documents/artifact/2.png" {
+		t.Fatalf("got %#v, want streamed hosted artifact", got)
 	}
 }
 
