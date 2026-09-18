@@ -323,16 +323,12 @@ func (s *ModelSolver) resolveTenantModel(ctx context.Context, tenantID string, m
 		return nil, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerEntity.ProviderName)
 	}
 
-	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName)
-	if err != nil || modelInfo == nil {
+	modelInfo, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName)
+	if modelInfo != nil {
+		modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
 		if err != nil {
-			return nil, fmt.Errorf("%w: provider %s model %s not found: %v", errModelConfigUnavailable, providerEntity.ProviderName, modelEntity.ModelName, err)
+			return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
 		}
-		return nil, fmt.Errorf("%w: provider %s model %s not found", errModelConfigUnavailable, providerEntity.ProviderName, modelEntity.ModelName)
-	}
-	modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
-	if err != nil {
-		return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
 	}
 
 	extra, err := decodeModelInstanceExtra(instanceEntity.Extra)

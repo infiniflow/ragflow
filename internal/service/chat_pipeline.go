@@ -2087,9 +2087,11 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		// Probe the default model's enrolled types so a vision-capable
 		// default dispatches as image2text (same rule as the explicit-LLM
 		// branches below).
-		if target.ModelID != "" {
-			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, target.ModelID)
+		modelRef := target.ModelID
+		if modelRef == "" {
+			modelRef = fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
 		}
+		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelRef)
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
