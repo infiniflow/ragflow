@@ -3,7 +3,7 @@
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
-//  You may obtain the License at
+//  You may obtain a copy of the License at
 //
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
@@ -17,12 +17,17 @@
 package tokenizer
 
 import (
+	"bytes"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// failFastChildEnv marks the re-executed child that owns the real assertions.
+const failFastChildEnv = "TOKENIZER_FAILFAST_CHILD"
 
 // TestInitCL100KEncoder_FailFast pins the contract that InitCL100KEncoder fails
 // fast on a missing cl100k_base table, and — the part the regression actually
@@ -43,6 +48,26 @@ import (
 // that the table "present" later copies under /tmp is not discoverable by it via
 // searchRoots() walking up to the shared /tmp ancestor.
 func TestInitCL100KEncoder_FailFast(t *testing.T) {
+	// This test's premise is a process with an EMPTY tiktoken cache. tiktoken-go
+	// memoises loaded encodings in a package-global map with no reset API
+	// (encodingMap in its encoding.go), so as soon as any sibling test has loaded
+	// cl100k successfully, "no table present must fail" can no longer be observed
+	// here - resetCL100KEncoderForTest() only clears RAGFlow's own wrapper. A test
+	// whose outcome depends on execution order is not a test, so re-exec the test
+	// binary and run the real checks in a fresh process instead.
+	if os.Getenv(failFastChildEnv) == "" {
+		child := exec.Command(os.Args[0], "-test.run=^TestInitCL100KEncoder_FailFast$", "-test.v")
+		child.Env = append(os.Environ(), failFastChildEnv+"=1")
+		out, err := child.CombinedOutput()
+		if err != nil {
+			t.Fatalf("isolated child run failed (%v); the fail-fast contract is only observable in a fresh process\n%s", err, out)
+		}
+		if !bytes.Contains(out, []byte("--- PASS")) {
+			t.Fatalf("isolated child run reported no PASS:\n%s", out)
+		}
+		return
+	}
+
 	// fail-fast: an empty scoped dir must surface a hard error, not a silent 0.
 	t.Run("absent", func(t *testing.T) {
 		resetCL100KEncoderForTest()

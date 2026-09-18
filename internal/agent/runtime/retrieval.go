@@ -14,10 +14,9 @@
 //  limitations under the License.
 //
 
-// Retrieval contracts shared by the canvas agent runtime (internal/agent/tool)
-// and the smart-reasoning agent (internal/agentic_rag). Keeping these here —
-// in the engine-agnostic runtime package — means neither agent layer depends on
-// the other: both depend on this shared
+// Retrieval contracts shared by the canvas agent runtime (internal/agent/tool).
+// Keeping these in the engine-agnostic runtime package means the tool layer
+// re-exports them instead of owning a second copy.
 package runtime
 
 import (
@@ -63,36 +62,39 @@ type RetrievalChunk struct {
 
 // RetrievalRequest is the input to RetrievalService.Search.
 type RetrievalRequest struct {
-	Query                 string
-	DatasetIDs            []string
-	MemoryIDs             []string
-	TopN                  int
-	RerankCandidatesCount int
-	TopK                  int
-	// VectorSimilarityWeight is the VECTOR leg's weight (Python
-	// vector_similarity_weight), forwarded verbatim by the agentic harness. The
-	// canvas path keeps using KeywordsSimilarityWeight (the keyword weight the
-	// adapter inverts); see retrievalbridge/runtime_adapter.go.
-	VectorSimilarityWeight *float64
-	// DisableVectorLeg mirrors Python passing embd_mdl=None: the backend runs
-	// the keyword-only branch with NO dense leg (not even a weight-0 one).
-	DisableVectorLeg         bool
+	Query      string
+	DatasetIDs []string
+	MemoryIDs  []string
+	TopN       int
+	// RerankCandidatesCount caps the candidate set pulled for reranking. Zero
+	// means "use the backend default".
+	RerankCandidatesCount    int
+	TopK                     int
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
 	SimilarityThreshold      *float64
+	AllowDenseFallback       *bool
 	RerankID                 string
 	CrossLanguages           []string
 	TOCEnhance               bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
-	// DocScope restricts retrieval to a set of document ids. Empty = no doc filter.
+	// DocScope restricts retrieval to a set of document ids (the doc_id list
+	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	TenantID string
 	// RankFeature is the label_question term→weight map passed through to the
 	// engine so retrieval is biased toward the query's predicted topic class.
 	// Mirrors engine nlp.RetrievalRequest.RankFeature.
-	RankFeature map[string]float64
+	RankFeature *map[string]float64
+	// UserID optionally filters memory messages by the user_id they were
+	// recorded with (the Retrieval node's "User ID" field, e.g. resolved
+	// from sys.user_id). Empty = no user filter. Only meaningful for
+	// retrieval_from=memory.
+	UserID string
+	// ExcludeCompiled excludes compiled-product rows from plain retrieval.
+	ExcludeCompiled bool
 	// OnlyOriginalText, when true, restricts retrieval to ordinary document
 	// text chunks (available_int=1 and no compile_kwd), excluding
 	// knowledge-compiled products.

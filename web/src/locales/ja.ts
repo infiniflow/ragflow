@@ -950,7 +950,7 @@ export default {
         'ここにTavilyのAPIキーを設定すると、ナレッジベース検索に加えてウェブ検索も利用できます。',
 
       tavilyApiKeyMessage: 'Tavily APIキーを入力してください',
-      tavilyApiKeyHelp: '取得方法はこちら',
+      webSearchApiKeyHelp: '取得方法はこちら',
       crossLanguage: 'クロス言語検索',
       crossLanguageTip: `1つ以上の言語を選択すると、その言語でも検索します。未選択の場合は元の言語で検索します。`,
       createChat: 'チャットを作成',

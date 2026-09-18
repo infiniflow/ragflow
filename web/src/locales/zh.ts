@@ -1124,23 +1124,42 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       reasoning: '推理',
       reasoningTip:
         '在问答过程中是否启用推理工作流，类似 Deepseek-R1 等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
-      tavilyApiKeyTip:
-        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
-      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       webSearch: '网络搜索',
       webSearchProvider: '网络搜索服务',
       webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
       webSearchProviderPlaceholder: '请选择网络搜索服务',
+      webSearchApiKeyRequired:
+        '所选服务必须填写 API Key —— 否则不会发起联网搜索，聊天框里也不会出现联网开关。',
+      // 密钥输入框的标签。{{provider}} 是 provider 的品牌名，故意不翻译，
+      // 因此一个模板即可覆盖全部 9 个 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
+      // 每个 provider 一组 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
+      braveApiKeyMessage: '请输入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。选择 Exa 后，将使用其搜索结果补充知识库检索。即使是每月 1,000 次的免费额度，也仍然需要 Key。',
+      exaApiKeyMessage: '请输入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '选择 Firecrawl 后，将使用其搜索结果补充知识库检索。只取搜索摘要，不抓取整页。',
+      firecrawlApiKeyMessage: '请输入你的 Firecrawl API Key',
+      linkupApiKeyTip: '选择 Linkup 后，将使用其搜索结果补充知识库检索。',
+      linkupApiKeyMessage: '请输入你的 Linkup API Key',
+      parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
+      parallelApiKeyMessage: '请输入你的 Parallel API Key',
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入你的 Querit API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入你的 Serply API Key',
+      tavilyApiKeyTip:
+        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
+      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
-      tavilyApiKeyHelp: '如何获取？',
+      webSearchApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
@@ -2211,7 +2230,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
       chunkTokenCap: '分块 Token 上限',
-      chunkTokenCapTip:'每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
+      chunkTokenCapTip:
+        '每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
       rootAsHeading: '将首个分块设为全局上下文',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
