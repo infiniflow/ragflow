@@ -82,16 +82,13 @@ type batchResult struct {
 // failure this node exists to remove: a single call that carries them all reaches its clock
 // and answers nothing, losing a whole enumeration's worth of members to one timeout.
 //
-// These bound ONE budget, not three independent knobs: this node has to be able to judge
+// These bound ONE budget, not independent knobs: this node has to be able to judge
 // coverageWindowsMax windows inside CoverageResolveTimeoutS, and its capacity is
-// workers × (clock / the slowest call it can expect) × batch. At three workers and a
-// five-second call that is 144 windows — BELOW the 160 the enumeration is allowed to hand it,
-// i.e. a ceiling the point-of-naming step can never clear, which makes the member set a
-// function of provider latency instead of a function of the corpus. Six workers clear the
-// same cap with room to spare (6 × (30/5) × 8 = 288).
+// workers × (clock / the slowest call it can expect) × batch. The cap must stay BELOW that
+// capacity, with room for calls slower than the five seconds assumed here.
 const (
 	coverageResolveBatch      = 8
-	coverageResolveWorkers    = 6
+	coverageResolveWorkers    = 8
 	coverageResolveQuoteChars = 300
 	// coverageResolvePasses bounds the re-asking: the first pass puts every window in front of
 	// the model, and each pass after it re-asks ONLY the windows that got no verdict — a call
@@ -214,6 +211,88 @@ func ResolveCoverage(ctx context.Context, model SessionModel, question string, c
 		}
 	}
 	return members, stats
+}
+
+// CoverageVocabPrompt asks for the vocabulary of THE SOURCE, never for the vocabulary of the
+// language: the passages are what answers it, and a word that is not in them does not qualify.
+const CoverageVocabPrompt = `You are given passages from ONE source document.
+
+The direction under study is the deed named by these words — the act they stand for:
+%WORDS%
+
+List the words THIS SOURCE uses for that deed. A word qualifies only if it ACTUALLY APPEARS in the
+passages below: never list a word you know from the language but cannot see in the text. Include
+every distinct phrasing the passages use for it, including unusual and indirect ones — but give the
+ACT ITSELF: the verb or short phrase, never a phrase carrying a particular victim's name and never
+a whole clause.
+
+Answer with JSON only: {"words": ["<word>", "<word>"]}
+Every entry is copied EXACTLY as it appears in a passage, at most %MAX% entries. No prose.`
+
+// The probe's bounds: how many passages it reads, how much of each, and how many words it may
+// bring back. The call is small on purpose — it is read once per enumeration, against a point of
+// naming that judges hundreds of lines — and every word it reports is then checked against the
+// very passages it was shown.
+const (
+	coverageVocabSamples     = 12
+	coverageVocabSampleChars = 320
+	coverageVocabWords       = 24
+)
+
+// induceActWords reads the deed's vocabulary OUT OF THE CORPUS — one call, before the enumeration
+// filters with it.
+//
+// Why this exists: the planner declares the deed's words BEFORE any passage has been read (see the
+// initialize prompt's "the words the SOURCE itself uses for that deed" — asked of a text nobody
+// has looked at yet).
+func induceActWords(ctx context.Context, model SessionModel, declared []string, passages string, samples []string) []string {
+	if model == nil || len(declared) == 0 || passages == "" || len(samples) == 0 || ctx.Err() != nil {
+		return nil
+	}
+	head := strings.Replace(CoverageVocabPrompt, "%WORDS%", strings.Join(declared, " / "), 1)
+	head = strings.Replace(head, "%MAX%", fmt.Sprint(coverageVocabWords), 1)
+	reply, err := model.Complete(ctx, []schema.Message{
+		*schema.SystemMessage(head),
+		*schema.UserMessage(passages),
+	}, nil)
+	if err != nil || reply == nil {
+		return nil
+	}
+	obj := coverageJSONObject(reply.Content)
+	if obj == nil {
+		return nil
+	}
+	var out []string
+	for _, raw := range coverageAnyList(obj["words"]) {
+		w, _ := raw.(string)
+		w = strings.TrimSpace(w)
+		// A word, not a clause; and present in what the model was shown. the ACT with the victim inside it, which can only ever
+		// match the one passage it was read from, so it spends one of the entries to buy nothing.
+		// The prompt asks for the act itself; this is the mechanical backstop for it (a phrasing
+		// long enough to carry a name is not a vocabulary item).
+		if w == "" || len([]rune(w)) > 8 || strings.ContainsAny(w, " \t\n") {
+			continue
+		}
+		if !coverageCarriedByAny(samples, w) {
+			continue
+		}
+		out = appendUnique(out, w)
+		if len(out) >= coverageVocabWords {
+			break
+		}
+	}
+	return out
+}
+
+// coverageCarriedByAny reports whether one of the passages actually carries the word — the check
+// that makes the induced vocabulary a reading of the corpus instead of a claim about it.
+func coverageCarriedByAny(samples []string, word string) bool {
+	for _, s := range samples {
+		if strings.Contains(s, word) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveCoverageBatch puts ONE batch of jobs in front of the model and returns the members

@@ -74,13 +74,14 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	if set.Empty() {
 		// Nothing to judge: no enumeration ran (no clock left, or the executor cannot search)
 		// and no probe reached a name the slots do not already hold.
-		logger.Printf("[Coverage] resolve has nothing to judge: %d enumeration window(s), %d reached name(s), %d unjudged claim(s).", len(set.Windows), reached, claimed)
+		logger.Printf("[Coverage] resolve has nothing to judge: 0 line(s).")
 		return stats
 	}
 	if reached+claimed > 0 {
 		// The split is worth a line: it is the difference between a node that judges only what
 		// its own enumeration recalled and one that also judges what the run's search touched
-		// and what the sessions ASSERTED but never showed a passage for.
+		// and what the sessions ASSERTED but never showed a passage for. Both numbers are READ
+		// from the one list (countSource), never kept beside it.
 		logger.Printf("[Coverage] resolve candidates: %d window(s) + %d reached name(s) + %d unjudged claim(s) = %d line(s)",
 			len(set.Windows)-reached-claimed, reached, claimed, len(set.Windows))
 	}
@@ -137,6 +138,10 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	// prompt puts them in front of the answer, which must cite one passage per member and otherwise
 	// sees only the top-scoring handful.
 	st.KB.NoteCitedChunks(runtime.AnchoredItemChunks(&st.SlotTable))
+	// And the member↔passage table itself, so the compose can write the citation of every member
+	// the answer states (see runtime.CiteAnchoredMembers): which passage a member rests on is the
+	// naming node's finding, not a block number the model has to write out of a budgeted render.
+	st.KB.NoteAnchoredRefs(runtime.AnchoredItemRefs(&st.SlotTable))
 	if stats.Unknown > 0 {
 		// An enumeration that did not finish must not read as one that did. The windows with
 		// no verdict are members nobody judged, so the list above is a LOWER BOUND, and the
@@ -199,6 +204,14 @@ func coverageResolveCandidates(kb *runtime.Kbinfos, table *runtime.State, cov ru
 	for _, name := range runtime.AnchoredItems(table) {
 		known[strings.ToLower(strings.TrimSpace(name))] = true
 	}
+	// Everything below goes into ONE list, judged by ONE node under ONE budget; what differs is
+	// where a line came from, which is a field on the line (CoverageWindow.Source) rather than a
+	// pipeline with its own cap, its own dedup and its own counter.
+	//
+	// The two counters below count TERMS, not lines, because that is what the report says
+	// ("reached name(s)"): a name the pool carries three passages about is one name handed over.
+	// A count read off the lines instead would report three — measured by the test that pins the
+	// split (coverage_step_test.go: 于禁 has two passages in the pool and is ONE claim).
 	added := 0
 	for _, rt := range kb.ReachedTerms() {
 		term := strings.TrimSpace(rt.Term)
@@ -216,7 +229,7 @@ func coverageResolveCandidates(kb *runtime.Kbinfos, table *runtime.State, cov ru
 		if quote == "" {
 			continue
 		}
-		set.Windows = append(set.Windows, runtime.CoverageWindow{ChunkID: rt.ChunkID, Quote: quote})
+		set.Windows = append(set.Windows, runtime.CoverageWindow{ChunkID: rt.ChunkID, Quote: quote, Source: runtime.CoverageSourceReached})
 		known[key] = true
 		added++
 	}
@@ -238,6 +251,7 @@ func coverageResolveCandidates(kb *runtime.Kbinfos, table *runtime.State, cov ru
 			if windowQuotesTerm(set.Windows, w.ChunkID, term) {
 				continue
 			}
+			w.Source = runtime.CoverageSourceClaim
 			set.Windows = append(set.Windows, w)
 		}
 		known[key] = true
