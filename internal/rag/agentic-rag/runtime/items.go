@@ -177,8 +177,43 @@ var citedMarkerPattern = regexp.MustCompile(`\[(?:ID:\s*)?[0-9]+\]`)
 // member the answer never states is left alone, and a line that already carries a marker is kept
 // as written.
 func CiteAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string) string {
+	out, _ := CitedAnchoredMembers(answer, refs, citeIDs, nil)
+	return out
+}
+
+// answerQuote is the passage a line quotes: its first “…” span (or its first "…"), "" when the
+// line quotes nothing.
+func answerQuote(line string) string {
+	for _, pair := range [][2]string{{"“", "”"}, {"\"", "\""}} {
+		lo := strings.Index(line, pair[0])
+		if lo < 0 {
+			continue
+		}
+		rest := line[lo+len(pair[0]):]
+		hi := strings.Index(rest, pair[1])
+		if hi < 0 {
+			continue
+		}
+		if q := strings.TrimSpace(rest[:hi]); q != "" {
+			return q
+		}
+	}
+	return ""
+}
+
+// spaceLess drops the whitespace and quotation marks a passage and its quotation may differ by, so
+// "被云长 刀起处，挥为两段" still matches the corpus's own spelling.
+func spaceLess(s string) string {
+	return strings.NewReplacer(" ", "", "\t", "", "\n", "", "\u3000", "",
+		"“", "", "”", "", "\"", "", "…", "").Replace(s)
+}
+
+// CitedAnchoredMembers is CiteAnchoredMembers plus the number of LINES it rewrote, so a caller can
+// report whether the step touched the answer at all: a run whose members all carried markers
+// already is indistinguishable from one the step never reached otherwise.
+func CitedAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string, textOf func(string) string) (string, int) {
 	if strings.TrimSpace(answer) == "" || len(refs) == 0 || len(citeIDs) == 0 {
-		return answer
+		return answer, 0
 	}
 	pos := map[string]int{}
 	for i, id := range citeIDs {
@@ -190,8 +225,9 @@ func CiteAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string) st
 		}
 	}
 	if len(pos) == 0 {
-		return answer
+		return answer, 0
 	}
+	overridden := 0
 	lines := strings.Split(answer, "\n")
 	for i, line := range lines {
 		// A line naming members is given the marker of EVERY member it names, and any marker the
@@ -205,7 +241,36 @@ func CiteAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string) st
 			if !strings.Contains(line, r.Name) {
 				continue
 			}
-			if idx, ok := pos[strings.TrimSpace(r.ChunkID)]; ok {
+			id := strings.TrimSpace(r.ChunkID)
+			if textOf != nil {
+				// The marker must open the passage that STATES this member: the words the line
+				// quotes, or — when the answer states them in its own words — the quotation the
+				// naming node took from the passage in the first place. Only when NEITHER is in
+				// the anchored passage is another published passage tried, and only when none of
+				// them holds either is the line left uncited.
+				holds := func(cand, q string) bool {
+					return q != "" && strings.Contains(spaceLess(textOf(cand)), spaceLess(q))
+				}
+				asked, own := answerQuote(line), strings.TrimSpace(r.Quote)
+				if !holds(id, asked) && !holds(id, own) {
+					id = ""
+					for _, q := range []string{asked, own} {
+						for _, cand := range citeIDs {
+							if holds(cand, q) {
+								id = strings.TrimSpace(cand)
+								break
+							}
+						}
+						if id != "" {
+							break
+						}
+					}
+				}
+			}
+			if id == "" {
+				continue
+			}
+			if idx, ok := pos[id]; ok {
 				add = append(add, "[ID:"+strconv.Itoa(idx)+"]")
 			}
 		}
@@ -214,8 +279,9 @@ func CiteAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string) st
 		}
 		stripped := strings.TrimRight(strings.TrimSpace(citedMarkerPattern.ReplaceAllString(line, "")), " \t")
 		lines[i] = stripped + " " + strings.Join(add, "")
+		overridden++
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), overridden
 }
 
 // itemValuesWhere joins the items a picker selects ACROSS the table's slots, in ItemValues order,

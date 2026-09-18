@@ -2109,6 +2109,33 @@ func compactAnchored(chunks []map[string]any, kb *runtime.Kbinfos) []map[string]
 	return out
 }
 
+// anchoredPoolEntries rebuilds a pool record for every enumerated member whose passage is NOT in
+// the pool, from the quote the naming node took from that passage.
+//
+// The citation chain is: marker number → position in the published list → the pool entry that id
+// resolves to. A member whose passage is gone therefore cannot be cited at all — the marker is
+// dropped (citePoolIdx answers -1) or opens nothing. Rebuilding the record from the member's own
+// quote keeps that chain whole, and the content it opens is exactly the text the answer states.
+func anchoredPoolEntries(kb *runtime.Kbinfos) []map[string]any {
+	if kb == nil {
+		return nil
+	}
+	var out []map[string]any
+	for _, r := range kb.AnchoredRefs() {
+		id := strings.TrimSpace(r.ChunkID)
+		quote := strings.TrimSpace(r.Quote)
+		if id == "" || quote == "" || kb.ChunkByID(id) != nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"chunk_id":            id,
+			"content":             quote,
+			"content_with_weight": quote,
+		})
+	}
+	return out
+}
+
 // appendMissingIDs appends the ids not already present, in order: a passage the render left out
 // (the budget admits only the first few whole chunks) still has to hold a position in the
 // published list, or nothing can cite it.
@@ -2133,6 +2160,19 @@ func appendMissingIDs(ids, extra []string) []string {
 func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question string, partial, noEvidence bool) answerPrompt {
 	chunks := []map[string]any{}
 	if kb != nil {
+		// An enumerated member whose passage is no longer in the pool is rebuilt from the quote the
+		// naming node took from it BEFORE anything is rendered or published: the marker's number
+		// indexes the published list and the client opens the pool entry behind it, so a member
+		// whose passage was evicted (the pool cap, or selectEvidence narrowing to another call)
+		// would otherwise lose its citation in the chat pipeline (citePoolIdx answers -1 and the
+		// marker is dropped).
+		if extra := anchoredPoolEntries(kb); len(extra) > 0 {
+			kb.Admit(func(p *runtime.PoolAdmitter) {
+				for _, c := range extra {
+					p.Add(c)
+				}
+			})
+		}
 		chunks = kb.Chunks
 	}
 	ranked := rankByScore(chunks)
@@ -2170,7 +2210,18 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// (runtime.CiteAnchoredMembers).
 	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
 	if kb != nil {
-		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(citeChunks, sources), kb.CitedChunks())
+		// Only ids the POOL still holds are appended: the chat pipeline resolves a marker by
+		// looking its chunk up in the pool, and a member whose passage is gone would publish a
+		// nil reference entry — the marker is then dropped and the line loses its citation
+		// entirely. A member the pool no longer holds must lose its citation, not break the one
+		// the user can open.
+		present := make([]string, 0, len(kb.CitedChunks()))
+		for _, id := range kb.CitedChunks() {
+			if kb.ChunkByID(id) != nil {
+				present = append(present, id)
+			}
+		}
+		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(citeChunks, sources), present)
 	}
 	evidence := strings.Join(blocks, "\n")
 

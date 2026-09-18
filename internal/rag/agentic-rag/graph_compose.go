@@ -533,7 +533,39 @@ func citeAnchoredMembers(answer string, kb *runtime.Kbinfos) string {
 	if kb == nil {
 		return answer
 	}
-	return runtime.CiteAnchoredMembers(answer, kb.AnchoredRefs(), kb.CiteChunkIDs)
+	refs := kb.AnchoredRefs()
+	// textOf lets the step verify a citation against the passage it would open: a marker is
+	// written only for a passage that actually contains the words the answer quotes.
+	textOf := func(id string) string {
+		if c := kb.ChunkByID(id); c != nil {
+			return runtime.ChunkTextOf(c)
+		}
+		return ""
+	}
+	out, overridden := runtime.CitedAnchoredMembers(answer, refs, kb.CiteChunkIDs, textOf)
+	if len(refs) > 0 {
+		// One line per run that says which member was given which marker, and which passage that
+		// marker holds: "the citation opens a passage that does not state this member" is only
+		// answerable from this pairing, and without it a marker and its passage look the same
+		// whether or not they belong together.
+		pos := map[string]int{}
+		for i, id := range kb.CiteChunkIDs {
+			if _, dup := pos[id]; !dup {
+				pos[id] = i
+			}
+		}
+		pairs := make([]string, 0, len(refs))
+		for _, r := range refs {
+			if i, ok := pos[strings.TrimSpace(r.ChunkID)]; ok {
+				pairs = append(pairs, fmt.Sprintf("%s->%d(%s)", r.Name, i, r.ChunkID))
+				continue
+			}
+			pairs = append(pairs, fmt.Sprintf("%s->(not-published)", r.Name))
+		}
+		_LOG.Printf("[Citation] anchored %d member(s), rewrote %d line(s); %s",
+			len(refs), overridden, strings.Join(pairs, " "))
+	}
+	return out
 }
 
 // composeSystem builds the system prompt, applying the precedence rules.

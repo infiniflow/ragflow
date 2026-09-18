@@ -84,11 +84,11 @@ type batchResult struct {
 //
 // These bound ONE budget, not three independent knobs: this node has to be able to judge
 // coverageWindowsMax windows inside CoverageResolveTimeoutS, and its capacity is
-// workers × (clock / the slowest call it can expect) × batch. At three workers and a
-// five-second call that is 144 windows — BELOW the 160 the enumeration is allowed to hand it,
-// i.e. a ceiling the point-of-naming step can never clear, which makes the member set a
-// function of provider latency instead of a function of the corpus. Six workers clear the
-// same cap with room to spare (6 × (30/5) × 8 = 288).
+// workers × (clock / the slowest call it can expect) × batch. The cap and the capacity are
+// the SAME number on purpose (6 × (30/5) × 8 = 288): a cap above the capacity is a ceiling
+// the point-of-naming step can never clear, which makes the member set a function of provider
+// latency instead of a function of the corpus, and a cap below it drops windows the
+// enumeration already paid a search for (they are reported UNKNOWN: nobody judged them).
 const (
 	coverageResolveBatch      = 8
 	coverageResolveWorkers    = 6

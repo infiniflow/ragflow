@@ -29,7 +29,14 @@ import (
 // of a passage a verdict is asked about, and the two caps keep the seed and the call list
 // finite.
 const (
-	coverageRecallTopN      = 200
+	// 200 was the HEAD OF A RANKING sold as a total (measured 2026-09-17, 三国, 1718 chunks:
+	// `operand "斩"/"杀": recall hit its bound (200 passage(s))`, both runs). A member stated
+	// in a passage ranked past 200 could then never become a window, never be judged, never be
+	// named — and the pass-through set came out as "the famous ones", which is why an answer
+	// named the right members while citing only a handful of them. The bound is per OPERAND
+	// (actor forms + act words, see Coverage.Operands), so this is a corpus-scale ask, not a
+	// per-pair one.
+	coverageRecallTopN      = 1000
 	coverageWindowsPerChunk = 3
 	coverageWindowBefore    = 80
 	coverageWindowAfter     = 60
@@ -39,8 +46,18 @@ const (
 	// clock / a slow call × batch — so the two move together: a cap above the capacity is a
 	// ceiling that can never be reached, and the member set then moves with the provider's
 	// latency instead of with the corpus.
-	coverageWindowsMax   = 192
-	coverageSeedMaxChars = 8000
+	//
+	// 288 is the capacity the resolve node already documents for itself (coverage_resolve.go:
+	// six workers × (CoverageResolveTimeoutS / a five-second call) × batch = 6 × 6 × 8 = 288).
+	// At 192 the cap was BELOW that capacity, and every window past it was reported as UNKNOWN
+	// (ResolveCoverage: "nobody judged them"), i.e. evidence the enumeration had paid a search
+	// for was dropped without ever being read.
+	coverageWindowsMax = 288
+	// coverageSeedMaxChars is the PROSE budget of the seed, not a cap on what a session can
+	// cite: past it the quote is dropped and the chunk id is still written (see Render), because
+	// a window omitted outright is a passage no session can name, and a member nothing can name
+	// is a member that only exists in the model's own memory.
+	coverageSeedMaxChars = 32000
 )
 
 // CoverageWindow is one place the corpus states the deed: the chunk it is in, the words
@@ -221,13 +238,28 @@ func (s CoverageSet) Render() string {
 		b.WriteString("(nothing)\n")
 		return b.String()
 	}
+	quotesDropped, idsDropped := 0, 0
 	for _, w := range s.Windows {
 		line := fmt.Sprintf("- chunk_id=%s  %q\n", w.ChunkID, w.Quote)
 		if b.Len()+len(line) > coverageSeedMaxChars {
-			b.WriteString("(further windows omitted; all of them are in the pool)\n")
-			break
+			// Over the prose budget: the passage is still NAMED, only its text is left out.
+			// Dropping the line outright would hide a window the enumeration already paid a
+			// search for, and a member that no line names is a member the session can only
+			// answer from its own memory — the very thing the seed exists to replace.
+			line = fmt.Sprintf("- chunk_id=%s\n", w.ChunkID)
+			if b.Len()+len(line) > coverageSeedMaxChars {
+				idsDropped++
+				continue
+			}
+			quotesDropped++
 		}
 		b.WriteString(line)
+	}
+	if quotesDropped > 0 {
+		fmt.Fprintf(&b, "(the %d window(s) above list a chunk id without its quote; the text is in the pool under that id)\n", quotesDropped)
+	}
+	if idsDropped > 0 {
+		fmt.Fprintf(&b, "(%d further window(s) are in the pool but are not listed here)\n", idsDropped)
 	}
 	if s.Truncated {
 		b.WriteString("(the enumeration ran out of clock; the corpus holds more than is shown here)\n")
