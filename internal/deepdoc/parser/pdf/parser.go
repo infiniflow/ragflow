@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"log/slog"
 	"math"
 	"sort"
 
@@ -148,7 +147,8 @@ func resolvePagesToProcess(ranges [][]int, pageCount int) []int {
 func (p *Parser) extractOutlines(engine pdf.PDFEngine) []pdf.Outline {
 	outlines, outlineErr := engine.Outlines()
 	if outlineErr != nil {
-		slog.Warn("Failed to extract PDF outlines; continuing without them", "err", outlineErr)
+		common.Warn("deepdoc pdf parse: extract outlines failed; continuing without them",
+			zap.Error(outlineErr))
 		outlines = nil
 	}
 	return outlines
@@ -473,7 +473,8 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 			continue
 		}
 		if r.Err != nil {
-			slog.Warn("page worker failed", "page", r.PageNumber, "err", r.Err)
+			common.Warn("deepdoc pdf parse: page worker failed",
+				zap.Int("page", r.PageNumber), zap.Error(r.Err))
 		}
 		// Store per-page PDF-point dimensions for buildLayout.
 		if r.PageHeight > 0 {
@@ -651,12 +652,13 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 			zap.Int("page_count", pageCount),
 			zap.Ints("pages_to_parse", pages))
 	} else {
-		slog.Debug("deepdoc pdf parse: parsing all pages", "page_count", pageCount)
+		common.Debug("deepdoc pdf parse: parsing all pages", zap.Int("page_count", pageCount))
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
 	if pageErr != nil {
-		slog.Warn("runPageWorkers: some pages failed", "err", pageErr)
+		common.Warn("deepdoc pdf parse: runPageWorkers some pages failed",
+			zap.Error(pageErr))
 	}
 
 	result, err := p.assembleDocument(ctx, pages, pageResults, outlines)
