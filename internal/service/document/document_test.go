@@ -2499,34 +2499,164 @@ func TestAssertIngestionTasksTerminal_AcceptsAllTerminal(t *testing.T) {
 	}
 }
 
-// TestIngest_RerunWithDelete_RejectsBatchWithRunningTask verifies the batch
-// pre-check: when re-parsing with delete, if any document's ingestion task is
-// non-terminal, the whole request is rejected up front so no document is
-// partially cleaned.
-func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
+// TestIngest_RunningTask_SkippedWhenBatchStartingParse verifies that when
+// starting parse on a batch of documents, in-flight active tasks (RUNNING,
+// CREATED, SCHEDULED, STOPPING) are skipped and leave existing tasks untouched,
+// while eligible documents are parsed.
+func TestIngest_RunningTask_SkippedWhenBatchStartingParse(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-3", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
+	insertTestIngestionTaskWithStatus(t, "task-3", "user-1", "doc-3", "kb-1", common.CREATED)
 
-	ctx := t.Context()
+	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
-	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2", "doc-3"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: true,
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// doc-2 (RUNNING) and doc-3 (CREATED) must be untouched
+	task2, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-2")
+	if task2 == nil || task2.Status != common.RUNNING {
+		t.Fatalf("doc-2 task status = %v, want %s", task2, common.RUNNING)
+	}
+	task3, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-3")
+	if task3 == nil || task3.Status != common.CREATED {
+		t.Fatalf("doc-3 task status = %v, want %s", task3, common.CREATED)
+	}
+
+	// Only doc-1 should have been re-enqueued
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message for doc-1, got %d", len(publisher.messages))
+	}
+}
+
+func TestIngest_AllActiveTasks_ReturnsSuccessIdempotent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.SCHEDULED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: true,
 	})
-	if err == nil {
-		t.Fatal("expected error for batch with RUNNING task, got nil")
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
 	}
-	// doc-1 (terminal) task must NOT be deleted - the whole batch was rejected.
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("expected 0 published messages, got %d", len(publisher.messages))
+	}
+}
+
+func TestIngest_CompletedTask_SkippedWhenDeleteIsFalse(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-2").Update("location", "loc-2").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: false,
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// doc-1 (COMPLETED with Delete=false) should remain COMPLETED and not fail
 	task1, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
-	if task1 == nil {
-		t.Fatal("doc-1 terminal task should not be deleted when batch is rejected")
+	if task1 == nil || task1.Status != common.COMPLETED {
+		t.Fatalf("doc-1 task status = %v, want %s", task1, common.COMPLETED)
+	}
+
+	// doc-2 (unstarted) should have been started
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message for doc-2, got %d", len(publisher.messages))
+	}
+}
+
+func TestIngest_FailedAndStoppedTasks_Restarted(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id IN ?", []string{"doc-1", "doc-2"}).Update("location", "loc").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.FAILED)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.STOPPED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: false,
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// Both FAILED and STOPPED tasks should have been re-enqueued
+	if len(publisher.messages) != 2 {
+		t.Fatalf("expected 2 published messages, got %d", len(publisher.messages))
 	}
 }
 

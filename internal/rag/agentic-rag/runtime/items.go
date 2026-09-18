@@ -17,6 +17,8 @@
 package runtime
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -131,6 +133,155 @@ func AnchoredItemChunks(table *State) []string {
 		}
 	}
 	return out
+}
+
+// AnchoredItemRefs is AnchoredItemChunks' pairing: every anchored item's value with the passage it
+// rests on, in table order and deduped by value. The naming node matched each member to the
+// passage that states its deed, so this is the member→passage table the answer's citations are
+// written from (see CiteAnchoredMembers).
+func AnchoredItemRefs(table *State) []AnchoredRef {
+	if table == nil {
+		return nil
+	}
+	var out []AnchoredRef
+	seen := map[string]bool{}
+	for _, v := range table.State {
+		for _, it := range v.Typed().Anchored() {
+			name := strings.TrimSpace(it.Value)
+			id := strings.TrimSpace(it.ChunkID)
+			if name == "" || id == "" {
+				continue
+			}
+			key := strings.ToLower(name)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, AnchoredRef{Name: name, ChunkID: id, Quote: strings.TrimSpace(it.Quote)})
+		}
+	}
+	return out
+}
+
+// citedMarkerPattern matches a citation marker the answer may already carry: the canonical
+// "[ID:n]" the rules prescribe, and the bare "[n]" a model writes on its own.
+var citedMarkerPattern = regexp.MustCompile(`\[(?:ID:\s*)?[0-9]+\]`)
+
+// CiteAnchoredMembers attaches the citation of every anchored member the answer states without
+// one: the line naming the member gets the marker of the passage that member rests on, taken from
+// citeIDs — the published evidence list, whose positions are what the client opens.
+//
+// The step is the RUNTIME's, not the model's: the naming node already matched each member to the
+// passage that names it, while a model can only cite the blocks it was shown — the evidence budget
+// admits the first few whole chunks, so a member past them has no block number it could write. A
+// member the answer never states is left alone, and a line that already carries a marker is kept
+// as written.
+func CiteAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string) string {
+	out, _ := CitedAnchoredMembers(answer, refs, citeIDs, nil)
+	return out
+}
+
+// answerQuote is the passage a line quotes: its first “…” span (or its first "…"), "" when the
+// line quotes nothing.
+func answerQuote(line string) string {
+	for _, pair := range [][2]string{{"“", "”"}, {"\"", "\""}} {
+		lo := strings.Index(line, pair[0])
+		if lo < 0 {
+			continue
+		}
+		rest := line[lo+len(pair[0]):]
+		hi := strings.Index(rest, pair[1])
+		if hi < 0 {
+			continue
+		}
+		if q := strings.TrimSpace(rest[:hi]); q != "" {
+			return q
+		}
+	}
+	return ""
+}
+
+// spaceLess drops the whitespace and quotation marks a passage and its quotation may differ by, so
+// "被云长 刀起处，挥为两段" still matches the corpus's own spelling.
+func spaceLess(s string) string {
+	return strings.NewReplacer(" ", "", "\t", "", "\n", "", "\u3000", "",
+		"“", "", "”", "", "\"", "", "…", "").Replace(s)
+}
+
+// CitedAnchoredMembers is CiteAnchoredMembers plus the number of LINES it rewrote, so a caller can
+// report whether the step touched the answer at all: a run whose members all carried markers
+// already is indistinguishable from one the step never reached otherwise.
+func CitedAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string, textOf func(string) string) (string, int) {
+	if strings.TrimSpace(answer) == "" || len(refs) == 0 || len(citeIDs) == 0 {
+		return answer, 0
+	}
+	pos := map[string]int{}
+	for i, id := range citeIDs {
+		if id = strings.TrimSpace(id); id == "" {
+			continue
+		}
+		if _, dup := pos[id]; !dup {
+			pos[id] = i
+		}
+	}
+	if len(pos) == 0 {
+		return answer, 0
+	}
+	overridden := 0
+	lines := strings.Split(answer, "\n")
+	for i, line := range lines {
+		// A line naming members is given the marker of EVERY member it names, and any marker the
+		// model wrote there is replaced by them: the model cites the blocks it read, so a line it
+		// grouped ("颜良…文丑" both [ID:5]) points at a passage that is not that member's, and a
+		// sentence naming nine members carries one marker for nine. Which member rests on which
+		// passage is the naming node's finding (refs × citeIDs), so the runtime's answer replaces
+		// the model's guess on exactly those lines; a line naming no member is left untouched.
+		var add []string
+		for _, r := range refs {
+			if !strings.Contains(line, r.Name) {
+				continue
+			}
+			id := strings.TrimSpace(r.ChunkID)
+			if textOf != nil {
+				// The marker must open the passage that STATES this member: the words the line
+				// quotes, or — when the answer states them in its own words — the quotation the
+				// naming node took from the passage in the first place. Only when NEITHER is in
+				// the anchored passage is another published passage tried, and only when none of
+				// them holds either is the line left uncited.
+				holds := func(cand, q string) bool {
+					return q != "" && strings.Contains(spaceLess(textOf(cand)), spaceLess(q))
+				}
+				asked, own := answerQuote(line), strings.TrimSpace(r.Quote)
+				if !holds(id, asked) && !holds(id, own) {
+					id = ""
+					for _, q := range []string{asked, own} {
+						for _, cand := range citeIDs {
+							if holds(cand, q) {
+								id = strings.TrimSpace(cand)
+								break
+							}
+						}
+						if id != "" {
+							break
+						}
+					}
+				}
+			}
+			if id == "" {
+				continue
+			}
+			if idx, ok := pos[id]; ok {
+				add = append(add, "[ID:"+strconv.Itoa(idx)+"]")
+			}
+		}
+		if len(add) == 0 {
+			continue
+		}
+		stripped := strings.TrimRight(strings.TrimSpace(citedMarkerPattern.ReplaceAllString(line, "")), " \t")
+		lines[i] = stripped + " " + strings.Join(add, "")
+		overridden++
+	}
+	return strings.Join(lines, "\n"), overridden
 }
 
 // itemValuesWhere joins the items a picker selects ACROSS the table's slots, in ItemValues order,

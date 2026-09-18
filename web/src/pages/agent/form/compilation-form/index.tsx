@@ -1,5 +1,8 @@
 import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
-import { LargeModelFormField } from '@/components/large-model-form-field';
+import {
+  LlmSettingFieldItems,
+  LlmSettingSchema,
+} from '@/components/llm-setting-items/next';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,7 +26,7 @@ export function buildCompilationFormSchema(t: TFunction) {
     compilation_template_group_id: z
       .string()
       .min(1, t('knowledgeConfiguration.compilationTemplateRequired')),
-    llm_id: z.string().optional(),
+    ...LlmSettingSchema,
   });
 }
 
@@ -63,10 +66,9 @@ const CompilationForm = ({
     <Form {...form}>
       <FormWrapper>
         <CompilationTemplateFormField name="compilation_template_group_id"></CompilationTemplateFormField>
-        <LargeModelFormField
-          name="llm_id"
+        <LlmSettingFieldItems
           ownerTenantId={ownerTenantId}
-        ></LargeModelFormField>
+        ></LlmSettingFieldItems>
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

@@ -178,7 +178,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		}
 	}
 
-	canFetchRemote := apiKey != "" && baseURL != ""
+	canFetchRemote := baseURL != ""
 	if bedrockProvider {
 		// Bedrock's existing SigV4 modes keep using the static catalog. Only
 		// API-key auth needs a live catalog scoped to the supplied credential.

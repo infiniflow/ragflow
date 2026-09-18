@@ -661,3 +661,107 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 		})
 	}
 }
+
+// compilerDSL mirrors the compiler pipeline template's component structure.
+func compilerDSL(t *testing.T) []byte {
+	t.Helper()
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Compiler:NewBoxesLove": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Compiler",
+					"params": map[string]any{
+						"outputs":                       map[string]any{},
+						"compilation_template_group_id": "",
+						"llm_id":                        "",
+						"plan":                          false,
+					},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl fixture: %v", err)
+	}
+	return raw
+}
+
+func TestCleanComponentParams_CompilerKeepsLLMRuntimeParams(t *testing.T) {
+	dslJSON := compilerDSL(t)
+	raw := map[string]any{
+		"Compiler:NewBoxesLove": map[string]any{
+			"compilation_template_group_id": "group-1",
+			"llm_id":                        "model-1",
+			"temperature":                   0.7,
+			"temperatureEnabled":            true,
+			"top_p":                         0.9,
+			"topPEnabled":                   true,
+			"presence_penalty":              0.2,
+			"presencePenaltyEnabled":        true,
+			"frequency_penalty":             0.3,
+			"frequencyPenaltyEnabled":       true,
+			"max_tokens":                    1024.0,
+			"maxTokensEnabled":              true,
+			"parameter":                     "Custom",
+			"thinking":                      "enabled",
+			"mode":                          "structure",
+		},
+	}
+	result := CleanComponentParams(dslJSON, raw)
+	params, ok := result["Compiler:NewBoxesLove"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Compiler params to survive, got %#v", result)
+	}
+	for _, key := range []string{
+		"compilation_template_group_id", "llm_id",
+		"temperature", "temperatureEnabled",
+		"top_p", "topPEnabled",
+		"presence_penalty", "presencePenaltyEnabled",
+		"frequency_penalty", "frequencyPenaltyEnabled",
+		"max_tokens", "maxTokensEnabled",
+		"parameter", "thinking",
+	} {
+		if _, ok := params[key]; !ok {
+			t.Errorf("expected LLM runtime param %q to be kept, got %#v", key, params)
+		}
+	}
+	if _, ok := params["mode"]; ok {
+		t.Error("expected unknown param key 'mode' to be dropped")
+	}
+	for _, key := range []string{"keywords", "questions", "tags", "summary", "metadata"} {
+		if _, ok := params[key]; ok {
+			t.Errorf("expected no extractor group %q on Compiler params", key)
+		}
+	}
+}
+
+func TestBuildParserConfig_CompilerRuntimeParamsSurvive(t *testing.T) {
+	dslJSON := compilerDSL(t)
+	raw := map[string]any{
+		"Compiler:NewBoxesLove": map[string]any{
+			"compilation_template_group_id": "group-1",
+			"llm_id":                        "model-1",
+			"temperature":                   0.7,
+			"temperatureEnabled":            true,
+			"thinking":                      "disabled",
+		},
+	}
+	result := BuildParserConfig(dslJSON, raw)
+	params, ok := result["Compiler:NewBoxesLove"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Compiler entry in built parser_config, got %#v", result)
+	}
+	if params["compilation_template_group_id"] != "group-1" || params["llm_id"] != "model-1" {
+		t.Errorf("compiler overrides mismatch: %#v", params)
+	}
+	if params["temperature"] != 0.7 || params["temperatureEnabled"] != true {
+		t.Errorf("expected LLM runtime overrides to survive, got %#v", params)
+	}
+	if params["thinking"] != "disabled" {
+		t.Errorf("expected thinking override to survive, got %#v", params)
+	}
+	if plan, ok := params["plan"].(bool); !ok || plan {
+		t.Errorf("expected DSL default plan=false to be baked in, got %#v", params["plan"])
+	}
+}
