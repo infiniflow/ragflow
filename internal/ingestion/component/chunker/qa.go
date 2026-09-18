@@ -266,20 +266,43 @@ func tableRows(htmlStr string) [][]string {
 	return rows
 }
 
-// isTableHTML reports whether the text is a rendered HTML table. The byte
-// after the tag name must be one that ends a tag name, so item text such as
-// "<tableau>\tanswer" stays on the delimiter path.
-func isTableHTML(s string) bool {
-	const tag = "<table"
-	s = strings.TrimSpace(strings.ToLower(s))
-	if !strings.HasPrefix(s, tag) || len(s) == len(tag) {
-		return false
-	}
-	switch s[len(tag)] {
+// endsTagName reports whether b terminates an HTML tag name.
+func endsTagName(b byte) bool {
+	switch b {
 	case ' ', '\t', '\n', '\f', '\r', '/', '>':
 		return true
 	}
 	return false
+}
+
+// hasOpenTag reports whether s opens the named element. The byte after the
+// name must end the tag name, so "<trailer>" is not a "<tr>".
+func hasOpenTag(s, name string) bool {
+	open := "<" + name
+	for i := 0; ; {
+		j := strings.Index(s[i:], open)
+		if j < 0 {
+			return false
+		}
+		i += j + len(open)
+		if i < len(s) && endsTagName(s[i]) {
+			return true
+		}
+	}
+}
+
+// isTableHTML reports whether the text is a rendered HTML table. It needs an
+// opening <table> tag and a row. The byte after each tag name must be one
+// that ends a tag name, so item text such as "<tableau>\tanswer" stays on the
+// delimiter path, and so does a sentence that opens with the literal
+// "<table>" and carries no row.
+func isTableHTML(s string) bool {
+	const tag = "<table"
+	s = strings.TrimSpace(strings.ToLower(s))
+	if !strings.HasPrefix(s, tag) || len(s) == len(tag) || !endsTagName(s[len(tag)]) {
+		return false
+	}
+	return hasOpenTag(s[len(tag):], "tr")
 }
 
 // cellText returns the visible text of a table cell. The parser hands text

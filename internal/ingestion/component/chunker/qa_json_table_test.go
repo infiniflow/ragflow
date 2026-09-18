@@ -176,3 +176,91 @@ func TestQAChunker_JSONTagNamePrefixStaysOnTheTextPath(t *testing.T) {
 		t.Errorf("chunk = %q, want %q", got, want)
 	}
 }
+
+// TestQAChunker_XLSXHTML4ExcelTablePairs runs the real XLSX parser with
+// html4excel on, which is the producer that still emits a rendered <table> in
+// the item text instead of typed cells. It guards the table branch of the
+// route end to end.
+func TestQAChunker_XLSXHTML4ExcelTablePairs(t *testing.T) {
+	data := newQASheet(t, [][]string{
+		{"What is RAGFlow?", "RAGFlow is a RAG engine."},
+		{"Where are the docs?", "On the website."},
+	})
+
+	p, err := parser.NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	p.HTML4Excel = true
+	parsed := p.ParseWithResult(t.Context(), "faq.xlsx", data)
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	if len(parsed.JSON) != 1 {
+		t.Fatalf("item count = %d, want 1", len(parsed.JSON))
+	}
+	markup, _ := parsed.JSON[0]["text"].(string)
+	if !isTableHTML(markup) {
+		t.Fatalf("html4excel item is not table markup: %q", markup)
+	}
+
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatalf("NewQAChunker: %v", err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "faq.xlsx",
+		"output_format": parsed.OutputFormat,
+		"json":          parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks has type %T", out["chunks"])
+	}
+	want := []string{
+		"Question: What is RAGFlow?\tAnswer: RAGFlow is a RAG engine.",
+		"Question: Where are the docs?\tAnswer: On the website.",
+	}
+	if len(chunks) != len(want) {
+		t.Fatalf("chunk count = %d, want %d: %#v", len(chunks), len(want), chunks)
+	}
+	for i, expected := range want {
+		if got, _ := chunks[i]["text"].(string); got != expected {
+			t.Errorf("chunk %d = %q, want %q", i, got, expected)
+		}
+	}
+}
+
+// TestQAChunker_JSONTableProseStaysOnTheTextPath keeps a sentence that opens
+// with the literal "<table>" on the text extractor. The markup has no row, so
+// the table extractor would return nothing and the pair would be lost.
+func TestQAChunker_JSONTableProseStaysOnTheTextPath(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatalf("NewQAChunker: %v", err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "notes.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "<table> is furniture\tFurniture with four legs.", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks has type %T", out["chunks"])
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("chunk count = %d, want 1: %#v", len(chunks), chunks)
+	}
+	want := "Question: <table> is furniture\tAnswer: Furniture with four legs."
+	if got, _ := chunks[0]["text"].(string); got != want {
+		t.Errorf("chunk = %q, want %q", got, want)
+	}
+}
