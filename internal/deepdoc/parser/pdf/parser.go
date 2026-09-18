@@ -652,7 +652,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 			zap.Int("page_count", pageCount),
 			zap.Ints("pages_to_parse", pages))
 	} else {
-		common.Debug("deepdoc pdf parse: parsing all pages", zap.Int("page_count", pageCount))
+		common.Info("deepdoc pdf parse: parsing all pages", zap.Int("page_count", pageCount))
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
