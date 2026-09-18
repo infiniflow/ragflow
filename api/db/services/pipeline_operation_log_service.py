@@ -166,6 +166,7 @@ def _remove_embedding_vectors(value):
 def _sanitize_pipeline_dsl(dsl_mapping):
     """Return the immutable pipeline definition without per-run state."""
     sanitized = deepcopy(dsl_mapping)
+    sanitized.pop("task_id", None)
     root = sanitized.get("dsl") if isinstance(sanitized.get("dsl"), dict) else sanitized
     root.pop("task_id", None)
 

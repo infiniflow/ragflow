@@ -942,6 +942,7 @@ func pipelineDSLID(pipelineID, parserID string) string {
 // equality reflects the immutable pipeline definition only.
 func sanitizePipelineDSL(dsl entity.JSONMap) {
 	root := map[string]any(dsl)
+	delete(root, "task_id")
 	if nested, ok := root["dsl"].(map[string]any); ok {
 		root = nested
 	}
