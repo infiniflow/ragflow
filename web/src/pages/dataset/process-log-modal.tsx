@@ -8,10 +8,12 @@ import {
 } from '@/components/ui/tooltip';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
+import { IngestionEventItem } from '@/interfaces/database/ingestion';
+import { formatTime } from '@/utils/date';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -29,6 +31,10 @@ export interface ILogInfo {
   endTime?: string;
   duration?: string;
   details: string;
+  events?: IngestionEventItem[];
+  loadPreviousEvents?: () => Promise<unknown>;
+  hasPreviousEvents?: boolean;
+  isLoadingPreviousEvents?: boolean;
 }
 
 interface ProcessLogModalProps {
@@ -91,10 +97,38 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
 }) => {
   const { t } = useTranslate(translateKey || 'knowledgeDetails');
   const { t: tc } = useTranslation();
-  const blackKeyList = [''];
+  const blackKeyList = [
+    'loadPreviousEvents',
+    'hasPreviousEvents',
+    'isLoadingPreviousEvents',
+  ];
   const logInfo = useMemo(() => {
     return initData;
   }, [initData]);
+  const eventListRef = useRef<HTMLDivElement>(null);
+  const prependHeightRef = useRef<number | null>(null);
+  const eventCount = logInfo.events?.length ?? 0;
+  useEffect(() => {
+    const list = eventListRef.current;
+    const previousHeight = prependHeightRef.current;
+    if (list && previousHeight !== null) {
+      list.scrollTop = list.scrollHeight - previousHeight;
+    }
+    prependHeightRef.current = null;
+  }, [eventCount]);
+
+  const handleEventScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (
+      event.currentTarget.scrollTop !== 0 ||
+      !logInfo.hasPreviousEvents ||
+      logInfo.isLoadingPreviousEvents ||
+      !logInfo.loadPreviousEvents
+    ) {
+      return;
+    }
+    prependHeightRef.current = event.currentTarget.scrollHeight;
+    void logInfo.loadPreviousEvents();
+  };
 
   return (
     <Modal
@@ -116,6 +150,51 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
               !logInfo[key as keyof typeof logInfo]
             ) {
               return null;
+            }
+            if (key === 'events') {
+              return (
+                <div className="w-full mt-2" key={key}>
+                  <InfoItem
+                    label={t('details')}
+                    value={
+                      <div
+                        ref={eventListRef}
+                        onScroll={handleEventScroll}
+                        className="w-full whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto p-2.5"
+                      >
+                        {logInfo.isLoadingPreviousEvents && (
+                          <div className="text-text-secondary text-xs mb-1">
+                            Loading earlier events…
+                          </div>
+                        )}
+                        {logInfo.events?.map((event) => {
+                          const time = formatTime(event.ts);
+                          return (
+                            <div
+                              className={
+                                event.event_type === 3
+                                  ? 'text-text-secondary'
+                                  : undefined
+                              }
+                              key={event.id}
+                            >
+                              {time && (
+                                <span
+                                  className="text-text-secondary mr-1"
+                                  data-testid="ingestion-event-time"
+                                >
+                                  {time}
+                                </span>
+                              )}
+                              {replaceText(event.message)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    }
+                  />
+                </div>
+              );
             }
             if (key === 'details') {
               return (
@@ -151,7 +230,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                 <InfoItem
                   overflowTip={true}
                   label={t(key)}
-                  value={logInfo[key as keyof typeof logInfo]}
+                  value={logInfo[key as keyof typeof logInfo] as string}
                 />
               </div>
             );

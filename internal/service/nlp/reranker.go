@@ -938,6 +938,7 @@ func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]inte
 //   - qb: QueryBuilder for token processing
 //   - rankFeature: rank feature weights (e.g., {"pagerank_fea": 10.0})
 func RerankWithKNN(
+	ctx context.Context,
 	chunks []map[string]interface{},
 	ids []string,
 	field map[string]map[string]interface{},
@@ -953,7 +954,7 @@ func RerankWithKNN(
 		return []float64{}, []float64{}, []float64{}
 	}
 
-	common.Info("RerankWithKNN started", zap.Int("chunkCount", len(ids)), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+	common.InfoCtx(ctx, "RerankWithKNN started", zap.Int("chunkCount", len(ids)), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
 
 	// Normalize important_kwd - Python checks if it's a string and wraps in list
 	// for i in sres.ids:
@@ -976,7 +977,7 @@ func RerankWithKNN(
 	if qb != nil {
 		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
-	common.Info("RerankWithKNN keywords", zap.Any("keywords", keywords))
+	common.InfoCtx(ctx, "RerankWithKNN keywords", zap.Any("keywords", keywords))
 
 	// Build token lists matching Python's OrderedDict approach
 	insTw := make([][]string, 0, len(ids))
@@ -1015,14 +1016,14 @@ func RerankWithKNN(
 
 	// Calculate token similarity
 	tsim = TokenSimilarity(keywords, insTw, qb, language)
-	common.Info("RerankWithKNN tsim", zap.Float64s("tsim", tsim))
+	common.InfoCtx(ctx, "RerankWithKNN tsim", zap.Float64s("tsim", tsim))
 
 	// Build vector similarity from knnScores - matches Python's np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids])
 	vsim = make([]float64, len(ids))
 	for i, chunkID := range ids {
 		vsim[i] = knnScores[chunkID] // Returns 0.0 if not found (Go map default)
 	}
-	common.Debug("RerankWithKNN knnScores", zap.Int("knnScoreCount", len(knnScores)), zap.Float64s("vsim", vsim), zap.Strings("ids", ids), zap.Float64s("knnScores", func() []float64 {
+	common.InfoCtx(ctx, "RerankWithKNN knnScores", zap.Int("knnScoreCount", len(knnScores)), zap.Float64s("vsim", vsim), zap.Strings("ids", ids), zap.Float64s("knnScores", func() []float64 {
 		scores := make([]float64, 0, len(knnScores))
 		for _, id := range ids {
 			if s, ok := knnScores[id]; ok {
@@ -1040,9 +1041,9 @@ func RerankWithKNN(
 
 	// Apply rank feature scores (tag_score * 10 + pagerank)
 	sim = applyRankFeatureScoresForIDs(ids, field, sim, rankFeature)
-	common.Info("RerankWithKNN rankFeatureScores", zap.Any("rankFeature", rankFeature), zap.Any("simAfterRank", sim))
+	common.InfoCtx(ctx, "RerankWithKNN rankFeatureScores", zap.Any("rankFeature", rankFeature), zap.Any("simAfterRank", sim))
 
-	common.Info("RerankWithKNN completed", zap.Int("outputChunks", len(sim)))
+	common.InfoCtx(ctx, "RerankWithKNN completed", zap.Int("outputChunks", len(sim)))
 	return sim, tsim, vsim
 }
 

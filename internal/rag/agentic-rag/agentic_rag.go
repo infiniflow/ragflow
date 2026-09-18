@@ -231,13 +231,13 @@ type RAGTools struct {
 	// the runtime defaults.
 	TopN                int
 	SimilarityThreshold float64
-	// VectorSimilarityWeight is the vector leg's weight. A pointer so an explicit 0 —
-	// keyword-only, which is what the agentic retrieve channel uses — is distinguishable
-	// from "not configured". Nil selects DefaultAgenticVectorWeight (0).
-	VectorSimilarityWeight *float64
-	// UsingEmbedding: when false (the agentic default) retrieval is keyword-only (vector
-	// weight 0); when true the embedder is engaged and VectorSimilarityWeight (default 0.7)
-	// applies.
+	// KeywordsSimilarityWeight is the keyword leg's weight. A pointer keeps an
+	// explicit zero (pure vector search) distinct from an unset value.
+	KeywordsSimilarityWeight *float64
+	// UsingEmbedding is the Go spelling of Python RAGTools.retrieve's
+	// `using_embedding: bool = False` (agentic_rag.py:599). When false (the
+	// agentic default) retrieval is keyword-only; when true the embedder is
+	// engaged and KeywordsSimilarityWeight (default 0.3) applies.
 	//
 	// SCOPE: only the retrieve channel honours it.
 	UsingEmbedding bool
@@ -974,18 +974,18 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req runtime.RunRequest, d
 		DocTenantResolver: dbDocTenantResolver{},
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
-		// Configuration is the middle precedence level, between an explicit tool argument
-		// and the module defaults.
-		TopN:                   deps.TopN,
-		SimilarityThreshold:    deps.SimilarityThreshold,
-		VectorSimilarityWeight: deps.VectorSimilarityWeight,
-		UsingEmbedding:         deps.UsingEmbedding,
-		HasEmbedder:            deps.HasEmbedder,
-		RerankCandidatesCount:  deps.RerankCandidatesCount,
-		TopK:                   deps.TopK,
-		MetaDataFilter:         deps.MetaDataFilter,
-		// RAGTools carries the KB objects and a tagger, so the tag boost can be
-		// computed.
+		// Python retrieve:614-646 — configuration is the middle precedence
+		// level, between an explicit tool argument and the module defaults.
+		TopN:                     deps.TopN,
+		SimilarityThreshold:      deps.SimilarityThreshold,
+		KeywordsSimilarityWeight: deps.KeywordsSimilarityWeight,
+		UsingEmbedding:           deps.UsingEmbedding,
+		HasEmbedder:              deps.HasEmbedder,
+		RerankCandidatesCount:    deps.RerankCandidatesCount,
+		TopK:                     deps.TopK,
+		MetaDataFilter:           deps.MetaDataFilter,
+		// rank_feature (Python retrieve:668): RAGTools carries the KB objects
+		// and a tagger, mirroring rank_feature=label_question(question, self.kbs).
 		KBs:    deps.KBs,
 		Tagger: deps.Tagger,
 		// External embedding handle. When the caller supplied one on RAGTools it is used
@@ -1684,6 +1684,11 @@ func runOuterReact(ctx context.Context, deps RAGTools, req runtime.RunRequest, l
 	p.resp.Answer = answer
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
+	// The numbering the answer's [ID:n] markers were written with travels WITH those chunks:
+	// the chat pipeline resolves a marker by position in this list, so a response carrying the
+	// passages without their numbering leaves the list empty and every marker indexes the POOL
+	// instead — the citation then opens whatever passage happens to sit at that position.
+	p.resp.CiteChunkIDs = append([]string(nil), p.kb.CiteChunkIDs...)
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
 	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
@@ -1765,6 +1770,11 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req runtime.RunRequ
 	// Keep only the evidence of the call that owns the answer (selectEvidence
 	// no-ops when the answer came from the outer model instead of a rag call).
 	session.selectEvidence(p.resp.Answer)
+	// Same as runOuterReact: the numbering the answer's [ID:n] markers were written with has to
+	// travel with the passages it numbers. Without it the chat pipeline's published list is
+	// empty, citePoolIdx falls back to pool order, and every marker opens whichever passage
+	// happens to sit at that position (rendered_blocks == pool size is the tell).
+	p.resp.CiteChunkIDs = append([]string(nil), p.kb.CiteChunkIDs...)
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
@@ -2215,6 +2225,11 @@ func (s *outerReactSession) selectEvidence(answer string) {
 		s.kb.DocAggs = append([]map[string]any(nil), r.kb.DocAggs...)
 		s.kb.Memory = append([]map[string]any(nil), r.kb.Memory...)
 		s.kb.PreSummary = r.kb.PreSummary
+		// The published evidence list belongs to THIS call too: the answer's [ID:n] markers
+		// were written against it, and the chat pipeline resolves them against whatever is on
+		// the response. Restoring the passages without their numbering leaves marker n pointing
+		// at another call's n-th passage — the citation opens a passage the answer never cited.
+		s.kb.CiteChunkIDs = append([]string(nil), r.kb.CiteChunkIDs...)
 		return
 	}
 }

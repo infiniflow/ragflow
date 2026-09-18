@@ -69,6 +69,68 @@ _seed_from_system() {
     return 1
 }
 
+# ── cl100k_base BPE table ─────────────────────────────────────────────
+# internal/tokenizer loads this table from disk only (no network) and PANICS in
+# NumTokensFromString / TrimContentToTokenLimit when it is absent: a deployment
+# that forgot the file must not silently zero every token count (see
+# internal/tokenizer/bpe_loader.go and failfast_test.go). CI provisions it in a
+# workflow step before running the Go tests; build.sh does the same so the
+# documented local test commands are self-contained. Order mirrors CI: system
+# pre-seed first, then the network. A failure here is deliberately NOT fatal —
+# the loader stays the final gate, and its panic message names the file.
+CL100K_TABLE_URL="https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+CL100K_TABLE_RELPATH="ragflow_deps/cl100k_base.tiktoken"
+SYSTEM_DEPS_TOKENIZER="/opt/ragflow_deps"
+
+# Provision the cl100k_base BPE table into ragflow_deps/ (no-op if present).
+# Returns 0 when the table is in place, 1 when it could not be provisioned.
+_ensure_cl100k_table() {
+    local dest="${PROJECT_ROOT}/${CL100K_TABLE_RELPATH}"
+    local sys_copy="${SYSTEM_DEPS_TOKENIZER}/cl100k_base.tiktoken"
+
+    echo "check if the cl100k_base BPE table exists at ${dest}"
+
+    if [ -s "$dest" ]; then
+        echo "  cl100k_base.tiktoken → ${dest} (already present)"
+        return 0
+    fi
+
+    if [ -s "$sys_copy" ]; then
+        mkdir -p "$(dirname "$dest")"
+        cp "$sys_copy" "$dest"
+        echo "  cl100k_base.tiktoken → ${dest} (system)"
+        return 0
+    fi
+
+    # Download to a temp file and move it into place only after a successful
+    # transfer: an interrupted download would otherwise leave a truncated table
+    # behind, which the loader rejects on digest.
+    local tmp="${dest}.download"
+    mkdir -p "$(dirname "$dest")"
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fsSL -o "$tmp" "$CL100K_TABLE_URL"; then
+            mv "$tmp" "$dest"
+            echo "  cl100k_base.tiktoken → ${dest} (downloaded)"
+            return 0
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if wget -q -O "$tmp" "$CL100K_TABLE_URL"; then
+            mv "$tmp" "$dest"
+            echo "  cl100k_base.tiktoken → ${dest} (downloaded)"
+            return 0
+        fi
+    fi
+    rm -f "$tmp"
+
+    echo -e "  ${YELLOW}cl100k_base BPE table NOT provisioned${NC} (offline, or the network is blocked)"
+    echo "  internal/tokenizer panics on a missing table by design, so every test that"
+    echo "  counts tokens will fail loudly. Recover with any of:"
+    echo "    - re-run this command (a transient network error usually clears);"
+    echo "    - curl -fsSL -o ${CL100K_TABLE_RELPATH} ${CL100K_TABLE_URL}"
+    echo "    - or point TIKTOKEN_CACHE_DIR at a directory holding the table."
+    return 1
+}
+
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
 # Function to print section headers
@@ -727,6 +789,11 @@ setup_cgo_env() {
 run_go_tests() {
     print_section "Running Go tests"
 
+    # The tokenizer panics instead of counting 0 when the cl100k table is
+    # missing, so provision it before the tests, as CI does. Non-fatal: without
+    # it only the token-counting tests fail, and they say why.
+    _ensure_cl100k_table || true
+
     cd "$PROJECT_ROOT"
     setup_cgo_env
 
@@ -816,6 +883,10 @@ run_go_tests_tagged() {
     local tags="$1"; shift
     print_section "Running Go tests (tags: ${tags})"
 
+    # Same cl100k table requirement as the unit tier (integration/e2e runs count
+    # tokens too); non-fatal, see _ensure_cl100k_table.
+    _ensure_cl100k_table || true
+
     cd "$PROJECT_ROOT"
     setup_cgo_env
 
@@ -895,6 +966,11 @@ OPTIONS:
     --test-integration   Run Go tests tagged 'integration' (need real services,
                     e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.
                     `$0 --test-integration ./internal/engine/...`
+    --test-integration-go  Run ONLY the generic 'integration' tier (MySQL/MinIO/
+                    Redis/NATS/Infinity/ES) without the model-backed native
+                    DeepDoc tests. Use this for the CI integration job, which
+                    brings up the service stack separately from the native
+                    backend job. e.g. `$0 --test-integration-go ./internal/storage/...`
     --test-e2e           Run Go tests tagged 'e2e' (full-pipeline, heavy).
     --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
                     ONLY, never run in CI).
@@ -918,7 +994,8 @@ EXAMPLES:
     $0 --cpp-test   # Build C++ test executable
     $0 --test       # Run all Go tests (unit tier, no build tag)
     $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
-    $0 --test-integration ./internal/engine/...      # integration tier
+    $0 --test-integration ./internal/engine/...      # integration + native tiers
+    $0 --test-integration-go ./internal/storage/...  # generic integration tier only
     $0 --test-e2e                                 # e2e tier
     $0 --test-manual                             # manual tier (very slow)
     $0 --test-all                                # integration + e2e (no manual)
@@ -978,6 +1055,22 @@ main() {
                 run_go_tests_tagged integration "${args[@]:1}"
             fi
             run_native_integration_tests
+            ;;
+        --test-integration-go)
+            # Runs only the generic `integration` test tier (MySQL/MinIO/Redis/
+            # NATS/Infinity/ES/etc.) WITHOUT the model-backed native DeepDoc
+            # tests. The native tests need MODEL_DIR + the InfiniFlow/deepdoc
+            # snapshot and are covered separately by `--test-native` /
+            # `ragflow_native_backend` in CI; running them here would also force
+            # the `fetch_testdata` tag's init-time network fetch of testdata,
+            # which is undesirable in a generic CI run. Use this target for the
+            # CI integration job. e.g. `$0 --test-integration-go ./internal/storage/...`
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged integration "${args[@]:2}"
+            else
+                run_go_tests_tagged integration "${args[@]:1}"
+            fi
             ;;
         --test-e2e)
             check_go_deps

@@ -38,7 +38,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component/globals"
 )
 
@@ -52,7 +52,7 @@ const TTL = 7 * 24 * time.Hour
 const keyNamespace = "kc"
 
 // Store is the slice of the Redis client this package needs.
-// *redis.Client satisfies it; tests supply an in-memory double.
+// *kvrocks.Client satisfies it; tests supply an in-memory double.
 type Store interface {
 	Get(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key, value string, exp time.Duration) bool
@@ -63,11 +63,11 @@ type Store interface {
 }
 
 // Client resolves the process-wide Redis client as a Store, or nil when Redis
-// is not configured. Always resolve through this function: passing redis.Get()
+// is not configured. Always resolve through this function: passing kvrocks.Get()
 // directly into a Store parameter would wrap a typed nil pointer in a non-nil
 // interface, defeating the nil guards below.
 func Client() Store {
-	if c := redis.Get(); c != nil {
+	if c := kvrocks.Get(); c != nil {
 		return c
 	}
 	return nil
@@ -168,22 +168,29 @@ func Set(ctx context.Context, s Store, key, value string) {
 // PurgeTask drops every cache entry recorded for taskID, then the manifest
 // itself. Call it once the task's chunks are durably persisted: from that point
 // nothing can read the entries back, so holding them for the remaining TTL is
-// pure waste.
+// pure waste. A manifest read failure is returned because callers that remove
+// the task row must not make resumable cleanup look complete while Redis is
+// unavailable.
 //
 // The manifest is deleted last: losing it first would orphan the entries it
 // still lists, leaving them to expire. Best-effort — a failed reclaim only
 // means the entries wait out their TTL.
-func PurgeTask(ctx context.Context, s Store, taskID string) {
+func PurgeTask(ctx context.Context, s Store, taskID string) error {
 	if s == nil || taskID == "" {
-		return
+		return nil
 	}
 	mk := manifestKey(taskID)
 	keys, err := s.SMembers(ctx, mk)
 	if err != nil {
-		return
+		return fmt.Errorf("read chunk cache manifest %s: %w", mk, err)
 	}
 	for _, k := range keys {
-		s.Delete(ctx, k)
+		if !s.Delete(ctx, k) {
+			return fmt.Errorf("delete chunk cache entry %s", k)
+		}
 	}
-	s.Delete(ctx, mk)
+	if !s.Delete(ctx, mk) {
+		return fmt.Errorf("delete chunk cache manifest %s", mk)
+	}
+	return nil
 }

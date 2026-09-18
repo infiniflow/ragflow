@@ -346,6 +346,8 @@ export default {
       welcome: '欢迎回来',
       description: '今天我们要使用哪个知识库？',
       createKnowledgeBase: '创建知识库',
+      builtInTemplate: '内置模板',
+      ingestionPipeline: 'Ingestion pipeline',
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
@@ -378,7 +380,7 @@ export default {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
-        builtIn: '内置',
+        builtIn: '内置解析模板',
         generation: '生成',
         toMetadataSettingTip: '在配置中设置自动元数据',
         toMetadataSetting: '生成设置',
@@ -457,7 +459,7 @@ export default {
       completed: '已完成',
       datasetLog: '知识库日志',
       created: '创建于',
-      learnMore: '内置 pipeline 简介',
+      learnMore: '查看内置解析方法说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
@@ -476,7 +478,7 @@ export default {
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
-      datasetDescription: '解析成功后才能问答哦。',
+      datasetDescription: '只有解析成功后才能问答。',
       addFile: '新增文件',
       searchFiles: '搜索文件',
       localFiles: '本地文件',
@@ -569,9 +571,9 @@ export default {
 
       html4excel: '表格转 HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
-      autoKeywords: '自动关键词提取',
+      autoKeywords: '自动关键词提取数',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
-      autoQuestions: '自动问题提取',
+      autoQuestions: '自动问题提取数',
       autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoTags: '自动标签提取',
       redo: '是否清空已有 {{chunkNum}}个 Chunk？',
@@ -674,27 +676,27 @@ export default {
       editLinkDataPipeline: '编辑 pipeline',
       linkPipelineSetTip: '管理与此知识库的数据管道链接',
       default: '默认',
-      dataPipeline: '切换或配置 ingestion pipeline。',
+      dataPipeline: '选择或切换解析方式',
       linkDataPipeline: '关联 pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方法',
-      manualSetup: '选择pipeline',
-      builtIn: '内置',
+      parseType: '解析方式',
+      manualSetup: '自定义Ingestion pipeline',
+      builtIn: '内置解析模板',
       titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
-      photoTip: '你可以上传 4MB 的文件',
+      photoTip: '可以上传 4MB 以内的文件',
       description: '描述',
       language: '文档语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请输入语言',
       permissions: '权限',
       embeddingModel: 'Embedding 模型',
-      chunkTokenNumber: '建议文本块大小',
+      chunkTokenNumber: '推荐分块大小',
       chunkTokenNumberMessage: '块 Token 数是必填项',
       embeddingModelTip:
         '知识库采用的默认 Embedding 模型。一旦知识库内已经产生了文本块，更换 Embedding 模型时，系统将随机抽取若干 Chunk 进行兼容性校验，使用新 Embedding 模型重新编码并计算新旧向量的余弦相似度，样本平均相似度需 ≥ 0.9 方可切换。否则，必须删除知识库内的所有文本块后才能更改。',
@@ -748,7 +750,7 @@ export default {
       这样做的好处是 LLM 可以更好的概括论文中相关章节的内容，
       产生更全面的答案，帮助读者更好地理解论文。
       缺点是它增加了 LLM 对话的背景并增加了计算成本，
-      所以在对话过程中，你可以考虑减少‘<b>topN</b>’的设置。</p>`,
+      所以在对话过程中，可以考虑减少‘<b>topN</b>’的设置。</p>`,
       presentation: `<p>支持的文件格式为<b>PDF</b>、<b>PPTX</b>。</p><p>
       每个页面都将被视为一个块。 并且每个页面的缩略图都会被存储。</p><p>
       <i>您上传的所有 PPT 文件都会使用此方法自动分块，无需为每个PPT文件进行设置。</i></p>`,
@@ -808,7 +810,7 @@ export default {
       </p><p>
       对于一个文档，它将被视为一个完整的块，根本不会被分割。
       </p><p>
-      如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
+      如果需要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，可以尝试这种方法。
       </p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
@@ -876,7 +878,7 @@ export default {
       <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
       <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
-      <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
+      <li>在给知识库文本块批量打标签之前，需要先生成标签集作为样本。 </li>
       <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
       <p> 详见：https://ragflow.io/docs/dataset_configuration#basic-information </p>
@@ -957,7 +959,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       send: '发送',
       sendPlaceholder: '给助理发送消息...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '为你的知识库配置专属聊天助手！ 💕',
+      chatConfigurationDescription: '为知识库配置知识问答聊天！ 💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填项',
       namePlaceholder: '例如 贾维斯简历',
@@ -1126,21 +1128,40 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '在问答过程中是否启用推理工作流，类似 Deepseek-R1 等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
-      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      tavilyApiKeyMessage: '请输入 Tavily API Key',
       webSearch: '网络搜索',
       webSearchProvider: '网络搜索服务',
       webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
       webSearchProviderPlaceholder: '请选择网络搜索服务',
+      webSearchApiKeyRequired:
+        '所选服务必须填写 API Key —— 否则不会发起联网搜索，聊天框里也不会出现联网开关。',
+      // 密钥输入框的标签。{{provider}} 是 provider 的品牌名，故意不翻译，
+      // 因此一个模板即可覆盖全部 9 个 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
+      // 每个 provider 一组 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
+      braveApiKeyMessage: '请输入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。选择 Exa 后，将使用其搜索结果补充知识库检索。即使是每月 1,000 次的免费额度，也仍然需要 Key。',
+      exaApiKeyMessage: '请输入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '选择 Firecrawl 后，将使用其搜索结果补充知识库检索。只取搜索摘要，不抓取整页。',
+      firecrawlApiKeyMessage: '请输入你的 Firecrawl API Key',
+      linkupApiKeyTip: '选择 Linkup 后，将使用其搜索结果补充知识库检索。',
+      linkupApiKeyMessage: '请输入你的 Linkup API Key',
+      parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
+      parallelApiKeyMessage: '请输入你的 Parallel API Key',
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
-      queritApiKeyMessage: '请输入你的 Querit API Key',
+      queritApiKeyMessage: '请输入 Querit API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
-      serplyApiKeyMessage: '请输入你的 Serply API Key',
+      serplyApiKeyMessage: '请输入 Serply API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
-      tavilyApiKeyHelp: '如何获取？',
+      webSearchApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
@@ -2102,6 +2123,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       skillDeleteTitle: '删除 Skill',
       skillDeleteDescription: '确定要删除该 Skill 吗？',
       navTitle: 'PageIndex',
+      navLogTitle: '导航树日志',
       navEmpty: '暂无导航节点',
       navLoadFailed: '加载目录树失败',
       navChildLoadFailed: '加载子节点失败',
@@ -2207,17 +2229,20 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tagsPlaceholder: '输入标签后按回车',
       tagSuggestionsLabel: '现有标签',
       removeTagAriaLabel: '删除 {{tag}}',
-      includeHeadingContent: '分离上级标题正文',
+      includeHeadingContent: '分离上级标题内容',
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
-      rootAsHeading: '将首个切片设为 H0 标题',
+      chunkTokenCap: '分块 Token 上限',
+      chunkTokenCapTip:
+        '每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
+      rootAsHeading: '将首个分块设为全局上下文',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
-      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
+      hierarchyTip: `构建标题层级树并生成独立分块，每个分块均包含完整的上级标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
 适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
-      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
-适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
-      enableMultiColumn: '启用多栏',
+      groupTip: `在选定的标题层级对文档进行扁平分块，并合并相邻的小节，以保持语义连贯性。分块中不包含上级标题路径。\n
+适用场景：内容连续、上下文关联较强的文档，例如书籍、手册、报告和文章。这类文档通常需要保留相邻段落，以维持叙述连贯性。`,
+      enableMultiColumn: '多栏布局识别',
       enableMultiColumnTip:
         '检测并解析多栏页面布局以保持正确的阅读顺序。对于具有双栏或报纸式布局的 PDF 或文档，请开启此功能。',
       removeToc: '移除原始目录',
@@ -2334,7 +2359,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       communication: '通信',
       developer: '开发者',
       typeCommandORsearch: '输入命令或或搜索...',
-      builtIn: '内置',
+      builtIn: '内置解析模板',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
@@ -2469,7 +2494,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       baiduDescription: `此组件用于从 www.baidu.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',
+        '此组件用于从 [www.duckduckgo.com](http://www.duckduckgo.com) 获取搜索结果。通常，它作为知识库的补充。Top N 指定需要调整的搜索结果数量。',
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
@@ -2900,7 +2925,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         upload: '上传',
         photo: '照片',
         permissions: '权限',
-        permissionsTip: '你可以在这里设置团队访问权限。',
+        permissionsTip: '可以在这里设置团队访问权限。',
         me: '仅限自己',
         team: '团队',
       },
@@ -2910,7 +2935,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
-        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。可以通过斜杠或者 (x) 按钮显示可用的 key。',
       knowledgeBasesTip: '选择关联的知识库，或者在下方选择包含知识库ID的变量。',
       knowledgeBaseVars: '知识库变量',
       code: '代码',
@@ -2938,8 +2963,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       query: '查询变量',
       queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
-      documentIds: '文档 ID 列表',
-      documentIdsTip: '可选，限制检索范围的文档 ID 列表，支持引用上游变量',
       agent: '智能体',
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
@@ -3066,7 +3089,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       // group: '聚合',
       // hierarchy: '层次结构',
       regularExpressions: '正则表达式',
-      overlappedPercent: '重叠百分比（%）',
+      overlappedPercent: '重叠比例（%）',
       searchMethod: '搜索方法',
       searchMethodTip: `决定该知识库启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
@@ -3080,12 +3103,12 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       viewResult: '查看结果',
       running: '运行中',
       summary: '增强上下文',
-      keywords: '关键词',
-      questions: '问题',
+      keywords: '自动关键词',
+      questions: '自动问题',
       metadata: '元数据',
       fieldName: '结果目的地',
       enableSummary: '启用增强上下文',
-      useBuiltInTemplate: '使用内置模板',
+      useBuiltInTemplate: '使用内置解析模板',
       prompts: {
         system: {
           keywords: `角色

@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"strconv"
 	"strings"
 	"time"
@@ -78,12 +78,12 @@ type AgentHandler struct {
 	fileService  agentFileService
 	loader       canvasLoader
 	// redisGet fetches a raw string from Redis. Defaults to the global
-	// client (redis.Get) so production behaviour is unchanged; tests inject
+	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
 	// live Redis (mirrors the newExecutor injection pattern).
 	redisGet func(key string) (string, error)
 	// redisStore writes the debug-run log array. Defaults to the global
-	// client (redis.Get, which satisfies task.DebugLogStore); tests inject a
+	// client (kvrocks.Get, which satisfies task.DebugLogStore); tests inject a
 	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
 	// live Redis.
 	redisStore task.DebugLogStore
@@ -112,8 +112,8 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return redis.Get().Get(ctx, key) },
-		redisStore:   redis.Get(),
+		redisGet:     func(key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
+		redisStore:   kvrocks.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
 		},
@@ -1363,6 +1363,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	hasEvents := false
 	for ev := range events {
 		hasEvents = true
+		if ev.Type == "error" {
+			common.ResponseWithCodeData(c, common.CodeServerError, false, agentRunEventMessage(ev, "Agent run failed."))
+			return
+		}
 		var evData map[string]any
 		if err := json.Unmarshal([]byte(ev.Data), &evData); err == nil {
 			if ev.Type == "message" {
@@ -1635,7 +1639,7 @@ func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canva
 // api/apps/restful_apis/agent_api.py:992 — but unlike the Python
 // implementation this handler does not sync a Canvas replica.
 // `api.apps.services.canvas_replica_service.CanvasReplicaService` is
-// the Python Redis-backed runtime replica (distributed lock + 3h TTL);
+// the Python Kvrocks-backed runtime replica (distributed lock + 3h TTL);
 // it is intentionally NOT ported to Go. The Go agent port runs every
 // agent through eino's compose.Workflow.Invoke, which is reconstructed
 // from the DSL on each run, so the replica's read-side acceleration

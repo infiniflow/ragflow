@@ -35,8 +35,22 @@ import (
 )
 
 const (
-	redactedLogValue = "[REDACTED]"
+	redactedLogValue      = "[REDACTED]"
+	maxLoggedVectorFloats = 3
 )
+
+// APIStatusError is a provider HTTP failure with its status code preserved, so
+// callers can act on the status (failover cooldown, retry) instead of matching
+// the error text. The shared request helpers return it; the message is byte-for-
+// byte what plain fmt.Errorf produced before, so existing assertions still hold.
+type APIStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *APIStatusError) Error() string {
+	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
+}
 
 type BaseModel struct {
 	BaseURL          map[string]string
@@ -224,7 +238,7 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -259,7 +273,7 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -292,7 +306,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 		if err != nil {
 			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	return handler(resp.Body)
@@ -494,11 +508,12 @@ func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if !common.IsLLMDebugEnabled() {
 		return base
 	}
-	return &providerLoggingTransport{base: base}
+	return &providerLoggingTransport{base: base, now: time.Now}
 }
 
 type providerLoggingTransport struct {
 	base http.RoundTripper
+	now  func() time.Time
 }
 
 func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -509,20 +524,23 @@ func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response,
 	providerURL := redactProviderURL(req.URL)
 	logPayload := redactProviderBody(payload)
 
+	startedAt := t.now()
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		logProviderCall(providerURL, logPayload, 0, "", err)
+		logProviderCall(providerURL, logPayload, 0, "", t.now().Sub(startedAt), 0, err)
 		return nil, err
 	}
 	if resp.Body == nil {
-		logProviderCall(providerURL, logPayload, resp.StatusCode, "", nil)
+		logProviderCall(providerURL, logPayload, resp.StatusCode, "", t.now().Sub(startedAt), 0, nil)
 		return resp, nil
 	}
 
 	resp.Body = &providerResponseBody{
 		ReadCloser: resp.Body,
-		log: func(body []byte) {
-			logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), nil)
+		startedAt:  startedAt,
+		now:        t.now,
+		log: func(body []byte, took, firstToken time.Duration) {
+			logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), took, firstToken, nil)
 		},
 	}
 	return resp, nil
@@ -532,31 +550,38 @@ func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response,
 // streaming delivery instead of eagerly reading the entire provider response.
 type providerResponseBody struct {
 	io.ReadCloser
-	body bytes.Buffer
-	once sync.Once
-	log  func([]byte)
+	body       bytes.Buffer
+	startedAt  time.Time
+	now        func() time.Time
+	firstToken time.Duration
+	firstOnce  sync.Once
+	logOnce    sync.Once
+	log        func([]byte, time.Duration, time.Duration)
 }
 
 func (b *providerResponseBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	if n > 0 {
+		b.firstOnce.Do(func() {
+			b.firstToken = b.now().Sub(b.startedAt)
+		})
 		_, _ = b.body.Write(p[:n])
 	}
 	if err == io.EOF {
-		b.logOnce()
+		b.writeLogOnce()
 	}
 	return n, err
 }
 
 func (b *providerResponseBody) Close() error {
 	err := b.ReadCloser.Close()
-	b.logOnce()
+	b.writeLogOnce()
 	return err
 }
 
-func (b *providerResponseBody) logOnce() {
-	b.once.Do(func() {
-		b.log(b.body.Bytes())
+func (b *providerResponseBody) writeLogOnce() {
+	b.logOnce.Do(func() {
+		b.log(b.body.Bytes(), b.now().Sub(b.startedAt), b.firstToken)
 	})
 }
 
@@ -638,6 +663,10 @@ func redactProviderValue(value any) {
 				value[key] = redactedLogValue
 				continue
 			}
+			if isVectorLogKey(key) {
+				child = truncateLoggedVectors(child)
+				value[key] = child
+			}
 			redactProviderValue(child)
 		}
 	case []any:
@@ -645,6 +674,47 @@ func redactProviderValue(value any) {
 			redactProviderValue(child)
 		}
 	}
+}
+
+func isVectorLogKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "embedding", "embeddings", "vector", "vectors":
+		return true
+	default:
+		return false
+	}
+}
+
+func truncateLoggedVectors(value any) any {
+	switch value := value.(type) {
+	case []any:
+		if isNumericVector(value) {
+			if len(value) > maxLoggedVectorFloats {
+				return value[:maxLoggedVectorFloats]
+			}
+			return value
+		}
+		for i, child := range value {
+			value[i] = truncateLoggedVectors(child)
+		}
+	case map[string]any:
+		for key, child := range value {
+			value[key] = truncateLoggedVectors(child)
+		}
+	}
+	return value
+}
+
+func isNumericVector(value []any) bool {
+	if len(value) == 0 {
+		return false
+	}
+	for _, item := range value {
+		if _, ok := item.(float64); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func isSensitiveLogKey(key string) bool {
@@ -657,9 +727,9 @@ func isSensitiveLogKey(key string) bool {
 	}
 }
 
-func logProviderCall(providerURL, payload string, statusCode int, responseBody string, err error) {
+func logProviderCall(providerURL, payload string, statusCode int, responseBody string, took, firstToken time.Duration, err error) {
 	request := fmt.Sprintf("url=%s payload=%s", providerURL, payload)
-	response := fmt.Sprintf("response_code=%d response_body=%s", statusCode, responseBody)
+	response := fmt.Sprintf("response_code=%d took=%s first-token=%s response_body=%s", statusCode, took, firstToken, responseBody)
 	if err != nil {
 		response += " error=" + err.Error()
 	}

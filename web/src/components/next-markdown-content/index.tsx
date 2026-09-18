@@ -395,7 +395,7 @@ function MarkdownContent({
     [renderPopoverContent, t],
   );
 
-  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const dir = getDirAttribute(content?.replace(citationMarkerReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
   return (

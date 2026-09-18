@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package redis
+package kvrocks
 
 import (
 	"context"
@@ -47,7 +47,7 @@ type Client struct {
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
 	luaAutoIncrement *redis.Script
-	config           config.RedisConfig
+	config           config.KvrocksConfig
 }
 
 // Message represents a message from Redis Stream
@@ -106,22 +106,23 @@ const (
 	`
 )
 
-// Init InitRedis initializes Redis client
+// Init initializes the Kvrocks client. Kvrocks is the only supported cache/queue
+// backend for the Go services; if it is unreachable the process fails fast.
 func Init(ctx context.Context) error {
 	var initErr error
 	once.Do(func() {
 		globalConfig := server.GetConfig()
-		redisConfig := globalConfig.GetRedisConfig()
+		kvrocksConfig := globalConfig.GetKvrocksConfig()
 
-		if redisConfig.Host == "" {
-			common.Info("Redis host not configured, skipping Redis initialization")
+		if kvrocksConfig.Host == "" {
+			initErr = fmt.Errorf("kvrocks host not configured")
 			return
 		}
 
 		client := redis.NewClient(&redis.Options{
-			Addr:     fmt.Sprintf("%s:%d", redisConfig.Host, redisConfig.Port),
-			Password: redisConfig.Password,
-			DB:       redisConfig.DB,
+			Addr:     fmt.Sprintf("%s:%d", kvrocksConfig.Host, kvrocksConfig.Port),
+			Password: kvrocksConfig.Password,
+			DB:       kvrocksConfig.DB,
 		})
 
 		// Test connection
@@ -129,21 +130,21 @@ func Init(ctx context.Context) error {
 		defer cancel()
 
 		if err := client.Ping(redisCtx).Err(); err != nil {
-			initErr = fmt.Errorf("failed to connect to Redis: %w", err)
+			initErr = fmt.Errorf("failed to connect to Kvrocks: %w", err)
 			return
 		}
 
 		globalClient = &Client{
 			client:           client,
-			config:           redisConfig,
+			config:           kvrocksConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		}
 
-		common.Info("Redis client initialized",
-			zap.String("host", redisConfig.Host),
-			zap.Int("port", redisConfig.Port),
-			zap.Int("db", redisConfig.DB),
+		common.Info("Kvrocks client initialized",
+			zap.String("host", kvrocksConfig.Host),
+			zap.Int("port", kvrocksConfig.Port),
+			zap.Int("db", kvrocksConfig.DB),
 		)
 	})
 	return initErr

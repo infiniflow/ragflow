@@ -498,54 +498,50 @@ func newKnowledgeCompilerTemplateResolver() kc.TemplateResolver {
 // component resolves its embedder.
 func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 	svc := service.NewModelProviderService()
+	modelSolver := service.NewModelSolver()
 	return func(tenantID, llmID, embeddingModel string) (kc.Deps, error) {
 		if strings.TrimSpace(llmID) == "" {
 			// No explicit chat model was supplied (e.g. the dataset-level deduper
 			// is seeded with a global default that may be empty). Resolve the
 			// tenant's default chat model so cross-document LLM merging can
 			// actually run instead of failing / falling back to a no-op. Use the
-			// composite "<model>@<instance>@<provider>" reference (not the bare
-			// model name) so later Chat/ResolveModelConfig round-trips can locate
-			// the provider.
-			defaultRef, derr := svc.GetTenantDefaultModelRef(context.Background(), tenantID, entity.ModelTypeChat)
-			if derr != nil || strings.TrimSpace(defaultRef) == "" {
+			// tenant model ID so later model resolution can use the same persisted
+			// tenant model directly.
+			defaultTarget, derr := modelSolver.ResolveDefaultModelConfig(context.Background(), tenantID, entity.ModelTypeChat)
+			if derr != nil || defaultTarget == nil || strings.TrimSpace(defaultTarget.ModelID) == "" {
 				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
 			}
-			llmID = defaultRef
+			llmID = defaultTarget.ModelID
 			// Keep the fall-through path below for ModelContextLen resolution so
 			// both explicit and default model refs share one context-window path.
 		}
 		// Resolve the chat model's context window so RAPTOR can truncate each
 		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
-		// This uses content_length (PR #17839) — the total context window — not
-		// max_output. max_output is only the generation cap; using it as the
-		// budget source would collapse per-chunk input quotas.
+		// ContextLength is the total context window; MaxTokens is only the
+		// generation cap and must not be used as the input budget.
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup so a stalled provider/instance DB read
 		// cannot block document ingestion indefinitely.
 		contextLengthCtx, cancelContextLength := context.WithTimeout(context.Background(), 30*time.Second)
-		ml, contextLengthErr := svc.ResolveModelContextLength(contextLengthCtx, tenantID, llmID)
+		modelTarget, contextLengthErr := modelSolver.ResolveModelConfig(contextLengthCtx, tenantID, entity.ModelTypeChat, llmID)
 		cancelContextLength()
-		if contextLengthErr == nil && ml > 0 {
-			llmMax = ml
+		if contextLengthErr == nil && modelTarget != nil && modelTarget.ContextLength > 0 {
+			llmMax = modelTarget.ContextLength
 		}
 		// Resolve the model's generation cap (max_output). Cross-document merge
 		// judging packs many pairs into one LLM call; the batch must be bounded by
 		// BOTH the input window and this output cap, so a large candidate set
 		// never overflows max_output and yields a truncated/non-JSON reply. This
 		// uses max_tokens (the generation cap), NOT content_length — see
-		// ResolveModelContextLength's comment.
+		// ModelSolver.ResolveModelConfig's ContextLength and MaxTokens fields.
 		llmMaxOutput := 0
-		modelConfigCtx, cancelModelConfig := context.WithTimeout(context.Background(), 30*time.Second)
-		_, _, _, mo, modelConfigErr := svc.ResolveModelConfig(modelConfigCtx, tenantID, entity.ModelTypeChat, llmID)
-		cancelModelConfig()
-		if modelConfigErr == nil && mo > 0 {
-			llmMaxOutput = mo
+		if contextLengthErr == nil && modelTarget != nil && modelTarget.MaxTokens > 0 {
+			llmMaxOutput = modelTarget.MaxTokens
 		}
 
 		return kc.Deps{
 			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
-			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
+			Embed:           &kcEmbedder{svc: svc, solver: modelSolver, tenantID: tenantID, embdID: embeddingModel},
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
 			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
@@ -604,6 +600,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
+	failureReporter := kc.RetryFailureReporter{}
 	attempt := 0
 	call := func() error {
 		attempt++
@@ -615,15 +612,23 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
 		if err != nil {
 			if !req.DisableRetry {
-				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, kc.CompactError(err))
-				if appcommon.IsTransientError(err) && attempt <= kcChatRetryMax {
-					message += "; retrying with exponential backoff"
+				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
+				delay := kcChatRetryDelay
+				if final {
+					delay = 0
 				}
-				runtime.ReportProgressMessage(ctx, "Compiler", message)
+				if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
+					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				}
 			}
 			return err
 		}
 		resp = r
+		if !req.DisableRetry {
+			if message, ok := failureReporter.RecoveryMessage(attempt); ok {
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
+		}
 		return nil
 	}
 	if req.DisableRetry {
@@ -658,6 +663,7 @@ const kcChatRetryDelay = 2 * time.Second
 // the component's product schema.
 type kcEmbedder struct {
 	svc      *service.ModelProviderService
+	solver   *service.ModelSolver
 	tenantID string
 	embdID   string
 	dim      atomic.Int64
@@ -745,14 +751,14 @@ func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, 
 		}
 		return mdl, nil
 	}
-	driver, name, apiConfig, _, err := e.svc.GetTenantDefaultModelByType(ctx, e.tenantID, entity.ModelTypeEmbedding)
+	target, err := e.solver.ResolveDefaultModelConfig(ctx, e.tenantID, entity.ModelTypeEmbedding)
 	if err != nil {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
 	}
-	if driver == nil || name == "" {
+	if target == nil || target.Driver == nil || target.ModelName == "" {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
 	}
-	return &models.EmbeddingModel{ModelDriver: driver, ModelName: &name, APIConfig: apiConfig}, nil
+	return &models.EmbeddingModel{ModelDriver: target.Driver, ModelName: &target.ModelName, APIConfig: target.APIConfig}, nil
 }
 
 func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }

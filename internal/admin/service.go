@@ -24,13 +24,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -998,19 +1000,36 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 type ServiceStatus struct {
 	Type    string `json:"type"`
 	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
 	Status  string `json:"status"`
 	Elapsed string `json:"elapsed"`
 	Message string `json:"message"`
 }
 
-func newServiceStatus(typeStr, nameStr, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
+func newServiceStatus(typeStr, nameStr, host string, port int, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
 	return ServiceStatus{
 		Type:    typeStr,
 		Name:    nameStr,
+		Host:    host,
+		Port:    port,
 		Status:  statusStr,
 		Elapsed: fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 		Message: messageStr,
 	}
+}
+
+func serviceEndpoint(raw string, defaultPort int) (string, int) {
+	if parsed, err := url.Parse(raw); err == nil && parsed.Hostname() != "" {
+		raw = parsed.Host
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err == nil {
+		var portNumber int
+		fmt.Sscanf(port, "%d", &portNumber)
+		return host, portNumber
+	}
+	return raw, defaultPort
 }
 
 // ListServices get all services
@@ -1026,48 +1045,64 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		mysqlStatus := s.getMySQLStatus(ctx)
 		results = append(results, mysqlStatus)
 	default:
-		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+		mysqlConfig := globalConfig.GetMySQLConfig()
+		results = append(results, newServiceStatus("database", databaseType, mysqlConfig.Host, mysqlConfig.Port, "not available", time.Now(), "not supported database type"))
 	}
 
 	// Doc engine
 	docEngineImpl := engine.Get()
+	docHost, docPort := "-", 0
+	if docEngineImpl.GetType() == "infinity" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
+	} else if docEngineImpl.GetType() == "elasticsearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {
-		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "alive", time.Now(), ""))
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), docHost, docPort, "alive", time.Now(), ""))
 	} else {
-		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "timeout", time.Now(), err.Error()))
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), docHost, docPort, "timeout", time.Now(), err.Error()))
 	}
 
 	// storage engine
 	storageImpl := storage.GetStorageFactory().GetStorage()
+	storageHost, storagePort := "-", 0
+	if storageImpl.Type() == "minio" {
+		storageHost, storagePort = serviceEndpoint(globalConfig.GetMinioConfig().Host, 0)
+	}
 	storageHealth := storageImpl.Health(ctx)
 	if storageHealth {
-		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "alive", time.Now(), ""))
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), storageHost, storagePort, "alive", time.Now(), ""))
 	} else {
-		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "timeout", time.Now(), ""))
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), storageHost, storagePort, "timeout", time.Now(), ""))
 	}
 
 	// cache engine
 	cacheType := globalConfig.CacheEngineType()
 	switch cacheType {
-	case "redis":
+	// The Go stack talks to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template; both map to
+	// the same Kvrocks backend, so probe the same connection.
+	case "redis", "kvrocks":
 		mysqlStatus := s.getRedisInfo(ctx)
 		results = append(results, mysqlStatus)
 	default:
-		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+		redisConfig := globalConfig.GetKvrocksConfig()
+		results = append(results, newServiceStatus("cache", cacheType, redisConfig.Host, redisConfig.Port, "not available", time.Now(), "not supported cache type"))
 	}
 
 	// message queue
 	messageQueueImpl := engine.GetMessageQueueEngine()
 	messageQueueStatus := messageQueueImpl.CheckStatus()
-	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
+	natsConfig := globalConfig.GetNATSConfig()
+	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), natsConfig.Host, natsConfig.Port, messageQueueStatus, time.Now(), ""))
 
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {
 		now := time.Now()
-		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, "", serverStatus.Timestamp, "")
+		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
 		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
 			serverItem.Status = "alive"
@@ -1134,16 +1169,19 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	sqlDB, err := dao.DB.DB()
 	if err != nil {
-		return newServiceStatus(serviceType, name, "not connected", startTime, err.Error())
+		mysqlConfig := server.GetConfig().GetMySQLConfig()
+		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "not connected", startTime, err.Error())
 	}
 
 	// Execute SELECT 1 to check connectivity
 	err = sqlDB.PingContext(ctx)
 	if err != nil {
-		return newServiceStatus(serviceType, name, "timeout", startTime, err.Error())
+		mysqlConfig := server.GetConfig().GetMySQLConfig()
+		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "timeout", startTime, err.Error())
 	}
 
-	return newServiceStatus(serviceType, name, "alive", startTime, "")
+	mysqlConfig := server.GetConfig().GetMySQLConfig()
+	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
 }
 
 // getRedisInfo gets Redis service info
@@ -1153,13 +1191,14 @@ func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
 	name := "redis"
 
 	startTime := time.Now()
+	redisConfig := server.GetConfig().GetKvrocksConfig()
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		return newServiceStatus(serviceType, name, "alive", startTime, "")
+		return newServiceStatus(serviceType, name, redisConfig.Host, redisConfig.Port, "alive", startTime, "")
 	}
 
-	return newServiceStatus(serviceType, name, "timeout", startTime, "Redis health check failed")
+	return newServiceStatus(serviceType, name, redisConfig.Host, redisConfig.Port, "timeout", startTime, "Redis health check failed")
 }
 
 // getESClusterStats gets Elasticsearch cluster stats

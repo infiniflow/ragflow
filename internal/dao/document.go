@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DocumentDAO document data access object
@@ -43,6 +44,18 @@ func (dao *DocumentDAO) Create(ctx context.Context, db *gorm.DB, document *entit
 func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
 	err := db.WithContext(ctx).First(&document, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &document, nil
+}
+
+// GetByIDForUpdate fetches a document while holding the row lock used to
+// serialize creation of its ingestion-run identity. Callers must use a short
+// transaction and perform no external I/O while holding the lock.
+func (dao *DocumentDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
+	var document entity.Document
+	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +169,7 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 	// only the newest row, with ID as a deterministic tie-breaker for equal
 	// create times. This ordering must match IngestionTaskDAO's task lookups.
 	listQuery := db.WithContext(ctx).Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status`).
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").

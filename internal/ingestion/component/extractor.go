@@ -1507,7 +1507,8 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 }
 
 // extractorContextFitBudget returns 97% of the model's context window as the
-// fitting budget, mirroring the agent component's contextFitBudget. The
+// fitting budget, mirroring agent/chat's ContextFitBudget (the canonical
+// helper) plus the clamp below. The
 // margin leaves headroom for the difference between the cl100k tokenizer used
 // for counting and the model's own tokenizer, plus per-message formatting
 // overhead, so a fitted prompt stays inside the provider's real context limit
