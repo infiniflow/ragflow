@@ -404,12 +404,3 @@ class TestListOperationsSortInv:
         # Call _sort directly: it should treat None as no items.
         list_ops._sort()
         assert list_ops._param.outputs["result"]["value"] == []
-
-    def test_inputs_is_none_treated_as_empty(self, lo_module, list_ops):
-        """Edge case — the operator handles ``self.inputs is None`` by
-        skipping the op entirely (set in ``_invoke``). Pin the contract."""
-        list_ops.inputs = None
-        # No-op when inputs is None (matches the early return in _invoke).
-        # Call _sort directly: it should treat None as no items.
-        list_ops._sort()
-        assert list_ops._param.outputs["result"]["value"] == []
