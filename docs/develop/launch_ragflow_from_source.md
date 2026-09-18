@@ -37,44 +37,46 @@ git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 ```
 
-### Install Python Dependencies
+### Install Go and Native Dependencies
 
-1. Install uv:
-
-   ```bash
-   pipx install uv
-   ```
-
-2. Install RAGFlow service's Python dependencies:
+1. Install Go:
 
    ```bash
-   uv sync --python 3.13 --frozen
+   wget https://go.dev/dl/go1.26.4.linux-amd64.tar.gz
+   sudo rm -rf /usr/local/go
+   sudo tar -C /usr/local -xzf go1.25.4.linux-amd64.tar.gz
+   echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+   source ~/.bashrc
+   go version
    ```
-   *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
-   If you need to run tests against the RAGFlow service, install the test dependencies:
+2. Install native dependencies:
+
+   sudo apt update
+   sudo apt install -y cmake clang-20 lld-20 libpcre2-dev
+
+3. Download the native libraries and model files required by Go:
+
+   python3 ragflow_deps/download_go_deps.py
+
+4. Build the Go binaries and the required C++ bindings:
 
    ```bash
-   uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
+   ./build.sh --all
    ```
 
-:::note macOS
-On macOS, some Python dependencies link against native libraries that are not installed by default. Install them with Homebrew before launching the backend service:
+   For a production build with debug symbols removed:
 
    ```bash
-   brew install unixodbc jemalloc pkg-config
+   ./build.sh --strip --all
    ```
-
-- `unixodbc` provides `libodbc.2.dylib`, which the `pyodbc` package links against. Without it, `import pyodbc` fails with `Library not loaded: .../libodbc.2.dylib` (the full path is `$(brew --prefix unixodbc)/lib/libodbc.2.dylib`; `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel), and the ExeSQL agent tool fails to load (look for `Warning: Failed to import module exesql` at startup).
-- `jemalloc` and `pkg-config` are required by the preload commands used to launch the task executor; see step 5 of [Launch the RAGFlow Backend Service](#launch-the-ragflow-backend-service).
-:::
 
 ### Launch Third-Party Services
 
-The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+The following command launches the required services, including MinIO, Infinity, Redis, MySQL, NATS, and Kvrocks, using Docker Compose:
 
 ```bash
-docker compose -f docker/docker-compose-base.yml up -d
+docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity --profile mysql up -d
 ```
 
 ### Update `host` and `port` Settings for Third-Party Services
@@ -87,46 +89,28 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-### Launch the RAGFlow Backend Service
 
-1. Comment out the `nginx` line in **docker/entrypoint.sh**.
+### Launch the RAGFlow Go Backend
 
-   ```
-   # /usr/sbin/nginx
-   ```
+1. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
 
-2. Activate the Python virtual environment:
+2. Run database migrations:
 
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   ```
+   ./bin/ragflow_server --migrate
 
-3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
+3. Start the admin server:
 
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
+   ./bin/ragflow_server --admin
 
-4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
+4. Open another terminal and start the API server:
 
-5. Run the **entrypoint.sh** script to launch the backend service:
+   ./bin/ragflow_server --api
 
-   ```shell
-   JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
-   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
-   ```
+5. Open another terminal and start the ingestor:
 
-   On macOS, use the Homebrew dylib and `DYLD_INSERT_LIBRARIES` instead:
+   ./bin/ragflow_server --ingestor
 
-   ```shell
-   JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.2.dylib;
-   DYLD_INSERT_LIBRARIES=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
-   ```
-
-   ```shell
-   python api/ragflow_server.py;
-   ```
+The admin server must be started before the API and ingestor servers.
 
 ### Launch the RAGFlow Frontend Service
 
@@ -137,17 +121,12 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Start the RAGFlow frontend service with the proxy configured for the Python backend:
+2. Start the RAGFlow frontend service with the proxy configured for the Go backend:
 
-   ```bash
-   API_PROXY_SCHEME=python npm run dev
-   ```
+   API_PROXY_SCHEME=go npm run dev
 
-   The `python` proxy scheme routes API requests to the Python backend on port `9380`. Use `go` for the Go backend on port `9384`, or `hybrid` when running both backends.
+The `go` proxy scheme routes all API requests to the Go API server on port `9384`.
 
-   *The following message appears, showing the IP address and port number of your frontend service:*
-
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 ### Access the RAGFlow Service
 
@@ -155,12 +134,10 @@ In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number 
 
 ### Stop the RAGFlow Service When the Development Is Done
 
-1. Stop the RAGFlow frontend service:
-   ```bash
-   pkill npm
-   ```
+1. Stop the frontend service by pressing `Ctrl+C` in the frontend terminal.
 
-2. Stop the RAGFlow backend service:
-   ```bash
-   pkill -f "docker/entrypoint.sh"
-   ```
+2. Stop the Go admin, API, and ingestor services by pressing `Ctrl+C` in their respective terminals.
+
+3. Stop the dependency containers:
+
+   docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity down
