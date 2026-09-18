@@ -22,9 +22,7 @@ import (
 	"ragflow/internal/rag/agentic-rag/slots"
 )
 
-// CoverageActWordsMax bounds the act words ONE slot may declare. Ten because a source
-// words one deed many ways (斩 / 杀 / 劈 / 挥为两段 …), and a phrasing no act word covers
-// is a passage no query ever names — which is why the planner is asked for several.
+// CoverageActWordsMax bounds the act words ONE slot may declare.
 const CoverageActWordsMax = 10
 
 // Coverage is what a question ASKS FOR when its answer is a SET OF NAMED MEMBERS: an
@@ -138,6 +136,13 @@ func CoverageOf(table State) Coverage {
 // questions, where it can only add cost and timeouts.
 func (c Coverage) Ok() bool {
 	return c.Set && c.ItemKind != "" && len(c.Acts) > 0
+}
+
+// ActsAll is the act vocabulary the enumeration filters by: the planner's declaration, and
+// nothing else. It is a named extension point rather than a constant (see coverage_enumerate.go,
+// which filters with it).
+func (c Coverage) ActsAll() []string {
+	return append([]string(nil), c.Acts...)
 }
 
 // ItemsInValue reports whether the table's own slots HOLD items — the direction the run's output

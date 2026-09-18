@@ -371,7 +371,7 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 		logger.Printf("[Composing the answer] composition failed: %v", err)
 		return AnswerResult{Answer: answerErrorFallback, Failed: true}
 	}
-	answer := cleanAnswer(reply.Content)
+	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}
 }
@@ -521,9 +521,51 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	if reply == nil {
 		return AnswerResult{Answer: "", Failed: true}, errors.New("streaming composition returned no reply")
 	}
-	answer := cleanAnswer(reply.Content)
+	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}, nil
+}
+
+// citeAnchoredMembers attaches the citation of every enumerated member the answer states without
+// one (see runtime.CiteAnchoredMembers). Nil-safe: a run that enumerated nothing, or whose members
+// never reached the published evidence list, comes back unchanged.
+func citeAnchoredMembers(answer string, kb *runtime.Kbinfos) string {
+	if kb == nil {
+		return answer
+	}
+	refs := kb.AnchoredRefs()
+	// textOf lets the step verify a citation against the passage it would open: a marker is
+	// written only for a passage that actually contains the words the answer quotes.
+	textOf := func(id string) string {
+		if c := kb.ChunkByID(id); c != nil {
+			return runtime.ChunkTextOf(c)
+		}
+		return ""
+	}
+	out, overridden := runtime.CitedAnchoredMembers(answer, refs, kb.CiteChunkIDs, textOf)
+	if len(refs) > 0 {
+		// One line per run that says which member was given which marker, and which passage that
+		// marker holds: "the citation opens a passage that does not state this member" is only
+		// answerable from this pairing, and without it a marker and its passage look the same
+		// whether or not they belong together.
+		pos := map[string]int{}
+		for i, id := range kb.CiteChunkIDs {
+			if _, dup := pos[id]; !dup {
+				pos[id] = i
+			}
+		}
+		pairs := make([]string, 0, len(refs))
+		for _, r := range refs {
+			if i, ok := pos[strings.TrimSpace(r.ChunkID)]; ok {
+				pairs = append(pairs, fmt.Sprintf("%s->%d(%s)", r.Name, i, r.ChunkID))
+				continue
+			}
+			pairs = append(pairs, fmt.Sprintf("%s->(not-published)", r.Name))
+		}
+		_LOG.Printf("[Citation] anchored %d member(s), rewrote %d line(s); %s",
+			len(refs), overridden, strings.Join(pairs, " "))
+	}
+	return out
 }
 
 // composeSystem builds the system prompt, applying the precedence rules.
