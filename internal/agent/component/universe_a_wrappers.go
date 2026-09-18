@@ -857,7 +857,7 @@ func uploadCodeExecArtifacts(ctx context.Context, artifacts []any, sessionID str
 			"size":      size,
 		})
 		markdown = append(markdown, codeExecArtifactMarkdown(name, mimeType, url))
-		sections = append(sections, codeExecAttachmentSection(idx+1, name, mimeType, url))
+		sections = append(sections, codeExecAttachmentSection(len(sections)+1, name, mimeType, url))
 	}
 	if len(sections) > 0 {
 		attachmentContent = fmt.Sprintf("attachment_count: %d\n\n%s", len(sections), strings.Join(sections, "\n\n"))
