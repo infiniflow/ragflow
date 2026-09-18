@@ -1502,9 +1502,10 @@ func (s *ChatSessionService) ChatCompletions(
 			if result.Final {
 				failed := strings.Contains(result.Answer, "**ERROR**")
 				if session != nil && !failed {
-					content := result.Answer
+					// Store with <think>thinking content</think>
+					content := fullAnswer.String()
 					if content == "" {
-						content = fullAnswer.String()
+						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
 					if ctx.Err() == nil {
