@@ -100,11 +100,20 @@ def _parse_retrieval_options(retrieval_setting):
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
         raise ValueError("retrieval_setting must be an object")
+    raw_top_k = retrieval_setting.get("top_k", 1024)
+    # ``bool`` is an ``int`` subclass, so ``int(True) == 1`` would otherwise
+    # pass the range check below and silently turn a JSON ``true`` into
+    # ``top_k=1``; reject booleans and fractional floats (``int(1024.9) ==
+    # 1024`` would silently truncate) before converting.
+    if isinstance(raw_top_k, bool) or (isinstance(raw_top_k, float) and not raw_top_k.is_integer()):
+        raise ValueError("top_k must be integer and score_threshold must be numeric")
     try:
         similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
-        top = int(retrieval_setting.get("top_k", 1024))
+        top = int(raw_top_k)
     except (TypeError, ValueError):
         raise ValueError("top_k must be integer and score_threshold must be numeric")
+    if not 1 <= top <= 1024:
+        raise ValueError("top_k must be between 1 and 1024")
     return retrieval_setting, similarity_threshold, top
 
 
