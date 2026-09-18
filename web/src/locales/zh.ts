@@ -454,7 +454,7 @@ export default {
       completed: '已完成',
       datasetLog: '知识库日志',
       created: '创建于',
-      learnMore: '内置 pipeline 简介',
+      learnMore: '查看内置解析方法说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
@@ -2202,16 +2202,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tagsPlaceholder: '输入标签后按回车',
       tagSuggestionsLabel: '现有标签',
       removeTagAriaLabel: '删除 {{tag}}',
-      includeHeadingContent: '分离上级标题正文',
+      includeHeadingContent: '分离上级标题内容',
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
-      rootAsHeading: '将首个切片设为 H0 标题',
+      chunkTokenCap: '分块 Token 上限',
+      chunkTokenCapTip:'每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
+      rootAsHeading: '将首个分块设为全局上下文',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
-      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
+      hierarchyTip: `构建标题层级树并生成独立分块，每个分块均包含完整的上级标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
 适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
-      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
-适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
+      groupTip: `在选定的标题层级对文档进行扁平分块，并合并相邻的小节，以保持语义连贯性。分块中不包含上级标题路径。\n
+适用场景：内容连续、上下文关联较强的文档，例如书籍、手册、报告和文章。这类文档通常需要保留相邻段落，以维持叙述连贯性。`,
       enableMultiColumn: '多栏布局识别',
       enableMultiColumnTip:
         '检测并解析多栏页面布局以保持正确的阅读顺序。对于具有双栏或报纸式布局的 PDF 或文档，请开启此功能。',
