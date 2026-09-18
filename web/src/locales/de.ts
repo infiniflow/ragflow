@@ -900,7 +900,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       tavilyApiKeyTip:
         'Wenn hier ein API-SCHLÜSSEL korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
       tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-SCHLÜSSEL ein',
-      tavilyApiKeyHelp: 'Wie bekomme ich ihn?',
+      webSearchApiKeyHelp: 'Wie bekomme ich ihn?',
       crossLanguage: 'Sprachübergreifende Suche',
       crossLanguageTip:
         'Wählen Sie eine oder mehrere Sprachen für die sprachübergreifende Suche aus. Wenn keine Sprache ausgewählt ist, sucht das System mit der ursprünglichen Abfrage.',

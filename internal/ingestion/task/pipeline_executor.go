@@ -97,6 +97,32 @@ func validateTaskContext(taskCtx *TaskContext) error {
 	return nil
 }
 
+// noRefreshChunkInserter is the narrower inserter the ingestion path prefers:
+// an engine that implements it can write chunks without waiting for an index
+// refresh.
+type noRefreshChunkInserter interface {
+	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+}
+
+// insertChunksForIngestion writes chunks through the engine's no-refresh path
+// when it offers one, falling back to the plain inserter otherwise.
+//
+// Waiting for a refresh costs ~0.5s per write (median; p90 1.0s, max 5.0s) with
+// the KB index's refresh_interval=1000ms, and it buys nothing during ingestion:
+// the index publishes the chunks on its own refresh cycle a moment later, so the
+// only difference is up to a second before they are searchable. It is also what
+// Python's ingestion does - it inserts with refresh=False
+// (rag/svr/task_executor_refactor/chunk_service.py:386 and :423) while its API
+// default stays "wait_for" - so this keeps the two ingestion paths in step.
+func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
+	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+		if bulk, ok := eng.(noRefreshChunkInserter); ok {
+			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
+		}
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+	}
+}
+
 func NewPipelineExecutor(
 	taskCtx *TaskContext,
 	canvasID string,
@@ -112,14 +138,7 @@ func NewPipelineExecutor(
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
-		indexWriter: newChunkIndexWriter(
-			func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-				return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
-			},
-			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
-			taskCtx.Doc.KbID,
-			docBulkSize,
-		),
+		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
