@@ -59,7 +59,9 @@ export function findMessageFromList(eventList: IEventList) {
     .map((x) => x.data)
     .find((d) => d?.memory_error || d?.outputs?.memory_error);
   const memoryError = memoryErrorHit
-    ? (memoryErrorHit.memory_error || memoryErrorHit.outputs?.memory_error) as string | undefined
+    ? ((memoryErrorHit.memory_error || memoryErrorHit.outputs?.memory_error) as
+        | string
+        | undefined)
     : undefined;
   messageEventList.forEach((x, idx) => {
     const { data } = x;
@@ -521,7 +523,10 @@ export const useSendAgentMessage = ({
       findMessageFromList(answerList);
     // Surface memory-save failure (e.g. unavailable embedding model) as a
     // toast, mirroring the prompt style used for LLM-unavailable errors.
-    if (memory_error && memoryErrorShownRef.current !== `${id}:${memory_error}`) {
+    if (
+      memory_error &&
+      memoryErrorShownRef.current !== `${id}:${memory_error}`
+    ) {
       sonnerMessage.warning(memory_error);
       memoryErrorShownRef.current = `${id}:${memory_error}`;
     }
