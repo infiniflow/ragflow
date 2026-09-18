@@ -1013,6 +1013,7 @@ async def delete_session_message(chat_id, session_id, msg_id):
             if (
                 i + 1 >= len(conv["message"])
                 or conv["message"][i + 1].get("id") != msg_id
+                or conv["message"][i + 1].get("role") != "assistant"
             ):
                 # The paired follow-up message is missing or not the match
                 # (e.g. the assistant message was already removed): report a

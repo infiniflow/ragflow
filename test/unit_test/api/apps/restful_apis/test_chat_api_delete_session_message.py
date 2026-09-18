@@ -32,6 +32,7 @@ These tests pin:
 4. Sessions with no references don't raise IndexError.
 """
 
+import copy
 import importlib.util
 import sys
 from pathlib import Path
@@ -322,6 +323,22 @@ class TestDeleteSessionMessage:
         assert result["code"] == 500  # DATA_ERROR
         assert "not paired" in result["message"]
         # No save happens on bad input.
+        assert update_calls == []
+
+    @pytest.mark.asyncio
+    async def test_same_id_non_assistant_follow_up_is_not_deleted(self, monkeypatch):
+        conv = _build_session(with_prologue=False, n_pairs=1)
+        conv["message"][1]["role"] = "user"
+        expected_messages = copy.deepcopy(conv["message"])
+        expected_references = copy.deepcopy(conv["reference"])
+        module, update_calls = _load_chat_api(monkeypatch, conv)
+
+        result = await module.delete_session_message("c-1", "s-1", "u0")
+
+        assert result["code"] == 500  # DATA_ERROR
+        assert "not paired" in result["message"]
+        assert conv["message"] == expected_messages
+        assert conv["reference"] == expected_references
         assert update_calls == []
 
     @pytest.mark.asyncio
