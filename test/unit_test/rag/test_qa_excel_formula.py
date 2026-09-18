@@ -146,6 +146,39 @@ def test_a_computed_question_is_read_too(qa_excel):
 
 
 @pytest.mark.p2
+def test_an_uncached_formula_reports_the_row_instead_of_answering_with_its_source(qa_excel):
+    """A library-written workbook has the formula but no value Excel ever computed.
+
+    openpyxl, xlsxwriter and `pandas.to_excel` write `<f>` without a `<v>`, so
+    `data_only=True` yields None and the pair has no answer. Before this change
+    the row was kept and the formula's source text was indexed as the answer;
+    now the row is reported as a failure by line number, which is the same path
+    any other unusable row takes. The alternative, falling back to the source
+    text, is the defect this PR removes, so it is not a fallback worth having.
+    """
+    blob = _build_xlsx([("What is the total?", None)])
+    from openpyxl import Workbook, load_workbook
+
+    wb = Workbook()
+    wb.active["A1"] = "What is the total?"
+    wb.active["B1"] = '=CONCATENATE("The total is ",42)'
+    buf = BytesIO()
+    wb.save(buf)
+    blob = buf.getvalue()
+
+    # the premise: openpyxl really did write a formula with no cached value
+    assert load_workbook(BytesIO(blob), data_only=True).active["B1"].value is None
+    assert load_workbook(BytesIO(blob), data_only=False).active["B1"].value == '=CONCATENATE("The total is ",42)'
+
+    seen = []
+    pairs = qa_excel()("qa.xlsx", blob, callback=lambda *a, **k: seen.append((a, k)))
+
+    assert pairs == []
+    reported = " ".join(str(part) for call in seen for part in call[0] + tuple(call[1].values()))
+    assert "1 failure" in reported and "line: 1" in reported
+
+
+@pytest.mark.p2
 def test_plain_pairs_are_unchanged(qa_excel):
     """Guard: a sheet with no formula must come out exactly as before."""
     blob = _build_xlsx([("Question one", "Answer one"), ("Question two", "Answer two")])
