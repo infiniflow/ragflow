@@ -272,13 +272,13 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 		// that exists (rag/utils/table_es_metadata.py:187).
 		for _, col := range cols {
 			role := roleFor(profile, col)
-			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
+			if role.Stored() {
 				metaCols = append(metaCols, col)
 			}
 		}
 	} else if len(profile.Roles) > 0 {
 		for col, role := range profile.Roles {
-			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
+			if role.Stored() {
 				metaCols = append(metaCols, col)
 			}
 		}
@@ -339,14 +339,13 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 		return nil
 	}
 	modeStr, _ := parserConfig["table_column_mode"].(string)
-	roles, rawRoles := parseTableColumnRoles(parserConfig["table_column_roles"])
+	roles := parseTableColumnRoles(parserConfig["table_column_roles"])
 	columns := ResolveTableColumnNames(parserConfig)
 	if modeStr != "" || len(roles) > 0 {
 		return &TableProfile{
-			Mode:     common.NormalizeTableColumnMode(modeStr),
-			Roles:    roles,
-			RawRoles: rawRoles,
-			Columns:  columns,
+			Mode:    common.NormalizeTableColumnMode(modeStr),
+			Roles:   roles,
+			Columns: columns,
 		}
 	}
 	for _, cid := range sortedParserComponentIDs(parserConfig) {
@@ -356,7 +355,7 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 			continue
 		}
 		mode, _ := ss["column_mode"].(string)
-		ssRoles, ssRawRoles := parseTableColumnRoles(ss["column_roles"])
+		ssRoles := parseTableColumnRoles(ss["column_roles"])
 		// An entry that states nothing is not a profile: a canvas can carry a
 		// spreadsheet block for a component the user never configured, and
 		// stopping there would hide the profile a later component does declare.
@@ -364,10 +363,9 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 			continue
 		}
 		return &TableProfile{
-			Mode:     common.NormalizeTableColumnMode(mode),
-			Roles:    ssRoles,
-			RawRoles: ssRawRoles,
-			Columns:  columns,
+			Mode:    common.NormalizeTableColumnMode(mode),
+			Roles:   ssRoles,
+			Columns: columns,
 		}
 	}
 	return nil
@@ -396,44 +394,24 @@ func ResolveTableColumnNames(parserConfig map[string]interface{}) []string {
 	return nil
 }
 
-func parseTableColumnRoles(raw any) (map[string]common.ColumnRole, map[string]any) {
-	if raw == nil {
-		return nil, nil
-	}
+func parseTableColumnRoles(raw any) map[string]common.ColumnRole {
 	switch m := raw.(type) {
-	case map[string]common.ColumnRole:
-		if len(m) == 0 {
-			return nil, nil
-		}
-		rawMap := make(map[string]any, len(m))
-		for k, v := range m {
-			rawMap[k] = string(v)
-		}
-		return m, rawMap
 	case map[string]string:
-		if len(m) == 0 {
-			return nil, nil
-		}
 		out := make(map[string]common.ColumnRole, len(m))
-		rawMap := make(map[string]any, len(m))
 		for k, v := range m {
 			out[k] = common.NormalizeColumnRole(v)
-			rawMap[k] = v
 		}
-		return out, rawMap
+		return out
 	case map[string]interface{}:
-		if len(m) == 0 {
-			return nil, nil
-		}
 		out := make(map[string]common.ColumnRole, len(m))
 		for k, v := range m {
 			if s, ok := v.(string); ok {
 				out[k] = common.NormalizeColumnRole(s)
 			}
 		}
-		return out, m
+		return out
 	default:
-		return nil, nil
+		return nil
 	}
 }
 

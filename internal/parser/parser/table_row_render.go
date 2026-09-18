@@ -23,11 +23,8 @@ import (
 	"ragflow/internal/common"
 )
 
-// DecodeTableColumnConfig extracts column_mode and column_roles from a setup map.
-func DecodeTableColumnConfig(setup map[string]any) (string, map[string]string) {
-	if setup == nil {
-		return "", nil
-	}
+// decodeTableColumnConfig extracts column_mode and column_roles from a setup map.
+func decodeTableColumnConfig(setup map[string]any) (string, map[string]string) {
 	var mode string
 	if v, ok := setup["column_mode"].(string); ok && v != "" {
 		mode = v
@@ -40,16 +37,26 @@ func DecodeTableColumnConfig(setup map[string]any) (string, map[string]string) {
 				roles[k] = s
 			}
 		}
-	} else if v, ok := setup["column_roles"].(map[string]string); ok {
-		roles = v
 	}
 	return mode, roles
 }
 
-// DeduplicateColumnNames ports Python's _deduplicate_column_names (rag/app/table.py:43-63).
+// applyTableColumnSetup records the column mode and roles a setup states,
+// leaving either field untouched when the setup is silent about it.
+func applyTableColumnSetup(setup map[string]any, columnMode *string, columnRoles *map[string]string) {
+	mode, roles := decodeTableColumnConfig(setup)
+	if mode != "" {
+		*columnMode = mode
+	}
+	if roles != nil {
+		*columnRoles = roles
+	}
+}
+
+// deduplicateColumnNames ports Python's _deduplicate_column_names (rag/app/table.py:43-63).
 // Ensures all column header names are unique by appending _2, _3, etc.,
 // avoiding collisions with both already-used and existing reserved headers.
-func DeduplicateColumnNames(columns []string) []string {
+func deduplicateColumnNames(columns []string) []string {
 	reserved := make(map[string]struct{}, len(columns))
 	for _, col := range columns {
 		reserved[col] = struct{}{}
@@ -82,9 +89,9 @@ func DeduplicateColumnNames(columns []string) []string {
 	return unique
 }
 
-// TableRowHasContent reports whether a row carries a non-blank cell, the rule
+// tableRowHasContent reports whether a row carries a non-blank cell, the rule
 // both the renderer and the schema probe use to find the header row of a table.
-func TableRowHasContent(row []string) bool {
+func tableRowHasContent(row []string) bool {
 	for _, cell := range row {
 		if strings.TrimSpace(cell) != "" {
 			return true
@@ -103,34 +110,29 @@ var tableBookkeepingColumns = map[string]struct{}{
 	"id": {}, "_id": {}, "index": {}, "idx": {},
 }
 
-// TableHeaderRule selects the header rules of a file family. The table parser
-// does not read a spreadsheet and a delimited file the same way: Excel headers
-// go through _parse_simple_headers, which trims each cell and names an empty
-// one Column_<position> (rag/app/table.py:280-302), while a CSV/TSV header is
-// the first record as read and is only deduplicated
-// (rag/app/table.py:582, deduplicated at :594). The schema probe applies the
-// rule of the file it is shown, so the columns it offers for configuration are
-// the columns ingestion indexes.
+// TableHeaderRule selects how a file family turns a header row into column
+// names. Excel headers go through _parse_simple_headers, which trims each cell
+// and names an empty one Column_<position> (rag/app/table.py:280-302), while a
+// CSV/TSV header is the first record as read and is only deduplicated
+// (rag/app/table.py:582, :594).
 type TableHeaderRule int
 
 const (
 	// TableHeaderRuleSpreadsheet trims cells and renames an empty header to
-	// Column_<position>. It is the zero value, which is also the rule the
-	// shared header helper had before the file kinds were separated.
+	// Column_<position>.
 	TableHeaderRuleSpreadsheet TableHeaderRule = iota
-	// TableHeaderRuleDelimited takes the header cells as read: a padded name
-	// stays padded and an empty name stays empty, because that is what the
-	// column is called in the index.
+	// TableHeaderRuleDelimited takes the header cells as read: a padded or
+	// empty name is exactly what the column is called in the index.
 	TableHeaderRuleDelimited
 )
 
-// TableColumnHeaderNames turns a header row into the column names the table
+// tableColumnHeaderNames turns a header row into the column names the table
 // parser indexes: the row-bookkeeping columns are dropped and the survivors
 // are deduplicated, under the cell rules of rule. sourceIndexes carries each
 // surviving name's position in headerRow, which is how a data row is mapped
 // onto the columns. The schema probe uses the same function with the same rule,
 // so what it offers for configuration is what ingestion produces.
-func TableColumnHeaderNames(headerRow []string, rule TableHeaderRule) (names []string, sourceIndexes []int) {
+func tableColumnHeaderNames(headerRow []string, rule TableHeaderRule) (names []string, sourceIndexes []int) {
 	raw := make([]string, 0, len(headerRow))
 	indexes := make([]int, 0, len(headerRow))
 	for i, h := range headerRow {
@@ -147,7 +149,7 @@ func TableColumnHeaderNames(headerRow []string, rule TableHeaderRule) (names []s
 		raw = append(raw, name)
 		indexes = append(indexes, i)
 	}
-	return DeduplicateColumnNames(raw), indexes
+	return deduplicateColumnNames(raw), indexes
 }
 
 // RenderRowsToJSONChunks converts table rows into structured row chunks (one chunk per row),
@@ -157,17 +159,11 @@ func TableColumnHeaderNames(headerRow []string, rule TableHeaderRule) (names []s
 // Auto mode (the default, matching Python's table chunker) gives every column
 // the "both" role, so all columns land in text and in chunk_data. Manual mode
 // honors column_roles; a column the roles map does not carry is "both".
-// headerRule is the header rule of the file being rendered: a caller reading a
-// spreadsheet passes TableHeaderRuleSpreadsheet, a CSV/TSV reader passes
-// TableHeaderRuleDelimited.
+// headerRule is the header rule of the file being rendered.
 func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string, columnRoles map[string]string, headerRule TableHeaderRule) ([]map[string]any, []string) {
-	if len(rows) == 0 {
-		return nil, nil
-	}
-
 	headerRowIdx := -1
 	for rIdx, r := range rows {
-		if TableRowHasContent(r) {
+		if tableRowHasContent(r) {
 			headerRowIdx = rIdx
 			break
 		}
@@ -176,7 +172,7 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 		return nil, nil
 	}
 
-	headers, headerIndexes := TableColumnHeaderNames(rows[headerRowIdx], headerRule)
+	headers, headerIndexes := tableColumnHeaderNames(rows[headerRowIdx], headerRule)
 
 	isManual := common.NormalizeTableColumnMode(columnMode) == common.TableColumnModeManual
 	items := make([]map[string]any, 0, len(rows)-headerRowIdx-1)
@@ -200,11 +196,6 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 				continue
 			}
 
-			// The "both" default belongs to the lookup, not to the normalizer:
-			// Python's `column_roles.get(col, "both")` (rag/app/table.py:701)
-			// defaults only a column the map does not carry, so a column
-			// carried with a blank or unknown value is excluded. common owns
-			// that classification, which the indexdoc aggregation shares.
 			role := common.ColumnRoleBoth
 			if isManual {
 				if configured, ok := columnRoles[col]; ok {
@@ -212,10 +203,10 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 				}
 			}
 
-			if role == common.ColumnRoleIndexing || role == common.ColumnRoleBoth {
+			if role.Indexed() {
 				textLines = append(textLines, fmt.Sprintf("- %s: %s", col, val))
 			}
-			if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
+			if role.Stored() {
 				chunkData[col] = val
 			}
 		}

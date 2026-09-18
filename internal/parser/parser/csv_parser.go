@@ -81,6 +81,15 @@ func newCSVReader(filename, text string) *csv.Reader {
 	return reader
 }
 
+// decodeDelimitedText decodes a delimited table the way Python reads one: with
+// utf-8-sig (rag/nlp/__init__.py decode_text), so a BOM never reaches the first
+// header cell. Column names are the keys of table_column_names and of the
+// column-role map, so a retained BOM would name a column no role can match.
+func decodeDelimitedText(data []byte) (string, string) {
+	decoded, encName := DecodeToUTF8(data, "text/csv")
+	return strings.TrimPrefix(string(decoded), "\uFEFF"), encName
+}
+
 // ProbeDelimitedColumnNames returns the column names this parser would index for
 // the given delimited stream, from its first row with content. The caller
 // bounds the reader; a header fits the prefix it reads.
@@ -89,18 +98,15 @@ func ProbeDelimitedColumnNames(r io.Reader, filename string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoded, _ := DecodeToUTF8(data, "text/csv")
-	// Python decodes text with utf-8-sig, so the BOM never reaches the first
-	// header cell; the parser strips it the same way.
-	text := strings.TrimPrefix(string(decoded), "\uFEFF")
+	text, _ := decodeDelimitedText(data)
 
 	records, err := newCSVReader(filename, text).ReadAll()
 	if err != nil {
 		return nil, err
 	}
 	for _, record := range cleanIllegalControlChars(records) {
-		if TableRowHasContent(record) {
-			names, _ := TableColumnHeaderNames(record, TableHeaderRuleDelimited)
+		if tableRowHasContent(record) {
+			names, _ := tableColumnHeaderNames(record, TableHeaderRuleDelimited)
 			return names, nil
 		}
 	}
@@ -133,14 +139,7 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
-	if mode, roles := DecodeTableColumnConfig(setup); mode != "" || roles != nil {
-		if mode != "" {
-			p.ColumnMode = mode
-		}
-		if roles != nil {
-			p.ColumnRoles = roles
-		}
-	}
+	applyTableColumnSetup(setup, &p.ColumnMode, &p.ColumnRoles)
 }
 
 // ParseWithResult implements ParseResultProducer. It reads CSV rows and emits
@@ -168,13 +167,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		// for CSV processing.
 	}
 
-	decoded, encName := DecodeToUTF8(data, "text/csv")
-	// Python decodes text with utf-8-sig (rag/nlp/__init__.py decode_text), so a
-	// UTF-8 BOM never reaches the first header cell. Column names are the keys
-	// of table_column_names and of the column-role map, and the schema probe
-	// drops the BOM as well, so the parser must drop it too or every discovered
-	// name would carry a leading U+FEFF that no configured role matches.
-	text := strings.TrimPrefix(string(decoded), "\uFEFF")
+	text, encName := decodeDelimitedText(data)
 	if strings.TrimSpace(text) == "" {
 		if strings.EqualFold(p.OutputFormat, "json") {
 			return ParseResult{

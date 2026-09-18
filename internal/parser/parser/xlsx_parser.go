@@ -80,14 +80,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
-	if mode, roles := DecodeTableColumnConfig(setup); mode != "" || roles != nil {
-		if mode != "" {
-			p.ColumnMode = mode
-		}
-		if roles != nil {
-			p.ColumnRoles = roles
-		}
-	}
+	applyTableColumnSetup(setup, &p.ColumnMode, &p.ColumnRoles)
 }
 
 func normalizeXLSXParseMethod(raw string) string {
@@ -133,7 +126,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if strings.EqualFold(p.OutputFormat, "json") {
 		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
 		if err == nil {
-			return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
+			return spreadsheetRowParseResult(filename, "xlsx", items, allColumns, warnings, sheets)
 		}
 
 		normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
@@ -149,7 +142,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		}
 		warnings = append(normalizeWarnings, warnings...)
 		warnings = append(warnings, retryWarnings...)
-		return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
+		return spreadsheetRowParseResult(filename, "xlsx", items, allColumns, warnings, sheets)
 	}
 
 	items, warnings, sheets, err := parseXLSXBytes(data, p.HTML4Excel)
@@ -206,10 +199,6 @@ func parseXLSXRowsJSON(data []byte, columnMode string, columnRoles map[string]st
 	return allItems, allColumns, warnings, len(sheets), nil
 }
 
-func xlsxRowParseResult(filename string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
-	return spreadsheetRowParseResult(filename, "xlsx", items, columns, warnings, sheets)
-}
-
 // ProbeSpreadsheetColumnNames returns the column names parseXLSXRowsJSON would
 // index for the given workbook stream: the first row with content of every
 // sheet, unioned in the order the columns are first seen, which is the order
@@ -238,11 +227,11 @@ func ProbeSpreadsheetColumnNames(r io.Reader) ([]string, error) {
 				continue
 			}
 			cols = cleanIllegalControlChars([][]string{cols})[0]
-			if !TableRowHasContent(cols) {
+			if !tableRowHasContent(cols) {
 				continue
 			}
 
-			header, _ := TableColumnHeaderNames(cols, TableHeaderRuleSpreadsheet)
+			header, _ := tableColumnHeaderNames(cols, TableHeaderRuleSpreadsheet)
 			for _, name := range header {
 				if _, ok := seen[name]; ok {
 					continue

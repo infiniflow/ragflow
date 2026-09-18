@@ -76,14 +76,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
-	if mode, roles := DecodeTableColumnConfig(setup); mode != "" || roles != nil {
-		if mode != "" {
-			p.ColumnMode = mode
-		}
-		if roles != nil {
-			p.ColumnRoles = roles
-		}
-	}
+	applyTableColumnSetup(setup, &p.ColumnMode, &p.ColumnRoles)
 }
 
 func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {

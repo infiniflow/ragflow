@@ -49,9 +49,9 @@ func TestDeduplicateColumnNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := DeduplicateColumnNames(tt.in)
+			got := deduplicateColumnNames(tt.in)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("DeduplicateColumnNames(%v) = %v, want %v", tt.in, got, tt.want)
+				t.Errorf("deduplicateColumnNames(%v) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -87,7 +87,7 @@ func TestTableColumnHeaderNames_PerFileKind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			names, indexes := TableColumnHeaderNames(tt.headerRow, tt.rule)
+			names, indexes := tableColumnHeaderNames(tt.headerRow, tt.rule)
 			if !reflect.DeepEqual(names, tt.wantNames) {
 				t.Errorf("names = %q, want %q", names, tt.wantNames)
 			}
@@ -389,42 +389,29 @@ func TestXLSXParser_ColumnMode(t *testing.T) {
 	}
 }
 
-func TestDecodeTableColumnConfig(t *testing.T) {
-	// Nil setup
-	mode, roles := DecodeTableColumnConfig(nil)
-	if mode != "" || roles != nil {
-		t.Errorf("expected empty for nil setup, got mode=%q, roles=%v", mode, roles)
+func TestApplyTableColumnSetup(t *testing.T) {
+	mode := "auto"
+	roles := map[string]string{"keep": "both"}
+	applyTableColumnSetup(map[string]any{}, &mode, &roles)
+	if mode != "auto" || roles["keep"] != "both" {
+		t.Errorf("a silent setup must leave the parser's own values, got mode=%q roles=%v", mode, roles)
 	}
 
-	// map[string]any roles
-	setup1 := map[string]any{
+	applyTableColumnSetup(map[string]any{
 		"column_mode": "manual",
 		"column_roles": map[string]any{
 			"colA": "indexing",
 			"colB": "metadata",
 		},
+	}, &mode, &roles)
+	if mode != "manual" {
+		t.Errorf("expected mode=manual, got %q", mode)
 	}
-	mode1, roles1 := DecodeTableColumnConfig(setup1)
-	if mode1 != "manual" {
-		t.Errorf("expected mode=manual, got %q", mode1)
+	if roles["colA"] != "indexing" || roles["colB"] != "metadata" {
+		t.Errorf("expected roles colA=indexing, colB=metadata, got %v", roles)
 	}
-	if roles1["colA"] != "indexing" || roles1["colB"] != "metadata" {
-		t.Errorf("expected roles colA=indexing, colB=metadata, got %v", roles1)
-	}
-
-	// map[string]string roles
-	setup2 := map[string]any{
-		"column_mode": "auto",
-		"column_roles": map[string]string{
-			"colC": "both",
-		},
-	}
-	mode2, roles2 := DecodeTableColumnConfig(setup2)
-	if mode2 != "auto" {
-		t.Errorf("expected mode=auto, got %q", mode2)
-	}
-	if roles2["colC"] != "both" {
-		t.Errorf("expected roles colC=both, got %v", roles2)
+	if _, ok := roles["keep"]; ok {
+		t.Errorf("expected a stated roles map to replace the parser's, got %v", roles)
 	}
 }
 

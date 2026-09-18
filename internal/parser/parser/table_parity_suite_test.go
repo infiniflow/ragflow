@@ -428,21 +428,21 @@ func TestParity_EmptyCells(t *testing.T) {
 	}
 }
 
-// Case 11: DeduplicateColumnNames matching Python
+// Case 11: deduplicateColumnNames matching Python
 func TestParity_DeduplicateColumnNames_Parity(t *testing.T) {
 	cols := []string{"name", "name", "name", "age", "age"}
-	dedup := DeduplicateColumnNames(cols)
+	dedup := deduplicateColumnNames(cols)
 	want := []string{"name", "name_2", "name_3", "age", "age_2"}
 	if !reflect.DeepEqual(dedup, want) {
-		t.Errorf("DeduplicateColumnNames = %v, want %v", dedup, want)
+		t.Errorf("deduplicateColumnNames = %v, want %v", dedup, want)
 	}
 
 	// Collision with existing suffix
 	cols2 := []string{"col", "col_2", "col"}
-	dedup2 := DeduplicateColumnNames(cols2)
+	dedup2 := deduplicateColumnNames(cols2)
 	want2 := []string{"col", "col_2", "col_3"}
 	if !reflect.DeepEqual(dedup2, want2) {
-		t.Errorf("DeduplicateColumnNames = %v, want %v", dedup2, want2)
+		t.Errorf("deduplicateColumnNames = %v, want %v", dedup2, want2)
 	}
 }
 

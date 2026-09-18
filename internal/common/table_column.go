@@ -48,11 +48,12 @@ const (
 	ColumnRoleMetadata ColumnRole = "metadata"
 	ColumnRoleBoth     ColumnRole = "both"
 	// ColumnRoleNone is the outcome for a role value the vocabulary does not
-	// know. It is an internal sentinel, never persisted: the written value is
-	// always what the caller supplied. Python's table chunker classifies an
-	// unknown role by membership tests (rag/app/table.py:704-706 for the chunk
-	// body, rag/app/table.py:633 for the dataset field_map), so such a column
-	// is excluded from text, chunk_data and the field_map alike — NOT treated
+	// know. A write boundary rejects such a value
+	// (ValidateTableColumnSettings), so it survives only in rows written before
+	// that check. Python's table chunker classifies an unknown role by
+	// membership tests (rag/app/table.py:704-706 for the chunk body,
+	// rag/app/table.py:633 for the dataset field_map), so such a column is
+	// excluded from text, chunk_data and the field_map alike — NOT treated
 	// as "both".
 	ColumnRoleNone ColumnRole = "none"
 )
@@ -64,8 +65,7 @@ const (
 // than silently promoted to "both". This is Python's membership test verbatim
 // (rag/app/table.py:704-706), which compares the stored string and neither
 // trims nor case-folds it. The default "both" belongs to the lookup, not to
-// this function: it applies to a column the roles map does not carry, which is
-// what Python's `column_roles.get(col, "both")` expresses.
+// this function: it applies to a column the roles map does not carry.
 func NormalizeColumnRole(role string) ColumnRole {
 	switch role {
 	case "indexing", "vectorize":
@@ -77,6 +77,19 @@ func NormalizeColumnRole(role string) ColumnRole {
 	default:
 		return ColumnRoleNone
 	}
+}
+
+// Indexed reports whether a column with this role reaches the chunk body a
+// retriever embeds. Python tests the same membership at rag/app/table.py:704.
+func (r ColumnRole) Indexed() bool {
+	return r == ColumnRoleIndexing || r == ColumnRoleBoth
+}
+
+// Stored reports whether a column with this role is kept as structured values:
+// a chunk's chunk_data, or the dataset field_map a SQL prompt is built from.
+// Python tests the same membership at rag/app/table.py:633 and :706.
+func (r ColumnRole) Stored() bool {
+	return r == ColumnRoleMetadata || r == ColumnRoleBoth
 }
 
 // NormalizeTableColumnMode maps a persisted mode onto the vocabulary. Only the
@@ -91,29 +104,13 @@ func NormalizeTableColumnMode(mode string) TableColumnMode {
 	return TableColumnModeAuto
 }
 
-// ValidateTableColumnSettings rejects table column values the runtime cannot
-// act on: a mode other than auto/manual, a role outside the three known values
-// (plus the legacy "vectorize" alias), and column names that are not a list of
-// strings. An absent key, and an empty mode, are accepted — that is "unset",
-// which the runtime reads as its default.
-//
-// Both shapes a request can use are covered: the root-level `table_column_*`
-// keys (upload override, dataset settings) and the component-shaped
-// `column_*` keys a parser dialog writes under a `Parser:<id>` spreadsheet
-// entry.
-//
-// Python validates the same contract at its API boundary
-// (api/utils/validation_utils.py:430 defines the role Literal, :457/:459/:461
-// the fields, on a strict model at :436), so an unknown value never reaches
-// parsing there. This is the Go equivalent: the runtime's "unknown role is
-// excluded" rule stays a safety net for legacy rows instead of the normal write
-// path.
-//
-// The checks accept what Python accepts (a role entry keyed by an empty column
-// name is meaningless but not rejected there, and an absent value is "unset"),
-// and reject what Python rejects: an unknown, blank, differently cased or
-// non-string role, a mode outside auto/manual, and names that are not a list of
-// strings. Comparison is exact because Python's Literal is.
+// ValidateTableColumnSettings rejects table column values the runtime cannot act
+// on: a mode other than auto/manual, a role outside the vocabulary, and column
+// names that are not a list of strings. An absent key is "unset" and is
+// accepted. It covers both shapes a request can use — the root `table_column_*`
+// keys and the component-shaped `column_*` keys a parser dialog writes under a
+// `Parser:<id>` spreadsheet entry — and compares exactly, because the Python
+// Literal it mirrors does (api/utils/validation_utils.py:430).
 func ValidateTableColumnSettings(config map[string]interface{}) error {
 	if config == nil {
 		return nil

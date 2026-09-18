@@ -1193,24 +1193,16 @@ func cloneParserConfig(in map[string]interface{}) map[string]interface{} {
 	return out
 }
 
-// resolveTableColumnSettings folds the document's and the dataset's table
-// column settings onto the document's root-level keys, which is the one place
-// this run's configuration is read from: the parser-entry injection, the
-// post-run metadata aggregation, the strip-key computation and column discovery
-// all resolve the same values from there.
+// resolveTableColumnSettings folds the document's and the dataset's table column
+// settings onto the document's root keys, the one place this run reads them
+// from: the parser-entry injection, the metadata aggregation, the strip-key
+// computation and column discovery all resolve the same values there.
 //
-// Precedence, per key:
-//  1. the document's own value, resolved from its root keys and otherwise from
-//     the parser component entry its canvas carries;
-//  2. the dataset's value, used for keys the document does not define;
-//  3. nothing, leaving the parser's own default in place.
-//
-// A document-level mode is honored only when it is "manual": "auto" is the
-// absence of a column configuration (common.NormalizeTableColumnMode maps an
-// empty mode to auto, and both dialogs emit "auto" for a form the user never
-// touched), so a bare "auto" must not shadow the dataset's manual mode and
-// roles — that would make dataset-level column settings unreachable for every
-// document saved through a dialog.
+// Per key the document's own value wins, then the dataset's, then nothing, which
+// leaves the parser's default in place. A document mode counts as a value only
+// when it is "manual": both dialogs emit "auto" for a form the user never
+// touched, so a bare "auto" would otherwise shadow the dataset's manual settings
+// and make dataset-level column configuration unreachable.
 func resolveTableColumnSettings(docConfig, kbConfig map[string]interface{}) map[string]interface{} {
 	docMode, docRoles := statedTableColumnSettings(indexdoc.ResolveTableProfile(docConfig))
 	kbMode, kbRoles := statedTableColumnSettings(indexdoc.ResolveTableProfile(kbConfig))
@@ -1231,10 +1223,18 @@ func resolveTableColumnSettings(docConfig, kbConfig map[string]interface{}) map[
 	if mode != "" {
 		docConfig["table_column_mode"] = mode
 	}
-	if roles := firstNonEmptyRoles(docRoles, kbRoles); roles != nil {
+	roles := docRoles
+	if len(roles) == 0 {
+		roles = kbRoles
+	}
+	if len(roles) > 0 {
 		docConfig["table_column_roles"] = roles
 	}
-	if names := firstNonEmptyNames(docNames, kbNames); names != nil {
+	names := docNames
+	if len(names) == 0 {
+		names = kbNames
+	}
+	if len(names) > 0 {
 		docConfig["table_column_names"] = names
 	}
 	return docConfig
@@ -1248,26 +1248,6 @@ func statedTableColumnSettings(profile *indexdoc.TableProfile) (string, map[stri
 		return "", nil
 	}
 	return string(profile.Mode), profile.ToRolesInterfaceMap()
-}
-
-func firstNonEmptyRoles(docRoles, kbRoles map[string]interface{}) map[string]interface{} {
-	if len(docRoles) > 0 {
-		return docRoles
-	}
-	if len(kbRoles) > 0 {
-		return kbRoles
-	}
-	return nil
-}
-
-func firstNonEmptyNames(docNames, kbNames []string) []string {
-	if len(docNames) > 0 {
-		return docNames
-	}
-	if len(kbNames) > 0 {
-		return kbNames
-	}
-	return nil
 }
 
 // isTableParserRun reports whether this run belongs to the table parser, which

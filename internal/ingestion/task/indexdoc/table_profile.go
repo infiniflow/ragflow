@@ -29,33 +29,20 @@ import (
 // through the dataset field_map, which document metadata keys are stripped on
 // reparse) live next to it here, in the layer that applies them.
 type TableProfile struct {
-	Mode     common.TableColumnMode       `json:"table_column_mode"`
-	Roles    map[string]common.ColumnRole `json:"table_column_roles,omitempty"`
-	RawRoles map[string]any               `json:"-"`
-	Columns  []string                     `json:"table_column_names,omitempty"`
+	Mode    common.TableColumnMode
+	Roles   map[string]common.ColumnRole
+	Columns []string
 }
 
-// NewTableProfile creates a TableProfile with initialized maps.
+// NewTableProfile returns the profile of a configuration that states no column
+// intent: auto mode, where every column carries the "both" role.
 func NewTableProfile(mode common.TableColumnMode) *TableProfile {
-	return &TableProfile{
-		Mode:     mode,
-		Roles:    make(map[string]common.ColumnRole),
-		RawRoles: make(map[string]any),
-		Columns:  make([]string, 0),
-	}
+	return &TableProfile{Mode: mode}
 }
 
-// ToRolesInterfaceMap returns the column roles formatted as map[string]interface{}.
-// The raw shape a caller supplied (RawRoles) wins, so a value the vocabulary
-// does not know survives the round trip into a parser setup untouched.
+// ToRolesInterfaceMap returns the column roles as the parser setup shape.
 func (p *TableProfile) ToRolesInterfaceMap() map[string]interface{} {
-	if p == nil {
-		return nil
-	}
-	if len(p.RawRoles) > 0 {
-		return p.RawRoles
-	}
-	if len(p.Roles) == 0 {
+	if p == nil || len(p.Roles) == 0 {
 		return nil
 	}
 	out := make(map[string]interface{}, len(p.Roles))
@@ -98,7 +85,7 @@ func BuildFieldMap(profile *TableProfile, columns []string) map[string]interface
 		// named them, so a padded or blank name is an addressable column too
 		// (rag/app/table.py:633,645).
 		role := roleFor(profile, col)
-		if role == common.ColumnRoleMetadata || role == common.ColumnRoleBoth {
+		if role.Stored() {
 			fieldMap[col] = strings.ReplaceAll(col, "_", " ")
 		}
 	}

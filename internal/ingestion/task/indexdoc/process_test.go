@@ -529,15 +529,19 @@ func TestResolveTableProfile_RootTier(t *testing.T) {
 func TestResolveTableProfile_RootWriterShapes(t *testing.T) {
 	cfg := map[string]interface{}{
 		"table_column_mode":  "auto",
-		"table_column_roles": map[string]string{"col1": "Both"},
+		"table_column_roles": map[string]string{"col1": "both", "col2": "Both"},
 		"table_column_names": []string{"col1", "col2"},
 	}
 	profile := ResolveTableProfile(cfg)
 	if profile == nil {
 		t.Fatal("want a profile from the root keys")
 	}
-	if got := profile.ToRolesInterfaceMap(); len(got) != 1 || got["col1"] != "Both" {
-		t.Errorf("roles = %v, want col1 preserved", got)
+	got := profile.ToRolesInterfaceMap()
+	if len(got) != 2 ||
+		got["col1"] != string(common.ColumnRoleBoth) ||
+		got["col2"] != string(common.ColumnRoleNone) {
+		t.Errorf("roles = %v, want col1 %q and an out-of-vocabulary value %q",
+			got, common.ColumnRoleBoth, common.ColumnRoleNone)
 	}
 	if !reflect.DeepEqual(profile.Columns, []string{"col1", "col2"}) {
 		t.Errorf("columns = %v, want [col1 col2]", profile.Columns)
