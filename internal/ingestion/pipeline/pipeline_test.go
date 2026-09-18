@@ -1064,6 +1064,26 @@ func TestCleanupCheckpoint_DeletesStoreAndClearsTracker(t *testing.T) {
 	}
 }
 
+func TestCleanupTaskStateDeletesCheckpointAndFingerprints(t *testing.T) {
+	store := newMemCheckpointStore()
+	for _, key := range []string{"task-1", "task-1:dsl", "task-1:ovf"} {
+		if err := store.Set(t.Context(), key, []byte("state")); err != nil {
+			t.Fatalf("seed %s: %v", key, err)
+		}
+	}
+
+	if err := cleanupTaskState(t.Context(), store, nil, "task-1"); err != nil {
+		t.Fatalf("cleanupTaskState: %v", err)
+	}
+	for _, key := range []string{"task-1", "task-1:dsl", "task-1:ovf"} {
+		if _, ok, err := store.Get(t.Context(), key); err != nil {
+			t.Fatalf("read %s: %v", key, err)
+		} else if ok {
+			t.Fatalf("checkpoint state %s still exists", key)
+		}
+	}
+}
+
 // =============================================================================
 // runPlain — tracker integration with miniredis
 // =============================================================================

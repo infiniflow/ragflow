@@ -5,9 +5,12 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Operator } from '@/constants/agent';
-import useGraphStore from '@/pages/agent/store';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { PropsWithChildren, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChunkerOperators } from '../../../constant/pipeline';
+import useGraphStore from '../../../store';
+import { isChunkerOperator } from '../../../utils/pipeline-connection';
 import { OperatorItemList } from './operator-item-list';
 
 function OperatorAccordionTrigger({ children }: PropsWithChildren) {
@@ -171,34 +174,41 @@ export function PipelineAccordionOperators({
 }) {
   const restrictSingleOperatorOnCanvas = useRestrictSingleOperatorOnCanvas();
   const { getOperatorTypeFromId } = useGraphStore((state) => state);
+  const isGoBackend = useIsGoBackend();
+  const sourceOperator = getOperatorTypeFromId(nodeId);
+
+  // Go pipelines require a Parser to feed a chunker, so from a Parser node
+  // the menu offers only the chunker group.
+  const parserMustFeedChunker =
+    isGoBackend && sourceOperator === Operator.Parser;
 
   const operators = useMemo(() => {
+    if (parserMustFeedChunker) {
+      return [];
+    }
     const list = [
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
-    if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
+    if (sourceOperator !== Operator.Compiler) {
       list.push(Operator.Compiler);
     }
     return list;
-  }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
+  }, [parserMustFeedChunker, sourceOperator, restrictSingleOperatorOnCanvas]);
 
   const chunkerOperators = useMemo(() => {
-    return [
-      ...restrictSingleOperatorOnCanvas([
-        Operator.TokenChunker,
-        Operator.TitleChunker,
-      ]),
-    ];
+    return [...restrictSingleOperatorOnCanvas(ChunkerOperators)];
   }, [restrictSingleOperatorOnCanvas]);
 
   const showChunker = useMemo(() => {
-    return (
-      getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
-      getOperatorTypeFromId(nodeId) !== Operator.Compiler &&
-      chunkerOperators.length > 0
-    );
-  }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);
+    // Go pipelines forbid chunker -> chunker, mirroring the existing rule
+    // that Extractor/Compiler never offer the chunker group.
+    const sourceExcluded =
+      sourceOperator === Operator.Extractor ||
+      sourceOperator === Operator.Compiler ||
+      (isGoBackend && isChunkerOperator(sourceOperator as Operator));
+    return !sourceExcluded && chunkerOperators.length > 0;
+  }, [chunkerOperators.length, isGoBackend, sourceOperator]);
 
   return (
     <>

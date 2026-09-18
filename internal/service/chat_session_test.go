@@ -243,13 +243,25 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error) {
 	f.tenantID = tenantID
-	f.llmID = llmID
+	f.llmID = modelRef
 	if f.err != nil {
-		return nil, "", nil, 0, f.err
+		return nil, f.err
 	}
-	return nil, "resolved-model", &modelModule.APIConfig{}, 8192, nil
+	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+}
+
+func (f *fakeChatModelConfigResolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error) {
+	f.tenantID = tenantID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+}
+
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
+	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 
 type feedbackContextKey struct{}
@@ -1100,7 +1112,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	pipeline := &fakePipeline{
 		resultChan: makeResultChan(
-			AsyncChatResult{Answer: "Marigold", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{StartToThink: true, Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{Reasoning: "checking sources", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{EndToThink: true, Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{Answer: "Marigold is a depth-estimation model.", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
 			AsyncChatResult{
 				Answer:    "Marigold is a depth-estimation model. [ID:0]",
 				Reference: finalReference,
@@ -1178,6 +1193,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	if got := ref["total"]; got != float64(1) {
 		t.Fatalf("final reference total = %v", got)
+	}
+	stored := parseMessages(store.sessions["session-1"].Message)
+	if got := stored[len(stored)-1]["content"]; got != "<think>checking sources</think>Marigold is a depth-estimation model." {
+		t.Fatalf("stored assistant content = %q, want tagged reasoning and visible answer", got)
 	}
 }
 

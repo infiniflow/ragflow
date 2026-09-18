@@ -158,7 +158,7 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("minimax API error: %s", errMsg)
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)

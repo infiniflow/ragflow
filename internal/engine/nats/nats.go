@@ -31,13 +31,31 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// isStreamExistsErr reports whether err means the stream already exists, using
+// the typed JetStream APIError (err_code 10058) rather than error-string
+// matching. The APIError code is the canonical, stable signal from the server.
+func isStreamExistsErr(err error) bool {
+	if errors.Is(err, nats.ErrStreamNameAlreadyInUse) {
+		return true
+	}
+	var apiErr *jetstream.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode == jetstream.JSErrCodeStreamNameInUse
+	}
+	return false
+}
+
 type NatsEngine struct {
 	host      string
 	port      int
 	nc        *nats.Conn
 	jetStream jetstream.JetStream
 	stream    jetstream.Stream
-	consumer  jetstream.Consumer
+	// consumer is the task consumer handle. Guarded by consumerMu: the pull loop
+	// and the admin inspection endpoint share one engine, and the handle is
+	// replaced when it is found to have outlived its consumer (see PullMessages).
+	consumerMu sync.Mutex
+	consumer   jetstream.Consumer
 
 	// dataset-level compile consumer (§11) state.
 	knowledgeCompileStream   jetstream.Stream
@@ -80,19 +98,35 @@ func (n *NatsEngine) Init() error {
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 		Discard:   jetstream.DiscardNew,
-		MaxMsgs:   1024 * 128,
-		MaxBytes:  1024 * 1024 * 64,
-		// Server-side dedup window. Inert for task publishes: PublishTask
-		// intentionally sends no MsgID (see below — dedup would swallow
-		// retry republishes of a reused task_id). It only takes effect for
-		// a publisher that opts into MsgIDs.
-		Duplicates: 10 * time.Minute,
+		MaxMsgs:   1024 * 1024,
+		MaxBytes:  1024 * 1024 * 1024,
 	}
 
 	n.stream, err = ensureStreamConfig(ctx, n.jetStream, streamCfg)
 	if err != nil {
-		n.nc.Close()
-		return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
+		if !isStreamExistsErr(err) {
+			n.nc.Close()
+			return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
+		}
+
+		common.Info("NATS stream already exists, use existing stream")
+		n.stream, err = n.jetStream.Stream(ctx, "RAGFLOW_TASKS")
+		if err != nil {
+			n.nc.Close()
+			return fmt.Errorf("fail to get existing stream at %s: %w", natsURL, err)
+		}
+		// Reconcile the running stream with the configured limits so an existing
+		// stream created under older settings (e.g. DiscardOld + small MaxBytes)
+		// picks up DiscardNew and the larger MaxMsgs/MaxBytes. CreateStream never
+		// touches an already-existing stream, so UpdateStream is required here.
+		n.stream, err = n.jetStream.UpdateStream(ctx, streamCfg)
+		if err != nil {
+			n.nc.Close()
+			return fmt.Errorf("fail to update existing stream at %s: %w", natsURL, err)
+		}
+		common.Info("NATS stream updated with current config (discard=new, larger limits)")
+	} else {
+		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
 	}
 	common.Info(fmt.Sprintf("NATS stream RAGFLOW_TASKS ready at %s", natsURL))
 
@@ -212,13 +246,21 @@ func (n *NatsEngine) ListMessages(messageType string, pending bool) ([]map[strin
 }
 
 func (n *NatsEngine) InitConsumer(subject string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return n.ensureConsumer(ctx)
+}
+
+// ensureConsumer creates or updates RAGFLOW_CONSUMER and stores the handle.
+// It is idempotent, so it doubles as the repair path when a stored handle is
+// found to have outlived its consumer. The consumer name is a fixed, durable
+// name on purpose: a restart must reattach to the same consumer (and its
+// pending messages) instead of leaving an orphan behind.
+func (n *NatsEngine) ensureConsumer(ctx context.Context) error {
 	if n.stream == nil {
 		return fmt.Errorf("NATS stream is nil, engine not properly initialized")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
-	var err error
 	// Explicit redelivery schedule: BackOff paces successive redeliveries
 	// (5s/15s/30s, then 60s repeated) so an unsettled message (crash, slow
 	// DB) is retried with breathing room instead of the broker default. The
@@ -233,7 +275,7 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	// applied. When MaxWaiting matches (the default, since this config omits
 	// it), the other three update in place. The fallback below handles the
 	// MaxWaiting mismatch by keeping the existing consumer.
-	n.consumer, err = n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+	consumer, err := n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Name:          "RAGFLOW_CONSUMER",
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		MaxDeliver:    16,
@@ -246,7 +288,7 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 		// MaxWaiting is immutable after consumer creation (AckWait/BackOff/MaxAckPending remain mutable when MaxWaiting matches; the update is atomic).
 		// If the consumer already exists, fall back to fetching it.
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
-			n.consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
+			consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
 			if err != nil {
 				return fmt.Errorf("failed to get existing consumer: %w", err)
 			}
@@ -254,7 +296,61 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 			return fmt.Errorf("failed to create Consumer: %w", err)
 		}
 	}
+	n.consumerMu.Lock()
+	n.consumer = consumer
+	n.consumerMu.Unlock()
 	return nil
+}
+
+// consumerHandle returns the task consumer handle, or an error when the engine
+// has not created one yet.
+func (n *NatsEngine) consumerHandle() (jetstream.Consumer, error) {
+	n.consumerMu.Lock()
+	defer n.consumerMu.Unlock()
+	if n.consumer == nil {
+		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
+	}
+	return n.consumer, nil
+}
+
+// recreateConsumer rebuilds RAGFLOW_CONSUMER and returns the fresh handle.
+// Consumer creation is a JetStream API round trip, so it gets its own timeout
+// rather than borrowing the (deliberately short) pull deadline.
+func (n *NatsEngine) recreateConsumer(ctx context.Context) (jetstream.Consumer, error) {
+	createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := n.ensureConsumer(createCtx); err != nil {
+		return nil, err
+	}
+	return n.consumerHandle()
+}
+
+// consumerRepairPullAttempts / consumerRepairPullDelay bound the retry that
+// follows a consumer rebuild: the pull subject of a freshly created consumer can
+// take a moment to become addressable, and a pull in that window answers the
+// very same "no responders" error the repair exists to clear.
+const (
+	consumerRepairPullAttempts = 5
+	consumerRepairPullDelay    = 200 * time.Millisecond
+)
+
+// isConsumerGoneErr reports whether err means the stored consumer handle no
+// longer addresses a live consumer: it was deleted, never existed, or the
+// JetStream context went stale. Typed JetStream/NATS errors are checked first -
+// they are the stable signal - with a string fallback for wrapped variants.
+func isConsumerGoneErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, jetstream.ErrConsumerNotFound) ||
+		errors.Is(err, jetstream.ErrConsumerDeleted) ||
+		errors.Is(err, nats.ErrNoResponders) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no responders") ||
+		strings.Contains(msg, "consumer not found") ||
+		strings.Contains(msg, "consumer deleted")
 }
 
 // PullMessages fetches up to messageCount messages before ctx expires.
@@ -262,18 +358,66 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
 		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
 	}
-	if n.consumer == nil {
-		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
+	consumer, err := n.consumerHandle()
+	if err != nil {
+		return nil, err
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		return nil, errors.New("pull messages context must have a deadline")
 	}
 
-	resultMessages := make([]common.TaskHandle, 0, messageCount)
-	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch messages: %w", err)
+	resultMessages, pullErr := n.fetchOnce(ctx, consumer, messageCount)
+	if !isConsumerGoneErr(pullErr) {
+		if pullErr != nil {
+			return nil, fmt.Errorf("failed to fetch messages: %w", pullErr)
+		}
+		return resultMessages, nil
 	}
+
+	// The handle outlived its consumer (deleted behind our back, or the
+	// JetStream context went stale across a reconnect). Retrying against the
+	// dead handle answers "no responders available for request" forever: the
+	// worker logs errors, the queue stops draining, and only a process restart
+	// clears it. Rebuild the consumer and retry, bounded, so a persistent failure
+	// still surfaces instead of spinning.
+	common.Warn(fmt.Sprintf("NATS consumer went missing (%v); recreating RAGFLOW_CONSUMER", pullErr))
+	consumer, recreateErr := n.recreateConsumer(ctx)
+	if recreateErr != nil {
+		return nil, fmt.Errorf("failed to fetch messages: %w (recreate consumer: %v)", pullErr, recreateErr)
+	}
+	// A pull issued in the instant right after the consumer is created can still
+	// land before the server registers the new consumer's pull subject - the same
+	// "no responders" answer, briefly - so retry a few times with a short pause
+	// instead of declaring the repair failed.
+	for attempt := 1; attempt <= consumerRepairPullAttempts; attempt++ {
+		resultMessages, pullErr = n.fetchOnce(ctx, consumer, messageCount)
+		if !isConsumerGoneErr(pullErr) || attempt == consumerRepairPullAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to fetch messages: %w", pullErr)
+		case <-time.After(consumerRepairPullDelay):
+		}
+	}
+	if pullErr != nil {
+		return nil, fmt.Errorf("failed to fetch messages: %w", pullErr)
+	}
+	return resultMessages, nil
+}
+
+// fetchOnce performs a single pull and folds the batch error into the returned
+// error. A pull deadline means "nothing was delivered" and is not an error - the
+// caller's loop relies on that - while any other batch failure nacks whatever did
+// arrive so the messages stay available. Errors can surface either from Fetch
+// itself or from the returned batch, which is why the no-responders repair above
+// has to look at both.
+func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer, messageCount int) ([]common.TaskHandle, error) {
+	messages, err := consumer.Fetch(messageCount, jetstream.FetchContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	resultMessages := make([]common.TaskHandle, 0, messageCount)
 	for message := range messages.Messages() {
 		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
 	}
@@ -286,7 +430,7 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 				common.Error("nack message after failed pull", nackErr)
 			}
 		}
-		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
+		return nil, batchErr
 	}
 	return resultMessages, nil
 }

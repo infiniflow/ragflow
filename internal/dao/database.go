@@ -181,6 +181,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = RunMigrations(ctx, DB); err != nil {
 			return fmt.Errorf("failed to run manual migrations: %w", err)
 		}
+		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
+			return err
+		}
 
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
@@ -197,6 +200,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
 	} else {
+		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
+			return err
+		}
 		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
 		// performed by the standalone --migrate action, so a server-mode process
 		// only converges the tables it needs itself.

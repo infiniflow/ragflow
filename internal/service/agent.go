@@ -349,7 +349,7 @@ type AgentService struct {
 	// in-memory; a follow-up phase moves to Redis per plan §4.9.
 	runner *canvas.Runner
 
-	// Phase 4.4 V2 — Redis-backed run infrastructure. nil = in-memory
+	// Phase 4.4 V2 — Kvrocks-backed run infrastructure. nil = in-memory
 	// / no-tracking (test path, current production boot path until
 	// cmd/server_main.go wires them in v3.6.0).
 	//
@@ -391,7 +391,7 @@ func NewAgentService() *AgentService {
 }
 
 // NewAgentServiceWithOptions is the production constructor that
-// injects the Redis-backed run infrastructure. The zero-arg
+// injects the Kvrocks-backed run infrastructure. The zero-arg
 // NewAgentService() remains as a thin wrapper that calls this with
 // all-nil options so existing call sites (cmd/server_main.go,
 // handler tests, agent_test.go) keep compiling.
@@ -1873,7 +1873,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 	if err != nil {
 		return nil
 	}
-	resolver := NewModelProviderService()
+	modelSolver := NewModelSolver()
 	for _, node := range c.Components {
 		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
 			continue
@@ -1882,7 +1882,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, _, _, _, err := resolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelSolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
 			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
 			}
@@ -2847,7 +2847,7 @@ func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
 }
 
 // markRunSucceeded records the run as completed successfully via
-// the Redis-backed RunTracker. No-op when tracker is nil (test path)
+// the Kvrocks-backed RunTracker. No-op when tracker is nil (test path)
 // or when the underlying Redis call fails (degraded boot).
 func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 	if s.runTracker == nil {
@@ -2862,7 +2862,7 @@ func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 }
 
 // markRunFailed records the run as failed (with reason) via the
-// Redis-backed RunTracker. No-op when tracker is nil or the
+// Kvrocks-backed RunTracker. No-op when tracker is nil or the
 // underlying Redis call fails.
 func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) {
 	if s.runTracker == nil {

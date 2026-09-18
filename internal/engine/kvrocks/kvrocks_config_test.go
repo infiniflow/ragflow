@@ -18,7 +18,7 @@
 // Valkey->Kvrocks migration. These are plain unit tests (no external service):
 // they assert that the deployment artifacts (CI workflow, compose file) encode
 // the required fixes so a future edit cannot silently regress the migration.
-package redis
+package kvrocks
 
 import (
 	"os"

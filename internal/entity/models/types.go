@@ -93,7 +93,11 @@ type TokenUsage struct {
 type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
-	// FIXME: add implementation
+	// TokenCount is what this input cost, taken from the provider's reported
+	// usage. Embedding APIs report usage per *request*, not per input, so the
+	// ingest path distributes the request total across the inputs it sent
+	// (internal/ingestion/task/embedder.go). It stays 0 for providers that
+	// report no usage at all — by design, rather than inventing a number.
 	TokenCount int `json:"token_count"`
 }
 
@@ -294,6 +298,39 @@ func (m *EmbeddingModel) ResolveBatchSize() int {
 	return GetEmbeddingBatchSize(name)
 }
 
+// ResolveMaxTokens is ResolveBatchSize's counterpart for the input window: the
+// model's own declaration wins, then the provider catalog's context_length, then
+// 0, which tells the caller to apply its own default. Deliberately not 8192:
+// the catalog has embedding models with 512-token windows, and overshooting a
+// window is a rejected request while undershooting only truncates.
+func (m *EmbeddingModel) ResolveMaxTokens() int {
+	if m == nil {
+		return 0
+	}
+	if m.MaxTokens > 0 {
+		return m.MaxTokens
+	}
+	var name string
+	if m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingMaxTokens(name)
+}
+
+// ResolveTokenizerID returns the tokenizer family declared for this model, or ""
+// when the model's own tokenizer is unknown (the caller then counts with cl100k
+// and a calibrated ratio).
+func (m *EmbeddingModel) ResolveTokenizerID() string {
+	if m == nil {
+		return ""
+	}
+	var name string
+	if m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingTokenizer(name)
+}
+
 // RerankModel wraps a ModelDriver with rerank-specific configuration
 type RerankModel struct {
 	ModelDriver ModelDriver
@@ -369,10 +406,6 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
-	// LastUsage holds the token usage (prompt/completion/total) of the most
-	// recent chat call. Consumed by callers for accurate Langfuse reporting
-	// and per-run token aggregation. Reset before each call.
-	LastUsage *TokenUsage
 }
 
 // NewChatModel creates a new ChatModel
