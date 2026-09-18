@@ -254,7 +254,7 @@ describe('useShowLog — Go backend early-log fallback', () => {
       expect.objectContaining({
         document_id: 'doc-1',
         log_type: 'file',
-        orderby: 'create_time',
+        orderby: 'run_count',
         desc: true,
         page_size: 1,
       }),

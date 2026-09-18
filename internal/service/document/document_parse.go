@@ -466,10 +466,9 @@ func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Doc
 	_ = s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID)
 }
 
-// deleteDocumentChunkImages removes source chunk image objects in bounded,
-// claim-fenced search batches. Images are external storage state, so a
-// takeover can fence the cleanup only at batch boundaries; repeating the
-// operation is safe because deleting an absent object is a no-op.
+// deleteDocumentChunkImages removes source chunk image objects in bounded
+// search batches. Repeating the operation is safe because deleting an absent
+// object is a no-op.
 func (s *DocumentService) deleteDocumentChunkImages(ctx context.Context, indexName, datasetID, documentID string) error {
 	if s.docEngine == nil {
 		return nil
