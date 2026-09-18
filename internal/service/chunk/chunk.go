@@ -855,10 +855,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			Asc("top_int").
 			Desc("create_timestamp_flt")
 	} else {
-		matchExprs = append(matchExprs, &types.MatchTextExpr{
-			MatchingText: keywords,
-			TopN:         size,
-		})
+		queryBuilder := nlp.GetQueryBuilder()
+		if queryBuilder == nil {
+			queryBuilder = nlp.NewQueryBuilder()
+		}
+		if matchText, _ := queryBuilder.Question(keywords, "", 0.3); matchText != nil {
+			matchExprs = append(matchExprs, matchText)
+		}
 	}
 
 	// Build search request - same as retrieval test but filtered by doc_id

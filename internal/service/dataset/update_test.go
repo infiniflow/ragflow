@@ -1250,3 +1250,42 @@ func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T
 		t.Fatalf("expected success code, got %d", code)
 	}
 }
+
+// TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity pins Python's guard: the
+// engine capability is consulted ONLY when the requested pagerank differs from
+// the stored one (`if "pagerank" in req and req["pagerank"] != kb.pagerank`,
+// dataset_api_service.py:392). A settings form re-sending the value the dataset
+// already has must not fail on a non-ES engine; a real change still must
+// (Python's own tests assert that message:
+// test/testcases/restful_api/test_datasets.py:620).
+func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	// fakeChatDocEngine.SupportsPageRank() == false — the Infinity case.
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = fakeChatDocEngine{}
+
+	unchanged := int64(0) // insertDatasetUpdateKB stores pagerank 0
+	if _, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+		service.UpdateDatasetRequest{Pagerank: &unchanged}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("unchanged pagerank: code=%d err=%v, want success (a no-op, as in Python)", code, err)
+	}
+
+	changed := int64(7)
+	_, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+		service.UpdateDatasetRequest{Pagerank: &changed})
+	if err == nil || !strings.Contains(err.Error(), "can only be set when doc_engine is elasticsearch") {
+		t.Fatalf("changed pagerank: code=%d err=%v, want the doc_engine message", code, err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("changed pagerank: code=%d, want CodeDataError", code)
+	}
+	persisted, getErr := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if getErr != nil {
+		t.Fatalf("get kb: %v", getErr)
+	}
+	if persisted.Pagerank != 0 {
+		t.Fatalf("pagerank = %d, want the rejected update rolled back", persisted.Pagerank)
+	}
+}
