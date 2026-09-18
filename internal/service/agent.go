@@ -2333,6 +2333,28 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunSucceeded(ctx2, runID)
 				return state, nil
 			}
+			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
+				visibleAnswer := answer
+				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
+					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					visibleAnswer = failureText
+				}
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
+					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
+				}
+				if shouldEmitMessage {
+					meData, _ := json.Marshal(canvas.MessageEndEvent{
+						Attachment: attachment,
+						Reference:  referencePayload,
+					})
+					emit("message_end", string(meData))
+				}
+				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
+				return state, nil
+			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, fmt.Errorf("canvas invoke: %w", err)
 		}
@@ -2836,6 +2858,25 @@ func tenantIDFromRoot(root map[string]any) string {
 		return s
 	}
 	return ""
+}
+
+// deferredAgentStreamFailureText returns the user-facing failure text the
+// Agent component recorded under `_ERROR` when the Message component's
+// deferred consumption failed. Python surfaces that same text through the
+// failing node's outputs into the chat stream instead of aborting the SSE
+// conversation with an error frame, so the run handler keeps it in the
+// message flow. Cancellation and timeouts stay run-level errors.
+func deferredAgentStreamFailureText(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ""
+	}
+	const marker = "consume deferred Agent stream: "
+	msg := err.Error()
+	idx := strings.LastIndex(msg, marker)
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(msg[idx+len(marker):])
 }
 
 func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
