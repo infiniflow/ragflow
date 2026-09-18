@@ -649,6 +649,14 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
+		// Either the chat setting or the request can disable citations.
+		quote := true
+		if v, ok := kwargs["quote"].(bool); ok {
+			quote = v
+		}
+		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+			quote = quote && promptConfigQuote
+		}
 		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
 		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
 		// agentic). It comes from the request kwargs first, then prompt_config.
@@ -683,16 +691,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			if useReasoning && chatModel != nil && len(kbs) > 0 {
-				// Reasoning chat (level 1..4): drive the agentic-RAG harness at
-				// the corresponding mode, mirroring Python's dialog_service →
-				// RAGTools → harness/*.
-				//
-				// The harness 'rag' tool composes the final cited answer itself
-				// (terminal tool, mirroring Python). When it returns a non-empty
-				// Answer we emit that answer directly (decorated per Python's
-				// decorate_answer: references resolved, prompt empty) and stop —
-				// there is no second-generation pass in Phase 10/11. Otherwise
-				// we keep its evidence as kbinfos and fall through.
+				// The harness collects evidence and composes the answer for
+				// reasoning levels 1..4. Apply citation visibility to its stream
+				// and final answer. If no answer is returned, keep the evidence
+				// and continue through the regular generation path.
 				thinkingMode := harnessModeForLevel(reasoningLevel)
 				question := strings.Join(questions, " ")
 				// Stream the answer as the harness composes it (Python
@@ -725,16 +727,17 @@ func (s *ChatPipelineService) AsyncChat(
 				// Engine progress (B) is pushed from concurrent research-slot
 				// goroutines while the final compose runs on the main goroutine, so
 				// serialize the think-framing state machine and the out<-send.
+				var answerFilter, reasoningFilter citationStreamFilter
 				var sinkMu sync.Mutex
+				send := func(ev AsyncChatResult) {
+					select {
+					case out <- ev:
+					case <-ctx.Done():
+					}
+				}
 				sink := func(delta string, isThink bool) {
 					sinkMu.Lock()
 					defer sinkMu.Unlock()
-					send := func(ev AsyncChatResult) {
-						select {
-						case out <- ev:
-						case <-ctx.Done():
-						}
-					}
 					if isThink {
 						if answerStreamed {
 							// Never reopen a thought block after the answer: drop the
@@ -750,6 +753,9 @@ func (s *ChatPipelineService) AsyncChat(
 								StartToThink: true,
 							})
 						}
+						if !quote {
+							delta = reasoningFilter.write(delta)
+						}
 						if delta != "" {
 							send(AsyncChatResult{
 								Reasoning: delta,
@@ -761,6 +767,9 @@ func (s *ChatPipelineService) AsyncChat(
 						return
 					}
 					if harnessThinking {
+						if text := reasoningFilter.flush(); text != "" {
+							send(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
 						harnessThinking = false
 						send(AsyncChatResult{
 							Reference:  map[string]interface{}{},
@@ -771,6 +780,11 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					if delta != "" {
 						answerStreamed = true
+					}
+					if !quote {
+						delta = answerFilter.write(delta)
+					}
+					if delta != "" {
 						send(AsyncChatResult{
 							Answer:    delta,
 							Reference: map[string]interface{}{},
@@ -821,6 +835,11 @@ func (s *ChatPipelineService) AsyncChat(
 				// EndToThink after the Phase 10/11 answer or the Final below.
 				// No-op when no block is open.
 				sink("", false)
+				sinkMu.Lock()
+				if text := answerFilter.flush(); text != "" {
+					send(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+				}
+				sinkMu.Unlock()
 				if hErr != nil {
 					common.Warn("harness retrieval failed", zap.Error(hErr))
 				} else {
@@ -828,7 +847,7 @@ func (s *ChatPipelineService) AsyncChat(
 					if harnessAnswer != "" {
 						common.Info("harness produced final cited answer; short-circuiting",
 							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs)
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs, quote)
 						final.Final = true
 						out <- final
 						return
@@ -1056,13 +1075,6 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Build citation prompt if quoting is enabled.
 		prompt4citation := ""
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
 		if len(knowledges) > 0 && quote {
 			prompt4citation = citationPrompt()
 		}
@@ -3111,10 +3123,8 @@ func (s *ChatPipelineService) decorateAnswer(
 		}
 	}
 
-	// Build refs: deepcopy kbinfos and strip vectors — done whenever
-	// hasKnowledges is true, regardless of quote flag.
-	// Mirrors dialog_service.py:826-829.
-	if hasKnowledges {
+	// Include sources only when citations are enabled, stripping chunk vectors.
+	if hasKnowledges && quote {
 		refs = make(map[string]interface{})
 		for k, v := range kbinfos {
 			refs[k] = v
@@ -3133,6 +3143,8 @@ func (s *ChatPipelineService) decorateAnswer(
 			}
 			refs["chunks"] = chunksFormat(newChunks)
 		}
+	} else if !quote {
+		refs = map[string]interface{}{}
 	}
 
 	// Check for invalid API key errors (outside knowledges guard).
@@ -3209,13 +3221,13 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 }
 
-// decorateHarnessAnswer mirrors Python's rag_agent decorate_answer used on the
-// reasoning>=1 path (dialog_service.py:2092-2137). The harness 'rag' tool
-// already composed the final answer WITH its own [ID:N] citations, so — unlike
-// decorateAnswer for the native async_chat path — we never run insert_citations
-// here. We only resolve the existing markers, repair bad formats, filter
-// doc_aggs to the cited docs, and build the reference from the harness citation
-// pool (chunks stripped of their vectors). Prompt stays empty, matching Python.
+// decorateHarnessAnswer formats the reasoning chat's final answer. The harness
+// 'rag' tool already composed the answer WITH its own [ID:N] citations, so —
+// unlike decorateAnswer for the native async_chat path — we never run
+// insert_citations here. We only resolve the existing markers, repair bad
+// formats, filter doc_aggs to the cited docs, and build the reference from the
+// harness citation pool (chunks stripped of their vectors). Prompt stays empty,
+// matching Python.
 //
 // The answer's [ID:n] markers index the evidence list the compose rendered for
 // the model — harness.Kbinfos.CiteChunkIDs, passed in as citeChunkIDs. That list
@@ -3230,17 +3242,29 @@ func (s *ChatPipelineService) decorateAnswer(
 // returned whenever the pool is non-empty, so an answer the model composed without
 // markers still carries its sources.
 //
-// Precondition for marker n to open passage n: the rendered blocks resolve to pool
-// chunks in order. A block whose id the pool does not know keeps its slot — an empty
-// entry the reference carries — so the later blocks keep their numbers; its own
-// citations are dropped, since the user could not open them.
-func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string) AsyncChatResult {
+// When quote is false the citations are removed entirely and the reference is
+// cleared (see stripCitations).
+func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string, quote bool) AsyncChatResult {
 	think := ""
 	ans := answer
 	if strings.Contains(answer, "</think>") {
 		if parts := strings.Split(answer, "</think>"); len(parts) == 2 {
 			think = parts[0] + "</think>"
 			ans = strings.TrimSpace(parts[1])
+		}
+	}
+
+	// Invalid-key hint (dialog_service.py:2134-2135).
+	if strings.Contains(strings.ToLower(ans), "invalid key") ||
+		strings.Contains(strings.ToLower(ans), "invalid api") {
+		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+	}
+
+	if !quote {
+		return AsyncChatResult{
+			Answer:    stripCitations(think + ans),
+			Reference: map[string]interface{}{},
+			CreatedAt: float64(time.Now().Unix()),
 		}
 	}
 
@@ -3346,12 +3370,6 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		// reference and the shared chunks stay intact.
 		ref["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
 		refs = ref
-	}
-
-	// Invalid-key hint (dialog_service.py:2134-2135).
-	if strings.Contains(strings.ToLower(ans), "invalid key") ||
-		strings.Contains(strings.ToLower(ans), "invalid api") {
-		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
 	}
 
 	return AsyncChatResult{

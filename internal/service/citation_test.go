@@ -495,7 +495,7 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 		},
 	}
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil)
+	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil, true)
 
 	if strings.Contains(res.Answer, "1-3") {
 		t.Fatalf("final answer still carries the range citation: %q", res.Answer)
@@ -511,5 +511,21 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 	// filtered out of the reference (recall_docs = cited docs).
 	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
 		t.Fatalf("reference doc_aggs = %#v, want the single cited doc", res.Reference["doc_aggs"])
+	}
+}
+
+func TestCitationStreamFilter(t *testing.T) {
+	var filter citationStreamFilter
+	want := "Answer[guide](https://example.com) end"
+	got := ""
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)", "[guide](https://example.com) end"} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream leaked citation text: %q", got)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer=%q, want %q", got, want)
 	}
 }
