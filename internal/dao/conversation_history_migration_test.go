@@ -109,7 +109,7 @@ func writeDatabaseVersion(t *testing.T, db *gorm.DB, version string) {
 }
 
 func TestMigrateConversationHistorySplitsPayloads(t *testing.T) {
-	message := `[{"role":"user","content":"hi","id":"m1"},{"role":"assistant","content":"hello","id":"m2","reference":[{"chunk-0":{"content":"chunk"}}]}]`
+	message := `[{"role":"user","content":"hi","id":"m1"},{"role":"assistant","content":"<think>reasoning</think>hello","id":"m2","reference":[{"chunk-0":{"content":"chunk"}}]}]`
 	reference := `[{"chunks":["a"],"doc_aggs":[]},{"chunks":["b"],"doc_aggs":[]}]`
 	db := setupConversationHistoryMigrationDB(t, true)
 	insertLegacyConversation(t, db, "conversation", "c1", message, reference)
@@ -131,12 +131,17 @@ func TestMigrateConversationHistorySplitsPayloads(t *testing.T) {
 		}
 	}
 
-	var msg entity.ConversationMessage
-	if err := db.Table(conversationMessageTable).Where("conversation_id = ? AND position = ?", "c1", 1).Take(&msg).Error; err != nil {
-		t.Fatalf("load message: %v", err)
-	}
-	if derefString(msg.Role) != "assistant" || derefString(msg.Content) != "hello" || derefString(msg.MessageID) != "m2" {
-		t.Fatalf("unexpected assistant message: %+v", msg)
+	for _, tc := range []struct{ table, conversationID string }{
+		{conversationMessageTable, "c1"},
+		{apiConversationMessageTable, "a1"},
+	} {
+		var msg entity.ConversationMessage
+		if err := db.Table(tc.table).Where("conversation_id = ? AND position = ?", tc.conversationID, 1).Take(&msg).Error; err != nil {
+			t.Fatalf("load message from %s: %v", tc.table, err)
+		}
+		if derefString(msg.Role) != "assistant" || derefString(msg.Content) != "<think>reasoning</think>hello" || derefString(msg.MessageID) != "m2" {
+			t.Fatalf("unexpected assistant message in %s: %+v", tc.table, msg)
+		}
 	}
 
 	var storedReference string

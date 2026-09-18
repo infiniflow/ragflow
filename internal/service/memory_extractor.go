@@ -474,15 +474,15 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	if mem.TenantLLMID != nil && *mem.TenantLLMID != "" {
 		llmRef = *mem.TenantLLMID
 	}
-	driver, modelName, apiConfig, _, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeChat, llmRef)
+	target, err := NewModelSolver().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeChat, llmRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", classifyMemoryTaskDependencyError(err))
 	}
-	chatModel := models.NewChatModel(driver, &modelName, apiConfig)
+	chatModel := models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
 	temperature := mem.Temperature
-	resp, err := chatModel.ModelDriver.ChatWithMessages(ctx, modelName, messages, apiConfig, &models.ChatConfig{Temperature: &temperature}, nil)
+	resp, err := chatModel.ModelDriver.ChatWithMessages(ctx, target.ModelName, messages, target.APIConfig, &models.ChatConfig{Temperature: &temperature}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("chat model: %w", err)
 	}

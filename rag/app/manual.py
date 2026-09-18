@@ -101,6 +101,11 @@ class Docx(DocxParser):
                     level_stack.pop()
                 question_stack.append(p_text)
                 level_stack.append(question_level)
+            if from_page <= pn < to_page:
+                # A text box keeps its text out of `Paragraph.text` and is never a
+                # heading, so it belongs to the answer of the enclosing section.
+                for box_text in self.extract_text_boxes(p):
+                    last_answer = f"{last_answer}\n{box_text}"
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1

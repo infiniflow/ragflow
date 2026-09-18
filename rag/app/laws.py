@@ -87,9 +87,14 @@ class Docx(DocxParser):
 
             p = Paragraph(block, self.doc)
             question_level, p_text = docx_question_level(p, bull)
+            # A text box carries no heading level either, so it gets the same sentinel
+            # as a table and stays leaf content of the enclosing section.
+            text_boxes = [(table_level, box_text) for box_text in self.extract_text_boxes(p)]
             if not p_text.strip("\n"):
+                lines.extend(text_boxes)
                 continue
             lines.append((question_level, p_text))
+            lines.extend(text_boxes)
             level_set.add(question_level)
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
