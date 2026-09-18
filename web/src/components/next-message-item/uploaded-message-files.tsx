@@ -19,12 +19,15 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import api from '@/utils/api';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
+import { cn } from '@/lib/utils';
 import { memo, useEffect, useState } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import FileIcon from '../file-icon';
 import { useAuthenticatedImageUrl } from '../image';
+import { Modal } from '../ui/modal/modal';
+import { Spin } from '../ui/spin';
 import SvgIcon from '../svg-icon';
-import { getFileMimeType, isImageFile } from './utils';
+import { getFileMimeType, isAudioFile, isImageFile } from './utils';
 
 interface IProps {
   files?: File[] | IDocumentInfo[] | UploadResponseDataType[];
@@ -89,6 +92,72 @@ function LocalFileImage({ file, name }: { file: File; name: string }) {
   );
 }
 
+// Audio attachments have no visual content, so the chip opens an inline
+// player instead of a lightbox: chat uploads live in the per-user downloads
+// bucket and are fetched through the authenticated attachment preview
+// endpoint, while unsent local files play straight from an object URL.
+function AudioPlayerModal({
+  file,
+  onClose,
+}: {
+  file: File | UploadResponseDataType | IDocumentInfo;
+  onClose: () => void;
+}) {
+  const name = file.name;
+  const isLocal = file instanceof File;
+  const remoteSrc = useAuthenticatedImageUrl(
+    !isLocal && file.id
+      ? api.getAttachmentFilePreview({
+          docId: file.id,
+          filename: name,
+          mimeType: getFileMimeType(file),
+        })
+      : null,
+  );
+  const [localSrc, setLocalSrc] = useState('');
+
+  useEffect(() => {
+    if (isLocal) {
+      const url = URL.createObjectURL(file);
+      setLocalSrc(url);
+      return () => URL.revokeObjectURL(url);
+    }
+  }, [isLocal, file]);
+
+  const src = isLocal ? localSrc : remoteSrc;
+
+  return (
+    <Modal
+      open
+      onCancel={onClose}
+      showfooter={false}
+      title={
+        <div className="flex items-center gap-2">
+          {isLocal ? (
+            <SvgIcon name={`file-icon/${getExtension(name)}`} width={24} />
+          ) : (
+            <FileIcon id={file.id ?? ''} name={name}></FileIcon>
+          )}
+          <span className="truncate">{name}</span>
+        </div>
+      }
+    >
+      {src ? (
+        <audio
+          controls
+          src={src}
+          className="w-full"
+          data-testid="uploaded-audio-player"
+        />
+      ) : (
+        <div className="flex items-center justify-center py-6">
+          <Spin />
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 type NameWidgetType = {
   name: string;
   size: number;
@@ -109,6 +178,10 @@ function NameWidget({ name, size }: NameWidgetType) {
   );
 }
 export function InnerUploadedMessageFiles({ files = [] }: IProps) {
+  const [playingFile, setPlayingFile] = useState<
+    File | UploadResponseDataType | IDocumentInfo | null
+  >(null);
+
   return (
     <PhotoProvider>
       <section className="flex gap-2 pt-2 flex-wrap">
@@ -116,9 +189,30 @@ export function InnerUploadedMessageFiles({ files = [] }: IProps) {
           const name = file.name;
           const isFile = file instanceof File;
           const isImage = isImageFile(file);
+          const isAudio = isAudioFile(file);
 
           return (
-            <div key={idx} className="flex gap-1 border rounded-md p-1.5">
+            <div
+              key={idx}
+              className={cn(
+                'flex gap-1 border rounded-md p-1.5',
+                isAudio && 'cursor-pointer hover:border-accent-primary',
+              )}
+              role={isAudio ? 'button' : undefined}
+              tabIndex={isAudio ? 0 : undefined}
+              aria-label={isAudio ? name : undefined}
+              onClick={isAudio ? () => setPlayingFile(file) : undefined}
+              onKeyDown={
+                isAudio
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setPlayingFile(file);
+                      }
+                    }
+                  : undefined
+              }
+            >
               {isImage ? (
                 isFile ? (
                   <LocalFileImage file={file} name={name}></LocalFileImage>
@@ -146,6 +240,12 @@ export function InnerUploadedMessageFiles({ files = [] }: IProps) {
           );
         })}
       </section>
+      {playingFile && (
+        <AudioPlayerModal
+          file={playingFile}
+          onClose={() => setPlayingFile(null)}
+        ></AudioPlayerModal>
+      )}
     </PhotoProvider>
   );
 }
