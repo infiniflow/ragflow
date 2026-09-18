@@ -16,6 +16,7 @@
 
 import logging
 from email import policy
+from email.message import EmailMessage as _EmailMessage
 from email.parser import BytesParser
 from rag.app.naive import chunk as naive_chunk
 from common.constants import MAXIMUM_PAGE_NUMBER
@@ -33,7 +34,39 @@ _OLE_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _INDEXED_HEADERS = frozenset(("date", "from", "to", "cc", "bcc", "reply-to", "subject"))
 
 
+def _replace_or_add_body(message, body, body_type):
+    """Replace an existing plain/html body part or add it if msgconvert omitted it."""
+    if body is None:
+        return
+    part = message.get_body(preferencelist=(body_type,))
+    if part is not None:
+        if body_type == "plain":
+            part.set_content(body)
+        else:
+            charset = part.get_content_charset() or "utf-8"
+            part.set_content(body, maintype="text", subtype="html", params={"charset": charset})
+        return
+    new_part = _EmailMessage()
+    if body_type == "plain":
+        new_part.set_content(body)
+    else:
+        new_part.set_content(body, maintype="text", subtype="html", params={"charset": "utf-8"})
+    if message.is_multipart():
+        message.attach(new_part)
+    elif message.get_content_type() == "text/plain" and body_type == "html":
+        message.make_alternative()
+        message.attach(new_part)
+    elif message.get_content_type() == "text/html" and body_type == "plain":
+        message.make_alternative()
+        message.attach(new_part)
+    elif body_type == "plain":
+        message.set_content(body)
+    else:
+        message.set_content(body, maintype="text", subtype="html", params={"charset": "utf-8"})
+
+
 def _parse_message(filename, binary):
+    """Parse an RFC822 email; convert Outlook MSG to EML first when necessary."""
     original_body = None
     original_html = None
     is_msg = filename.lower().endswith(".msg") or binary.startswith(_OLE_SIGNATURE)
@@ -62,15 +95,8 @@ def _parse_message(filename, binary):
     message = BytesParser(policy=policy.default).parsebytes(binary)
     if is_msg and (message.defects or not any(header.lower() in _INDEXED_HEADERS for header in message.keys())):
         raise ValueError("Invalid converted email")
-    if original_body is not None:
-        plain_part = message.get_body(preferencelist=("plain",))
-        if plain_part is not None:
-            plain_part.set_content(original_body)
-    if original_html is not None:
-        html_part = message.get_body(preferencelist=("html",))
-        if html_part is not None:
-            charset = html_part.get_content_charset() or "utf-8"
-            html_part.set_content(original_html, maintype="text", subtype="html", params={"charset": charset})
+    _replace_or_add_body(message, original_body, "plain")
+    _replace_or_add_body(message, original_html, "html")
     return message
 
 
@@ -112,7 +138,10 @@ def chunk(
 
     #  get the email main info
     def _add_content(msg, content_type):
+        """Recursively collect text/plain and text/html payloads into target lists."""
+
         def _decode_payload(payload, charset, target_list):
+            """Decode a MIME payload, falling back through common encodings."""
             try:
                 target_list.append(payload.decode(charset))
             except (UnicodeDecodeError, LookupError):
