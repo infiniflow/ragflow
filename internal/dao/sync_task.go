@@ -294,8 +294,12 @@ func (d *SyncTaskDAO) FailTask(ctx context.Context, taskID, connectorID, message
 	})
 }
 
-// HandleTransientFailure retries a running task until maxRetries is reached.
-func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connectorID, message string, maxRetries int64) (int64, bool, error) {
+// HandleTransientFailure retries a running task until maxRetries for its error
+// class is reached. errorClass identifies the current failure class; the
+// class-scoped retry counter resets whenever the class changes, so failures of
+// one class never consume another class's retry budget. ErrorCount is kept as
+// the total failure count for diagnostics.
+func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connectorID, message, errorClass string, maxRetries int64) (int64, bool, error) {
 	var attempts int64
 	var failed bool
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -311,7 +315,11 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 			return err
 		}
 
-		attempts = task.ErrorCount + 1
+		attempts = task.RetryCount + 1
+		if task.ErrorClass != errorClass {
+			// A different failure class starts a fresh retry budget.
+			attempts = 1
+		}
 		status := SyncStatusSchedule
 		connectorStatus := SyncStatusSchedule
 		errorMsg := message
@@ -319,7 +327,7 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 			failed = true
 			status = SyncStatusFail
 			connectorStatus = SyncStatusFail
-			errorMsg = fmt.Sprintf("sync task failed after %d transient retries: %s", maxRetries, message)
+			errorMsg = fmt.Sprintf("sync task failed after %d retries, last error: %s", attempts-1, message)
 		}
 
 		if err := tx.Model(&entity.SyncLogs{}).
@@ -327,7 +335,9 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 			Updates(map[string]any{
 				"status":      status,
 				"error_msg":   errorMsg,
-				"error_count": attempts,
+				"error_count": task.ErrorCount + 1,
+				"retry_count": attempts,
+				"error_class": errorClass,
 			}).Error; err != nil {
 			return err
 		}
