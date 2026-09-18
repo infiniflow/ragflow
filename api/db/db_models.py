@@ -1682,6 +1682,16 @@ class Search(DataBaseModel):
         db_table = "search"
 
 
+class PipelineDSLVersion(DataBaseModel):
+    dsl_id = CharField(max_length=255, null=False)
+    version = BigIntegerField(null=False)
+    dsl = JSONField(null=False)
+
+    class Meta:
+        db_table = "pipeline_dsl_version"
+        primary_key = CompositeKey("dsl_id", "version")
+
+
 class PipelineOperationLog(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     document_id = CharField(max_length=32, index=True)
@@ -1698,6 +1708,8 @@ class PipelineOperationLog(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
+    dsl_id = CharField(max_length=255, null=True)
+    dsl_version = BigIntegerField(null=True)
     dsl = JSONField(null=True, default=dict)
     task_type = CharField(max_length=32, null=False, default="")
     operation_status = CharField(max_length=32, null=False, help_text="Operation status")
@@ -1706,6 +1718,7 @@ class PipelineOperationLog(DataBaseModel):
 
     class Meta:
         db_table = "pipeline_operation_log"
+        indexes = ((("dsl_id", "dsl_version"), False),)
 
 
 class Connector(DataBaseModel):
@@ -2457,6 +2470,8 @@ def migrate_db():
     alter_db_column_type(migrator, "system_settings", "value", EmptyStringTextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
     alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
+    alter_db_add_column(migrator, "pipeline_operation_log", "dsl_id", CharField(max_length=255, null=True))
+    alter_db_add_column(migrator, "pipeline_operation_log", "dsl_version", BigIntegerField(null=True))
     alter_db_add_column(
         migrator,
         "user_canvas",

@@ -43,6 +43,9 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	if db.Migrator().HasTable(&entity.MemoryTask{}) {
 		t.Fatal("expected memory_task to not exist initially")
 	}
+	if db.Migrator().HasTable(&entity.PipelineDSLVersion{}) {
+		t.Fatal("expected pipeline_dsl_version to not exist initially")
+	}
 
 	ctx := context.Background()
 	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
@@ -58,6 +61,9 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	}
 	if !db.Migrator().HasTable(&entity.MemoryTask{}) {
 		t.Fatal("expected memory_task to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasTable(&entity.PipelineDSLVersion{}) {
+		t.Fatal("expected pipeline_dsl_version to exist after autoMigrateRuntimeModels")
 	}
 	if !db.Migrator().HasIndex(&entity.MemoryTask{}, "idx_memory_task_due") {
 		t.Fatal("expected memory_task due index to exist after autoMigrateRuntimeModels")
@@ -98,6 +104,46 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	// Verify idempotency
 	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
 		t.Fatalf("second autoMigrateRuntimeModels failed: %v", err)
+	}
+}
+
+func TestMigratePipelineOperationLogDSLReference(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		dsl longtext NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy pipeline operation log table: %v", err)
+	}
+
+	ctx := t.Context()
+	if err = migratePipelineOperationLogDSLReference(ctx, db); err != nil {
+		t.Fatalf("migrate pipeline operation log DSL reference: %v", err)
+	}
+	migrator := db.Migrator()
+	if !migrator.HasColumn(&entity.PipelineOperationLog{}, "dsl_id") {
+		t.Fatal("expected pipeline_operation_log.dsl_id")
+	}
+	if !migrator.HasColumn(&entity.PipelineOperationLog{}, "dsl_version") {
+		t.Fatal("expected pipeline_operation_log.dsl_version")
+	}
+	if !migrator.HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_dsl") {
+		t.Fatal("expected pipeline operation log DSL reference index")
+	}
+
+	if err = migratePipelineOperationLogDSLReference(ctx, db); err != nil {
+		t.Fatalf("second migration should be idempotent: %v", err)
+	}
+
+	fresh, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open second sqlite: %v", err)
+	}
+	if err = migratePipelineOperationLogDSLReference(ctx, fresh); err != nil {
+		t.Fatalf("migration on a table-less database should be a no-op: %v", err)
 	}
 }
 

@@ -288,6 +288,45 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migratePipelineOperationLogDSLReference adds the versioned-DSL reference
+// without running AutoMigrate over the rest of the shared operation-log table.
+func migratePipelineOperationLogDSLReference(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&entity.PipelineOperationLog{}) {
+		return nil
+	}
+
+	fields := []struct {
+		name   string
+		column string
+	}{
+		{name: "DSLID", column: "dsl_id"},
+		{name: "DSLVersion", column: "dsl_version"},
+	}
+	for _, field := range fields {
+		if migrator.HasColumn(&entity.PipelineOperationLog{}, field.name) {
+			continue
+		}
+		if err := migrator.AddColumn(&entity.PipelineOperationLog{}, field.name); err != nil {
+			if isDuplicateColumnErr(err) {
+				continue
+			}
+			return fmt.Errorf("failed to add pipeline_operation_log.%s: %w", field.column, err)
+		}
+	}
+
+	const indexName = "idx_pipeline_operation_log_dsl"
+	if !migrator.HasIndex(&entity.PipelineOperationLog{}, indexName) {
+		if err := migrator.CreateIndex(&entity.PipelineOperationLog{}, indexName); err != nil {
+			if isDuplicateIndexErr(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to create %s: %w", indexName, err)
+		}
+	}
+	return nil
+}
+
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
 // (tenant_id, name) for valid knowledge bases. A VIRTUAL generated column
 // (name_ci) computes LOWER(name) only for status='1' rows and is NULL otherwise,
@@ -684,6 +723,10 @@ func dropColumnIfExists(ctx context.Context, db *gorm.DB, table, column string) 
 // key name), which means the index already exists.
 func isDuplicateIndexErr(err error) bool {
 	return strings.Contains(err.Error(), "Error 1061") || strings.Contains(err.Error(), "Duplicate key name")
+}
+
+func isDuplicateColumnErr(err error) bool {
+	return strings.Contains(err.Error(), "Error 1060") || strings.Contains(err.Error(), "Duplicate column name")
 }
 
 // renameDuplicateEmails renames every user row that shares an address with
