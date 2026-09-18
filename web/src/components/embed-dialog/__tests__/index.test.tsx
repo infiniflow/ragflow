@@ -64,9 +64,7 @@ describe('EmbedDialog widget settings persistence', () => {
       screen.getByRole('button', { name: 'flow.save widget settings' }),
     );
 
-    await waitFor(() =>
-      expect(onSaveWidgetSettings).toHaveBeenCalledTimes(1),
-    );
+    await waitFor(() => expect(onSaveWidgetSettings).toHaveBeenCalledTimes(1));
     expect(onSaveWidgetSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         theme: 'dark',
