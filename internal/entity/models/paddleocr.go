@@ -248,6 +248,8 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		return nil, err
 	}
 
+	apiConfig = paddleOCRResolvedAPIConfig(apiConfig)
+
 	if (content == nil || len(content) == 0) && (fileURL == nil || *fileURL == "") {
 		return nil, fmt.Errorf("content and fileURL cannot be both empty")
 	}
@@ -554,14 +556,15 @@ func (p *PaddleOCRModel) ShowTask(ctx context.Context, taskID string, apiConfig 
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-// PaddleOCRConfigFromAPIKey parses the tenant PaddleOCR api_key payload the
+// paddleOCRConfigFromAPIKey parses the tenant PaddleOCR api_key payload the
 // same way Python's PaddleOCROcrModel does: the api_key is a JSON object
-// carrying paddleocr_base_url / paddleocr_api_url, paddleocr_access_token and
-// paddleocr_algorithm, optionally nested under an "api_key" key. A non-JSON
-// api_key — the PaddleOCR.local plain bearer token — yields zero values and
-// the caller falls back to plain-text semantics. base_url prefers
-// paddleocr_base_url over paddleocr_api_url, mirroring Python.
-func PaddleOCRConfigFromAPIKey(apiKey string) (baseURL, accessToken, algorithm string) {
+// carrying the server endpoint, access token and algorithm, either with the
+// lower-case keys written by the model UI or the upper-case env-style keys
+// written by the env auto-provisioning, optionally nested under an "api_key"
+// key. A non-JSON api_key — the PaddleOCR.local plain bearer token — yields
+// zero values and the caller falls back to plain-text semantics. base_url
+// prefers paddleocr_base_url over paddleocr_api_url, mirroring Python.
+func paddleOCRConfigFromAPIKey(apiKey string) (baseURL, accessToken, algorithm string) {
 	if strings.TrimSpace(apiKey) == "" {
 		return "", "", ""
 	}
@@ -573,12 +576,72 @@ func PaddleOCRConfigFromAPIKey(apiKey string) (baseURL, accessToken, algorithm s
 		raw = nested
 	}
 	get := func(key string) string {
-		value, _ := raw[key].(string)
-		return strings.TrimSpace(value)
+		for _, k := range []string{key, strings.ToUpper(key)} {
+			if value, _ := raw[k].(string); strings.TrimSpace(value) != "" {
+				return strings.TrimSpace(value)
+			}
+		}
+		return ""
 	}
 	baseURL = get("paddleocr_base_url")
 	if baseURL == "" {
 		baseURL = get("paddleocr_api_url")
 	}
 	return baseURL, get("paddleocr_access_token"), get("paddleocr_algorithm")
+}
+
+// paddleOCRResolvedAPIConfig resolves the wire config for the PaddleOCR
+// drivers: the bearer token comes from the api_key JSON payload when present,
+// and the base url falls back from the instance field through the payload to
+// the PADDLEOCR_BASE_URL / PADDLEOCR_API_URL env vars. A plain-text api_key
+// passes through untouched; an empty base url is left for the driver's catalog
+// default.
+func paddleOCRResolvedAPIConfig(apiConfig *APIConfig) *APIConfig {
+	if apiConfig == nil {
+		return nil
+	}
+	apiKey := ""
+	if apiConfig.ApiKey != nil {
+		apiKey = *apiConfig.ApiKey
+	}
+	baseURL := ""
+	if apiConfig.BaseURL != nil {
+		baseURL = strings.TrimSpace(*apiConfig.BaseURL)
+	}
+	keyBaseURL, keyAccessToken, _ := paddleOCRConfigFromAPIKey(apiKey)
+	if keyAccessToken != "" {
+		apiKey = keyAccessToken
+	}
+	if baseURL == "" {
+		baseURL = keyBaseURL
+	}
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
+	}
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAPIURL))
+	}
+	return &APIConfig{ApiKey: &apiKey, Region: apiConfig.Region, BaseURL: &baseURL}
+}
+
+// paddleOCRAlgorithm resolves the OCR algorithm the drivers advertise: an
+// explicit OCRConfig override (parser setup) wins, then the api_key payload,
+// then the PADDLEOCR_ALGORITHM env var, then the PaddleOCR-VL default.
+func paddleOCRAlgorithm(ocrConfig *OCRConfig, apiConfig *APIConfig) string {
+	if ocrConfig != nil {
+		if algorithm := strings.TrimSpace(ocrConfig.Algorithm); algorithm != "" {
+			return algorithm
+		}
+	}
+	apiKey := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKey = *apiConfig.ApiKey
+	}
+	if _, _, algorithm := paddleOCRConfigFromAPIKey(apiKey); strings.TrimSpace(algorithm) != "" {
+		return strings.TrimSpace(algorithm)
+	}
+	if algorithm := strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm)); algorithm != "" {
+		return algorithm
+	}
+	return "PaddleOCR-VL"
 }
