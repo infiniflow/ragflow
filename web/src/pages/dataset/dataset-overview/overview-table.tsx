@@ -385,8 +385,11 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     }
     return {
       ...logInfo,
-      details: '',
-      events: messages?.items ?? [],
+      // Keep the seeded progress_msg visible until events arrive: blanking
+      // details unconditionally flashes an empty modal while the messages
+      // query is still loading (mirrors the dataset page's useShowLog).
+      details: messages?.items.length ? '' : logInfo.details,
+      events: messages?.items,
       loadPreviousEvents: hasPreviousPage
         ? () => fetchPreviousPage()
         : undefined,
