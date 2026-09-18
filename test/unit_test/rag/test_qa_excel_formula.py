@@ -156,7 +156,6 @@ def test_an_uncached_formula_reports_the_row_instead_of_answering_with_its_sourc
     any other unusable row takes. The alternative, falling back to the source
     text, is the defect this PR removes, so it is not a fallback worth having.
     """
-    blob = _build_xlsx([("What is the total?", None)])
     from openpyxl import Workbook, load_workbook
 
     wb = Workbook()
