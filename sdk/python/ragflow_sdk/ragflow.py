@@ -36,7 +36,11 @@ class RAGFlow:
         """
         if timeout is not None:
             values = timeout if isinstance(timeout, tuple) else (timeout, timeout)
-            if len(values) != 2 or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0 for value in values):
+            try:
+                valid_timeout = len(values) == 2 and all(not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value > 0 for value in values)
+            except OverflowError:
+                valid_timeout = False
+            if not valid_timeout:
                 raise ValueError("timeout must be None, a positive finite number, or a (connect, read) tuple of positive finite numbers")
         self._timeout = timeout
         self.user_key = api_key

@@ -32,17 +32,19 @@ RAGFlow(api_key, base_url, version="v1", *, timeout=None)
 - A positive finite number: use that many seconds for both connection and read timeouts.
 - A pair of positive finite numbers: `(connect_timeout, read_timeout)` in seconds.
 
-Invalid values, including zero, negative numbers, booleans, and non-finite numbers, raise `ValueError` when constructing the client.
+Invalid values, including zero, negative numbers, booleans, non-finite numbers, and integers too large to convert to a float, raise `ValueError` when constructing the client.
 
 ```python
 from ragflow_sdk import RAGFlow
 
 rag = RAGFlow(
     api_key="<YOUR_API_KEY>",
-    base_url="http://<YOUR_BASE_URL>:9380",
+    base_url="https://<YOUR_BASE_URL>",
     timeout=(5, 60),
 )
 ```
+
+Use HTTPS for remote deployments because each request includes the API key as a bearer token. Plain HTTP is appropriate only for trusted local or loopback endpoints.
 
 This uses Requests' [connection and read timeout semantics](https://requests.readthedocs.io/en/latest/user/advanced/#timeouts). A read timeout limits how long the socket waits without receiving data; it is not a deadline for an entire request, parsing task, or streaming conversation. Each polling request receives the same timeout independently. Choose the read timeout to allow expected pauses in streaming responses.
 

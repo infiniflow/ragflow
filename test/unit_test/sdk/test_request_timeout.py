@@ -152,3 +152,13 @@ def test_timeout_rejects_invalid_configuration(timeout):
     """Reject unsupported configurations before any request can start."""
     with pytest.raises(ValueError, match="timeout must be"):
         RAGFlow("test-key", "http://unused.invalid", timeout=timeout)
+
+
+@pytest.mark.parametrize("sign", [1, -1], ids=["positive", "negative"])
+@pytest.mark.parametrize("position", ["scalar", "connect", "read"])
+def test_timeout_rejects_oversized_integers_consistently(sign, position):
+    """Reject integers outside float range with the documented validation error."""
+    value = sign * 10**1000
+    timeout = {"scalar": value, "connect": (value, 1), "read": (1, value)}[position]
+    with pytest.raises(ValueError, match="timeout must be"):
+        RAGFlow("test-key", "http://unused.invalid", timeout=timeout)
