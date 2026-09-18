@@ -769,7 +769,7 @@ func TestAggregateTableDocMetadata_ManualMode(t *testing.T) {
 }
 
 // Python compares the stored role as is (rag/utils/table_es_metadata.py:187,
-// like the chunk-body membership tests at rag/app/table.py:704-706), so a
+// like the chunk-body membership tests at rag/app/table.py:629-631), so a
 // differently cased role excludes the column from document metadata. Only
 // "metadata" and "both" aggregate, so the indexing alias "vectorize" excludes
 // it as well.

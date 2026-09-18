@@ -54,7 +54,7 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 		for _, n := range newNames {
 			// Keep the name as the parser wrote it: it is the key both the role
 			// lookup and chunk_data use, so trimming or dropping a blank one
-			// would orphan that column's role (rag/app/table.py:665-670).
+			// would orphan that column's role (rag/app/table.py:590-595).
 			if _, ok := seen[n]; !ok {
 				seen[n] = struct{}{}
 				names = append(names, n)
@@ -71,7 +71,7 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 // (knowledgebase) parser_config: the discovered column names, plus the
 // field_map the SQL retrieval path reads. Mirrors Python's table chunker, which
 // updates the knowledgebase with table_column_names + field_map on every parse
-// (rag/app/table.py:675-678).
+// (rag/app/table.py:600-603).
 //
 // Both keys are REPLACED rather than merged: the discovered schema is the
 // current file's schema, so a column that disappeared, or whose role changed

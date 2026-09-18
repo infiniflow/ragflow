@@ -181,41 +181,6 @@ async def upload_info(tenant_id: str):
         return server_error_response(e)
 
 
-@manager.route("/documents/probe_table", methods=["POST"])  # noqa: F821
-@login_required
-async def probe_table():
-    """
-    Probe a table file to discover column headers without ingesting.
-    """
-    files = await request.files
-    file = files.get("file") if files else None
-    if not file:
-        return get_error_argument_result("No file provided")
-
-    filename = (file.filename or "").lower()
-    max_text_probe_bytes = 1024 * 1024  # 1MB is sufficient for table header discovery
-    max_excel_probe_bytes = 32 * 1024 * 1024  # 32MB safety limit for Excel archives
-
-    if filename.endswith((".csv", ".tsv", ".txt")):
-        content = file.read(max_text_probe_bytes)
-    elif filename.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
-        content = file.read(max_excel_probe_bytes)
-    else:
-        return get_error_argument_result(f"Unsupported or binary table format: {filename}")
-
-    if not content:
-        return get_result(data={"columns": [], "total_columns": 0})
-
-    try:
-        from rag.app.table import probe_table_headers
-
-        headers = probe_table_headers(content, filename)
-        return get_result(data={"columns": headers, "total_columns": len(headers)})
-    except Exception as e:
-        logging.exception("probe_table failed")
-        return server_error_response(e)
-
-
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

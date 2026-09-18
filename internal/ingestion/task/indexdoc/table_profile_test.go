@@ -93,7 +93,7 @@ func TestBuildFieldMap(t *testing.T) {
 	}
 	if fm[" "] != " " {
 		// Python builds field_map from the column names as indexed, blanks
-		// included (rag/app/table.py:633,645).
+		// included (rag/app/table.py:558,570).
 		t.Errorf("a blank column name is still a column: %v", fm)
 	}
 

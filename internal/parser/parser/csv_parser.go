@@ -66,7 +66,7 @@ func newCSVReader(filename, text string) *csv.Reader {
 	name := strings.ToLower(filename)
 	switch {
 	case strings.HasSuffix(name, ".tsv"), strings.HasSuffix(name, ".txt"):
-		// Python splits a .txt table on a tab (rag/app/table.py:555,
+		// Python splits a .txt table on a tab (rag/app/table.py:481,
 		// kwargs.get("delimiter", "\t")) and a .tsv on the same default (:574).
 		reader.Comma = '\t'
 	case !strings.Contains(text, ",") && strings.Contains(text, "\t"):

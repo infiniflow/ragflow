@@ -428,7 +428,7 @@ func parseTableColumnNames(raw any) []string {
 			// Verbatim, including a blank name: table_column_names carries the
 			// columns as the parser named them, and that exact string is both the
 			// key a role is looked up under and the key chunk_data is stored with
-			// (rag/app/table.py:675-678 writing what :594 built).
+			// (rag/app/table.py:600-603 writing what :519 built).
 			if s, ok := item.(string); ok {
 				out = append(out, s)
 			}

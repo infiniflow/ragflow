@@ -63,80 +63,6 @@ def _deduplicate_column_names(columns):
     return unique_columns
 
 
-# Spreadsheet bookkeeping columns are dropped before rendering: they carry no
-# content, and keeping them would index the row's primary key into the chunk
-# text and chunk_data. Kept in sync with the Go parser
-# (internal/parser/parser/table_row_render.go, tableBookkeepingColumns).
-TABLE_BOOKKEEPING_COLUMNS = ("id", "_id", "index", "idx")
-
-
-def table_column_header_names(header_row, spreadsheet):
-    """Column names a header row parses into, under the rules of its file kind.
-
-    A spreadsheet header is what ``Excel._parse_simple_headers`` indexes: every
-    cell trimmed and an empty one named ``Column_<position>``. A delimited
-    (csv/tsv/txt) header is the first record as read, so a padded name stays
-    padded and an empty one stays empty; it is only deduplicated. Bookkeeping
-    columns are dropped and survivors deduplicated in both kinds.
-
-    ``spreadsheet`` selects the rule, so a preview of the columns agrees with
-    what the parser indexes. Mirrors the Go parser
-    (internal/parser/parser/table_row_render.go, TableHeaderRule).
-    """
-    names = []
-    for i, cell in enumerate(header_row):
-        name = "" if cell is None else str(cell)
-        if spreadsheet:
-            name = name.strip()
-            if not name:
-                name = f"Column_{i + 1}"
-        if name in TABLE_BOOKKEEPING_COLUMNS:
-            continue
-        names.append(name)
-    return _deduplicate_column_names(names)
-
-
-def probe_table_headers(content, filename):
-    """Column names a table file parses into, read from its leading rows only.
-
-    Used by the pre-ingestion schema probe: it must not read the whole file, so
-    for a workbook it takes the first non-empty row of every sheet and unions
-    the columns in the order they are first seen, which is what ingestion
-    writes to ``table_column_names``. A sheet with merged or multi-level
-    headers is parsed with hierarchical headers, which this preview cannot
-    reproduce — the parser stays authoritative.
-    """
-    name = (filename or "").lower()
-    if name.endswith((".csv", ".tsv", ".txt")):
-        # A .txt table is tab-delimited (see the TXT branch below), like a .tsv.
-        delimiter = "," if name.endswith(".csv") else "\t"
-        text_stream = io.StringIO(content.decode("utf-8-sig", errors="replace"))
-        for row in csv.reader(text_stream, delimiter=delimiter):
-            if any(cell.strip() for cell in row):
-                return table_column_header_names(row, spreadsheet=False)
-        return []
-    if name.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
-        import openpyxl
-
-        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        try:
-            names = []
-            seen = set()
-            for sheet in wb.sheetnames:
-                for row in wb[sheet].iter_rows(values_only=True):
-                    if not any(str(cell or "").strip() for cell in row):
-                        continue
-                    for column in table_column_header_names(row, spreadsheet=True):
-                        if column not in seen:
-                            seen.add(column)
-                            names.append(column)
-                    break
-            return names
-        finally:
-            wb.close()
-    raise ValueError(f"Unsupported or binary table format: {filename}")
-
-
 class Excel(ExcelParser):
     def __call__(
         self,
@@ -568,11 +494,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=_deduplicate_column_names(headers))]
-    elif re.search(r"\.(csv|tsv)$", filename, re.IGNORECASE):
+    elif re.search(r"\.csv$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
-        default_delimiter = "\t" if re.search(r"\.tsv$", filename, re.IGNORECASE) else ","
-        delimiter = kwargs.get("delimiter", default_delimiter)
+        delimiter = kwargs.get("delimiter", ",")
 
         reader = csv.reader(io.StringIO(txt), delimiter=delimiter)
         all_rows = list(reader)
@@ -593,7 +518,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
 
         dfs = [pd.DataFrame(rows, columns=_deduplicate_column_names(headers))]
     else:
-        raise NotImplementedError("file type not supported yet(excel, text, csv, tsv supported)")
+        raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
 
     res = []
     PY = Pinyin()
@@ -611,7 +536,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
     # table_column_names, then update KB once so the UI role selector sees all columns, not only the last sheet.
     sheet_specs = []
     for df in dfs:
-        for n in TABLE_BOOKKEEPING_COLUMNS:
+        for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values

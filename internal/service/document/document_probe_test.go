@@ -226,8 +226,8 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// The probe must not read an unbounded workbook: like the Python endpoint
-// (max_excel_probe_bytes), it stops at the cap. The archive is then truncated,
+// The probe must not read an unbounded workbook: it stops at the cap. The
+// archive is then truncated,
 // the open fails, and the client falls back to local extraction instead of the
 // server reading an arbitrarily large upload.
 func TestProbeTable_XLSXStopsAtProbeLimit(t *testing.T) {

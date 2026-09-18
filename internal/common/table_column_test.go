@@ -26,7 +26,7 @@ import (
 // pinned here: a known value maps to its role and anything else — blank,
 // padded, differently cased, misspelled — is excluded (ColumnRoleNone) rather
 // than promoted to "both". Python compares the stored string as is
-// (rag/app/table.py:704-706 for the chunk body, :633 for the dataset
+// (rag/app/table.py:629-631 for the chunk body, :558 for the dataset
 // field_map), and the "both" default belongs to the lookup, not to this
 // mapping: it covers a column the roles map does not carry.
 func TestNormalizeColumnRole(t *testing.T) {

@@ -26,10 +26,10 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
-// probeXLSXMaxBytes bounds the workbook stream the probe reads, mirroring the
-// Python endpoint's max_excel_probe_bytes. A larger upload cannot be opened
-// from a truncated archive, so the probe reports an error and the client falls
-// back to local extraction instead of the server reading an unbounded stream.
+// probeXLSXMaxBytes bounds the workbook stream the probe reads. A larger upload
+// cannot be opened from a truncated archive, so the probe reports an error and
+// the client falls back to local extraction instead of the server reading an
+// unbounded stream.
 const probeXLSXMaxBytes = 32 * 1024 * 1024
 
 // ErrUnsupportedTableFormat marks a file the probe declines because no header

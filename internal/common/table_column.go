@@ -51,8 +51,8 @@ const (
 	// know. A write boundary rejects such a value
 	// (ValidateTableColumnSettings), so it survives only in rows written before
 	// that check. Python's table chunker classifies an unknown role by
-	// membership tests (rag/app/table.py:704-706 for the chunk body,
-	// rag/app/table.py:633 for the dataset field_map), so such a column is
+	// membership tests (rag/app/table.py:629-631 for the chunk body,
+	// rag/app/table.py:558 for the dataset field_map), so such a column is
 	// excluded from text, chunk_data and the field_map alike — NOT treated
 	// as "both".
 	ColumnRoleNone ColumnRole = "none"
@@ -63,7 +63,7 @@ const (
 // vocabulary does not know — the empty string, a different case, surrounding
 // whitespace included — is ColumnRoleNone, so such a value is excluded rather
 // than silently promoted to "both". This is Python's membership test verbatim
-// (rag/app/table.py:704-706), which compares the stored string and neither
+// (rag/app/table.py:629-631), which compares the stored string and neither
 // trims nor case-folds it. The default "both" belongs to the lookup, not to
 // this function: it applies to a column the roles map does not carry.
 func NormalizeColumnRole(role string) ColumnRole {
@@ -80,14 +80,14 @@ func NormalizeColumnRole(role string) ColumnRole {
 }
 
 // Indexed reports whether a column with this role reaches the chunk body a
-// retriever embeds. Python tests the same membership at rag/app/table.py:704.
+// retriever embeds. Python tests the same membership at rag/app/table.py:629.
 func (r ColumnRole) Indexed() bool {
 	return r == ColumnRoleIndexing || r == ColumnRoleBoth
 }
 
 // Stored reports whether a column with this role is kept as structured values:
 // a chunk's chunk_data, or the dataset field_map a SQL prompt is built from.
-// Python tests the same membership at rag/app/table.py:633 and :706.
+// Python tests the same membership at rag/app/table.py:558 and :631.
 func (r ColumnRole) Stored() bool {
 	return r == ColumnRoleMetadata || r == ColumnRoleBoth
 }
@@ -95,7 +95,7 @@ func (r ColumnRole) Stored() bool {
 // NormalizeTableColumnMode maps a persisted mode onto the vocabulary. Only the
 // exact "manual" selects manual, matching Python's
 // `parser_config.get("table_column_mode") == "manual"`
-// (rag/app/table.py:604); every other value — absent, blank, unknown or
+// (rag/app/table.py:529); every other value — absent, blank, unknown or
 // differently cased — is auto.
 func NormalizeTableColumnMode(mode string) TableColumnMode {
 	if mode == string(TableColumnModeManual) {

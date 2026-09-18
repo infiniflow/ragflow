@@ -30,7 +30,7 @@ export type TableColumnSettings = {
  * The comparison is exact, because both runtimes compare the stored string
  * exactly — no trimming, no case-folding — and only "vectorize" carries a second
  * spelling, as the legacy name of "indexing"
- * (rag/app/table.py:704-706, ported by common.NormalizeColumnRole).
+ * (rag/app/table.py:629-631, ported by common.NormalizeColumnRole).
  *
  * A value outside the three roles is something no dialog can express: it can
  * only come from a configuration that never passed the write boundary's check.
@@ -54,8 +54,8 @@ function collectRoles(raw: unknown): TableColumnSettings['roles'] {
   }
   const roles: TableColumnSettings['roles'] = {};
   // Keep every stored key: the lookup is by exact column name
-  // (`column_roles.get(col, "both")`, rag/app/table.py:701), and a delimited
-  // header is the first record as read (rag/app/table.py:582), which can
+  // (`column_roles.get(col, "both")`, rag/app/table.py:626), and a delimited
+  // header is the first record as read (rag/app/table.py:507), which can
   // legitimately name a column "" or " ". Dropping a blank key would hide a
   // role ingestion honours.
   for (const [column, role] of Object.entries(raw as Record<string, unknown>)) {

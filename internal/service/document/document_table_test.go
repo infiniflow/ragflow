@@ -156,7 +156,7 @@ func TestSaveKBTableState_ReplacesSchemaAndKeepsFieldMapWhenNotOwned(t *testing.
 	names, ok := updated.ParserConfig["table_column_names"].([]interface{})
 	// A blank name survives: it is a real column of a delimited file, and the
 	// published schema has to name the columns exactly as the run indexed them
-	// (rag/app/table.py:665-670).
+	// (rag/app/table.py:590-595).
 	if !ok || !reflect.DeepEqual(names, []interface{}{"new_col", " "}) {
 		t.Errorf("table_column_names = %#v, want [new_col, ' ']", updated.ParserConfig["table_column_names"])
 	}

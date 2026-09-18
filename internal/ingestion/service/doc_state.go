@@ -72,7 +72,7 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	// The discovered schema belongs to the dataset as well: the dataset-level
 	// role selector reads it, and an older document picks it up at task time.
 	// Mirrors Python's table chunker, which updates the knowledgebase with
-	// table_column_names + field_map on every parse (rag/app/table.py:675-678).
+	// table_column_names + field_map on every parse (rag/app/table.py:600-603).
 	if len(r.DiscoveredColumns) > 0 && r.KbID != "" {
 		if err := u.docSvc.SaveKBTableState(ctx, r.KbID, r.DiscoveredColumns, r.FieldMapUpdates); err != nil {
 			common.Warn(fmt.Sprintf("failed to sync table schema to KB %s: %v", r.KbID, err))

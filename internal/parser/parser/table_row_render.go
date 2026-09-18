@@ -101,8 +101,8 @@ func tableRowHasContent(row []string) bool {
 }
 
 // tableBookkeepingColumns are the columns Python deletes from every table
-// before rendering (`TABLE_BOOKKEEPING_COLUMNS` at rag/app/table.py:70, dropped
-// at rag/app/table.py:614-616). They carry no content, and keeping them would
+// before rendering (rag/app/table.py:539-541). They carry no content, and
+// keeping them would
 // index the row's primary key into the chunk text and into chunk_data. The
 // schema probe drops them too, so the columns it reports are the columns
 // ingestion can index.
@@ -112,9 +112,9 @@ var tableBookkeepingColumns = map[string]struct{}{
 
 // TableHeaderRule selects how a file family turns a header row into column
 // names. Excel headers go through _parse_simple_headers, which trims each cell
-// and names an empty one Column_<position> (rag/app/table.py:280-302), while a
+// and names an empty one Column_<position> (rag/app/table.py:206-228), while a
 // CSV/TSV header is the first record as read and is only deduplicated
-// (rag/app/table.py:582, :594).
+// (rag/app/table.py:507, :519).
 type TableHeaderRule int
 
 const (
@@ -189,7 +189,7 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 				val = row[src]
 			}
 			// No trimming here: Python skips a cell only when it is empty
-			// (rag/app/table.py:696) and renders the value it read, so a padded
+			// (rag/app/table.py:621) and renders the value it read, so a padded
 			// or whitespace-only cell is content that lands in the chunk text
 			// and in chunk_data. Trimming here would drop it instead.
 			if val == "" {

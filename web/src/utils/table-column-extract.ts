@@ -137,10 +137,9 @@ function deduplicateColumns(columns: string[]): string[] {
 }
 
 // Spreadsheet bookkeeping columns carry no content: the table parser deletes
-// them before rendering (rag/app/table.py, mirrored by the Go
-// parser.TableColumnHeaderNames), so the client-side fallback must drop them as
-// well — otherwise it would offer a role for a column that never reaches a
-// chunk. Kept in sync with tableBookkeepingColumns in
+// them before rendering (rag/app/table.py:539-541), so the client-side fallback
+// must drop them as well — otherwise it would offer a role for a column that
+// never reaches a chunk. Kept in sync with tableBookkeepingColumns in
 // internal/parser/parser/table_row_render.go.
 const BOOKKEEPING_COLUMNS = ['id', '_id', 'index', 'idx'];
 
@@ -148,8 +147,9 @@ const BOOKKEEPING_COLUMNS = ['id', '_id', 'index', 'idx'];
 // raw header row: drop bookkeeping columns and dedupe the survivors. Only a
 // spreadsheet also trims each cell and names an empty one by position
 // (_parse_simple_headers); a delimited header is indexed exactly as read, so a
-// padded or empty cell keeps that spelling as its column name. Mirrors
-// rag/app/table.py table_column_header_names and the Go TableHeaderRule.
+// padded or empty cell keeps that spelling as its column name. Applies the same
+// rules rag/app/table.py indexes with (`_parse_simple_headers` at :206-228, the
+// first record as read at :507), which are the Go TableHeaderRule.
 function tableColumnHeaderNames(
   row: unknown[],
   rule: 'spreadsheet' | 'delimited',
@@ -168,8 +168,10 @@ function tableColumnHeaderNames(
 }
 
 /**
- * Check if a file is a table file: every format the table parser reads
- * (rag/app/table.py), which is also what the schema probe accepts.
+ * Check if a file is a table file: every format the Go table parser reads, which
+ * is also what the schema probe accepts. Python serves this set only through the
+ * Go path: its own canvas parser reads no column mode and it exposes no probe
+ * endpoint.
  */
 export function isTableFile(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
