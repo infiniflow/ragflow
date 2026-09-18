@@ -20,6 +20,36 @@ pip install ragflow-sdk
 
 ---
 
+## Client configuration
+
+```python
+RAGFlow(api_key, base_url, version="v1", *, timeout=None)
+```
+
+`timeout` applies to every SDK HTTP request, including uploads, downloads, and streaming requests:
+
+- `None` (default): no timeout is imposed by the SDK.
+- A positive finite number: use that many seconds for both connection and read timeouts.
+- A pair of positive finite numbers: `(connect_timeout, read_timeout)` in seconds.
+
+Invalid values, including zero, negative numbers, booleans, and non-finite numbers, raise `ValueError` when constructing the client.
+
+```python
+from ragflow_sdk import RAGFlow
+
+rag = RAGFlow(
+    api_key="<YOUR_API_KEY>",
+    base_url="http://<YOUR_BASE_URL>:9380",
+    timeout=(5, 60),
+)
+```
+
+This uses Requests' [connection and read timeout semantics](https://requests.readthedocs.io/en/latest/user/advanced/#timeouts). A read timeout limits how long the socket waits without receiving data; it is not a deadline for an entire request, parsing task, or streaming conversation. Each polling request receives the same timeout independently. Choose the read timeout to allow expected pauses in streaming responses.
+
+Transport exceptions propagate unchanged. Requests can raise `ConnectTimeout` or `ReadTimeout` while issuing a request, and can surface a read timeout as `ConnectionError` while consuming a response body or stream. The SDK does not retry timed-out requests or cancel server-side work.
+
+---
+
 ## ERROR CODES
 
 RAGFlow responses may contain both an HTTP status code and a business code in the JSON response body. These codes should be checked separately.
