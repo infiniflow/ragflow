@@ -1,0 +1,450 @@
+package layout
+
+import (
+	"regexp"
+	"sort"
+	"strings"
+	"unicode/utf8"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+)
+
+// ---------------------------------------------------------------------------
+// Tunable thresholds.
+// ---------------------------------------------------------------------------
+
+const (
+	// tocMaxProseRunes is the per-box length (in runes) above which a box is
+	// treated as a prose paragraph. A page with substantial body text has many
+	// such boxes; a TOC page has at most a title or a long chapter heading.
+	// This is the primary guard against deleting content: any page with more
+	// than tocMaxLongBoxes long boxes is never classified as TOC.
+	tocMaxProseRunes = 60
+	// tocMaxLongBoxes is the maximum number of boxes longer than
+	// tocMaxProseRunes a page may carry and still be classified as TOC.
+	tocMaxLongBoxes = 2
+	// tocMinShortBoxes is the minimum number of short boxes a TOC page carries.
+	// A TOC is a list, so its entries usually stay separate boxes. A page whose
+	// entries were merged into one long box is covered by tocMinMergedRuns, and
+	// one merged without leader runs at all is covered by the outline signal.
+	tocMinShortBoxes = 4
+	// tocMinEntries is the minimum number of confirming entry markers (chapter
+	// markers plus page numbers) a page must carry to be classified as TOC.
+	tocMinEntries = 3
+	// tocMinMergedRuns is the number of leader+page-number runs a single long
+	// box must carry before that box is read as a whole TOC block rather than as
+	// prose. A merged block confirms itself — three leader runs are three
+	// entries — so it needs no separate marker count. Prose can accumulate the
+	// occasional run, which is why the threshold is three and not one.
+	tocMinMergedRuns = 3
+	// tocMaxLeadPages bounds how many leading pages without body text may
+	// precede the TOC. A cover, copyright page or frontispiece carries no body
+	// text and is skipped, so a TOC that is not physically page one is still
+	// reachable; the first page carrying body text ends the search.
+	tocMaxLeadPages = 3
+)
+
+// ---------------------------------------------------------------------------
+// Box-level patterns.
+// ---------------------------------------------------------------------------
+
+var (
+	// chapterEntryPattern matches a box that opens like a TOC entry title: a
+	// chapter/section/appendix marker (Chinese or Latin, digit or word form) or
+	// a common front/back-matter heading.
+	chapterEntryPattern = regexp.MustCompile(`(?i)^(第\s*[0-9０-９一二三四五六七八九十百千]+\s*[章节篇部册卷回讲目]|chapter\s+(\d+|[a-z]+|one|two|three|four|five|six|seven|eight|nine|ten)|appendix\s+[a-z0-9]+|section\s+\d+|part\s+(\d+|[ivxlcdm]+|[a-z]+)|前言|序言|引言|导论|绪论|后记|结语|附录|索引|参考文献|结论|致谢|跋|序|凡例|目录|acknowledgements?|acknowledgments?)`)
+	// pageNumberPattern matches common page-number forms: pure digits, digits
+	// with leading dots (..18), roman numerals (III, IV), or dash-wrapped
+	// numbers (- 2 -). Full-width digits count as digits, matching the class
+	// chapterEntryPattern uses for 第N章 numbering: the target corpus is largely
+	// CJK, and a full-width page-number column still has to confirm a TOC page.
+	pageNumberPattern = regexp.MustCompile(`^[.…]*[0-9０-９]+[.…]*$|^[.…]*[IVXLCDM]+[.…]*$|^\s*-\s*[0-9０-９]+\s*-\s*$`)
+	// tocStartPattern matches an outline title that names the table of contents,
+	// which is the only thing that starts a TOC page range. A heading that is
+	// merely adjacent to a TOC — acknowledgements, references — does not: the
+	// section-level detector this pass replaces accepted 致谢 here, so a book
+	// without a 目录 bookmark had its acknowledgements page claimed as a TOC.
+	tocStartPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents)$`)
+	// tocEndMarkerPattern matches the front/back-matter headings that are
+	// neither a TOC nor an entry, so they cannot bound a TOC range. The
+	// acknowledgements family is spelled out the way chapterEntryPattern spells
+	// it (singular and plural, both spellings), because the pattern this
+	// replaces only matched the bare word "acknowledge" and so never fired on
+	// the usual "Acknowledgements" bookmark.
+	tocEndMarkerPattern = regexp.MustCompile(`(?i)^(致谢|acknowledg(?:e|ements?|ments?))$`)
+	// tocEntryRunPattern matches one TOC entry's tail: a leader run (two or more
+	// dots, ellipses or middots, never wide spaces — those are too common in
+	// prose ending in a number), a page number and an optional roman-numeral
+	// fragment. Counting these runs tells a TOC block that upstream merged into
+	// one long box apart from a paragraph. Digits accept the full-width forms
+	// pageNumberPattern accepts, for the same reason.
+	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*[0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}`)
+)
+
+// ---------------------------------------------------------------------------
+// Outline signal.
+// ---------------------------------------------------------------------------
+
+// TOCPageRangeFromOutlines returns the 0-based page indices the PDF bookmarks
+// identify as the table of contents: from the outline entry naming the TOC up
+// to — excluding — the next entry at the same level. It returns nil when the
+// document carries no usable bookmark.
+//
+// Only an entry that names the TOC itself starts a range (tocStartPattern).
+// When a front/back-matter heading (tocEndMarkerPattern) is the next same-level
+// entry the range is abandoned rather than closed, because such a heading does
+// not say where the entries stop — it follows the TOC in some books and sits at
+// the back of others — so the extent is left to the box shape signal instead of
+// spanning the gap and deleting whatever lies inside it. Only the page the TOC
+// starts on is claimed.
+//
+// Outline page numbers are 1-based — pdfium adds one to the 0-based destination
+// index (internal/deepdoc/parser/pdf/pdfium/pdfium.go) — while
+// TextBox.PageNumber is 0-based, because ParseRaw enumerates pages from zero.
+// The conversion happens here, once, so no caller has to know about it.
+func TOCPageRangeFromOutlines(outlines []pdf.Outline) map[int]bool {
+	for i, o := range outlines {
+		if !tocStartPattern.MatchString(outlineTitle(o.Title)) {
+			continue
+		}
+		first := o.PageNumber - 1
+		if first < 0 {
+			return nil
+		}
+		for _, next := range outlines[i+1:] {
+			if next.Level != o.Level {
+				continue
+			}
+			if tocEndMarkerPattern.MatchString(outlineTitle(next.Title)) {
+				break
+			}
+			pages := make(map[int]bool, 4)
+			for pg := first; pg < next.PageNumber-1; pg++ {
+				pages[pg] = true
+			}
+			if len(pages) == 0 {
+				return nil
+			}
+			return pages
+		}
+		// No usable following entry at the same level: the TOC page is known
+		// but its extent is not, so claim only that page and leave the rest to
+		// the box shape signal.
+		return map[int]bool{first: true}
+	}
+	return nil
+}
+
+// outlineTitle strips the "@@" anchor suffix pdfium appends to bookmark titles
+// and lower-cases the result, matching how the section-level detector compared.
+func outlineTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if idx := strings.Index(title, "@@"); idx >= 0 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	return strings.ToLower(title)
+}
+
+// ---------------------------------------------------------------------------
+// TOC removal.
+// ---------------------------------------------------------------------------
+
+// RemoveTOCBoxes drops whole pages that are detected as tables of contents.
+//
+// Detection works on signals that are destroyed by the later TextMerge /
+// BoxesToSections passes (leader dots get folded into adjacent boxes, per-entry
+// geometry collapses into a section), so this MUST run before TextMerge (see
+// Parser.buildLayout).
+//
+// coversDocumentStart reports whether boxes cover the document's first page.
+// The shape signal reads a TOC out of a leading run, so it is skipped when the
+// parse began mid-document (Config.Pages): a TOC-shaped page at the start of a
+// page range says nothing about the document, and reading it as a document
+// prefix would delete content from the middle of the book. The outline signal
+// carries absolute page numbers and is unaffected.
+//
+// Two signals select pages and the union is dropped:
+//
+//  1. outlinePages — the pages the PDF bookmarks identify as TOC (see
+//     TOCPageRangeFromOutlines). Strongest, and the only one that still sees a
+//     TOC whose entries were merged into one box with no leader runs left.
+//  2. Box shape — the leading run of pages that read as a TOC list: a page
+//     carrying at least tocMinShortBoxes short boxes and tocMinEntries
+//     confirming markers (chapter markers or page numbers), or one long box
+//     that is itself tocMinMergedRuns leader+page-number runs, preceded only by
+//     pages without body text and spanning as many consecutive pages as keep
+//     satisfying that shape. Kept for documents that carry no usable bookmark,
+//     and only consulted when coversDocumentStart.
+//
+// Both signals pass through one guard: a page carrying body text (more than
+// tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
+// document consisting only of TOC pages is left untouched. The detector stays
+// deliberately conservative — missing a TOC page costs noise chunks, deleting a
+// content page loses text.
+func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, coversDocumentStart bool) []pdf.TextBox {
+	if len(boxes) == 0 {
+		return boxes
+	}
+
+	perPage := make(map[int][]int, 64)
+	for i := range boxes {
+		p := boxes[i].PageNumber
+		perPage[p] = append(perPage[p], i)
+	}
+
+	pages := make([]int, 0, len(perPage))
+	for pg := range perPage {
+		pages = append(pages, pg)
+	}
+	sort.Ints(pages)
+
+	shapes := make(map[int]pageShape, len(pages))
+	for _, pg := range pages {
+		shapes[pg] = shapeOfPage(boxes, perPage[pg])
+	}
+
+	selected := make(map[int]bool, len(pages))
+	for pg := range outlinePages {
+		if _, ok := perPage[pg]; ok {
+			selected[pg] = true
+		}
+	}
+
+	// Heuristic fallback, for documents that carry no usable bookmark. A TOC is
+	// a document prefix, so only a parse that covers the document's first page
+	// is eligible, and then only the leading pages are candidates: pages without
+	// body text (a cover, copyright page) may be skipped, and the run continues
+	// while pages keep satisfying isTOC(). It ends on the first page that does
+	// not — in practice the first page carrying body text, which is what keeps
+	// per-chapter pages that happen to hold several short headings (the Daodejing
+	// case) out of scope. The run is deliberately unbounded in length: a real
+	// TOC can span more pages than any fixed cap would allow, and truncating it
+	// silently keeps the remaining TOC pages in the output. Length is bounded
+	// instead by isTOC() itself and by the all-TOC guard below.
+	if coversDocumentStart {
+		inTOC, lead := false, 0
+		for _, pg := range pages {
+			if inTOC {
+				if !shapes[pg].isTOC() {
+					break
+				}
+				selected[pg] = true
+				continue
+			}
+			if shapes[pg].isTOC() {
+				inTOC = true
+				selected[pg] = true
+				continue
+			}
+			if shapes[pg].carriesProse() || lead >= tocMaxLeadPages {
+				break
+			}
+			lead++
+		}
+	}
+
+	drop := make(map[int]struct{}, len(boxes))
+	droppedPages := 0
+	for _, pg := range pages {
+		if !selected[pg] || shapes[pg].carriesProse() {
+			continue
+		}
+		droppedPages++
+		for _, i := range perPage[pg] {
+			drop[i] = struct{}{}
+		}
+	}
+	if droppedPages == 0 || droppedPages == len(pages) {
+		return boxes
+	}
+
+	out := make([]pdf.TextBox, 0, len(boxes)-len(drop))
+	for i := range boxes {
+		if _, ok := drop[i]; ok {
+			continue
+		}
+		out = append(out, boxes[i])
+	}
+	return out
+}
+
+// pageShape summarises the boxes of one page.
+type pageShape struct {
+	prose   int // boxes longer than tocMaxProseRunes
+	short   int
+	markers int  // short boxes opening with a chapter marker or holding a page number
+	merged  bool // a long box carrying tocMinMergedRuns leader+page-number runs
+}
+
+func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
+	var s pageShape
+	for _, i := range indices {
+		text := strings.TrimSpace(boxes[i].Text)
+		if text == "" {
+			continue
+		}
+		if utf8.RuneCountInString(text) > tocMaxProseRunes {
+			s.prose++
+			// A merged TOC block is long by definition, so the run count is the
+			// only evidence it can carry. Cap the search: the answer is a
+			// three-way comparison, not the exact number of runs.
+			if len(tocEntryRunPattern.FindAllStringIndex(text, tocMinMergedRuns)) >= tocMinMergedRuns {
+				s.merged = true
+			}
+			continue
+		}
+		s.short++
+		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) {
+			s.markers++
+		}
+	}
+	return s
+}
+
+// isTOC reports whether the page reads as a table of contents: a list of short
+// boxes carrying entry markers, or one long box that is itself a run of
+// entries, and no body text either way.
+func (s pageShape) isTOC() bool {
+	if s.carriesProse() {
+		return false
+	}
+	return s.merged || (s.short >= tocMinShortBoxes && s.markers >= tocMinEntries)
+}
+
+// carriesProse reports whether the page carries body text. No signal may drop
+// such a page: this is the single guard that bounds every removal.
+func (s pageShape) carriesProse() bool { return s.prose > tocMaxLongBoxes }
+
+// ---------------------------------------------------------------------------
+// Running header / footer removal.
+// ---------------------------------------------------------------------------
+
+const (
+	// headerZoneRatio / footerZoneRatio bound the top/bottom page zones where a
+	// running header / footer lives (fractions of the page height).
+	headerZoneRatio = 0.10
+	footerZoneRatio = 0.90
+	// minHeaderFooterPages guards against false positives on short documents.
+	minHeaderFooterPages = 3
+)
+
+// RemoveHeaderFooterBoxes drops boxes that are running headers or footers.
+//
+// A box is a candidate when it sits entirely in the top headerZoneRatio or
+// bottom footerZoneRatio of its page and carries text-like content. Among
+// candidates, a (zone, normalized-text) pair that recurs on at least half of
+// the document's pages — rounded up, so an odd page count raises the bar rather
+// than lowering it — is treated as a running header / footer and removed.
+//
+// Like RemoveTOCBoxes this works on intact box geometry and must run before
+// TextMerge (which can fold a header box into the first body section).
+func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.TextBox {
+	if len(pageHeights) < minHeaderFooterPages || len(boxes) == 0 {
+		return boxes
+	}
+
+	type zoneKey struct {
+		zone string
+		text string
+	}
+	keyPages := make(map[zoneKey]map[int]struct{})
+	keyIdx := make(map[zoneKey][]int)
+
+	for i := range boxes {
+		b := boxes[i]
+		// Only plain-text boxes participate; tables / figures in the margin are
+		// not running headers/footers.
+		if lt := strings.TrimSpace(b.LayoutType); lt != "" && lt != "text" {
+			continue
+		}
+		h, ok := pageHeights[b.PageNumber]
+		if !ok || h <= 0 {
+			continue
+		}
+		top, bottom := b.Top, b.Bottom
+		var zone string
+		switch {
+		case bottom <= h*headerZoneRatio:
+			zone = "header"
+		case top >= h*footerZoneRatio:
+			zone = "footer"
+		default:
+			continue
+		}
+		norm := normalizeRunningText(b.Text)
+		if norm == "" {
+			continue
+		}
+		key := zoneKey{zone: zone, text: norm}
+		if keyPages[key] == nil {
+			keyPages[key] = make(map[int]struct{})
+		}
+		keyPages[key][b.PageNumber] = struct{}{}
+		keyIdx[key] = append(keyIdx[key], i)
+	}
+
+	numPages := len(pageHeights)
+	// Half the pages, rounded up: rounding an odd page count down would let two
+	// pages of a five-page document pass as "half", which is the one direction
+	// this guard must not drift in.
+	minPages := (numPages + 1) / 2
+	if minPages < 2 {
+		minPages = 2
+	}
+
+	drop := make(map[int]struct{})
+	for key, pages := range keyPages {
+		if len(pages) < minPages {
+			continue
+		}
+		for _, i := range keyIdx[key] {
+			drop[i] = struct{}{}
+		}
+	}
+	if len(drop) == 0 {
+		return boxes
+	}
+
+	out := make([]pdf.TextBox, 0, len(boxes)-len(drop))
+	for i := range boxes {
+		if _, ok := drop[i]; ok {
+			continue
+		}
+		out = append(out, boxes[i])
+	}
+	return out
+}
+
+// normalizeRunningText collapses whitespace, replaces digit runs with a single
+// '#' and lower-cases the result, so per-page variants of the same running
+// header/footer ("- 2 -", "- 3 -", "Page 4 of 9", "第 １ 页") share one
+// comparison key.
+func normalizeRunningText(text string) string {
+	t := strings.Join(strings.Fields(text), " ")
+	out := make([]rune, 0, len(t))
+	inDigit := false
+	for _, r := range t {
+		if isMaskableDigit(r) {
+			inDigit = true
+			continue
+		}
+		if inDigit {
+			out = append(out, '#')
+			inDigit = false
+		}
+		out = append(out, r)
+	}
+	if inDigit {
+		out = append(out, '#')
+	}
+	return strings.ToLower(strings.TrimSpace(string(out)))
+}
+
+// isMaskableDigit reports whether r is a digit whose per-page value must be
+// masked before running headers/footers are compared: ASCII and full-width
+// decimal digits. Full width is required for the same reason pageNumberPattern
+// accepts it — otherwise every page of "第 １ 页" / "第 ２ 页" gets its own key
+// and the footer never reaches minPages.
+func isMaskableDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= '０' && r <= '９')
+}
