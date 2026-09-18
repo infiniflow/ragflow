@@ -21,9 +21,11 @@ package component
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,7 +35,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -534,6 +538,14 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 			decoded["_ERROR"] = ""
 		}
 	}
+	// Upload sandbox-returned artifacts to object storage and surface
+	// them as message attachments. Without this the tool's base64
+	// `_ARTIFACTS` payload never reaches the UI: the canvas message
+	// shows an empty `attachments` list even though the sandbox
+	// collected files. Mirrors the Python code_exec tool
+	// (_upload_artifacts / _build_attachment_markdown_list).
+	attachCodeExecArtifacts(ctx, decoded)
+
 	if err != nil {
 		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
 	}
@@ -752,3 +764,169 @@ var (
 
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
+
+// attachCodeExecArtifacts uploads the `_ARTIFACTS` produced by the
+// CodeExec tool to object storage and populates the message-facing
+// `attachments` / `_ATTACHMENT_CONTENT` outputs plus a content
+// appendix. It is a no-op when the tool returned no artifacts.
+func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
+	raw, ok := decoded["_ARTIFACTS"].([]any)
+	if !ok || len(raw) == 0 {
+		return
+	}
+	st := storage.GetStorageFactory().GetStorage()
+	if st == nil {
+		common.Error("CodeExec: storage not initialized; cannot attach artifacts", nil)
+		return
+	}
+	sessionID := ""
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		sessionID = state.SessionID
+	}
+	uploaded, markdown, attachmentContent := uploadCodeExecArtifacts(ctx, raw, sessionID, st)
+	if len(uploaded) == 0 {
+		return
+	}
+	decoded["_ARTIFACTS"] = uploaded
+	decoded["attachments"] = markdown
+	decoded["_ATTACHMENT_CONTENT"] = attachmentContent
+	// Append the attachment sections to content, mirroring the Python
+	// code_exec tool (content = "\"\n\n\"".join(content_parts)); when the
+	// tool produced no base content the attachment text becomes the
+	// content itself.
+	if content, ok := decoded["content"].(string); ok && strings.TrimSpace(content) != "" {
+		decoded["content"] = strings.TrimSpace(content + "\n\n" + attachmentContent)
+	} else {
+		decoded["content"] = strings.TrimSpace(attachmentContent)
+	}
+}
+
+// codeExecArtifactBucket returns the object-storage bucket used for
+// CodeExec sandbox artifacts. Mirrors the Python
+// `SANDBOX_ARTIFACT_BUCKET` setting and the document service's
+// default ("sandbox-artifacts").
+func codeExecArtifactBucket() string {
+	if bucket := common.GetEnv(common.EnvSandboxArtifactBucket); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+// uploadCodeExecArtifacts uploads sandbox-returned artifacts to object
+// storage and returns the attachment-facing payloads, mirroring the
+// Python code_exec tool (_upload_artifacts / _build_attachment_markdown_list
+// / _build_attachment_content):
+//
+//   - uploaded: `_ARTIFACTS` entries with a downloadable url
+//   - markdown: `attachments` list (image preview / download links)
+//   - attachmentContent: `_ATTACHMENT_CONTENT` text (attachment_count + sections)
+//
+// Entries that cannot be decoded or stored are skipped with a warning,
+// matching the Python "skip on failure" semantics.
+func uploadCodeExecArtifacts(ctx context.Context, artifacts []any, sessionID string, st storage.Storage) (uploaded []map[string]any, markdown []string, attachmentContent string) {
+	bucket := codeExecArtifactBucket()
+	sections := make([]string, 0, len(artifacts))
+	for idx, raw := range artifacts {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := codeExecArtifactString(m["name"])
+		contentB64 := codeExecArtifactString(m["content_b64"])
+		if name == "" || contentB64 == "" {
+			continue
+		}
+		mimeType := codeExecArtifactString(m["mime_type"])
+		size := codeExecArtifactInt64(m["size"])
+		binary, err := base64.StdEncoding.DecodeString(contentB64)
+		if err != nil || len(binary) == 0 {
+			common.Warn("CodeExec: skip artifact with undecodable content_b64", zap.String("name", name))
+			continue
+		}
+
+		storageName := uuid.NewString() + strings.ToLower(filepath.Ext(name))
+		if err := st.Put(ctx, bucket, storageName, binary); err != nil {
+			common.Warn("CodeExec: failed to upload artifact", zap.String("name", name), zap.String("storage", storageName), zap.Error(err))
+			continue
+		}
+		url := fmt.Sprintf("/api/v1/documents/artifact/%s?session_id=%s", storageName, sessionID)
+		uploaded = append(uploaded, map[string]any{
+			"name":      name,
+			"url":       url,
+			"mime_type": mimeType,
+			"size":      size,
+		})
+		markdown = append(markdown, codeExecArtifactMarkdown(name, mimeType, url))
+		sections = append(sections, codeExecAttachmentSection(idx+1, name, mimeType, url))
+	}
+	if len(sections) > 0 {
+		attachmentContent = fmt.Sprintf("attachment_count: %d\n\n%s", len(sections), strings.Join(sections, "\n\n"))
+	} else {
+		attachmentContent = "attachment_count: 0"
+	}
+	return uploaded, markdown, attachmentContent
+}
+
+// codeExecArtifactMarkdown renders one uploaded artifact as a Markdown
+// link: image artifacts become inline images, everything else becomes a
+// download link.
+func codeExecArtifactMarkdown(name, mimeType, url string) string {
+	if strings.HasPrefix(strings.ToLower(mimeType), "image/") && url != "" {
+		return fmt.Sprintf("![%s](%s)", name, url)
+	}
+	if url != "" {
+		return fmt.Sprintf("[Download %s](%s)", name, url)
+	}
+	return name
+}
+
+// codeExecAttachmentSection renders the `attachmentN (type): name`
+// section used by _ATTACHMENT_CONTENT.
+func codeExecAttachmentSection(idx int, name, mimeType, url string) string {
+	title := fmt.Sprintf("attachment%d (%s): %s", idx, codeExecAttachmentType(name, mimeType), name)
+	return title + "\n" + codeExecArtifactMarkdown(name, mimeType, url)
+}
+
+// codeExecAttachmentType mirrors Python's _normalize_attachment_type.
+func codeExecAttachmentType(name, mimeType string) string {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case mimeType == "application/pdf":
+		return "pdf"
+	case mimeType == "text/csv":
+		return "csv"
+	case mimeType == "application/json":
+		return "json"
+	case mimeType == "text/html":
+		return "html"
+	}
+	if ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), "."); ext != "" {
+		return ext
+	}
+	return "file"
+}
+
+func codeExecArtifactString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func codeExecArtifactInt64(v any) int64 {
+	switch x := v.(type) {
+	case int64:
+		return x
+	case int:
+		return int64(x)
+	case float64:
+		return int64(x)
+	case json.Number:
+		if n, err := x.Int64(); err == nil {
+			return n
+		}
+	}
+	return 0
+}
