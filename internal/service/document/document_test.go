@@ -242,78 +242,11 @@ type failingDeleteDocEngine struct {
 	err error
 }
 
-type claimLostOnSearchDocEngine struct {
-	fakeChatDocEngine
-	db *gorm.DB
-}
-
-type claimFencingDocEngine struct {
-	fakeChatDocEngine
-	db          *gorm.DB
-	deleteCalls int
-}
-
 type generatedCleanupDocEngine struct {
 	fakeChatDocEngine
 	deleteCalls      int
 	generatedDeleted bool
 	generatedCond    map[string]interface{}
-}
-
-type knowledgeCompileClaimFencingEngine struct {
-	fakeChatDocEngine
-	db          *gorm.DB
-	searchCalls int
-}
-
-func (e *knowledgeCompileClaimFencingEngine) Search(_ context.Context, _ *types.SearchRequest) (*types.SearchResult, error) {
-	e.searchCalls++
-	if e.searchCalls == 1 {
-		if err := e.db.Model(&entity.DocumentCleanupClaim{}).
-			Where("document_id = ?", "doc-1").Update("token", "replacement-token").Error; err != nil {
-			return nil, err
-		}
-	}
-	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "wiki-1", "compile_kwd": "wiki_page"}}, Total: 1}, nil
-}
-
-func TestDocumentKnowledgeCompileTypesStopsWhenCleanupClaimIsFenced(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-
-	claimDAO := dao.NewDocumentCleanupClaimDAO()
-	now, err := dao.CurrentUnixTime(t.Context(), db)
-	if err != nil {
-		t.Fatalf("read database time: %v", err)
-	}
-	claim, err := claimDAO.Acquire(t.Context(), db, "doc-1", "owner-a", now, 120, 45)
-	if err != nil {
-		t.Fatalf("acquire cleanup claim: %v", err)
-	}
-
-	engine := &knowledgeCompileClaimFencingEngine{db: db}
-	svc := testDocumentService(t)
-	svc.docEngine = engine
-	cleanupCtx := service.WithDocumentCleanupClaim(t.Context(), "doc-1", claim.Token)
-
-	_, _, err = svc.documentKnowledgeCompileTypes(cleanupCtx, "tenant-1", "kb-1", "doc-1")
-	if !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
-		t.Fatalf("documentKnowledgeCompileTypes error = %v, want cleanup claim lost", err)
-	}
-	if engine.searchCalls != 1 {
-		t.Fatalf("Search calls = %d, want 1 after fencing", engine.searchCalls)
-	}
-}
-
-func TestCleanupClaimLeaseInvariants(t *testing.T) {
-	if cleanupClaimLeaseSeconds <= int64(2*(cleanupClaimRenewInterval/time.Second)+cleanupBatchTimeout/time.Second) {
-		t.Fatalf("cleanup claim lease = %d seconds, want greater than two renew intervals plus batch timeout", cleanupClaimLeaseSeconds)
-	}
-	if dao.DefaultDocumentCleanupTakeoverGraceSeconds <= int64(cleanupBatchTimeout/time.Second) {
-		t.Fatalf("cleanup takeover grace = %d seconds, want greater than batch timeout", dao.DefaultDocumentCleanupTakeoverGraceSeconds)
-	}
 }
 
 func (e *generatedCleanupDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
@@ -334,32 +267,6 @@ func (e *generatedCleanupDocEngine) DeleteChunks(_ context.Context, condition ma
 		e.generatedCond = condition
 	}
 	return 1, nil
-}
-
-func (e *claimFencingDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
-	return true, nil
-}
-
-func (e *claimFencingDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	if req.Offset >= 1000 {
-		return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "source-1000"}}, Total: 1001}, nil
-	}
-	chunks := make([]map[string]interface{}, 1000)
-	for i := range chunks {
-		chunks[i] = map[string]interface{}{"id": fmt.Sprintf("source-%d", i)}
-	}
-	return &types.SearchResult{Chunks: chunks, Total: 1001}, nil
-}
-
-func (e *claimFencingDocEngine) DeleteChunks(_ context.Context, _ map[string]interface{}, _, _ string) (int64, error) {
-	e.deleteCalls++
-	if e.deleteCalls == 1 {
-		if err := e.db.Model(&entity.DocumentCleanupClaim{}).
-			Where("document_id = ?", "doc-1").Update("token", "replacement-token").Error; err != nil {
-			return 0, err
-		}
-	}
-	return 1000, nil
 }
 
 func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
@@ -383,15 +290,6 @@ func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[str
 
 func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
 	return 0, e.err
-}
-
-func (e *claimLostOnSearchDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
-	if err := e.db.Model(&entity.DocumentCleanupClaim{}).
-		Where("document_id = ?", "doc-1").
-		Update("token", "replacement-token").Error; err != nil {
-		return nil, err
-	}
-	return &types.SearchResult{}, nil
 }
 
 type sourceAvailabilityDocEngine struct {
@@ -600,7 +498,6 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
-		&entity.DocumentCleanupClaim{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -634,7 +531,6 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
-		cleanupClaimDAO:  dao.NewDocumentCleanupClaimDAO(),
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
@@ -846,52 +742,6 @@ func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
 	}
 }
 
-func TestDeleteDocumentFullStopsWhenCleanupClaimIsLostDuringTaskStatePurge(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
-
-	svc := testDocumentService(t)
-	svc.purgeTaskState = func(context.Context, string) error {
-		return db.Model(&entity.DocumentCleanupClaim{}).
-			Where("document_id = ?", "doc-1").
-			Update("token", "replacement-token").Error
-	}
-
-	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
-		t.Fatalf("deleteDocumentFull error = %v, want cleanup claim lost", err)
-	}
-	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted after cleanup claim loss during state purge")
-	}
-	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted after cleanup claim loss during state purge: %v", err)
-	}
-}
-
-func TestDeleteDocumentFullStopsWhenCleanupClaimIsFenced(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
-
-	engine := &claimFencingDocEngine{db: db}
-	svc := testDocumentService(t)
-	svc.docEngine = engine
-
-	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
-		t.Fatalf("deleteDocumentFull error = %v, want cleanup claim lost", err)
-	}
-	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted after cleanup claim loss: %v", err)
-	}
-}
-
 func TestDeleteDocumentFullKeepsDocumentWhenChunkDeletionFails(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -931,56 +781,6 @@ func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
-	}
-}
-
-func TestRemoveDocumentKeepFileStopsWhenCleanupClaimIsLostDuringTaskStatePurge(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
-
-	svc := testDocumentService(t)
-	svc.purgeTaskState = func(context.Context, string) error {
-		return db.Model(&entity.DocumentCleanupClaim{}).
-			Where("document_id = ?", "doc-1").
-			Update("token", "replacement-token").Error
-	}
-
-	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
-		t.Fatalf("RemoveDocumentKeepFile error = %v, want cleanup claim lost", err)
-	}
-	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted after cleanup claim loss during state purge")
-	}
-	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted after cleanup claim loss during state purge: %v", err)
-	}
-}
-
-func TestRemoveDocumentKeepFileStopsBeforeTaskRemovalWhenCleanupClaimIsLost(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
-
-	svc := testDocumentService(t)
-	svc.docEngine = &claimLostOnSearchDocEngine{db: db}
-
-	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
-		t.Fatalf("RemoveDocumentKeepFile error = %v, want cleanup claim lost", err)
-	}
-	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted after cleanup claim loss")
-	}
-	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted after cleanup claim loss: %v", err)
 	}
 }
 
@@ -1705,13 +1505,6 @@ func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
 	}
 	if terminal.Message != "Task superseded by a new parse request." {
 		t.Fatalf("terminal message = %q", terminal.Message)
-	}
-	var claimCount int64
-	if err = db.Model(&entity.DocumentCleanupClaim{}).Where("document_id = ?", "doc-1").Count(&claimCount).Error; err != nil {
-		t.Fatalf("count cleanup claims: %v", err)
-	}
-	if claimCount != 0 {
-		t.Fatalf("cleanup claims = %d, want none after enqueue", claimCount)
 	}
 }
 
@@ -2664,40 +2457,6 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	}
 	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
-	}
-}
-
-func TestClearDocumentParseResultsStopsAfterCleanupClaimIsFenced(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
-	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-
-	claimDAO := dao.NewDocumentCleanupClaimDAO()
-	now, err := dao.CurrentUnixTime(t.Context(), db)
-	if err != nil {
-		t.Fatalf("read database time: %v", err)
-	}
-	claim, err := claimDAO.Acquire(t.Context(), db, "doc-1", "owner-a", now, 120, 45)
-	if err != nil {
-		t.Fatalf("acquire cleanup claim: %v", err)
-	}
-
-	engine := &claimFencingDocEngine{db: db}
-	svc := testDocumentService(t)
-	svc.docEngine = engine
-	cleanupCtx := service.WithDocumentCleanupClaim(t.Context(), "doc-1", claim.Token)
-	doc, err := svc.documentDAO.GetByID(cleanupCtx, db, "doc-1")
-	if err != nil {
-		t.Fatalf("load document: %v", err)
-	}
-
-	err = svc.clearDocumentParseResults(cleanupCtx, doc, "tenant-1")
-	if !errors.Is(err, dao.ErrDocumentCleanupClaimLost) {
-		t.Fatalf("clearDocumentParseResults error = %v, want cleanup claim lost", err)
-	}
-	if engine.deleteCalls != 1 {
-		t.Fatalf("DeleteChunks calls = %d, want 1 after fencing", engine.deleteCalls)
 	}
 }
 

@@ -68,11 +68,7 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	seenVariants := make(map[string]struct{})
 	seenTaskTypes := make(map[string]struct{})
-	claimToken := s.cleanupClaimToken(ctx, documentID)
 	for offset := 0; ; offset += 1000 {
-		if err := s.beginCleanupBatch(ctx, documentID, claimToken); err != nil {
-			return nil, nil, err
-		}
 		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 		result, err := s.docEngine.Search(searchCtx, &types.SearchRequest{
 			IndexNames:   []string{indexName},
@@ -84,9 +80,6 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 		})
 		cancel()
 		if err != nil {
-			return nil, nil, err
-		}
-		if err := s.finishCleanupBatch(ctx, documentID, claimToken); err != nil {
 			return nil, nil, err
 		}
 		if result == nil || len(result.Chunks) == 0 {

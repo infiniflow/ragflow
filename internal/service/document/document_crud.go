@@ -10,7 +10,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
-	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -275,45 +274,30 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	if err != nil {
 		return err
 	}
-	claim, err := s.acquireCleanupClaim(ctx, docID, fmt.Sprintf("document-delete:%s", docID))
-	if err != nil {
-		return fmt.Errorf("acquire cleanup claim for document %s: %w", docID, err)
-	}
-	cleanupCtx := servicepkg.WithDocumentCleanupClaim(ctx, docID, claim.Token)
-	stopHeartbeat := s.startCleanupClaimHeartbeat(ctx, docID, claim.Token)
-	defer stopHeartbeat()
-	defer func() {
-		if _, releaseErr := s.cleanupClaimDAO.Release(context.WithoutCancel(ctx), dao.DB, docID, claim.Token); releaseErr != nil {
-			common.Warn(fmt.Sprintf("release cleanup claim for document %s: %v", docID, releaseErr))
-		}
-	}()
 
 	// Delete tasks from DB
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(cleanupCtx, dao.DB, docID)
+	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if err != nil {
 		common.Error(fmt.Sprintf("failed to get ingestion task by doc:%s", doc.ID), err)
 		return err
 	}
 	if ingestionTask != nil {
-		if err := s.purgeTaskStateWithCleanupClaim(cleanupCtx, docID, ingestionTask.ID); err != nil {
+		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
 			return err
 		}
-		if _, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
+		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
 			return err
 		}
 	}
 
-	if err := s.deleteDocEngineData(cleanupCtx, docID, kb.TenantID, doc.KbID); err != nil {
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID); err != nil {
 		return err
 	}
-	if err := s.finishCleanupBatch(cleanupCtx, docID, claim.Token); err != nil {
-		return fmt.Errorf("cleanup claim for document %s was lost: %w", docID, err)
-	}
-	if err = s.deleteDocRecordWithCounters(cleanupCtx, doc, kb.ID); err != nil {
+	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
 
-	fileCleanupCtx := context.WithoutCancel(cleanupCtx)
+	fileCleanupCtx := context.WithoutCancel(ctx)
 	if err = s.cleanupFileReferences(fileCleanupCtx, docID); err != nil {
 		return fmt.Errorf("document deleted but file cleanup failed: %w", err)
 	}
@@ -331,53 +315,35 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	claim, err := s.acquireCleanupClaim(ctx, docID, fmt.Sprintf("document-remove:%s", docID))
-	if err != nil {
-		return fmt.Errorf("acquire cleanup claim for document %s: %w", docID, err)
-	}
-	cleanupCtx := servicepkg.WithDocumentCleanupClaim(ctx, docID, claim.Token)
-	stopHeartbeat := s.startCleanupClaimHeartbeat(ctx, docID, claim.Token)
-	defer stopHeartbeat()
-	defer func() {
-		if _, releaseErr := s.cleanupClaimDAO.Release(context.WithoutCancel(ctx), dao.DB, docID, claim.Token); releaseErr != nil {
-			common.Warn(fmt.Sprintf("release cleanup claim for document %s: %v", docID, releaseErr))
-		}
-	}()
-	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(cleanupCtx, kb.TenantID, kb.ID, docID)
+	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
-		if errors.Is(typeErr, dao.ErrDocumentCleanupClaimLost) {
-			return typeErr
-		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
 	}
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(cleanupCtx, dao.DB, docID)
+	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
 	}
 	if ingestionTask != nil {
-		if err := s.purgeTaskStateWithCleanupClaim(cleanupCtx, docID, ingestionTask.ID); err != nil {
+		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
 			return err
 		}
-		if _, err := s.ingestionTaskSvc.Remove(cleanupCtx, ingestionTask.ID, nil); err != nil {
+		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, nil); err != nil {
 			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
 		}
 	}
-	if _, delErr := s.taskDAO.DeleteByDocIDs(cleanupCtx, dao.DB, []string{docID}); delErr != nil {
+	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
 			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	if err := s.finishCleanupBatch(cleanupCtx, docID, claim.Token); err != nil {
-		return fmt.Errorf("cleanup claim for document %s was lost: %w", docID, err)
-	}
-	if err := s.deleteDocRecordWithCounters(cleanupCtx, doc, kb.ID); err != nil {
+	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
 	// File replacement/deletion uses this path instead of deleteDocumentFull.
 	// Publish the same deletion event so the dataset-level consumer removes the
 	// deleted document's contribution in both paths.
-	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), 15*time.Second)
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
@@ -451,25 +417,13 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
 	if typeErr != nil {
-		if errors.Is(typeErr, dao.ErrDocumentCleanupClaimLost) {
-			return typeErr
-		}
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
-	}
-	claimToken := s.cleanupClaimToken(ctx, docID)
-	if err := s.beginCleanupBatch(ctx, docID, claimToken); err != nil {
-		return err
 	}
 	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
 	cancel()
 	if delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
-	}
-	if err := s.finishCleanupBatch(ctx, docID, claimToken); err != nil {
-		return err
-	}
-	if delErr != nil {
 		return fmt.Errorf("delete chunks for document %s: %w", docID, delErr)
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's

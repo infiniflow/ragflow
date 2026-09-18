@@ -326,18 +326,12 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 	}
-
-	if err := createIngestionLogTableIfMissing(migrator, &entity.DocumentCleanupClaim{}, "create document_cleanup_claim"); err != nil {
-		return err
-	}
 	return nil
 }
 
 type ingestionLogSchemaMigrator interface {
 	HasIndex(any, string) bool
 	CreateIndex(any, string) error
-	HasTable(any) bool
-	CreateTable(...any) error
 }
 
 func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model any, name, operation string) error {
@@ -345,16 +339,6 @@ func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model
 		return nil
 	}
 	if err := migrator.CreateIndex(model, name); err != nil && !migrator.HasIndex(model, name) {
-		return fmt.Errorf("%s: %w", operation, err)
-	}
-	return nil
-}
-
-func createIngestionLogTableIfMissing(migrator ingestionLogSchemaMigrator, model any, operation string) error {
-	if migrator.HasTable(model) {
-		return nil
-	}
-	if err := migrator.CreateTable(model); err != nil && !migrator.HasTable(model) {
 		return fmt.Errorf("%s: %w", operation, err)
 	}
 	return nil

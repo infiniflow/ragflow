@@ -47,9 +47,7 @@ func cleanupTaskState(ctx context.Context, store canvas.CheckPointStore, tracker
 }
 
 // PurgeTaskState removes checkpoint, tracker, and per-chunk cache state for a
-// task using the process-wide Redis clients. Document rerun cleanup calls this
-// while it owns the durable cleanup claim; the caller supplies a bounded,
-// detached context and fences the claim at the batch boundary.
+// task using the process-wide Redis clients.
 func PurgeTaskState(ctx context.Context, taskID string) error {
 	if taskID == "" {
 		return errors.New("task state cleanup requires a task id")

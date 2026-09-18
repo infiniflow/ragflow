@@ -69,40 +69,10 @@ type IngestionTaskService struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	pipelineLogDAO      *dao.PipelineOperationLogDAO
-	cleanupClaimDAO     *dao.DocumentCleanupClaimDAO
 	kbDAO               *dao.KnowledgebaseDAO
 	userCanvasDAO       *dao.UserCanvasDAO
 	taskPublisher       TaskPublisher
 	logSettings         IngestionLogSettings
-}
-
-type cleanupClaimContextKey struct{}
-
-type cleanupClaimContextValue struct {
-	DocumentID string
-	Token      string
-}
-
-// WithDocumentCleanupClaim marks a new-run request as the current cleanup
-// owner. It is only used by the document cleanup workflow before enqueueing.
-func WithDocumentCleanupClaim(ctx context.Context, documentID, token string) context.Context {
-	return context.WithValue(ctx, cleanupClaimContextKey{}, cleanupClaimContextValue{
-		DocumentID: documentID,
-		Token:      token,
-	})
-}
-
-func cleanupClaimFromContext(ctx context.Context, documentID string) (string, bool) {
-	claim, ok := ctx.Value(cleanupClaimContextKey{}).(cleanupClaimContextValue)
-	return claim.Token, ok && claim.DocumentID == documentID && claim.Token != ""
-}
-
-// DocumentCleanupClaimFromContext returns the fencing token attached to a
-// document cleanup request. Storage-facing cleanup code uses this accessor to
-// renew and verify ownership around each bounded external operation without
-// exposing the context key or value type.
-func DocumentCleanupClaimFromContext(ctx context.Context, documentID string) (string, bool) {
-	return cleanupClaimFromContext(ctx, documentID)
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
@@ -112,7 +82,6 @@ func NewIngestionTaskService() *IngestionTaskService {
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
-		cleanupClaimDAO:     dao.NewDocumentCleanupClaimDAO(),
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		userCanvasDAO:       dao.NewUserCanvasDAO(),
 		taskPublisher:       NewMessageQueueTaskPublisher(),
@@ -790,20 +759,6 @@ func (s *IngestionTaskService) ensureRunIdentity(ctx context.Context, task *enti
 		lockedDocument, err := s.documentDAO.GetByIDForUpdate(ctx, tx, task.DocumentID)
 		if err != nil {
 			return err
-		}
-		now, err := dao.CurrentUnixTime(ctx, tx)
-		if err != nil {
-			return err
-		}
-		claim, err := s.cleanupClaimDAO.GetBlocking(ctx, tx, lockedDocument.ID, now, dao.DefaultDocumentCleanupTakeoverGraceSeconds)
-		if err != nil {
-			return err
-		}
-		if claim != nil {
-			token, owned := cleanupClaimFromContext(ctx, lockedDocument.ID)
-			if !owned || token != claim.Token {
-				return fmt.Errorf("document %s cleanup claim is active", lockedDocument.ID)
-			}
 		}
 		lockedTask, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
 		if err != nil {

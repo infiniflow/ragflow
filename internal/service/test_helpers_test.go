@@ -49,7 +49,6 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
-		&entity.DocumentCleanupClaim{},
 		&entity.PipelineOperationLog{},
 		&entity.UserCanvas{},
 		&entity.File2Document{},
