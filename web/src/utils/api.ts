@@ -224,6 +224,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   getPipelineDetail: (datasetId: string, logId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
+  listIngestionMessages: (datasetId: string, logId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}/messages`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   listPipelines: `${restAPIv1}/pipelines?type=builtin`,
@@ -236,7 +238,6 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/compilation/status`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>

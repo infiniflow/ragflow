@@ -38,6 +38,7 @@ services:
     # Example configuration to start Admin server:
     command:
       - --enable-adminserver
+      - --init-superuser
       #- --init-model-provider-tables
     ports:
       - ${SVR_WEB_HTTP_PORT}:80

@@ -99,6 +99,7 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 			DocumentName:     c.DocumentName,
 			DatasetID:        c.DatasetID,
 			ImageID:          c.ImageID,
+			DocType:          c.DocType,
 			URL:              c.URL,
 			Positions:        c.Positions,
 			Score:            c.Score,

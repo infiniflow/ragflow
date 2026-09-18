@@ -157,7 +157,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -210,7 +210,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
 	if err != nil {
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "retrieval test failed")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -387,7 +387,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	})
 	if err != nil {
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		jsonInternalError(c, err)
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")

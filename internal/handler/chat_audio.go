@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service"
 )
 
 const (
@@ -73,11 +74,14 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeTTS)
+	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeTTS)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
+	driver := target.Driver
+	modelName := target.ModelName
+	apiConfig := target.APIConfig
 
 	writeAudioHeaders := func(mediaType string) {
 		c.Header("Content-Type", mediaType)
@@ -98,6 +102,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	// a single WAV before being written.
 	var wavFmt *wavFormat
 	var wavPCM []byte
+	var firstSynthErr error
 	for i, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
@@ -105,6 +110,9 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		}
 		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
+			if firstSynthErr == nil {
+				firstSynthErr = err
+			}
 			common.Warn("chat TTS synthesis failed",
 				zap.Int("segmentIndex", i),
 				zap.Int("segmentLen", len(seg)),
@@ -165,7 +173,13 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		c.Writer.Flush()
 	}
 	if !headerWritten {
-		common.ErrorWithCode(c, common.CodeServerError, "TTS synthesis produced no audio")
+		if firstSynthErr != nil {
+			common.ErrorWithCode(c, common.CodeServerError,
+				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, driver.Name()))
+			return
+		}
+		common.ErrorWithCode(c, common.CodeServerError,
+			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, driver.Name()))
 	}
 }
 
@@ -254,11 +268,14 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeSpeech2Text)
+	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeSpeech2Text)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
+	driver := target.Driver
+	modelName := target.ModelName
+	apiConfig := target.APIConfig
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {

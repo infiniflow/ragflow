@@ -61,7 +61,8 @@ var badCitationPatterns = []*regexp.Regexp{
 //  4. Compute cosine similarity between each sentence and each chunk vector.
 //  5. Threshold descent (0.63 → 0.3, ×0.8 per round): find chunks where
 //     similarity > max*0.99.  Up to 4 chunks per sentence.
-//  6. Rebuild answer text with [ID:n] markers inserted after cited sentences.
+//  6. Rebuild answer text with [ID:n] markers inserted after cited sentences,
+//     where n is the cited chunk's position in chunks (see applyCitations).
 //
 // Returns the decorated answer and the set of cited chunk indices.
 func InsertCitations(ctx context.Context, answer string, chunks []SourcedChunk, embedder Embedder, chunkVectors [][]float64) (string, []int) {
@@ -153,6 +154,11 @@ func sentenceSplit(text string) []string {
 
 // applyCitations rebuilds the answer text with [ID:n] markers inserted after
 // each cited sentence position.
+//
+// n is the cited chunk's POSITION in chunks, not its chunk id: the caller returns
+// that same list as the reference, and the client resolves a marker by indexing it
+// with the number the marker carries. A chunk id (opaque text, only digits parse)
+// would come back as a dead marker on both consumers.
 func applyCitations(answer string, sentences []string, sentenceIdx []int, cites map[int][]int, chunks []SourcedChunk) (string, []int) {
 	blocks := strings.Split(answer, "```")
 	var rawPieces []string
@@ -181,7 +187,7 @@ func applyCitations(answer string, sentences []string, sentenceIdx []int, cites 
 			for _, ci := range chunkIdxs {
 				if ci < len(chunks) && !seenChunks[ci] {
 					seenChunks[ci] = true
-					markers = append(markers, " [ID:"+chunks[ci].ID+"]")
+					markers = append(markers, " [ID:"+strconv.Itoa(ci)+"]")
 					citedIndices = append(citedIndices, ci)
 				}
 			}
@@ -380,10 +386,11 @@ var slotCitationPattern = regexp.MustCompile(`(?i)\[\s*(?:ID\s*[:： ]*\s*)?slot
 
 // RepairSlotCitations rewrites leaked slot-table citations into locatable
 // chunk citations. slotCitations maps a slot-table id ("0", "1", ...) to the
-// evidence chunk ids that produced the slot's candidate; chunks is the
-// citation pool the downstream decoration indexes ("[ID:N]" where N is a
-// 0-based position there). A marker whose slot has no evidence chunk in the
-// pool is dropped outright — an internal marker the user cannot resolve must
+// evidence chunk ids that produced the slot's candidate; chunks is the ordered
+// evidence list the compose rendered for the model, whose block ids are 0-based
+// ("[ID:N]" where N is the block's index in that list — the index the client
+// resolves against the reference). A marker whose slot has no evidence chunk in
+// the list is dropped outright — an internal marker the user cannot resolve must
 // not reach the answer. Python parity note: the same leak exists upstream
 // (agentic_rag.py:885 only repairs "(ID:5)" shapes; the pre_summary slot
 // draft reaches Python's compose prompt too), so this repair is a Go-side
@@ -439,11 +446,12 @@ var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)
 
 // ExpandRangeCitations expands range-merged citations back into individual
 // ones: [ID:1-3] → [ID:1][ID:2][ID:3]. A range expands only when BOTH bounds
-// name valid citation-pool positions (0-based, bounded by poolSize); reversed
-// bounds are swapped first. Anything out of range is dropped outright — an
-// unresolvable marker must not reach the user's answer, matching the
-// slot-citation repair above. poolSize is len(kbinfos chunks): the same space
-// the downstream [ID:N] resolution indexes.
+// name valid evidence positions (0-based, bounded by poolSize — the numbering
+// the compose renders and the client indexes); reversed bounds are swapped
+// first. Anything out of range is dropped outright — an unresolvable marker must
+// not reach the user's answer, matching the slot-citation repair above. poolSize
+// is the length of the ordered evidence list the compose rendered
+// (harness.Kbinfos.CiteChunkIDs).
 func ExpandRangeCitations(answer string, poolSize int) string {
 	if answer == "" || !rangeCitationPattern.MatchString(answer) {
 		return answer
@@ -467,4 +475,103 @@ func ExpandRangeCitations(answer string, poolSize int) string {
 	}
 	b.WriteString(answer[last:])
 	return b.String()
+}
+
+// ResolveCitationMarkers drops the answer's canonical [ID:n] markers that name
+// nothing and returns the pool positions of the markers that do resolve.
+//
+// citeIdx maps a rendered evidence position to its chunk's index in the pool the
+// reference is built from (see citePoolIdx); -1 is a block whose chunk could not
+// be located. The rendered blocks are numbered 0-based, so a marker's number IS
+// the client's index into the reference — resolvable markers therefore keep the
+// number the model wrote.
+//
+// Only a marker carrying the literal "ID:" prefix is removed when it cannot be
+// resolved: the compose's citation rules prescribe that form, while a bare "[5]"
+// in prose is as likely to be a footnote, a version or a year, and deleting
+// user-visible text is worse than leaving a marker the client cannot open.
+//
+// The returned positions are pool indexes, de-duplicated, in first-seen order.
+func ResolveCitationMarkers(answer string, citeIdx []int) (string, []int) {
+	if answer == "" || len(citeIdx) == 0 {
+		return answer, nil
+	}
+	var b strings.Builder
+	b.Grow(len(answer))
+	last := 0
+	seen := make(map[int]struct{})
+	var out []int
+	for _, m := range CitationMarkerPattern.FindAllStringSubmatchIndex(answer, -1) {
+		n, ok := markerNumber(answer[m[2]:m[3]])
+		resolved := -1
+		if ok && n >= 0 && n < len(citeIdx) {
+			resolved = citeIdx[n]
+		}
+		if resolved >= 0 {
+			if _, dup := seen[resolved]; !dup {
+				seen[resolved] = struct{}{}
+				out = append(out, resolved)
+			}
+			continue
+		}
+		if canonicalIDMarkerPattern.MatchString(answer[m[0]:m[1]]) {
+			// A canonical citation that names no rendered block: the user could
+			// never open it, so it must not reach the answer.
+			b.WriteString(answer[last:m[0]])
+			last = m[1]
+		}
+	}
+	b.WriteString(answer[last:])
+	return b.String(), out
+}
+
+// canonicalIDMarkerPattern matches a citation marker that carries the literal
+// "ID:" prefix — the form the citation rules prescribe, and the only one that can
+// be removed from the answer without risking ordinary text like "[2024]".
+var canonicalIDMarkerPattern = regexp.MustCompile(
+	`(?i)^\[\s*ID\s*[:： ]*\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\s*\]$`)
+
+// rawCitationMarkers returns the citation numbers the model wrote, in order and
+// including duplicates — the repetition is what the citation observability log in
+// decorateHarnessAnswer looks at — capped at limit entries. They are read before
+// any repair, so they are what the model actually emitted.
+func rawCitationMarkers(answer string, limit int) []int {
+	if answer == "" || limit <= 0 {
+		return nil
+	}
+	out := make([]int, 0, limit)
+	for _, m := range CitationMarkerPattern.FindAllStringSubmatch(answer, -1) {
+		if len(m) < 2 {
+			continue
+		}
+		n, ok := markerNumber(m[1])
+		if !ok {
+			continue
+		}
+		out = append(out, n)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+// markerNumber parses a citation marker's digits (Arabic-Indic digits accepted)
+// into a position. ok is false for an empty or non-numeric capture.
+func markerNumber(digits string) (int, bool) {
+	s := normalizeArabicDigits(digits)
+	if s == "" {
+		return 0, false
+	}
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+		if n > 1<<30 {
+			return 0, false
+		}
+	}
+	return n, true
 }

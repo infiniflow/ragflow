@@ -3,6 +3,7 @@
 package native
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -60,7 +61,7 @@ func TestSessionPoolConcurrentGetReleaseStress(t *testing.T) {
 				// Rotate the key across more distinct values than maxKeys so the
 				// LRU eviction path is exercised under contention.
 				key := (g + i) % (maxKeys * 2)
-				s, release, err := p.Get(key, newFn)
+				s, release, err := p.Get(context.Background(), key, newFn)
 				if err != nil {
 					t.Errorf("Get(%d): %v", key, err)
 					return

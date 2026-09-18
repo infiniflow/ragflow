@@ -163,7 +163,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
 		if s.DialogID != chatID {
@@ -243,13 +243,25 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error) {
 	f.tenantID = tenantID
-	f.llmID = llmID
+	f.llmID = modelRef
 	if f.err != nil {
-		return nil, "", nil, 0, f.err
+		return nil, f.err
 	}
-	return nil, "resolved-model", &modelModule.APIConfig{}, 8192, nil
+	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+}
+
+func (f *fakeChatModelConfigResolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error) {
+	f.tenantID = tenantID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+}
+
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
+	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 
 type feedbackContextKey struct{}
@@ -351,7 +363,7 @@ func TestListChatSessions_Success(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -370,7 +382,7 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
 	if err == nil || !strings.Contains(err.Error(), "no authorization") {
 		t.Fatalf("got %v", err)
 	}
@@ -573,7 +585,7 @@ func TestUpdateSession_NotFound(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "missing", map[string]interface{}{"name": "renamed"})
-	if err == nil || err.Error() != "session not found" {
+	if err == nil || err.Error() != "Session not found!" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeDataError {
@@ -1100,7 +1112,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	pipeline := &fakePipeline{
 		resultChan: makeResultChan(
-			AsyncChatResult{Answer: "Marigold", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{StartToThink: true, Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{Reasoning: "checking sources", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{EndToThink: true, Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{Answer: "Marigold is a depth-estimation model.", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
 			AsyncChatResult{
 				Answer:    "Marigold is a depth-estimation model. [ID:0]",
 				Reference: finalReference,
@@ -1178,6 +1193,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	if got := ref["total"]; got != float64(1) {
 		t.Fatalf("final reference total = %v", got)
+	}
+	stored := parseMessages(store.sessions["session-1"].Message)
+	if got := stored[len(stored)-1]["content"]; got != "<think>checking sources</think>Marigold is a depth-estimation model." {
+		t.Fatalf("stored assistant content = %q, want tagged reasoning and visible answer", got)
 	}
 }
 
@@ -1351,6 +1370,28 @@ func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
 // ===================================================================
 // chunksFormat tests — verifies field normalization after the rewrite.
 // ===================================================================
+
+// TestChunksFormat_ContentPrefersContent pins Python's precedence in
+// chunks_format: `get_value(chunk, "content", "content_with_weight")`
+// (rag/prompts/generator.py:50) reads the display field FIRST and only falls
+// back to the engine spelling. The two normally hold the same string, so the
+// order is only observable when they differ.
+func TestChunksFormat_ContentPrefersContent(t *testing.T) {
+	svc := &ChatSessionService{}
+	result := svc.chunksFormat(map[string]interface{}{
+		"chunks": []map[string]interface{}{{
+			"chunk_id":            "c1",
+			"content":             "display text",
+			"content_with_weight": "engine body",
+		}},
+	})
+	if len(result) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(result))
+	}
+	if got := result[0]["content"]; got != "display text" {
+		t.Fatalf("content=%v, want display text (Python reads content first)", got)
+	}
+}
 
 func TestChunksFormat_NormalizesRawFieldNames(t *testing.T) {
 	svc := &ChatSessionService{}

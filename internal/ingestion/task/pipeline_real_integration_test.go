@@ -242,8 +242,7 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
-		}).
-		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+		})
 
 	if _, err = svc.Execute(ctx); err != nil {
 		t.Fatalf("Run: %v", err)

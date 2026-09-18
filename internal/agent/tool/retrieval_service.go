@@ -48,6 +48,11 @@ type RetrievalChunk struct {
 	// for top-level chunks. Threaded through so the harness can run
 	// retrieval_by_children (child fragments are promoted to their parent chunk).
 	MomID string
+	// DocType is the engine's doc_type_kwd ("text" / "image" / "table"). It is
+	// what lets the answer reference card render an image chunk as an image
+	// instead of dropping the marker, so it must survive the hop to the harness
+	// evidence pool alongside ImageID.
+	DocType string
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
@@ -79,8 +84,8 @@ type RetrievalRequest struct {
 	RankFeature    *map[string]float64
 	MetaDataFilter map[string]any
 	RetrievalFrom  string
-	// DocScope restricts retrieval to a set of document ids (from document_ids
-	// on the retrieval node/tool, or dataset_navigation_by_tree). Empty = no doc filter.
+	// DocScope restricts retrieval to a set of document ids (the doc_id list
+	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// It is used for dataset-name resolution and memory access. Reads from

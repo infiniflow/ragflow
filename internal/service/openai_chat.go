@@ -249,7 +249,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, _, _, _, mErr := s.pipeline.ModelProviderSvc.GetChatModelConfig(ctx, dialog.TenantID, resolvedModel); mErr != nil {
+		modelType := entity.ModelTypeChat
+		if s.pipeline.ModelProviderSvc.isImage2TextLLM(ctx, dialog.TenantID, resolvedModel) {
+			modelType = entity.ModelTypeImage2Text
+		}
+		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, modelType, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
@@ -664,7 +668,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 	for _, chunk := range chunks {
 		out = append(out, FormattedChunk{
 			ID:               strVal(getValue(chunk, "chunk_id", "id")),
-			Content:          strVal(getValue(chunk, "content_with_weight", "content")),
+			Content:          strVal(getValue(chunk, "content", "content_with_weight")),
 			DocumentID:       strVal(getValue(chunk, "doc_id", "document_id")),
 			DocumentName:     strVal(getValue(chunk, "docnm_kwd", "document_name")),
 			DatasetID:        strVal(getValue(chunk, "kb_id", "dataset_id")),

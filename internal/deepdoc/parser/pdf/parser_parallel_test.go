@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/png"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -86,6 +87,38 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 		if r.PageNumber != pages[i] {
 			t.Errorf("results[%d].PageNumber = %d, want %d", i, r.PageNumber, pages[i])
 		}
+	}
+}
+
+func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
+	if got, budget := defaultPageWorkerCount(), DeepDocConcurrency(); got > budget {
+		t.Fatalf("got %d page workers, want at most %d (process inference budget)", got, budget)
+	}
+}
+
+// TestDeepDocConcurrencyShare pins the process budget rule: DeepDoc inference
+// may have floor(80% of the CPUs available to the process) Runs in flight.
+func TestDeepDocConcurrencyShare(t *testing.T) {
+	want := int(deepdocInferenceCPUShare * float64(runtime.GOMAXPROCS(0)))
+	if got := DeepDocConcurrency(); got != max(1, want) {
+		t.Fatalf("got %d concurrent Runs, want %d (GOMAXPROCS=%d)",
+			got, max(1, want), runtime.GOMAXPROCS(0))
+	}
+}
+
+// TestSetPageWorkerPoolSizeClampsToBudget pins the setter's contract: the page
+// worker pool never grows past the process inference budget, because workers
+// beyond it cannot add throughput — rendering is serialized by pdfsync.Mu and
+// inference by the native gate — and only contend for the CPUs the budget
+// already accounts for.
+func TestSetPageWorkerPoolSizeClampsToBudget(t *testing.T) {
+	orig := PageWorkerPoolStats().DesiredWorkers
+	t.Cleanup(func() { parserPageWorkerPool().Resize(orig) })
+
+	budget := DeepDocConcurrency()
+	SetPageWorkerPoolSize(budget + 8)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != budget {
+		t.Fatalf("worker pool resized to %d, want the budget %d", got, budget)
 	}
 }
 
@@ -485,13 +518,15 @@ func sortPages(pages []int) {
 }
 
 // setPoolSize resizes the process-wide page worker pool for the duration of
-// a test and restores the prior size afterwards. With Config.Parallelism
-// removed, the pool worker count is the only page-concurrency knob.
+// a test and restores the prior size afterwards. It drives the pool directly
+// instead of going through SetPageWorkerPoolSize, whose public contract clamps
+// the size to the process inference budget; tests need to exercise sizes on
+// either side of that bound.
 func setPoolSize(t *testing.T, n int) {
 	t.Helper()
 	orig := PageWorkerPoolStats().DesiredWorkers
-	SetPageWorkerPoolSize(n)
-	t.Cleanup(func() { SetPageWorkerPoolSize(orig) })
+	parserPageWorkerPool().Resize(n)
+	t.Cleanup(func() { parserPageWorkerPool().Resize(orig) })
 }
 
 // imageHash produces a stable PNG-content fingerprint for an image so

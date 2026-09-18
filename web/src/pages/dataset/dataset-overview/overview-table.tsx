@@ -24,11 +24,10 @@ import {
   RunningStatusMap,
 } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { cn } from '@/lib/utils';
-import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
-import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
@@ -44,21 +43,18 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
-import { ArrowUpDown, ClipboardList, Eye, MonitorUp } from 'lucide-react';
-import { FC, useMemo, useState } from 'react';
+import { ArrowUpDown, Eye, MonitorUp } from 'lucide-react';
+import { FC, useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
+import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
-  knowledgeId: string,
-  navigateToDataflowResult: (
-    props: NavigateToDataflowResultProps,
-  ) => () => void,
   dataSourceInfo: IDataSourceInfoMap,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
@@ -214,23 +210,6 @@ export const getFileLogsTableColumns = (
           >
             <Eye />
           </Button>
-          {row.original.pipeline_id && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={navigateToDataflowResult({
-                id: row.original.id,
-                [PipelineResultSearchParams.KnowledgeId]:
-                  row.original.kb_id || knowledgeId,
-                [PipelineResultSearchParams.DocumentId]:
-                  row.original.document_id,
-                [PipelineResultSearchParams.IsReadOnly]: 'false',
-                [PipelineResultSearchParams.Type]: 'dataflow',
-              })}
-            >
-              <ClipboardList />
-            </Button>
-          )}
         </div>
       ),
     },
@@ -368,10 +347,19 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const { t: tDatasetOverview } = useTranslate('datasetOverview');
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const { navigateToDataflowResult } = useNavigatePage();
-  const [logInfo, setLogInfo] = useState<IFileLogItem>();
-  const knowledgeId = useParams().id;
-  const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
+  const [logInfo, setLogInfo] = useState<ILogInfo>();
+  const [selectedLogID, setSelectedLogID] = useState<string>();
+  const { id: routeId } = useParams();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const datasetId = knowledgeId || routeId;
+  const isGoBackend = useIsGoBackend();
+  const {
+    data: messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = useIngestionMessages(datasetId, selectedLogID, isModalVisible);
+  const showLog = useCallback((row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
       fileName: row.original.document_name,
@@ -382,24 +370,43 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
       ),
-      details: row.original.progress_msg,
-    } as unknown as IFileLogItem;
-    console.log('logDetail', logDetail);
+      details: row.original.progress_msg ?? '',
+    } as ILogInfo;
     setLogInfo(logDetail);
+    setSelectedLogID(row.original.id);
     setIsModalVisible(true);
-  };
+  }, []);
+  const modalLogInfo = useMemo<ILogInfo | undefined>(() => {
+    if (!logInfo) {
+      return undefined;
+    }
+    if (!isGoBackend) {
+      return logInfo;
+    }
+    return {
+      ...logInfo,
+      details: '',
+      events: messages?.items ?? [],
+      loadPreviousEvents: hasPreviousPage
+        ? () => fetchPreviousPage()
+        : undefined,
+      hasPreviousEvents: hasPreviousPage,
+      isLoadingPreviousEvents: isFetchingPreviousPage,
+    };
+  }, [
+    isGoBackend,
+    logInfo,
+    messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  ]);
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
-      ? getFileLogsTableColumns(
-          t,
-          showLog,
-          knowledgeId || '',
-          navigateToDataflowResult,
-          dataSourceInfo,
-        )
+      ? getFileLogsTableColumns(t, showLog, dataSourceInfo)
       : getDatasetLogsTableColumns(t, showLog);
-  }, [active, t]);
+  }, [active, dataSourceInfo, showLog, t]);
 
   const currentPagination = useMemo(
     () => ({
@@ -492,7 +499,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
-          logInfo={logInfo as unknown as ILogInfo}
+          logInfo={modalLogInfo as ILogInfo}
         />
       )}
     </div>

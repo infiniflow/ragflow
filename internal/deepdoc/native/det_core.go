@@ -82,18 +82,12 @@ var detSessions = newSessionPool[detSessKey, *session](detMaxShapePools, detShap
 // shape plus a release func. The caller must call release exactly once. On a
 // pool miss a fresh session is created; creation errors are propagated and
 // nothing is cached.
-func getDetSession(modelPath string, rh, rw int64) (*session, func(), error) {
+func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*session, func(), error) {
 	key := detSessKey{modelPath, rh, rw}
-	return detSessions.Get(key, func() (*session, error) {
-		// intraOpThreads=1 is preserved as-is for the verified det parity
-		// (mean|Δ|≈4e-5 vs the Python reference). The historical comment that
-		// this avoids competing OpenCV findContours worker threads does NOT
-		// apply to this pure-Go port, where the postprocess runs fully
-		// synchronously after RunWithOptions returns. Re-confirm parity on the
-		// det fixtures before switching to 0 (all cores) to match DLA/TSR.
+	return detSessions.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, "x",
 			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0",
-			[]int64{1, 1, rh, rw}, 1)
+			[]int64{1, 1, rh, rw})
 	})
 }
 
@@ -102,7 +96,7 @@ func getDetSession(modelPath string, rh, rw int64) (*session, func(), error) {
 // extraction uses the pure-Go connected-components backend.
 func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error) {
 	blob, rh, rw, sh, sw := detPreprocess(img)
-	sess, release, e := getDetSession(filepath.Join(modelDir, "det.ort"), int64(rh), int64(rw))
+	sess, release, e := getDetSession(ctx, filepath.Join(modelDir, "det.ort"), int64(rh), int64(rw))
 	if e != nil {
 		return DetResult{}, e
 	}

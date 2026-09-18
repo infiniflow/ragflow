@@ -86,38 +86,22 @@ var retrievalUserPrefixPattern = regexp.MustCompile(`(?i)^user[:：\s]*`)
 // beyond its docEngine + documentDAO handles, both of which the
 // nlp package treats as concurrent-safe.
 type NLPRetrievalAdapter struct {
-	svc           *nlp.RetrievalService
-	kbDAO         knowledgebaseLookup
-	modelResolver modelResolver
-	enhancer      retrievalEnhancer
+	svc                 *nlp.RetrievalService
+	kbDAO               knowledgebaseLookup
+	modelConfigResolver modelConfigResolver
+	enhancer            retrievalEnhancer
 }
+
+type modelConfigResolver func(
+	ctx context.Context,
+	tenantID string,
+	modelType entity.ModelType,
+	modelRef string,
+) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
 
 type knowledgebaseLookup interface {
 	GetByIDs(ctx context.Context, sqlDB *gorm.DB, ids []string) ([]*entity.Knowledgebase, error)
 	GetByName(ctx context.Context, sqlDB *gorm.DB, name, tenantID string) (*entity.Knowledgebase, error)
-}
-
-// modelResolver is the narrow model-provider surface needed by retrieval.
-// Keeping this interface in the tool package avoids importing the parent
-// internal/service package, which already depends on agent/tool.
-type modelResolver interface {
-	GetModelConfigByID(
-		ctx context.Context,
-		tenantID string,
-		modelType entity.ModelType,
-		modelID string,
-	) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
-	ResolveModelConfig(
-		ctx context.Context,
-		tenantID string,
-		modelType entity.ModelType,
-		modelRef string,
-	) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
-	GetTenantDefaultModelByType(
-		ctx context.Context,
-		tenantID string,
-		modelType entity.ModelType,
-	) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
 }
 
 // retrievalEnhancer exposes the service-layer query and result enhancements
@@ -160,14 +144,14 @@ type retrievalEnhancer interface {
 // *nlp.RetrievalService.
 func NewNLPRetrievalAdapter(
 	svc *nlp.RetrievalService,
-	resolver modelResolver,
+	resolver modelConfigResolver,
 	enhancer retrievalEnhancer,
 ) *NLPRetrievalAdapter {
 	return &NLPRetrievalAdapter{
-		svc:           svc,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		modelResolver: resolver,
-		enhancer:      enhancer,
+		svc:                 svc,
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		modelConfigResolver: resolver,
+		enhancer:            enhancer,
 	}
 }
 
@@ -179,15 +163,35 @@ func NewNLPRetrievalAdapter(
 func NewNLPRetrievalAdapterFromDeps(
 	docEngine engine.DocEngine,
 	documentDAO *dao.DocumentDAO,
-	resolver modelResolver,
+	resolver modelConfigResolver,
 	enhancer retrievalEnhancer,
 ) *NLPRetrievalAdapter {
 	return &NLPRetrievalAdapter{
-		svc:           nlp.NewRetrievalService(docEngine, documentDAO),
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		modelResolver: resolver,
-		enhancer:      enhancer,
+		svc:                 nlp.NewRetrievalService(docEngine, documentDAO),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		modelConfigResolver: resolver,
+		enhancer:            enhancer,
 	}
+}
+
+// SetModelConfigResolver installs modelRef-based resolution without coupling
+// the agent tool package to the parent service package.
+func (a *NLPRetrievalAdapter) SetModelConfigResolver(resolver modelConfigResolver) {
+	if a != nil {
+		a.modelConfigResolver = resolver
+	}
+}
+
+func (a *NLPRetrievalAdapter) resolveModelConfig(
+	ctx context.Context,
+	tenantID string,
+	modelType entity.ModelType,
+	modelRef string,
+) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	if a == nil || a.modelConfigResolver == nil {
+		return nil, "", nil, 0, fmt.Errorf("retrieval: model config resolver is not configured")
+	}
+	return a.modelConfigResolver(ctx, tenantID, modelType, modelRef)
 }
 
 // Search implements RetrievalService. The translation rules live
@@ -480,7 +484,7 @@ func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
 	ctx context.Context,
 	kb *entity.Knowledgebase,
 ) (*modelModule.EmbeddingModel, error) {
-	if a == nil || a.modelResolver == nil {
+	if a == nil {
 		return nil, fmt.Errorf("retrieval: embedding model resolver is not configured")
 	}
 
@@ -493,16 +497,16 @@ func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
 	)
 	switch {
 	case kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "":
-		driver, modelName, apiConfig, maxTokens, err = a.modelResolver.GetModelConfigByID(
+		driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
 			ctx, kb.TenantID, entity.ModelTypeEmbedding, *kb.TenantEmbdID,
 		)
 	case strings.TrimSpace(kb.EmbdID) != "":
-		driver, modelName, apiConfig, maxTokens, err = a.modelResolver.ResolveModelConfig(
+		driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
 			ctx, kb.TenantID, entity.ModelTypeEmbedding, kb.EmbdID,
 		)
 	default:
-		driver, modelName, apiConfig, maxTokens, err = a.modelResolver.GetTenantDefaultModelByType(
-			ctx, kb.TenantID, entity.ModelTypeEmbedding,
+		driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
+			ctx, kb.TenantID, entity.ModelTypeEmbedding, "",
 		)
 	}
 	if err != nil {
@@ -521,11 +525,11 @@ func (a *NLPRetrievalAdapter) resolveChatModel(
 	if !needsChatModel {
 		return nil, nil
 	}
-	if a == nil || a.modelResolver == nil {
+	if a == nil {
 		return nil, fmt.Errorf("retrieval: model resolver is not configured")
 	}
-	driver, modelName, apiConfig, _, err := a.modelResolver.GetTenantDefaultModelByType(
-		ctx, tenantID, entity.ModelTypeChat,
+	driver, modelName, apiConfig, _, err := a.resolveModelConfig(
+		ctx, tenantID, entity.ModelTypeChat, "",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve default chat model: %w", err)
@@ -541,7 +545,7 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 	if req.RerankID == "" {
 		return nil, nil
 	}
-	if a == nil || a.modelResolver == nil {
+	if a == nil || a.modelConfigResolver == nil {
 		return nil, fmt.Errorf("retrieval: model resolver is not configured")
 	}
 	var (
@@ -551,7 +555,7 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 		maxTokens int
 		err       error
 	)
-	driver, modelName, apiConfig, maxTokens, err = a.modelResolver.ResolveModelConfig(
+	driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
 		ctx, tenantID, entity.ModelTypeRerank, req.RerankID,
 	)
 	if err != nil {
@@ -572,6 +576,7 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		DocumentName:     stringFromMap(raw, "docnm_kwd"),
 		DatasetID:        stringFromMap(raw, "kb_id"),
 		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
+		DocType:          firstStringFromMap(raw, "doc_type_kwd", "doc_type"),
 		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
 		Positions:        firstValueFromMap(raw, "positions", "position_int"),
 		MomID:            stringFromMap(raw, "mom_id"),

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 11
 title: Launch RAGFlow MCP Server
 sidebar_label: Launch RAGFlow MCP Server
 slug: /launch_mcp_server

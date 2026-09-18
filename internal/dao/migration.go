@@ -288,6 +288,70 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migrateIngestionLogRunIdentity adds the columns and indexes that make each
+// ingestion event belong to one immutable pipeline-operation-log run. It is
+// deliberately explicit: the runtime startup path auto-migrates ingestion
+// tables and cannot be trusted to converge an existing schema safely.
+func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if migrator.HasTable(&entity.PipelineOperationLog{}) {
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "run_count") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN run_count int NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.run_count: %w", err)
+			}
+		}
+		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
+			return err
+		}
+	}
+
+	if migrator.HasTable(&entity.IngestionTaskLog{}) {
+		if !migrator.HasColumn(&entity.IngestionTaskLog{}, "pipeline_log_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE ingestion_task_log ADD COLUMN pipeline_log_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add ingestion_task_log.pipeline_log_id: %w", err)
+			}
+		}
+		if !migrator.HasColumn(&entity.IngestionTaskLog{}, "event_type") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE ingestion_task_log ADD COLUMN event_type tinyint NOT NULL DEFAULT 4",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add ingestion_task_log.event_type: %w", err)
+			}
+		}
+		if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type ingestionLogSchemaMigrator interface {
+	HasIndex(any, string) bool
+	CreateIndex(any, string) error
+}
+
+func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model any, name, operation string) error {
+	if migrator.HasIndex(model, name) {
+		return nil
+	}
+	if err := migrator.CreateIndex(model, name); err != nil && !migrator.HasIndex(model, name) {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
+}
+
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
 // (tenant_id, name) for valid knowledge bases. A VIRTUAL generated column
 // (name_ci) computes LOWER(name) only for status='1' rows and is NULL otherwise,

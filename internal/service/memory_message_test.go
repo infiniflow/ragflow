@@ -16,6 +16,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 )
@@ -492,6 +493,116 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	}
 }
 
+// A caller may not list memories of a tenant they have not joined, even when
+// the target memories carry the team permission. Python list_memory clamps the
+// requested tenant_id filter to the caller's joined tenants; the Go port
+// passed the requested ids straight through, so ?tenant_id=<foreign> listed
+// that tenant's team-shared memories.
+func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	for _, u := range []*entity.User{
+		{ID: "user-1", Nickname: "Caller"},
+		{ID: "tenant-2", Nickname: "Foreign owner"},
+	} {
+		if err := dao.DB.Create(u).Error; err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+	if err := dao.DB.Create(&entity.Memory{
+		ID:               "mem-foreign-team",
+		Name:             "Foreign team memory",
+		TenantID:         "tenant-2",
+		MemoryType:       dao.MemoryTypeRaw,
+		StorageType:      "table",
+		EmbdID:           "embd",
+		LLMID:            "llm",
+		Permissions:      string(TenantPermissionTeam),
+		ForgettingPolicy: string(ForgettingPolicyFIFO),
+	}).Error; err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	resp, err := NewMemoryService().ListMemories(t.Context(), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 0 || len(resp.MemoryList) != 0 {
+		t.Fatalf("foreign tenant filter must return no memories, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+}
+
+// A caller who has joined the tenant may still use the tenant_id filter, and a
+// mixed filter keeps only the joined ids.
+func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	for _, u := range []*entity.User{
+		{ID: "user-1", Nickname: "Caller"},
+		{ID: "tenant-2", Nickname: "Joined owner"},
+		{ID: "tenant-3", Nickname: "Foreign owner"},
+	} {
+		if err := dao.DB.Create(u).Error; err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "ut-user-1-tenant-2",
+		UserID:   "user-1",
+		TenantID: "tenant-2",
+		Role:     "normal",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("seed user_tenant: %v", err)
+	}
+	for _, m := range []*entity.Memory{
+		{
+			ID:               "mem-joined-team",
+			Name:             "Joined team memory",
+			TenantID:         "tenant-2",
+			MemoryType:       dao.MemoryTypeRaw,
+			StorageType:      "table",
+			EmbdID:           "embd",
+			LLMID:            "llm",
+			Permissions:      string(TenantPermissionTeam),
+			ForgettingPolicy: string(ForgettingPolicyFIFO),
+		},
+		{
+			ID:               "mem-foreign-team",
+			Name:             "Foreign team memory",
+			TenantID:         "tenant-3",
+			MemoryType:       dao.MemoryTypeRaw,
+			StorageType:      "table",
+			EmbdID:           "embd",
+			LLMID:            "llm",
+			Permissions:      string(TenantPermissionTeam),
+			ForgettingPolicy: string(ForgettingPolicyFIFO),
+		},
+	} {
+		if err := dao.DB.Create(m).Error; err != nil {
+			t.Fatalf("seed memory %s: %v", m.ID, err)
+		}
+	}
+
+	ctx := t.Context()
+
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
+		t.Fatalf("joined tenant filter must return its team memory, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+
+	resp, err = NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
+		t.Fatalf("mixed filter must drop the unjoined tenant, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+}
+
 func seedMemoryMessages(t *testing.T) {
 	t.Helper()
 
@@ -617,8 +728,16 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	if req == nil {
 		t.Fatal("expected doc engine search request")
 	}
-	if !reflect.DeepEqual(req.IndexNames, []string{"memory_user-1"}) {
-		t.Fatalf("IndexNames = %v, want [memory_user-1]", req.IndexNames)
+	// The per-memory index name gains a `_<memoryID>` suffix on infinity
+	// (see memorySearchIndexNames). The engine type is process-global and set
+	// by sibling integration tests, so make the expectation engine-aware rather
+	// than hard-coding the non-infinity name.
+	wantIndexName := "memory_user-1"
+	if engine.GetEngineType() == "infinity" {
+		wantIndexName = "memory_user-1_mem-owned"
+	}
+	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
+		t.Fatalf("IndexNames = %v, want [%s]", req.IndexNames, wantIndexName)
 	}
 	if len(req.KbIDs) != 0 {
 		t.Fatalf("KbIDs = %v, want empty for memory message search", req.KbIDs)

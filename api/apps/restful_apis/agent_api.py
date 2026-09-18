@@ -39,7 +39,6 @@ from quart import Response, jsonify, request, make_response
 from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
-from api.db.db_models import Task
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
@@ -47,11 +46,9 @@ from api.db.services.canvas_service import (
     completion as agent_completion,
     completion_openai,
 )
-from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
+from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
@@ -1301,55 +1298,6 @@ async def reset_agent(agent_id, tenant_id):
         return server_error_response(exc)
 
 
-@manager.route("/agents/rerun", methods=["POST"])  # noqa: F821
-@validate_request("id", "dsl", "component_id")
-@login_required
-@add_tenant_id_to_kwargs
-async def rerun_agent(tenant_id):
-    from rag.nlp import search
-
-    req = await get_request_json()
-    doc = PipelineOperationLogService.get_documents_info(req["id"])
-    if not doc:
-        return get_data_error_result(message="Document not found.")
-    doc = doc[0]
-    if not DocumentService.accessible(doc["id"], tenant_id):
-        logging.warning(
-            "rerun_agent denied: tenant_id=%s log_id=%s doc_id=%s",
-            tenant_id,
-            req["id"],
-            doc["id"],
-        )
-        return get_data_error_result(message="Document not found.")
-    if 0 < doc["progress"] < 1:
-        return get_data_error_result(message=f"`{doc['name']}` is processing...")
-
-    from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
-
-    remove_dataset_nav_doc_sync(tenant_id, doc["kb_id"], doc["id"])
-    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc["kb_id"]):
-        settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(tenant_id), doc["kb_id"])
-    doc["progress_msg"] = ""
-    doc["chunk_num"] = 0
-    doc["token_num"] = 0
-    DocumentService.clear_chunk_num_when_rerun(doc["id"])
-    DocumentService.update_by_id(doc["id"], doc)
-    TaskService.filter_delete([Task.doc_id == doc["id"]])
-
-    dsl = req["dsl"]
-    dsl["path"] = [req["component_id"]]
-    PipelineOperationLogService.update_by_id(req["id"], {"dsl": dsl})
-    queue_dataflow(
-        tenant_id=tenant_id,
-        flow_id=req["id"],
-        task_id=get_uuid(),
-        doc_id=doc["id"],
-        priority=0,
-        rerun=True,
-    )
-    return get_json_result(data=True)
-
-
 @manager.route("/agents/test_db_connection", methods=["POST"])  # noqa: F821
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
@@ -1538,6 +1486,14 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         if workflow_session:
             workflow_conv = conv.to_dict()
 
+    if not session_id:
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return get_json_result(
+                data=False,
+                message="Make sure you have permission to access the agent.",
+                code=RetCode.OPERATING_ERROR,
+            )
+
     if openai_compatible:
         # OpenAI-compatible mode uses a different wire format, keep it separate from regular agent events.
         messages = req.get("messages", [])
@@ -1634,13 +1590,6 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         )
 
     if not session_id:
-        if not UserCanvasService.accessible(agent_id, tenant_id):
-            return get_json_result(
-                data=False,
-                message="Make sure you have permission to access the agent.",
-                code=RetCode.OPERATING_ERROR,
-            )
-
         # Load the caller's runtime replica as the workflow template. Session-owned
         # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")

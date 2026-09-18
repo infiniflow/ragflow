@@ -47,10 +47,8 @@ type Pipeline struct {
 	// these bytes, so a stale checkpoint can be detected and discarded
 	// instead of being resumed against an incompatible graph.
 	rawDSL     []byte
-	documentID string // owning document; progress is mirrored back to the
-	// document table so the existing GET /api/v1/datasets/{dataset_id}/documents
-	// endpoint (which reads document.progress/run/progress_msg) reflects the
-	// live Go pipeline progress without a bespoke endpoint (plan §8).
+	documentID string // owning document; numeric progress is mirrored back to
+	// the document table for existing status projections.
 	canvas  *canvas.Canvas
 	store   canvas.CheckPointStore // optional injected; nil -> resolve at Run
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
@@ -99,9 +97,8 @@ func WithRequireResume() PipelineOption {
 	return func(p *Pipeline) { p.requireResume = true }
 }
 
-// WithDocumentID binds the pipeline's owning document so progress can be
-// mirrored back into the document table (document.progress / run /
-// progress_msg) — the canonical store the document-list endpoint serves.
+// WithDocumentID binds the pipeline's owning document so numeric progress can
+// be mirrored back into the document table.
 // Pass the empty string to disable the mirror (e.g. headless/test runs where
 // the document row is not materialized).
 func WithDocumentID(docID string) PipelineOption {
@@ -676,23 +673,8 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 // cleanupCheckpoint wipes the eino checkpoint payload and the persisted
 // interrupt id (plan §4.3.b cancelled path).
 func (p *Pipeline) cleanupCheckpoint(ctx context.Context, store canvas.CheckPointStore, tracker *canvas.RunTracker, cpID string) {
-	if store != nil {
-		if err := store.Delete(ctx, cpID); err != nil {
-			common.Error(fmt.Sprintf("pipeline: delete checkpoint %s failed: %v", cpID, err), err)
-		}
-		// Drop the DSL / override fingerprints alongside the checkpoint so
-		// they share one lifecycle on cancellation (otherwise the fingerprint
-		// keys linger up to TTL while the checkpoint is gone — harmless, but
-		// inconsistent). A later re-run overwrites them anyway.
-		if err := store.Delete(ctx, cpID+dslKeySuffix); err != nil {
-			common.Error(fmt.Sprintf("pipeline: delete DSL fingerprint %s failed: %v", cpID, err), err)
-		}
-		if err := store.Delete(ctx, cpID+ovfKeySuffix); err != nil {
-			common.Error(fmt.Sprintf("pipeline: delete override fingerprint %s failed: %v", cpID, err), err)
-		}
-	}
-	if tracker != nil {
-		_ = tracker.ClearInterruptID(ctx, cpID)
+	if err := cleanupCheckpointState(ctx, store, tracker, cpID); err != nil {
+		common.Error(fmt.Sprintf("pipeline: cleanup checkpoint %s failed: %v", cpID, err), err)
 	}
 }
 
@@ -720,17 +702,21 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		return nil
 	}
 	return func(ev runtime.ProgressEvent) {
+		componentName := ev.Component
+		if comp, ok := p.canvas.Components[ev.Component]; ok && comp.Obj.ComponentName != "" {
+			componentName = comp.Obj.ComponentName
+		}
 		var msg string
 		switch ev.Phase {
 		case runtime.PhaseEnter:
-			msg = ev.Component + " Started"
+			msg = componentName + " Started"
 		case runtime.PhaseExit:
-			msg = ev.Component + " Done"
+			msg = componentName + " Done"
 		case runtime.PhaseError:
 			if ev.Err != nil {
-				msg = ev.Component + ": " + ev.Err.Error()
+				msg = componentName + ": " + ev.Err.Error()
 			} else {
-				msg = ev.Component + " Error"
+				msg = componentName + " Error"
 			}
 		}
 		// Surface every component lifecycle event as a structured log line so

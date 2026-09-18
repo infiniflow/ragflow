@@ -1,3 +1,4 @@
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -28,8 +29,6 @@ import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
   CategorizeAnchorPointPositions,
-  FileType,
-  FileTypeSuffixMap,
   InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
@@ -437,10 +436,11 @@ export function transformTitleChunkerParams(
   };
 }
 
-// LLM setting keys the Go extractor DSL keeps besides the nested groups.
-// Mirrors LlmSettingSchema (components/llm-setting-items/next) — duplicated
-// here as a plain list so this module doesn't import the form components.
-const ExtractorLlmSettingKeys = [
+// LLM setting keys LLM-backed pipeline operators (Extractor, Compiler) keep in
+// their DSL params. Mirrors LlmSettingSchema (components/llm-setting-items/next)
+// — duplicated here as a plain list so this module doesn't import the form
+// components.
+export const LlmSettingParamKeys = [
   'llm_id',
   'temperature',
   'top_p',
@@ -515,7 +515,7 @@ function transformExtractorParamsGo(
   // the LLM settings the form defines — no legacy flat mirrors, no
   // display-only fields like outputs.
   return {
-    ...pick(params, ExtractorLlmSettingKeys),
+    ...pick(params, LlmSettingParamKeys),
     keywords: {
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
@@ -547,6 +547,17 @@ export function transformExtractorParams(
     go: transformExtractorParamsGo,
     python: transformExtractorParamsPython,
   })(params);
+}
+
+// The Compiler reads the compilation template group plus the same LLM runtime
+// settings as the Extractor; display-only fields like outputs are dropped.
+export function transformCompilationParams(
+  params: Record<string, any>,
+): Record<string, any> {
+  return {
+    compilation_template_group_id: params?.compilation_template_group_id,
+    ...pick(params, LlmSettingParamKeys),
+  };
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
@@ -741,7 +752,9 @@ export const buildDslGlobalVariables = (
 
 // TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && res?.response.status !== 200;
+  res &&
+  (res?.response.status !== 200 ||
+    (typeof res?.data?.code === 'number' && res.data.code !== 0));
 
 // Replace the id in the object with text
 export const replaceIdWithText = (

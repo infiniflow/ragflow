@@ -6,10 +6,25 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
+
+func TestClaimProgressReporterEmitsMilestonesAndFinalResult(t *testing.T) {
+	reporter := newClaimProgressReporter(100)
+	var reported []int
+	for completed := 1; completed <= 100; completed++ {
+		if reporter.shouldReport(completed) {
+			reported = append(reported, completed)
+		}
+	}
+	if len(reported) != 21 {
+		t.Fatalf("reported %d milestones, want 21: %v", len(reported), reported)
+	}
+	if reported[0] != 1 || reported[1] != 5 || reported[len(reported)-1] != 100 {
+		t.Fatalf("reported milestones = %v, want first 1, then 5-step milestones through 100", reported)
+	}
+}
 
 // recordingEmbedder captures the texts it was asked to embed, so a test can
 // assert what actually reached the vector.
@@ -53,6 +68,20 @@ func (f *flakyChatForClaims) Chat(ctx context.Context, req common.ChatRequest) (
 		return nil, fmt.Errorf("429 rate limit exceeded")
 	}
 	return &common.ChatResponse{Content: f.reply}, nil
+}
+
+type sequencedChatForClaims struct {
+	replies []string
+	calls   int
+}
+
+func (s *sequencedChatForClaims) Chat(_ context.Context, _ common.ChatRequest) (*common.ChatResponse, error) {
+	index := s.calls
+	s.calls++
+	if index >= len(s.replies) {
+		index = len(s.replies) - 1
+	}
+	return &common.ChatResponse{Content: s.replies[index]}, nil
 }
 
 func TestLocateEvidenceExactAndReflowed(t *testing.T) {
@@ -297,6 +326,19 @@ func TestExtractClaimsForChunksAttribution(t *testing.T) {
 func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
 	// Mirrors Python _CLAIM_BATCH_SIZE: one call harvests a whole batch, so the
 	// call count stays flat instead of growing one-per-chunk.
+	previous := batchSubmitter
+	defer SetBatchSubmitter(previous)
+	submitted := 0
+	SetBatchSubmitter(func(ctx context.Context, jobs []func() error) error {
+		submitted = len(jobs)
+		for _, job := range jobs {
+			if err := job(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
 	reply, _ := json.Marshal(map[string]any{"items": []any{
 		map[string]any{
 			"name":             "a claim",
@@ -316,15 +358,14 @@ func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
 	if chat.calls != 1 {
 		t.Fatalf("expected 1 call for %d chunks, got %d", len(chunks), chat.calls)
 	}
+	if submitted != 1 {
+		t.Fatalf("expected one batch submitted to the shared pool, got %d", submitted)
+	}
 }
 
 func TestExtractClaimsForChunksRetriesTransientErrors(t *testing.T) {
 	// Mirrors Python _RETRYABLE_LLM_ERR: a rate-limit failure is worth waiting
 	// out instead of silently dropping the batch's claims.
-	old := claimRetryBaseDelay
-	claimRetryBaseDelay = time.Millisecond
-	t.Cleanup(func() { claimRetryBaseDelay = old })
-
 	reply, _ := json.Marshal(map[string]any{"items": []any{
 		map[string]any{
 			"name":             "a claim",
@@ -336,6 +377,25 @@ func TestExtractClaimsForChunksRetriesTransientErrors(t *testing.T) {
 	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft, "")
 	if len(got["c1"]) != 1 {
 		t.Fatalf("a retried call should still yield its claims, got %+v", got)
+	}
+}
+
+func TestExtractClaimsForChunksRetriesMalformedJSON(t *testing.T) {
+	reply, _ := json.Marshal(map[string]any{"items": []any{
+		map[string]any{
+			"name":             "a claim",
+			"source_chunk_ids": []any{"c1"},
+			"evidence":         []any{map[string]any{"quote": "alpha text", "chunk_id": "c1"}},
+		},
+	}})
+	chat := &sequencedChatForClaims{replies: []string{"not valid JSON", string(reply)}}
+	deps := common.Deps{Chat: chat, TenantID: "t"}
+	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft, "")
+	if len(got["c1"]) != 1 {
+		t.Fatalf("a malformed response should be retried, got %+v", got)
+	}
+	if chat.calls != 2 {
+		t.Fatalf("expected one retry after malformed JSON, got %d calls", chat.calls)
 	}
 }
 

@@ -8,7 +8,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useEffect, useMemo } from 'react';
@@ -85,7 +85,7 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>Output Format</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     {...field}
                     options={[
                       { label: 'PDF', value: 'pdf' },
@@ -94,7 +94,7 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
                       { label: 'Markdown', value: 'markdown' },
                       { label: 'HTML', value: 'html' },
                     ]}
-                  ></RAGFlowSelect>
+                  ></SelectWithSearch>
                 </FormControl>
                 <FormMessage />
               </FormItem>

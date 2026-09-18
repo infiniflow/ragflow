@@ -202,8 +202,16 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 
 // validateIPWhitelist mirrors python agent_api.py:1660-1679. Empty
 // list → allow. Supports CIDR ("10.0.0.0/8") and exact ("1.2.3.4").
-// The client IP comes from gin's c.ClientIP() which honours
-// X-Forwarded-For when trusted proxies are configured.
+//
+// This is a security gate, so the address it checks must be one the
+// caller cannot choose. c.ClientIP() takes X-Forwarded-For / X-Real-IP
+// only when the direct peer is in the engine's trusted proxy list and
+// falls back to the socket peer otherwise; the engine is configured via
+// common.ConfigureTrustedProxies (default: loopback, the nginx bundled
+// in the image) instead of gin's trust-everything default, which let any
+// caller send "X-Forwarded-For: <an-allowed-ip>" and pass. The socket
+// peer alone (c.RemoteIP()) is not usable here because behind that
+// bundled nginx it is 127.0.0.1 for every request.
 func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 	whitelist, _ := cfg["ip_whitelist"].([]any)
 	if len(whitelist) == 0 {
