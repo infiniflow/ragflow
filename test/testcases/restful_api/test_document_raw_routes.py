@@ -41,7 +41,7 @@ def test_document_image_invalid_id_contract(rest_client):
 def test_private_document_images_require_auth(rest_client_noauth, path):
     res = rest_client_noauth.get(path)
     assert res.status_code == 401, res.text
-    assert_auth_error(res.json(), path)
+    assert_auth_error(res.json(), "missing token")
 
 
 @pytest.mark.p2
