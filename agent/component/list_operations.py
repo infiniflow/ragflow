@@ -1,3 +1,4 @@
+import math
 import os
 from abc import ABC
 
@@ -47,6 +48,18 @@ def _go_format_scalar(v):
         return "<nil>"
     if isinstance(v, bool):
         return "true" if v else "false"
+    if isinstance(v, float):
+        # Go's default %g-style rendering omits the trailing decimal point
+        # for integral mantissas (1.0 -> 1), unlike Python's str().
+        if math.isnan(v):
+            return "NaN"
+        if math.isinf(v):
+            return "+Inf" if v > 0 else "-Inf"
+        formatted = repr(v)
+        mantissa, separator, exponent = formatted.partition("e")
+        if mantissa.endswith(".0"):
+            mantissa = mantissa[:-2]
+        return mantissa + (separator + exponent if separator else "")
     if isinstance(v, (list, tuple)):
         return "[" + " ".join(_go_format_scalar(item) for item in v) + "]"
     if isinstance(v, dict):

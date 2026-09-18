@@ -295,6 +295,16 @@ class TestScalarSortKey:
         # Python's ``str(3.14)`` → ``\"3.14\"``. Go's ``%v`` on a float64
         # also prints minimal precision, so they match for most values.
         assert fmt(3.14) == "3.14"
+        assert fmt(1.0) == "1"
+        assert fmt(-0.0) == "-0"
+        assert fmt(float("inf")) == "+Inf"
+        assert fmt(float("-inf")) == "-Inf"
+        assert fmt(float("nan")) == "NaN"
+
+    def test_go_format_integral_floats_in_containers(self, lo_module):
+        fmt = lo_module._go_format_scalar
+        assert fmt([1.0, {"value": 2.0}]) == "[1 map[value:2]]"
+        assert fmt({"one": 1.0, "nested": [3.14, 2.0]}) == "map[nested:[3.14 2] one:1]"
 
     def test_go_format_list_recursive(self, lo_module):
         """Go's ``%v`` renders a list as ``[a b c]``: space-separated,
