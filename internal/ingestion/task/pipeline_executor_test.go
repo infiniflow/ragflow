@@ -789,6 +789,32 @@ func TestPipelineExecutorCompensatesAfterExhaustingCombinedWriteRetries(t *testi
 	}
 }
 
+func TestPipelineExecutorBoundsCompensationCleanup(t *testing.T) {
+	var cleanupCtx context.Context
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithInsertFunc(func(context.Context, []map[string]any, string, string) ([]string, error) {
+			return nil, errors.New("index unavailable")
+		}).
+		WithDeleteChunksFunc(func(ctx context.Context, _ map[string]any, _, _ string) (int64, error) {
+			cleanupCtx = ctx
+			return 0, nil
+		})
+
+	_, err := svc.processOutput(t.Context(), map[string]any{
+		"chunks": []map[string]any{{"text": "child", "mom": "parent"}},
+	}, time.Now())
+	if err == nil {
+		t.Fatal("processOutput succeeded after exhausted writes")
+	}
+	deadline, ok := cleanupCtx.Deadline()
+	if !ok {
+		t.Fatal("compensation cleanup context has no deadline")
+	}
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > 5*time.Second {
+		t.Fatalf("compensation cleanup deadline remaining = %s, want (0, 5s]", remaining)
+	}
+}
+
 func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {

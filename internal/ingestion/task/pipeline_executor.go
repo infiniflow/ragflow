@@ -381,8 +381,10 @@ func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunk
 	if len(ids) == 0 {
 		return nil
 	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	_, err := s.deleteChunksFunc(
-		context.WithoutCancel(ctx),
+		cleanupCtx,
 		map[string]any{"id": ids, "kb_id": s.taskCtx.Doc.KbID},
 		s.indexWriter.baseName,
 		s.taskCtx.Doc.KbID,
