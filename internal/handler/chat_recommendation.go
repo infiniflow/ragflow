@@ -17,13 +17,14 @@
 package handler
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+
+	"go.uber.org/zap"
 )
 
 // ChatRecommendationRequest is the request body for POST /api/v1/chat/recommendation.
@@ -60,11 +61,8 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 	ctx := c.Request.Context()
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
-		if errors.Is(err, service.ErrChatModelUnavailable) {
-			llmUnavailableError(c, err)
-			return
-		}
-		jsonInternalError(c, err)
+		common.Warn("chat recommendation failed", zap.String("error", err.Error()))
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 

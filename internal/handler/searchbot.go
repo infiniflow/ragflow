@@ -18,7 +18,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -158,11 +157,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		if errors.Is(err, service.ErrChatModelUnavailable) {
-			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, service.ChatModelUnavailableMessage)
-			return
-		}
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -392,11 +387,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	})
 	if err != nil {
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		if errors.Is(err, service.ErrChatModelUnavailable) {
-			llmUnavailableError(c, err)
-			return
-		}
-		jsonInternalError(c, err)
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")

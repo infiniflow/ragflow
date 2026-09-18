@@ -39,17 +39,6 @@ func jsonInternalError(c *gin.Context, err error) {
 	common.ResponseWithCodeData(c, common.CodeServerError, nil, common.CodeServerError.Message())
 }
 
-// llmUnavailableError responds with a clear code+message when the chat model
-// is unavailable or not configured, instead of a generic internal error.
-func llmUnavailableError(c *gin.Context, err error) {
-	common.Warn("chat model unavailable",
-		zap.Error(err),
-		zap.String("method", c.Request.Method),
-		zap.String("path", c.Request.URL.Path),
-	)
-	common.ResponseWithCodeData(c, common.CodeOperatingError, nil, service.ChatModelUnavailableMessage)
-}
-
 // HandleNoRoute handles requests to undefined routes
 func HandleNoRoute(c *gin.Context) {
 	// Python parity: GET /api/v1/auth/login/ (an empty OAuth channel) resolves

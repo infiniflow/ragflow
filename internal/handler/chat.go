@@ -18,7 +18,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -28,6 +27,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/service"
+
+	"go.uber.org/zap"
 )
 
 // ChatHandler chat handler
@@ -228,11 +229,8 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
-		if errors.Is(err, service.ErrChatModelUnavailable) {
-			llmUnavailableError(c, err)
-			return
-		}
-		jsonInternalError(c, err)
+		common.Warn("mindmap failed", zap.String("error", err.Error()))
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")
