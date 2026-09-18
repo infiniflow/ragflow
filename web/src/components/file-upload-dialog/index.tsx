@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { TableColumnSettingsFields } from '@/components/table-column-settings-form-fields';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,13 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
 import { TableColumnSettings } from '@/utils/table-column-settings';
@@ -41,21 +35,7 @@ import { z } from 'zod';
 import { FileUploader } from '../file-uploader';
 import { RAGFlowFormItem } from '../ragflow-form';
 import { Form } from '../ui/form';
-import { Label } from '../ui/label';
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Switch } from '../ui/switch';
-
-const ROLE_OPTIONS = [
-  { value: 'both', labelKey: 'knowledgeConfiguration.tableColumnRoleBoth' },
-  {
-    value: 'indexing',
-    labelKey: 'knowledgeConfiguration.tableColumnRoleIndexing',
-  },
-  {
-    value: 'metadata',
-    labelKey: 'knowledgeConfiguration.tableColumnRoleMetadata',
-  },
-] as const;
 
 export type TableColumnRoles = Record<string, 'indexing' | 'metadata' | 'both'>;
 
@@ -231,73 +211,14 @@ function UploadForm({
 
         {showColumnConfig && (
           <div className="space-y-3 border rounded-md p-3">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {t('knowledgeConfiguration.tableColumnMode')}
-              </Label>
-              <RadioGroup
-                value={columnMode}
-                onValueChange={handleModeChange}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="auto" id="upload-mode-auto" />
-                  <label
-                    htmlFor="upload-mode-auto"
-                    className="text-sm font-normal cursor-pointer"
-                  >
-                    {t('knowledgeConfiguration.tableColumnModeAuto')}
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="manual" id="upload-mode-manual" />
-                  <label
-                    htmlFor="upload-mode-manual"
-                    className="text-sm font-normal cursor-pointer"
-                  >
-                    {t('knowledgeConfiguration.tableColumnModeManual')}
-                  </label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {columnMode === 'auto' && (
-              <p className="text-sm text-muted-foreground">
-                {t('knowledgeConfiguration.tableColumnModeAutoDescription')}
-              </p>
-            )}
-
-            {columnMode === 'manual' && (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {t('knowledgeConfiguration.tableColumnRolesTip')}
-                </p>
-                <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {extractedColumns.map((col) => (
-                    <div key={col} className="flex items-center gap-3">
-                      <Label className="min-w-[120px] shrink-0 text-sm font-normal truncate">
-                        {col}
-                      </Label>
-                      <Select
-                        value={columnRoles[col] || 'both'}
-                        onValueChange={(value) => handleRoleChange(col, value)}
-                      >
-                        <SelectTrigger className="w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ROLE_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {t(opt.labelKey)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <TableColumnSettingsFields
+              idPrefix="upload"
+              mode={columnMode}
+              columns={extractedColumns}
+              roles={columnRoles}
+              onModeChange={handleModeChange}
+              onRoleChange={handleRoleChange}
+            />
           </div>
         )}
       </form>
