@@ -606,7 +606,7 @@ func paddleOCRResolvedAPIConfig(apiConfig *APIConfig) *APIConfig {
 	}
 	baseURL := ""
 	if apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
+		baseURL = strings.TrimSpace(*apiConfig.BaseURL)
 	}
 	keyBaseURL, keyAccessToken, _ := paddleOCRConfigFromAPIKey(apiKey)
 	if keyAccessToken != "" {

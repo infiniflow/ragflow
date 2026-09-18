@@ -231,6 +231,27 @@ func TestPaddleOCRResolvedAPIConfig(t *testing.T) {
 			t.Errorf("BaseURL = %q, want http://envauto.test", got)
 		}
 	})
+
+	t.Run("whitespace instance base url falls back to payload", func(t *testing.T) {
+		apiKey := `{"paddleocr_base_url":"http://key.test","paddleocr_access_token":"tok-2"}`
+		baseURL := "   "
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+		if got := *resolved.BaseURL; got != "http://key.test" {
+			t.Errorf("BaseURL = %q, want http://key.test", got)
+		}
+		if got := *resolved.ApiKey; got != "tok-2" {
+			t.Errorf("ApiKey = %q, want tok-2", got)
+		}
+	})
+
+	t.Run("padded instance base url is trimmed", func(t *testing.T) {
+		apiKey := `{"paddleocr_access_token":"tok-3"}`
+		baseURL := "  http://instance.test  "
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+		if got := *resolved.BaseURL; got != "http://instance.test" {
+			t.Errorf("BaseURL = %q, want http://instance.test", got)
+		}
+	})
 }
 
 // TestPaddleOCRModelOCRFileUnwrapsAPIKeyPayload pins the layering contract the
