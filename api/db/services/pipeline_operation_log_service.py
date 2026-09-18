@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import json
 import logging
 import os
@@ -270,7 +271,7 @@ class PipelineOperationLogService(CommonService):
         if dsl_mapping is None:
             dsl_for_log = {}
         else:
-            dsl_for_log = _remove_embedding_vectors(dsl_mapping)
+            dsl_for_log = _remove_embedding_vectors(copy.deepcopy(dsl_mapping))
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)

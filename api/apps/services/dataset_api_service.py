@@ -1337,6 +1337,26 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     if not embd_id:
         return False, "`embd_id` is required."
 
+    # Validate ``check_num`` before any embedding-model work so an invalid
+    # argument always surfaces as an argument error, never as an embedding
+    # error or a wasted model load. ``bool`` is an ``int`` subclass, so
+    # ``int(True) == 1`` would otherwise sneak past the parser; reject it
+    # explicitly. Fractional floats (``int(1.9) == 1``) are rejected, while
+    # integral floats (``int(2.0) == 2``) stay accepted. Values above 1000
+    # exceed the sampler population (``random.sample(range(min(total,
+    # 1000)), n)`` would raise ``ValueError``) and are rejected up front.
+    raw_check_num = req.get("check_num", 5)
+    try:
+        n = int(raw_check_num)
+    except (TypeError, ValueError):
+        return False, "`check_num` must be an integer."
+    if isinstance(raw_check_num, bool) or n <= 0:
+        return False, "`check_num` must be greater than 0."
+    if isinstance(raw_check_num, float) and not raw_check_num.is_integer():
+        return False, "`check_num` must be an integer."
+    if n > 1000:
+        return False, "`check_num` must be between 1 and 1000."
+
     logging.info("check_embedding: dataset=%s tenant=%s embd_id=%s", dataset_id, tenant_id, embd_id)
 
     ok, err = verify_embedding_availability(embd_id, tenant_id)
@@ -1346,12 +1366,6 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
-    raw_check_num = req.get("check_num", 5)
-    if type(raw_check_num) is not int:
-        return False, "`check_num` must be an integer."
-    n = raw_check_num
-    if n <= 0:
-        return False, "`check_num` must be greater than 0."
     samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=kb.tenant_id, kb_id=dataset_id, n=n)
     logging.info("check_embedding: dataset=%s sampled=%d chunks", dataset_id, len(samples))
 
