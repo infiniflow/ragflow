@@ -26,9 +26,7 @@ jest.mock('@/utils/request', () => ({
 jest.mock('@/utils/file-util', () => ({
   decodeBlobText: jest
     .fn()
-    .mockResolvedValue(
-      'direction,model\nmultimodal,GPT-4o\nreasoning,o1',
-    ),
+    .mockResolvedValue('direction,model\nmultimodal,GPT-4o\nreasoning,o1'),
 }));
 
 jest.mock('@/components/ui/message', () => ({
