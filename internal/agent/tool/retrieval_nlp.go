@@ -576,6 +576,7 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		DocumentName:     stringFromMap(raw, "docnm_kwd"),
 		DatasetID:        stringFromMap(raw, "kb_id"),
 		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
+		DocType:          firstStringFromMap(raw, "doc_type_kwd", "doc_type"),
 		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
 		Positions:        firstValueFromMap(raw, "positions", "position_int"),
 		MomID:            stringFromMap(raw, "mom_id"),

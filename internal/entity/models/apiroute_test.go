@@ -41,7 +41,7 @@ func TestApiRouteName(t *testing.T) {
 
 // TestApiRouteFactory tests creating the driver from factory.
 func TestApiRouteFactory(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("apiroute", map[string]string{"default": "http://unused"}, URLSuffix{})
+	driver, err := NewModelFactory().CreateModelDriver("api-route", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}
@@ -50,6 +50,27 @@ func TestApiRouteFactory(t *testing.T) {
 	}
 	if _, ok := driver.NewInstance(map[string]string{"default": "http://other"}).(*ApiRouteModel); !ok {
 		t.Fatal("NewInstance did not return *ApiRouteModel")
+	}
+}
+
+// The shipped config must resolve to the API-Route driver. CreateModelDriver
+// dispatches on strings.ToLower(name), so the "API-Route" provider name only
+// matches a "api-route" case; a "apiroute" case silently falls through to
+// DummyModel.
+func TestApiRouteProviderConfig(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "apiroute.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	provider := GetProviderManager().FindProvider("API-Route")
+	if provider == nil {
+		t.Fatal("API-Route provider not found")
+	}
+	if _, ok := provider.ModelDriver.(*ApiRouteModel); !ok {
+		t.Fatalf("ModelDriver=%T, want *models.ApiRouteModel", provider.ModelDriver)
 	}
 }
 
