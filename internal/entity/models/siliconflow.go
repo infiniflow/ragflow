@@ -626,6 +626,33 @@ func (s *SiliconflowModel) TranscribeAudioWithSender(ctx context.Context, modelN
 	return fmt.Errorf("%s, no such method", s.Name())
 }
 
+// siliconflowTTSRequestBody mirrors rag/llm/tts_model.py SILICONFLOWTTS._build_payload:
+// /v1/audio/speech requires voice as "{model}:{voice_name}" and only synthesizes
+// mp3 at 32000 or 44100 Hz, so the defaults pin the payload to a shape the
+// provider accepts. ttsConfig.Params overrides any field; Format overrides
+// response_format last.
+func siliconflowTTSRequestBody(modelName, audioContent string, ttsConfig *TTSConfig, stream bool) map[string]interface{} {
+	reqBody := map[string]interface{}{
+		"model":           modelName,
+		"input":           audioContent,
+		"voice":           fmt.Sprintf("%s:anna", modelName),
+		"response_format": "mp3",
+		"sample_rate":     32000,
+		"speed":           1,
+		"gain":            0,
+		"stream":          stream,
+	}
+	if ttsConfig != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+		if ttsConfig.Format != "" {
+			reqBody["response_format"] = ttsConfig.Format
+		}
+	}
+	return reqBody
+}
+
 // AudioSpeech convert text to audio
 func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -642,22 +669,7 @@ func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, a
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
-	reqBody := map[string]interface{}{
-		"model":  *modelName,
-		"input":  *audioContent,
-		"stream": false,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			reqBody[key] = value
-		}
-	}
-	if ttsConfig != nil && ttsConfig.Format != "" {
-		reqBody["response_format"] = ttsConfig.Format
-	}
-
-	jsonData, err := json.Marshal(reqBody)
+	jsonData, err := json.Marshal(siliconflowTTSRequestBody(*modelName, *audioContent, ttsConfig, false))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -685,7 +697,7 @@ func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, a
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("SiliconFlow TTS API error: %s - %s", resp.Status, string(body))
 	}
 
 	return &TTSResponse{Audio: body}, nil
@@ -706,22 +718,7 @@ func (s *SiliconflowModel) AudioSpeechWithSender(ctx context.Context, modelName 
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
-	reqBody := map[string]interface{}{
-		"model":  *modelName,
-		"input":  *audioContent,
-		"stream": true,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			reqBody[key] = value
-		}
-	}
-	if ttsConfig != nil && ttsConfig.Format != "" {
-		reqBody["response_format"] = ttsConfig.Format
-	}
-
-	jsonData, err := json.Marshal(reqBody)
+	jsonData, err := json.Marshal(siliconflowTTSRequestBody(*modelName, *audioContent, ttsConfig, true))
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
