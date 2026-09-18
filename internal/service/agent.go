@@ -2861,22 +2861,20 @@ func tenantIDFromRoot(root map[string]any) string {
 }
 
 // deferredAgentStreamFailureText returns the user-facing failure text the
-// Agent component recorded under `_ERROR` when the Message component's
-// deferred consumption failed. Python surfaces that same text through the
-// failing node's outputs into the chat stream instead of aborting the SSE
-// conversation with an error frame, so the run handler keeps it in the
-// message flow. Cancellation and timeouts stay run-level errors.
+// Message component recorded when its deferred consumption of an Agent
+// stream failed. Python surfaces that same text through the failing node's
+// outputs into the chat stream instead of aborting the SSE conversation
+// with an error frame, so the run handler keeps it in the message flow.
+// Cancellation and timeouts stay run-level errors.
 func deferredAgentStreamFailureText(err error) string {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return ""
 	}
-	const marker = "consume deferred Agent stream: "
-	msg := err.Error()
-	idx := strings.LastIndex(msg, marker)
-	if idx < 0 {
+	var deferred *runtime.DeferredStreamError
+	if !errors.As(err, &deferred) {
 		return ""
 	}
-	return strings.TrimSpace(msg[idx+len(marker):])
+	return strings.TrimSpace(deferred.FailureText())
 }
 
 func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
