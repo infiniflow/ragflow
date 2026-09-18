@@ -81,21 +81,21 @@ def _scalar_compare(a, b):
 def _scalar_sort_key(v):
     """Return a sort key for ``v`` that ``sorted`` can use safely.
 
-    Returns a ``(rank, formatted_string)`` tuple. The rank gives a strict
-    type ordering (numbers before non-numbers); the formatted string breaks
-    ties lexicographically. Using a tuple key avoids the
-    ``TypeError: '<' not supported between instances of 'X' and 'Y'`` that
-    ``sorted`` raises when two items have the same key but heterogeneous
-    Python types — a real risk for the dict-field sort path where two
-    different fields can produce equal keys.
+    For numbers (rank 0), the key is ``(0, float(v), formatted)`` —
+    including the float value forces Python's tuple comparison to order
+    numbers numerically (``2 < 10``, not ``"10" < "2"`` lex order).
 
-    Pass the result through :func:`cmp_to_key` of :func:`_scalar_compare`
-    when a pure cmp function is more natural (e.g. nested sorts); this
-    helper is the recommended adapter for ``sorted(items, key=...)``."""
-    return (_scalar_rank(v), _go_format_scalar(v))
+    For everything else (rank 1), the key is ``(1, formatted)`` — the
+    rank itself ensures all numbers sort before all non-numbers, and the
+    formatted string orders non-numbers lex (matching Go's
+    ``fmt.Sprintf(\"%v\", v)``).
+    """
+    formatted = _go_format_scalar(v)
+    if _scalar_rank(v) == _NUMERIC_RANK:
+        return (0, float(v), formatted)
+    return (1, formatted)
 
 
->>>>>>> 132ef599e (fix(agent): use rank-based comparator for transitive ListOperations sort (#19427 follow-up))
 class ListOperationsParam(ComponentParamBase):
     """
     Define the List Operations component parameters.
@@ -276,9 +276,12 @@ class ListOperations(ComponentBase, ABC):
             sort_by_raw = getattr(self._param, "sort_by", "") or ""
             sort_by = [k.strip() for k in sort_by_raw.split(",") if k.strip()]
             if sort_by:
+                # Wrap each field value with ``_scalar_sort_key`` so the
+                # resulting tuple of ``(rank, formatted_str[, float])``
+                # keys compares cleanly across heterogeneous field types.
                 outputs = sorted(
                     items,
-                    key=lambda x: tuple(x.get(k) for k in sort_by),
+                    key=lambda x: tuple(_scalar_sort_key(x.get(k)) for k in sort_by),
                     reverse=reverse,
                 )
             else:
@@ -288,7 +291,7 @@ class ListOperations(ComponentBase, ABC):
                     reverse=reverse,
                 )
         else:
-            outputs = sorted(items, reverse=reverse)
+            outputs = sorted(items, key=_scalar_sort_key, reverse=reverse)
 
         self._set_outputs(outputs)
 
