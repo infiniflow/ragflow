@@ -424,6 +424,7 @@ export function getInitialExtractorValues() {
 }
 
 export const initialCompilationValues = {
+  ...initialLlmBaseValues,
   compilation_template_group_id: '',
   llm_id: '',
   outputs: {
