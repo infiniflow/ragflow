@@ -467,7 +467,7 @@ func (s *ModelSolver) resolveProviderInstanceModel(ctx context.Context, tenantID
 		if err != nil {
 			return nil, fmt.Errorf("%w: read model limits: %v", errModelConfigUnavailable, err)
 		}
-		return &resolvedModel{modelEntity: modelEntity, providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelName: modelEntity.ModelName, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, maxTokens: maxTokens}, nil
+		return &resolvedModel{modelEntity: modelEntity, providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelID: modelEntity.ID, modelName: modelEntity.ModelName, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, maxTokens: maxTokens}, nil
 	}
 	if providerInfo == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
