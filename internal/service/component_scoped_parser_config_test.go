@@ -187,10 +187,10 @@ func TestApplyComponentScopedParserConfig_PreservesNodeOnlyMetadata(t *testing.T
 	}
 }
 
-func TestPreserveTableSchemaConfig_IncomingWinsAndMissingKeysSurvive(t *testing.T) {
+func TestNormalizeTableColumnSettings_IncomingWinsAndMissingKeysSurvive(t *testing.T) {
 	rebuilt := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"spreadsheet": map[string]any{"column_mode": "auto"},
+			"spreadsheet": map[string]any{"output_format": "json"},
 		},
 	}
 	incoming := map[string]interface{}{
@@ -205,7 +205,7 @@ func TestPreserveTableSchemaConfig_IncomingWinsAndMissingKeysSurvive(t *testing.
 		"unrelated_component": map[string]any{},
 	}
 
-	got := PreserveTableSchemaConfig(rebuilt, incoming, existing)
+	got := NormalizeTableColumnSettings(rebuilt, incoming, existing)
 
 	if got["table_column_mode"] != "manual" {
 		t.Fatalf("table_column_mode = %#v, want the requested manual", got["table_column_mode"])
@@ -221,12 +221,12 @@ func TestPreserveTableSchemaConfig_IncomingWinsAndMissingKeysSurvive(t *testing.
 		t.Fatalf("field_map = %#v, want the stored field map kept", got["field_map"])
 	}
 	if _, ok := got["unrelated_component"]; ok {
-		t.Fatal("only the table schema keys are carried over")
+		t.Fatal("only the table column setting keys are carried over")
 	}
 }
 
-func TestPreserveTableSchemaConfig_NilRebuiltBecomesEmptyConfig(t *testing.T) {
-	got := PreserveTableSchemaConfig(nil, nil, entity.JSONMap{"table_column_names": []any{"Name"}})
+func TestNormalizeTableColumnSettings_NilRebuiltBecomesEmptyConfig(t *testing.T) {
+	got := NormalizeTableColumnSettings(nil, nil, entity.JSONMap{"table_column_names": []any{"Name"}})
 	if _, ok := got["table_column_names"].([]any); !ok {
 		t.Fatalf("table_column_names = %#v, want the stored schema kept", got["table_column_names"])
 	}

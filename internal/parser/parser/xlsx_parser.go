@@ -126,10 +126,11 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	// Structured JSON row rendering applies only to the JSON output format.
-	// An html/markdown canvas setup must keep its legacy rendering even when
-	// a stale column_mode lingers, matching the CSV parser's gate.
-	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
+	// Structured JSON row rendering applies only to the JSON output format: an
+	// html/markdown canvas setup keeps its legacy rendering. A setup that states
+	// no column_mode renders auto — every column lands in text and chunk_data,
+	// which is what rag/app/table.py does when table_column_mode is not manual.
+	if strings.EqualFold(p.OutputFormat, "json") {
 		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
 		if err == nil {
 			return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)

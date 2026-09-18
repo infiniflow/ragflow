@@ -74,30 +74,31 @@ func ApplyComponentScopedParserConfig(
 	return parserConfig
 }
 
-// tableSchemaParserConfigKeys are a table parser run's own entries in a
-// dataset's or document's parser_config: the mode and the per-column roles a
-// caller configures, plus the schema the run publishes back (the discovered
-// table_column_names, and the field_map the SQL retrieval prompt builds from
-// them).
+// tableColumnSettingKeys are the root-level entries a table-parser run reads and
+// writes back: the mode and the per-column roles someone configured, plus the
+// schema the run publishes (the discovered table_column_names, and the field_map
+// the SQL retrieval prompt builds from them).
 //
-// They live at the root of parser_config, outside the component-scoped shape a
-// parser dialog writes, so a rebuild from the pipeline DSL does not carry them.
-var tableSchemaParserConfigKeys = []string{
+// They are the flat alternative to the component-scoped shape a parser dialog
+// writes, so CleanComponentParams drops them from every key it does not
+// recognize as a component id. A parser_config rebuilt from the pipeline DSL
+// therefore has to move them back in, which is what this normalization does.
+var tableColumnSettingKeys = []string{
 	"table_column_mode",
 	"table_column_names",
 	"table_column_roles",
 	"field_map",
 }
 
-// PreserveTableSchemaConfig re-attaches the root-level table schema keys that
-// rebuilding a parser_config from the pipeline DSL drops.
+// NormalizeTableColumnSettings re-attaches the root-level table column settings
+// that rebuilding a parser_config from the pipeline DSL drops.
 //
 // A value the request itself supplied wins over the stored one, so an update can
 // still change or clear a setting; a key the request does not mention keeps its
 // stored value, so editing any other parser_config section — topn, the embedding
 // model, the canvas parameters — cannot erase the schema the last table run
 // published.
-func PreserveTableSchemaConfig(
+func NormalizeTableColumnSettings(
 	rebuilt entity.JSONMap,
 	incoming map[string]interface{},
 	existing entity.JSONMap,
@@ -105,7 +106,7 @@ func PreserveTableSchemaConfig(
 	if rebuilt == nil {
 		rebuilt = entity.JSONMap{}
 	}
-	for _, key := range tableSchemaParserConfigKeys {
+	for _, key := range tableColumnSettingKeys {
 		if value, ok := incoming[key]; ok {
 			rebuilt[key] = value
 			continue

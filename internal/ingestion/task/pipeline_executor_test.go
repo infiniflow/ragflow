@@ -1207,8 +1207,11 @@ func TestApplyTableColumnOverride_CanvasTableRunInheritsDatasetParser(t *testing
 	if spreadsheet["column_mode"] != "manual" {
 		t.Errorf("column_mode = %#v, want manual", spreadsheet["column_mode"])
 	}
-	if !reflect.DeepEqual(spreadsheet["column_names"], []interface{}{"Name"}) {
-		t.Errorf("column_names = %#v, want [Name]", spreadsheet["column_names"])
+	if _, exists := spreadsheet["column_names"]; exists {
+		t.Errorf("column_names = %#v, want the component entry left to the canvas", spreadsheet["column_names"])
+	}
+	if !reflect.DeepEqual(got["table_column_names"], []string{"Name"}) {
+		t.Errorf("table_column_names = %#v, want the dataset's names on the root keys", got["table_column_names"])
 	}
 }
 
@@ -1248,6 +1251,36 @@ func TestApplyTableColumnOverride_ComponentShapedDocumentConfigWins(t *testing.T
 	}
 }
 
+// A parsed document carries the schema its last run published on the root keys.
+// That is system output, not a column configuration, so it must not outrank the
+// manual profile stored under the parser entry: otherwise editing the profile
+// once would make every later edit inert for the rest of the document's life.
+func TestApplyTableColumnOverride_PublishedSchemaKeepsComponentProfile(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "table"
+	taskCtx.Doc.ParserConfig = entity.JSONMap{
+		"table_column_names": []interface{}{"Name", "City"},
+		"Parser:Table": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"Name": "metadata"},
+			},
+		},
+	}
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+	got := svc.applyTableColumnOverride(map[string]interface{}(taskCtx.Doc.ParserConfig), dsl)
+
+	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
+	if spreadsheet["column_mode"] != "manual" {
+		t.Errorf("column_mode = %#v, want the published schema to leave the manual profile alone", spreadsheet["column_mode"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "metadata"}) {
+		t.Errorf("column_roles = %#v, want the document's roles", spreadsheet["column_roles"])
+	}
+}
+
 // The upload dialog used to submit its untouched default, which pinned every
 // document to "auto". A bare default mode must not shadow the dataset's manual
 // mode and roles: the dataset is where a column configuration lives.
@@ -1274,8 +1307,8 @@ func TestApplyTableColumnOverride_BareDefaultModeKeepsDatasetSettings(t *testing
 	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "indexing"}) {
 		t.Errorf("column_roles = %#v, want the dataset's roles", spreadsheet["column_roles"])
 	}
-	if !reflect.DeepEqual(spreadsheet["column_names"], []interface{}{"Name"}) {
-		t.Errorf("column_names = %#v, want the document's discovered names", spreadsheet["column_names"])
+	if !reflect.DeepEqual(got["table_column_names"], []string{"Name"}) {
+		t.Errorf("table_column_names = %#v, want the document's discovered names kept on the root keys", got["table_column_names"])
 	}
 }
 
@@ -1735,7 +1768,7 @@ func TestResolveTableColumnSettings(t *testing.T) {
 	if roles, _ := got["table_column_roles"].(map[string]interface{}); roles["Name"] != "metadata" {
 		t.Errorf("component-shaped document roles must win, got %#v", got["table_column_roles"])
 	}
-	if names, _ := got["table_column_names"].([]interface{}); len(names) != 1 || names[0] != "Name" {
+	if names, _ := got["table_column_names"].([]string); len(names) != 1 || names[0] != "Name" {
 		t.Errorf("component-shaped document names must win, got %#v", got["table_column_names"])
 	}
 

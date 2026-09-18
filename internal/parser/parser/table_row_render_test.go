@@ -268,6 +268,66 @@ func TestCSVParser_ColumnMode(t *testing.T) {
 	}
 }
 
+// A setup that states no column_mode is an unconfigured document, not a request
+// for the legacy row rendering: the JSON output format alone picks the
+// structured renderer, and every column keeps the default "both" role — which is
+// how rag/app/table.py treats a mode other than "manual".
+func TestCSVParser_JSONWithoutColumnMode(t *testing.T) {
+	p := NewCSVParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+
+	res := p.ParseWithResult(t.Context(), "users.csv", []byte("Name,Age\nAlice,30\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if res.OutputFormat != "json" {
+		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("len(JSON) = %d, want 1 structured row", len(res.JSON))
+	}
+	item := res.JSON[0]
+	if want := "- Name: Alice\n- Age: 30"; item["text"] != want {
+		t.Errorf("text = %q, want %q", item["text"], want)
+	}
+	cd, ok := item["chunk_data"].(map[string]any)
+	if !ok || cd["Name"] != "Alice" || cd["Age"] != "30" {
+		t.Errorf("chunk_data = %v, want every column", item["chunk_data"])
+	}
+}
+
+func TestXLSXParser_JSONWithoutColumnMode(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+
+	_ = f.SetCellValue("Sheet1", "A1", "Product")
+	_ = f.SetCellValue("Sheet1", "B1", "Price")
+	_ = f.SetCellValue("Sheet1", "A2", "Laptop")
+	_ = f.SetCellValue("Sheet1", "B2", "999")
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+
+	res := p.ParseWithResult(t.Context(), "inventory.xlsx", buf.Bytes())
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("len(JSON) = %d, want 1 structured row", len(res.JSON))
+	}
+	cd, ok := res.JSON[0]["chunk_data"].(map[string]any)
+	if !ok || cd["Product"] != "Laptop" || cd["Price"] != "999" {
+		t.Errorf("chunk_data = %v, want every column", res.JSON[0]["chunk_data"])
+	}
+}
+
 func TestXLSXParser_ColumnMode(t *testing.T) {
 	f := excelize.NewFile()
 	defer f.Close()

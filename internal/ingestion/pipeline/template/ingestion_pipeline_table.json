@@ -62,10 +62,7 @@
                                 "csv",
                                 "tsv"
                             ],
-                            "vlm": {},
-                            "column_mode": "auto",
-                            "column_roles": {},
-                            "column_names": []
+                            "vlm": {}
                         },
                         "text&code": {
                             "output_format": "json",
@@ -196,10 +193,7 @@
                                     "preprocess": [
                                         "main_content"
                                     ],
-                                    "vlm": {},
-                                    "column_mode": "auto",
-                                    "column_roles": {},
-                                    "column_names": []
+                                    "vlm": {}
                                 },
                                 {
                                     "fileFormat": "text&code",

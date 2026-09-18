@@ -310,7 +310,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				effectiveParserConfig,
 				llmID,
 			)
-			updates["parser_config"] = service.PreserveTableSchemaConfig(
+			updates["parser_config"] = service.NormalizeTableColumnSettings(
 				effectiveParserConfig,
 				req.ParserConfig,
 				lockedKB.ParserConfig,

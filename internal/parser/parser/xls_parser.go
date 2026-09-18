@@ -109,7 +109,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	// opened by excelize, so normalize first the same way the XLSX parser
 	// does; an un-normalizable legacy payload falls through to the legacy
 	// HTML path and fails there with the pre-existing (non-column) error.
-	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
+	if strings.EqualFold(p.OutputFormat, "json") {
 		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
 		if err == nil {
 			return spreadsheetRowParseResult(filename, "xls", items, allColumns, warnings, sheets)

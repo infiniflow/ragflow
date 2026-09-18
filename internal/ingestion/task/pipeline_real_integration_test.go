@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/server/config"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	_ "ragflow/internal/ingestion/component/chunker"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/server"
+	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 
@@ -392,6 +394,407 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 	}
 }
 
+// Who owns the column settings on a real built-in run, checked through the whole
+// chain rather than through a resolver: the document's root keys are the
+// authoritative intent, the parser component of the run's DSL is the canvas
+// author's projection that applies only while the root states nothing, and a
+// document nobody configured keeps the auto rendering every column. The built-in
+// table template states no column mode, so on the built-in run path nothing but
+// the document's own root keys can reach the parser.
+func TestPipelineExecutor_Run_BuiltinTableColumnIntent(t *testing.T) {
+	requireTokenizerPool(t)
+	mustLoadTaskTestConfig(t)
+
+	builtinDSL, err := pipelinepkg.LoadBuiltinDSL("table")
+	if err != nil {
+		t.Fatalf("LoadBuiltinDSL(table): %v", err)
+	}
+	if strings.Contains(builtinDSL, "column_mode") {
+		t.Fatalf("the built-in table template must not state a column mode, got %s", builtinDSL)
+	}
+	baseDSL := disableTokenizerEmbeddingForTaskTemplate(t, []byte(builtinDSL))
+
+	const content = "Title,Country,Internal\nDoc A,Turkey,42\n"
+
+	manualRoles := map[string]any{"Title": "indexing", "Country": "metadata"}
+	tests := []struct {
+		name        string
+		docConfig   entity.JSONMap
+		canvasSetup map[string]any
+		inText      []string
+		notInText   []string
+		wantRowData map[string]any
+	}{
+		{
+			name: "root column intent reaches the parser",
+			docConfig: entity.JSONMap{
+				"table_column_mode":  "manual",
+				"table_column_roles": manualRoles,
+			},
+			inText:      []string{"- Title: Doc A", "- Internal: 42"},
+			notInText:   []string{"- Country: Turkey"},
+			wantRowData: map[string]any{"Country": "Turkey", "Internal": "42"},
+		},
+		{
+			name:      "a canvas projection applies to an unconfigured document",
+			docConfig: entity.JSONMap{},
+			canvasSetup: map[string]any{
+				"column_mode":  "manual",
+				"column_roles": manualRoles,
+			},
+			inText:      []string{"- Title: Doc A", "- Internal: 42"},
+			notInText:   []string{"- Country: Turkey"},
+			wantRowData: map[string]any{"Country": "Turkey", "Internal": "42"},
+		},
+		{
+			name:      "the document intent shadows the canvas projection",
+			docConfig: entity.JSONMap{"table_column_mode": "manual", "table_column_roles": manualRoles},
+			canvasSetup: map[string]any{
+				"column_mode":  "auto",
+				"column_roles": map[string]any{"Country": "both", "Title": "both"},
+			},
+			inText:      []string{"- Title: Doc A", "- Internal: 42"},
+			notInText:   []string{"- Country: Turkey"},
+			wantRowData: map[string]any{"Country": "Turkey", "Internal": "42"},
+		},
+		{
+			name:        "an unconfigured document keeps every column",
+			docConfig:   entity.JSONMap{},
+			inText:      []string{"- Title: Doc A", "- Country: Turkey", "- Internal: 42"},
+			wantRowData: map[string]any{"Title": "Doc A", "Country": "Turkey", "Internal": "42"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			dsl := string(taskSetBuiltinParserSpreadsheet(t, baseDSL, tt.canvasSetup))
+
+			origDB := dao.DB
+			realDB := mustOpenTaskTestDB(t)
+			dao.DB = realDB
+			t.Cleanup(func() { dao.DB = origDB })
+
+			realStorage := storage.NewMemoryStorage()
+			origStorage := storage.GetStorageFactory().GetStorage()
+			storage.GetStorageFactory().SetStorage(realStorage)
+			t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
+
+			suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+			tenantID := taskLimit32("it_tenant_" + suffix)
+			kbID := taskLimit32("it_kb_" + suffix)
+			docID := taskLimit32("it_doc_" + suffix)
+			fileID := taskLimit32("it_file_" + suffix)
+			bucket := taskS3SafeBucketName(kbID)
+			objectPath := fmt.Sprintf("integration/task/%s/columns.csv", docID)
+			docName := "columns.csv"
+
+			mustSeedTaskRealPipelineDocumentBytes(t, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath, docName, ".csv", "csv", []byte(content))
+			t.Cleanup(func() {
+				cleanupTaskRealPipelineDocument(context.Background(), realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
+			})
+			if err = realDB.Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]any{
+				"parser_id":     "table",
+				"parser_config": tt.docConfig,
+			}).Error; err != nil {
+				t.Fatalf("seed table document: %v", err)
+			}
+
+			taskCtx := &TaskContext{
+				IngestionTask: &entity.IngestionTask{
+					ID:         "task-table-" + suffix,
+					DocumentID: docID,
+					DatasetID:  kbID,
+				},
+				Doc: entity.Document{
+					ID:           docID,
+					KbID:         kbID,
+					ParserID:     "table",
+					ParserConfig: tt.docConfig,
+					Name:         taskStrPtr(docName),
+				},
+				KB:     entity.Knowledgebase{ID: kbID, TenantID: tenantID, EmbdID: "embd-1"},
+				Tenant: entity.Tenant{ID: tenantID},
+			}
+
+			var inserted [][]map[string]any
+			svc := mustNewPipelineExecutor(t, taskCtx, "table", 0).
+				WithLoadDSLFunc(func(context.Context, string) (string, string, error) {
+					return dsl, "table", nil
+				}).
+				WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+					inserted = append(inserted, deepCopyTaskChunks(chunks))
+					return nil, nil
+				})
+
+			if _, err = svc.Execute(ctx); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if len(inserted) != 1 || len(inserted[0]) != 1 {
+				t.Fatalf("inserted = %v, want one chunk", inserted)
+			}
+			chunk := inserted[0][0]
+
+			text, _ := chunk["content_with_weight"].(string)
+			for _, want := range tt.inText {
+				if !strings.Contains(text, want) {
+					t.Errorf("content_with_weight = %q, want %q", text, want)
+				}
+			}
+			for _, unwanted := range tt.notInText {
+				if strings.Contains(text, unwanted) {
+					t.Errorf("content_with_weight = %q, must not carry %q", text, unwanted)
+				}
+			}
+			rowData, _ := chunk["chunk_data"].(map[string]any)
+			if !reflect.DeepEqual(rowData, tt.wantRowData) {
+				t.Errorf("chunk_data = %#v, want %v", chunk["chunk_data"], tt.wantRowData)
+			}
+		})
+	}
+}
+
+// Who owns the column settings, checked across two runs of the same document
+// row: a run publishes the schema it discovered to the document's root keys, and
+// an edit made afterwards must still decide the next parse. Discovered names are
+// not intent, so counting them as intent would make the root tier permanent after
+// one successful parse and shadow every later change. The publication must also
+// leave the document's canvas entry alone.
+func TestPipelineExecutor_Run_ReparseHonoursEditedColumnRoles(t *testing.T) {
+	requireTokenizerPool(t)
+	mustLoadTaskTestConfig(t)
+
+	builtinDSL, err := pipelinepkg.LoadBuiltinDSL("table")
+	if err != nil {
+		t.Fatalf("LoadBuiltinDSL(table): %v", err)
+	}
+	dsl := string(disableTokenizerEmbeddingForTaskTemplate(t, []byte(builtinDSL)))
+	const content = "Title,Country,Internal\nDoc A,Turkey,42\n"
+
+	origDB := dao.DB
+	realDB := mustOpenTaskTestDB(t)
+	dao.DB = realDB
+	t.Cleanup(func() { dao.DB = origDB })
+
+	realStorage := storage.NewMemoryStorage()
+	origStorage := storage.GetStorageFactory().GetStorage()
+	storage.GetStorageFactory().SetStorage(realStorage)
+	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	tenantID := taskLimit32("it_tenant_" + suffix)
+	kbID := taskLimit32("it_kb_" + suffix)
+	docID := taskLimit32("it_doc_" + suffix)
+	fileID := taskLimit32("it_file_" + suffix)
+	bucket := taskS3SafeBucketName(kbID)
+	objectPath := fmt.Sprintf("integration/task/%s/reparse.csv", docID)
+
+	mustSeedTaskRealPipelineDocumentBytes(t, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath, "reparse.csv", ".csv", "csv", []byte(content))
+	t.Cleanup(func() {
+		cleanupTaskRealPipelineDocument(context.Background(), realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
+	})
+	// A document whose dataset runs a canvas carries the parser component in its
+	// own configuration. The entry states no column setting, so it is silent for
+	// resolution — and it is the shape a run must leave alone.
+	if err = realDB.Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]any{
+		"parser_id": "table",
+		"parser_config": entity.JSONMap{
+			"Parser:HipSignsRhyme": map[string]any{
+				"spreadsheet": map[string]any{"output_format": "json"},
+			},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed table document: %v", err)
+	}
+
+	docSvc := documentpkg.NewDocumentService()
+
+	// parse reads the configuration the document row actually carries, so the
+	// second run resolves what the first run wrote back through the database,
+	// and applies the run's publication the way the ingestion service does.
+	parse := func(label string) map[string]any {
+		t.Helper()
+		var doc entity.Document
+		if err = realDB.Where("id = ?", docID).First(&doc).Error; err != nil {
+			t.Fatalf("%s: load document: %v", label, err)
+		}
+		var kb entity.Knowledgebase
+		if err = realDB.Where("id = ?", kbID).First(&kb).Error; err != nil {
+			t.Fatalf("%s: load dataset: %v", label, err)
+		}
+		taskCtx := &TaskContext{
+			IngestionTask: &entity.IngestionTask{
+				ID:         "task-reparse-" + label + "-" + suffix,
+				DocumentID: docID,
+				DatasetID:  kbID,
+			},
+			Doc:    doc,
+			KB:     kb,
+			Tenant: entity.Tenant{ID: tenantID},
+		}
+		var inserted [][]map[string]any
+		result, execErr := mustNewPipelineExecutor(t, taskCtx, "table", 0).
+			WithLoadDSLFunc(func(context.Context, string) (string, string, error) {
+				return dsl, "table", nil
+			}).
+			WithInsertFunc(func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+				inserted = append(inserted, deepCopyTaskChunks(chunks))
+				return nil, nil
+			}).Execute(t.Context())
+		if execErr != nil {
+			t.Fatalf("%s: Execute: %v", label, execErr)
+		}
+		if len(inserted) != 1 || len(inserted[0]) != 1 {
+			t.Fatalf("%s: inserted = %v, want one chunk", label, inserted)
+		}
+		if pubErr := docSvc.SaveDocumentTableColumns(t.Context(), docID, result.DiscoveredColumns); pubErr != nil {
+			t.Fatalf("%s: publish discovered columns: %v", label, pubErr)
+		}
+		return inserted[0][0]
+	}
+
+	first := parse("first")
+	firstText, _ := first["content_with_weight"].(string)
+	for _, want := range []string{"- Title: Doc A", "- Country: Turkey", "- Internal: 42"} {
+		if !strings.Contains(firstText, want) {
+			t.Errorf("first run: content_with_weight = %q, want %q", firstText, want)
+		}
+	}
+
+	var stored entity.Document
+	if err = realDB.Where("id = ?", docID).First(&stored).Error; err != nil {
+		t.Fatalf("load published document: %v", err)
+	}
+	if names := stringSliceFromConfig(stored.ParserConfig["table_column_names"]); !reflect.DeepEqual(names, []string{"Title", "Country", "Internal"}) {
+		t.Errorf("published table_column_names = %#v, want [Title Country Internal]", stored.ParserConfig["table_column_names"])
+	}
+	assertNoProjectedColumnKeys(t, stored.ParserConfig)
+	component, _ := stored.ParserConfig["Parser:HipSignsRhyme"].(map[string]any)
+	spreadsheet, _ := component["spreadsheet"].(map[string]any)
+	if len(spreadsheet) != 1 || spreadsheet["output_format"] != "json" {
+		t.Errorf("the first run rewrote the canvas entry: %#v, want the spreadsheet block it started with", spreadsheet)
+	}
+
+	// The document dialog's write: mode and roles at the root, next to the
+	// names the first run published.
+	edited := stored.ParserConfig
+	edited["table_column_mode"] = "manual"
+	edited["table_column_roles"] = map[string]any{"Title": "indexing", "Country": "metadata"}
+	if err = realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_config", edited).Error; err != nil {
+		t.Fatalf("edit column roles: %v", err)
+	}
+
+	second := parse("second")
+	secondText, _ := second["content_with_weight"].(string)
+	if strings.Contains(secondText, "- Country: Turkey") {
+		t.Errorf("second run: content_with_weight = %q, must not carry the metadata column", secondText)
+	}
+	for _, want := range []string{"- Title: Doc A", "- Internal: 42"} {
+		if !strings.Contains(secondText, want) {
+			t.Errorf("second run: content_with_weight = %q, want %q", secondText, want)
+		}
+	}
+	wantRowData := map[string]any{"Country": "Turkey", "Internal": "42"}
+	if rowData, _ := second["chunk_data"].(map[string]any); !reflect.DeepEqual(rowData, wantRowData) {
+		t.Errorf("second run: chunk_data = %#v, want %v", second["chunk_data"], wantRowData)
+	}
+
+	if err = realDB.Where("id = ?", docID).First(&stored).Error; err != nil {
+		t.Fatalf("load re-parsed document: %v", err)
+	}
+	if mode, _ := stored.ParserConfig["table_column_mode"].(string); mode != "manual" {
+		t.Errorf("after the second run table_column_mode = %#v, want the edited manual profile to survive publication", stored.ParserConfig["table_column_mode"])
+	}
+	roles, _ := stored.ParserConfig["table_column_roles"].(map[string]any)
+	if role, _ := roles["Country"].(string); role != "metadata" {
+		t.Errorf("after the second run Country role = %#v, want metadata", roles["Country"])
+	}
+	assertNoProjectedColumnKeys(t, stored.ParserConfig)
+}
+
+// stringSliceFromConfig reads a JSON round-tripped list of strings.
+func stringSliceFromConfig(raw any) []string {
+	list, _ := raw.([]any)
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		s, ok := item.(string)
+		if !ok {
+			return nil
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// assertNoProjectedColumnKeys fails if a run wrote column settings into a
+// component entry: the Parser:<id> spreadsheet block belongs to the canvas DSL,
+// so only the root keys may carry a document's intent and its discovered schema.
+func assertNoProjectedColumnKeys(t *testing.T, config map[string]any) {
+	t.Helper()
+	var walk func(owner string, node map[string]any)
+	walk = func(owner string, node map[string]any) {
+		for key, value := range node {
+			nested, isMap := value.(map[string]any)
+			if !isMap {
+				continue
+			}
+			for _, columnKey := range []string{"column_mode", "column_roles", "column_names"} {
+				if _, ok := nested[columnKey]; ok {
+					t.Errorf("%s.%s.%s is set: column state belongs to the root keys only", owner, key, columnKey)
+				}
+			}
+			walk(owner+"."+key, nested)
+		}
+	}
+	walk("parser_config", config)
+}
+
+// taskSetBuiltinParserSpreadsheet writes a canvas author's spreadsheet setup into
+// the Parser component of a built-in DSL, which is the shape a pipeline canvas
+func taskSetBuiltinParserSpreadsheet(t *testing.T, raw []byte, setup map[string]any) []byte {
+	t.Helper()
+	if len(setup) == 0 {
+		return raw
+	}
+	var dsl map[string]any
+	if err := json.Unmarshal(raw, &dsl); err != nil {
+		t.Fatalf("unmarshal dsl: %v", err)
+	}
+	components, ok := dsl["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("dsl components = %T, want map[string]any", dsl["components"])
+	}
+	patched := 0
+	for _, rawComp := range components {
+		comp, _ := rawComp.(map[string]any)
+		obj, _ := comp["obj"].(map[string]any)
+		if obj == nil || obj["component_name"] != "Parser" {
+			continue
+		}
+		params, _ := obj["params"].(map[string]any)
+		if params == nil {
+			t.Fatal("Parser component carries no params")
+		}
+		spreadsheet, _ := params["spreadsheet"].(map[string]any)
+		if spreadsheet == nil {
+			spreadsheet = map[string]any{}
+		}
+		for k, v := range setup {
+			spreadsheet[k] = v
+		}
+		params["spreadsheet"] = spreadsheet
+		patched++
+	}
+	if patched == 0 {
+		t.Fatal("no Parser component found in the built-in DSL")
+	}
+	out, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal patched dsl: %v", err)
+	}
+	return out
+}
+
 func taskRepoRoot(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
@@ -458,9 +861,11 @@ func disableTokenizerEmbeddingForTaskTemplate(t *testing.T, raw []byte) []byte {
 	if err := json.Unmarshal(raw, &tpl); err != nil {
 		t.Fatalf("unmarshal template: %v", err)
 	}
+	// A canvas template wraps the graph under "dsl"; a builtin DSL from
+	// pipeline.LoadBuiltinDSL already is that inner object.
 	dsl, ok := tpl["dsl"].(map[string]any)
 	if !ok {
-		t.Fatalf("template dsl = %T, want map[string]any", tpl["dsl"])
+		dsl = tpl
 	}
 	components, ok := dsl["components"].(map[string]any)
 	if !ok {

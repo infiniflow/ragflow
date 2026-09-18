@@ -18,7 +18,6 @@ package document
 
 import (
 	"context"
-	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -27,8 +26,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SaveDocumentTableColumns persists the parser-discovered column names on the document
-// and filters stale column roles so the document role selector can offer them without re-reading the file.
+// SaveDocumentTableColumns publishes the parser-discovered column names on the
+// document, and filters stale column roles so the document role selector can
+// offer them without re-reading the file.
+//
+// Discovery is written to the root keys only. The component entries of
+// parser_config belong to the canvas DSL, so mirroring a run's findings into
+// them would let system output masquerade as an author's configuration.
 func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID string, newNames []string) error {
 	if len(newNames) == 0 || docID == "" || dao.DB == nil {
 		return nil
@@ -59,21 +63,6 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 
 		doc.ParserConfig["table_column_names"] = names
 		doc.ParserConfig["table_column_roles"] = filterTableColumnRoles(doc.ParserConfig["table_column_roles"], seen)
-		for key, value := range doc.ParserConfig {
-			if !strings.HasPrefix(key, "Parser:") {
-				continue
-			}
-			componentConfig, ok := value.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			spreadsheet, ok := componentConfig["spreadsheet"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-			spreadsheet["column_names"] = names
-			spreadsheet["column_roles"] = filterTableColumnRoles(spreadsheet["column_roles"], seen)
-		}
 		return tx.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_config", doc.ParserConfig).Error
 	})
 }

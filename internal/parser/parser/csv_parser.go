@@ -214,7 +214,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	// Clean illegal control characters from all cells.
 	records = cleanIllegalControlChars(records)
 
-	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
+	if strings.EqualFold(p.OutputFormat, "json") {
 		items, headers := RenderRowsToJSONChunks(records, "", p.ColumnMode, p.ColumnRoles, TableHeaderRuleDelimited)
 		return ParseResult{
 			OutputFormat: "json",

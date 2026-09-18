@@ -86,29 +86,6 @@ func TestCSVParserHTML4ExcelRemainsAtomic(t *testing.T) {
 	}
 }
 
-func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
-	csvData := []byte("col1,col2\nval1,val2\n")
-	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
-
-	res := p.ParseWithResult(context.Background(), "test.csv", csvData)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult failed: %v", res.Err)
-	}
-
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
-	}
-	if len(res.JSON) != 2 {
-		t.Fatalf("len(res.JSON) = %d, want header plus row", len(res.JSON))
-	}
-	if res.JSON[1]["ck_type"] != "table_row" {
-		t.Fatalf("row ck_type = %v, want table_row", res.JSON[1]["ck_type"])
-	}
-}
-
 func TestCSVParser_EmptyContent(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{

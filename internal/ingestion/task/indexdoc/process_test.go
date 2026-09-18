@@ -1,8 +1,11 @@
 package indexdoc
 
 import (
+	"reflect"
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // =============================================================================
@@ -502,37 +505,46 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 // Table Column Mode & Metadata Aggregation Tests
 // =============================================================================
 
-func TestResolveTableColumnConfig_Flat(t *testing.T) {
+func TestResolveTableProfile_RootTier(t *testing.T) {
 	cfg := map[string]interface{}{
 		"table_column_mode":  "manual",
 		"table_column_roles": map[string]interface{}{"col1": "indexing", "col2": "metadata"},
 		"table_column_names": []interface{}{"col1", "col2"},
 	}
-	mode, roles, names := ResolveTableColumnConfig(cfg)
-	if mode != "manual" {
-		t.Errorf("mode = %q, want \"manual\"", mode)
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want a profile from the root keys")
 	}
-	if len(roles) != 2 {
-		t.Errorf("roles len = %d, want 2", len(roles))
+	if profile.Mode != common.TableColumnModeManual {
+		t.Errorf("mode = %q, want manual", profile.Mode)
 	}
-	if len(names) != 2 {
-		t.Errorf("names len = %d, want 2", len(names))
+	if len(profile.Roles) != 2 {
+		t.Errorf("roles = %#v, want 2", profile.Roles)
+	}
+	if len(profile.Columns) != 2 {
+		t.Errorf("columns = %#v, want 2", profile.Columns)
 	}
 }
 
-func TestResolveTableColumnConfig_WriterShapes(t *testing.T) {
+func TestResolveTableProfile_RootWriterShapes(t *testing.T) {
 	cfg := map[string]interface{}{
 		"table_column_mode":  "auto",
 		"table_column_roles": map[string]string{"col1": "Both"},
 		"table_column_names": []string{"col1", "col2"},
 	}
-	_, roles, names := ResolveTableColumnConfig(cfg)
-	if len(roles) != 1 || roles["col1"] != "Both" {
-		t.Errorf("roles = %v, want col1 preserved", roles)
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want a profile from the root keys")
 	}
-	if len(names) != 2 || names[0] != "col1" || names[1] != "col2" {
-		t.Errorf("names = %v, want [col1 col2]", names)
+	if got := profile.ToRolesInterfaceMap(); len(got) != 1 || got["col1"] != "Both" {
+		t.Errorf("roles = %v, want col1 preserved", got)
 	}
+	if !reflect.DeepEqual(profile.Columns, []string{"col1", "col2"}) {
+		t.Errorf("columns = %v, want [col1 col2]", profile.Columns)
+	}
+}
+
+func TestResolveTableProfile_ComponentTier(t *testing.T) {
 	nested := map[string]interface{}{
 		"Parser:B": map[string]interface{}{
 			"spreadsheet": map[string]interface{}{
@@ -547,19 +559,27 @@ func TestResolveTableColumnConfig_WriterShapes(t *testing.T) {
 			},
 		},
 	}
-	mode, roles, names := ResolveTableColumnConfig(nested)
-	if mode != "auto" {
-		t.Errorf("mode = %q, want deterministic lowest Parser id (auto)", mode)
+	profile := ResolveTableProfile(nested)
+	if profile == nil {
+		t.Fatal("want a profile from the parser entries")
 	}
-	if len(roles) != 0 || len(names) != 0 {
-		t.Errorf("roles/names = %v/%v, want empty from lowest id", roles, names)
+	if profile.Mode != common.TableColumnModeAuto {
+		t.Errorf("mode = %q, want deterministic lowest Parser id (auto)", profile.Mode)
+	}
+	if len(profile.Roles) != 0 {
+		t.Errorf("roles = %v, want empty from the lowest id", profile.Roles)
+	}
+	// The column list is its own axis, so the names the other entry states are
+	// still the published schema.
+	if !reflect.DeepEqual(profile.Columns, []string{"name", "age"}) {
+		t.Errorf("columns = %v, want [name age]", profile.Columns)
 	}
 }
 
 // A canvas can carry a spreadsheet block for a component nobody configured.
 // Stopping at it would hide the profile a later component does declare, so the
-// resolution continues to the next id that states a mode, a role or a column.
-func TestResolveTableColumnConfig_SkipsEmptySpreadsheetEntry(t *testing.T) {
+// resolution continues to the next id that states a mode or a role.
+func TestResolveTableProfile_SkipsEmptySpreadsheetEntry(t *testing.T) {
 	cfg := map[string]interface{}{
 		"Parser:A": map[string]interface{}{
 			"spreadsheet": map[string]interface{}{},
@@ -571,47 +591,88 @@ func TestResolveTableColumnConfig_SkipsEmptySpreadsheetEntry(t *testing.T) {
 			},
 		},
 	}
-	mode, roles, names := ResolveTableColumnConfig(cfg)
-	if mode != "manual" {
-		t.Errorf("mode = %q, want \"manual\" from the entry that states one", mode)
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want the profile the second entry declares")
 	}
-	if len(roles) != 1 || roles["age"] != "metadata" {
-		t.Errorf("roles = %v, want age=metadata", roles)
+	if profile.Mode != common.TableColumnModeManual {
+		t.Errorf("mode = %q, want \"manual\" from the entry that states one", profile.Mode)
 	}
-	if len(names) != 0 {
-		t.Errorf("names = %v, want none", names)
+	if len(profile.Roles) != 1 || profile.Roles["age"] != common.ColumnRoleMetadata {
+		t.Errorf("roles = %v, want age=metadata", profile.Roles)
+	}
+	if len(profile.Columns) != 0 {
+		t.Errorf("columns = %v, want none", profile.Columns)
 	}
 
-	// A component that states nothing anywhere leaves no profile at all.
+	// A component that states no mode and no roles leaves no profile at all.
 	emptyOnly := map[string]interface{}{
 		"Parser:A": map[string]interface{}{
 			"spreadsheet": map[string]interface{}{"column_mode": "", "column_roles": map[string]interface{}{}},
 		},
 	}
-	if mode, roles, names := ResolveTableColumnConfig(emptyOnly); mode != "" || roles != nil || names != nil {
-		t.Errorf("empty component = %q/%v/%v, want unset", mode, roles, names)
+	if profile := ResolveTableProfile(emptyOnly); profile != nil {
+		t.Errorf("empty component = %#v, want no profile", profile)
 	}
 }
 
-func TestResolveTableColumnConfig_NestedComponent(t *testing.T) {
+// A run publishes the columns it discovered onto the root keys. That is system
+// output rather than a column configuration, so it must not make the root
+// authoritative over the manual profile a document dialog stored on the parser
+// entry — otherwise the first successful parse would freeze the setting.
+func TestResolveTableProfile_PublishedSchemaIsNotIntent(t *testing.T) {
 	cfg := map[string]interface{}{
-		"Parser:HipSignsRhyme": map[string]interface{}{
+		"table_column_names": []interface{}{"name", "age"},
+		"Parser:Table": map[string]interface{}{
 			"spreadsheet": map[string]interface{}{
 				"column_mode":  "manual",
 				"column_roles": map[string]interface{}{"age": "metadata"},
-				"column_names": []interface{}{"name", "age"},
 			},
 		},
 	}
-	mode, roles, names := ResolveTableColumnConfig(cfg)
-	if mode != "manual" {
-		t.Errorf("mode = %q, want \"manual\"", mode)
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want the component's manual profile")
 	}
-	if len(roles) != 1 || roles["age"] != "metadata" {
-		t.Errorf("roles = %v, want age=metadata", roles)
+	if profile.Mode != common.TableColumnModeManual {
+		t.Errorf("mode = %q, want manual", profile.Mode)
 	}
-	if len(names) != 2 {
-		t.Errorf("names len = %d, want 2", len(names))
+	if len(profile.Roles) != 1 || profile.Roles["age"] != common.ColumnRoleMetadata {
+		t.Errorf("roles = %#v, want age=metadata", profile.Roles)
+	}
+	if !reflect.DeepEqual(profile.Columns, []string{"name", "age"}) {
+		t.Errorf("columns = %v, want the published schema", profile.Columns)
+	}
+}
+
+func TestResolveTableColumnNames(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_names": []interface{}{"root"},
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_names": []interface{}{"component"}},
+		},
+	}
+	if got := ResolveTableColumnNames(cfg); !reflect.DeepEqual(got, []string{"root"}) {
+		t.Errorf("got %v, want the root copy first", got)
+	}
+
+	withoutRoot := map[string]interface{}{
+		"Parser:B": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_names": []interface{}{"second"}},
+		},
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_names": []interface{}{"first"}},
+		},
+	}
+	if got := ResolveTableColumnNames(withoutRoot); !reflect.DeepEqual(got, []string{"first"}) {
+		t.Errorf("got %v, want the lowest Parser id", got)
+	}
+
+	if got := ResolveTableColumnNames(map[string]interface{}{"Parser:A": "not a component"}); got != nil {
+		t.Errorf("got %v, want nothing", got)
+	}
+	if got := ResolveTableColumnNames(nil); got != nil {
+		t.Errorf("got %v, want nothing", got)
 	}
 }
 

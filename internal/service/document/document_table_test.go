@@ -60,6 +60,15 @@ func TestSaveDocumentTableColumns_PersistsAndFiltersRoles(t *testing.T) {
 				"Name":  "metadata",
 				"Stale": "both",
 			},
+			// The parser component entry is the canvas DSL's projection, so a
+			// run's discovered schema must not be written into it: that would
+			// turn system output into a claim the canvas author never made.
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"spreadsheet": map[string]interface{}{
+					"column_mode":  "manual",
+					"column_roles": map[string]interface{}{"Name": "indexing"},
+				},
+			},
 		},
 	}
 	if err := db.Create(doc).Error; err != nil {
@@ -86,6 +95,15 @@ func TestSaveDocumentTableColumns_PersistsAndFiltersRoles(t *testing.T) {
 	wantRoles := map[string]interface{}{"Name": "metadata"}
 	if !reflect.DeepEqual(updated.ParserConfig["table_column_roles"], wantRoles) {
 		t.Fatalf("got roles %#v, want %#v (Stale must be filtered)", updated.ParserConfig["table_column_roles"], wantRoles)
+	}
+
+	component, _ := updated.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{})
+	spreadsheet, _ := component["spreadsheet"].(map[string]interface{})
+	if _, ok := spreadsheet["column_names"]; ok {
+		t.Fatalf("column_names = %#v, want discovery left out of the component entry", spreadsheet["column_names"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "indexing"}) {
+		t.Fatalf("column_roles = %#v, want the canvas entry untouched", spreadsheet["column_roles"])
 	}
 }
 
@@ -236,5 +254,54 @@ func TestUpdateDatasetDocumentKeepsPublishedTableSchema(t *testing.T) {
 	spreadsheet, ok := updated.ParserConfig["Parser:HipSignsRhyme"].(map[string]any)["spreadsheet"].(map[string]any)
 	if !ok || spreadsheet["output_format"] != "markdown" {
 		t.Fatalf("requested spreadsheet override lost: %#v", updated.ParserConfig["Parser:HipSignsRhyme"])
+	}
+}
+
+// A document update whose pipeline DSL cannot be loaded merges the request onto
+// the stored configuration instead of rebuilding it from the canvas. The merge
+// keeps keys the request never mentions, so the root column settings survive
+// without the normalization a rebuild needs.
+func TestUpdateDocumentParserConfig_MergeKeepsRootColumnSettings(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	doc := &entity.Document{
+		ID:       "doc-1",
+		KbID:     "kb-1",
+		ParserID: "table",
+		ParserConfig: entity.JSONMap{
+			"chunk_token_num":    float64(128),
+			"table_column_mode":  "manual",
+			"table_column_names": []interface{}{"Name", "City"},
+			"table_column_roles": map[string]interface{}{"Name": "metadata"},
+		},
+	}
+	if err := db.Create(doc).Error; err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	if err := svc.updateDocumentParserConfig(t.Context(), "doc-1", map[string]any{
+		"chunk_token_num": float64(256),
+	}); err != nil {
+		t.Fatalf("updateDocumentParserConfig: %v", err)
+	}
+
+	var updated entity.Document
+	if err := db.First(&updated, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+	if updated.ParserConfig["chunk_token_num"] != float64(256) {
+		t.Fatalf("chunk_token_num = %#v, want the requested 256", updated.ParserConfig["chunk_token_num"])
+	}
+	if updated.ParserConfig["table_column_mode"] != "manual" {
+		t.Fatalf("table_column_mode = %#v, want manual", updated.ParserConfig["table_column_mode"])
+	}
+	if names, ok := updated.ParserConfig["table_column_names"].([]interface{}); !ok || len(names) != 2 {
+		t.Fatalf("table_column_names = %#v, want the published schema kept", updated.ParserConfig["table_column_names"])
+	}
+	roles, ok := updated.ParserConfig["table_column_roles"].(map[string]interface{})
+	if !ok || roles["Name"] != "metadata" {
+		t.Fatalf("table_column_roles = %#v, want the stored metadata role", updated.ParserConfig["table_column_roles"])
 	}
 }

@@ -1123,12 +1123,22 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 	}
 }
 
+// injectTableColumnOverride folds the resolved column intent into the parser
+// component entry the runtime executes, and is the only place the root keys are
+// projected onto a component. Discovered column names are deliberately not
+// folded: no component parameter consumes them, and writing them would put a
+// run's findings into the canvas author's own configuration.
 func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map[string]interface{} {
 	if docConfig == nil {
 		docConfig = map[string]interface{}{}
 	}
-	mode, roles, names := indexdoc.ResolveTableColumnConfig(docConfig)
-	if mode == "" && len(roles) == 0 && len(names) == 0 {
+	profile := indexdoc.ResolveTableProfile(docConfig)
+	if profile == nil {
+		return docConfig
+	}
+	mode := string(profile.Mode)
+	roles := profile.ToRolesInterfaceMap()
+	if mode == "" && len(roles) == 0 {
 		return docConfig
 	}
 	parserCpnID := pipelinepkg.ExtractParserCpnID(dsl, component.ComponentNameParser)
@@ -1147,7 +1157,7 @@ func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map
 	}
 	ssEntry, ok := cpnEntry["spreadsheet"].(map[string]any)
 	if ok {
-		copied := make(map[string]any, len(ssEntry)+3)
+		copied := make(map[string]any, len(ssEntry)+2)
 		for k, v := range ssEntry {
 			copied[k] = v
 		}
@@ -1163,14 +1173,10 @@ func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map
 	if len(roles) > 0 {
 		ssEntry["column_roles"] = roles
 	}
-	if len(names) > 0 {
-		ssEntry["column_names"] = names
-	}
 	common.Debug("inject table column override",
 		zap.String("parser", parserCpnID),
 		zap.String("column_mode", mode),
 		zap.Int("column_roles", len(roles)),
-		zap.Int("column_names", len(names)),
 	)
 	return docConfig
 }
@@ -1188,16 +1194,14 @@ func cloneParserConfig(in map[string]interface{}) map[string]interface{} {
 }
 
 // resolveTableColumnSettings folds the document's and the dataset's table
-// column settings into the effective configuration for this run, written on the
-// document's root-level keys so the parser-entry injection and the post-run
-// readers (metadata aggregation, strip keys, column discovery) all resolve the
-// same values.
+// column settings onto the document's root-level keys, which is the one place
+// this run's configuration is read from: the parser-entry injection, the
+// post-run metadata aggregation, the strip-key computation and column discovery
+// all resolve the same values from there.
 //
 // Precedence, per key:
-//  1. the document's own value — root-level keys (the upload/API override) and
-//     the component-shaped entry a dialog writes are both document-level and
-//     are both resolved here; a component-shaped configuration used to be
-//     ignored whenever the dataset defined the same key;
+//  1. the document's own value, resolved from its root keys and otherwise from
+//     the parser component entry its canvas carries;
 //  2. the dataset's value, used for keys the document does not define;
 //  3. nothing, leaving the parser's own default in place.
 //
@@ -1208,8 +1212,10 @@ func cloneParserConfig(in map[string]interface{}) map[string]interface{} {
 // roles — that would make dataset-level column settings unreachable for every
 // document saved through a dialog.
 func resolveTableColumnSettings(docConfig, kbConfig map[string]interface{}) map[string]interface{} {
-	docMode, docRoles, docNames := indexdoc.ResolveTableColumnConfig(docConfig)
-	kbMode, kbRoles, kbNames := indexdoc.ResolveTableColumnConfig(kbConfig)
+	docMode, docRoles := statedTableColumnSettings(indexdoc.ResolveTableProfile(docConfig))
+	kbMode, kbRoles := statedTableColumnSettings(indexdoc.ResolveTableProfile(kbConfig))
+	docNames := indexdoc.ResolveTableColumnNames(docConfig)
+	kbNames := indexdoc.ResolveTableColumnNames(kbConfig)
 	if docMode == "" && len(docRoles) == 0 && len(docNames) == 0 &&
 		kbMode == "" && len(kbRoles) == 0 && len(kbNames) == 0 {
 		return docConfig
@@ -1234,6 +1240,16 @@ func resolveTableColumnSettings(docConfig, kbConfig map[string]interface{}) map[
 	return docConfig
 }
 
+// statedTableColumnSettings reports the mode and roles a resolved profile
+// carries, with an empty mode for a configuration that states no column intent
+// at all.
+func statedTableColumnSettings(profile *indexdoc.TableProfile) (string, map[string]interface{}) {
+	if profile == nil {
+		return "", nil
+	}
+	return string(profile.Mode), profile.ToRolesInterfaceMap()
+}
+
 func firstNonEmptyRoles(docRoles, kbRoles map[string]interface{}) map[string]interface{} {
 	if len(docRoles) > 0 {
 		return docRoles
@@ -1244,7 +1260,7 @@ func firstNonEmptyRoles(docRoles, kbRoles map[string]interface{}) map[string]int
 	return nil
 }
 
-func firstNonEmptyNames(docNames, kbNames []interface{}) []interface{} {
+func firstNonEmptyNames(docNames, kbNames []string) []string {
 	if len(docNames) > 0 {
 		return docNames
 	}
