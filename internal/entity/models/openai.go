@@ -90,7 +90,7 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
@@ -138,6 +138,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 type openaiEmbeddingResponse struct {
 	Data   []openaiEmbeddingData `json:"data"`
+	ID     string                `json:"id"`
 	Model  string                `json:"model"`
 	Object string                `json:"object"`
 	Usage  openaiUsage           `json:"usage"`
@@ -229,6 +230,15 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, request Embe
 		embeddingData.Index = dataElem.Index
 		embeddings = append(embeddings, embeddingData)
 	}
+
+	// The provider's own token count is the oracle the ingest path calibrates
+	// its tokenizer against (see internal/tokenizer: ObserveUsage). Reporting it
+	// also fixes token accounting, which previously saw 0 tokens for every
+	// embedding call on this driver.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }

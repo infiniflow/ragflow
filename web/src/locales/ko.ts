@@ -1124,7 +1124,7 @@ export default {
       tavilyApiKeyTip:
         'API 키가 올바르게 설정되면 Tavily 기반 웹 검색이 데이터셋 검색을 보완하는 데 사용됩니다.',
       tavilyApiKeyMessage: 'Tavily API 키를 입력해 주세요',
-      tavilyApiKeyHelp: '어떻게 얻나요?',
+      webSearchApiKeyHelp: '어떻게 얻나요?',
       crossLanguage: '교차 언어 검색',
       crossLanguagePlaceholder: '값 선택',
       crossLanguageTip: `교차 언어(cross-language) 검색을 위해 언어를 하나 이상 선택하세요. 언어를 선택하지 않으면 시스템은 원본 쿼리로 검색합니다.`,

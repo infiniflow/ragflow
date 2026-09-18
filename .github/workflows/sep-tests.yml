@@ -484,6 +484,40 @@ jobs:
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
+          # Provide the tokenizer assets the four non-cl100k counters load
+          # (ragflow_deps/huggingface.co/<repo>/<file>). Their only no-network source
+          # is the infiniflow/ragflow_deps image — the runtime images read them from
+          # exactly the same path — so this is the same "if the image is already
+          # cached" fallback the table above uses (again, no `docker pull`). Without
+          # them counter_properties_test / asset_dir_test silently drop their
+          # non-cl100k coverage, which is how a counter regression goes unnoticed.
+          TOKENIZER_ASSET_PATHS=(
+            BAAI/bge-m3/sentencepiece.bpe.model
+            BAAI/bge-large-en-v1.5/vocab.txt
+            Qwen/Qwen3-Embedding-0.6B/tokenizer.json
+            intfloat/e5-mistral-7b-instruct/tokenizer.json
+          )
+          if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+            if [ -n "${CID:-}" ]; then
+              for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
+                target="ragflow_deps/huggingface.co/$asset"
+                if [ -f "$target" ]; then
+                  continue
+                fi
+                mkdir -p "$(dirname "$target")"
+                if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
+                else
+                  echo "tokenizer: $asset absent from the cached image — its counter will skip"
+                fi
+              done
+              docker rm -f "$CID" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
@@ -493,17 +527,20 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
-      - name: Run ORT deps-download regression guard
+      - name: Run ragflow_deps regression guards
         if: env.API_PROXY_SCHEME == 'go'
-        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # Pure-Python, local, needs no API keys or model downloads; guards (a) the
         # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
-        # depends on (notably the version-bump path C2 hardened). Run it in
-        # isolation so the test/testcases conftest (which requires
+        # depends on (notably the version-bump path C2 hardened) and (b) the
+        # tokenizer-asset chain: the downloader's asset list, the three runtime
+        # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
+        # Go counters silently degrade to the calibrated cl100k estimate. Run them
+        # in isolation so the test/testcases conftest (which requires
         # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_go_deps.py -q --durations=100
+          uv run pytest ragflow_deps/test_download_go_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
@@ -566,7 +603,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=6000
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;
@@ -717,6 +754,7 @@ jobs:
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
                NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
+              KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
@@ -731,7 +769,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env-go (not .env). Without syncing these two,
@@ -751,6 +789,7 @@ jobs:
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
+                echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
                  echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
@@ -1181,6 +1220,40 @@ jobs:
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
+          # Provide the tokenizer assets the four non-cl100k counters load
+          # (ragflow_deps/huggingface.co/<repo>/<file>). Their only no-network source
+          # is the infiniflow/ragflow_deps image — the runtime images read them from
+          # exactly the same path — so this is the same "if the image is already
+          # cached" fallback the table above uses (again, no `docker pull`). Without
+          # them counter_properties_test / asset_dir_test silently drop their
+          # non-cl100k coverage, which is how a counter regression goes unnoticed.
+          TOKENIZER_ASSET_PATHS=(
+            BAAI/bge-m3/sentencepiece.bpe.model
+            BAAI/bge-large-en-v1.5/vocab.txt
+            Qwen/Qwen3-Embedding-0.6B/tokenizer.json
+            intfloat/e5-mistral-7b-instruct/tokenizer.json
+          )
+          if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+            if [ -n "${CID:-}" ]; then
+              for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
+                target="ragflow_deps/huggingface.co/$asset"
+                if [ -f "$target" ]; then
+                  continue
+                fi
+                mkdir -p "$(dirname "$target")"
+                if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
+                else
+                  echo "tokenizer: $asset absent from the cached image — its counter will skip"
+                fi
+              done
+              docker rm -f "$CID" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
@@ -1190,17 +1263,20 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
-      - name: Run ORT deps-download regression guard
+      - name: Run ragflow_deps regression guards
         if: env.API_PROXY_SCHEME == 'go'
-        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # Pure-Python, local, needs no API keys or model downloads; guards (a) the
         # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
-        # depends on (notably the version-bump path C2 hardened). Run it in
-        # isolation so the test/testcases conftest (which requires
+        # depends on (notably the version-bump path C2 hardened) and (b) the
+        # tokenizer-asset chain: the downloader's asset list, the three runtime
+        # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
+        # Go counters silently degrade to the calibrated cl100k estimate. Run them
+        # in isolation so the test/testcases conftest (which requires
         # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_go_deps.py -q --durations=100
+          uv run pytest ragflow_deps/test_download_go_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
@@ -1263,7 +1339,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=6000
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;
@@ -1414,6 +1490,7 @@ jobs:
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
                NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
+              KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
@@ -1428,7 +1505,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env-go (not .env). Without syncing these two,
@@ -1448,6 +1525,7 @@ jobs:
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
+                echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
                  echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"

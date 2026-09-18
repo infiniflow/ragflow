@@ -1074,7 +1074,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       tavilyApiKeyTip:
         'Si une clé API est correctement configurée ici, les recherches web basées sur Tavily seront utilisées pour compléter la récupération des bases de connaissances.',
       tavilyApiKeyMessage: 'Veuillez saisir votre clé API Tavily',
-      tavilyApiKeyHelp: "Comment l'obtenir ?",
+      webSearchApiKeyHelp: "Comment l'obtenir ?",
       crossLanguage: 'Recherche inter-langues',
       crossLanguagePlaceholder: 'Sélectionner une valeur',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n'est sélectionnée, le système recherche avec la requête originale.`,

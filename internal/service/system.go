@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"time"
 
@@ -230,7 +230,7 @@ func (s *SystemService) getDatabaseStatus(ctx context.Context) ComponentStatus {
 
 func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 	startedAt := time.Now()
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return ComponentStatus{
 			"status":  "red",
@@ -254,7 +254,7 @@ func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 
 func (s *SystemService) getTaskExecutorHeartbeats(ctx context.Context) map[string][]interface{} {
 	heartbeatsByExecutor := map[string][]interface{}{}
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return heartbeatsByExecutor
 	}
@@ -328,7 +328,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 	}
 
 	redisOK, redisMeta := timedHealthCheck(func() error {
-		redisClient := redis.Get()
+		redisClient := kvrocks.Get()
 		if redisClient == nil || !redisClient.Health(ctx) {
 			return fmt.Errorf("redis is not healthy")
 		}

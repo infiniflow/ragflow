@@ -986,7 +986,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1270,7 +1270,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1378,7 +1378,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
