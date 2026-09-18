@@ -86,10 +86,12 @@ def chunk(
             payload = msg.get_payload(decode=True)
             charset = msg.get_content_charset() or "utf-8"
             _decode_payload(payload, charset, html_txt)
-        elif "multipart" in content_type:
-            if msg.is_multipart():
-                for part in msg.iter_parts():
-                    _add_content(part, part.get_content_type())
+        # Branch on the structure, not on the name: `message/rfc822` — a forwarded
+        # mail — is a container as well, and its content type carries no "multipart"
+        # substring, so a name test walks straight past the forwarded message.
+        elif msg.is_multipart():
+            for part in msg.iter_parts():
+                _add_content(part, part.get_content_type())
 
     _add_content(msg, msg.get_content_type())
 
