@@ -1160,178 +1160,167 @@ func TestIsTableParserRun(t *testing.T) {
 	}
 }
 
-// A dataset that carries table column settings must not push them into a
-// document parsed by another parser: Python gates the same merge on
-// parser_id == "table" (rag/utils/table_es_metadata.py:35).
-func TestApplyTableColumnOverride_NonTableRunIgnoresDatasetConfig(t *testing.T) {
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = "naive"
-	taskCtx.Doc.ParserConfig = entity.JSONMap{"existing": "value"}
-	taskCtx.KB.ParserConfig = entity.JSONMap{
-		"table_column_mode":  "manual",
-		"table_column_names": []interface{}{"Name"},
-	}
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
-
+// The fold is the only place a document's and a dataset's column settings meet,
+// so each case states the resulting parser entry exactly: root keys are someone's
+// stated intent and win, a component entry is that run's canvas projection and is
+// read only while the root states nothing, and a published schema is neither.
+// Every case also checks the task document came out unchanged, since the fold
+// works on per-run state.
+func TestApplyTableColumnOverride(t *testing.T) {
 	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
-	got := svc.applyTableColumnOverride(map[string]interface{}{"existing": "value"}, dsl)
 
-	if _, exists := got["Parser:Table"]; exists {
-		t.Fatalf("non-table run must not receive table column settings: %#v", got)
-	}
-	if _, exists := got["table_column_mode"]; exists {
-		t.Fatalf("dataset table settings must not be merged into a non-table document: %#v", got)
-	}
-}
-
-// A canvas-pipeline table dataset clears document.parser_id but keeps the
-// dataset's own parser_id, so the run must still be treated as a table run.
-func TestApplyTableColumnOverride_CanvasTableRunInheritsDatasetParser(t *testing.T) {
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = ""
-	taskCtx.Doc.ParserConfig = entity.JSONMap{}
-	taskCtx.KB.ParserID = "table"
-	taskCtx.KB.ParserConfig = entity.JSONMap{
-		"table_column_mode":  "manual",
-		"table_column_names": []interface{}{"Name"},
-	}
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
-
-	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
-	got := svc.applyTableColumnOverride(map[string]interface{}{}, dsl)
-
-	spreadsheet, ok := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected an injected spreadsheet entry, got %#v", got)
-	}
-	if spreadsheet["column_mode"] != "manual" {
-		t.Errorf("column_mode = %#v, want manual", spreadsheet["column_mode"])
-	}
-	if _, exists := spreadsheet["column_names"]; exists {
-		t.Errorf("column_names = %#v, want the component entry left to the canvas", spreadsheet["column_names"])
-	}
-	if !reflect.DeepEqual(got["table_column_names"], []string{"Name"}) {
-		t.Errorf("table_column_names = %#v, want the dataset's names on the root keys", got["table_column_names"])
-	}
-}
-
-// The document parser dialog stores its column settings under the Parser
-// component entry, so that shape is document-level too: it must win over the
-// dataset rather than being overwritten by it.
-func TestApplyTableColumnOverride_ComponentShapedDocumentConfigWins(t *testing.T) {
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = "table"
-	taskCtx.Doc.ParserConfig = entity.JSONMap{
-		"Parser:Table": map[string]interface{}{
-			"spreadsheet": map[string]interface{}{
+	cases := []struct {
+		name      string
+		docParser string
+		kbParser  string
+		docConfig func() entity.JSONMap
+		kbConfig  entity.JSONMap
+		// sheet is the parser entry's spreadsheet after the fold, compared in
+		// full; nil asserts the fold left no parser entry at all.
+		sheet  map[string]interface{}
+		root   map[string]interface{}
+		absent []string
+	}{
+		{
+			name:      "a dataset's settings never reach a document parsed by another parser",
+			docParser: "naive",
+			docConfig: func() entity.JSONMap { return entity.JSONMap{"existing": "value"} },
+			kbConfig: entity.JSONMap{
+				"table_column_mode":  "manual",
+				"table_column_names": []interface{}{"Name"},
+			},
+			root:   map[string]interface{}{"existing": "value"},
+			absent: []string{"table_column_mode", "table_column_names"},
+		},
+		{
+			name:      "a canvas run inherits the dataset's parser and column mode",
+			kbParser:  "table",
+			docConfig: func() entity.JSONMap { return entity.JSONMap{} },
+			kbConfig: entity.JSONMap{
+				"table_column_mode":  "manual",
+				"table_column_names": []interface{}{"Name"},
+			},
+			sheet: map[string]interface{}{"column_mode": "manual"},
+			root: map[string]interface{}{
+				"table_column_mode":  "manual",
+				"table_column_names": []string{"Name"},
+			},
+			absent: []string{"table_column_roles"},
+		},
+		{
+			name:      "the document's component-shaped settings beat the dataset",
+			docParser: "table",
+			docConfig: func() entity.JSONMap {
+				return entity.JSONMap{
+					"Parser:Table": map[string]interface{}{
+						"spreadsheet": map[string]interface{}{
+							"column_mode":  "manual",
+							"column_roles": map[string]interface{}{"Name": "metadata"},
+							"column_names": []interface{}{"Name"},
+						},
+					},
+				}
+			},
+			kbConfig: entity.JSONMap{
+				"table_column_mode":  "auto",
+				"table_column_names": []interface{}{"Other"},
+			},
+			sheet: map[string]interface{}{
 				"column_mode":  "manual",
 				"column_roles": map[string]interface{}{"Name": "metadata"},
 				"column_names": []interface{}{"Name"},
 			},
+			root: map[string]interface{}{
+				"table_column_mode":  "manual",
+				"table_column_roles": map[string]interface{}{"Name": "metadata"},
+				"table_column_names": []string{"Name"},
+			},
 		},
-	}
-	taskCtx.KB.ParserConfig = entity.JSONMap{
-		"table_column_mode":  "auto",
-		"table_column_names": []interface{}{"Other"},
-	}
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
-
-	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
-	got := svc.applyTableColumnOverride(map[string]interface{}(taskCtx.Doc.ParserConfig), dsl)
-
-	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
-	if spreadsheet["column_mode"] != "manual" {
-		t.Errorf("column_mode = %#v, want manual", spreadsheet["column_mode"])
-	}
-	if !reflect.DeepEqual(spreadsheet["column_names"], []interface{}{"Name"}) {
-		t.Errorf("column_names = %#v, want [Name]", spreadsheet["column_names"])
-	}
-	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "metadata"}) {
-		t.Errorf("column_roles = %#v, want the document's roles", spreadsheet["column_roles"])
-	}
-}
-
-// A parsed document carries the schema its last run published on the root keys.
-// That is system output, not a column configuration, so it must not outrank the
-// manual profile stored under the parser entry: otherwise editing the profile
-// once would make every later edit inert for the rest of the document's life.
-func TestApplyTableColumnOverride_PublishedSchemaKeepsComponentProfile(t *testing.T) {
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = "table"
-	taskCtx.Doc.ParserConfig = entity.JSONMap{
-		"table_column_names": []interface{}{"Name", "City"},
-		"Parser:Table": map[string]interface{}{
-			"spreadsheet": map[string]interface{}{
+		{
+			name:      "a published schema does not outrank the component profile",
+			docParser: "table",
+			docConfig: func() entity.JSONMap {
+				return entity.JSONMap{
+					"table_column_names": []interface{}{"Name", "City"},
+					"Parser:Table": map[string]interface{}{
+						"spreadsheet": map[string]interface{}{
+							"column_mode":  "manual",
+							"column_roles": map[string]interface{}{"Name": "metadata"},
+						},
+					},
+				}
+			},
+			sheet: map[string]interface{}{
 				"column_mode":  "manual",
 				"column_roles": map[string]interface{}{"Name": "metadata"},
 			},
+			root:   map[string]interface{}{"table_column_names": []interface{}{"Name", "City"}},
+			absent: []string{"table_column_mode"},
+		},
+		{
+			name:      "an untouched default mode yields to the dataset's manual profile",
+			docParser: "table",
+			docConfig: func() entity.JSONMap {
+				return entity.JSONMap{
+					"table_column_mode":  "auto",
+					"table_column_names": []interface{}{"Name"},
+				}
+			},
+			kbConfig: entity.JSONMap{
+				"table_column_mode":  "manual",
+				"table_column_roles": map[string]interface{}{"Name": "indexing"},
+			},
+			sheet: map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"Name": "indexing"},
+			},
+			root: map[string]interface{}{
+				"table_column_mode":  "manual",
+				"table_column_names": []string{"Name"},
+			},
 		},
 	}
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
 
-	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
-	got := svc.applyTableColumnOverride(map[string]interface{}(taskCtx.Doc.ParserConfig), dsl)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := makeTaskCtx()
+			taskCtx.Doc.ParserID = tc.docParser
+			taskCtx.KB.ParserID = tc.kbParser
+			docConfig := tc.docConfig()
+			taskCtx.Doc.ParserConfig = docConfig
+			taskCtx.KB.ParserConfig = tc.kbConfig
+			svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
 
-	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
-	if spreadsheet["column_mode"] != "manual" {
-		t.Errorf("column_mode = %#v, want the published schema to leave the manual profile alone", spreadsheet["column_mode"])
-	}
-	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "metadata"}) {
-		t.Errorf("column_roles = %#v, want the document's roles", spreadsheet["column_roles"])
-	}
-}
+			got := svc.applyTableColumnOverride(map[string]interface{}(docConfig), dsl)
 
-// The upload dialog used to submit its untouched default, which pinned every
-// document to "auto". A bare default mode must not shadow the dataset's manual
-// mode and roles: the dataset is where a column configuration lives.
-func TestApplyTableColumnOverride_BareDefaultModeKeepsDatasetSettings(t *testing.T) {
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = "table"
-	taskCtx.Doc.ParserConfig = entity.JSONMap{
-		"table_column_mode":  "auto",
-		"table_column_names": []interface{}{"Name"},
-	}
-	taskCtx.KB.ParserConfig = entity.JSONMap{
-		"table_column_mode":  "manual",
-		"table_column_roles": map[string]interface{}{"Name": "indexing"},
-	}
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
-
-	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
-	got := svc.applyTableColumnOverride(map[string]interface{}(taskCtx.Doc.ParserConfig), dsl)
-
-	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
-	if spreadsheet["column_mode"] != "manual" {
-		t.Errorf("column_mode = %#v, want the dataset's manual", spreadsheet["column_mode"])
-	}
-	if !reflect.DeepEqual(spreadsheet["column_roles"], map[string]interface{}{"Name": "indexing"}) {
-		t.Errorf("column_roles = %#v, want the dataset's roles", spreadsheet["column_roles"])
-	}
-	if !reflect.DeepEqual(got["table_column_names"], []string{"Name"}) {
-		t.Errorf("table_column_names = %#v, want the document's discovered names kept on the root keys", got["table_column_names"])
-	}
-}
-
-// A non-table run must not receive the dataset table settings, and the task
-// context's document must stay untouched (the resolved config is per-run state).
-func TestApplyTableColumnOverride_DoesNotMutateTaskDocument(t *testing.T) {
-	taskCtx := makeTaskCtx()
-	taskCtx.Doc.ParserID = "table"
-	docConfig := entity.JSONMap{"table_column_mode": "manual"}
-	taskCtx.Doc.ParserConfig = docConfig
-	taskCtx.KB.ParserConfig = entity.JSONMap{"table_column_names": []interface{}{"Name"}}
-	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
-
-	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
-	got := svc.applyTableColumnOverride(map[string]interface{}(docConfig), dsl)
-	if _, ok := got["Parser:Table"]; !ok {
-		t.Fatalf("expected the parser entry to be injected, got %#v", got)
-	}
-	if _, ok := taskCtx.Doc.ParserConfig["Parser:Table"]; ok {
-		t.Errorf("the task context's document config must not be mutated: %#v", taskCtx.Doc.ParserConfig)
-	}
-	if _, ok := taskCtx.Doc.ParserConfig["table_column_names"]; ok {
-		t.Errorf("the dataset fallback must not be written onto the task document: %#v", taskCtx.Doc.ParserConfig)
+			if tc.sheet == nil {
+				if _, exists := got["Parser:Table"]; exists {
+					t.Fatalf("expected no parser component entry, got %#v", got)
+				}
+			} else {
+				cpn, _ := got["Parser:Table"].(map[string]interface{})
+				sheet, ok := cpn["spreadsheet"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("expected a spreadsheet entry, got %#v", got)
+				}
+				if !reflect.DeepEqual(sheet, tc.sheet) {
+					t.Errorf("spreadsheet = %#v, want %#v", sheet, tc.sheet)
+				}
+			}
+			for k, want := range tc.root {
+				if !reflect.DeepEqual(got[k], want) {
+					t.Errorf("root %s = %#v, want %#v", k, got[k], want)
+				}
+			}
+			for _, k := range tc.absent {
+				if v, exists := got[k]; exists {
+					t.Errorf("root %s = %#v, want it absent", k, v)
+				}
+			}
+			if fresh := tc.docConfig(); !reflect.DeepEqual(taskCtx.Doc.ParserConfig, fresh) {
+				t.Errorf("the fold mutated the task document config: got %#v, want %#v", taskCtx.Doc.ParserConfig, fresh)
+			}
+		})
 	}
 }
 

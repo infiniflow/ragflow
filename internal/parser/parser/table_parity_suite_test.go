@@ -94,208 +94,102 @@ func TestParity_OnlyReservedColumnsProducesNoItems(t *testing.T) {
 	}
 }
 
-// Case 1: Auto mode (all columns default to "both", matching Python)
-func TestParity_AutoMode(t *testing.T) {
-	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "auto", nil, TableHeaderRuleSpreadsheet)
-	if len(headers) != 5 {
-		t.Fatalf("expected 5 headers, got %d", len(headers))
-	}
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
+// Role classification decides both halves of a rendered row: what reaches the
+// chunk body and what reaches chunk_data. Every case is checked on every row, so
+// a role that leaks on one row cannot pass on the next.
+func TestParity_RoleClassification(t *testing.T) {
+	all := []string{"Title", "Content", "Country", "Category", "Year"}
+	roleOf := func(role string) map[string]string {
+		roles := make(map[string]string, len(all))
+		for _, col := range all {
+			roles[col] = role
+		}
+		return roles
 	}
 
-	for i, it := range items {
-		text := it["text"].(string)
-		cd := it["chunk_data"].(map[string]any)
+	cases := []struct {
+		name      string
+		mode      string
+		roles     map[string]string
+		inText    []string
+		notInText []string
+		inData    []string
+		notInData []string
+	}{
+		{"auto keeps every column in both tiers", "auto", nil, all, nil, all, nil},
+		{"manual all indexing", "manual", roleOf("indexing"), all, nil, nil, all},
+		{"manual all metadata", "manual", roleOf("metadata"), nil, all, all, nil},
+		{"manual all both", "manual", roleOf("both"), all, nil, all, nil},
+		{
+			name:   "manual mixed roles",
+			mode:   "manual",
+			roles:  map[string]string{"Title": "both", "Content": "indexing", "Country": "metadata", "Category": "both", "Year": "metadata"},
+			inText: []string{"Title", "Content", "Category"}, notInText: []string{"Country", "Year"},
+			inData: []string{"Title", "Country", "Category", "Year"}, notInData: []string{"Content"},
+		},
+		{
+			name:   "a column the roles map leaves out defaults to both",
+			mode:   "manual",
+			roles:  map[string]string{"Title": "indexing", "Country": "metadata"},
+			inText: []string{"Title", "Content", "Category", "Year"}, notInText: []string{"Country"},
+			inData: []string{"Content", "Country", "Category", "Year"}, notInData: []string{"Title"},
+		},
+		{
+			name:   "the legacy vectorize alias indexes",
+			mode:   "manual",
+			roles:  map[string]string{"Title": "vectorize", "Country": "metadata", "Category": "both"},
+			inText: []string{"Title", "Content", "Category", "Year"}, notInText: []string{"Country"},
+			inData: []string{"Content", "Country", "Category", "Year"}, notInData: []string{"Title"},
+		},
+	}
 
-		// In auto mode, every column must be in text AND in chunk_data
-		for _, h := range headers {
-			if !strings.Contains(text, "- "+h+": ") {
-				t.Errorf("row %d: text missing column %s: %s", i, h, text)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items, headers := RenderRowsToJSONChunks(standardTableRows, "", tc.mode, tc.roles, TableHeaderRuleSpreadsheet)
+			if !reflect.DeepEqual(headers, all) {
+				t.Fatalf("headers = %#v, want %v", headers, all)
 			}
-			if _, ok := cd[h]; !ok {
-				t.Errorf("row %d: chunk_data missing column %s", i, h)
+			if len(items) != 3 {
+				t.Fatalf("items = %d, want 3", len(items))
 			}
-		}
-	}
-}
-
-// Case 2: Manual mode - all indexing
-func TestParity_Manual_AllIndexing(t *testing.T) {
-	roles := map[string]string{
-		"Title":    "indexing",
-		"Content":  "indexing",
-		"Country":  "indexing",
-		"Category": "indexing",
-		"Year":     "indexing",
-	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-
-	for i, it := range items {
-		text := it["text"].(string)
-		if strings.TrimSpace(text) == "" {
-			t.Errorf("row %d: text should not be empty", i)
-		}
-		if cd, ok := it["chunk_data"]; ok && len(cd.(map[string]any)) > 0 {
-			t.Errorf("row %d: indexing-only mode should not have chunk_data, got %v", i, cd)
-		}
-	}
-
-	cfg := map[string]interface{}{
-		"table_column_mode":  "manual",
-		"table_column_roles": roles,
-	}
-	_ = cfg
-}
-
-// Case 3: Manual mode - all metadata
-func TestParity_Manual_AllMetadata(t *testing.T) {
-	roles := map[string]string{
-		"Title":    "metadata",
-		"Content":  "metadata",
-		"Country":  "metadata",
-		"Category": "metadata",
-		"Year":     "metadata",
-	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-
-	for i, it := range items {
-		text := it["text"].(string)
-		if text != "" {
-			t.Errorf("row %d: metadata-only mode should have empty text, got %q", i, text)
-		}
-		cd := it["chunk_data"].(map[string]any)
-		if len(cd) != 5 {
-			t.Errorf("row %d: chunk_data should have all 5 columns, got %d", i, len(cd))
-		}
-	}
-}
-
-// Case 4: Manual mode - all both
-func TestParity_Manual_AllBoth(t *testing.T) {
-	roles := map[string]string{
-		"Title":    "both",
-		"Content":  "both",
-		"Country":  "both",
-		"Category": "both",
-		"Year":     "both",
-	}
-	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-
-	for i, it := range items {
-		text := it["text"].(string)
-		cd := it["chunk_data"].(map[string]any)
-		for _, h := range headers {
-			if !strings.Contains(text, "- "+h+": ") {
-				t.Errorf("row %d: text missing %s", i, h)
+			colOf := map[string]int{}
+			for i, col := range all {
+				colOf[col] = i
 			}
-			if _, ok := cd[h]; !ok {
-				t.Errorf("row %d: chunk_data missing %s", i, h)
+			for row, item := range items {
+				text := item["text"].(string)
+				data, _ := item["chunk_data"].(map[string]any)
+				cell := func(col string) string { return standardTableRows[row+1][colOf[col]] }
+				for _, col := range tc.inText {
+					if want := "- " + col + ": " + cell(col); !strings.Contains(text, want) {
+						t.Errorf("row %d: text must index %s as %q, got %q", row, col, want, text)
+					}
+				}
+				for _, col := range tc.notInText {
+					if strings.Contains(text, col) {
+						t.Errorf("row %d: text must not name %s at all, got %q", row, col, text)
+					}
+				}
+				for _, col := range tc.inData {
+					if got, ok := data[col]; !ok || got != cell(col) {
+						t.Errorf("row %d: chunk_data must store %s = %q, got %#v", row, col, cell(col), data)
+					}
+				}
+				for _, col := range tc.notInData {
+					if got, ok := data[col]; ok {
+						t.Errorf("row %d: chunk_data must not store %s = %v", row, col, got)
+					}
+				}
+				if len(data) != len(tc.inData) {
+					t.Errorf("row %d: chunk_data stores %#v, want exactly %v", row, data, tc.inData)
+				}
+				if len(tc.inData) == 0 {
+					if _, exists := item["chunk_data"]; exists {
+						t.Errorf("row %d: a chunk with nothing to store must omit chunk_data, got %#v", row, item["chunk_data"])
+					}
+				}
 			}
-		}
-	}
-}
-
-// Case 5: Manual mode - mixed roles (indexing, metadata, both)
-func TestParity_Manual_MixedRoles(t *testing.T) {
-	roles := map[string]string{
-		"Title":    "both",
-		"Content":  "indexing",
-		"Country":  "metadata",
-		"Category": "both",
-		"Year":     "metadata",
-	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-
-	row0 := items[0]
-	text0 := row0["text"].(string)
-	cd0 := row0["chunk_data"].(map[string]any)
-
-	// Text must have Title, Content, Category; must NOT have Country, Year
-	if !strings.Contains(text0, "- Title: Doc A") || !strings.Contains(text0, "- Content: First document text") || !strings.Contains(text0, "- Category: Tech") {
-		t.Errorf("row0 text missing expected indexing columns: %s", text0)
-	}
-	if strings.Contains(text0, "Country") || strings.Contains(text0, "Year") {
-		t.Errorf("row0 text contains metadata-only columns: %s", text0)
-	}
-
-	// ChunkData must have Title, Country, Category, Year; must NOT have Content
-	for _, col := range []string{"Title", "Country", "Category", "Year"} {
-		if _, ok := cd0[col]; !ok {
-			t.Errorf("row0 chunk_data missing %s", col)
-		}
-	}
-	if _, ok := cd0["Content"]; ok {
-		t.Errorf("row0 chunk_data contains indexing-only column Content: %v", cd0)
-	}
-}
-
-// Case 6: Manual mode - partial roles (omitted columns default to "both", matching Python)
-func TestParity_Manual_PartialRoles_DefaultToBoth(t *testing.T) {
-	roles := map[string]string{
-		"Title":   "indexing",
-		"Country": "metadata",
-		// Content, Category, Year omitted
-	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-
-	row0 := items[0]
-	text0 := row0["text"].(string)
-	cd0 := row0["chunk_data"].(map[string]any)
-
-	// Omitted Content, Category, Year must default to "both":
-	// In text: Title (indexing), Content (default both), Category (default both), Year (default both)
-	// Country (metadata) excluded from text
-	if !strings.Contains(text0, "- Title: Doc A") || !strings.Contains(text0, "- Content: First document text") || !strings.Contains(text0, "- Category: Tech") || !strings.Contains(text0, "- Year: 2024") {
-		t.Errorf("text0 missing expected columns: %s", text0)
-	}
-	if strings.Contains(text0, "Country") {
-		t.Errorf("text0 should not contain metadata-only Country: %s", text0)
-	}
-
-	// In chunk_data: Country (metadata), Content (default both), Category (default both), Year (default both)
-	// Title (indexing) excluded from chunk_data
-	if _, ok := cd0["Title"]; ok {
-		t.Errorf("cd0 should not contain indexing-only Title: %v", cd0)
-	}
-	for _, col := range []string{"Country", "Content", "Category", "Year"} {
-		if _, ok := cd0[col]; !ok {
-			t.Errorf("cd0 missing expected column %s", col)
-		}
-	}
-}
-
-// Case 7: Manual mode - legacy "vectorize" alias maps to "indexing"
-func TestParity_Manual_VectorizeAlias(t *testing.T) {
-	roles := map[string]string{
-		"Title":   "vectorize",
-		"Country": "both",
-	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	row0 := items[0]
-	text0 := row0["text"].(string)
-	cd0 := row0["chunk_data"].(map[string]any)
-
-	if !strings.Contains(text0, "- Title: Doc A") {
-		t.Errorf("vectorize column Title must be indexed in text: %s", text0)
-	}
-	if _, ok := cd0["Title"]; ok {
-		t.Errorf("vectorize column Title must NOT be in chunk_data: %v", cd0)
+		})
 	}
 }
 
@@ -586,108 +480,5 @@ func TestParity_XLSXParser_MultiSheet(t *testing.T) {
 	wantCols := []string{"Name", "Team", "Product", "Revenue"}
 	if !reflect.DeepEqual(cols, wantCols) {
 		t.Errorf("table_column_names = %v, want %v", cols, wantCols)
-	}
-}
-
-// Case 17: Direct end-to-end parity against Python execution results
-func TestDirectParityWithPython(t *testing.T) {
-	// Directly verify that Go RenderRowsToJSONChunks and Python table.chunk produce identical results
-	type TestCase struct {
-		name     string
-		mode     string
-		roles    map[string]string
-		wantCols []string
-		wantSkip []string // columns that should NOT be in text
-		wantData []string // columns that MUST be in chunk_data
-		noData   []string // columns that must NOT be in chunk_data
-	}
-
-	tests := []TestCase{
-		{
-			name:     "mode_auto",
-			mode:     "auto",
-			roles:    nil,
-			wantCols: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantSkip: nil,
-			wantData: []string{"Title", "Content", "Country", "Category", "Year"},
-			noData:   nil,
-		},
-		{
-			name:     "mode_manual_all_indexing",
-			mode:     "manual",
-			roles:    map[string]string{"Title": "indexing", "Content": "indexing", "Country": "indexing", "Category": "indexing", "Year": "indexing"},
-			wantCols: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantSkip: nil,
-			wantData: nil,
-			noData:   []string{"Title", "Content", "Country", "Category", "Year"},
-		},
-		{
-			name:     "mode_manual_all_metadata",
-			mode:     "manual",
-			roles:    map[string]string{"Title": "metadata", "Content": "metadata", "Country": "metadata", "Category": "metadata", "Year": "metadata"},
-			wantCols: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantSkip: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantData: []string{"Title", "Content", "Country", "Category", "Year"},
-			noData:   nil,
-		},
-		{
-			name:     "mode_manual_mixed",
-			mode:     "manual",
-			roles:    map[string]string{"Title": "both", "Content": "indexing", "Country": "metadata", "Category": "both", "Year": "metadata"},
-			wantCols: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantSkip: []string{"Country", "Year"},
-			wantData: []string{"Title", "Country", "Category", "Year"},
-			noData:   []string{"Content"},
-		},
-		{
-			name:     "mode_manual_partial_fallback",
-			mode:     "manual",
-			roles:    map[string]string{"Title": "indexing", "Country": "metadata"},
-			wantCols: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantSkip: []string{"Country"},
-			wantData: []string{"Country", "Content", "Category", "Year"},
-			noData:   []string{"Title"},
-		},
-		{
-			name:     "mode_manual_vectorize_alias",
-			mode:     "manual",
-			roles:    map[string]string{"Title": "vectorize", "Country": "metadata", "Category": "both"},
-			wantCols: []string{"Title", "Content", "Country", "Category", "Year"},
-			wantSkip: []string{"Country"},
-			wantData: []string{"Country", "Category", "Content", "Year"},
-			noData:   []string{"Title"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			items, headers := RenderRowsToJSONChunks(standardTableRows, "", tc.mode, tc.roles, TableHeaderRuleSpreadsheet)
-			if !reflect.DeepEqual(headers, tc.wantCols) {
-				t.Errorf("headers = %v, want %v", headers, tc.wantCols)
-			}
-			if len(items) != 3 {
-				t.Fatalf("items count = %d, want 3", len(items))
-			}
-			for rowIdx, item := range items {
-				text := item["text"].(string)
-				cd, _ := item["chunk_data"].(map[string]any)
-
-				for _, skipCol := range tc.wantSkip {
-					if strings.Contains(text, "- "+skipCol+":") {
-						t.Errorf("case %s row %d: text should NOT contain %s, got: %s", tc.name, rowIdx, skipCol, text)
-					}
-				}
-				for _, dataCol := range tc.wantData {
-					if _, ok := cd[dataCol]; !ok {
-						t.Errorf("case %s row %d: chunk_data MISSING %s, got: %v", tc.name, rowIdx, dataCol, cd)
-					}
-				}
-				for _, noDataCol := range tc.noData {
-					if _, ok := cd[noDataCol]; ok {
-						t.Errorf("case %s row %d: chunk_data MUST NOT contain %s, got: %v", tc.name, rowIdx, noDataCol, cd)
-					}
-				}
-			}
-		})
 	}
 }
