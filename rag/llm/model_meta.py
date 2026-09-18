@@ -665,6 +665,22 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class Xiaomi(OpenAIAPICompatible):
+    """Xiaomi MiMo serves an OpenAI-compatible catalog behind an api-key header."""
+
+    _FACTORY_NAME = "Xiaomi"
+
+    async def _get_raw_model_list(self):
+        url = self._get_model_list_url()
+        if not url:
+            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"api-key": self._get_api_key()}) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
+
+
 class MWS(OpenAIAPICompatible):
     """Discover supported MWS deployments through the project models API."""
 
