@@ -1604,11 +1604,14 @@ func toolDocScope(args map[string]any) []string {
 // merge reads it as entry["id"],
 // so a "chunk_id" key silently disables the drill's structure_path attachment.
 func passageFromChunk(c map[string]any) map[string]any {
-	// Table chunks pass through un-truncated: the 1200-char cap would hide rows
-	// mid/late in a long standings table.
+	// Table chunks are shown to the model as a Markdown view (key-value for infoboxes,
+	// a full-row pipe table for ranked/result tables) instead of raw <table> markup:
+	// same rows, a fraction of the tokens, and a form the model can aggregate. They
+	// also pass through un-truncated: the 1200-char cap would hide rows mid/late in a
+	// long standings table. The shared pool keeps the RAW chunk for citation.
 	var content string
 	if IsTableChunk(c) {
-		content = ChunkTextOf(c)
+		content = TableViewOrRaw(ChunkTextOf(c))
 	} else {
 		// Content is a plain slice at 1200 chars (no trim, no ellipsis).
 		content = truncateRunes(ChunkTextOf(c), 1200)

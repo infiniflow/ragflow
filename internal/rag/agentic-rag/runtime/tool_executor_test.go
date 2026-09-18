@@ -1365,6 +1365,30 @@ func TestPassageFromChunkTruncatesContent(t *testing.T) {
 	}
 }
 
+// TestPassageFromChunkRendersTablesAsMarkdown pins the action-session table shape: the
+// model sees a Markdown view (same rows, a fraction of the tokens) and never the raw
+// <table>/<td> markup. The chunk in the shared pool stays raw for citation.
+func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
+	table := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
+		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
+		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
+	p := passageFromChunk(map[string]any{
+		"chunk_id": "c1", "doc_id": "d1", "content": table,
+	})
+	content, _ := p["content"].(string)
+	if strings.Contains(content, "<td>") || strings.Contains(content, "<table") {
+		t.Errorf("the model-visible passage still carries raw HTML: %q", content)
+	}
+	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("passage lost %q: %q", want, content)
+		}
+	}
+	if p["doc_id"] != "d1" || p["id"] != "c1" {
+		t.Errorf("passage = %v", p)
+	}
+}
+
 // seatRetriever answers a search by its query string, normalized to the DISTINCT
 // tokens it carries: the engine receives "question keywords" (a seat search sends
 // the same term twice), so a fixture must not depend on how that string is

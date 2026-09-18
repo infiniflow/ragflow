@@ -337,6 +337,30 @@ func TestNarrowContentKeepsNeighboursAndHighlights(t *testing.T) {
 	}
 }
 
+// TestNarrowContentRendersHTMLTablesAsMarkdown pins the table branch: an HTML table is
+// serialized to a Markdown view before the model sees it (raw <table>/<td> markup is the
+// expensive and least readable form), and the row set is not pruned.
+func TestNarrowContentRendersHTMLTablesAsMarkdown(t *testing.T) {
+	content := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
+		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
+		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
+	got, ok := NarrowContent(content, []string{"danilo"})
+	if !ok {
+		t.Fatal("NarrowContent must keep a table whole")
+	}
+	if strings.Contains(got, "<td>") || strings.Contains(got, "<table") {
+		t.Errorf("narrowed table still carries raw HTML: %q", got)
+	}
+	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("narrowed table lost %q: %q", want, got)
+		}
+	}
+	if !strings.HasPrefix(got, "...") || !strings.HasSuffix(got, "...") {
+		t.Errorf("narrowed text must be wrapped in ellipses: %q", got)
+	}
+}
+
 func TestSplitKeywordsFallsBackToBigrams(t *testing.T) {
 	// >=3 comma terms -> used as-is, lower-cased.
 	got := SplitKeywords("Alpha, Beta, Gamma")
