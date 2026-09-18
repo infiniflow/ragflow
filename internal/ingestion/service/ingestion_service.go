@@ -958,9 +958,30 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 			// (handleAndExecute Ack-skips an already-FAILED task); Nack for
 			// redelivery. The broker's redelivery limit handles deterministic
 			// poison messages.
-			common.Error(fmt.Sprintf("task %s panicked: %v", taskCtx.IngestionTask.ID, r), fmt.Errorf("%v", r))
-			e.markFailed(ctx, taskCtx.IngestionTask.ID)
-			e.recordTerminalPipelineLog(ctx, taskCtx.IngestionTask, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+			//
+			// The bookkeeping below reaches the DB, so it is guarded in turn: a
+			// panic raised inside a deferred function is unrecoverable and would
+			// take the worker process down — the exact outcome this handler
+			// exists to prevent. taskCtx is read defensively as well, since a
+			// panic is proof that an assumption upstream already broke.
+			var task *entity.IngestionTask
+			if taskCtx != nil {
+				task = taskCtx.IngestionTask
+			}
+			taskID := ""
+			if task != nil {
+				taskID = task.ID
+			}
+			func() {
+				defer func() {
+					if r2 := recover(); r2 != nil {
+						common.Error(fmt.Sprintf("task %s: failure handler panicked: %v", taskID, r2), fmt.Errorf("%v", r2))
+					}
+				}()
+				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
+				e.markFailed(ctx, taskID)
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+			}()
 			terminal = false
 		}
 		if e.leaseAbandoned(hb) {
@@ -1076,6 +1097,32 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 				}
 			}
 		}
+	}
+}
+
+// docRunFromTasks maps the doc's latest ingestion task to the document-level
+// run label. tasks is a single-element slice holding the newest task (as
+// returned by IngestionTaskDAO.GetByDocumentID, ordered by create_time DESC);
+// tasks[0] is the current parse round and its status is authoritative. A
+// document can be parsed multiple times over its lifetime, but document.run
+// reflects the latest parse round, so historical tasks are ignored. An empty
+// task set means UNSTART.
+func docRunFromTasks(tasks []*entity.IngestionTask) string {
+	if len(tasks) == 0 {
+		return string(entity.TaskStatusUnstart)
+	}
+	latest := tasks[0]
+	switch latest.Status {
+	case common.CREATED, common.RUNNING, common.STOPPING:
+		return string(entity.TaskStatusRunning)
+	case common.FAILED:
+		return string(entity.TaskStatusFail)
+	case common.STOPPED:
+		return string(entity.TaskStatusCancel)
+	case common.COMPLETED:
+		return string(entity.TaskStatusDone)
+	default:
+		return string(entity.TaskStatusUnstart)
 	}
 }
 

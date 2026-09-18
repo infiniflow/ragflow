@@ -286,6 +286,7 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 		"progress":         float64(0),
 		"chunk_num":        int64(0),
 		"token_num":        int64(0),
+		"process_duration": float64(0),
 		"process_begin_at": time.Now(),
 	}); err != nil {
 		common.Warn(fmt.Sprintf("prepare validated run: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
@@ -423,6 +424,13 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 }
 
 func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	if dao.DB == nil {
+		// Every task-status write funnels through here (MarkFailed/Stopped/
+		// Completed), and that includes the panic-recovery path in the ingestor
+		// worker. Dereferencing a nil handle there turns a recovered task panic
+		// into a panicking recovery handler, which kills the worker process.
+		return nil, errors.New("ingestion task: nil database")
+	}
 	task, err := s.ingestionTaskDAO.GetByID(ctx, dao.DB, taskID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -462,6 +470,14 @@ func (s *IngestionTaskService) ReloadAndValidateRunIdentity(ctx context.Context,
 		return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "invalid_run_count"}
 	}
 	return task, nil
+}
+
+// GetTaskByDocument returns the document's latest ingestion task. A document
+// may be parsed multiple times over its lifetime; the newest task (by
+// create_time) is the current parse round, so doc-level run state derives from
+// it alone.
+func (s *IngestionTaskService) GetTaskByDocument(ctx context.Context, documentID string) (*entity.IngestionTask, error) {
+	return s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, documentID)
 }
 
 func validateTransition(from, to string) error {

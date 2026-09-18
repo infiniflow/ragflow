@@ -222,16 +222,16 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	// as doc_ids to the retrieval), and collect()'s inScope still applies.
 	if len(docs) == 0 {
 		threshold := datasetNavRecallMinScore
-		w := datasetNavRecallVectorWeight
+		keywordsWeight := 1 - datasetNavRecallVectorWeight
 		chunks, err := GetRetrievalService().Search(ctx, dao.DB, RetrievalRequest{
-			Query:                  query,
-			DatasetIDs:             datasetIDs,
-			TopN:                   datasetNavRecallTopN,
-			SimilarityThreshold:    &threshold,
-			VectorSimilarityWeight: &w,
-			TenantID:               tenantID,
-			DocScope:               docScope,
-			RetrievalFrom:          "dataset",
+			Query:                    query,
+			DatasetIDs:               datasetIDs,
+			TopN:                     datasetNavRecallTopN,
+			SimilarityThreshold:      &threshold,
+			KeywordsSimilarityWeight: &keywordsWeight,
+			TenantID:                 tenantID,
+			DocScope:                 docScope,
+			RetrievalFrom:            "dataset",
 		})
 		if err != nil {
 			log.Printf("[Dataset navigation] content-recall retrieval failed: %v", err)

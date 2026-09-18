@@ -34,6 +34,9 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	}
 	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
 	modelID := relatedQuestionsModelID(ctx, tenantID, searchConfig, tenantSvc)
+	if modelID == "" {
+		return nil, fmt.Errorf("no chat model configured")
+	}
 	prompt, err := LoadPrompt("related_question")
 	if err != nil {
 		return nil, err

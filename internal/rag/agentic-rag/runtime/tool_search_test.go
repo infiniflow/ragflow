@@ -569,35 +569,31 @@ func TestVectorSearchBailsWithoutEmbedder(t *testing.T) {
 	}
 }
 
-// TestVectorSearchWeightIsOne: the pure-vector leg
-// carries weight 1.0 and excludes compiled rows.
-func TestVectorSearchWeightIsOne(t *testing.T) {
+// TestVectorSearchUsesZeroKeywordWeight mirrors Python vector_search: the
+// pure-vector leg carries keyword weight 0 and excludes compiled rows.
+func TestVectorSearchUsesZeroKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.HasEmbedder = true
 	VectorSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 1.0 {
-		t.Errorf("vector search weight = %v, want 1.0", got)
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 0 {
+		t.Errorf("vector search keyword weight = %v, want 0", got)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("vector search must exclude compiled rows")
 	}
 }
 
-// TestBM25SearchUsesZeroWeight: keyword-only, vector
-// weight unconditionally 0, threshold 0.0, excludes compiled rows.
-func TestBM25SearchUsesZeroWeight(t *testing.T) {
+// TestBM25SearchUsesFullKeywordWeight mirrors Python bm25_search: keyword-only,
+// keyword weight 1, threshold 0.0, excludes compiled rows.
+func TestBM25SearchUsesFullKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	BM25Search(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
-		t.Errorf("bm25 search weight = %v, want 0", got)
-	}
-	// No dense leg at all.
-	if !req.DisableVectorLeg {
-		t.Error("bm25 search must disable the vector leg")
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1 {
+		t.Errorf("bm25 search keyword weight = %v, want 1", got)
 	}
 	if got := ptrFloat(t, req.SimilarityThreshold); got != 0 {
 		t.Errorf("bm25 search threshold = %v, want 0", got)
@@ -607,18 +603,15 @@ func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	}
 }
 
-// TestGrepSearchDelegatesToBM25: it is bm25_search
-// with a keyword-only (weight 0) leg and compiled-row exclusion.
+// TestGrepSearchDelegatesToBM25 mirrors Python grep_search: it is bm25_search
+// with a keyword-only (weight 1) leg and compiled-row exclusion.
 func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	GrepSearch(context.Background(), deps, SearchParams{Question: "q", Keywords: "kw"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
-		t.Errorf("grep search weight = %v, want 0", got)
-	}
-	if !req.DisableVectorLeg {
-		t.Error("grep search must disable the vector leg (embd_mdl=None)")
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1 {
+		t.Errorf("grep search keyword weight = %v, want 1", got)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("grep search must exclude compiled rows")
@@ -925,8 +918,8 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	if want := "who made Culdcept? who made Culdcept"; req.Query != want {
 		t.Errorf("query = %q, want %q (question + derived terms)", req.Query, want)
 	}
-	if ptrFloat(t, req.VectorSimilarityWeight) != 0 || !req.ExcludeCompiled {
-		t.Error("grep must stay keyword-only (weight 0) and exclude compiled rows")
+	if ptrFloat(t, req.KeywordsSimilarityWeight) != 1 || !req.ExcludeCompiled {
+		t.Error("grep must stay keyword-only (weight 1) and exclude compiled rows")
 	}
 	// The derived hint also drives the narrowing stage: a prose candidate whose
 	// sentences miss those terms is dropped, while a >=3-row pipe table is kept
@@ -970,21 +963,17 @@ func TestSearchCacheIsHybridOnly(t *testing.T) {
 	}
 }
 
-// TestHybridSearchExcludesCompiledAndWeightsThreeTenths: vector weight 0.3 when an
-// embedder is configured, compiled rows excluded.
-func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
+// TestHybridSearchExcludesCompiledAndUsesSevenTenthsKeywordWeight mirrors Python
+// hybrid_search: keyword weight 0.7 when an embedder is configured, compiled
+// rows excluded.
+func TestHybridSearchExcludesCompiledAndUsesSevenTenthsKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.HasEmbedder = true
 	HybridSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != HybridSearchDefaultVectorWeight {
-		t.Errorf("hybrid search weight = %v, want %v", got, HybridSearchDefaultVectorWeight)
-	}
-	// With an embedder configured the real handle is passed: the dense leg RUNS at
-	// weight 0.3.
-	if req.DisableVectorLeg {
-		t.Error("hybrid search with an embedder must keep the vector leg")
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-HybridSearchDefaultVectorWeight {
+		t.Errorf("hybrid search keyword weight = %v, want %v", got, 1-HybridSearchDefaultVectorWeight)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("hybrid search must exclude compiled rows")
@@ -1003,8 +992,8 @@ func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
 	if req.ExcludeCompiled {
 		t.Error("retrieve search must NOT exclude compiled rows")
 	}
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != DefaultHybridVectorWeight {
-		t.Errorf("retrieve search weight = %v, want %v", got, DefaultHybridVectorWeight)
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-DefaultHybridVectorWeight {
+		t.Errorf("retrieve search keyword weight = %v, want %v", got, 1-DefaultHybridVectorWeight)
 	}
 }
 
@@ -1172,52 +1161,55 @@ func TestRetrievalDefaultsUseIntOrDef(t *testing.T) {
 	}
 }
 
-func TestResolveVectorWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
-	// UsingEmbedding off → keyword-only (weight 0); on → 0.7 default or the configured
-	// override.
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 0 {
-		t.Fatalf("using_embedding=false → %v, want 0 (keyword-only)", got)
+func TestResolveKeywordsSimilarityWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
+	// Python RAGTools.retrieve(using_embedding: bool = False).
+	// Off → keyword-only (weight 1); on → 0.3 default or the configured override.
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 1 {
+		t.Fatalf("using_embedding=false → %v, want 1 (keyword-only)", got)
 	}
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != DefaultHybridVectorWeight {
-		t.Fatalf("using_embedding=true → %v, want %v", got, DefaultHybridVectorWeight)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != 1-DefaultHybridVectorWeight {
+		t.Fatalf("using_embedding=true → %v, want %v", got, 1-DefaultHybridVectorWeight)
 	}
 	override := 0.5
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, VectorSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, KeywordsSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
 		t.Fatalf("using_embedding=true with override → %v, want 0.5", got)
 	}
 }
 
-func TestResolveVectorWeightHybridDefaultsToThreeTenths(t *testing.T) {
-	// The hybrid leg defaults the vector weight to 0.3, unlike the retrieve channel's 0.7.
-	if got := resolveVectorWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
-		t.Fatalf("hybrid → %v, want %v", got, HybridSearchDefaultVectorWeight)
+func TestResolveKeywordsSimilarityWeightHybridDefaultsToSevenTenths(t *testing.T) {
+	// Python hybrid_search defaults the vector weight to 0.3, hence its
+	// keyword weight is 0.7.
+	// (_DEFAULT_HYBRID_VECTOR_WEIGHT,), unlike RAGTools.retrieve's 0.7.
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != 1-HybridSearchDefaultVectorWeight {
+		t.Fatalf("hybrid → %v, want %v", got, 1-HybridSearchDefaultVectorWeight)
 	}
-	if got := resolveVectorWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 0 {
-		t.Fatalf("hybrid with no embedder → %v, want 0", got)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 1 {
+		t.Fatalf("hybrid with no embedder → %v, want 1 (Python: `if embd_mdl`)", got)
 	}
 }
 
-// TestResolveVectorWeightHybridIgnoresUsingEmbedding is the regression guard for the
-// channel-granularity bug: the hybrid leg has NO using_embedding parameter, so gating it
-// on that flag disabled the semantic leg for search_chunks — losing recall of passages
-// sharing no surface words. The gate for this channel is the embedder, nothing else.
-func TestResolveVectorWeightHybridIgnoresUsingEmbedding(t *testing.T) {
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
+// TestResolveKeywordsSimilarityWeightHybridIgnoresUsingEmbedding is the regression guard for
+// the channel-granularity bug: Python's hybrid_search has NO using_embedding
+// parameter (search.py:hybrid_search, :143-145), so gating it on that flag disabled the
+// semantic leg for search_chunks — losing recall of passages sharing no surface
+// words. The gate for this channel is the embedder, nothing else.
+func TestResolveKeywordsSimilarityWeightHybridIgnoresUsingEmbedding(t *testing.T) {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != 1-HybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid with using_embedding=false → %v, want %v: the vector leg "+
-			"must NOT depend on using_embedding", got, HybridSearchDefaultVectorWeight)
+			"must NOT depend on using_embedding", got, 1-HybridSearchDefaultVectorWeight)
 	}
 }
 
-// TestResolveVectorWeightGrepIsAlwaysZero: the grep channel and the retrieve / grep_*
-// session tools are keyword-only and have no vector leg at all, so no flag can turn one
-// on.
-func TestResolveVectorWeightGrepIsAlwaysZero(t *testing.T) {
-	override := 0.9
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 0 {
-		t.Fatalf("grep → %v, want 0 (grep_search has no vector leg)", got)
+// TestResolveKeywordsSimilarityWeightGrepIsAlwaysOne pins Python grep_search: the retrieve
+// and grep_* session tools are keyword-only and have no vector leg at all, so no
+// flag can turn one on.
+func TestResolveKeywordsSimilarityWeightGrepIsAlwaysOne(t *testing.T) {
+	override := 0.1
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 1 {
+		t.Fatalf("grep → %v, want 1 (grep_search has no vector leg)", got)
 	}
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, VectorSimilarityWeight: &override}, ChannelGrep); got != 0 {
-		t.Fatalf("grep with override → %v, want 0 (grep_search has no vector leg)", got)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, KeywordsSimilarityWeight: &override}, ChannelGrep); got != 1 {
+		t.Fatalf("grep with override → %v, want 1 (grep_search has no vector leg)", got)
 	}
 }
 

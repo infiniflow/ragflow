@@ -947,7 +947,7 @@ export default {
       tavilyApiKeyTip:
         'Если здесь правильно установлен API ключ, для дополнения извлечения из базы знаний будут использоваться веб-поиски на основе Tavily.',
       tavilyApiKeyMessage: 'Введите Tavily API Key',
-      tavilyApiKeyHelp: 'Как его получить?',
+      webSearchApiKeyHelp: 'Как его получить?',
       crossLanguage: 'Кросс-языковой поиск',
       crossLanguagePlaceholder: 'Выберите значение',
       crossLanguageTip: `Выберите один или несколько языков для кросс-языкового поиска. Если не выбрано — поиск по исходному запросу.`,

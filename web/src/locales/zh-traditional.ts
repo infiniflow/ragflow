@@ -580,10 +580,41 @@ export default {
       reasoning: '推理',
       reasoningTip:
         '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
+      webSearchProvider: '網路搜尋服務',
+      webSearchProviderTip: '選擇啟用聯網搜尋時使用的搜尋服務。',
+      webSearchProviderPlaceholder: '請選擇網路搜尋服務',
+      webSearchApiKeyRequired:
+        '所選服務必須填寫 API Key —— 否則不會發起聯網搜尋，聊天框中也不會出現聯網開關。',
+      // 密鑰輸入框的標籤。{{provider}} 是 provider 的品牌名，故意不翻譯，
+      // 因此一個範本即可涵蓋全部 9 個 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
-      tavilyApiKeyHelp: '如何獲取？',
+      // 每個 provider 一組 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '選擇 Brave Search 後，將使用其搜尋結果補充知識庫檢索。Brave 的所有端點都需要 Key。',
+      braveApiKeyMessage: '請輸入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。選擇 Exa 後，將使用其搜尋結果補充知識庫檢索。即使是每月 1,000 次的免費額度，也仍然需要 Key。',
+      exaApiKeyMessage: '請輸入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '選擇 Firecrawl 後，將使用其搜尋結果補充知識庫檢索。只取搜尋摘要，不抓取整頁。',
+      firecrawlApiKeyMessage: '請輸入你的 Firecrawl API Key',
+      linkupApiKeyTip: '選擇 Linkup 後，將使用其搜尋結果補充知識庫檢索。',
+      linkupApiKeyMessage: '請輸入你的 Linkup API Key',
+      parallelApiKeyTip: '選擇 Parallel 後，將使用其搜尋摘錄補充知識庫檢索。',
+      parallelApiKeyMessage: '請輸入你的 Parallel API Key',
+      queritApiKeyTip:
+        '選擇 Querit 後，將使用 Querit 的網路搜尋結果補充知識庫檢索。',
+      queritApiKeyMessage: '請輸入你的 Querit API Key',
+      serplyApiKeyTip:
+        '選擇 Serply 後，將使用 Serply 的網路搜尋結果補充知識庫檢索。',
+      serplyApiKeyMessage: '請輸入你的 Serply API Key',
+      youcomApiKeyTip:
+        '可選。You.com 在限速端點上無需 API Key 即可使用；填寫 Key 可解除限速。',
+      youcomApiKeyMessage: '可選 —— 留空則使用免費額度',
+      webSearchApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
       showChunkMetadata: '顯示區塊中繼資料',

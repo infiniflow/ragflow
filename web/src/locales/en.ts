@@ -1236,24 +1236,47 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
-      tavilyApiKeyTip:
-        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
-      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       webSearch: 'Web search',
       webSearchProvider: 'Web search provider',
       webSearchProviderTip:
         'Select the service used when Internet search is enabled.',
       webSearchProviderPlaceholder: 'Select a web search provider',
+      webSearchApiKeyRequired:
+        'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
+      // The key field's label. {{provider}} is the provider's BRAND name, which is
+      // deliberately not translated, so this single template covers all nine.
+      webSearchApiKeyLabel: '{{provider}} API Key',
+      // One Tip/Message pair per provider, alphabetical by provider id.
+      braveApiKeyTip:
+        'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
+      braveApiKeyMessage: 'Please enter your Brave Search API Key',
+      exaApiKeyTip:
+        'Required. When Exa is selected, its web results supplement dataset retrieval. A key is needed even on the free tier of 1,000 requests/month.',
+      exaApiKeyMessage: 'Please enter your Exa API Key',
+      firecrawlApiKeyTip:
+        'When Firecrawl is selected, its search results supplement dataset retrieval. Only the search snippets are pulled, not a full page scrape.',
+      firecrawlApiKeyMessage: 'Please enter your Firecrawl API Key',
+      linkupApiKeyTip:
+        'When Linkup is selected, its web results supplement dataset retrieval.',
+      linkupApiKeyMessage: 'Please enter your Linkup API Key',
+      parallelApiKeyTip:
+        'When Parallel is selected, its search excerpts supplement dataset retrieval.',
+      parallelApiKeyMessage: 'Please enter your Parallel API Key',
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
+      tavilyApiKeyTip:
+        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
+      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       youcomApiKeyTip:
         'Optional. You.com works without a key on its rate-limited endpoint; add a key to lift those limits.',
       youcomApiKeyMessage: 'Optional — leave blank to use the free tier',
-      tavilyApiKeyHelp: 'How to get it?',
+      // Shared anchor text for every provider's "get a key" link (only the href is
+      // provider-specific), so keep it provider-agnostic — do not name a provider.
+      webSearchApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,

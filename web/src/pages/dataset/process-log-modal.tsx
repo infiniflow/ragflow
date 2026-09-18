@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 import { IngestionEventItem } from '@/interfaces/database/ingestion';
+import { formatTime } from '@/utils/date';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -166,18 +167,29 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                             Loading earlier events…
                           </div>
                         )}
-                        {logInfo.events?.map((event) => (
-                          <div
-                            className={
-                              event.event_type === 3
-                                ? 'text-text-secondary'
-                                : undefined
-                            }
-                            key={event.id}
-                          >
-                            {replaceText(event.message)}
-                          </div>
-                        ))}
+                        {logInfo.events?.map((event) => {
+                          const time = formatTime(event.ts);
+                          return (
+                            <div
+                              className={
+                                event.event_type === 3
+                                  ? 'text-text-secondary'
+                                  : undefined
+                              }
+                              key={event.id}
+                            >
+                              {time && (
+                                <span
+                                  className="text-text-secondary mr-1"
+                                  data-testid="ingestion-event-time"
+                                >
+                                  {time}
+                                </span>
+                              )}
+                              {replaceText(event.message)}
+                            </div>
+                          );
+                        })}
                       </div>
                     }
                   />
