@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 
 	"gorm.io/gorm"
@@ -1363,6 +1364,180 @@ func TestPassageFromChunkTruncatesContent(t *testing.T) {
 	if p["doc_id"] != "d1" || p["id"] != "c1" {
 		t.Errorf("passage = %v", p)
 	}
+}
+
+// TestMetadataSearchToolBadArgsAndKeyHints pins the two "the model should change what it
+// asked for" outcomes: a call without filters, and a filter key the dataset does not
+// carry. Both are MISS/bad_args — a query-level miss, never a claim about the tool — and
+// the key case names the fields the dataset really has.
+func TestMetadataSearchToolBadArgsAndKeyHints(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{
+		pushdownOK: true,
+		metas:      common.MetaData{"question_id": {"444": {"d1"}}},
+	}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+	ctx := context.Background()
+
+	out, err := exec.Execute(ctx, "metadata_search", map[string]any{"query": []any{"q"}})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Errorf("status/reason = %s/%s, want miss/bad_args for a call without filters", out.Status, out.Reason)
+	}
+	if note := toolNote(out); !strings.Contains(note, "search_chunks") {
+		t.Errorf("note = %q, want the fallback tools named", note)
+	}
+
+	out, err = exec.Execute(ctx, "metadata_search", map[string]any{
+		"query":   []any{"q"},
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Errorf("status/reason = %s/%s, want miss/bad_args for a missing key", out.Status, out.Reason)
+	}
+	if note := toolNote(out); !strings.Contains(note, "question_id") {
+		t.Errorf("note = %q, want the dataset's REAL keys listed", note)
+	}
+}
+
+// TestMetadataSearchToolInfraWhenIndexUnreadable pins the semantic split: a metadata-index
+// failure is ERROR/infra and must NOT be phrased as "this dataset has no metadata" — the
+// model would then give up on a filter that a working index would have honoured.
+func TestMetadataSearchToolInfraWhenIndexUnreadable(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{flattenErr: errors.New("es down")}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"query":   []any{"q"},
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusError || out.Reason != ReasonInfra {
+		t.Errorf("status/reason = %s/%s, want error/infra", out.Status, out.Reason)
+	}
+	if note := toolNote(out); !strings.Contains(note, "NOT a statement about the dataset") {
+		t.Errorf("note = %q, want an explicit infra framing", note)
+	}
+}
+
+// TestMetadataSearchToolScopesResultsToMatchedDocuments pins the success path: the
+// retrieval runs inside the matched documents only, the hit is admitted to the shared
+// pool, and the payload is a model-facing passage.
+func TestMetadataSearchToolScopesResultsToMatchedDocuments(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"id": "c1", "doc_id": "d1", "content": "Culdcept was released in 1999 by OmiyaSoft."},
+	}}
+	deps, kb := newTestSearchDeps(r)
+	deps.MetadataResolver = &stubMetadataResolver{
+		pushdownOK:  true,
+		pushdownIDs: []string{"d1"},
+		metas:       common.MetaData{"title": {"Culdcept": {"d1"}}},
+	}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"query":   []any{"Culdcept"},
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
+		"logic":   "and",
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s), want ok", out.Status, out.Reason)
+	}
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
+		t.Errorf("doc_scope = %v, want the matched document", scope)
+	}
+	if len(kb.Chunks) != 1 {
+		t.Errorf("pool chunks = %d, want the hit admitted to the shared pool", len(kb.Chunks))
+	}
+	if len(out.EvidenceIDs) != 1 || out.EvidenceIDs[0] != "c1" {
+		t.Errorf("evidence ids = %v, want the hit's chunk id", out.EvidenceIDs)
+	}
+	if got := fmt.Sprint(out.Payload[0]); !strings.Contains(got, "Culdcept") {
+		t.Errorf("payload = %v, want the passage", out.Payload)
+	}
+}
+
+// TestNormalizeMetadataValue pins the value coercion: a list where one keyword is expected
+// collapses to its first non-empty element (one call = one keyword), 'in' keeps its list,
+// and an all-empty list becomes no value at all.
+func TestNormalizeMetadataValue(t *testing.T) {
+	cases := []struct {
+		value any
+		op    string
+		want  any
+	}{
+		{[]any{"New York", "Boston"}, "contains", "New York"},
+		{[]any{"", nil, "Boston"}, "contains", "Boston"},
+		{[]any{"", nil}, "contains", nil},
+		{[]any{"a", "b"}, "in", []any{"a", "b"}},
+		{"New York", "contains", "New York"},
+	}
+	for _, c := range cases {
+		if got := normalizeMetadataValue(c.value, c.op); fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("normalizeMetadataValue(%v, %q) = %v, want %v", c.value, c.op, got, c.want)
+		}
+	}
+}
+
+// TestMetadataSearchOneShotGuardBlocksSecondCall pins the one-shot policy end to end at
+// the tool node: the first call runs, the second within the same session is answered with
+// a nudge and never executed.
+func TestMetadataSearchOneShotGuardBlocksSecondCall(t *testing.T) {
+	exec := &ladderExec{emptyFor: map[string]bool{}}
+	st := &SessionState{
+		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
+		DeadlineLeft: 60,
+		ToolCache:    NewToolCache(),
+		PendingCalls: []ToolCall{{ID: "call-1", Name: "metadata_search"}},
+	}
+	if err := st.toolNode(context.Background()); err != nil {
+		t.Fatalf("toolNode: %v", err)
+	}
+	if len(exec.calls) != 1 || exec.calls[0] != "metadata_search" {
+		t.Fatalf("calls = %v, want the first metadata_search executed", exec.calls)
+	}
+	if !st.MetadataSearchUsed {
+		t.Error("MetadataSearchUsed must be set after the first call")
+	}
+
+	st.PendingCalls = []ToolCall{{ID: "call-2", Name: "metadata_search"}}
+	if err := st.toolNode(context.Background()); err != nil {
+		t.Fatalf("toolNode (second turn): %v", err)
+	}
+	if len(exec.calls) != 1 {
+		t.Errorf("calls = %v, want the second metadata_search blocked", exec.calls)
+	}
+	last := st.Messages[len(st.Messages)-1]
+	if !strings.Contains(last.Content, "ONE-SHOT") {
+		t.Errorf("second call's tool message = %q, want the one-shot nudge", last.Content)
+	}
+}
+
+// toolNote reads the note off a tool outcome whose payload is a single note object.
+func toolNote(out ToolOutcome) string {
+	if len(out.Payload) == 0 {
+		return ""
+	}
+	m, ok := out.Payload[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	note, _ := m["note"].(string)
+	return note
 }
 
 // TestPassageFromChunkRendersTablesAsMarkdown pins the action-session table shape: the

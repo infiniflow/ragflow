@@ -267,6 +267,25 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 	return flattedMeta, nil
 }
 
+// FilterDocIDsByMetaPushdown runs ONLY the metadata-index push-down, which is the first
+// half of the agentic metadata_search pipeline (the caller falls back to
+// GetFlattedMetaByKBs + ApplyMetaFilter when the push-down is not viable).
+//
+// ok=false means the push-down is not viable or errored; ok=true with an empty slice is
+// the definitive "no document matches". That split is the engine's own contract
+// (engine.DocEngine.FilterDocIdsByMetaPushdown returns nil for "not viable"), surfaced
+// here so the caller does not have to reach into the engine itself.
+func (s *MetadataService) FilterDocIDsByMetaPushdown(ctx context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool) {
+	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(filters) == 0 {
+		return nil, false
+	}
+	docIDs := s.docEngine.FilterDocIdsByMetaPushdown(ctx, dao.DB, kbIDs, filters, logic)
+	if docIDs == nil {
+		return nil, false
+	}
+	return docIDs, true
+}
+
 // CollectDocIDsByKB collects unique (kb_id, doc_id) pairs from chunks.
 func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	seen := make(map[string]struct{})

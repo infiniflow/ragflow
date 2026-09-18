@@ -1093,6 +1093,7 @@ var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTP
 var executorSupportedParams = map[string]map[string]bool{
 	"retrieve":           {"query": true, "doc_scope": true},
 	"search_chunks":      {"query": true},
+	"metadata_search":    {"query": true, "filters": true, "logic": true},
 	"list_chunks":        {"doc_id": true},
 	"navigate_tree":      {"query": true, "keywords": true},
 	"navigate_structure": {"doc_id": true, "query": true, "kind": true},
@@ -1100,8 +1101,8 @@ var executorSupportedParams = map[string]map[string]bool{
 	"web_search":         {"query": true},
 }
 
-// TestToolSpecsHavePlaybookSections pins the PR: each of the 7 tools documents
-// the 5-section contract, within the token budget (cap 1200 chars).
+// TestToolSpecsHavePlaybookSections pins the PR: every tool documents the
+// 5-section contract, within the token budget (cap 1200 chars).
 func TestToolSpecsHavePlaybookSections(t *testing.T) {
 	for _, name := range allTools {
 		desc := ToolMap[name].Function.Description
@@ -1117,7 +1118,7 @@ func TestToolSpecsHavePlaybookSections(t *testing.T) {
 }
 
 // TestActiveToolSpecsToolSurface pins mode -> exposed tool count: low=0,
-// medium/high=7, ultra=8, web-hidden=6.
+// medium/high=8, ultra=9, web-hidden=7.
 func TestActiveToolSpecsToolSurface(t *testing.T) {
 	cases := []struct {
 		mode string
@@ -1125,10 +1126,10 @@ func TestActiveToolSpecsToolSurface(t *testing.T) {
 		want int
 	}{
 		{"low", true, 0},
-		{"medium", true, 7},
-		{"high", true, 7},
-		{"ultra", true, 8},
-		{"medium", false, 6},
+		{"medium", true, 8},
+		{"high", true, 8},
+		{"ultra", true, 9},
+		{"medium", false, 7},
 	}
 	for _, c := range cases {
 		ts := &Toolset{ThinkingMode: c.mode, HasWebSearch: c.web}

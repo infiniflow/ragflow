@@ -157,12 +157,181 @@ func ExpandFanouts(ctx context.Context, deps RAGTools, question string) []string
 	return fanouts
 }
 
+// Metadata (title) pre-filter channel: the entities a sub-question names.
+//
+// Channel C exists because a sub-question that NAMES a document is better served by
+// pre-filtering the document set by title and searching inside it than by another
+// whole-corpus round: the whole-corpus round has to rank the named document against every
+// other one, and on a large corpus it loses. The entities come from ONE chat call for the
+// whole fan-out batch, and every entity must look like a SHORT NAME — a copied
+// sub-question or an answer would make the title filter match nothing.
+
+const metadataEntityPrompt = `For each numbered search sub-question below, extract up to 3 short named entities ` +
+	`it targets — the kind of name a document index stores as a title (an article/report ` +
+	`name, an organisation, a place, an event, a person). Use the exact surface form with ` +
+	`SPACES, never underscores. If a sub-question has no clear title-like entity, use an ` +
+	`empty string for it. Keep each entity under 10 words; never copy the whole ` +
+	`sub-question, never answer it. ` +
+	`Respond with JSON only: {"entities": [["<e1>", "<e2>", ...], ...]} — a list of ` +
+	`entity-arrays in the SAME ORDER as the sub-questions, JSON only, no prose.`
+
+const (
+	// metadataEntityMaxWords / metadataEntityMaxChars are the guard on an entity fed to
+	// the title filter: a long string is a copied sub-question or an answer.
+	metadataEntityMaxWords = 10
+	metadataEntityMaxChars = 80
+	// metadataMaxEntities caps the entities taken from one sub-question.
+	metadataMaxEntities = 3
+	// fanoutMetadataQuota is the metadata channel's per-query quota. Modest like the
+	// semantic quota: the channel's hits are only as good as the entity extraction.
+	fanoutMetadataQuota = 4
+)
+
+// metadataEntityStrings coerces a JSON entity list to trimmed strings.
+func metadataEntityStrings(v any) []string {
+	items := asSliceOfAny(v)
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		out = append(out, strings.TrimSpace(fmt.Sprint(it)))
+	}
+	return out
+}
+
+// metadataEntityLooksUsable reports whether an extracted entity is a short name rather
+// than a copied sub-question or an answer.
+func metadataEntityLooksUsable(entity string) bool {
+	s := strings.TrimSpace(entity)
+	if s == "" {
+		return false
+	}
+	low := strings.ToLower(s)
+	for _, mark := range fanoutAnswerMarks {
+		if strings.Contains(low, mark) {
+			return false
+		}
+	}
+	// The character cap counts code points: a byte-based cap would reject a legitimate CJK
+	// entity well below the 80-character limit.
+	return utf8.RuneCountInString(s) <= metadataEntityMaxChars && len(strings.Fields(s)) <= metadataEntityMaxWords
+}
+
+// parseFanoutEntities extracts up to metadataMaxEntities short entities per sub-question
+// from a model reply, order-aligned with fanouts.
+//
+// Accepts {"entities": [["e1","e2"], ...]} (preferred), a flat {"entities": ["e1", ...]}
+// (read positionally: one entity per sub-question), or
+// {"entities": [{"sub_question": ..., "entities": [...]}]} matched by text. Entities that
+// fail metadataEntityLooksUsable are dropped, as are duplicates.
+func parseFanoutEntities(text string, fanouts []string) [][]string {
+	out := make([][]string, len(fanouts))
+	data, ok := extractJSONObject(text).(map[string]any)
+	if !ok {
+		return out
+	}
+	items := asSliceOfAny(data["entities"])
+	if len(items) == 0 {
+		return out
+	}
+	byText := map[string][]string{}
+	var positional [][]string
+	for _, it := range items {
+		switch v := it.(type) {
+		case map[string]any:
+			ents := metadataEntityStrings(v["entities"])
+			if len(ents) == 0 {
+				ents = metadataEntityStrings(v["titles"])
+			}
+			sq := ""
+			if sv := v["sub_question"]; sv != nil {
+				sq = strings.TrimSpace(fmt.Sprint(sv))
+			}
+			if sq == "" && v["fanout"] != nil {
+				sq = strings.TrimSpace(fmt.Sprint(v["fanout"]))
+			}
+			if sq != "" {
+				byText[sq] = ents
+			}
+			positional = append(positional, ents)
+		case string:
+			positional = append(positional, []string{strings.TrimSpace(v)})
+		case []any:
+			positional = append(positional, metadataEntityStrings(v))
+		}
+	}
+	for i, fq := range fanouts {
+		var raw []string
+		if len(byText) > 0 {
+			raw = byText[fq]
+		} else if i < len(positional) {
+			raw = positional[i]
+		}
+		seen := make(map[string]bool, len(raw))
+		cleaned := make([]string, 0, metadataMaxEntities)
+		for _, e := range raw {
+			e = strings.TrimSpace(e)
+			if e != "" && !seen[strings.ToLower(e)] && metadataEntityLooksUsable(e) {
+				seen[strings.ToLower(e)] = true
+				cleaned = append(cleaned, e)
+			}
+			if len(cleaned) >= metadataMaxEntities {
+				break
+			}
+		}
+		out[i] = cleaned
+	}
+	return out
+}
+
+// ExtractFanoutEntities maps each sub-question to 1-3 short entities for metadata (title)
+// filtering: ONE chat call for the whole batch.
+//
+// Only sub-questions with at least one usable entity are returned. Any failure — no model,
+// a model error, an unparseable reply — yields nil so the metadata channel is simply
+// skipped for this round; pre-search is never blocked by it.
+func ExtractFanoutEntities(ctx context.Context, deps RAGTools, fanouts []string) map[string][]string {
+	queries := make([]string, 0, len(fanouts))
+	for _, f := range fanouts {
+		if q := strings.TrimSpace(f); q != "" {
+			queries = append(queries, q)
+		}
+	}
+	if len(queries) == 0 || deps.Model == nil {
+		return nil
+	}
+	listed := make([]string, 0, len(queries))
+	for i, q := range queries {
+		listed = append(listed, fmt.Sprintf("%d. %s", i+1, q))
+	}
+	reply, err := deps.Model.Complete(ctx, []schema.Message{
+		*schema.SystemMessage(metadataEntityPrompt),
+		*schema.UserMessage("Sub-questions:\n" + strings.Join(listed, "\n")),
+	}, nil)
+	if err != nil {
+		_LOG.Printf("[Prefetch] entity extraction failed; skipping the metadata channel: %v", err)
+		return nil
+	}
+	entities := parseFanoutEntities(reply.Content, queries)
+	out := make(map[string][]string, len(queries))
+	for i, q := range queries {
+		if len(entities[i]) > 0 {
+			out[q] = entities[i]
+		}
+	}
+	if len(out) > 0 {
+		_LOG.Printf("[Prefetch] metadata entities: %v", out)
+	}
+	return out
+}
+
 // Phase 2: programmatic fan-out search.
 
 // FanoutSearch: the
 // programmatic multi-query prefetch that seeds the snippet pool.
 //
-// It is a DUAL-CHANNEL search, and the two channels are deliberately different:
+// It is a three-channel search, and the channels are deliberately different:
 //
 //   - channel A (exact): a keyword BM25 round over a wide pool (top_n=60) whose
 //     hits are then narrowed by the query's own terms — the precision path. A
@@ -172,16 +341,23 @@ func ExpandFanouts(ctx context.Context, deps RAGTools, question string) []string
 //     pool. These are quarantined to a small per-fan-out quota
 //     (fanoutSemanticQuota) because bypassing narrowing is what makes them
 //     low-precision.
+//   - channel C (metadata title pre-filter): the sub-question's named entities
+//     pre-select documents by title and the retrieval runs INSIDE that subset
+//     (see ExtractFanoutEntities). Best effort: no usable entities — or no
+//     metadata resolver — simply skips the channel. Only runs when the caller
+//     asks for it (useMetadata): the FIRST prefetch round, where the sub-questions
+//     are the planner's raw wording; a rewrite round's queries are already
+//     targeted at a gap.
 //
 // Collapsing them into one call loses the split, and with it the ability to
 // admit a paraphrase-only match without letting it displace an exact one.
 //
 // Admission order is the point: every fan-out's channel A is admitted before any
-// fan-out's channel B, so an exact hit from a later fan-out outranks a semantic
-// hit from an earlier one.
+// fan-out's channel B, and C takes whatever room is left — its hits are the ones
+// A/B did not reach at all.
 //
 // Returns the number of NEW snippets admitted to the pool.
-func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN, capacity int) int {
+func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN, capacity int, useMetadata bool) int {
 	if len(queries) == 0 || st.KB == nil {
 		return 0
 	}
@@ -227,6 +403,13 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	type fanoutPair struct {
 		exact    []map[string]any
 		semantic []map[string]any
+		metadata []map[string]any
+	}
+	// Channel C's entities: ONE chat call for the whole batch, and only when the metadata
+	// channel was asked for. A failure yields nil and the channel is skipped.
+	var entitiesByQuery map[string][]string
+	if useMetadata {
+		entitiesByQuery = ExtractFanoutEntities(ctx, deps, qs)
 	}
 	pairs := make([]fanoutPair, 0, len(qs))
 	for _, q := range qs {
@@ -235,8 +418,8 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			return 0
 		default:
 		}
-		exact, semantic := fanoutSearchQuery(ctx, sd, q, capPerQuery)
-		pairs = append(pairs, fanoutPair{exact: exact, semantic: semantic})
+		exact, semantic, metadata := fanoutSearchQuery(ctx, sd, q, capPerQuery, entitiesByQuery[q])
+		pairs = append(pairs, fanoutPair{exact: exact, semantic: semantic, metadata: metadata})
 	}
 
 	added := 0
@@ -342,7 +525,7 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			}
 		}
 	}
-	// Channel A across every fan-out first, then channel B.
+	// Channel A across every fan-out first, then channel B, then channel C.
 	for _, p := range pairs {
 		if admit(p.exact) {
 			return added
@@ -353,12 +536,18 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			return added
 		}
 	}
+	for _, p := range pairs {
+		if admit(p.metadata) {
+			return added
+		}
+	}
 	return added
 }
 
-// fanoutSearchQuery runs one fan-out's two channels. It only retrieves; the
-// caller admits the results.
-func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, capPerQuery int) (exact, semantic []map[string]any) {
+// fanoutSearchQuery runs one fan-out's three channels. It only retrieves; the
+// caller admits the results. entities are the sub-question's title entities; an empty
+// list skips channel C.
+func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, capPerQuery int, entities []string) (exact, semantic, metadata []map[string]any) {
 	terms := runtime.QueryToTerms(fq)
 	keyed := runtime.FanoutKeyedTerms(terms)
 	termList := keyed
@@ -403,5 +592,36 @@ func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, ca
 			break
 		}
 	}
-	return exact, semantic
+
+	// Channel C — metadata title pre-filter: documents are pre-selected by their title
+	// metadata matching ANY of the sub-question's entities (OR), and the retrieval runs
+	// INSIDE that subset. Only hits the other two channels did not already surface are
+	// kept; the merge dedups again. runtime.MetadataSearch is inert without a resolver.
+	if len(entities) > 0 {
+		filters := make([]map[string]any, 0, len(entities))
+		for _, e := range entities {
+			filters = append(filters, map[string]any{"key": "title", "op": "contains", "value": e})
+		}
+		seenAB := make(map[string]bool, len(exact)+len(semantic))
+		for _, c := range exact {
+			seenAB[runtime.ChunkIDOf(c)] = true
+		}
+		for _, c := range semantic {
+			seenAB[runtime.ChunkIDOf(c)] = true
+		}
+		hits, _ := runtime.MetadataSearch(ctx, sd, runtime.SearchParams{
+			Question: fq,
+			TopN:     capPerQuery,
+		}, filters, "or")
+		for _, c := range hits {
+			if seenAB[runtime.ChunkIDOf(c)] {
+				continue
+			}
+			metadata = append(metadata, c)
+			if len(metadata) >= fanoutMetadataQuota {
+				break
+			}
+		}
+	}
+	return exact, semantic, metadata
 }

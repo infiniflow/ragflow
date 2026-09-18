@@ -1016,6 +1016,52 @@ var (
 		},
 	}
 
+	metadataSearchToolSpec = ToolSpec{
+		Type: "function",
+		Function: ToolFunction{
+			Name: "metadata_search",
+			Description: `WHEN TO CALL: PRE-FILTER the document set by title BEFORE retrieving chunks — the question names a document by title or recognizable name; or you need a named document subset; or the corpus is large and a title filter would sharpen recall. Prefer 'contains' with a distinctive substring. ` +
+				`CALL AT MOST ONCE PER DIRECTION: then use search_chunks / retrieve inside those documents. ` +
+				`DO NOT CALL: nothing names a document/subset; you already hold a doc_id (use list_chunks); counting or enumerating. ` +
+				`ARGUMENTS: query — 1-2 strings. filters — [{key, value, op}]; key is only 'title'; op — see enum; logic 'and'|'or'. For the string ops the value MUST be ONE keyword, never a list — one call per keyword; 'in' takes a list; 'empty' takes no value. Titles use spaces, not underscores. Example: [{key: 'title', op: 'contains', value: 'New York'}]. ` +
+				`OUTPUT: ranked chunks from ONLY the matching documents. ok = new evidence; redundant = already seen; miss = nothing matched. ` +
+				`IF IT FAILS: 'no documents match' — shorten the substring, or drop the filter and use search_chunks. Do NOT retry the same filter.`,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":     "array",
+						"items":    map[string]any{"type": "string"},
+						"minItems": 1,
+						"maxItems": 2,
+					},
+					"filters": map[string]any{
+						"type":     "array",
+						"minItems": 1,
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								// Only `title` is exposed for now. Extending to other
+								// metadata fields is a matter of adding to this enum —
+								// the executor is already field-agnostic.
+								"key": paramEnum("the document title", "title"),
+								"value": map[string]any{
+									"type": []any{"string", "array", "null"},
+									"description": "the keyword/value to match: ONE string keyword for contains / = / start with / " +
+										"end with / not contains (call once per keyword); a list for in / not in; nothing for empty / not empty",
+								},
+								"op": paramEnum("the comparison", "=", "contains", "not contains", "start with", "end with", "in", "empty", "not empty"),
+							},
+							"required": []string{"key", "op"},
+						},
+					},
+					"logic": paramEnum("how several filters combine, default and", "and", "or"),
+				},
+				"required": []string{"query", "filters"},
+			},
+		},
+	}
+
 	webSearchToolSpec = ToolSpec{
 		Type: "function",
 		Function: ToolFunction{
@@ -1145,6 +1191,7 @@ func paramEnum(desc string, values ...string) map[string]any {
 var ToolMap = map[string]ToolSpec{
 	"retrieve":           retrieveToolSpec,
 	"search_chunks":      searchChunksToolSpec,
+	"metadata_search":    metadataSearchToolSpec,
 	"list_chunks":        listChunksToolSpec,
 	"navigate_tree":      navigateTreeToolSpec,
 	"navigate_structure": navigateStructureToolSpec,
@@ -1778,6 +1825,11 @@ type SessionState struct {
 	SearchQueries []string
 	// SkippedDup counts near-duplicate retrievals suppressed so far.
 	SkippedDup int
+	// MetadataSearchUsed is the metadata_search ONE-SHOT: the tool is a pre-filter, so a
+	// second call within the SAME direction is blocked with a nudge (Python's
+	// _metadata_search_used). It survives across the session's turns but not across
+	// directions — each direction runs its own session.
+	MetadataSearchUsed bool
 	// ToolStrikes counts dataset-level empties per tool.
 	ToolStrikes map[string]int
 	// ToolOutcomes is the audit trail of (name, status, reason, metrics).
@@ -1991,6 +2043,18 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			}}))
 			continue
 		}
+		// metadata_search ONE-SHOT guard: block any 2nd call within this direction.
+		// The tool is a PRE-FILTER — once the document set is narrowed there is nothing
+		// a second call could add, and re-issuing it would burn the direction's turns
+		// re-applying a filter that is already in force.
+		if c.Name == "metadata_search" && s.MetadataSearchUsed {
+			_LOG.Printf("[Action Session] blocking 2nd metadata_search this direction (one-shot guard)")
+			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
+				"kind": "metadata_search",
+				"note": "metadata_search is a ONE-SHOT pre-filter and was ALREADY used this direction. Continue with search_chunks / retrieve inside the documents it returned — do NOT call metadata_search again this direction.",
+			}}))
+			continue
+		}
 		// Unknown tool name — never execute it; answer with a correction so the
 		// model can recover. Models usually emit the XML protocol tags (state /
 		// answer) as tool names; they belong in the reply body as plain text.
@@ -2017,6 +2081,11 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			seenQueries = append(seenQueries, q)
 		}
 		evidenceIDs = append(evidenceIDs, oc.EvidenceIDs...)
+		if c.Name == "metadata_search" {
+			// Used whatever the status: the guard is about not re-filtering, not about
+			// the filter having matched.
+			s.MetadataSearchUsed = true
+		}
 		chunks := append([]any(nil), oc.Payload...)
 
 		// ── Policy: act on WHAT happened, not just on payload size ──────────

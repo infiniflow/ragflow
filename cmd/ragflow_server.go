@@ -1278,6 +1278,11 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// retrieval to the user-selected documents instead of the whole kb.
 			DocScope:      req.DocIDs,
 			DocIDVerifier: agentic_rag.NewDocIDLookup(),
+			// MetadataResolver backs the metadata_search tool and the pre-search
+			// metadata channel (Python DocMetadataService push-down + meta_filter
+			// fallback). metadataService already carries the doc engine and the DAO
+			// the metadata index reads need.
+			MetadataResolver: metadataService,
 			// DocChunks pages one document's chunks in reading order off the
 			// chunk index (Python retriever.chunk_list), backing the
 			// document-level tools (summarize_document / fetch_full_document).

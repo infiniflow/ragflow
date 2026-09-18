@@ -30,6 +30,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -213,6 +214,8 @@ func (e *searchExecutor) dispatch(ctx context.Context, name string, args map[str
 	switch name {
 	case "retrieve", "search_chunks", "grep_search", "grep_chunks":
 		return e.search(ctx, name, args)
+	case "metadata_search":
+		return e.metadataSearch(ctx, args)
 	case "navigate_tree":
 		return e.navigateTree(ctx, args)
 	case "navigate_structure":
@@ -1442,6 +1445,273 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
 		Note:        strings.Join(reachNotes, "\n"),
 	}, nil
+}
+
+// Metadata-search caps: the candidate pool one query reads, and the queries one call
+// runs (Python: top_n=20, max_q=2).
+const (
+	metadataSearchTopN       = 20
+	metadataSearchMaxQueries = 2
+	// metadataKeysHintMax caps the available-keys list echoed back on a bad key.
+	metadataKeysHintMax = 30
+)
+
+// metadataSearch is the metadata_search tool: a document-metadata pre-filter followed by
+// hybrid retrieval INSIDE the matching documents.
+//
+// The statuses are set explicitly rather than derived (see ReasonStatus): a missing filter
+// or a metadata key the dataset does not carry is MISS/bad_args — the model should change
+// the filter or switch tools, not read it as an infrastructure failure — a filter matching
+// no document is MISS/no_doc, and only a metadata-index read failure is ERROR/infra.
+// (Python folds a keys-query exception into "this dataset has no metadata", which tells the
+// model the wrong thing about the corpus.)
+//
+// Claim prefetch is deliberately NOT run here: this tool's contract is "chunks from ONLY
+// the matching documents", while the claim channel reads the whole evidence pool.
+func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any) (ToolOutcome, error) {
+	// searchLogger falls back to the package logger: Logger is optional on SearchDeps,
+	// and a nil *log.Logger panics on the first Printf.
+	logger := searchLogger(e.deps)
+	badArgs := func(note string) (ToolOutcome, error) {
+		return ToolOutcome{
+			Payload: []any{map[string]any{"kind": "metadata_search", "note": note}},
+			Status:  StatusMiss,
+			Reason:  ReasonBadArgs,
+			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+		}, nil
+	}
+	queries := toolQueries(args)
+	if len(queries) == 0 {
+		return badArgs("No query given. metadata_search needs 1-2 queries describing what to look for INSIDE the matched documents.")
+	}
+	if len(queries) > metadataSearchMaxQueries {
+		queries = queries[:metadataSearchMaxQueries]
+	}
+	filters := metadataFiltersOf(args)
+	if len(filters) == 0 {
+		return badArgs("No metadata conditions given. metadata_search needs at least one {key, value, op} filter — otherwise use search_chunks / retrieve.")
+	}
+	if e.deps.MetadataResolver == nil {
+		return ToolOutcome{
+			Payload: []any{map[string]any{
+				"kind": "metadata_search",
+				"note": "metadata_search is unavailable in this deployment (no metadata resolver is wired). Use search_chunks / retrieve.",
+			}},
+			Status:  StatusError,
+			Reason:  ReasonInfra,
+			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+		}, nil
+	}
+	targetIDs := metadataTargetIDs(e.deps)
+	if len(targetIDs) == 0 {
+		return ToolOutcome{
+			Payload: []any{},
+			Status:  StatusError,
+			Reason:  ReasonInfra,
+			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+		}, nil
+	}
+
+	// 1) Key validation against the dataset's REAL metadata fields: a dataset without the
+	//    requested key (e.g. no title) must degrade to a hint, never to an empty retrieval
+	//    the model retries forever.
+	metas, err := e.deps.MetadataResolver.GetFlattedMetaByKBs(ctx, targetIDs)
+	if err != nil {
+		logger.Printf("[Metadata search] metadata index read failed: %v", err)
+		return ToolOutcome{
+			Payload: []any{map[string]any{
+				"kind": "metadata_search",
+				"note": "The document-metadata index could not be read (infrastructure failure — NOT a statement about the dataset). Fall back to search_chunks / retrieve.",
+			}},
+			Status:  StatusError,
+			Reason:  ReasonInfra,
+			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+		}, nil
+	}
+	known := make([]string, 0, len(metas))
+	for k := range metas {
+		known = append(known, k)
+	}
+	sort.Strings(known)
+	knownSet := make(map[string]bool, len(known))
+	for _, k := range known {
+		knownSet[k] = true
+	}
+	var bad []string
+	for _, f := range filters {
+		if key := asString(f["key"]); !knownSet[key] {
+			bad = append(bad, key)
+		}
+	}
+	if len(bad) > 0 {
+		available := strings.Join(capStrings(known, metadataKeysHintMax), ", ")
+		if available == "" {
+			available = "NONE — this dataset has no metadata; use search_chunks / retrieve"
+		}
+		logger.Printf("[Metadata search] bad key(s) %v — not in the dataset's metadata (available: %s)", bad, available)
+		return badArgs(fmt.Sprintf("Metadata key(s) %v do not exist in this dataset. Available: %s.", bad, available))
+	}
+
+	// 2) Normalize the filter values BEFORE they reach the push-down / in-memory filter, so
+	//    a model that emits a list where one keyword is expected can never silently produce
+	//    a no-match.
+	normalized := make([]map[string]any, 0, len(filters))
+	for _, f := range filters {
+		nf := make(map[string]any, len(f)+1)
+		for k, v := range f {
+			nf[k] = v
+		}
+		nf["value"] = normalizeMetadataValue(f["value"], asString(f["op"]))
+		normalized = append(normalized, nf)
+	}
+	logic := argString(args, "logic")
+	if logic != "or" {
+		logic = "and"
+	}
+
+	// 3) Resolve the document set ONCE — the filter does not depend on the query — and then
+	//    search inside it.
+	docIDs, ok := MetadataDocIDs(ctx, e.deps, normalized, logic)
+	if !ok {
+		logger.Printf("[Metadata search] no documents matched filters=%v logic=%s", normalized, logic)
+		return ToolOutcome{
+			Payload: []any{map[string]any{
+				"kind": "metadata_search",
+				"note": "No documents match the given metadata conditions. Loosen or change the filters (try a shorter substring, or the space form instead of underscores), or use search_chunks / retrieve for unfiltered search.",
+			}},
+			Status:  StatusMiss,
+			Reason:  ReasonNoDoc,
+			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+		}, nil
+	}
+
+	// 4) Hybrid search restricted to exactly those documents.
+	var payload []any
+	var evidenceIDs []string
+	seen := map[string]bool{}
+	newChunks := 0
+	limit := snippetsPerQueryFor(e.req.ThinkingMode)
+	for _, q := range queries {
+		chunks, aggs := HybridSearch(ctx, e.deps, SearchParams{
+			Question: q,
+			DocScope: docIDs,
+			TopN:     metadataSearchTopN,
+			// Compiled expansion would pull in chunks from OUTSIDE the matched documents.
+			UseCompiled: false,
+		})
+		if len(chunks) == 0 {
+			continue
+		}
+		if limit > 0 && len(chunks) > limit {
+			chunks = chunks[:limit]
+		}
+		e.deps.KB.Admit(func(p *PoolAdmitter) {
+			for _, c := range chunks {
+				cid := ChunkIDOf(c)
+				if cid != "" && seen[cid] {
+					continue
+				}
+				if cid != "" {
+					seen[cid] = true
+				}
+				evidenceIDs = append(evidenceIDs, cid)
+				payload = append(payload, passageFromChunk(c))
+				if p.Add(c) {
+					newChunks++
+				}
+			}
+		})
+		e.deps.KB.MergeDocAggs(aggs)
+	}
+	if len(payload) == 0 {
+		return ToolOutcome{
+			Payload:     []any{},
+			EvidenceIDs: nil,
+			Status:      StatusMiss,
+			Reason:      ReasonNoDoc,
+			Metrics:     map[string]any{"hits": 0, "new_evidence": 0},
+			Note:        fmt.Sprintf("The metadata filter matched %d document(s), but the scoped search returned nothing. Try another query or a different filter.", len(docIDs)),
+		}, nil
+	}
+	status := StatusOK
+	if newChunks == 0 {
+		status = StatusRedundant
+	}
+	logger.Printf("[Metadata search] ok — %d doc(s) matched by filters, %d hit(s), %d new evidence", len(docIDs), len(payload), newChunks)
+	return ToolOutcome{
+		Payload:     payload,
+		EvidenceIDs: evidenceIDs,
+		Status:      status,
+		Reason:      ReasonNone,
+		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
+	}, nil
+}
+
+// metadataFiltersOf reads the filters argument: a list of {key, value, op} objects.
+// Entries without a key or an op are dropped, so a malformed entry cannot ride along into
+// the push-down as a condition that matches everything.
+func metadataFiltersOf(args map[string]any) []map[string]any {
+	raw, ok := args["filters"]
+	if !ok || raw == nil {
+		return nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		key := strings.TrimSpace(asString(m["key"]))
+		op := strings.TrimSpace(asString(m["op"]))
+		if key == "" || op == "" {
+			continue
+		}
+		out = append(out, map[string]any{"key": key, "value": m["value"], "op": op})
+	}
+	return out
+}
+
+// normalizeMetadataValue coerces a model-supplied filter value to the single value the
+// executor expects. The string ops (contains / = / start with / end with / not contains)
+// take ONE keyword: a list that sneaks in collapses to its first non-empty element (one
+// call = one keyword) and is logged, so the model can re-call per keyword. 'in' / 'not in'
+// keep their list (the value SET); empty / not empty take no value.
+func normalizeMetadataValue(value any, op string) any {
+	if op == "in" || op == "not in" {
+		return value
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return value
+	}
+	flat := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if s := strings.TrimSpace(fmt.Sprint(item)); s != "" {
+			flat = append(flat, s)
+		}
+	}
+	if len(flat) == 0 {
+		return nil
+	}
+	if len(flat) > 1 {
+		_LOG.Printf("[Metadata search] value list collapsed to the single keyword %q (ignored: %v); to match all, call metadata_search once per keyword", flat[0], flat[1:])
+	}
+	return flat[0]
+}
+
+// capStrings returns the first n elements of list (n <= 0 means "no cap").
+func capStrings(list []string, n int) []string {
+	if n <= 0 || len(list) <= n {
+		return list
+	}
+	return list[:n]
 }
 
 // calculate derives a number the evidence does not state outright, by having the model

@@ -27,8 +27,10 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 )
 
@@ -146,6 +148,29 @@ type DocTenant struct {
 // searching each bound dataset with the whole DocScope.
 type DocTenantResolver interface {
 	ResolveDocTenants(ctx context.Context, docIDs []string) (map[string]DocTenant, error)
+}
+
+// MetadataResolver resolves document sets from document metadata for the metadata_search
+// tool. Like DocIDVerifier / DocTenantResolver the lookup is left to the caller, so the
+// search legs hold no metadata-index dependency of their own; the production
+// implementation is internal/service.MetadataService. Nil makes the metadata channel
+// unavailable (the tool reports a clean miss, the pre-search channel is skipped).
+//
+// Filters are the tool's own {key, value, op} condition maps, kept as maps so the
+// implementation needs no import of this package.
+type MetadataResolver interface {
+	// FilterDocIDsByMetaPushdown resolves the documents whose metadata matches filters
+	// (logic = "and" | "or") by pushing the predicate into the document-metadata index.
+	//
+	// ok=false means the push-down is NOT viable or errored and the caller must fall back
+	// to GetFlattedMetaByKBs + the in-memory filter. ok=true with an empty slice is the
+	// definitive "no document matches".
+	FilterDocIDsByMetaPushdown(ctx context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool)
+	// GetFlattedMetaByKBs returns field → value → doc_ids for the given datasets. It is
+	// the in-memory filter's input and the source of the "which fields exist" hint that
+	// turns "this dataset has no title" into advice instead of an empty retrieval the
+	// model retries forever.
+	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
 }
 
 // RetrieveRequest is one retrieval call.
@@ -369,6 +394,10 @@ type SearchDeps struct {
 	// behaviour: each bound dataset is searched with the whole DocScope (no per-document
 	// re-grouping).
 	DocTenantResolver DocTenantResolver
+	// MetadataResolver resolves document sets from document metadata, backing the
+	// metadata_search tool and the pre-search metadata channel. Nil leaves both
+	// unavailable: the tool reports a clean miss and the channel is skipped.
+	MetadataResolver MetadataResolver
 	// DoRefer: when true, summarize_document
 	// prefixes the citation rules so the model cites the blocks it summarises.
 	DoRefer bool
@@ -810,6 +839,109 @@ func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 		// inconsistency is Python's and is reproduced verbatim.
 		narrowLabel: "hybrid_search",
 	})
+}
+
+// MetadataDocIDs resolves the documents a metadata filter matches: metadata-index
+// push-down (ES / Infinity) -> in-memory filter when the push-down is not viable ->
+// intersect with the session document scope.
+//
+// ok=false means NO document is eligible — nothing matched, or the session scope removed
+// every match. That is a normal empty result, never an error: the caller reports a
+// query-level miss. The resolution is query-independent, so callers resolve once and then
+// search inside the returned documents.
+func MetadataDocIDs(ctx context.Context, deps SearchDeps, filters []map[string]any, logic string) ([]string, bool) {
+	logger := searchLogger(deps)
+	if len(filters) == 0 || deps.MetadataResolver == nil {
+		return nil, false
+	}
+	targetIDs := metadataTargetIDs(deps)
+	if len(targetIDs) == 0 {
+		return nil, false
+	}
+	docIDs, pushdownOK := deps.MetadataResolver.FilterDocIDsByMetaPushdown(ctx, targetIDs, filters, logic)
+	if !pushdownOK {
+		metas, err := deps.MetadataResolver.GetFlattedMetaByKBs(ctx, targetIDs)
+		if err != nil {
+			logger.Printf("[Metadata search] push-down unavailable and the in-memory fallback failed: %v", err)
+			return nil, false
+		}
+		docIDs = metaFilterDocIDs(metas, filters, logic)
+	}
+	if len(docIDs) == 0 {
+		logger.Printf("[Metadata search] no documents matched filters=%v logic=%s", filters, logic)
+		return nil, false
+	}
+	// The session's document scope is a ceiling: a document outside it stays unreachable
+	// even when its metadata matches.
+	scoped := scopedDocIDs(deps.DocScope, docIDs)
+	if len(scoped) == 0 {
+		logger.Printf("[Metadata search] 0 documents after the doc-scope intersection")
+		return nil, false
+	}
+	return scoped, true
+}
+
+// MetadataSearch: hybrid retrieval restricted to the documents a metadata filter matches
+// (MetadataDocIDs + HybridSearch), the leg the pre-search metadata channel runs.
+//
+// Compiled expansion stays OFF: it would pull in out-of-scope chunks and break the "only
+// these documents" contract.
+func MetadataSearch(ctx context.Context, deps SearchDeps, p SearchParams, filters []map[string]any, logic string) ([]map[string]any, []map[string]any) {
+	docIDs, ok := MetadataDocIDs(ctx, deps, filters, logic)
+	if !ok {
+		return nil, nil
+	}
+	searchLogger(deps).Printf("[Metadata search] %q searching %d matched doc(s) via filters=%v", trunc(p.Question, 80), len(docIDs), filters)
+	return HybridSearch(ctx, deps, SearchParams{
+		Question:    p.Question,
+		Keywords:    p.Keywords,
+		DocScope:    docIDs,
+		TopN:        p.TopN,
+		UseCompiled: false,
+	})
+}
+
+// metadataTargetIDs is the deduplicated dataset id list a metadata lookup spans: the
+// session's bound datasets plus its structured (SQL-backed) ones.
+func metadataTargetIDs(deps SearchDeps) []string {
+	merged := append(append([]string{}, deps.KbIDs...), deps.SQLKBs...)
+	out := make([]string, 0, len(merged))
+	seen := make(map[string]struct{}, len(merged))
+	for _, id := range merged {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// metaFilterDocIDs is the in-memory metadata filter used when the index push-down is not
+// viable. The condition conversion and the operator normalisation stay in
+// internal/service, where the chat pipeline's own filter shares them.
+func metaFilterDocIDs(metas common.MetaData, filters []map[string]any, logic string) []string {
+	if len(metas) == 0 || len(filters) == 0 {
+		return nil
+	}
+	conditions := make([]service.MetaFilterCondition, 0, len(filters))
+	for _, f := range filters {
+		if f == nil {
+			continue
+		}
+		conditions = append(conditions, service.MetaFilterCondition{
+			Key:   asString(f["key"]),
+			Value: f["value"],
+			Op:    asString(f["op"]),
+		})
+	}
+	if len(conditions) == 0 {
+		return nil
+	}
+	return service.ApplyMetaFilter(metas, conditions, logic)
 }
 
 // VectorSearch: the pure vector entry point. With no embedder it returns nothing,

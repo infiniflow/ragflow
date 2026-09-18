@@ -185,6 +185,10 @@ type RAGTools struct {
 	// (summarize_document / fetch_full_document)
 	// Nil disables it: the document-level tools report that reading is unavailable.
 	DocChunks runtime.DocChunkLister
+	// MetadataResolver resolves document sets from document metadata. It backs the
+	// metadata_search tool and the pre-search metadata channel
+	// (implemented by internal/service.MetadataService). Nil leaves both unavailable.
+	MetadataResolver runtime.MetadataResolver
 	// Outer is the outer-layer chat model that drives the rag_agent react loop
 	// (dialog_service.rag_agent): it binds tools=[rag, summarize_document] with
 	// terminal_tools={"rag"}. When non-nil, Rag runs that outer loop: the model may call
@@ -973,6 +977,7 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req runtime.RunRequest, d
 		DocIDVerifier:     deps.DocIDVerifier,
 		DocChunks:         deps.DocChunks,
 		DocTenantResolver: dbDocTenantResolver{},
+		MetadataResolver:  deps.MetadataResolver,
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
 		// Python retrieve:614-646 — configuration is the middle precedence

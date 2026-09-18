@@ -30,6 +30,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -553,6 +554,161 @@ func TestHybridSearchInvokesCompiledExpansion(t *testing.T) {
 }
 
 type stubExpander struct{ calls int }
+
+// stubMetadataResolver is a scripted MetadataResolver: the push-down answer, the
+// flattened view and the call log are all set per test.
+type stubMetadataResolver struct {
+	pushdownIDs   []string
+	pushdownOK    bool
+	metas         common.MetaData
+	flattenErr    error
+	pushdownCalls int
+	flattenCalls  int
+	gotKbIDs      []string
+	gotFilters    []map[string]any
+	gotLogic      string
+}
+
+func (s *stubMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool) {
+	s.pushdownCalls++
+	s.gotKbIDs = kbIDs
+	s.gotFilters = filters
+	s.gotLogic = logic
+	return s.pushdownIDs, s.pushdownOK
+}
+
+func (s *stubMetadataResolver) GetFlattedMetaByKBs(context.Context, []string) (common.MetaData, error) {
+	s.flattenCalls++
+	return s.metas, s.flattenErr
+}
+
+// TestMetadataSearchScopesHybridToMatchedDocuments pins the retrieval leg: the metadata
+// match decides the document set, the hybrid search runs inside it (compiled expansion
+// OFF, so nothing outside the set can be pulled in), and the push-down hit means the
+// flattened view is never read.
+func TestMetadataSearchScopesHybridToMatchedDocuments(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"id": "c1", "doc_id": "d1", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	res := &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1", "d2"}}
+	deps.MetadataResolver = res
+
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "New York"}}
+	chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "how many?", TopN: 20}, filters, "and")
+
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	if res.flattenCalls != 0 {
+		t.Errorf("flatten calls = %d: a push-down hit must not read the flattened view", res.flattenCalls)
+	}
+	if res.gotLogic != "and" || len(res.gotFilters) != 1 {
+		t.Errorf("resolver got filters=%v logic=%q", res.gotFilters, res.gotLogic)
+	}
+	if len(res.gotKbIDs) != 1 || res.gotKbIDs[0] != "kb1" {
+		t.Errorf("resolver kbIDs = %v, want the session's datasets", res.gotKbIDs)
+	}
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	scope := r.requests[0].DocScope
+	if len(scope) != 2 || scope[0] != "d1" || scope[1] != "d2" {
+		t.Errorf("doc_scope = %v, want the matched documents", scope)
+	}
+}
+
+// TestMetadataSearchFallsBackToInMemoryFilter pins the fallback: when the push-down is
+// not viable, the flattened metadata is filtered in memory with the same conditions.
+func TestMetadataSearchFallsBackToInMemoryFilter(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"id": "c1", "doc_id": "d1", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	res := &stubMetadataResolver{
+		pushdownOK: false,
+		metas: common.MetaData{
+			"title": {"New York City": {"d1"}, "Boston": {"d2"}},
+		},
+	}
+	deps.MetadataResolver = res
+
+	chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"},
+		[]map[string]any{{"key": "title", "op": "contains", "value": "New York"}}, "and")
+
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want the in-memory hit", len(chunks))
+	}
+	if res.flattenCalls != 1 {
+		t.Errorf("flatten calls = %d, want 1", res.flattenCalls)
+	}
+	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
+		t.Errorf("doc_scope = %v, want the in-memory match", scope)
+	}
+}
+
+// TestMetadataSearchEmptyResultIsNotASearch pins the miss path: an empty match (definitive
+// from the push-down, or after the session ceiling) must reach the retriever zero times,
+// and must not be reported as an error.
+func TestMetadataSearchEmptyResultIsNotASearch(t *testing.T) {
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "nowhere"}}
+
+	// Push-down says: definitively no match.
+	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
+	deps, _ := newTestSearchDeps(r)
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true}
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, filters, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil", chunks)
+	}
+	if len(r.requests) != 0 {
+		t.Errorf("requests = %d: an empty match must not search", len(r.requests))
+	}
+
+	// The session ceiling removes every matched document.
+	r2 := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
+	deps2, _ := newTestSearchDeps(r2)
+	deps2.DocScope = []string{"d9"}
+	deps2.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1"}}
+	if chunks, _ := MetadataSearch(context.Background(), deps2, SearchParams{Question: "q"}, filters, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil", chunks)
+	}
+	if len(r2.requests) != 0 {
+		t.Errorf("requests = %d: a scope that excludes everything must not search", len(r2.requests))
+	}
+}
+
+// TestMetadataSearchIntersectsTheSessionScope pins the ceiling: the metadata set cannot
+// escape the session's document restriction.
+func TestMetadataSearchIntersectsTheSessionScope(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"id": "c1", "doc_id": "d2", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	deps.DocScope = []string{"d2", "d3"}
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1", "d2", "d3"}}
+
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "x"}}
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, filters, "and"); len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	scope := r.requests[0].DocScope
+	if len(scope) != 2 || scope[0] != "d2" || scope[1] != "d3" {
+		t.Errorf("doc_scope = %v, want the intersection with the session scope", scope)
+	}
+}
+
+// TestMetadataSearchWithoutResolverIsInert pins the unwired seam: no resolver (or no
+// filters) means the leg does nothing at all, never a failed search.
+func TestMetadataSearchWithoutResolverIsInert(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
+	deps, _ := newTestSearchDeps(r)
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "x"}}
+
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, filters, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil without a resolver", chunks)
+	}
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1"}}
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, nil, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil without filters", chunks)
+	}
+	if len(r.requests) != 0 {
+		t.Errorf("requests = %d, want none", len(r.requests))
+	}
+}
 
 func (s *stubExpander) Expand(_ context.Context, _ *Kbinfos, _, _ string, _ []string) error {
 	s.calls++

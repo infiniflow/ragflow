@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
@@ -783,7 +784,7 @@ func TestFanoutSearchIsDualChannel(t *testing.T) {
 	r := &channelRetriever{}
 	deps := RAGTools{Search: runtime.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, HasEmbedder: true}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8, 60)
+	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8, 60, false)
 
 	// Two fan-outs x two channels.
 	if len(r.keywordsWeights) != 4 {
@@ -820,7 +821,7 @@ func TestFanoutSearchPrefersExactOverSemantic(t *testing.T) {
 	r := &fanoutHitRetriever{}
 	deps := RAGTools{Search: runtime.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, HasEmbedder: true}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	added := FanoutSearch(ctx, deps, st, []string{"alpha", "beta"}, 8, 2)
+	added := FanoutSearch(ctx, deps, st, []string{"alpha", "beta"}, 8, 2, false)
 
 	if added != 2 {
 		t.Fatalf("added = %d, want 2 (the pool's remaining room)", added)
@@ -908,7 +909,7 @@ func TestFanoutSearchEvidenceTopUp(t *testing.T) {
 		KbIDs:     []string{"kb-1"},
 	}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, 60)
+	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, 60, false)
 	if added != 2 {
 		t.Fatalf("added = %d, want 2 (the claim row + its source chunk)", added)
 	}
@@ -4518,5 +4519,175 @@ func TestRunSlotResearchPassEnumeratesOnce(t *testing.T) {
 	RunSlotResearchPass(context.Background(), context.Background(), deps, second.Question, second, 60)
 	if got := exec.ran(); got != 1 {
 		t.Errorf("second round ran the enumeration again (%d), want the stored set reused", got)
+	}
+}
+
+// metadataScopedRetriever serves a hit ONLY to a doc-scoped request, so a test can tell
+// which fan-out channel admitted what: channels A/B search the whole corpus (no scope),
+// channel C searches inside the documents the metadata filter selected.
+type metadataScopedRetriever struct {
+	scopes [][]string
+}
+
+func (r *metadataScopedRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
+	if len(req.DocScope) == 0 {
+		return nil, nil
+	}
+	r.scopes = append(r.scopes, req.DocScope)
+	return []map[string]any{{"id": "meta-1", "doc_id": "d1", "content": "Culdcept tower height is 42 m."}}, nil
+}
+
+// fanoutMetadataResolver is a scripted MetadataResolver for the fan-out channel: the
+// push-down always answers with the configured documents, and the filters/logic it was
+// handed are recorded.
+type fanoutMetadataResolver struct {
+	ids     []string
+	calls   int
+	filters []map[string]any
+	logic   string
+}
+
+func (m *fanoutMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, _ []string, filters []map[string]any, logic string) ([]string, bool) {
+	m.calls++
+	m.filters = filters
+	m.logic = logic
+	return m.ids, true
+}
+
+func (m *fanoutMetadataResolver) GetFlattedMetaByKBs(context.Context, []string) (common.MetaData, error) {
+	return nil, nil
+}
+
+// TestFanoutSearchMetadataChannelAdmitsTitleMatchedDocuments pins channel C: the
+// sub-question's extracted entities pre-filter the document set by title (OR), the
+// retrieval runs inside it, and its hits reach the pool even though the corpus-wide
+// channels returned nothing.
+func TestFanoutSearchMetadataChannelAdmitsTitleMatchedDocuments(t *testing.T) {
+	ctx := context.Background()
+	r := &metadataScopedRetriever{}
+	resolver := &fanoutMetadataResolver{ids: []string{"d1"}}
+	mdl := &scriptedModel{}
+	mdl.push(`{"entities": [["Culdcept"]]}`)
+	deps := RAGTools{
+		Search: runtime.SearchDeps{
+			Backend:          r,
+			KbIDs:            []string{"kb1"},
+			HasEmbedder:      true,
+			MetadataResolver: resolver,
+		},
+		Model: mdl,
+	}
+	st := &AgenticState{KB: &runtime.Kbinfos{}}
+
+	added := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, 60, true)
+
+	if added != 1 || len(st.KB.Chunks) != 1 {
+		t.Fatalf("added = %d, pool = %d; want the metadata channel's one hit", added, len(st.KB.Chunks))
+	}
+	if got := runtime.ChunkIDOf(st.KB.Chunks[0]); got != "meta-1" {
+		t.Errorf("pooled chunk = %q, want the channel-C hit", got)
+	}
+	if len(mdl.seen) != 1 {
+		t.Errorf("model calls = %d, want exactly ONE entity-extraction call for the batch", len(mdl.seen))
+	}
+	if resolver.calls != 1 || resolver.logic != "or" {
+		t.Errorf("resolver calls = %d logic = %q, want one OR-combined lookup", resolver.calls, resolver.logic)
+	}
+	if len(resolver.filters) != 1 || resolver.filters[0]["key"] != "title" ||
+		resolver.filters[0]["op"] != "contains" || resolver.filters[0]["value"] != "Culdcept" {
+		t.Errorf("filters = %v, want one title-contains condition per entity", resolver.filters)
+	}
+	if len(r.scopes) != 1 || len(r.scopes[0]) != 1 || r.scopes[0][0] != "d1" {
+		t.Errorf("scoped requests = %v, want the search restricted to the matched document", r.scopes)
+	}
+}
+
+// TestFanoutSearchSkipsMetadataChannelUnlessAsked pins the gate: the rewrite round (and
+// every other caller that does not ask for the metadata channel) must not pay the
+// entity-extraction model call, and must not resolve documents.
+func TestFanoutSearchSkipsMetadataChannelUnlessAsked(t *testing.T) {
+	ctx := context.Background()
+	r := &metadataScopedRetriever{}
+	resolver := &fanoutMetadataResolver{ids: []string{"d1"}}
+	mdl := &scriptedModel{}
+	mdl.push(`{"entities": [["Culdcept"]]}`)
+	deps := RAGTools{
+		Search: runtime.SearchDeps{
+			Backend:          r,
+			KbIDs:            []string{"kb1"},
+			HasEmbedder:      true,
+			MetadataResolver: resolver,
+		},
+		Model: mdl,
+	}
+	st := &AgenticState{KB: &runtime.Kbinfos{}}
+
+	if added := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, 60, false); added != 0 {
+		t.Errorf("added = %d, want 0 without the metadata channel", added)
+	}
+	if len(mdl.seen) != 0 {
+		t.Errorf("model calls = %d, want none: entity extraction must not run", len(mdl.seen))
+	}
+	if resolver.calls != 0 || len(r.scopes) != 0 {
+		t.Errorf("resolver calls = %d scoped searches = %d, want none", resolver.calls, len(r.scopes))
+	}
+}
+
+// TestParseFanoutEntitiesShapesAndGuards pins the reply shapes and the guards: a copied
+// sub-question, an answer sentence, a duplicate and an over-long entity are all dropped,
+// and at most three entities survive per sub-question.
+func TestParseFanoutEntitiesShapesAndGuards(t *testing.T) {
+	fanouts := []string{"q one", "q two"}
+
+	// Positional arrays: one group per sub-question, in order.
+	got := parseFanoutEntities(`{"entities": [["Alpha Corp", "Beta"], ["Gamma"]]}`, fanouts)
+	if len(got) != 2 || len(got[0]) != 2 || got[0][0] != "Alpha Corp" || got[1][0] != "Gamma" {
+		t.Errorf("positional = %v", got)
+	}
+
+	// Dict form matched by sub-question text: the unmatched one stays empty.
+	got = parseFanoutEntities(`{"entities": [{"sub_question": "q two", "entities": ["Delta"]}]}`, fanouts)
+	if len(got[0]) != 0 || len(got[1]) != 1 || got[1][0] != "Delta" {
+		t.Errorf("by-text = %v", got)
+	}
+
+	// A flat list of strings is read POSITIONALLY: one entity per sub-question, so a
+	// single-string list only fills the first one.
+	got = parseFanoutEntities(`{"entities": ["Alpha"]}`, fanouts)
+	if len(got[0]) != 1 || got[0][0] != "Alpha" || len(got[1]) != 0 {
+		t.Errorf("flat = %v", got)
+	}
+
+	// Guards: an answer/prose entity, an over-long one, an 11-word one, a duplicate and an
+	// empty string are dropped; the cap is three.
+	long := strings.Repeat("x", metadataEntityMaxChars+1)
+	reply := `{"entities": [["` + long + `", "one two three four five six seven eight nine ten eleven", ` +
+		`"see https://example.com", "Dup", "dup", "", "e1", "e2", "e3", "e4"]]}`
+	got = parseFanoutEntities(reply, fanouts)
+	want := []string{"Dup", "e1", "e2"}
+	if len(got[0]) != len(want) {
+		t.Fatalf("guarded = %v, want %v", got[0], want)
+	}
+	for i, w := range want {
+		if got[0][i] != w {
+			t.Errorf("guarded[%d] = %q, want %q", i, got[0][i], w)
+		}
+	}
+
+	// No JSON at all: nothing extracted, and the fan-outs are still order-aligned.
+	got = parseFanoutEntities("no json here", fanouts)
+	if len(got) != 2 || len(got[0]) != 0 || len(got[1]) != 0 {
+		t.Errorf("non-JSON = %v", got)
+	}
+}
+
+// TestExtractFanoutEntitiesWithoutModelIsInert pins the best-effort contract: no chat model
+// means no entities (the channel is skipped), never a failure.
+func TestExtractFanoutEntitiesWithoutModelIsInert(t *testing.T) {
+	if got := ExtractFanoutEntities(context.Background(), RAGTools{}, []string{"q"}); got != nil {
+		t.Errorf("entities = %v, want nil without a model", got)
+	}
+	if got := ExtractFanoutEntities(context.Background(), RAGTools{Model: &scriptedModel{}}, nil); got != nil {
+		t.Errorf("entities = %v, want nil without sub-questions", got)
 	}
 }
