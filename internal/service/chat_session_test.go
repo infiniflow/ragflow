@@ -1100,7 +1100,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	pipeline := &fakePipeline{
 		resultChan: makeResultChan(
-			AsyncChatResult{Answer: "Marigold", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{StartToThink: true, Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{Reasoning: "checking sources", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{EndToThink: true, Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
+			AsyncChatResult{Answer: "Marigold is a depth-estimation model.", Reference: map[string]interface{}{"chunks": []interface{}{}}, Final: false},
 			AsyncChatResult{
 				Answer:    "Marigold is a depth-estimation model. [ID:0]",
 				Reference: finalReference,
@@ -1178,6 +1181,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	}
 	if got := ref["total"]; got != float64(1) {
 		t.Fatalf("final reference total = %v", got)
+	}
+	stored := parseMessages(store.sessions["session-1"].Message)
+	if got := stored[len(stored)-1]["content"]; got != "<think>checking sources</think>Marigold is a depth-estimation model." {
+		t.Fatalf("stored assistant content = %q, want tagged reasoning and visible answer", got)
 	}
 }
 
