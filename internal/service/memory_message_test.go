@@ -189,6 +189,35 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	})
 }
 
+func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "Owner"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-1", Name: "one", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-2", Name: "two", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	if filters.Total != 2 || len(filters.Filter.Owner) != 1 {
+		t.Fatalf("unexpected owner aggregate: %+v", filters)
+	}
+	if filters.Filter.Owner[0].Label != "Owner" || filters.Filter.Owner[0].Count != 2 {
+		t.Fatalf("owner filter = %+v", filters.Filter.Owner)
+	}
+	if len(filters.Filter.MemoryType) != 2 || len(filters.Filter.StorageType) != 2 {
+		t.Fatalf("unexpected type/storage filters: %+v", filters)
+	}
+}
+
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
