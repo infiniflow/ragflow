@@ -70,7 +70,27 @@ type CoverageWindow struct {
 	ChunkID string
 	Quote   string
 	Act     string
+	// Source is the line's PROVENANCE, and it is the whole difference between what used to be
+	// three pipelines (see CoverageSource): the enumeration's windows, the names a probe reached
+	// and the names a session asserted are judged side by side, in one list with one budget —
+	// not in three lists with three caps, three dedup rules and three counters.
+	Source CoverageSource
 }
+
+// CoverageSource says where one ledger line came from. Nothing downstream may branch on it
+// except a report: a line is judged, or it is not, and a member named in it is a member.
+type CoverageSource string
+
+const (
+	// CoverageSourceEnumeration: a window this run's own enumeration built; it carries an Act.
+	CoverageSourceEnumeration CoverageSource = "enumeration"
+	// CoverageSourceReached: a name a probe asked about and DID reach, with the pool chunk that
+	// carries it (see Kbinfos.RecordReachedTerm).
+	CoverageSourceReached CoverageSource = "reached"
+	// CoverageSourceClaim: a name a session asserted with no passage. The pool is asked what it
+	// can show about it, so a claim the run can refute is refuted rather than counted.
+	CoverageSourceClaim CoverageSource = "claim"
+)
 
 // CoverageSet is what one enumeration of the corpus produced: the operands it asked
 // about, the windows the deed was stated in, and how many distinct passages came back.
@@ -237,7 +257,7 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 				set.Truncated = true
 				break
 			}
-			set.Windows = append(set.Windows, CoverageWindow{ChunkID: ChunkIDOf(c), Quote: w.quote, Act: w.act})
+			set.Windows = append(set.Windows, CoverageWindow{ChunkID: ChunkIDOf(c), Quote: w.quote, Act: w.act, Source: CoverageSourceEnumeration})
 		}
 	}
 	return set

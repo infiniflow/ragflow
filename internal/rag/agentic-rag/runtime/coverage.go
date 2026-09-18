@@ -114,31 +114,16 @@ func CoverageOf(table State) Coverage {
 				c.ItemKind = CoverageItemKindItems
 			}
 		}
-		if c.Actor == "" && !coveragePlaceholderTerm(v.Subject) {
+		if c.Actor == "" {
 			c.Actor = strings.TrimSpace(v.Subject)
 		}
 		for _, term := range v.Terms {
-			if term = strings.TrimSpace(term); term != "" && !coveragePlaceholderTerm(term) {
+			if term = strings.TrimSpace(term); term != "" {
 				c.Acts = appendUnique(c.Acts, term)
 			}
 		}
 	}
 	return c
-}
-
-// coveragePlaceholderTerm reports whether a slot field carries a NULL MARKER instead of a word —
-// the "None" a planner writes when it has nothing to put in the field.
-//
-// This is NOT a vocabulary (see ActsAll for why a word list must not live here): it is the plan's
-// OUTPUT CONTRACT, the same handful of null markers in any language, listing only what a model
-// writes INSTEAD of leaving the field out.
-func coveragePlaceholderTerm(term string) bool {
-	switch strings.ToLower(strings.TrimSpace(term)) {
-	case "", "none", "null", "nil", "n/a", "na", "unknown", "unspecified", "-", "--",
-		"无", "暂无", "未知", "不适用", "待定", "空":
-		return true
-	}
-	return false
 }
 
 // Ok reports whether this table asks for an enumeration: a SET of ELEMENTS whose deed the

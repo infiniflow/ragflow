@@ -85,12 +85,7 @@ type batchResult struct {
 // These bound ONE budget, not independent knobs: this node has to be able to judge
 // coverageWindowsMax windows inside CoverageResolveTimeoutS, and its capacity is
 // workers × (clock / the slowest call it can expect) × batch. The cap must stay BELOW that
-// capacity, with room for calls slower than the five seconds assumed here — measured 2026-09-18
-// (三国, 199 lines): six workers spent the node's whole 30 seconds and left 16 lines with no
-// verdict at all ("asked=199 answered=183 unknown=16"), which makes the member set a function of
-// provider latency, the exact thing this node exists to prevent. Eight workers put 288 windows
-// (36 batches) at 3 rounds ≈ 16s: 8 × (30/5) × 8 = 384 > 288, so the cap is the binder and the
-// clock is not.
+// capacity, with room for calls slower than the five seconds assumed here.
 const (
 	coverageResolveBatch      = 8
 	coverageResolveWorkers    = 8
