@@ -540,6 +540,10 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	if parentChild != nil {
 		next["parent_child"] = parentChild
 	}
+	// The persisted top-level setting is authoritative. Re-derive the
+	// chunker's runtime delimiter after every config merge so parser/pipeline
+	// switches cannot retain parent_child without retaining its behavior.
+	pipelinepkg.ApplyParentChildChunkerConfig(next, map[string]interface{}(next))
 	return next
 }
 

@@ -1097,7 +1097,9 @@ class Dealer:
             if not isinstance(mom_id, str) or not mom_id.strip():
                 i += 1
                 continue
-            mom_chunks[(ck["mom_id"], ck.get("doc_id", ""), ck.get("kb_id", ""))].append(chunks.pop(i))
+            doc_id = _chunk_scalar(ck.get("doc_id"))
+            kb_id = _chunk_scalar(ck.get("kb_id"))
+            mom_chunks[(mom_id, doc_id, kb_id)].append(chunks.pop(i))
 
         if not mom_chunks:
             return chunks
@@ -1108,7 +1110,8 @@ class Dealer:
         vector_size = 1024
         for (id, doc_id, kb_id), cks in mom_chunks.items():
             chunk = self.dataStore.get(id, idx_nms[0], [kb_id])
-            if chunk is None or chunk.get("doc_id") != doc_id:
+            parent_doc_id = _chunk_scalar(chunk.get("doc_id")) if chunk is not None else ""
+            if chunk is None or parent_doc_id != doc_id:
                 logging.warning(
                     "Parent chunk '%s' not found for document '%s'; falling back to %d child chunk(s).",
                     id,
@@ -1121,9 +1124,9 @@ class Dealer:
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),
                 "content_with_weight": chunk["content_with_weight"],
-                "doc_id": chunk["doc_id"],
+                "doc_id": parent_doc_id,
                 "docnm_kwd": chunk.get("docnm_kwd", ""),
-                "kb_id": chunk["kb_id"],
+                "kb_id": _chunk_scalar(chunk.get("kb_id")),
                 "important_kwd": [kwd for ck in cks for kwd in ck.get("important_kwd", [])],
                 "image_id": chunk.get("img_id", ""),
                 "similarity": np.mean([ck["similarity"] for ck in cks]),

@@ -722,7 +722,7 @@ func TestPipelineExecutor_ProcessOutputMaterializesParentChunk(t *testing.T) {
 			inserted = append(inserted, chunks...)
 			return nil, nil
 		},
-	).WithLogCreateFunc(func(context.Context, *gorm.DB, *entity.PipelineOperationLog) error { return nil })
+	)
 
 	_, err := svc.processOutput(t.Context(), map[string]any{
 		"chunks": []map[string]any{

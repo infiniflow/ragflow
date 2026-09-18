@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestChunkIndexWriter_EmptyChunks(t *testing.T) {
@@ -123,5 +124,26 @@ func TestChunkIndexWriterRetriesFailedBatch(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("insert attempts = %d, want 2", attempts)
+	}
+}
+
+func TestChunkIndexWriterWaitsBeforeRetryingFailedBatch(t *testing.T) {
+	attempts := make([]time.Time, 0, 2)
+	writer := newChunkIndexWriter(func(_ context.Context, _ []map[string]any, _, _ string) ([]string, error) {
+		attempts = append(attempts, time.Now())
+		if len(attempts) == 1 {
+			return nil, errors.New("temporary write failure")
+		}
+		return nil, nil
+	}, "ragflow_tenant", "kb", 0)
+
+	if err := writer.Write(t.Context(), []map[string]any{{"id": "chunk"}}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("insert attempts = %d, want 2", len(attempts))
+	}
+	if delay := attempts[1].Sub(attempts[0]); delay < 50*time.Millisecond {
+		t.Fatalf("retry delay = %s, want at least 50ms", delay)
 	}
 }
