@@ -79,11 +79,11 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 		}
 	}
 	if findChatModelErr != nil {
-		return mindMapNode{}, findChatModelErr
+		return mindMapNode{}, fmt.Errorf("%w: %v", service.ErrChatModelUnavailable, findChatModelErr)
 	}
 	fullText, err := collectMindMapStream(streamCtx, ch, streamErrs)
 	if err != nil {
-		return mindMapNode{}, err
+		return mindMapNode{}, fmt.Errorf("%w: %v", service.ErrChatModelUnavailable, err)
 	}
 	if strings.TrimSpace(fullText) == "" {
 		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil

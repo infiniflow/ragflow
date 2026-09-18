@@ -18,6 +18,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -227,6 +228,10 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrChatModelUnavailable) {
+			llmUnavailableError(c, err)
+			return
+		}
 		jsonInternalError(c, err)
 		return
 	}

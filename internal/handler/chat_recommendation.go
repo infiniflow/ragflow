@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -59,6 +60,10 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 	ctx := c.Request.Context()
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
+		if errors.Is(err, service.ErrChatModelUnavailable) {
+			llmUnavailableError(c, err)
+			return
+		}
 		jsonInternalError(c, err)
 		return
 	}
