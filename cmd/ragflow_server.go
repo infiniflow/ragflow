@@ -986,7 +986,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
 		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		-1,
+		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
@@ -1037,7 +1037,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
 		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
-		-1,
+		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
