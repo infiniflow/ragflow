@@ -2212,7 +2212,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
       chunkTokenCap: '分块 Token 上限',
-      chunkTokenCapTip:'每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
+      chunkTokenCapTip:
+        '每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
       rootAsHeading: '将首个分块设为全局上下文',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
