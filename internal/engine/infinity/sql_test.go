@@ -402,10 +402,11 @@ func TestBuildFilterFromCondition_UnconstrainedFilter(t *testing.T) {
 }
 
 // TestBuildFilterFromCondition_StringSliceIDPreservesScope pins the shape the
-// document availability switch relies on: updateSourceChunkAvailability passes a
-// typed []string id list, and Infinity must render it as an IN clause. Dropping
-// it leaves whatever other clauses the caller passed (none, for that path), i.e.
-// an update scoped to the whole dataset table.
+// document availability switch relies on: the doc-service caller of
+// UpdateChunks (updateDocumentChunkAvailability) passes a typed []string id
+// list, and Infinity must render it as an IN clause. Dropping it leaves whatever
+// other clauses the caller passed (none, for that path), i.e. an update scoped
+// to the whole dataset table.
 func TestBuildFilterFromCondition_StringSliceIDPreservesScope(t *testing.T) {
 	clmns := map[string]struct {
 		Type    string
