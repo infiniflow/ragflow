@@ -787,6 +787,11 @@ class Docx(DocxParser):
                             flush_last_image()
                             last_image = current_image
 
+                    # Text boxes are anchored in a paragraph but keep their text out of
+                    # `Paragraph.text`; emit each of them as a block of its own.
+                    for box_text in self.extract_text_boxes(p):
+                        lines.append({"text": self.__clean(box_text), "image": None, "table": None})
+
                 for run in p.runs:
                     xml = run._element.xml
                     if "lastRenderedPageBreak" in xml:
