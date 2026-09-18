@@ -19,6 +19,7 @@ import copy
 import re
 
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
+from html import escape as html_escape
 from io import BytesIO
 from deepdoc.parser.utils import extract_pdf_outlines
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img, DEFAULT_DELIMITER
@@ -128,7 +129,8 @@ class Docx(DocxParser):
                         else:
                             break
                     i += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                 html += "</tr>"
             html += "</table>"
             tbls.append(((None, html), ""))
