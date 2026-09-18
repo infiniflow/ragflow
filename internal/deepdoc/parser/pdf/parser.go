@@ -17,12 +17,6 @@ import (
 	"ragflow/internal/utility"
 )
 
-// diagStagePages is the number of leading pages for which per-stage
-// progress logs (render/ocr/dla_tsr) are emitted. These logs are noisy, so
-// they are restricted to the first few pages; the document-wide "page
-// finished" log already covers every page.
-const diagStagePages = 3
-
 // Parser is the core PDF text/layout extraction pipeline.
 // It corresponds to RAGFlowPdfParser in pdf_parser.py.
 // Stateless after construction — safe to reuse across documents.
@@ -204,14 +198,9 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	}
 
 	// First pass: render at the default DLA DPI (216 DPI).
-	stageDiag := pg < diagStagePages
-	if stageDiag {
-		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render start"))
-	}
+	common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render start"))
 	pageImg, renderErr := p.renderPageToImage(ctx, engine, pg)
-	if stageDiag {
-		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render done"))
-	}
+	common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render done"))
 	pageZoom := pdf.DlaScale
 	var ocrBoxes []pdf.TextBox
 	var updatedChars []pdf.TextChar
@@ -221,18 +210,12 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	var dlaRegions []pdf.DLAPageRegions
 
 	if pageImg != nil && renderErr == nil {
-		if stageDiag {
-			common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr start"))
-		}
+		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr start"))
 		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer, pageZoom)
-		if stageDiag {
-			common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr done"))
-		}
+		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr done"))
 		annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
 			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom)
-		if stageDiag {
-			common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "dla_tsr done"))
-		}
+		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "dla_tsr done"))
 	}
 
 	if renderErr != nil {
