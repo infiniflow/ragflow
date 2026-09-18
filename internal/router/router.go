@@ -219,9 +219,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// Public bot endpoints (authenticated with an SDK beta token, not a session)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
-		apiBetaAuth.GET("/documents/:id/thumbnail", r.documentHandler.GetDocumentThumbnail)
-		apiBetaAuth.GET("/documents/:id/images/:image_id", r.documentHandler.GetDocumentImageForDocument)
-		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
@@ -306,6 +303,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/thumbnail", r.documentHandler.GetDocumentThumbnail)
+				documents.GET("/:id/images/:image_id", r.documentHandler.GetDocumentImageForDocument)
+				documents.GET("/images/:image_id", r.documentHandler.GetDocumentImage)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
