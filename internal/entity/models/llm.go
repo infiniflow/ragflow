@@ -33,23 +33,88 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
-// EinoChatModel adapts a RAGFlow *ChatModel to eino's chat model interfaces.
-// It is safe for concurrent use: all per-request state lives in the
-// receiver's fields which are only mutated through WithTools (which returns
-// a new instance, never mutating in place — see eino's
+// EinoChatModel adapts one or more RAGFlow *ChatModels to eino's chat model
+// interfaces. With more than one model it forms a FAILOVER chain: Generate /
+// Stream start at the STICKY CURSOR and, when a call ends in ANY terminal
+// error (provider quota walls, rate limits, outages, auth failures), move to
+// the next entry — only a full sweep of the chain reports failure. The cursor
+// stays on the model that last served a call, so a dead primary is not re-hit
+// on every single Generate of a long conversation.
+//
+// It is safe for concurrent use: the cursor is mutex-guarded, and the
+// per-request tool state is only mutated through WithTools (which returns a
+// new instance, never mutating in place — see eino's
 // components/model/interface.go:84-99 for the rationale).
 type EinoChatModel struct {
-	inner      *ChatModel
+	chain  []*ChatModel
+	labels []string // human-readable tag per chain entry (model @ instance), logs only
+	// sweep caches the outcome of the last FULL-CHAIN failure. A provider
+	// quota wall does not recover within one question, and an agentic turn
+	// issues tens of Generate calls — without this, one dead roster costs
+	// (calls × models) doomed round-trips per question. Inside the cooldown a
+	// new Generate returns the cached error immediately instead of sweeping
+	// the chain again.
+	sweep struct {
+		failedAt time.Time
+		err      error
+	}
+
 	chatCfg    *ChatConfig
 	tools      []*schema.ToolInfo
 	toolChoice *string
+
+	mu     sync.Mutex // guards cursor + sweep
+	cursor int        // chain index to try first on the next call
+}
+
+// failoverCooldown is how long a full-chain failure short-circuits later
+// Generate calls. Long enough to absorb an agentic turn (which would otherwise
+// re-sweep the roster on every ReAct step), short enough that a replenished
+// plan is picked up without a restart.
+const failoverCooldown = 30 * time.Second
+
+// cacheableSweepFailure reports whether a terminal chain failure may be cached
+// to short-circuit later Generate/Stream calls for failoverCooldown.
+//
+// Only provider-WIDE failures qualify. A request-level failure (invalid
+// messages, an unknown tool, a bad parameter) also fails on every chain entry,
+// but it says nothing about the next request — caching it would answer every
+// valid turn with that stale error for the whole cooldown.
+func cacheableSweepFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	// A cancelled context is the caller's doing, not the provider's health.
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	// Transport failures (timeout, DNS, refused connection) hit every request.
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	// A provider status: rate limiting and 5xx mean the provider cannot serve
+	// anything right now; any other 4xx is about THIS request.
+	var statusErr *APIStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Status == http.StatusTooManyRequests || statusErr.Status >= 500
+	}
+	return false
 }
 
 // NewEinoChatModel wraps an existing RAGFlow *ChatModel so it can be passed
@@ -59,19 +124,63 @@ type EinoChatModel struct {
 // Driver is taken from cm.ModelDriver, model name from cm.ModelName, and
 // API key / region from cm.APIConfig. These are fixed for the lifetime of
 // the wrapper; per-request variations belong in WithTools / a new instance.
+// For a model chain with automatic failover, see NewFailoverEinoChatModel.
 func NewEinoChatModel(cm *ChatModel, chatConfig *ChatConfig) *EinoChatModel {
 	return &EinoChatModel{
-		inner:   cm,
+		chain:   []*ChatModel{cm},
 		chatCfg: chatConfig,
 	}
 }
 
-// name returns the underlying model name (best-effort; nil-safe).
+// NewFailoverEinoChatModel wraps a chain of RAGFlow *ChatModels. models[0] is
+// the primary; on a terminal Generate/Stream error the next entry is tried,
+// and the chain is swept at most once per call before the last error is
+// returned. Use NewEinoChatModel for a single model.
+func NewFailoverEinoChatModel(models []*ChatModel, chatConfig *ChatConfig) (*EinoChatModel, error) {
+	return NewFailoverEinoChatModelWithLabels(models, nil, chatConfig)
+}
+
+// NewFailoverEinoChatModelWithLabels is NewFailoverEinoChatModel plus a
+// human-readable label per entry (e.g. "MiniMax-M3 @ zyf"). Chain entries are
+// frequently the same model name on different provider instances, so the
+// label is what makes failover logs attributable. A missing label falls back
+// to the model name.
+func NewFailoverEinoChatModelWithLabels(models []*ChatModel, labels []string, chatConfig *ChatConfig) (*EinoChatModel, error) {
+	chain := make([]*ChatModel, 0, len(models))
+	tags := make([]string, 0, len(models))
+	for i, cm := range models {
+		if cm == nil || cm.ModelDriver == nil {
+			continue
+		}
+		chain = append(chain, cm)
+		label := ""
+		if i < len(labels) {
+			label = labels[i]
+		}
+		if label == "" {
+			label = modelNameOf(cm)
+		}
+		tags = append(tags, label)
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("models: NewFailoverEinoChatModel: no usable chat model in chain")
+	}
+	return &EinoChatModel{
+		chain:   chain,
+		labels:  tags,
+		chatCfg: chatConfig,
+	}, nil
+}
+
+// name returns the primary model's name (best-effort; nil-safe).
 func (m *EinoChatModel) name() string {
-	if m == nil || m.inner == nil || m.inner.ModelName == nil {
+	// chain[0] itself can be nil: NewEinoChatModel takes the caller's *ChatModel
+	// as-is (unlike the failover constructor, which filters nil entries), so a
+	// nil model must not turn Name() into a nil dereference.
+	if m == nil || len(m.chain) == 0 || m.chain[0] == nil || m.chain[0].ModelName == nil {
 		return ""
 	}
-	return *m.inner.ModelName
+	return *m.chain[0].ModelName
 }
 
 // toInternalMessages converts eino's []schema.Message into the existing
@@ -182,17 +291,112 @@ func fromInternalResponse(resp *ChatResponse) *schema.Message {
 	if len(resp.ToolCalls) > 0 {
 		msg.ToolCalls = toolCallsFromInternal(resp.ToolCalls)
 	}
+	if resp.Usage != nil {
+		// The call's token split travels ON THE MESSAGE (eino's own per-response
+		// metadata), so a caller that reports a node's cost reads it from the value it
+		// was handed instead of a field shared by every call on the ChatModel - where a
+		// concurrent call could replace it between the write and the read.
+		msg.ResponseMeta = &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				PromptTokens:     resp.Usage.PromptTokens,
+				CompletionTokens: resp.Usage.CompletionTokens,
+				TotalTokens:      resp.Usage.TotalTokens,
+			},
+		}
+	}
 	return msg
 }
 
 // Generate blocks until the model returns a complete response. Mirrors
-// eino's model.BaseChatModel.Generate.
+// eino's model.BaseChatModel.Generate. With a failover chain, a terminal
+// error moves the call to the next entry (wrapping around once), and the
+// sticky cursor stays on the entry that served the call.
 func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
-	if m == nil || m.inner == nil || m.inner.ModelDriver == nil {
+	if m == nil || len(m.chain) == 0 {
+		return nil, fmt.Errorf("models: EinoChatModel: empty model chain")
+	}
+	// A full sweep that just failed stays failed for the cooldown: replaying
+	// the whole roster on every ReAct step of one question is what turns a
+	// dead plan into a wall of identical provider errors.
+	m.mu.Lock()
+	start := m.cursor
+	if waited := time.Since(m.sweep.failedAt); m.sweep.err != nil && waited < failoverCooldown {
+		err := m.sweep.err
+		m.mu.Unlock()
+		common.DebugCtx(ctx, "models: eino generate short-circuited by failover cooldown",
+			zap.Duration("waited", waited), zap.Error(err))
+		return nil, err
+	}
+	m.mu.Unlock()
+
+	var lastErr error
+	// cacheable stays true only while EVERY failed attempt was a provider-wide
+	// failure: a sweep that mixes a request-specific 400 with a transient 503 must not
+	// be remembered as "the whole roster is down", or the next request is rejected on
+	// the cooldown without trying a provider that could have served it.
+	cacheable := true
+	for i := 0; i < len(m.chain); i++ {
+		idx := (start + i) % len(m.chain)
+		cm := m.chain[idx]
+		if err := ctx.Err(); err != nil {
+			// The shared budget is spent: every remaining model would fail
+			// identically, so don't burn the chain on a dead context.
+			return nil, err
+		}
+		resp, err := m.generateOnce(ctx, cm, msgs, opts...)
+		if err == nil {
+			m.mu.Lock()
+			m.cursor = idx
+			m.sweep.failedAt = time.Time{}
+			m.sweep.err = nil
+			m.mu.Unlock()
+			return resp, nil
+		}
+		lastErr = err
+		cacheable = cacheable && cacheableSweepFailure(err)
+		next := (idx + 1) % len(m.chain)
+		common.WarnCtx(ctx, "models: eino generate failed, failing over to next model",
+			zap.String("failed_model", m.labelOf(idx)),
+			zap.String("next_model", m.labelOf(next)),
+			zap.Error(err))
+	}
+
+	// Terminal: every entry failed. Rotate the cursor so the next attempt starts
+	// on a different entry instead of always spending the primary's error budget
+	// first, and cache the outcome only when EVERY attempt was a provider-wide
+	// failure (see cacheable above), not merely the last one.
+	cached := lastErr != nil && cacheable
+	m.mu.Lock()
+	m.cursor = (start + 1) % len(m.chain)
+	if cached {
+		m.sweep.failedAt = time.Now()
+		m.sweep.err = lastErr
+	}
+	m.mu.Unlock()
+	common.WarnCtx(ctx, "models: eino generate failed on every model in the chain",
+		zap.Int("models", len(m.chain)), zap.Duration("cooldown", failoverCooldown),
+		zap.Bool("cached", cached), zap.Error(lastErr))
+	return nil, lastErr
+}
+
+// labelOf returns the human-readable chain entry tag (model @ instance).
+func (m *EinoChatModel) labelOf(idx int) string {
+	if idx < 0 || idx >= len(m.chain) {
+		return "(out of range)"
+	}
+	if idx < len(m.labels) && m.labels[idx] != "" {
+		return m.labels[idx]
+	}
+	return modelNameOf(m.chain[idx])
+}
+
+// generateOnce runs one Generate attempt against a single chain entry.
+func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	if cm == nil || cm.ModelDriver == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil inner ModelDriver")
 	}
 	internal := toInternalMessages(msgs)
-	if m.inner.ModelName == nil {
+	if cm.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
 	// ChatWithMessages does not take a context.Context today — Phase 0 kept
@@ -201,52 +405,119 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// Reset stale per-call usage before the call so that a response
-	// without a usage block doesn't leak the previous call's data.
-	// Mirrors Python's LLMBundle._reset_last_usage().
-	m.inner.LastUsage = nil
 	chatCfg, err := m.chatConfigForGenerate()
 	if err != nil {
 		return nil, err
 	}
-	if containsToolResult(internal) {
+	// eino's ChatModelAgent binds tools via the per-call model.WithTools option
+	// (not by calling WithTools). Merge those into the config so the model
+	// actually emits tool_calls; otherwise the ReAct loop would have no tools.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	// Once a tool result is in context the model must be free to answer in
+	// prose. Code-exec agents pin tool_choice to "required"/execute_code, and
+	// keeping that pin on the follow-up turn would loop forever instead of
+	// returning the answer.
+	if chatCfg != nil && containsToolResult(internal) {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
 	}
-	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
+	common.Debug("models: eino generate request",
+		zap.String("model", *cm.ModelName),
+		zap.Int("messages", len(internal)),
+		zap.Int("tools", toolCount(chatCfg)),
+	)
+	common.Debug("models: eino generate message skeleton",
+		zap.String("skeleton", describeInternalMessages(internal)))
+	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
 	if err != nil {
-		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
+		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *cm.ModelName, err)
 	}
 	// Record the per-call token usage so the canvas-level aggregator (and
 	// Langfuse) can compute the run total. Mirrors Python's
 	// LLMBundle._report_usage() / self.mdl.last_usage pattern.
 	if resp != nil && resp.Usage != nil {
-		m.inner.LastUsage = &TokenUsage{
+		// The run sink gets this call's own split. The canvas component gets the same
+		// numbers from the message it is handed (ResponseMeta.Usage, set in
+		// fromInternalResponse): nothing about one call's usage lives on the shared
+		// ChatModel, where a concurrent call could replace it between write and read.
+		recordUsage(ctx, *cm.ModelName, &TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
-		}
-		recordUsageFromResponse(ctx, m.inner)
+		})
 	}
+	// Guard the debug log against a nil resp: some drivers may return (nil, nil)
+	// on an aborted/empty completion, and len(resp.ToolCalls) would panic.
+	toolCalls := 0
+	if resp != nil {
+		toolCalls = len(resp.ToolCalls)
+	}
+	// METADATA only: the answer body is user-visible (and often retrieved private)
+	// content, so a debug line must not copy it into the log file (CWE-532).
+	// Length + shape still separate an empty completion from a truncated one.
+	common.Debug("models: eino generate response",
+		zap.String("model", *cm.ModelName),
+		zap.Int("answer_bytes", len(answerHead(resp))),
+		zap.Int("tool_calls", toolCalls),
+		zap.Int("completion_tokens", usageCompletion(resp)),
+	)
 	return fromInternalResponse(resp), nil
 }
 
-func containsToolResult(messages []Message) bool {
-	for _, message := range messages {
-		if message.Role == "tool" {
-			return true
-		}
+// modelNameOf returns the model's display name (best-effort; nil-safe).
+func modelNameOf(cm *ChatModel) string {
+	if cm == nil || cm.ModelName == nil {
+		return "(nil)"
 	}
-	return false
+	return *cm.ModelName
+}
+
+// answerHead returns a short preview of the response answer for log lines.
+func answerHead(resp *ChatResponse) string {
+	if resp == nil || resp.Answer == nil {
+		return ""
+	}
+	return *resp.Answer
+}
+
+func usageCompletion(resp *ChatResponse) int {
+	if resp == nil || resp.Usage == nil {
+		return 0
+	}
+	return resp.Usage.CompletionTokens
+}
+
+// toolCount returns the number of tools on a config, tolerating the
+// interface{} storage type.
+func toolCount(cfg *ChatConfig) int {
+	if cfg == nil {
+		return 0
+	}
+	switch t := cfg.Tools.(type) {
+	case []map[string]any:
+		return len(t)
+	case nil:
+		return 0
+	default:
+		return 0
+	}
 }
 
 func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
-	if len(m.tools) == 0 {
-		return m.chatCfg, nil
-	}
+	// Always hand back a COPY. Both callers (generateOnce, Stream) release the
+	// tool_choice on the config when the turn carries a tool result, and m.chatCfg
+	// is the shared base every WithTools/WithToolChoice instance carries: writing
+	// through it would persist one turn's "auto" into later turns (losing a
+	// required choice) and race concurrent calls on the same fields.
 	cfg := &ChatConfig{}
 	if m.chatCfg != nil {
 		cp := *m.chatCfg
 		cfg = &cp
+	}
+	if len(m.tools) == 0 {
+		return cfg, nil
 	}
 	tools, err := openAIToolsFromEino(m.tools)
 	if err != nil {
@@ -303,6 +574,30 @@ func toolChoiceBody(choice string) map[string]any {
 	}
 }
 
+// chatConfigWithOptsTools overlays tools supplied via the per-call
+// model.WithTools option onto base. eino's ChatModelAgent binds tools this way,
+// so Generate/Stream must honor opts or the model will never emit tool_calls.
+// When opts carries no tools, base is returned unchanged.
+func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.Option) (*ChatConfig, error) {
+	co := model.GetCommonOptions(nil, opts...)
+	if co == nil || len(co.Tools) == 0 {
+		return base, nil
+	}
+	tools, err := openAIToolsFromEino(co.Tools)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &ChatConfig{}
+	if base != nil {
+		cp := *base
+		cfg = &cp
+	}
+	cfg.Tools = tools
+	choice := "auto"
+	cfg.ToolChoice = &choice
+	return cfg, nil
+}
+
 func openAIToolsFromEino(infos []*schema.ToolInfo) ([]map[string]any, error) {
 	tools := make([]map[string]any, 0, len(infos))
 	for _, info := range infos {
@@ -328,6 +623,37 @@ func openAIToolsFromEino(infos []*schema.ToolInfo) ([]map[string]any, error) {
 		})
 	}
 	return tools, nil
+}
+
+// describeInternalMessages renders the message sequence's tool-call skeleton —
+// "sys|user|asst[tc=ID1,ID2]|tool(ID1)|tool(ID2)|asst|user" — the exact shape a
+// provider's tool-id validator sees, so a rejection like MiniMax's
+// `tool result's tool id(X) not found` can be matched against the replayed
+// sequence directly from the log instead of being reproduced blind.
+func describeInternalMessages(msgs []Message) string {
+	var b strings.Builder
+	for i, m := range msgs {
+		if i > 0 {
+			b.WriteByte('|')
+		}
+		switch m.Role {
+		case "assistant":
+			b.WriteString("asst")
+			if len(m.ToolCalls) > 0 {
+				ids := make([]string, 0, len(m.ToolCalls))
+				for _, tc := range m.ToolCalls {
+					id, _ := tc["id"].(string)
+					ids = append(ids, id)
+				}
+				b.WriteString(fmt.Sprintf("[tc=%s]", strings.Join(ids, ",")))
+			}
+		case "tool":
+			b.WriteString("tool(" + m.ToolCallID + ")")
+		default:
+			b.WriteString(m.Role)
+		}
+	}
+	return b.String()
 }
 
 func toolCallsToInternal(calls []schema.ToolCall) []map[string]interface{} {
@@ -372,9 +698,17 @@ func toolCallsFromInternal(calls []map[string]interface{}) []schema.ToolCall {
 				}
 			}
 		}
+		// Index MUST be set: stream consumers merge tool-call chunks by Index
+		// (nil reads as 0), and this message reaches them as one complete
+		// chunk carrying EVERY parallel call. With nil indexes the whole batch
+		// collapses into a single call — the last ID wins, the others' results
+		// are orphaned, and a provider replay (gate repair turn) rejects the
+		// sequence with `tool result's tool id(X) not found`.
+		idx := i
 		out = append(out, schema.ToolCall{
-			ID:   id,
-			Type: callType,
+			ID:    id,
+			Type:  callType,
+			Index: &idx,
 			Function: schema.FunctionCall{
 				Name:      fnName,
 				Arguments: fnArgs,
@@ -384,18 +718,30 @@ func toolCallsFromInternal(calls []map[string]interface{}) []schema.ToolCall {
 	return out
 }
 
+// containsToolResult reports whether any message already carries a tool
+// result. ReAct turns that contain results must keep tool_choice free: the
+// model is expected to answer, not to fire another tool.
+func containsToolResult(messages []Message) bool {
+	for _, message := range messages {
+		if message.Role == "tool" {
+			return true
+		}
+	}
+	return false
+}
+
 // Stream returns a schema.StreamReader that yields message chunks
 // incrementally. Uses the existing ChatStreamlyWithSender pathway; the
 // sender callback pushes the streamed delta into the StreamReader.
+// With a failover chain, a stream that fails BEFORE any delta was emitted
+// moves to the next model; once deltas have reached the client the call
+// cannot be replayed, so the error is surfaced as-is.
 func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	if m == nil || m.inner == nil || m.inner.ModelDriver == nil {
-		return nil, fmt.Errorf("models: EinoChatModel: nil inner ModelDriver")
+	if m == nil || len(m.chain) == 0 {
+		return nil, fmt.Errorf("models: EinoChatModel: empty model chain")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	if m.inner.ModelName == nil {
-		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
 	internalMessage := toInternalMessages(msgs)
 	// Some OpenAI-compatible providers (including the configured MiniMax
@@ -419,14 +765,30 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
-	if containsToolResult(internalMessage) {
+	// Same tool-binding fix as Generate: honor the per-call model.WithTools
+	// option so the ReAct loop's model requests actually carry tool definitions.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	// Same tool_choice release as generateOnce: a turn carrying tool results
+	// must be able to produce the final text instead of being forced to call
+	// a tool again.
+	if chatCfg != nil && containsToolResult(internalMessage) {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
 	}
+	common.Debug("models: eino stream request",
+		zap.String("model", modelNameOf(m.chain[0])),
+		zap.Int("messages", len(internalMessage)),
+		zap.Int("tools", toolCount(chatCfg)),
+		zap.Int("chain", len(m.chain)),
+	)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
+	var sentAny bool
 	sender := func(content *string, reasoning *string) error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
@@ -449,21 +811,120 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}
+		sentAny = true
 		return nil
 	}
 	go func() {
 		defer sw.Close()
-		if err := m.inner.ModelDriver.ChatStreamlyWithSender(ctx, *m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
+		m.mu.Lock()
+		start := m.cursor
+		if waited := time.Since(m.sweep.failedAt); m.sweep.err != nil && waited < failoverCooldown {
+			err := m.sweep.err
+			m.mu.Unlock()
 			_ = sw.Send(nil, err)
 			return
 		}
-		if chatCfg != nil && chatCfg.ToolCallsResult != nil && len(*chatCfg.ToolCallsResult) > 0 {
-			msg := &schema.Message{
-				Role:      schema.Assistant,
-				ToolCalls: toolCallsFromInternal(*chatCfg.ToolCallsResult),
+		m.mu.Unlock()
+		var lastErr error
+		// Same rule as Generate: cache the sweep only when every failed attempt was
+		// provider-wide, never on the strength of the last error alone.
+		cacheable := true
+		for i := 0; i < len(m.chain); i++ {
+			idx := (start + i) % len(m.chain)
+			cm := m.chain[idx]
+			if cm == nil || cm.ModelDriver == nil {
+				// generateOnce reports this entry as a failed attempt ("nil inner
+				// ModelDriver"); mirror that here, and run it through the same
+				// cacheable rule. Skipping it silently left lastErr nil, so a
+				// chain of unusable entries reported success with no message.
+				lastErr = fmt.Errorf("models: EinoChatModel: nil inner ModelDriver on chain entry %d", idx)
+				cacheable = cacheable && cacheableSweepFailure(lastErr)
+				continue
 			}
-			_ = sw.Send(msg, nil)
+			if cm.ModelName == nil {
+				// generateOnce reports this entry as a failed attempt; the
+				// streaming path used to dereference it, and a panic raised here
+				// runs inside a goroutine, which kills the process. It is a chain
+				// misconfiguration, not provider health, so it must not be cached
+				// as a sweep-wide failure either.
+				lastErr = fmt.Errorf("models: EinoChatModel: nil model name on chain entry %d", idx)
+				cacheable = cacheable && cacheableSweepFailure(lastErr)
+				continue
+			}
+			if err := ctx.Err(); err != nil {
+				_ = sw.Send(nil, err)
+				return
+			}
+			sendMu.Lock()
+			sentBefore := sentAny
+			sendMu.Unlock()
+			// Attempt-local config: the driver writes ToolCallsResult/UsageResult
+			// INTO the config it is handed, so reusing one instance would let a
+			// failed attempt's leftovers be attributed to the model that actually
+			// served the turn.
+			attemptCfg := &ChatConfig{}
+			if chatCfg != nil {
+				cp := *chatCfg
+				attemptCfg = &cp
+			}
+			attemptCfg.ToolCallsResult = nil
+			attemptCfg.UsageResult = nil
+			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
+			if err == nil {
+				// Streamed turns report their token usage through the config
+				// (stream_options.include_usage), not through the nil modelUsage
+				// argument, so the run-level accumulator has to be fed from here —
+				// otherwise every streamed turn's tokens are missing from the total.
+				if attemptCfg.UsageResult != nil && attemptCfg.UsageResult.TotalTokens > 0 {
+					recordUsage(ctx, *cm.ModelName, attemptCfg.UsageResult)
+				}
+				if attemptCfg.ToolCallsResult != nil && len(*attemptCfg.ToolCallsResult) > 0 {
+					common.Debug("models: eino stream tool calls",
+						zap.String("model", *cm.ModelName),
+						zap.Int("tool_calls", len(*attemptCfg.ToolCallsResult)))
+					msg := &schema.Message{
+						Role:      schema.Assistant,
+						ToolCalls: toolCallsFromInternal(*attemptCfg.ToolCallsResult),
+					}
+					_ = sw.Send(msg, nil)
+				}
+				m.mu.Lock()
+				m.cursor = idx
+				m.sweep.failedAt = time.Time{}
+				m.sweep.err = nil
+				m.mu.Unlock()
+				return
+			}
+			lastErr = err
+			cacheable = cacheable && cacheableSweepFailure(err)
+			sendMu.Lock()
+			sentAfter := sentAny
+			sendMu.Unlock()
+			if sentAfter != sentBefore || sentAfter {
+				// Deltas already reached the client: the stream cannot be
+				// replayed on another model, so fail as-is.
+				_ = sw.Send(nil, err)
+				return
+			}
+			next := (idx + 1) % len(m.chain)
+			common.WarnCtx(ctx, "models: eino stream failed before first delta, failing over to next model",
+				zap.String("failed_model", m.labelOf(idx)),
+				zap.String("next_model", m.labelOf(next)),
+				zap.Error(err))
 		}
+		// Terminal: sweep exhausted. Rotate, and cache only when EVERY attempt was a
+		// provider-wide failure - mirroring Generate.
+		cached := lastErr != nil && cacheable
+		m.mu.Lock()
+		m.cursor = (start + 1) % len(m.chain)
+		if cached {
+			m.sweep.failedAt = time.Now()
+			m.sweep.err = lastErr
+		}
+		m.mu.Unlock()
+		common.Debug("models: eino stream response error",
+			zap.String("model", modelNameOf(m.chain[0])), zap.Bool("cached", cached), zap.Error(lastErr))
+		_ = sw.Send(nil, lastErr)
 	}()
 	return sr, nil
 }
@@ -482,7 +943,18 @@ func (m *EinoChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCh
 	if m == nil {
 		return nil, fmt.Errorf("models: EinoChatModel.WithTools: nil receiver")
 	}
-	cp := *m
+	m.mu.Lock()
+	cursor := m.cursor
+	m.mu.Unlock()
+	// Field-by-field copy: EinoChatModel contains a sync.Mutex, which must
+	// never be copied (go vet copylocks).
+	cp := EinoChatModel{
+		chain:      m.chain,
+		labels:     m.labels,
+		chatCfg:    m.chatCfg,
+		toolChoice: m.toolChoice,
+		cursor:     cursor,
+	}
 	cp.tools = append([]*schema.ToolInfo(nil), tools...)
 	return &cp, nil
 }
@@ -493,7 +965,19 @@ func (m *EinoChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCh
 // operates on the RAGFlow wrapper so the choice reaches the driver's request
 // body via chatConfigForGenerate.
 func (m *EinoChatModel) WithToolChoice(choice string) *EinoChatModel {
-	cp := *m
+	m.mu.Lock()
+	cursor := m.cursor
+	m.mu.Unlock()
+	// Field-by-field copy for the same reason as WithTools: cp := *m would copy
+	// the sync.Mutex (go vet copylocks) and could hand back a model whose mutex
+	// is permanently locked, deadlocking its next Generate/Stream/WithTools.
+	cp := EinoChatModel{
+		chain:   m.chain,
+		labels:  m.labels,
+		chatCfg: m.chatCfg,
+		tools:   append([]*schema.ToolInfo(nil), m.tools...),
+		cursor:  cursor,
+	}
 	if choice == "" {
 		cp.toolChoice = nil
 		return &cp
@@ -511,14 +995,14 @@ func (m *EinoChatModel) Tools() []*schema.ToolInfo {
 	return append([]*schema.ToolInfo(nil), m.tools...)
 }
 
-// Inner exposes the wrapped *ChatModel for callers that need direct
+// Inner exposes the primary wrapped *ChatModel for callers that need direct
 // access (e.g. to read token usage from the response after a custom
 // Generate call). Not part of any eino interface.
 func (m *EinoChatModel) Inner() *ChatModel {
-	if m == nil {
+	if m == nil || len(m.chain) == 0 {
 		return nil
 	}
-	return m.inner
+	return m.chain[0]
 }
 
 // Name returns the wrapped model name (used by tools / debugging).

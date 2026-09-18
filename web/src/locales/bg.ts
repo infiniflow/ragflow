@@ -884,7 +884,7 @@ The above is the content you need to summarize.`,
       tavilyApiKeyTip:
         'Ако API ключът е зададен правилно тук, ще бъдат използвани уеб търсения базирани на Tavily за допълване на извличането от базата от знания.',
       tavilyApiKeyMessage: 'Моля, въведете вашия Tavily API ключ',
-      tavilyApiKeyHelp: 'Как да го получите?',
+      webSearchApiKeyHelp: 'Как да го получите?',
       crossLanguage: 'Крос-езиково търсене',
       crossLanguageTip: `Изберете един или повече езици за крос-езиково търсене. Ако не е избран език, системата търси с оригиналната заявка.`,
       createChat: 'Създай чат',

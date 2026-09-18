@@ -484,6 +484,40 @@ jobs:
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
+          # Provide the tokenizer assets the four non-cl100k counters load
+          # (ragflow_deps/huggingface.co/<repo>/<file>). Their only no-network source
+          # is the infiniflow/ragflow_deps image — the runtime images read them from
+          # exactly the same path — so this is the same "if the image is already
+          # cached" fallback the table above uses (again, no `docker pull`). Without
+          # them counter_properties_test / asset_dir_test silently drop their
+          # non-cl100k coverage, which is how a counter regression goes unnoticed.
+          TOKENIZER_ASSET_PATHS=(
+            BAAI/bge-m3/sentencepiece.bpe.model
+            BAAI/bge-large-en-v1.5/vocab.txt
+            Qwen/Qwen3-Embedding-0.6B/tokenizer.json
+            intfloat/e5-mistral-7b-instruct/tokenizer.json
+          )
+          if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+            if [ -n "${CID:-}" ]; then
+              for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
+                target="ragflow_deps/huggingface.co/$asset"
+                if [ -f "$target" ]; then
+                  continue
+                fi
+                mkdir -p "$(dirname "$target")"
+                if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
+                else
+                  echo "tokenizer: $asset absent from the cached image — its counter will skip"
+                fi
+              done
+              docker rm -f "$CID" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
@@ -493,17 +527,20 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
-      - name: Run ORT deps-download regression guard
+      - name: Run ragflow_deps regression guards
         if: env.API_PROXY_SCHEME == 'go'
-        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # Pure-Python, local, needs no API keys or model downloads; guards (a) the
         # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
-        # depends on (notably the version-bump path C2 hardened). Run it in
-        # isolation so the test/testcases conftest (which requires
+        # depends on (notably the version-bump path C2 hardened) and (b) the
+        # tokenizer-asset chain: the downloader's asset list, the three runtime
+        # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
+        # Go counters silently degrade to the calibrated cl100k estimate. Run them
+        # in isolation so the test/testcases conftest (which requires
         # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_go_deps.py -q --durations=100
+          uv run pytest ragflow_deps/test_download_go_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
@@ -1181,6 +1218,40 @@ jobs:
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
+          # Provide the tokenizer assets the four non-cl100k counters load
+          # (ragflow_deps/huggingface.co/<repo>/<file>). Their only no-network source
+          # is the infiniflow/ragflow_deps image — the runtime images read them from
+          # exactly the same path — so this is the same "if the image is already
+          # cached" fallback the table above uses (again, no `docker pull`). Without
+          # them counter_properties_test / asset_dir_test silently drop their
+          # non-cl100k coverage, which is how a counter regression goes unnoticed.
+          TOKENIZER_ASSET_PATHS=(
+            BAAI/bge-m3/sentencepiece.bpe.model
+            BAAI/bge-large-en-v1.5/vocab.txt
+            Qwen/Qwen3-Embedding-0.6B/tokenizer.json
+            intfloat/e5-mistral-7b-instruct/tokenizer.json
+          )
+          if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+            if [ -n "${CID:-}" ]; then
+              for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
+                target="ragflow_deps/huggingface.co/$asset"
+                if [ -f "$target" ]; then
+                  continue
+                fi
+                mkdir -p "$(dirname "$target")"
+                if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
+                else
+                  echo "tokenizer: $asset absent from the cached image — its counter will skip"
+                fi
+              done
+              docker rm -f "$CID" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
@@ -1190,17 +1261,20 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
-      - name: Run ORT deps-download regression guard
+      - name: Run ragflow_deps regression guards
         if: env.API_PROXY_SCHEME == 'go'
-        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # Pure-Python, local, needs no API keys or model downloads; guards (a) the
         # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
-        # depends on (notably the version-bump path C2 hardened). Run it in
-        # isolation so the test/testcases conftest (which requires
+        # depends on (notably the version-bump path C2 hardened) and (b) the
+        # tokenizer-asset chain: the downloader's asset list, the three runtime
+        # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
+        # Go counters silently degrade to the calibrated cl100k estimate. Run them
+        # in isolation so the test/testcases conftest (which requires
         # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_go_deps.py -q --durations=100
+          uv run pytest ragflow_deps/test_download_go_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
