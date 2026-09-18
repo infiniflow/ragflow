@@ -3,6 +3,8 @@ package nlp
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	"ragflow/internal/common"
@@ -66,12 +68,60 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 			t.Fatalf("must_not filter = %#v", filters["must_not"])
 		}
 	}
+	if engine.highlightCalls != 0 {
+		t.Fatalf("GetHighlight calls = %d with highlighting disabled, want 0", engine.highlightCalls)
+	}
+}
+
+func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	rows := []map[string]interface{}{
+		{"id": "highlighted", "content_ltks": "alpha", "content_with_weight": "alpha élève", "_score": 0.9},
+		{"id": "unmatched", "content_ltks": "alpha", "content_with_weight": "plain content", "_score": 0.8},
+	}
+	docEngine := &retrievalCountEngine{
+		rows:       rows,
+		highlights: map[string]string{"highlighted": "<em>alpha</em> élève"},
+	}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 1.0
+	highlight := true
+
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               2,
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Highlight:              &highlight,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if docEngine.highlightCalls != 1 {
+		t.Fatalf("GetHighlight calls = %d, want 1", docEngine.highlightCalls)
+	}
+	if got := result.Chunks[0]["highlight"]; got != "<em>alpha</em> élève" {
+		t.Fatalf("highlight = %q, want spacing preserved", got)
+	}
+	if _, ok := result.Chunks[1]["highlight"]; ok {
+		t.Fatalf("unmatched chunk received fallback highlight: %#v", result.Chunks[1])
+	}
 }
 
 type retrievalCountEngine struct {
-	rows          []map[string]interface{}
-	searchLimits  []int
-	searchFilters []map[string]interface{}
+	rows           []map[string]interface{}
+	searchLimits   []int
+	searchFilters  []map[string]interface{}
+	highlights     map[string]string
+	highlightCalls int
 }
 
 func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -182,7 +232,8 @@ func (e *retrievalCountEngine) GetAggregation([]map[string]interface{}, string) 
 	return nil
 }
 func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
-	return nil
+	e.highlightCalls++
+	return e.highlights
 }
 func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
 	return nil, nil
@@ -252,11 +303,160 @@ func (e *captureSearchDocEngine) GetAggregation(_ []map[string]interface{}, _ st
 func (e *captureSearchDocEngine) GetHighlight(_ []map[string]interface{}, _ []string, _ string) map[string]string {
 	return nil
 }
+func (e *captureSearchDocEngine) KNNScores(context.Context, []map[string]interface{}, []float64, int) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+func (e *captureSearchDocEngine) GetScores(map[string]interface{}) map[string]float64 {
+	return map[string]float64{}
+}
 
 type captureEmbeddingDriver struct{ modelModule.ModelDriver }
 
 func (d *captureEmbeddingDriver) Embed(_ context.Context, _ *string, _ modelModule.EmbedRequest, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return []modelModule.EmbeddingData{{Embedding: []float64{0.1, 0.2}}}, nil
+}
+
+type retryCaptureEngine struct {
+	engine.DocEngine
+	engineType string
+	totals     []int64
+	requests   []*types.SearchRequest
+	mutate     bool
+}
+
+func (e *retryCaptureEngine) GetType() string { return e.engineType }
+func (e *retryCaptureEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	requestCopy := *req
+	requestCopy.Filter = maps.Clone(req.Filter)
+	requestCopy.MatchExprs = slices.Clone(req.MatchExprs)
+	for i, expression := range requestCopy.MatchExprs {
+		if dense, ok := expression.(*types.MatchDenseExpr); ok {
+			requestCopy.MatchExprs[i] = cloneDenseExpr(dense)
+		}
+	}
+	e.requests = append(e.requests, &requestCopy)
+	if e.mutate {
+		for _, expression := range req.MatchExprs {
+			if dense, ok := expression.(*types.MatchDenseExpr); ok {
+				delete(dense.ExtraOptions, "num_candidates")
+				dense.ExtraOptions["filter"] = "connector-added"
+			}
+		}
+	}
+	total := e.totals[0]
+	e.totals = e.totals[1:]
+	return &types.SearchResult{Total: total}, nil
+}
+func (e *retryCaptureEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }
+func (e *retryCaptureEngine) GetFields([]map[string]interface{}, []string) map[string]map[string]interface{} {
+	return nil
+}
+func (e *retryCaptureEngine) GetAggregation([]map[string]interface{}, string) []map[string]interface{} {
+	return nil
+}
+func (e *retryCaptureEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
+	return nil
+}
+
+func TestSearchDenseFallbackContract(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	for _, engineType := range []string{string(engine.EngineElasticsearch), string(engine.EngineInfinity)} {
+		for _, test := range []struct {
+			name      string
+			totals    []int64
+			wantCalls int
+			wantExprs int
+		}{
+			{name: "one weak lexical hit", totals: []int64{1}, wantCalls: 1, wantExprs: 3},
+			{name: "relaxed hit", totals: []int64{0, 1}, wantCalls: 2, wantExprs: 3},
+			{name: "dense recovery", totals: []int64{0, 0, 1}, wantCalls: 3, wantExprs: 1},
+			{name: "dense recovery empty", totals: []int64{0, 0, 0}, wantCalls: 3, wantExprs: 1},
+		} {
+			t.Run(engineType+"/"+test.name, func(t *testing.T) {
+				docEngine := &retryCaptureEngine{engineType: engineType, totals: slices.Clone(test.totals), mutate: true}
+				service := NewRetrievalService(docEngine, nil)
+				_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+					Question: "ปัญหาแจ้งระบบภาษี", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+					KNNTopK: 7, KNNNumCandidates: 19, Filter: map[string]interface{}{"category_kwd": "allowed"},
+					EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(docEngine.requests) != test.wantCalls {
+					t.Fatalf("search calls = %d, want %d", len(docEngine.requests), test.wantCalls)
+				}
+				last := docEngine.requests[len(docEngine.requests)-1]
+				if len(last.MatchExprs) != test.wantExprs {
+					t.Fatalf("final expressions = %d, want %d", len(last.MatchExprs), test.wantExprs)
+				}
+				if test.wantCalls == 3 {
+					dense := last.MatchExprs[0].(*types.MatchDenseExpr)
+					if dense.TopN != 7 || dense.ExtraOptions["num_candidates"] != 19 || dense.ExtraOptions["similarity"] != 0.17 {
+						t.Fatalf("dense fallback changed options: %#v", dense)
+					}
+					if _, contaminated := dense.ExtraOptions["filter"]; contaminated {
+						t.Fatalf("dense fallback inherited connector mutation: %#v", dense.ExtraOptions)
+					}
+					if fmt.Sprint(last.Filter["kb_id"]) != "[kb-1]" || last.Filter["available_int"] != 1 || last.Filter["category_kwd"] != "allowed" {
+						t.Fatalf("dense fallback lost scope filters: %#v", last.Filter)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestSearchWithoutLexicalExpressionRetries(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0, 1}, mutate: true}
+	service := NewRetrievalService(docEngine, nil)
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "!!!", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"},
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 2 || len(docEngine.requests[1].MatchExprs) != 1 {
+		t.Fatalf("dense-only request did not retry: %#v", docEngine.requests)
+	}
+	dense := docEngine.requests[1].MatchExprs[0].(*types.MatchDenseExpr)
+	if dense.ExtraOptions["similarity"] != 0.17 || dense.ExtraOptions["num_candidates"] != 2048 || dense.ExtraOptions["filter"] != nil {
+		t.Fatalf("fallback options = %#v", dense.ExtraOptions)
+	}
+}
+
+func TestRetrievalDisablesDenseFallback(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	for _, query := range []string{"!!!", "weak lexical query"} {
+		t.Run(query, func(t *testing.T) {
+			wantCalls := 2
+			if query == "!!!" {
+				wantCalls = 1
+			}
+			docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0, 0, 0}}
+			service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+			_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+				Question: query, TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"},
+				EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, AllowDenseFallback: new(false),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(docEngine.requests) != wantCalls {
+				t.Fatalf("calls = %d, want %d", len(docEngine.requests), wantCalls)
+			}
+		})
+	}
 }
 
 func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
@@ -284,7 +484,7 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 	top := 10
 	docEngine := &captureSearchDocEngine{
 		engineType: string(engine.EngineInfinity),
-		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 0},
+		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 1},
 	}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
@@ -311,15 +511,23 @@ func assertFusionWeights(t *testing.T, request *types.SearchRequest, want string
 	}
 }
 
-func TestBuildRetrievalFusionExprKeepsLegacyWeightsOutsideInfinity(t *testing.T) {
+func TestBuildRetrievalFusionExprKeepsPythonWeightsOutsideInfinity(t *testing.T) {
 	expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, float64Ptr(0.8))
 
-	if got := expr.FusionParams["weights"]; got != "0.05,0.95" {
-		t.Fatalf("expected Elasticsearch weights=0.05,0.95, got %v", got)
+	// Elasticsearch must honour the caller weight exactly like Infinity does:
+	// it used to be hardcoded to "0.05,0.95", which silently discarded it.
+	if got := expr.FusionParams["weights"]; got != "0.2,0.8" {
+		t.Fatalf("expected Elasticsearch weights=0.2,0.8, got %v", got)
+	}
+
+	// nil weight falls back to the documented default (0.3 vector).
+	expr = buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, nil)
+	if got := expr.FusionParams["weights"]; got != "0.7,0.3" {
+		t.Fatalf("expected default Elasticsearch weights=0.7,0.3, got %v", got)
 	}
 }
 
-func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
+func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
 	if GetQueryBuilder() == nil {
 		globalQueryBuilder = NewQueryBuilder()
 	}
@@ -350,7 +558,9 @@ func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
 	}
-	if got := fusionExpr.FusionParams["weights"]; got != "0.05,0.95" {
-		t.Fatalf("expected Elasticsearch weights=0.05,0.95, got %v", got)
+	// Elasticsearch must honour the caller weight (0.8 vector -> "0.2,0.8")
+	// instead of the legacy hardcoded "0.05,0.95".
+	if got := fusionExpr.FusionParams["weights"]; got != "0.2,0.8" {
+		t.Fatalf("expected Elasticsearch weights=0.2,0.8, got %v", got)
 	}
 }

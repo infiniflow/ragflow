@@ -130,3 +130,22 @@ type WikiPageCommit struct {
 	CreateDate   *time.Time `json:"create_date,omitempty"`
 	UserNickname string     `json:"user_nickname"`
 }
+
+// WikiPageCommitDetail is the artifact-page commit detail returned by the
+// dataset commit endpoint. It mirrors Python's flat response shape consumed
+// by the wiki version-history UI.
+type WikiPageCommitDetail struct {
+	ID           string     `json:"id"`
+	TenantID     string     `json:"tenant_id"`
+	KBID         string     `json:"kb_id"`
+	PageType     string     `json:"page_type_kwd"`
+	Slug         string     `json:"slug"`
+	UserID       *string    `json:"user_id"`
+	UserNickname string     `json:"user_nickname"`
+	Title        string     `json:"title"`
+	Comments     string     `json:"comments"`
+	Diff         string     `json:"diff"`
+	ContentAfter string     `json:"content_after"`
+	CreateTime   *int64     `json:"create_time,omitempty"`
+	CreateDate   *time.Time `json:"create_date,omitempty"`
+}

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
@@ -627,6 +628,13 @@ func NumTokensFromString(s string) int {
 // Like Python's trim_content, an unavailable encoder PANICS: the previous
 // byte-length fallback silently produced a differently-truncated string instead
 // of surfacing the missing table. See NumTokensFromString.
+// The decoded prefix is snapped back to a rune boundary before it is returned.
+// Cutting the token list is not enough on its own: a single emoji is four UTF-8
+// bytes and may span tokens, so a token-boundary cut can end mid-character and
+// hand the caller - and the index - invalid UTF-8. (TestCountersSatisfyTrimProperties
+// caught exactly that on the emoji corpus at limit=1.) Dropping the partial rune
+// can only shrink the text, but the token count is re-checked anyway so the
+// "at most limit tokens" contract holds unconditionally.
 func TrimContentToTokenLimit(s string, limit int) string {
 	if limit < 0 {
 		limit = 0
@@ -642,5 +650,60 @@ func TrimContentToTokenLimit(s string, limit int) string {
 	if len(tokens) <= limit {
 		return s
 	}
-	return enc.Decode(tokens[:limit])
+	trimmed := clampToValidUTF8(enc.Decode(tokens[:limit]))
+	for i := 0; i < utf8.UTFMax && len(trimmed) > 0 && len(enc.Encode(trimmed, nil, nil)) > limit; i++ {
+		trimmed = dropLastRune(trimmed)
+	}
+	return trimmed
+}
+
+// clampToValidUTF8 returns the longest prefix of s that is valid UTF-8. Only the
+// tail can be broken after a token-boundary cut, so this is at most three bytes
+// of backtracking rather than a scan for an interior invalid byte.
+func clampToValidUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	for cut := 1; cut <= utf8.UTFMax && cut <= len(s); cut++ {
+		if prefix := s[:len(s)-cut]; utf8.ValidString(prefix) {
+			return prefix
+		}
+	}
+	return ""
+}
+
+// dropLastRune removes the final rune of s, tolerating a trailing partial rune.
+func dropLastRune(s string) string {
+	_, size := utf8.DecodeLastRuneInString(s)
+	if size <= 0 {
+		return ""
+	}
+	return s[:len(s)-size]
+}
+
+// EncodeCL100KTokens returns the cl100k_base token ids of s, from the same
+// cached encoder NumTokensFromString and TrimContentToTokenLimit use. ok is
+// false when the encoder is unavailable — the same degraded world where those
+// two degrade — so callers can run their own fallback instead of mistaking an
+// empty result for "zero tokens".
+func EncodeCL100KTokens(s string) (tokens []int, ok bool) {
+	enc, err := getCL100KEncoder()
+	if err != nil || enc == nil {
+		return nil, false
+	}
+	return enc.Encode(s, nil, nil), true
+}
+
+// DecodeCL100KTokens concatenates the raw byte sequences of tokens. Decoding
+// is a plain vocabulary-table concat (no re-segmentation), so
+// Decode(Encode(s)) == s and Decode(tokens[a:b]) is exactly the corresponding
+// byte slice of s — including a slice whose ends cut a multibyte rune, which
+// comes back as raw continuation bytes rather than U+FFFD. Returns "" when
+// the encoder is unavailable (callers gate on EncodeCL100KTokens first).
+func DecodeCL100KTokens(tokens []int) string {
+	enc, err := getCL100KEncoder()
+	if err != nil || enc == nil {
+		return ""
+	}
+	return enc.Decode(tokens)
 }

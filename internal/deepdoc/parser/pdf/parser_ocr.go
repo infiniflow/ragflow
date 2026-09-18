@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string) []pdf.TextBox {
+func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string, zoom float64) []pdf.TextBox {
 	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
@@ -21,12 +21,14 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		return nil
 	}
 
-	// detectBoxes returns image-pixel coords; ocrMergeChars divides by
-	// pdf.DlaScale before emitting boxes so downstream layout receives
-	// PDF-point coordinates. ocrDetectAndRecognize must match the same
-	// conversion so both OCR paths produce the same coordinate space.
-	imgW := float64(pageImg.Bounds().Dx()) / pdf.DlaScale
-	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
+	// detectBoxes returns image-pixel coords; both OCR paths divide by the zoom
+	// the page was rendered at before emitting boxes so downstream layout
+	// receives PDF-point coordinates — the same units as ParseResult.PageHeight.
+	// That zoom is DlaScale for the default render and the retry zoom after a
+	// per-page re-render, so it cannot be a constant.
+	scale := ocrCoordinateScale(zoom)
+	imgW := float64(pageImg.Bounds().Dx()) / scale
+	imgH := float64(pageImg.Bounds().Dy()) / scale
 
 	// For each box, de-skew via WarpCrop (layer 1) and build the layer-2
 	// rotation candidates: short/wide crops get one candidate at 0 deg; tall
@@ -61,10 +63,10 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 			{X: b.X3, Y: b.Y3},
 		})
 		// Convert detection bounds to PDF-point space (mirrors detectBoxes).
-		px0 := float64(x0) / pdf.DlaScale
-		py0 := float64(y0) / pdf.DlaScale
-		px1 := float64(x1) / pdf.DlaScale
-		py1 := float64(y1) / pdf.DlaScale
+		px0 := float64(x0) / scale
+		py0 := float64(y0) / scale
+		px1 := float64(x1) / scale
+		py1 := float64(y1) / scale
 		if px0 < 0 {
 			px0 = 0
 		}
@@ -231,8 +233,8 @@ type ocrDetectBox struct {
 	srcIdx int
 }
 
-func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
-	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum)
+func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int, zoom float64) []pdf.TextBox {
+	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum, zoom)
 	if err != nil || len(boxes) == 0 {
 		return nil
 	}
@@ -240,14 +242,30 @@ func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars [
 	return p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
 }
 
-func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int) ([]ocrDetectBox, float64, error) {
+// ocrCoordinateScale returns the factor that converts image pixels into PDF
+// points for a page rendered at zoom, falling back to the default DLA scale
+// when the caller supplies none. Detection and recognition must both use it:
+// any other factor leaves the boxes in a scale of their own, and every
+// page-relative comparison downstream — the header/footer zone check in
+// particular — then compares unlike quantities.
+func ocrCoordinateScale(zoom float64) float64 {
+	if zoom > 0 {
+		return zoom
+	}
+	return pdf.DlaScale
+}
+
+func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, zoom float64) ([]ocrDetectBox, float64, error) {
 	ocrDetectBoxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
 	slog.Debug("ocrMergeChars detect", "page", pageNum, "boxes", len(ocrDetectBoxes))
 
-	scale := pdf.DlaScale // 3.0
+	// The caller multiplies the returned boxes back by this scale to crop the
+	// original render, so passing the render zoom keeps the round trip exact
+	// and makes the emitted coordinates PDF points (see ocrDetectAndRecognize).
+	scale := ocrCoordinateScale(zoom)
 	imgBounds := pageImg.Bounds()
 	imgW := float64(imgBounds.Dx()) / scale
 	imgH := float64(imgBounds.Dy()) / scale

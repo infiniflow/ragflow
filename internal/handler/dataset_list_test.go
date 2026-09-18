@@ -145,3 +145,69 @@ func TestDatasetsHandlerListDatasetsRejectsDuplicateIDs(t *testing.T) {
 		t.Fatalf("message=%q want=%q", body.Message, expected)
 	}
 }
+
+// `sort` is a query key like any other on this endpoint, and the key gate runs
+// before the ordering is read, so the gate has to know the name.
+func TestDatasetsHandlerListDatasetsAcceptsSort(t *testing.T) {
+	setupListDatasetsTestDB(t)
+	insertListDatasetsTestKB(t, listDatasetsTestKBID, "user-1", "Alpha")
+
+	body := getListDatasets(t, newListDatasetsTestRouter(), "sort=update_time:asc")
+
+	if body.Code != int(common.CodeSuccess) {
+		t.Fatalf("code=%d message=%q", body.Code, body.Message)
+	}
+	if body.TotalDatasets != 1 {
+		t.Fatalf("expected the dataset to be listed, got total=%d", body.TotalDatasets)
+	}
+}
+
+// A request `sort` can order is not rejected for the spelling of an `orderby` or
+// `desc` that will not be read, while the same values without `sort` still are.
+func TestDatasetsHandlerListDatasetsLegacyOrderingValidation(t *testing.T) {
+	cases := []struct {
+		name     string
+		rawQuery string
+		wantCode common.ErrorCode
+		wantMsg  string
+	}{
+		{
+			name:     "an unrecognised orderby alone is rejected",
+			rawQuery: "orderby=nonsense",
+			wantCode: common.CodeArgumentError,
+			wantMsg:  "Input should be 'create_time' or 'update_time'",
+		},
+		{
+			name:     "an unparseable desc alone is rejected",
+			rawQuery: "desc=maybe",
+			wantCode: common.CodeArgumentError,
+			wantMsg:  "Input should be a valid boolean, unable to interpret input",
+		},
+		{
+			name:     "sort carries an unrecognised orderby",
+			rawQuery: "sort=update_time:asc&orderby=nonsense",
+			wantCode: common.CodeSuccess,
+		},
+		{
+			name:     "sort carries an unparseable desc",
+			rawQuery: "sort=update_time:asc&desc=maybe",
+			wantCode: common.CodeSuccess,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupListDatasetsTestDB(t)
+			insertListDatasetsTestKB(t, listDatasetsTestKBID, "user-1", "Alpha")
+
+			body := getListDatasets(t, newListDatasetsTestRouter(), tc.rawQuery)
+
+			if body.Code != int(tc.wantCode) {
+				t.Fatalf("code=%d want=%d message=%q", body.Code, tc.wantCode, body.Message)
+			}
+			if tc.wantMsg != "" && body.Message != tc.wantMsg {
+				t.Fatalf("message=%q want=%q", body.Message, tc.wantMsg)
+			}
+		})
+	}
+}

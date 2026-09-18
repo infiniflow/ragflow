@@ -55,6 +55,7 @@ from rag.flow.parser.pdf_chunk_metadata import (
     reorder_multi_column_bboxes,
 )
 from rag.flow.parser.schema import ParserFromUpstream
+from rag.flow.parser.spreadsheet_positions import TCADP_POSITION_TAG_RE, tcadp_spreadsheet_json_items
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
     extract_word_outlines,
@@ -67,6 +68,14 @@ from rag.flow.parser.utils import (
 )
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
+
+# Row ceiling passed to ``ExcelParser.html`` for a spreadsheet sheet. It is
+# deliberately far beyond any real sheet: a sheet is emitted as ONE
+# self-contained <table> and is never split by row count or token budget.
+# Any split would cut inside ``<td>`` content or, worse, drop the delimiter
+# characters it cut on — the bug this typed parser output exists to prevent.
+# The TCADP path applies the same rule and emits one item per returned table.
+TABLE_NO_SPLIT_ROWS = 1 << 30
 
 
 class ParserParam(ProcessParamBase):
@@ -137,7 +146,7 @@ class ParserParam(ProcessParamBase):
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
                 "flatten_media_to_text": False,
-                "output_format": "html",
+                "output_format": "json",
                 "suffix": [
                     "xls",
                     "xlsx",
@@ -626,7 +635,7 @@ class Parser(ProcessBase):
             bboxes = []
             for section, position_tag in sections:
                 if position_tag:
-                    match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    match = TCADP_POSITION_TAG_RE.match(position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
                         bboxes.append(
@@ -838,23 +847,7 @@ class Parser(ProcessBase):
                 self.set_output("html", html_content)
 
             elif output_format == "json":
-                # For JSON output, create a list of text items
-                result = []
-                # Add sections as text
-                for section, position_tag in sections:
-                    if section:
-                        result.append({"text": section, "doc_type_kwd": "text"})
-                # Add tables as text
-                for table in tables:
-                    if table:
-                        result.append(
-                            {
-                                "text": table,
-                                "doc_type_kwd": "text" if flatten_media_to_text else "table",
-                            }
-                        )
-
-                self.set_output("json", result)
+                self.set_output("json", tcadp_spreadsheet_json_items(sections, tables, flatten_media_to_text))
 
             elif output_format == "markdown":
                 # For markdown output, combine into markdown
@@ -874,18 +867,21 @@ class Parser(ProcessBase):
                 htmls = spreadsheet_parser.html(blob, 1000000000)
                 self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
+                # One self-contained <table> item per sheet, never split, so the
+                # downstream TokenChunker keeps every table whole instead of
+                # cutting it on a delimiter.
                 self.set_output(
                     "json",
                     [
                         {
-                            "text": txt,
-                            "doc_type_kwd": "text",
+                            "text": tb,
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
                             # 0-based sheet. TaskExecutor and dataflow_service
                             # call add_positions, which stores pn+1 (1-based).
                             "positions": [[sheet, r1, r2, c1, c2]],
                         }
-                        for txt, (sheet, r1, r2, c1, c2) in spreadsheet_parser(blob)
-                        if txt
+                        for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_NO_SPLIT_ROWS)
+                        if tb
                     ],
                 )
             elif conf.get("output_format") == "markdown":
@@ -1256,6 +1252,20 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
         target_fields = conf["fields"]
 
+        def _decode_payload(payload, charset):
+            """Decode a MIME payload, falling back through the encodings mislabelled
+            mail actually uses. Empty or absent payloads decode to an empty string."""
+            if not payload:
+                return ""
+            for enc in [charset, "utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
+                if not enc:
+                    continue
+                try:
+                    return payload.decode(enc)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            return payload.decode("utf-8", errors="ignore")
+
         _, ext = os.path.splitext(name)
         if ext == ".eml":
             # handle eml file
@@ -1277,31 +1287,16 @@ class Parser(ProcessBase):
                 body_text, body_html = [], []
 
                 def _add_content(m, content_type):
-                    def _decode_payload(payload, charset, target_list):
-                        try:
-                            target_list.append(payload.decode(charset))
-                        except (UnicodeDecodeError, LookupError):
-                            for enc in ["utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
-                                try:
-                                    target_list.append(payload.decode(enc))
-                                    break
-                                except UnicodeDecodeError:
-                                    continue
-                            else:
-                                target_list.append(payload.decode("utf-8", errors="ignore"))
-
+                    # Read the part that was handed in, not the top-level message:
+                    # get_payload(decode=True) on a multipart container returns None,
+                    # so any message with an attachment used to fail here.
                     if content_type == "text/plain":
-                        payload = msg.get_payload(decode=True)
-                        charset = msg.get_content_charset() or "utf-8"
-                        _decode_payload(payload, charset, body_text)
+                        body_text.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
                     elif content_type == "text/html":
-                        payload = msg.get_payload(decode=True)
-                        charset = msg.get_content_charset() or "utf-8"
-                        _decode_payload(payload, charset, body_html)
-                    elif "multipart" in content_type:
-                        if m.is_multipart():
-                            for part in m.iter_parts():
-                                _add_content(part, part.get_content_type())
+                        body_html.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
+                    elif "multipart" in content_type and m.is_multipart():
+                        for part in m.iter_parts():
+                            _add_content(part, part.get_content_type())
 
                 _add_content(msg, msg.get_content_type())
 
@@ -1316,7 +1311,12 @@ class Parser(ProcessBase):
                         dispositions = content_disposition.strip().split(";")
                         if dispositions[0].lower() == "attachment":
                             filename = part.get_filename()
-                            payload = part.get_payload(decode=True).decode(part.get_content_charset())
+                            # A binary attachment carries no charset, so decoding its
+                            # bytes as text would only push mojibake into the indexed
+                            # content. Keep the name and leave the payload empty.
+                            payload = ""
+                            if part.get_content_maintype() == "text":
+                                payload = _decode_payload(part.get_payload(decode=True), part.get_content_charset())
                             attachments.append(
                                 {
                                     "filename": filename,
@@ -1353,10 +1353,18 @@ class Parser(ProcessBase):
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
+                    # extract_msg exposes no charset for an attachment, so treat only
+                    # payloads that are valid UTF-8 as text and skip the rest.
+                    payload = ""
+                    if isinstance(t.data, bytes):
+                        try:
+                            payload = t.data.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
                     attachments.append(
                         {
                             "filename": t.name,
-                            "payload": t.data.decode("utf-8"),
+                            "payload": payload,
                         }
                     )
                 email_content["attachments"] = attachments

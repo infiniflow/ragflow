@@ -44,6 +44,15 @@ func validateExeSQLParams(params map[string]any) error {
 		return fmt.Errorf("Choose DB type %v is not supported, it should be in %v", dbType, exeSQLDBTypes)
 	}
 
+	// Templates ship ExeSQL nodes whose connection fields are all blank (see
+	// agent/templates/text2sql_data_expert.json): the node is an unconfigured
+	// scaffold the user fills in on the canvas, not a broken configuration.
+	// Requiring the fields here would make such a canvas impossible to create
+	// or save, so only a node the user started configuring is checked.
+	if !exeSQLConnectionStarted(params) {
+		return nil
+	}
+
 	// Connection identity fields have no Python defaults and must be present.
 	for _, field := range []struct {
 		key  string
@@ -83,6 +92,17 @@ func validateExeSQLParams(params map[string]any) error {
 		return fmt.Errorf("For the security reason, it does not support database named rag_flow.")
 	}
 	return nil
+}
+
+// exeSQLConnectionStarted reports whether the user filled in at least one
+// ExeSQL connection field. Blanks and absent keys both count as untouched.
+func exeSQLConnectionStarted(params map[string]any) bool {
+	for _, key := range []string{"database", "username", "host", "password"} {
+		if isNonBlankString(params[key]) {
+			return true
+		}
+	}
+	return false
 }
 
 // exeSQLDBTypeAllowed reports whether dbType is one of exeSQLDBTypes.

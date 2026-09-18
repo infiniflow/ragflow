@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -51,7 +51,7 @@ export function DuckDuckGoWidgets() {
           <FormItem>
             <FormLabel tooltip={t('channelTip')}>{t('channel')}</FormLabel>
             <FormControl>
-              <RAGFlowSelect {...field} options={options} />
+              <SelectWithSearch {...field} options={options} />
             </FormControl>
             <FormMessage />
           </FormItem>

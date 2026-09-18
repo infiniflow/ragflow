@@ -289,3 +289,74 @@ def test_row_number_includes_rows_after_blank_gap():
     xlsx = _make_gap_xlsx(gap_rows=600)
     total = RAGFlowExcelParser.row_number("test.xlsx", xlsx)
     assert total >= 1001
+
+
+def _one_sheet_xlsx(sheet_title="Revenue"):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_title
+    ws.append(["Quarter", "Amount"])
+    ws.append(["Q1", 10])
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def test_dataframe_to_workbook_accepts_a_single_sheet_dict():
+    """`pd.read_excel(sheet_name=None)` returns a dict whatever the sheet count."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+
+    workbook = RAGFlowExcelParser._dataframe_to_workbook({"Revenue": frame})
+
+    assert workbook.sheetnames == ["Revenue"]
+
+
+def test_pandas_fallback_keeps_the_sheet_name_of_a_one_sheet_workbook(monkeypatch):
+    """The fallback taken when openpyxl cannot read the file.
+
+    The sheet name ends up in the chunk as the table caption, so losing it to the
+    placeholder "Data" degrades every chunk the workbook produces.
+    """
+
+    def _openpyxl_cannot_read(*args, **kwargs):
+        raise ValueError("openpyxl cannot read this file")
+
+    monkeypatch.setattr(_mod, "load_workbook", _openpyxl_cannot_read)
+
+    workbook = RAGFlowExcelParser._load_excel_to_workbook(_one_sheet_xlsx())
+
+    assert workbook.sheetnames == ["Revenue"]
+    assert list(workbook["Revenue"].iter_rows(values_only=True)) == [
+        ("Quarter", "Amount"),
+        ("Q1", 10),
+    ]
+
+
+def test_pandas_fallback_still_keeps_every_sheet_of_a_multi_sheet_workbook(monkeypatch):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    first = wb.active
+    first.title = "Revenue"
+    first.append(["Quarter", "Amount"])
+    first.append(["Q1", 10])
+    second = wb.create_sheet(title="Notes")
+    second.append(["Comment"])
+    second.append(["all good"])
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    def _openpyxl_cannot_read(*args, **kwargs):
+        raise ValueError("openpyxl cannot read this file")
+
+    monkeypatch.setattr(_mod, "load_workbook", _openpyxl_cannot_read)
+
+    workbook = RAGFlowExcelParser._load_excel_to_workbook(buffer)
+
+    assert workbook.sheetnames == ["Revenue", "Notes"]

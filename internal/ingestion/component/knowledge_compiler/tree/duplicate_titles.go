@@ -142,13 +142,14 @@ func rewriteTitleGroup(ctx context.Context, deps common.Deps, llmID, title strin
 		"Nodes: " + string(itemsJSON)
 
 	temp := 0.0
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
+	req := common.ChatRequest{
 		LLMID:        llmID,
 		SystemPrompt: "You rename duplicate tree node titles for display.",
 		UserPrompt:   prompt,
 		JSONMode:     true,
 		Temperature:  &temp,
-	})
+	}
+	resp, err := deps.Chat.Chat(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -177,19 +178,12 @@ func rewriteTitleGroup(ctx context.Context, deps common.Deps, llmID, title strin
 
 // unmarshalRenames parses the LLM rename array, tolerating code fences.
 func unmarshalRenames(raw string, out *[]renameOut) error {
-	s := strings.TrimSpace(raw)
-	s = strings.TrimPrefix(s, "```json")
-	s = strings.TrimPrefix(s, "```")
-	s = strings.TrimSuffix(s, "```")
-	if err := json.Unmarshal([]byte(s), out); err == nil {
-		return nil
+	s, err := common.RepairJSONText(raw)
+	if err != nil {
+		return fmt.Errorf("invalid rename response: %w", err)
 	}
-	// Fallback: the model may have wrapped the array in extra prose — grab the
-	// first '[' … last ']' span.
-	start := strings.IndexByte(s, '[')
-	end := strings.LastIndexByte(s, ']')
-	if start < 0 || end <= start {
-		return fmt.Errorf("no JSON array in rename response")
+	if err := json.Unmarshal([]byte(s), out); err != nil {
+		return fmt.Errorf("rename response is not a JSON array: %w", err)
 	}
-	return json.Unmarshal([]byte(s[start:end+1]), out)
+	return nil
 }

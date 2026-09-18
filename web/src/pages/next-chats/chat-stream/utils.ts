@@ -18,6 +18,28 @@ export function mergeAnswerChunk(
   previousAnswer: string,
   chunk: CompletionChunk,
 ): string {
+  // A final chunk carries the COMPLETE answer (citations inserted, references
+  // attached server-side). It replaces the accumulated ANSWER — but NOT the
+  // thinking accumulated so far, which is the only record of the ReAct
+  // trajectory the user watched unfold (the final chunk ships the deliverable
+  // alone). A naive final is self-contained (`think + decorated answer`), so
+  // it replaces everything wholesale instead of duplicating the think span.
+  if (chunk.final === true && chunk.answer) {
+    if (chunk.answer.includes('<think>')) {
+      return chunk.answer;
+    }
+    const closeTag = '</think>';
+    const closeIdx = previousAnswer.lastIndexOf(closeTag);
+    if (closeIdx !== -1) {
+      return (
+        previousAnswer.slice(0, closeIdx + closeTag.length) +
+        '\n\n' +
+        chunk.answer
+      );
+    }
+    return chunk.answer;
+  }
+
   const currentAnswer = chunk.final && previousAnswer ? '' : chunk.answer || '';
 
   let nextAnswer: string;
@@ -32,7 +54,11 @@ export function mergeAnswerChunk(
   }
 
   if (chunk.end_to_think === true) {
-    nextAnswer = nextAnswer + '</think>';
+    // The closing marker must be followed by a blank line: the answer's first
+    // line lands right after it, and a heading (`## Candidate Matrix`) glued
+    // onto '</think>' stops being a heading — markdown only parses `#` at
+    // line begin.
+    nextAnswer = nextAnswer + '</think>\n\n';
   }
 
   return nextAnswer;

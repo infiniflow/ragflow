@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,13 +32,15 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
+	native "ragflow/internal/deepdoc/native"
+	pdf "ragflow/internal/deepdoc/parser/pdf"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
-	"ragflow/internal/rag/advanced_rag"
-	"ragflow/internal/rag/advanced_rag/harness"
+	"ragflow/internal/rag/agentic-rag"
+	agenticruntime "ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -51,6 +54,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -64,7 +68,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	et "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
@@ -84,6 +88,14 @@ type serverArgs struct {
 	adminHost     *string // Used by api, ingestor, syncer for heartbeat
 	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
 	name          *string // server name
+	mcpEnabled    bool
+	mcpHost       string
+	mcpPort       int
+	mcpMode       string
+	mcpAPIKey     string
+	mcpSSE        bool
+	mcpStreamable bool
+	mcpJSON       bool
 }
 
 // engineDocEngine is the small slice of the engine surface the doc-chunk pager
@@ -93,7 +105,7 @@ type engineDocEngine interface {
 	Search(ctx context.Context, req *et.SearchRequest) (*et.SearchResult, error)
 }
 
-// docChunkPager is the production harness.DocChunkLister. It pages one
+// docChunkPager is the production agenticruntime.DocChunkLister. It pages one
 // document's chunks in reading order straight off the chunk index, mirroring
 // Python settings.retriever.chunk_list with sort_by_position=True
 // (rag/nlp/search.py:824). This is what the document-level tools
@@ -106,8 +118,8 @@ type docChunkPager struct {
 	docEngine engineDocEngine
 }
 
-// DocChunks implements harness.DocChunkLister.
-func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequest) ([]map[string]any, error) {
+// DocChunks implements agenticruntime.DocChunkLister.
+func (p *docChunkPager) DocChunks(ctx context.Context, req agenticruntime.DocChunksRequest) ([]map[string]any, error) {
 	if p == nil || p.docEngine == nil {
 		return nil, nil
 	}
@@ -144,7 +156,7 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequ
 	rows := make([]map[string]any, 0, len(resp.Chunks))
 	for _, ck := range resp.Chunks {
 		row := make(map[string]any, 8)
-		// The harness chunk rows need the canonical keys its citation pipeline
+		// The runtime chunk rows need the canonical keys its citation pipeline
 		// reads: chunk_id (dedup), docnm_kwd (doc title), doc_id and the text
 		// under content/content_with_weight (chunkText prefers content first).
 		if id, ok := ck["id"].(string); ok && id != "" {
@@ -175,12 +187,39 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequ
 }
 
 func parseArgs() (*serverArgs, error) {
-	args := &serverArgs{}
+	args := &serverArgs{
+		mcpHost:       "127.0.0.1",
+		mcpPort:       9382,
+		mcpMode:       "self-host",
+		mcpSSE:        true,
+		mcpStreamable: true,
+		mcpJSON:       true,
+	}
 
 	var serverMode string
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
+		if key, value, ok := strings.Cut(arg, "="); ok {
+			switch key {
+			case "--mcp-host":
+				args.mcpHost = value
+				continue
+			case "--mcp-port":
+				port, err := parsePort(value, "MCP")
+				if err != nil {
+					return nil, err
+				}
+				args.mcpPort = port
+				continue
+			case "--mcp-mode":
+				args.mcpMode = value
+				continue
+			case "--mcp-host-api-key":
+				args.mcpAPIKey = value
+				continue
+			}
+		}
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
@@ -193,6 +232,20 @@ func parseArgs() (*serverArgs, error) {
 		case "--api":
 			serverMode = "api"
 			args.mode = &serverMode
+		case "--enable-mcpserver":
+			args.mcpEnabled = true
+		case "--transport-sse-enabled":
+			args.mcpSSE = true
+		case "--no-transport-sse-enabled":
+			args.mcpSSE = false
+		case "--transport-streamable-http-enabled":
+			args.mcpStreamable = true
+		case "--no-transport-streamable-http-enabled":
+			args.mcpStreamable = false
+		case "--json-response":
+			args.mcpJSON = true
+		case "--no-json-response":
+			args.mcpJSON = false
 		case "--syncer":
 			serverMode = "syncer"
 			args.mode = &serverMode
@@ -250,7 +303,82 @@ func parseArgs() (*serverArgs, error) {
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
+
+	if err := applyMCPEnv(args); err != nil {
+		return nil, err
+	}
+	if err := validateMCPArgs(args); err != nil {
+		return nil, err
+	}
+	if args.migrateDB && args.mode != nil {
+		return nil, errors.New("--migrate cannot be combined with a server mode")
+	}
 	return args, nil
+}
+
+func applyMCPEnv(args *serverArgs) error {
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST"); ok {
+		args.mcpHost = value
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_PORT"); ok {
+		port, err := parsePort(value, "MCP")
+		if err != nil {
+			return err
+		}
+		args.mcpPort = port
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_LAUNCH_MODE"); ok {
+		args.mcpMode = value
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST_API_KEY"); ok {
+		args.mcpAPIKey = value
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_ENABLED"); ok {
+		args.mcpEnabled = parseMCPBool(value)
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED"); ok {
+		args.mcpSSE = parseMCPBool(value)
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED"); ok {
+		args.mcpStreamable = parseMCPBool(value)
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_JSON_RESPONSE"); ok {
+		args.mcpJSON = parseMCPBool(value)
+	}
+	return nil
+}
+
+func validateMCPArgs(args *serverArgs) error {
+	if args.mcpMode != "self-host" && args.mcpMode != "host" {
+		return fmt.Errorf("invalid MCP mode: %s", args.mcpMode)
+	}
+	if !args.mcpStreamable && args.mcpJSON {
+		args.mcpJSON = false
+	}
+	if !args.mcpSSE && !args.mcpStreamable {
+		args.mcpStreamable = true
+	}
+	if args.mcpEnabled && args.mcpMode == "self-host" && args.mcpAPIKey == "" {
+		return errors.New("--mcp-host-api-key is required when --mcp-mode=self-host")
+	}
+	return nil
+}
+
+func parseMCPBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parsePort(value, name string) (int, error) {
+	port, err := strconv.Atoi(value)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0, fmt.Errorf("invalid %s port: %s", name, value)
+	}
+	return port, nil
 }
 
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
@@ -261,13 +389,16 @@ func parseArgs() (*serverArgs, error) {
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
 		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
+		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
+		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
 		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
@@ -329,7 +460,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || arguments.mode == nil {
+	if arguments.helpFlag || (arguments.mode == nil && !arguments.migrateDB) {
 		printHelp(arguments)
 		os.Exit(1)
 	}
@@ -337,6 +468,13 @@ func main() {
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
+	}
+
+	if arguments.migrateDB {
+		if err = runMigrate(ctx, arguments); err != nil {
+			common.Fatal("Failed to run database migration", zap.Error(err))
+		}
+		return
 	}
 
 	// Initialize local variables (runtime variables from Redis)
@@ -361,7 +499,11 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.InitLogger(logLevel, common.FileOutput{Filename: logFileName, Path: "logs"}, serverName); err != nil {
+	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
+	// is not known yet, so a file here would be an orphaned log (e.g.
+	// logs/api_server.log next to the real logs/api_server_9384.log); the
+	// real file sink is attached by the post-config re-initialization below.
+	if err = common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -379,9 +521,15 @@ func main() {
 	globalConfig := server.GetConfig()
 
 	// override default port if provided
+	// NOTE: this switch must stay side-effect-free on the LOG (no
+	// registerNativeDeepDoc here): it runs while only the temporary
+	// stdout-only logger exists, so anything it logs is lost from the file.
+	// Side effects that log (DeepDoc registration) move below, after the
+	// real file-backed logger is up.
+	needNativeDeepDoc := false
 	switch *arguments.mode {
 	case "api":
-		registerNativeDeepDoc()
+		needNativeDeepDoc = true
 		apiServerConfig := globalConfig.GetAPIServerConfig()
 		port := apiServerConfig.HTTPPort
 		if arguments.port != nil {
@@ -402,7 +550,7 @@ func main() {
 			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
-		registerNativeDeepDoc()
+		needNativeDeepDoc = true
 		if serverName == "" {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
@@ -452,13 +600,25 @@ func main() {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
+	// Wire the in-process DeepDoc backend only after the REAL file-backed
+	// logger exists: its registration lines (and the Fatal abort on a missing
+	// backend) must land in the run's log file, not in the pre-config
+	// stdout-only window.
+	if needNativeDeepDoc {
+		registerNativeDeepDoc()
+	}
+
 	// Print all configuration settings
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	if err = dao.InitDB(ctx, false); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	if err = checkDatabaseVersion(ctx); err != nil {
+		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
@@ -467,11 +627,11 @@ func main() {
 	}
 	defer engine.Close()
 
-	// Initialize Redis cache
-	if err = redis.Init(ctx); err != nil {
-		common.Fatal("Failed to initialize Redis", zap.Error(err))
+	// Initialize Kvrocks cache
+	if err = kvrocks.Init(ctx); err != nil {
+		common.Fatal("Failed to initialize Kvrocks", zap.Error(err))
 	}
-	defer redis.Close()
+	defer kvrocks.Close()
 
 	if err = storage.Init(ctx); err != nil {
 		common.Error("Failed to initialize storage factory", err)
@@ -484,7 +644,7 @@ func main() {
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err = server.InitVariables(redis.Get()); err != nil {
+	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
@@ -525,6 +685,112 @@ func main() {
 	}
 }
 
+// checkDatabaseVersion refuses to run a server when the running code is older
+// than the version recorded in the system_settings migration marker. Migrating
+// the database forward is a one-way operation, so an older binary would read and
+// write a schema it does not understand.
+//
+// A missing marker, or a version on either side that cannot be parsed, never
+// blocks startup: without a usable comparison there is no evidence that the
+// database is ahead of the code.
+//
+// RAGFLOW_DEV_MODE turns the check off entirely. A development build can carry
+// a marker for a release that is not tagged yet, in which case the comparison
+// would reject the build that wrote the marker.
+func checkDatabaseVersion(ctx context.Context) error {
+	if common.DevModeEnabled() {
+		common.Warn("Development mode is enabled, skipping the database downgrade check",
+			zap.String("env", common.EnvRAGFlowDevMode))
+		return nil
+	}
+
+	databaseVersion, err := dao.GetDatabaseMigrationVersion(ctx, dao.DB)
+	if err != nil {
+		return fmt.Errorf("read database version marker: %w", err)
+	}
+	if databaseVersion == "" {
+		return nil
+	}
+
+	codeVersion := common.GetRAGFlowVersion()
+	older, comparable := common.IsOlderReleaseThan(codeVersion, databaseVersion)
+	if !comparable {
+		common.Warn("Cannot compare code version with database version, skipping the downgrade check",
+			zap.String("code_version", codeVersion),
+			zap.String("database_version", databaseVersion))
+		return nil
+	}
+	if older {
+		return fmt.Errorf("code version %s is older than database version %s: upgrade this deployment to %s or newer before starting",
+			codeVersion, databaseVersion, databaseVersion)
+	}
+
+	common.Info("Database version check passed",
+		zap.String("code_version", codeVersion),
+		zap.String("database_version", databaseVersion))
+	return nil
+}
+
+// runMigrate runs the database schema and data migrations and returns. It is
+// the whole of the standalone --migrate action: load the configuration, run
+// dao.InitDB with migrations enabled, then exit. It deliberately does not call
+// registerNativeDeepDoc or initialize the doc engine, Redis, storage or the
+// message queue, so it can run on its own, before any server mode boots (see
+// docker/entrypoint-go.sh and docker/launch_backend_service.sh).
+func runMigrate(ctx context.Context, args *serverArgs) error {
+	const serverName = "migrate"
+
+	if err := server.InitLocalVariables(); err != nil {
+		return fmt.Errorf("initialize local variables: %w", err)
+	}
+
+	logLevel := "info"
+	if args.debugLog {
+		logLevel = "debug"
+	}
+	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
+		return fmt.Errorf("initialize logger: %w", err)
+	}
+
+	var configPath string
+	if args.configPath != nil {
+		configPath = *args.configPath
+	}
+	if err := server.Init(configPath); err != nil {
+		return fmt.Errorf("initialize configuration: %w", err)
+	}
+
+	globalConfig := server.GetConfig()
+	server.SetServerName(serverName)
+	logConfig := globalConfig.GetLogConfig()
+	if logConfig.Level != "" {
+		logLevel = logConfig.Level
+	}
+	if args.debugLog {
+		logLevel = "debug"
+	}
+	globalConfig.SetLogLevel(logLevel)
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, common.FileOutput{
+		Filename:   serverName + ".log",
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}, serverName); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
+	}
+
+	common.Info("Running database migrations")
+	if err := dao.InitDB(ctx, true); err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	common.Info("Database migrations completed")
+	return nil
+}
+
 func runAdmin(ctx context.Context, args *serverArgs) error {
 
 	globalConfig := server.GetConfig()
@@ -558,6 +824,11 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every peer.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
@@ -572,7 +843,6 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 		Addr:    addr,
 		Handler: ginEngine,
 	}
-
 	// Print RAGFlow Admin logo
 	common.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
@@ -656,6 +926,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	if err := tokenizer.InitCL100KEncoder(); err != nil {
 		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
 	}
+	logTokenizerCounters()
 
 	// The dataset-level post-processing consumer cluster (§11) is owned and run by
 	// the Ingestor: it is started inside ingestor.Start() and joined inside
@@ -715,7 +986,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
 		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		-1,
+		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
@@ -766,7 +1037,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
 		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
-		-1,
+		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
@@ -814,14 +1085,16 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	startServer(ctx)
+	if err := startServer(ctx, args); err != nil {
+		return err
+	}
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(ctx context.Context) {
+func startServer(ctx context.Context, args *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -854,6 +1127,7 @@ func startServer(ctx context.Context) {
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
+	modelSolver := service.NewModelSolver()
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
@@ -863,29 +1137,48 @@ func startServer(ctx context.Context) {
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
 	retrievalEnhancer := retrievalbridge.NewEnhancer(docEngine, metadataService)
-	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(
+	// Keep the concrete adapter: it is both the canvas/agent-tool backend and the
+	// target of the agentic-RAG bridge wired below. The bridge must hold it
+	// directly (not look it up in the registry) because the registry is shared —
+	// agenttool.SetRetrievalService and runtime.SetRetrievalService write the same
+	// singleton, so a bridge that resolved its target per call would find itself.
+	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
 		docEngine,
 		documentDAO,
-		modelProviderService,
+		nil,
 		retrievalEnhancer,
-	))
+	)
+	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		var target *service.ModelTarget
+		var err error
+		if strings.TrimSpace(modelRef) == "" {
+			target, err = modelSolver.ResolveDefaultModelConfig(ctx, tenantID, modelType)
+		} else {
+			target, err = modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
+		}
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
+	})
+	agenttool.SetRetrievalService(retrievalAdapter)
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
 
-	// Wire the agentic-RAG harness as the Go chat pipeline's evidence engine
-	// (internal/service/chat_pipeline.retrieveViaHarness): it searches through the
-	// runtime retrieval singleton below and runs each request on a model resolved
-	// from the caller's ModelID. Activating the agentic loop here enables the full
-	// planner/SCA path for reasoning chats.
-	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter())
-	advanced_rag.SetAgenticLoop(advanced_rag.NewAgenticLoop())
+	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
+	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
+	// model resolved from the caller's ModelID and searches through the adapter
+	// above. Activating the agentic loop here enables the full planner/SCA path for
+	// reasoning chats.
+	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
+	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
 	service.SetHarnessRetriever(func(ctx context.Context, req service.HarnessRequest) (service.HarnessResult, error) {
 		// Resolve the tenant's actual chat model, mirroring Python where RAGTools
 		// receives a fully-resolved LLMBundle: chat.LLMID may be a UUID/tenant_model
 		// id that the default invoker cannot split into a provider, so resolving here
 		// avoids falling through to a dummy driver. If resolution fails we leave model
-		// nil so the harness degrades to a direct search (no dummy fallback).
-		var model harness.SessionModel
+		// nil so the runtime degrades to a direct search (no dummy fallback).
+		var model agenticruntime.SessionModel
 		// outerModel mirrors Python RAGTools.chat_mdl: the fully-resolved chat
 		// model that drives the outer rag_agent react loop (tools=[rag,
 		// summarize_document], terminal_tools={"rag"}). Wired into RAGTools.Outer
@@ -896,19 +1189,19 @@ func startServer(ctx context.Context) {
 		// key's model component; empty disables that cache.
 		resolvedModelName := ""
 		if req.ModelID != "" {
-			if driver, modelName, apiCfg, contentLen, mErr := modelProviderService.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); mErr == nil {
-				if inv := component.NewResolvedInvoker(driver, modelName, apiCfg); inv != nil {
+			if target, mErr := modelSolver.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); mErr == nil {
+				if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
 					// MaxLength mirrors Python LLMBundle.max_length (the model's
 					// context window in tokens); message-fitting nodes (calculate,
 					// structure_qa) use it as their chat.FitMessages budget.
-					model = &harness.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: contentLen}
-					resolvedModelName = modelName
+					model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
+					resolvedModelName = target.ModelName
 					// Reuse the same resolved driver/name/api as the invoker so
 					// the outer loop and the inner tool calls share one model.
-					outerModel = modelModule.NewChatModel(driver, &modelName, apiCfg)
+					outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			} else {
-				common.Warn("harness: failed to resolve chat model for reasoning; harness will degrade to direct search", zap.Error(mErr))
+				common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
 			}
 		}
 
@@ -926,8 +1219,11 @@ func startServer(ctx context.Context) {
 
 		// Load the KB objects (mirroring Python RAGTools' self.kbs via
 		// KnowledgebaseService.get_by_ids(kb_ids)) so the agentic tool can
-		// derive rank features from parser_config.tag_kb_ids. Best-effort: a
-		// load failure leaves KBs empty and the adapter resolves them itself.
+		// derive rank features. The Go tag extractor (extractor_tag.go) writes
+		// both tag_kwd (the list of tag names) and tag_feas (per-tag weights)
+		// onto each chunk at parse time; the labeler aggregates tag_kwd to build
+		// the tag vocabulary and the retriever ranks with tag_feas. Best-effort:
+		// a load failure leaves KBs empty and the adapter resolves them itself.
 		var kbs []*entity.Knowledgebase
 		if len(req.DatasetIDs) > 0 {
 			if loaded, lErr := dao.NewKnowledgebaseDAO().GetByIDs(ctx, dao.DB, req.DatasetIDs); lErr == nil {
@@ -945,10 +1241,17 @@ func startServer(ctx context.Context) {
 		// is what hybrid_search applies to its vector leg (search.py:143), so
 		// getting it wrong silently degrades search_chunks to keyword-only.
 		hasEmbedder := hasEmbedderFor(kbs)
-		deps := advanced_rag.RAGTools{
+		deps := agentic_rag.RAGTools{
 			Model:     model,
 			ModelName: resolvedModelName,
 			Outer:     outerModel,
+			// OriginalQuestion mirrors Python RAGTools(original_user_question=...):
+			// the user's own, unrewritten question as received from the chat
+			// layer. The outer model's `rag(question=...)` argument is
+			// model-generated and often compresses a multi-hop question to its
+			// first hop; resolveEffectiveQuestion (agentic_rag.py:865) prefers
+			// this original over that rewrite when both describe the same turn.
+			OriginalQuestion: req.Question,
 			// OuterSupportsTools gates the outer react loop on tool capability
 			// (Python is_tools); false → fall back to direct RunAgenticRAG.
 			OuterSupportsTools: outerSupportsTools,
@@ -956,7 +1259,7 @@ func startServer(ctx context.Context) {
 			// (chat-level doc_ids + meta_data_filter) restrict every agentic
 			// retrieval to the user-selected documents instead of the whole kb.
 			DocScope:      req.DocIDs,
-			DocIDVerifier: advanced_rag.NewDocIDLookup(),
+			DocIDVerifier: agentic_rag.NewDocIDLookup(),
 			// DocChunks pages one document's chunks in reading order off the
 			// chunk index (Python retriever.chunk_list), backing the
 			// document-level tools (summarize_document / fetch_full_document).
@@ -967,13 +1270,13 @@ func startServer(ctx context.Context) {
 			// dense seed leg wired to the bound dataset's own embedding model.
 			// The scope config lets each dataset be scanned under its own tenant
 			// and a doc scope be grouped by real owner, like graph_explore.
-			Expand: harness.NewCompiledExpander(
+			Expand: agenticruntime.NewCompiledExpander(
 				newDatasetCompiledStore(docEngine, modelProviderService, kbs),
-				harness.CompiledScopeConfig{
+				agenticruntime.CompiledScopeConfig{
 					DatasetIDs:        req.DatasetIDs,
 					TenantID:          req.TenantID,
 					KBs:               kbs,
-					DocTenantResolver: advanced_rag.NewDocTenantResolver(),
+					DocTenantResolver: agentic_rag.NewDocTenantResolver(),
 				},
 			),
 			// WebSearch backs the web_search tool (Python RAGTools.web_search).
@@ -982,26 +1285,69 @@ func startServer(ctx context.Context) {
 			WebSearch:   harnessWebSearcher(req.WebSearch),
 			KBs:         kbs,
 			HasEmbedder: hasEmbedder,
+			// Embedder backs claim recall's KNN leg (Python
+			// recall_dataset_claims, navigation.py:1837-1909, which embeds the
+			// query with tools.embed_mdl — the FIRST dataset's embedding model,
+			// dialog_service.py:362-366) and the structure-drill seed vector.
+			// Without it the claim leg silently degrades to BM25-only and
+			// paraphrase-phrased claims are never recalled. Bound to
+			// kbs[0].EmbdID (validateDatasetEmbeddingModels above guarantees
+			// every bound dataset shares it), query-side encoded.
+			Embedder: embedderForDatasets(kbs, modelProviderService),
 			// Tagger is the Go equivalent of Python's label_question
 			// (agentic_rag.py:668): classifies the query into question-type
 			// tags the retriever boosts on. metadataService implements it
 			// (service.MetadataService.LabelQuestion).
 			Tagger: metadataService,
+			// SystemPrompt mirrors Python RAGTools(system_prompt=
+			// _render_reasoning_system_prompt(dialog, prompt_config, kwargs),
+			// dialog_service.py:2084) — the dialog-level UI configuration the
+			// final-answer compose appends after the agentic contract
+			// (agentic_rag_graph.py:923-933).
+			SystemPrompt: req.SystemPrompt,
+			// CiteRules and EvidenceMaxTokens deliberately stay unset: Python's
+			// dialog path constructs RAGTools WITHOUT user_defined_prompts
+			// (dialog_service.py:2072-2090), so citation_prompt defaults apply,
+			// and Python has no evidence-token override (the compose always
+			// uses min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS=8000),
+			// which EvidenceMaxTokens<=0 reproduces).
 		}
+		// Diagnose WHY compiled expansion is disabled: NewCompiledExpander
+		// returns nil for three reasons (store==nil / no datasets / no tenant)
+		// and RAGTools.Expand==nil silences the whole channel with no other
+		// trace — the observed "Compiled expansion enabled = 0" was invisible.
+		if deps.Expand == nil {
+			switch {
+			case docEngine == nil:
+				common.Warn("compiled expansion disabled: document engine unavailable (store==nil)")
+			case len(req.DatasetIDs) == 0:
+				common.Warn("compiled expansion disabled: no bound dataset (DatasetIDs empty)")
+			case strings.TrimSpace(req.TenantID) == "":
+				common.Warn("compiled expansion disabled: no tenant (TenantID empty)")
+			default:
+				common.Warn("compiled expansion disabled: unknown reason")
+			}
+		}
+		// The two projections of one reasoning step: the sentence the chat UI
+		// appends to its think block, and the structured event a step-rendering
+		// client consumes. Steps.Stage/Emit feeds both from one call, so the
+		// trace cannot drift from its structured twin. Each step is an
+		// isThink=true delta, i.e. think-block content rather than answer text.
 		if req.AnswerSink != nil {
-			deps.AnswerSink = &advanced_rag.AnswerSink{
+			answerSink := req.AnswerSink
+			deps.AnswerSink = &agentic_rag.AnswerSink{
 				OnDelta: req.AnswerSink,
 			}
-			// Engine-stage progress (planner/orchestrator/research/SCA) is
-			// research-time think content — mirroring Python think_log, which
-			// forwarded the tagged lines into the <think> block. Deliver each
-			// line as an isThink=true delta so the live reasoning block shows
-			// the research as it happens.
-			deps.Progress = func(line string) {
-				req.AnswerSink(line, true)
-			}
+			deps.Steps.Text = func(line string) { answerSink(line, true) }
 		}
-		r := advanced_rag.Rag(ctx, deps, harness.RunRequest{
+		if req.ThinkSink != nil {
+			// One type on both sides — agenticruntime.ThinkEvent is an alias of
+			// service.ThinkEvent — so the sink passes straight through: there is
+			// nothing to copy field by field, and no way to forget a field that
+			// was added on one side only.
+			deps.Steps.Events = req.ThinkSink
+		}
+		r := agentic_rag.Rag(ctx, deps, agenticruntime.RunRequest{
 			Question:        req.Question,
 			ThinkingMode:    req.ThinkingMode,
 			DatasetIDs:      req.DatasetIDs,
@@ -1010,14 +1356,14 @@ func startServer(ctx context.Context) {
 			Images:          req.Images,
 			TextAttachments: req.TextAttachments,
 		})
-		res := service.HarnessResult{Chunks: r.Chunks, DocAggs: r.DocAggs, Answer: r.Answer}
+		res := service.HarnessResult{Chunks: r.Chunks, DocAggs: r.DocAggs, Answer: r.Answer, SlotCitations: r.SlotCitations, CiteChunkIDs: r.CiteChunkIDs}
 		if r.Kbinfos != nil {
 			res.Memory = r.Kbinfos.Memory
 			res.PreSummary = r.Kbinfos.PreSummary
 		}
 		return res, nil
 	})
-	common.Info("agent: harness chat retriever wired (runtime retrieval + agentic loop)")
+	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
@@ -1056,7 +1402,7 @@ func startServer(ctx context.Context) {
 	)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	// Install the agent service's Redis-backed run infrastructure
+	// Install the agent service's Kvrocks-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
 	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
 	// the constructors return errors, and we fall through to the
@@ -1070,12 +1416,7 @@ func startServer(ctx context.Context) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	// WithDocumentService wires the rerun dependency used by
-	// POST /api/v1/agents/rerun (dataflow "re-run" in the pipeline
-	// result viewer). RerunAgent fails closed without it, so this must
-	// stay attached to NewAgentHandler.
-	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService).
-		WithDocumentService(documentService)
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
@@ -1127,8 +1468,8 @@ func startServer(ctx context.Context) {
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Install the production eino-based chat invoker as the shared chat default,
-	// so agentic-search harness LLM calls work in production. Without this,
-	// chat.GetDefaultInvoker() stays nil and the harness falls back gracefully.
+	// so agentic-search runtime LLM calls work in production. Without this,
+	// chat.GetDefaultInvoker() stays nil and the runtime falls back gracefully.
 	component.InstallDefaultChatInvoker()
 
 	// Install the dataset-nav ES-backed service (internal/service/nav +
@@ -1184,6 +1525,14 @@ func startServer(ctx context.Context) {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every
+	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
+	// login audit records, so gin's trust-everything default would let any
+	// caller pick its own address.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	// Note: common.GinLogger() is registered inside router.Setup so the
@@ -1197,7 +1546,7 @@ func startServer(ctx context.Context) {
 
 	_, err := channels.Start(ctx)
 	if err != nil {
-		common.Fatal("Fail to start chat-channel", zap.Error(err))
+		return fmt.Errorf("start chat-channel: %w", err)
 	}
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
@@ -1207,10 +1556,91 @@ func startServer(ctx context.Context) {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// WriteTimeout spans "request header read → response written", so it is a
+		// ceiling on the WHOLE request, not on a slow client's reads. Measured
+		// (2026-09-15, FRAMES 20q): three multi-hop questions take 150–225s to reach
+		// their response, and at 120s the server closed the connection with no
+		// response at all — the client reports
+		// `RemoteDisconnected('Remote end closed connection without response')` and
+		// the benchmark re-runs the whole question (max_retries: 2), so one slow
+		// question cost three full pipelines. 180s clears the measured distribution's
+		// middle; questions whose composition alone runs past it still need streaming
+		// or a larger budget.
+		WriteTimeout: 180 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	apiListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen API server on %s: %w", addr, err)
+	}
+	defer apiListener.Close()
+
+	serveErr := make(chan error, 2)
+	serve := func(name string, srv *http.Server, listener net.Listener) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- fmt.Errorf("%s server failed: %w", name, err)
+		}
+	}
+
+	var mcpSrv *http.Server
+	var mcpCloser interface{ Close() error }
+	var mcpListener net.Listener
+	if args != nil && args.mcpEnabled {
+		resolveUser := func(ctx context.Context, authorization string) (string, error) {
+			if args.mcpMode == "self-host" {
+				authorization = args.mcpAPIKey
+			}
+			user, err := authHandler.ResolveMCPUser(ctx, authorization)
+			if err != nil {
+				return "", err
+			}
+			return user.ID, nil
+		}
+		if args.mcpMode == "self-host" {
+			authCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			_, err := resolveUser(authCtx, "")
+			cancel()
+			if err != nil {
+				return errors.New("invalid configured MCP API key")
+			}
+		}
+		mcpHandler := handler.NewStandaloneMCPHandler(
+			resolveUser,
+			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+				return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderby, desc)
+			},
+			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+				return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderby, desc)
+			},
+			func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
+				return handler.MCPRetrieval(ctx, datasetsService, userID, req)
+			},
+			mcp.Options{SSE: args.mcpSSE, StreamableHTTP: args.mcpStreamable, JSONResponse: args.mcpJSON},
+		)
+		mcpCloser = mcpHandler
+		defer mcpHandler.Close()
+		mcpAddr := fmt.Sprintf("%s:%d", args.mcpHost, args.mcpPort)
+		mcpListener, err = net.Listen("tcp", mcpAddr)
+		if err != nil {
+			return fmt.Errorf("listen MCP server on %s: %w", mcpAddr, err)
+		}
+		defer mcpListener.Close()
+		mcpSrv = &http.Server{
+			Addr:              mcpAddr,
+			Handler:           mcpHandler,
+			BaseContext:       func(net.Listener) context.Context { return ctx },
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       60 * time.Second,
+			WriteTimeout:      0, // SSE streams outlive individual tool deadlines
+			IdleTimeout:       120 * time.Second,
+		}
+		go func() {
+			common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
+			serve("MCP", mcpSrv, mcpListener)
+		}()
 	}
 
 	// Start server in a goroutine
@@ -1224,9 +1654,7 @@ func startServer(ctx context.Context) {
 		)
 		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 		common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.Fatal("Failed to start server", zap.Error(err))
-		}
+		serve("API", srv, apiListener)
 	}()
 
 	// Start heartbeat reporter to admin server
@@ -1239,20 +1667,42 @@ func startServer(ctx context.Context) {
 		defer hb.Stop()
 	}
 
-	// Wait for shutdown signal from main's signal.NotifyContext
-	<-ctx.Done()
-
-	common.Info(fmt.Sprintf("Received shutdown signal"))
+	// Wait for either shutdown signal or serving failure.
+	var runErr error
+	select {
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
+	case err := <-serveErr:
+		runErr = err
+		common.Error("Server failed; shutting down", err)
+	}
 	common.Info("Shutting down server...")
 
-	// Create context with timeout for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	// Shutdown server
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		common.Fatal("Server forced to shutdown", zap.Error(err))
+	if mcpCloser != nil {
+		if err := mcpCloser.Close(); err != nil {
+			common.Warn("Failed to close MCP handler", zap.Error(err))
+		}
 	}
+	if err := shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
+		return err
+	}
+	if mcpSrv != nil {
+		if err := shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
+			return err
+		}
+	}
+	return runErr
+}
+
+func shutdownHTTPServer(ctx context.Context, name string, srv *http.Server) error {
+	if err := srv.Shutdown(ctx); err != nil {
+		_ = srv.Close()
+		return fmt.Errorf("shutdown %s server: %w", name, err)
+	}
+	return nil
 }
 
 // agentRunOptions bundles the three optional injection slots the
@@ -1268,7 +1718,7 @@ type agentRunOptions struct {
 	runTracker      *canvas.RunTracker
 }
 
-// buildAgentRunOptions installs the Redis-backed run infrastructure
+// buildAgentRunOptions installs the Kvrocks-backed run infrastructure
 // when Redis is available. The Redis client is the one already
 // initialized at the top of main; the TTL is a conservative 24h for
 // both the checkpoint store and the run tracker. On any error
@@ -1277,11 +1727,11 @@ type agentRunOptions struct {
 // to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
-	if !redis.IsEnabled() || redis.Get() == nil {
+	if !kvrocks.IsEnabled() || kvrocks.Get() == nil {
 		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
 		return out
 	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
+	cp := canvas.NewKvrocksCheckPointStore(24 * time.Hour)
 	out.checkpointStore = cp
 	// stateSerializer is intentionally left nil. eino's default
 	// InternalSerializer (used when no compose.WithSerializer is
@@ -1355,6 +1805,38 @@ func registerNativeDeepDoc() {
 	}
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
+
+	// DeepDoc sessions run single-threaded, so the process inference budget is a
+	// plain concurrency cap. Register it with the native gate every inference
+	// call passes through (internal/deepdoc/native/inference_limit.go); without
+	// this the process would let every page worker call inference at once.
+	limit := pdf.DeepDocConcurrency()
+	native.SetInferenceLimit(limit)
+	common.Info("in-process DeepDoc inference limit registered",
+		zap.Int("max_concurrent_inference", limit),
+		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
+}
+
+// logTokenizerCounters reports, once at startup, which embedding tokenizers this process
+// can count with. An unavailable counter is not fatal here: the process still starts, and
+// untagged models keep counting with the calibrated estimate by design. But the models that
+// declare it cannot be ingested - the embedder refuses to substitute the calibrated count -
+// so this report is what tells an operator which asset to restore before documents fail.
+func logTokenizerCounters() {
+	var available, unavailable []string
+	for _, status := range tokenizer.CounterStatuses() {
+		if status.Available {
+			available = append(available, status.ID)
+			continue
+		}
+		unavailable = append(unavailable, status.ID)
+	}
+	common.Info("embedding tokenizer counters", zap.Strings("available", available))
+	if len(unavailable) > 0 {
+		common.Warn("embedding tokenizers unavailable; models that declare them cannot be ingested until the asset is restored",
+			zap.Strings("unavailable", unavailable),
+			zap.String("hint", "run `uv run ragflow_deps/download_go_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
+	}
 }
 
 // resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
@@ -1366,10 +1848,13 @@ func resolveDeepDocModelDir() string {
 		return v
 	}
 	wd, _ := os.Getwd()
-	candidates := []string{
+	// MODEL_ASSETS_DIR first: the shared model-asset root keeps this layout too, so one
+	// variable can point at the DeepDoc weights as well as the embedding tokenizers.
+	candidates := append([]string(nil), common.ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
+	candidates = append(candidates,
 		filepath.Join(wd, "rag", "res", "deepdoc"),
 		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
-	}
+	)
 	for _, c := range candidates {
 		if dirHasModels(c) {
 			return c
@@ -1408,6 +1893,22 @@ func dirHasModels(dir string) bool {
 // passing, all datasets share one model and this equals "all have one".
 func hasEmbedderFor(kbs []*entity.Knowledgebase) bool {
 	return len(kbs) > 0 && kbs[0] != nil && kbs[0].EmbdID != ""
+}
+
+// embedderForDatasets builds the embedding handle the agentic runtime uses for
+// query-side encoding outside the main retrieval leg: claim recall's KNN leg
+// (Python recall_dataset_claims, navigation.py:1837-1909, embedding with
+// tools.embed_mdl) and the structure-drill seed vector. The model is the FIRST
+// dataset's embedding (Python dialog_service.py:362-366 resolves
+// kbs[0].embd_id under kbs[0].tenant_id; validateDatasetEmbeddingModels
+// guarantees the rest share it). Nil when no dataset carries an embedding
+// model — the claim leg then degrades to BM25-only, matching a Python run
+// without embed_mdl.
+func embedderForDatasets(kbs []*entity.Knowledgebase, modelSvc *service.ModelProviderService) nlp.NavEmbedder {
+	if len(kbs) == 0 || kbs[0] == nil || kbs[0].EmbdID == "" {
+		return nil
+	}
+	return service.NewNavEmbedder(modelSvc, kbs[0].EmbdID)
 }
 
 // validateDatasetEmbeddingModels mirrors Python validate_dataset_embedding_models
@@ -1517,9 +2018,9 @@ func baseModelName(embdID string) string {
 // Harness seams (compiled expansion + open-web search)
 // ---------------------------------------------------------------------------
 
-// engineCompiledStore implements harness.CompiledStore over the document
+// engineCompiledStore implements agenticruntime.CompiledStore over the document
 // engine, backing search_chunks' compiled-structure expansion (Python
-// tools/compiled_expansion.py). The harness owns the expansion strategy; this
+// tools/compiled_expansion.py). The runtime owns the expansion strategy; this
 // adapter only maps its (scope, filters, free text) request onto one engine
 // search, mirroring Python's settings.docStoreConn.search calls.
 type engineCompiledStore struct {
@@ -1536,7 +2037,7 @@ type engineCompiledStore struct {
 	embedTenantID string
 }
 
-var _ harness.CompiledStore = (*engineCompiledStore)(nil)
+var _ agenticruntime.CompiledStore = (*engineCompiledStore)(nil)
 
 // compiledQueryEncoder is the query-side embedding seam used for the compiled
 // dense seed leg. *service.NavEmbedder implements it via EncodeQueries.
@@ -1553,9 +2054,9 @@ const (
 )
 
 // newEngineCompiledStore returns nil when no engine is available so
-// harness.NewCompiledExpander disables expansion instead of searching nowhere.
+// agenticruntime.NewCompiledExpander disables expansion instead of searching nowhere.
 // A nil embed (or empty embedTenantID) keeps the keyword-only leg.
-func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embedTenantID string) harness.CompiledStore {
+func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embedTenantID string) agenticruntime.CompiledStore {
 	if e == nil {
 		return nil
 	}
@@ -1568,7 +2069,7 @@ func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embed
 // expansion; using the tenant-default model instead would compare the query
 // against rows embedded by a different model — different vector spaces, so the
 // dense hits would be noise.
-func newDatasetCompiledStore(e engineDocEngine, modelSvc *service.ModelProviderService, kbs []*entity.Knowledgebase) harness.CompiledStore {
+func newDatasetCompiledStore(e engineDocEngine, modelSvc *service.ModelProviderService, kbs []*entity.Knowledgebase) agenticruntime.CompiledStore {
 	if e == nil {
 		return nil
 	}
@@ -1610,7 +2111,7 @@ var compiledChunkSelectFields = []string{
 	"content_with_weight", "source_chunk_ids", "similarity",
 }
 
-// SearchCompiled implements harness.CompiledStore.
+// SearchCompiled implements agenticruntime.CompiledStore.
 func (s *engineCompiledStore) SearchCompiled(ctx context.Context, kbID, tenantID string, docIDs []string, filters map[string][]string, matchText string, topN int) ([]map[string]any, error) {
 	if s == nil || s.engine == nil || kbID == "" || strings.TrimSpace(tenantID) == "" {
 		return nil, nil
@@ -1693,7 +2194,7 @@ func (s *engineCompiledStore) denseExpr(ctx context.Context, text string, topN i
 	}
 }
 
-// LoadChunks implements harness.CompiledStore: fetch the referenced source
+// LoadChunks implements agenticruntime.CompiledStore: fetch the referenced source
 // chunks by id (Python compiled_expansion.py:_load_chunks_for_doc searches the
 // tenant index with an {"id": chunk_ids} condition).
 func (s *engineCompiledStore) LoadChunks(ctx context.Context, kbID, tenantID string, chunkIDs []string) ([]map[string]any, error) {
@@ -1713,7 +2214,7 @@ func (s *engineCompiledStore) LoadChunks(ctx context.Context, kbID, tenantID str
 	return res.Chunks, nil
 }
 
-// Vectorize implements harness.CompiledStore. The ported expander assigns
+// Vectorize implements agenticruntime.CompiledStore. The ported expander assigns
 // compiled chunks the similarity stored on the row and blends by that field, so
 // expansion itself never needs a query embedding.
 func (s *engineCompiledStore) Vectorize(context.Context, string) ([]float64, error) {
@@ -1731,7 +2232,7 @@ func compiledDocScopeKey(filters map[string][]string) string {
 	return "doc_id"
 }
 
-// compiledEngineFilter maps the harness' OR-list filters onto the engine filter
+// compiledEngineFilter maps the runtime' OR-list filters onto the engine filter
 // shape. available_int is a numeric column, so its string values are coerced to
 // ints (Python passes the literal 1).
 func compiledEngineFilter(filters map[string][]string) map[string]interface{} {
@@ -1755,20 +2256,20 @@ func compiledEngineFilter(filters map[string][]string) map[string]interface{} {
 }
 
 // harnessWebSearcherFunc adapts the chat pipeline's web-search callback to the
-// harness.WebSearcher seam consumed by the web_search tool. The callback is a
-// plain func so internal/service does not have to depend on the harness package.
+// agenticruntime.WebSearcher seam consumed by the web_search tool. The callback is a
+// plain func so internal/service does not have to depend on the runtime package.
 type harnessWebSearcherFunc func(ctx context.Context, queries []string) ([]string, error)
 
-// Search implements harness.WebSearcher.
+// Search implements agenticruntime.WebSearcher.
 func (f harnessWebSearcherFunc) Search(ctx context.Context, queries []string) ([]string, error) {
 	return f(ctx, queries)
 }
 
-var _ harness.WebSearcher = harnessWebSearcherFunc(nil)
+var _ agenticruntime.WebSearcher = harnessWebSearcherFunc(nil)
 
 // harnessWebSearcher wraps a non-nil callback, returning a nil WebSearcher when
 // the pipeline did not supply one — which is what hides the web_search tool.
-func harnessWebSearcher(fn func(context.Context, []string) ([]string, error)) harness.WebSearcher {
+func harnessWebSearcher(fn func(context.Context, []string) ([]string, error)) agenticruntime.WebSearcher {
 	if fn == nil {
 		return nil
 	}

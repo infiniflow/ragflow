@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional
 
+from .metrics import request_rates
+
 
 def _fmt_seconds(value: Optional[float]) -> str:
     if value is None:
@@ -14,15 +16,19 @@ def _fmt_ms(value: Optional[float]) -> str:
 
 
 def _fmt_qps(qps: Optional[float]) -> str:
-    if qps is None or qps <= 0:
+    if qps is None:
         return "n/a"
     return f"{qps:.2f}"
 
 
-def _calc_qps(total_duration_s: Optional[float], total_requests: int) -> Optional[float]:
-    if total_duration_s is None or total_duration_s <= 0:
-        return None
-    return total_requests / total_duration_s
+def _request_rate_lines(success: int, failure: int, total_duration_s: float | None) -> list[str]:
+    rates = request_rates(success, failure, total_duration_s)
+    failure_rate = "n/a" if rates["failure_rate"] is None else f"{rates['failure_rate']:.2%}"
+    return [
+        f"QPS (requests / total duration): {_fmt_qps(rates['qps'])}",
+        f"Successful QPS (success / total duration): {_fmt_qps(rates['success_qps'])}",
+        f"Failure Rate: {failure_rate}",
+    ]
 
 
 def render_report(lines: List[str]) -> str:
@@ -62,7 +68,7 @@ def chat_report(
             f"avg={_fmt_ms(first_token_stats['avg'])}, min={_fmt_ms(first_token_stats['min'])}, "
             f"p50={_fmt_ms(first_token_stats['p50'])}, p90={_fmt_ms(first_token_stats['p90'])}, p95={_fmt_ms(first_token_stats['p95'])}",
             f"Total Duration: {_fmt_seconds(total_duration_s)}",
-            f"QPS (requests / total duration): {_fmt_qps(_calc_qps(total_duration_s, iterations))}",
+            *_request_rate_lines(success, failure, total_duration_s),
         ]
     )
     if errors:
@@ -95,7 +101,7 @@ def retrieval_report(
         [
             f"Latency: avg={_fmt_ms(stats['avg'])}, min={_fmt_ms(stats['min'])}, p50={_fmt_ms(stats['p50'])}, p90={_fmt_ms(stats['p90'])}, p95={_fmt_ms(stats['p95'])}",
             f"Total Duration: {_fmt_seconds(total_duration_s)}",
-            f"QPS (requests / total duration): {_fmt_qps(_calc_qps(total_duration_s, iterations))}",
+            *_request_rate_lines(success, failure, total_duration_s),
         ]
     )
     if errors:

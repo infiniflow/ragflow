@@ -184,7 +184,6 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		}
 		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
 			DatasetID:  datasetID,
-			DocID:      pageType + "/" + slug,
 			Slug:       slug,
 			PageType:   pageType,
 			Title:      title,
@@ -256,13 +255,25 @@ func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 }
 
 // GetArtifactGraph handles GET /artifacts/graph — wiki entity/relation graph.
+// keywords seeds the graph with BM25 matches; top_n/topN controls the entity cap.
 func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID)
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	topNValue := c.Query("top_n")
+	if topNValue == "" {
+		topNValue = c.Query("topN")
+	}
+	var topN *int
+	if topNValue != "" {
+		if value, parseErr := strconv.Atoi(topNValue); parseErr == nil {
+			topN = &value
+		}
+	}
+	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID, keywords, topN)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -322,13 +333,15 @@ func (h *DatasetArtifactHandler) AnySkill(c *gin.Context) {
 	}
 }
 
-// ListNavigation handles GET /navigation — list navigation clusters.
+// ListNavigation handles GET /navigation — list navigation clusters. The
+// optional keywords query searches navigation rows across the dataset.
 func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
-	items, total, err := h.svc.ListNavClusters(c.Request.Context(), tenantID, c.Param("dataset_id"))
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	items, total, err := h.svc.ListNavClusters(c.Request.Context(), tenantID, c.Param("dataset_id"), keywords)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -338,13 +351,15 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
-// ListNavigationChildren handles GET /navigation/<name>/children — list children of a navigation cluster.
+// ListNavigationChildren handles GET /navigation/<name>/children — list
+// children of a navigation cluster, optionally filtered by keywords.
 func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
-	items, total, err := h.svc.ListNavChildren(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("name"))
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	items, total, err := h.svc.ListNavChildren(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("name"), keywords)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return

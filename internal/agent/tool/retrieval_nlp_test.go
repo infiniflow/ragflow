@@ -246,10 +246,14 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
 		SimilarityThreshold:      &similarityThreshold,
+		AllowDenseFallback:       new(false),
 	}, []string{"tenant-a"}, 3, embeddingModel, false)
 
 	if got.Question != "hi" {
 		t.Fatalf("Question=%q want hi", got.Question)
+	}
+	if got.AllowDenseFallback == nil || *got.AllowDenseFallback {
+		t.Fatal("dense fallback opt-out was not passed to nlp retrieval")
 	}
 	if len(got.TenantIDs) != 1 || got.TenantIDs[0] != "tenant-a" {
 		t.Fatalf("TenantIDs=%v want [tenant-a]", got.TenantIDs)
@@ -272,6 +276,44 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.EmbeddingModel != embeddingModel {
 		t.Fatal("EmbeddingModel was not passed to nlp retrieval request")
 	}
+	if got.VectorOnly {
+		t.Fatal("mixed retrieval must not be vector-only")
+	}
+}
+
+func TestNLPRequestFromRetrieval_DerivesPureModesFromKeywordWeight(t *testing.T) {
+	embeddingModel := &modelModule.EmbeddingModel{}
+	vectorOnlyWeight := 0.0
+	vectorOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &vectorOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if !vectorOnly.VectorOnly {
+		t.Fatal("keywords weight 0 must derive vector-only search")
+	}
+	if vectorOnly.EmbeddingModel != embeddingModel {
+		t.Fatal("vector-only search must retain the embedding model")
+	}
+	if vectorOnly.VectorSimilarityWeight == nil || *vectorOnly.VectorSimilarityWeight != 1 {
+		t.Fatalf("vector-only vector weight = %v, want 1", vectorOnly.VectorSimilarityWeight)
+	}
+
+	keywordOnlyWeight := 1.0
+	keywordOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &keywordOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if keywordOnly.VectorOnly {
+		t.Fatal("keywords weight 1 must not derive vector-only search")
+	}
+	if keywordOnly.EmbeddingModel != nil {
+		t.Fatal("keywords weight 1 must disable the vector leg")
+	}
+	if keywordOnly.VectorSimilarityWeight == nil || *keywordOnly.VectorSimilarityWeight != 0 {
+		t.Fatalf("keyword-only vector weight = %v, want 0", keywordOnly.VectorSimilarityWeight)
+	}
 }
 
 func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
@@ -286,6 +328,9 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
+	}
+	if got.AllowDenseFallback != nil {
+		t.Fatal("ordinary retrieval must preserve default dense fallback policy")
 	}
 }
 
@@ -423,7 +468,7 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				EmbdID:       "embedding@provider",
 				TenantEmbdID: &tenantEmbeddingID,
 			},
-			wantCall: "id:tenant-embedding-1",
+			wantCall: "resolve:tenant-embedding-1",
 		},
 		{
 			name: "knowledge base embedding reference",
@@ -440,14 +485,24 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				ID:       "kb-1",
 				TenantID: "tenant-1",
 			},
-			wantCall: "default",
+			wantCall: "resolve:",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			resolver := &fakeModelResolver{modelName: "resolved-model"}
-			adapter := &NLPRetrievalAdapter{modelResolver: resolver}
+			adapter := &NLPRetrievalAdapter{
+				modelConfigResolver: func(
+					_ context.Context,
+					_ string,
+					_ entity.ModelType,
+					modelRef string,
+				) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+					resolver.call = "resolve:" + modelRef
+					return nil, resolver.modelName, &modelModule.APIConfig{}, 512, resolver.err
+				},
+			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
@@ -505,35 +560,6 @@ type fakeModelResolver struct {
 	call      string
 	modelName string
 	err       error
-}
-
-func (f *fakeModelResolver) GetModelConfigByID(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelID string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "id:" + modelID
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) ResolveModelConfig(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelRef string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "resolve:" + modelRef
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) GetTenantDefaultModelByType(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "default"
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
 }
 
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {

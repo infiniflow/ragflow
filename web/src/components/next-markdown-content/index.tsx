@@ -17,7 +17,10 @@
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { SafeImg } from '@/components/safe-img';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import {
+  MarkdownRemarkPlugins,
+  MarkdownRemarkPluginsLite,
+} from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
@@ -183,11 +186,17 @@ function MarkdownContent({
   clickDocumentButton,
   content,
   loading,
+  disableMath = false,
 }: {
   content: string;
   loading: boolean;
   reference?: IReferenceObject;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+  /**
+   * When true, disables LaTeX math rendering (remark-math + rehype-katex).
+   * Use this for user-generated content where `$` should be treated as literal text.
+   */
+  disableMath?: boolean;
 }) {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
@@ -371,7 +380,7 @@ function MarkdownContent({
           <HoverCard key={i}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                {t('common.figure')} {chunkIndex + 1}
+                [{chunkIndex + 1}]
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
@@ -386,19 +395,25 @@ function MarkdownContent({
     [renderPopoverContent, t],
   );
 
-  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const dir = getDirAttribute(content?.replace(citationMarkerReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[
-          rehypeRaw,
-          RehypeSanitizeAssistantMarkdown,
-          rehypeWrapReference,
-          rehypeKatex,
-        ]}
-        remarkPlugins={MarkdownRemarkPlugins}
+        rehypePlugins={
+          disableMath
+            ? [rehypeRaw, RehypeSanitizeAssistantMarkdown, rehypeWrapReference]
+            : [
+                rehypeRaw,
+                RehypeSanitizeAssistantMarkdown,
+                rehypeWrapReference,
+                rehypeKatex,
+              ]
+        }
+        remarkPlugins={
+          disableMath ? MarkdownRemarkPluginsLite : MarkdownRemarkPlugins
+        }
         urlTransform={(url, key) => {
           if (
             key === 'src' &&

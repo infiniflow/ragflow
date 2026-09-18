@@ -150,6 +150,8 @@ class DocumentService(CommonService):
                 .where(cls.model.kb_id == kb_id)
             )
         if doc_ids is not None:
+            if len(doc_ids) == 0:
+                return [], 0
             docs = docs.where(cls.model.id.in_(doc_ids))
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))

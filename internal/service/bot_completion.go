@@ -296,6 +296,12 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 func (s *BotService) ChatbotCompletion(
 	ctx context.Context, tenantID, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	req.Question = question
 	// 1. Load and authorise the dialog.
 	//
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
@@ -330,8 +336,9 @@ func (s *BotService) ChatbotCompletion(
 	// behaviour and add the comment so a future reader doesn't
 	// "fix" it to a tenant-id lookup and break the symmetry.
 	if req.SessionID == "" {
-		// No session yet: seed one with the prologue and return it
-		// immediately WITHOUT running the pipeline. Mirrors python
+		// Seed a new session. An empty question is the opening handshake;
+		// a supplied question continues through the normal generation path.
+		// Mirrors python
 		// async_iframe_completion (conversation_service.py:324-334):
 		// the share page calls this endpoint once with an empty
 		// question to obtain a session_id, then sends the real
@@ -354,24 +361,27 @@ func (s *BotService) ChatbotCompletion(
 			return nil, common.CodeServerError, err
 		}
 
-		// Mirror python async_iframe_completion
-		// (conversation_service.py:324-334): a request without a
-		// session_id is the share page's opening handshake — the
-		// front-end sends an empty question only to obtain a session.
-		// Persist the prologue-seeded session and stream the prologue
-		// back WITHOUT invoking the pipeline; running the model here
-		// would fabricate a reply to a message the user never sent.
-		out := make(chan ChatbotSSEFrame, 2)
-		go func() {
-			defer close(out)
-			out <- ChatbotSSEFrame{
-				Data:      prologue,
-				Reference: map[string]any{},
-				SessionID: session.ID,
-			}
-			out <- ChatbotSSEFrame{Done: true}
-		}()
-		return out, common.CodeSuccess, nil
+		req.SessionID = session.ID
+		if req.Question == "" {
+			// Mirror python async_iframe_completion
+			// (conversation_service.py:324-334): a request without a
+			// session_id is the share page's opening handshake — the
+			// front-end sends an empty question only to obtain a session.
+			// Persist the prologue-seeded session and stream the prologue
+			// back WITHOUT invoking the pipeline; running the model here
+			// would fabricate a reply to a message the user never sent.
+			out := make(chan ChatbotSSEFrame, 2)
+			go func() {
+				defer close(out)
+				out <- ChatbotSSEFrame{
+					Data:      prologue,
+					Reference: map[string]any{},
+					SessionID: session.ID,
+				}
+				out <- ChatbotSSEFrame{Done: true}
+			}()
+			return out, common.CodeSuccess, nil
+		}
 	}
 
 	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID)
@@ -398,8 +408,7 @@ func (s *BotService) ChatbotCompletion(
 		return nil, common.CodeDataError, errors.New("no LLM configured for this chatbot")
 	}
 
-	// 4. Build the pipeline input. The Message column on
-	// api_4_conversation is a json.RawMessage array of
+	// 4. Build the pipeline input. The hydrated Message value is a JSON array of
 	// {role, content, created_at} dicts; the pipeline expects the
 	// same filtered shape python builds in async_iframe_completion
 	// (drop system turns, drop the leading assistant prologue,
@@ -412,8 +421,16 @@ func (s *BotService) ChatbotCompletion(
 	kwargs := map[string]interface{}{
 		"quote": req.Quote != nil && *req.Quote,
 	}
-	if reasoning, ok := normalizeBotBoolFlag(req.Reasoning); ok {
-		kwargs["reasoning"] = reasoning
+	// Pass the raw reasoning level (0..4) straight through to the pipeline.
+	// The previous normalizeBotBoolFlag coercion only accepted a bool or 0/1,
+	// silently dropping medium/high/ultra agentic-RAG levels (2/3/4) so the
+	// new-tab/embed chat fell back to plain RAG. resolveReasoningLevel
+	// (chat_pipeline.go) reads this value first and tolerates float64/int/bool/
+	// string/json.Number via asInt64, then falls back to the dialog's
+	// prompt_config when the key is absent — so omitting it keeps the old
+	// default behaviour.
+	if req.Reasoning != nil {
+		kwargs["reasoning"] = req.Reasoning
 	}
 	if req.Internet != nil {
 		kwargs["internet"] = req.Internet
@@ -422,6 +439,9 @@ func (s *BotService) ChatbotCompletion(
 		kwargs["doc_ids"] = req.DocIDs
 	}
 
+	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
+		return nil, common.CodeServerError, err
+	}
 	results, err := s.pipeline.AsyncChat(ctx, tenantID, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -475,9 +495,9 @@ func (s *BotService) streamChatbotTurn(
 		// no-delta fallback.
 		var rawAnswer, fullAnswer string
 		var finalRef map[string]any
-		var errored bool
 		for res := range results {
 			if res.Final {
+				completedAt := float64(time.Now().UnixNano()) / 1e9
 				if res.Answer != "" {
 					// Decorated full answer (citations
 					// resolved). Replaces the accumulated
@@ -490,8 +510,17 @@ func (s *BotService) streamChatbotTurn(
 				if res.Reference != nil {
 					finalRef = res.Reference
 				}
-				if strings.HasPrefix(fullAnswer, "**ERROR**") {
-					errored = true
+				errored := strings.HasPrefix(fullAnswer, "**ERROR**")
+				// Save the completed answer before delivering the final SSE frame.
+				// The question was saved before generation; failures leave it intact.
+				if !errored && ctx.Err() == nil {
+					persisted := rawAnswer
+					if persisted == "" {
+						persisted = fullAnswer
+					}
+					if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef, completedAt); pErr != nil {
+						common.Error("bot: ChatbotCompletion session update failed", pErr, zap.String("dialog_id", session.DialogID), zap.String("session_id", session.ID))
+					}
 				}
 				finalData := ""
 				if rawAnswer == "" || errored {
@@ -562,36 +591,6 @@ func (s *BotService) streamChatbotTurn(
 			}
 		}
 
-		// 6. Persist the completed turn pair (user + assistant)
-		// plus the retrieval reference, mirroring python
-		// API4ConversationService.append_message after the stream.
-		// Persistence errors are logged but do NOT fail the SSE
-		// stream — the answer has already been produced. On a
-		// pipeline-level error ("**ERROR**" answer) nothing is
-		// persisted, matching the python exception path.
-		persisted := rawAnswer
-		if persisted == "" {
-			// No-delta finals never carry server-inserted [ID:n]
-			// citation markers: the structured-SQL path returns its
-			// markdown table (with ##N$$ source markers the frontend
-			// resolves client-side, same as python use_sql) before
-			// decorateAnswer runs, the empty_response fallback yields
-			// the user-configured text undecorated, and the streaming
-			// path always streams the full visible text as deltas
-			// before its decorated final (so rawAnswer is non-empty
-			// whenever the final was decorated). Falling back to
-			// fullAnswer here is therefore marker-free.
-			persisted = fullAnswer
-		}
-		if !errored {
-			if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef); pErr != nil {
-				common.Error("bot: ChatbotCompletion session update failed",
-					pErr,
-					zap.String("dialog_id", session.DialogID),
-					zap.String("session_id", session.ID),
-				)
-			}
-		}
 		out <- ChatbotSSEFrame{Done: true}
 	}()
 	return out
@@ -640,75 +639,22 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 	return turns
 }
 
-// persistChatbotTurn appends the finished user/assistant turn pair
-// and the retrieval reference to the api_4_conversation row so the
-// next ChatbotCompletion call with the same session_id sees this
-// turn in its history. Mirrors python
-// API4ConversationService.append_message.
+func (s *BotService) persistChatbotQuestion(ctx context.Context, session *entity.API4Conversation, question, messageID string, receivedAt float64) error {
+	message := map[string]interface{}{"role": "user", "content": question, "id": messageID, "created_at": receivedAt}
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message})
+}
+
+// persistChatbotTurn completes an already-persisted user turn with its
+// assistant message and immutable retrieval reference.
 func (s *BotService) persistChatbotTurn(
 	ctx context.Context, session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
+	completedAt float64,
 ) error {
-	// Serialise the read-modify-write per session and re-read the row
-	// inside the lock: the caller's session was loaded before the
-	// stream ran, so a concurrent request on the same session_id may
-	// already have appended its own turn. Without the lock + re-read
-	// the last Update would silently drop the other exchange.
-	lock := s.persistLock(session.ID)
-	lock.Lock()
-	defer lock.Unlock()
-	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, session.ID, session.DialogID)
-	if err != nil {
-		return err
-	}
-	if fresh != nil {
-		session = fresh
-	}
-
-	now := time.Now().Unix()
-	turns := parseChatbotTurns(session.Message)
-	// Both turns of the pair share messageID by design: a Q&A exchange
-	// is addressed as a unit — mirrors the in-app chat convention
-	// where the answer id is derived from the question id so the pair
-	// is deleted together (web/src/hooks/logic-hooks.ts
-	// buildMessageUuid).
-	turns = append(turns,
-		map[string]any{
-			"role":       "user",
-			"content":    question,
-			"id":         messageID,
-			"created_at": now,
-		},
-		map[string]any{
-			"role":       "assistant",
-			"content":    answer,
-			"id":         messageID,
-			"created_at": now,
-		},
-	)
-	rawMsg, err := json.Marshal(turns)
-	if err != nil {
-		return err
-	}
-	session.Message = rawMsg
-
-	refs := make([]any, 0)
-	if len(session.Reference) > 0 {
-		// Tolerate malformed / missing reference history — the
-		// message turns above are the authoritative history;
-		// a lost reference list degrades citation display only.
-		_ = json.Unmarshal(session.Reference, &refs)
-	}
 	if reference == nil {
 		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	}
-	refs = append(refs, reference)
-	rawRef, err := json.Marshal(refs)
-	if err != nil {
-		return err
-	}
-	session.Reference = rawRef
-
-	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
+	message := map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID, Reference: reference, AppendReference: true})
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

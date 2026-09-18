@@ -479,24 +479,117 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	}
 }
 
-func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
+func TestModelSolverResolveModelConfigByID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
 	ctx := t.Context()
-	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID(ctx, "user-1", entity.ModelTypeChat, "model-1")
+	target, err := NewModelSolver().ResolveModelConfig(ctx, "user-1", entity.ModelTypeChat, "model-1")
 	if err != nil {
-		t.Fatalf("GetModelConfigByID() error = %v", err)
+		t.Fatalf("ResolveModelConfig() error = %v", err)
 	}
-	if driver == nil {
-		t.Fatal("GetModelConfigByID() returned nil driver")
+	if target == nil || target.Driver == nil {
+		t.Fatal("ResolveModelConfig() returned nil target or driver")
 	}
-	if modelName != "gpt-test" {
-		t.Fatalf("modelName = %q, want %q", modelName, "gpt-test")
+	if target.ModelName != "gpt-test" {
+		t.Fatalf("modelName = %q, want %q", target.ModelName, "gpt-test")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != "sk-test" {
-		t.Fatalf("apiConfig.ApiKey = %v, want %q", apiConfig.ApiKey, "sk-test")
+	if target.APIConfig == nil || target.APIConfig.ApiKey == nil || *target.APIConfig.ApiKey != "sk-test" {
+		t.Fatalf("apiConfig.ApiKey = %v, want %q", target.APIConfig.ApiKey, "sk-test")
+	}
+}
+
+func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	for _, modelRef := range []string{
+		"unknown@ZHIPU-AI",
+		"unknown@default@OpenAI",
+	} {
+		t.Run(modelRef, func(t *testing.T) {
+			_, err := NewModelSolver().ResolveModelConfig(
+				t.Context(), "tenant-1", entity.ModelTypeEmbedding, modelRef,
+			)
+			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("ResolveModelConfig() error = %v, want unavailable record-not-found error", err)
+			}
+			if !strings.Contains(err.Error(), "lookup failed: record not found") {
+				t.Fatalf("ResolveModelConfig() error = %q, want lookup failure contract", err)
+			}
+		})
+	}
+}
+
+// TestModelProviderServiceDecodesCompatibleInstanceExtra verifies both model
+// resolution paths accept empty configuration and unrelated typed fields.
+func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	solver := NewModelSolver()
+	resolvers := []struct {
+		name    string
+		resolve func() (*ModelTarget, error)
+	}{
+		{
+			name: "model ID",
+			resolve: func() (*ModelTarget, error) {
+				return solver.ResolveModelConfig(t.Context(), "user-1", entity.ModelTypeChat, "model-1")
+			},
+		},
+		{
+			name: "provider instance",
+			resolve: func() (*ModelTarget, error) {
+				return solver.ResolveModelConfig(t.Context(), "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI")
+			},
+		},
+	}
+	configs := []struct {
+		name        string
+		raw         string
+		wantRegion  string
+		wantBaseURL string
+	}{
+		{name: "empty", raw: ""},
+		{
+			name:        "unrelated typed fields",
+			raw:         `{"region":"us-east-1","base_url":"https://models.example.com","enabled":true,"retries":3,"options":{"mode":"custom"}}`,
+			wantRegion:  "us-east-1",
+			wantBaseURL: "https://models.example.com",
+		},
+	}
+	for _, config := range configs {
+		t.Run(config.name, func(t *testing.T) {
+			if err := db.Model(&entity.TenantModelInstance{}).
+				Where("id = ?", "instance-1").
+				Update("extra", config.raw).Error; err != nil {
+				t.Fatalf("update instance extra: %v", err)
+			}
+
+			for _, resolver := range resolvers {
+				t.Run(resolver.name, func(t *testing.T) {
+					target, err := resolver.resolve()
+					if err != nil {
+						t.Fatalf("resolve model config: %v", err)
+					}
+					driver := target.Driver
+					apiConfig := target.APIConfig
+					if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != config.wantRegion || apiConfig.BaseURL == nil || *apiConfig.BaseURL != config.wantBaseURL {
+						t.Fatalf("resolved driver/config = %v/%+v, want region %q and base URL %q", driver, apiConfig, config.wantRegion, config.wantBaseURL)
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -512,106 +605,6 @@ func TestMaxTokensFromModelInfo(t *testing.T) {
 	}
 	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeChat); got != maxOutput {
 		t.Fatalf("chat max tokens = %d, want max output %d", got, maxOutput)
-	}
-}
-
-func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-	// Seed a tenant chat model that maps to a real factory-catalog model
-	// (Anthropic / claude-opus-4-8 has context_length=1000000, max_output=128000).
-	activeStatus := "1"
-	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
-		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active"},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("failed to seed %T: %v", row, err)
-		}
-	}
-
-	svc := NewModelProviderService()
-	ctx := t.Context()
-
-	// UUID path: resolves context_length (context window) from the factory
-	// catalog, NOT max_output.
-	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(uuid) error = %v", err)
-	}
-	if got != 1000000 {
-		t.Fatalf("uuid context_length = %d, want 1000000 (must be the context window, not max_output=128000)", got)
-	}
-
-	// Composite "model@instance@provider" path resolves the same value.
-	got2, err := svc.ResolveModelContextLength(ctx, "user-1", "claude-opus-4-8@default@Anthropic")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(composite) error = %v", err)
-	}
-	if got2 != 1000000 {
-		t.Fatalf("composite context_length = %d, want 1000000", got2)
-	}
-}
-
-func TestModelProviderServiceResolveModelContextLengthUnknownModel(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-
-	// A model that does not exist in the factory catalog resolves to 0 so the
-	// caller falls back to its default context length instead of failing.
-	got, err := NewModelProviderService().ResolveModelContextLength(
-		t.Context(), "user-1", "gpt-no-such-model@default@OpenAI")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(unknown) error = %v", err)
-	}
-	if got != 0 {
-		t.Fatalf("unknown model context_length = %d, want 0", got)
-	}
-}
-
-// TestModelProviderServiceResolveModelContextLengthOverride verifies that the
-// tenant-configured "max_tokens" override in tenant_model.extra wins over the
-// catalog context_length through the service delegation. UUID resolution is
-// unscoped (globally unique); the composite path needs the real tenant id to
-// locate the tenant's provider/instance/model rows.
-func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-	activeStatus := "1"
-	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
-		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"max_tokens": 4096}`},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("failed to seed %T: %v", row, err)
-		}
-	}
-
-	svc := NewModelProviderService()
-	ctx := t.Context()
-
-	// UUID path: the 4096 override wins over catalog context_length 1000000.
-	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(override uuid) error = %v", err)
-	}
-	if got != 4096 {
-		t.Fatalf("uuid override context_length = %d, want 4096 (custom override, not catalog 1000000)", got)
-	}
-
-	// Composite path with the real tenant id honors the same override.
-	got2, err := svc.ResolveModelContextLength(ctx, "tenant-cl", "claude-opus-4-8@default@Anthropic")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(override composite) error = %v", err)
-	}
-	if got2 != 4096 {
-		t.Fatalf("composite override context_length = %d, want 4096", got2)
 	}
 }
 
@@ -1117,5 +1110,43 @@ func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *t
 	}
 	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("model lookup failure = (%v, nil), want a propagated error", got)
+	}
+}
+
+func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	// Force the second delete (tenant_model_instance) to fail so the
+	// transaction must roll back the already-applied tenant_model delete.
+	if err := db.Callback().Delete().Before("gorm:DELETE").Register(
+		"test:fail_tenant_model_instance_delete",
+		func(tx *gorm.DB) {
+			if tx.Statement != nil && tx.Statement.Table == "tenant_model_instance" {
+				_ = tx.AddError(errors.New("forced tenant_model_instance delete failure"))
+			}
+		},
+	); err != nil {
+		t.Fatalf("failed to register failing delete callback: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Delete().Remove("test:fail_tenant_model_instance_delete")
+	})
+
+	code, err := NewModelProviderService().DropProviderInstances(t.Context(), "provider-1", "user-1", []string{"instance-1"})
+	if err == nil {
+		t.Fatalf("DropProviderInstances() error = nil, want forced instance delete failure")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("code = %v, want %v", code, common.CodeServerError)
+	}
+
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", "instance-1").Count(&modelCount).Error; err != nil {
+		t.Fatalf("failed to count tenant models: %v", err)
+	}
+	if modelCount != 1 {
+		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
 	}
 }

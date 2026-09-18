@@ -21,14 +21,18 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -40,6 +44,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // Service admin service layer
@@ -475,22 +480,27 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 }
 
 // GetUserDetails get user details
-func (s *Service) GetUserDetails(username string) (map[string]interface{}, error) {
-	// Query user by email/username
-	var user entity.User
-	err := dao.DB.Where("email = ?", username).First(&user).Error
+func (s *Service) GetUserDetails(ctx context.Context, username string) (map[string]interface{}, error) {
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
-		return nil, common.ErrUserNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	return map[string]interface{}{
-		"id":           user.ID,
-		"email":        user.Email,
-		"nickname":     user.Nickname,
-		"is_active":    user.IsActive,
-		"is_superuser": user.IsSuperuser,
-		"create_time":  user.CreateTime,
-		"update_time":  user.UpdateTime,
+		"avatar":          user.Avatar,
+		"email":           user.Email,
+		"language":        user.Language,
+		"last_login_time": user.LastLoginTime,
+		"is_active":       user.IsActive,
+		"is_anonymous":    user.IsAnonymous,
+		"login_channel":   user.LoginChannel,
+		"status":          user.Status,
+		"is_superuser":    user.IsSuperuser,
+		"create_date":     user.CreateDate,
+		"update_date":     user.UpdateDate,
 	}, nil
 }
 
@@ -623,6 +633,18 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 
 		// 9. Delete chat sessions
 		if len(dialogIDs) > 0 {
+			var sessionIDs []string
+			if pluckErr := tx.Model(&entity.ChatSession{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &sessionIDs); pluckErr.Error != nil {
+				common.Warn("failed to get chat session IDs", zap.Error(pluckErr.Error))
+			}
+			if len(sessionIDs) > 0 {
+				if delErr := tx.Table("conversation_message").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete conversation messages", zap.Error(delErr.Error))
+				}
+				if delErr := tx.Table("conversation_reference").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete conversation references", zap.Error(delErr.Error))
+				}
+			}
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{}); delErr.Error != nil {
 				common.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
 			}
@@ -640,6 +662,18 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 
 		// 12. Delete API4Conversations
 		if len(dialogIDs) > 0 {
+			var sessionIDs []string
+			if pluckErr := tx.Model(&entity.API4Conversation{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &sessionIDs); pluckErr.Error != nil {
+				common.Warn("failed to get API conversation IDs", zap.Error(pluckErr.Error))
+			}
+			if len(sessionIDs) > 0 {
+				if delErr := tx.Table("api_4_conversation_message").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete API conversation messages", zap.Error(delErr.Error))
+				}
+				if delErr := tx.Table("api_4_conversation_reference").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete API conversation references", zap.Error(delErr.Error))
+				}
+			}
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{}); delErr.Error != nil {
 				common.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
 			}
@@ -849,18 +883,6 @@ func (s *Service) RevokeAdmin(ctx context.Context, username string) error {
 	return nil
 }
 
-// GetUserDatasets get user datasets
-func (s *Service) GetUserDatasets(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user datasets
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserAgents get user agents
-func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user agents
-	return []map[string]interface{}{}, nil
-}
-
 // API Key methods
 
 // ListUserAPITokens get user API keys
@@ -978,19 +1000,36 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 type ServiceStatus struct {
 	Type    string `json:"type"`
 	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
 	Status  string `json:"status"`
 	Elapsed string `json:"elapsed"`
 	Message string `json:"message"`
 }
 
-func newServiceStatus(typeStr, nameStr, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
+func newServiceStatus(typeStr, nameStr, host string, port int, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
 	return ServiceStatus{
 		Type:    typeStr,
 		Name:    nameStr,
+		Host:    host,
+		Port:    port,
 		Status:  statusStr,
 		Elapsed: fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 		Message: messageStr,
 	}
+}
+
+func serviceEndpoint(raw string, defaultPort int) (string, int) {
+	if parsed, err := url.Parse(raw); err == nil && parsed.Hostname() != "" {
+		raw = parsed.Host
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err == nil {
+		var portNumber int
+		fmt.Sscanf(port, "%d", &portNumber)
+		return host, portNumber
+	}
+	return raw, defaultPort
 }
 
 // ListServices get all services
@@ -1006,48 +1045,64 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		mysqlStatus := s.getMySQLStatus(ctx)
 		results = append(results, mysqlStatus)
 	default:
-		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+		mysqlConfig := globalConfig.GetMySQLConfig()
+		results = append(results, newServiceStatus("database", databaseType, mysqlConfig.Host, mysqlConfig.Port, "not available", time.Now(), "not supported database type"))
 	}
 
 	// Doc engine
 	docEngineImpl := engine.Get()
+	docHost, docPort := "-", 0
+	if docEngineImpl.GetType() == "infinity" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
+	} else if docEngineImpl.GetType() == "elasticsearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {
-		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "alive", time.Now(), ""))
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), docHost, docPort, "alive", time.Now(), ""))
 	} else {
-		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "timeout", time.Now(), err.Error()))
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), docHost, docPort, "timeout", time.Now(), err.Error()))
 	}
 
 	// storage engine
 	storageImpl := storage.GetStorageFactory().GetStorage()
+	storageHost, storagePort := "-", 0
+	if storageImpl.Type() == "minio" {
+		storageHost, storagePort = serviceEndpoint(globalConfig.GetMinioConfig().Host, 0)
+	}
 	storageHealth := storageImpl.Health(ctx)
 	if storageHealth {
-		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "alive", time.Now(), ""))
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), storageHost, storagePort, "alive", time.Now(), ""))
 	} else {
-		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "timeout", time.Now(), ""))
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), storageHost, storagePort, "timeout", time.Now(), ""))
 	}
 
 	// cache engine
 	cacheType := globalConfig.CacheEngineType()
 	switch cacheType {
-	case "redis":
+	// The Go stack talks to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template; both map to
+	// the same Kvrocks backend, so probe the same connection.
+	case "redis", "kvrocks":
 		mysqlStatus := s.getRedisInfo(ctx)
 		results = append(results, mysqlStatus)
 	default:
-		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+		redisConfig := globalConfig.GetRedisConfig()
+		results = append(results, newServiceStatus("cache", cacheType, redisConfig.Host, redisConfig.Port, "not available", time.Now(), "not supported cache type"))
 	}
 
 	// message queue
 	messageQueueImpl := engine.GetMessageQueueEngine()
 	messageQueueStatus := messageQueueImpl.CheckStatus()
-	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
+	natsConfig := globalConfig.GetNATSConfig()
+	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), natsConfig.Host, natsConfig.Port, messageQueueStatus, time.Now(), ""))
 
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {
 		now := time.Now()
-		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, "", serverStatus.Timestamp, "")
+		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
 		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
 			serverItem.Status = "alive"
@@ -1114,16 +1169,19 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	sqlDB, err := dao.DB.DB()
 	if err != nil {
-		return newServiceStatus(serviceType, name, "not connected", startTime, err.Error())
+		mysqlConfig := server.GetConfig().GetMySQLConfig()
+		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "not connected", startTime, err.Error())
 	}
 
 	// Execute SELECT 1 to check connectivity
 	err = sqlDB.PingContext(ctx)
 	if err != nil {
-		return newServiceStatus(serviceType, name, "timeout", startTime, err.Error())
+		mysqlConfig := server.GetConfig().GetMySQLConfig()
+		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "timeout", startTime, err.Error())
 	}
 
-	return newServiceStatus(serviceType, name, "alive", startTime, "")
+	mysqlConfig := server.GetConfig().GetMySQLConfig()
+	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
 }
 
 // getRedisInfo gets Redis service info
@@ -1133,13 +1191,14 @@ func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
 	name := "redis"
 
 	startTime := time.Now()
+	redisConfig := server.GetConfig().GetRedisConfig()
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		return newServiceStatus(serviceType, name, "alive", startTime, "")
+		return newServiceStatus(serviceType, name, redisConfig.Host, redisConfig.Port, "alive", startTime, "")
 	}
 
-	return newServiceStatus(serviceType, name, "timeout", startTime, "Redis health check failed")
+	return newServiceStatus(serviceType, name, redisConfig.Host, redisConfig.Port, "timeout", startTime, "Redis health check failed")
 }
 
 // getESClusterStats gets Elasticsearch cluster stats
@@ -1352,7 +1411,11 @@ func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one
 func (s *Service) SetVariable(ctx context.Context, varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
+	return s.setVariable(ctx, dao.DB, varName, varValue)
+}
+
+func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err
 	}
@@ -1363,7 +1426,7 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 			return err
 		}
 		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
+		return s.systemSettingsDAO.UpdateByName(ctx, db, varName, setting)
 	} else if len(settings) > 1 {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
@@ -1378,7 +1441,7 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
-	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
+	return s.systemSettingsDAO.Create(ctx, db, newSetting)
 }
 
 // Config methods
@@ -1465,40 +1528,108 @@ func (s *Service) GetVersion() (string, string) {
 
 // ListSandboxProviders list sandbox providers
 func (s *Service) ListSandboxProviders() ([]map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return []map[string]interface{}{}, nil
+	return sandbox.ListProviders(), nil
 }
 
 // GetSandboxProviderSchema get sandbox provider schema
 func (s *Service) GetSandboxProviderSchema(providerID string) (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{}, nil
+	schema, err := sandbox.ConfigSchema(providerID)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+	return schema, nil
 }
 
 // GetSandboxConfig get sandbox config
-func (s *Service) GetSandboxConfig() (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{}, nil
+func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, "sandbox.")
+	if err != nil {
+		return nil, err
+	}
+
+	providerType := "self_managed"
+	values := make(map[string]string, len(settings))
+	for _, setting := range settings {
+		if _, exists := values[setting.Name]; exists {
+			return nil, fmt.Errorf("duplicate sandbox setting: %s", setting.Name)
+		}
+		values[setting.Name] = setting.Value
+	}
+	if value, exists := values["sandbox.provider_type"]; exists {
+		providerType = value
+	}
+	schema, err := sandbox.ConfigSchema(providerType)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+
+	raw := values["sandbox."+providerType]
+	var config map[string]interface{}
+	if raw != "" {
+		var value interface{}
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			config = nil
+		} else if value == nil {
+			return nil, common.NewCodedError(common.CodeBadRequest,
+				fmt.Sprintf("sandbox.%s must contain a JSON object", providerType))
+		} else if object, ok := value.(map[string]interface{}); ok {
+			config = object
+		} else {
+			return nil, common.NewCodedError(common.CodeBadRequest,
+				fmt.Sprintf("sandbox.%s must contain a JSON object", providerType))
+		}
+	}
+	if len(config) == 0 {
+		config = make(map[string]interface{})
+		for name, field := range schema {
+			fieldSchema, ok := field.(map[string]any)
+			if !ok {
+				continue
+			}
+			if fieldSchema["readonly"] == true {
+				continue
+			}
+			if value, ok := fieldSchema["default"]; ok && value != nil {
+				config[name] = value
+			}
+		}
+	}
+	return map[string]interface{}{"provider_type": providerType, "config": config}, nil
 }
 
 // SetSandboxConfig set sandbox config
-func (s *Service) SetSandboxConfig(providerType string, config map[string]interface{}, setActive bool) (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{
-		"provider_type": providerType,
-		"config":        config,
-		"set_active":    setActive,
-	}, nil
+func (s *Service) SetSandboxConfig(ctx context.Context, providerType string, config map[string]interface{}, setActive bool) (map[string]interface{}, error) {
+	if config == nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, "config must be a JSON object")
+	}
+	if err := sandbox.ValidateConfig(providerType, config); err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, fmt.Sprintf("invalid sandbox configuration: %v", err))
+	}
+	err = s.systemSettingsDAO.Transaction(ctx, dao.DB, func(tx *gorm.DB) error {
+		if setActive {
+			if err := s.setVariable(ctx, tx, "sandbox.provider_type", providerType); err != nil {
+				return err
+			}
+		}
+		return s.setVariable(ctx, tx, "sandbox."+providerType, string(encoded))
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"provider_type": providerType, "config": config}, nil
 }
 
 // TestSandboxConnection test sandbox connection
-func (s *Service) TestSandboxConnection(providerType string, config map[string]interface{}) (map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return map[string]interface{}{
-		"provider_type": providerType,
-		"config":        config,
-		"connected":     true,
-	}, nil
+func (s *Service) TestSandboxConnection(ctx context.Context, providerType string, config map[string]interface{}) (map[string]interface{}, error) {
+	result, err := sandbox.TestConnection(ctx, providerType, config)
+	if err != nil {
+		return nil, common.NewCodedError(common.CodeBadRequest, err.Error())
+	}
+	return result, nil
 }
 
 var heartBeatCount int64 = 0

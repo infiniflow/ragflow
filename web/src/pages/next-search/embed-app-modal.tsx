@@ -17,7 +17,7 @@
 import HighLightMarkdown from '@/components/highlight-markdown';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import {
   LanguageAbbreviation,
@@ -41,7 +41,7 @@ type IEmbedAppModalProps = {
 const EmbedAppModal = (props: IEmbedAppModalProps) => {
   const { t } = useTranslate('search');
   const { data: tenantInfo } = useFetchTenantInfo();
-  const tenantId = tenantInfo.tenant_id;
+  const tenantId = tenantInfo?.tenant_id ?? '';
   const { open, setOpen, token = '', from, url, beta = '' } = props;
 
   const [hideAvatar, setHideAvatar] = useState(false);
@@ -112,12 +112,12 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
           <label className="block text-sm font-medium mb-2">
             {t('locale')}
           </label>
-          <RAGFlowSelect
+          <SelectWithSearch
             placeholder={t('selectLocalePlaceholder')}
             value={locale}
             onChange={(value) => setLocale(value)}
             options={languageOptions}
-          ></RAGFlowSelect>
+          ></SelectWithSearch>
         </div>
         {/* Embed Code */}
         <div className="mb-6">

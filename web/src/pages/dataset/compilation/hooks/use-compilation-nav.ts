@@ -1,4 +1,10 @@
+import { GenerateType } from '@/constants/knowledge';
 import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
+import {
+  DatasetNavKeys,
   useDeleteDatasetNav,
   useDeleteDatasetNavNode,
   useFetchDatasetNav,
@@ -8,8 +14,13 @@ import { useFetchDocumentStructureGraphById } from '@/hooks/use-document-request
 import { useKnowledgeBaseId } from '@/hooks/use-knowledge-request';
 import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useIsGoBackend } from '@/utils/backend-variant';
+import { useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
+import { trim } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
+
+import { useRunEndEffect } from './use-run-end-effect';
 
 export interface SelectedNavNode {
   parentName: string | null;
@@ -26,6 +37,9 @@ export function useCompilationNav() {
   const kbId = useKnowledgeBaseId();
   const [keywords, setKeywords] = useState('');
   const debouncedKeywords = useDebounce(keywords, { wait: 500 });
+  // The filter actually applied to requests; the input value lags behind it by
+  // the debounce window.
+  const activeKeywords = trim(debouncedKeywords);
   const {
     data: navList,
     loading: navLoading,
@@ -51,9 +65,13 @@ export function useCompilationNav() {
   );
 
   const { data: childrenData, isError: childrenError } =
-    useFetchDatasetNavChildren(loadingParent);
+    useFetchDatasetNavChildren(loadingParent, activeKeywords);
   const { data: structureData, isPlaceholderData: structurePlaceholder } =
-    useFetchDocumentStructureGraphById(kbId, loadingDocId ?? '');
+    useFetchDocumentStructureGraphById(
+      kbId,
+      loadingDocId ?? '',
+      activeKeywords || undefined,
+    );
 
   useEffect(() => {
     if (!loadingParent || !childrenData) {
@@ -105,6 +123,38 @@ export function useCompilationNav() {
       }));
     }
   }, [loadingDocId, structureData, structurePlaceholder]);
+
+  const clearExpandedData = useCallback(() => {
+    setChildrenMap({});
+    setChildrenErrorParents({});
+    setLoadingParent(null);
+    setStructureMap({});
+    setLoadingDocId(null);
+  }, []);
+
+  useEffect(() => {
+    // Loaded children/graphs were fetched under the previous keywords filter;
+    // drop them so re-expansion refetches under the active filter.
+    clearExpandedData();
+  }, [activeKeywords, clearExpandedData]);
+
+  const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
+  // Go: the nav tree is a by-product of tree/structure knowledge compilation.
+  // Poll the Tree-scoped scheduler status (kind "raptor" normalizes to "Tree")
+  // so the view can surface compile progress/logs and refresh the tree when a
+  // run ends. Python keeps the read-only behavior (no polling, no log UI).
+  const { data: navRunData } = useTraceRunData(GenerateType.Raptor, isGo);
+  const { status: navStatus } = useGenerateStatus(navRunData);
+
+  const handleCompileRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: DatasetNavKeys.all(kbId) });
+    // Children/structure data cached in local state predates the compile, and
+    // invalidation cannot refetch their inactive queries — drop the maps so
+    // re-expansion fetches fresh data.
+    clearExpandedData();
+  }, [queryClient, kbId, clearExpandedData]);
+  useRunEndEffect(navStatus, handleCompileRunEnd);
 
   const loadChildren = useCallback(
     (name: string) => {
@@ -177,12 +227,8 @@ export function useCompilationNav() {
 
   const resetNav = useCallback(() => {
     setSelectedNode(null);
-    setChildrenMap({});
-    setChildrenErrorParents({});
-    setLoadingParent(null);
-    setStructureMap({});
-    setLoadingDocId(null);
-  }, []);
+    clearExpandedData();
+  }, [clearExpandedData]);
 
   const handleKeywordsChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,12 +326,15 @@ export function useCompilationNav() {
     navLoading,
     navError,
     keywords,
+    activeKeywords,
     childrenMap,
     childrenErrorParents,
     structureMap,
     selectedNode,
     deleteNavLoading,
     deleteNodeLoading,
+    navRunData,
+    navStatus,
     handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,

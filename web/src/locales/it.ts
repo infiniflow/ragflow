@@ -1147,7 +1147,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       tavilyApiKeyTip:
         'Se una chiave API è impostata correttamente qui, le ricerche web basate su Tavily saranno usate per integrare il recupero dal dataset.',
       tavilyApiKeyMessage: 'Inserisci la tua chiave API Tavily',
-      tavilyApiKeyHelp: 'Come ottenerla?',
+      webSearchApiKeyHelp: 'Come ottenerla?',
       crossLanguage: 'Ricerca cross-lingua',
       crossLanguagePlaceholder: 'Seleziona valore',
       crossLanguageTip: `Seleziona una o più lingue per la ricerca cross-lingua. Se non viene selezionata nessuna lingua, il sistema cerca con la query originale.`,

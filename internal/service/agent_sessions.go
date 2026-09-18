@@ -50,6 +50,7 @@ type ListAgentSessionsRequest struct {
 	Desc       bool
 	ExpUserID  string
 	IncludeDSL bool
+	NoHistory  bool
 }
 
 // ListAgentSessionsResponse is the response body for ListAgentSessions.
@@ -359,6 +360,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 		SessionID:  req.SessionID,
 		UserID:     req.UserID,
 		IncludeDSL: req.IncludeDSL,
+		NoHistory:  req.NoHistory,
 		Keywords:   req.Keywords,
 		FromDate:   fromDate,
 		ToDate:     toDate,
@@ -371,6 +373,9 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 	data := make([]map[string]interface{}, 0, len(sessions))
 	for _, session := range sessions {
 		data = append(data, normalizeAgentSession(session, req.IncludeDSL))
+		if req.NoHistory {
+			delete(data[len(data)-1], "message")
+		}
 	}
 	return &ListAgentSessionsResponse{Data: data, Total: total}, common.CodeSuccess, nil
 }
@@ -701,9 +706,8 @@ type CreateAgentSessionRequest struct {
 //   - id          : 32-hex uuid, matches Python uuid.uuid4().hex
 //   - dialog_id   : agent canvas id
 //   - user_id     : caller's id
-//   - message     : JSON array (default []); GET path normalizes it
-//   - reference   : JSON object (default {}) so GET-side parsing
-//     does not crash on .chunks
+//   - message     : ordered rows in api_4_conversation_message
+//   - reference   : ordered rows in api_4_conversation_reference
 //   - dsl         : JSON map; copied from user_canvas.dsl if the
 //     caller did not pass one
 //   - create_time : unix-millis
@@ -736,7 +740,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if len(messages) == 0 {
 		messages = json.RawMessage(`[]`)
 	}
-	reference := json.RawMessage(`{}`)
+	reference := json.RawMessage(`[]`)
 
 	var dsl entity.JSONMap
 	if len(req.DSL) > 0 {
@@ -751,6 +755,12 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 			return nil, common.CodeServerError, fmt.Errorf("load canvas dsl: %w", gErr)
 		}
 		dsl = canvas.DSL
+	}
+	if err := validateAgentChatModels(ctx, req.UserID, dsl); err != nil {
+		if errors.Is(err, ErrAgentStorageError) {
+			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
+		}
+		return nil, common.CodeDataError, err
 	}
 
 	name := strings.TrimSpace(req.Name)

@@ -528,10 +528,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.DevCreateMetadataStoreCommand(cmd)
 	case "dev_drop_metadata_store":
 		return c.DevDropMetadataStoreCommand(cmd)
-	case "dev_insert_chunks_from_file":
-		return c.DevInsertChunksFromFileCommand(cmd)
-	case "dev_insert_metadata_from_file":
-		return c.DevInsertMetadataFromFileCommand(cmd)
 	case "dev_update_chunk":
 		return c.DevUpdateChunkCommand(cmd)
 	case "dev_get_chunk":

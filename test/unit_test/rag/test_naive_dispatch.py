@@ -36,12 +36,14 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from common.parser_config_utils import (
     MINERU_OPTION_KEYS,
     has_mineru_options,
+    is_tenant_model_id,
     normalize_layout_recognizer,
 )
 
@@ -204,7 +206,13 @@ def naive_module():
         _stub("deepdoc.parser.tcadp_parser", TCADPParser=_Parser)
         _stub("deepdoc.parser.utils", extract_pdf_outlines=lambda *a, **k: [])
 
-        _stub("common.parser_config_utils", normalize_layout_recognizer=normalize_layout_recognizer, MINERU_OPTION_KEYS=MINERU_OPTION_KEYS, has_mineru_options=has_mineru_options)
+        _stub(
+            "common.parser_config_utils",
+            normalize_layout_recognizer=normalize_layout_recognizer,
+            MINERU_OPTION_KEYS=MINERU_OPTION_KEYS,
+            has_mineru_options=has_mineru_options,
+            is_tenant_model_id=is_tenant_model_id,
+        )
         _stub("common.float_utils", normalize_overlapped_percent=lambda x: x)
         _stub("common.text_utils", normalize_arabic_presentation_forms=lambda x: x)
         _stub("common.token_utils", num_tokens_from_string=lambda s: len((s or "").split()))
@@ -356,6 +364,26 @@ def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize(naive_m
     assert parser.__name__ == "by_mineru"
 
 
+def test_dispatch_does_not_fall_back_to_mineru_for_vision_composite_name(naive_module):
+    """A resolved vision LLM composite name with leftover mineru_* form
+    defaults must keep routing to by_plaintext (vision parser), not MinerU."""
+    vision_ref = "qwen3.6-plus@tongyi@Tongyi-Qianwen"
+    parser, name, lr, _op, _model = _dispatch(
+        naive_module,
+        vision_ref,
+        {
+            "mineru_parse_method": "auto",
+            "mineru_formula_enable": True,
+            "mineru_table_enable": True,
+            "mineru_lang": "English",
+        },
+    )
+    assert name == vision_ref.lower()
+    assert lr == vision_ref
+    # Unknown layout names use the by_plaintext default (not PARSERS["plaintext"]).
+    assert parser is naive_module.by_plaintext
+
+
 # CodeRabbit review #4: layout_recognize_override preserves parser_model_name.
 def test_dispatch_uses_resolved_layout_recognize_via_override(naive_module):
     """The chunk() call site resolves a valid TenantModel UUID via
@@ -420,3 +448,37 @@ def test_merge_excel_items_passthrough_when_budget_disabled(naive_module):
     items = [("a", (0, 2, 2, 1, 1)), ("b", (0, 3, 3, 1, 1))]
     assert naive_module._merge_excel_items(items, chunk_token_num=0) == items
     assert naive_module._merge_excel_items([], chunk_token_num=128) == []
+
+
+def test_by_paddleocr_rethrows_parse_failure_and_notifies_callback(naive_module, monkeypatch):
+    callback = Mock()
+    parse_error = RuntimeError("paddle boom")
+    fake_parser = Mock()
+    fake_parser.parse_pdf.side_effect = parse_error
+    fake_bundle = Mock(mdl=fake_parser)
+
+    monkeypatch.setattr(naive_module, "resolve_model_config", Mock(return_value={"id": "cfg"}))
+    monkeypatch.setattr(naive_module, "LLMBundle", Mock(return_value=fake_bundle))
+
+    with pytest.raises(RuntimeError, match="paddle boom"):
+        naive_module.by_paddleocr(
+            "doc.pdf",
+            tenant_id="t1",
+            paddleocr_llm_name="paddle@provider",
+            callback=callback,
+        )
+
+    callback.assert_called_once()
+    prog, msg = callback.call_args.args
+    assert prog == -1
+    assert "Failed to parse pdf via PaddleOCR" in msg
+    assert "paddle boom" in msg
+
+
+def test_by_paddleocr_not_found_path_unchanged(naive_module):
+    callback = Mock()
+
+    sections, tables, parser = naive_module.by_paddleocr("doc.pdf", callback=callback)
+
+    assert (sections, tables, parser) == (None, None, None)
+    callback.assert_called_once_with(-1, "PaddleOCR not found.")

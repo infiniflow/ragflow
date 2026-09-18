@@ -33,10 +33,10 @@ func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ 
 	f.mu.Unlock()
 	return f.hits, nil
 }
-func (f *navRoutingFake) ListClusters(context.Context, string, string, int, int) ([]nav.NavNode, int64, error) {
+func (f *navRoutingFake) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return f.clusters, int64(len(f.clusters)), nil
 }
-func (f *navRoutingFake) ListChildren(_ context.Context, _, _, name string, _, _ int) ([]nav.NavNode, int64, error) {
+func (f *navRoutingFake) ListChildren(_ context.Context, _, _, name, _ string, _, _ int) ([]nav.NavNode, int64, error) {
 	return f.children[name], int64(len(f.children[name])), nil
 }
 func (f *navRoutingFake) SummariesByDocIDs(context.Context, string, string, []string) map[string]string {
@@ -229,6 +229,30 @@ func TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults(t *testing.T) {
 	}
 	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
 		t.Errorf("docs = %v, want only the in-scope d1 (a blank request value must not disable the default scope)", docs)
+	}
+}
+
+// TestCanvasTenantID_FromCanvasState asserts the tenant id resolves from canvas
+// state, falling back to user_id.
+func TestCanvasTenantID_FromCanvasState(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "canvas-tenant"
+	ctx := runtime.WithState(context.Background(), state)
+	if got := canvasTenantID(ctx); got != "canvas-tenant" {
+		t.Errorf("canvasTenantID = %q, want canvas tenant canvas-tenant", got)
+	}
+
+	// Fall back to user_id when tenant_id is absent.
+	state2 := runtime.NewCanvasState("run-1", "task-1")
+	state2.Sys["user_id"] = "user-1"
+	ctx2 := runtime.WithState(context.Background(), state2)
+	if got := canvasTenantID(ctx2); got != "user-1" {
+		t.Errorf("canvasTenantID = %q, want fallback user-1", got)
+	}
+
+	// No canvas state at all → empty.
+	if got := canvasTenantID(context.Background()); got != "" {
+		t.Errorf("canvasTenantID = %q, want empty without canvas state", got)
 	}
 }
 

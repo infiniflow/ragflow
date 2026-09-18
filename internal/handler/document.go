@@ -86,6 +86,10 @@ type documentServiceIface interface {
 	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
 }
 
+type latestIngestionEventLookup interface {
+	LatestIngestionEventsByPipelineLogIDs(ctx context.Context, pipelineLogIDs []string) (map[string]*service.IngestionEventItem, error)
+}
+
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
 type fileUploadIface interface {
 	UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
@@ -623,6 +627,21 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	docs := make([]map[string]interface{}, 0, len(documents))
+	runIDs := make([]string, 0, len(documents))
+	for _, doc := range documents {
+		if doc != nil && doc.PipelineLogID != nil && *doc.PipelineLogID != "" {
+			runIDs = append(runIDs, *doc.PipelineLogID)
+		}
+	}
+	latestEventsByRun := map[string]*service.IngestionEventItem{}
+	if lookup, ok := h.documentService.(latestIngestionEventLookup); ok && len(runIDs) > 0 {
+		var lookupErr error
+		latestEventsByRun, lookupErr = lookup.LatestIngestionEventsByPipelineLogIDs(ctx, runIDs)
+		if lookupErr != nil {
+			common.Warn("failed to load latest ingestion events for document list", zap.Error(lookupErr))
+			latestEventsByRun = map[string]*service.IngestionEventItem{}
+		}
+	}
 	for _, doc := range documents {
 		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
 			continue
@@ -635,7 +654,11 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			metaFields = make(map[string]interface{})
 		}
 
-		docs = append(docs, mapDocumentListItem(doc, metaFields))
+		var latestEvent *service.IngestionEventItem
+		if doc.PipelineLogID != nil {
+			latestEvent = latestEventsByRun[*doc.PipelineLogID]
+		}
+		docs = append(docs, mapDocumentListItem(doc, metaFields, latestEvent))
 	}
 
 	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
@@ -658,9 +681,9 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 		Types:    queryValues(c, "types"),
 	}
 
-	opts.RunStatuses = normalizeRunStatusFilter(queryValues(c, "run", "run_status"))
-	if len(queryValues(c, "run", "run_status")) > 0 && len(opts.RunStatuses) == 0 {
-		return opts, fmt.Sprintf("Invalid filter run status conditions: %s", strings.Join(invalidRunStatuses(queryValues(c, "run", "run_status")), ", "))
+	opts.RunStatuses = normalizeRunStatusFilter(queryValues(c, "run", "run_status", "ingestion_status"))
+	if len(queryValues(c, "run", "run_status", "ingestion_status")) > 0 && len(opts.RunStatuses) == 0 {
+		return opts, fmt.Sprintf("Invalid filter run status conditions: %s", strings.Join(invalidRunStatuses(queryValues(c, "run", "run_status", "ingestion_status")), ", "))
 	}
 
 	opts.Name = c.Query("name")
@@ -880,31 +903,25 @@ func queryValues(c *gin.Context, names ...string) []string {
 	return out
 }
 
+var runStatusMap = map[string]string{
+	"UNSTART":   "UNSTART",
+	"CREATED":   common.CREATED,
+	"SCHEDULED": common.SCHEDULED,
+	"RUNNING":   common.RUNNING,
+	"STOPPING":  common.STOPPING,
+	"STOPPED":   common.STOPPED,
+	"COMPLETED": common.COMPLETED,
+	"FAILED":    common.FAILED,
+}
+
 func normalizeRunStatusFilter(statuses []string) []string {
 	if len(statuses) == 0 {
 		return nil
 	}
-	statusTextToNumeric := map[string]string{
-		"UNSTART": string(entity.TaskStatusUnstart),
-		"RUNNING": string(entity.TaskStatusRunning),
-		"CANCEL":  string(entity.TaskStatusCancel),
-		"DONE":    string(entity.TaskStatusDone),
-		"FAIL":    string(entity.TaskStatusFail),
-	}
-	validStatuses := map[string]bool{
-		string(entity.TaskStatusUnstart): true,
-		string(entity.TaskStatusRunning): true,
-		string(entity.TaskStatusCancel):  true,
-		string(entity.TaskStatusDone):    true,
-		string(entity.TaskStatusFail):    true,
-	}
 	out := make([]string, 0, len(statuses))
 	for _, status := range statuses {
-		normalized := statusTextToNumeric[strings.ToUpper(status)]
-		if normalized == "" {
-			normalized = status
-		}
-		if !validStatuses[normalized] {
+		normalized, ok := runStatusMap[strings.ToUpper(strings.TrimSpace(status))]
+		if !ok {
 			return nil
 		}
 		out = append(out, normalized)
@@ -915,10 +932,9 @@ func normalizeRunStatusFilter(statuses []string) []string {
 // invalidRunStatuses returns the raw filter values that do not map to a valid
 // run status, mirroring Python's "Invalid filter run status conditions: ...".
 func invalidRunStatuses(statuses []string) []string {
-	valid := map[string]bool{"UNSTART": true, "RUNNING": true, "CANCEL": true, "DONE": true, "FAIL": true}
 	invalid := make([]string, 0)
 	for _, status := range statuses {
-		if !valid[strings.ToUpper(status)] {
+		if _, ok := runStatusMap[strings.ToUpper(strings.TrimSpace(status))]; !ok {
 			invalid = append(invalid, status)
 		}
 	}
@@ -1085,15 +1101,19 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
 // public response shape (chunk_num→chunk_count, token_num→token_count,
-// kb_id→dataset_id) and reports run as a label.
+// kb_id→dataset_id) and sets ingestion_status to UNSTART.
 // Mirrors Python map_doc_keys_with_run_status / map_doc_keys.
 func mapDocKeysWithRunStatus(raw map[string]interface{}) map[string]interface{} {
+	ingestionStatus := "UNSTART"
+	if s, ok := raw["ingestion_status"].(string); ok && s != "" {
+		ingestionStatus = s
+	}
 	out := map[string]interface{}{
-		"chunk_count": raw["chunk_num"],
-		"token_count": raw["token_num"],
-		"dataset_id":  raw["kb_id"],
-		"parser_id":   raw["parser_id"],
-		"run":         "UNSTART",
+		"chunk_count":      raw["chunk_num"],
+		"token_count":      raw["token_num"],
+		"dataset_id":       raw["kb_id"],
+		"parser_id":        raw["parser_id"],
+		"ingestion_status": ingestionStatus,
 	}
 	for _, k := range []string{"id", "name", "type", "size", "suffix", "source_type", "created_by", "parser_config", "location", "pipeline_id", "content_hash"} {
 		if v, ok := raw[k]; ok {
@@ -1113,6 +1133,12 @@ func isValidHTTPURL(raw string) bool {
 }
 
 func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
 	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
 
@@ -1125,6 +1151,18 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	// Authorize the caller before serving file bytes. The sibling routes on
+	// this dataset (PATCH/DELETE documents, chunks, metadata) all gate on
+	// datasetService.Accessible, and the Python reference
+	// (document_api.py download) checks KnowledgebaseService.accessible and
+	// DocumentService.accessible; without this, any logged-in user could
+	// download any tenant's document by supplying its dataset and document
+	// ids. Answer exactly like the missing-document case so existence is
+	// not leaked either.
+	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "document not found")
+		return
+	}
 	res, err := h.documentService.DownloadDocument(ctx, datasetID, docID)
 
 	if err != nil {
@@ -1137,46 +1175,48 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	c.Data(http.StatusOK, res.ContentType, res.Data)
 }
 
-func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}, latestEvent *service.IngestionEventItem) map[string]interface{} {
 	processDuration := doc.ProcessDuration
-	if doc.Run != nil && strings.TrimSpace(*doc.Run) == "1" && doc.ProcessBeginAt != nil {
+	if doc.IngestionStatus != nil && *doc.IngestionStatus == common.RUNNING && doc.ProcessBeginAt != nil {
 		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
 		if processDuration < 0 {
 			processDuration = 0
 		}
 	}
-	item := map[string]interface{}{
-		"id":               doc.ID,
-		"dataset_id":       doc.KbID,
-		"name":             stringValue(doc.Name),
-		"thumbnail":        stringValue(doc.Thumbnail),
-		"size":             doc.Size,
-		"type":             doc.Type,
-		"created_by":       doc.CreatedBy,
-		"location":         stringValue(doc.Location),
-		"token_count":      doc.TokenNum,
-		"chunk_count":      doc.ChunkNum,
-		"progress":         doc.Progress,
-		"progress_msg":     stringValue(doc.ProgressMsg),
-		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
-		"process_duration": processDuration,
-		"suffix":           doc.Suffix,
-		"run":              mapRunStatus(doc.Run),
-		"status":           stringValue(doc.Status),
-		"parser_id":        doc.ParserID,
-		"chunk_method":     doc.ParserID,
-		"pipeline_id":      stringValue(doc.PipelineID),
-		"pipeline_name":    stringValue(doc.PipelineName),
-		"nickname":         stringValue(doc.Nickname),
-		"parser_config":    decodeJSONMap(string(doc.ParserConfig)),
-		"meta_fields":      metaFields,
-		"create_time":      int64(0),
-		"create_date":      "",
-		"update_time":      int64(0),
-		"update_date":      "",
+	ingestionStatus := "UNSTART"
+	if doc.IngestionStatus != nil && *doc.IngestionStatus != "" {
+		ingestionStatus = *doc.IngestionStatus
 	}
-	if doc.IngestionStatus != nil {
-		item["ingestion_status"] = *doc.IngestionStatus
+	item := map[string]interface{}{
+		"id":                     doc.ID,
+		"dataset_id":             doc.KbID,
+		"name":                   stringValue(doc.Name),
+		"thumbnail":              stringValue(doc.Thumbnail),
+		"size":                   doc.Size,
+		"type":                   doc.Type,
+		"created_by":             doc.CreatedBy,
+		"location":               stringValue(doc.Location),
+		"token_count":            doc.TokenNum,
+		"chunk_count":            doc.ChunkNum,
+		"progress":               doc.Progress,
+		"progress_msg":           stringValue(doc.ProgressMsg),
+		"latest_ingestion_event": latestEvent,
+		"process_begin_at":       formatTimePtr(doc.ProcessBeginAt),
+		"process_duration":       processDuration,
+		"suffix":                 doc.Suffix,
+		"ingestion_status":       ingestionStatus,
+		"status":                 stringValue(doc.Status),
+		"parser_id":              doc.ParserID,
+		"chunk_method":           doc.ParserID,
+		"pipeline_id":            stringValue(doc.PipelineID),
+		"pipeline_name":          stringValue(doc.PipelineName),
+		"nickname":               stringValue(doc.Nickname),
+		"parser_config":          decodeJSONMap(string(doc.ParserConfig)),
+		"meta_fields":            metaFields,
+		"create_time":            int64(0),
+		"create_date":            "",
+		"update_time":            int64(0),
+		"update_date":            "",
 	}
 
 	if doc.CreateTime != nil {
@@ -1206,27 +1246,6 @@ func decodeJSONMap(raw string) map[string]interface{} {
 	}
 
 	return data
-}
-
-func mapRunStatus(run *string) string {
-	if run == nil {
-		return "UNSTART"
-	}
-
-	switch strings.TrimSpace(*run) {
-	case "0":
-		return "UNSTART"
-	case "1":
-		return "RUNNING"
-	case "2":
-		return "CANCEL"
-	case "3":
-		return "DONE"
-	case "4":
-		return "FAIL"
-	default:
-		return strings.TrimSpace(*run)
-	}
 }
 
 func formatTimePtr(value *time.Time) string {
@@ -1778,6 +1797,12 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
+	}
+	if present["parser_config"] && req.ParserConfig != nil {
+		if err := dataset.ValidateDocumentParserConfig(req.ParserConfig); err != nil {
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+			return
+		}
 	}
 	ctx := c.Request.Context()
 	data, code, err := h.documentService.UpdateDatasetDocument(ctx, user.ID, datasetID, documentID, &req, present)

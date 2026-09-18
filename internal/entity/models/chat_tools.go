@@ -20,23 +20,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"ragflow/internal/tokenizer"
 )
 
-// recordUsageFromResponse records one chat call's token usage to both
-// cm.LastUsage and the context-level run sink (if installed). Callers
-// should invoke this after each ChatWithMessages / ChatStreamlyWithSender
-// call so the canvas-layer aggregator and Langfuse both see the split.
-func recordUsageFromResponse(ctx context.Context, cm *ChatModel) {
+// recordCallUsage feeds ONE chat call's token split to the context-level run sink (if
+// installed). The caller passes the numbers it already holds: the ChatModel is shared
+// by every call on it, so a per-call field would let a concurrent call's tokens be
+// attributed to this one. The canvas component gets its own copy from the message
+// metadata (ResponseMeta.Usage) for the same reason.
+func recordCallUsage(ctx context.Context, cm *ChatModel, prompt, completion, total int) {
 	if cm == nil {
 		return
 	}
-	if cm.LastUsage == nil {
+	model := ""
+	if cm.ModelName != nil {
+		model = *cm.ModelName
+	}
+	recordUsage(ctx, model, &TokenUsage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: total})
+}
+
+// recordUsage records one chat call's token usage to the context-level run sink (if
+// installed). The caller passes the usage its own call returned: nothing about one
+// call's tokens is parked on the shared *ChatModel, where a concurrent call could
+// replace them between the write and the read and attribute them to the wrong request.
+func recordUsage(ctx context.Context, model string, usage *TokenUsage) {
+	if usage == nil {
 		return
 	}
-	tokenizer.RecordRunTokenUsage(ctx, cm.LastUsage.PromptTokens, cm.LastUsage.CompletionTokens, cm.LastUsage.TotalTokens)
+	tokenizer.RecordRunTokenUsageFor(ctx, model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 }
 
 const (
@@ -95,9 +109,6 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 	// Mirrors Python PR #16420 fix: previously the total was overwritten
 	// each round; now we accumulate so multi-round tool conversations
 	// report the correct grand total.
-	// Reset stale per-call usage from a previous call so a response
-	// without usage doesn't leak the prior call's data.
-	cm.LastUsage = nil
 	var totalTokens int
 	aggUsage := &TokenUsage{}
 
@@ -112,10 +123,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		totalTokens = aggUsage.TotalTokens
 		// Store per-round delta (not cumulative) so RecordRunTokenUsage
 		// records each round's contribution exactly once.
-		cm.LastUsage = &TokenUsage{
-			PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
-		}
-		recordUsageFromResponse(ctx, cm)
+		recordCallUsage(ctx, cm, u.PromptTokens, u.CompletionTokens, u.TotalTokens)
 	}
 
 	for round := 0; round <= maxRounds; round++ {
@@ -157,10 +165,12 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		// Execute the round's tool calls and fold their results into history.
 		// If one of them is a terminal tool and succeeded, its result is already
 		// the final answer — return it directly instead of re-invoking the model
-		// (Python chat_model.py:619-627).
+		// (Python chat_model.py:619-627). Non-streaming matches Python's
+		// all-empty fallthrough: no qualifying terminal result and the loop
+		// runs another round (chat_model.py:692-704).
 		var hit bool
 		var toolAnswer string
-		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
+		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), false)
 		if hit {
 			// This round's usage was already folded in by addRoundUsage above
 			// (it accumulates into aggUsage and forwards a per-round delta to the
@@ -250,8 +260,6 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	// Aggregate token counts across every tool-calling round (each round is a
 	// separate provider request). Committing per round avoids the previous
 	// bug where a later round's total overwrote earlier rounds.
-	// Reset stale per-call usage from a previous call.
-	cm.LastUsage = nil
 	var totalTokens int
 	aggUsage := &TokenUsage{}
 
@@ -273,10 +281,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			aggUsage.TotalTokens += deltaTotal
 		}
 		totalTokens = aggUsage.TotalTokens
-		cm.LastUsage = &TokenUsage{
-			PromptTokens: deltaPrompt, CompletionTokens: deltaCompletion, TotalTokens: deltaTotal,
-		}
-		recordUsageFromResponse(ctx, cm)
+		recordCallUsage(ctx, cm, deltaPrompt, deltaCompletion, deltaTotal)
 	}
 
 	for round := 0; round <= maxRounds; round++ {
@@ -363,9 +368,14 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		// A terminal tool's successful result is already the final answer:
 		// stream it to the caller and stop instead of asking the model again
 		// (Python chat_model.py:2574-2582). sendTerminal streams the result.
+		// Streaming passes emptyTerminalIsHit=true: a Go streaming tool returns
+		// "" to say "already delivered through the sink", and the loop must
+		// stop even when the folded content is empty — unlike Python, whose rag
+		// tool returns the full text and whose all-empty fallthrough would only
+		// buy an extra model round whose output the mux drops.
 		var termAnswer string
 		var termHit bool
-		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
+		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), true)
 		if termHit {
 			if err := sendTerminal(sender, &termAnswer); err != nil {
 				return totalTokens, err
@@ -401,9 +411,22 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 // When terminal is non-empty, a successful call to one of those tools
 // short-circuits: the loop returns (history, that result, true) so the caller
 // treats it as the final answer instead of re-invoking the model (mirrors
-// Python chat_model.py:619-627 / :2574-2582). When terminal is empty or no
-// terminal tool fired, it returns (history, "", false).
-func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}) ([]Message, string, bool) {
+// Python chat_model.py:619-627 / :2574-2582). An EMPTY terminal result does
+// not win on its own: Python's fold only returns on a non-empty string
+// (`if out:`, chat_model.py:696), so an empty result is skipped in favour of
+// a later non-empty sibling. When NO terminal result is non-empty,
+// emptyTerminalIsHit decides:
+//   - false (non-streaming, Python :692-704 fallthrough): no hit — the tool
+//     responses are in history and the loop runs another model round, which
+//     then answers from them or re-calls the tool;
+//   - true (streaming): hit with the first successful call's (empty) content.
+//     The Go streaming tool returns "" to say "already delivered through the
+//     sink", and the loop must stop (sendTerminal stays silent) instead of
+//     paying another model round whose output the mux would only drop.
+//
+// When terminal is empty or no terminal tool fired, it returns
+// (history, "", false) either way.
+func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}, emptyTerminalIsHit bool) ([]Message, string, bool) {
 	if session == nil {
 		history = append(history, Message{
 			Role:      "assistant",
@@ -474,21 +497,37 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 		ToolCalls: toolCalls,
 	})
 
-	// A successful terminal tool is the final answer; remember its result but
-	// still append every tool message so history stays well-formed if the
-	// caller ignores the short-circuit (defensive).
-	var terminalAnswer string
-	var terminalHit bool
+	// Every tool_call the assistant declared gets its matching tool message,
+	// well-formed history whichever path the caller takes. Then two passes over
+	// the (tiny) results slice pick the fold: the FIRST non-empty successful
+	// terminal result wins (Python chat_model.py:696 `if out:` — an empty
+	// terminal result never ships while a non-empty sibling exists, trimmed
+	// whitespace counts as empty), then the empty fallthrough per
+	// emptyTerminalIsHit (see the doc comment above).
 	for _, r := range results {
 		history = append(history, Message{
 			Role:       "tool",
 			Content:    r.content,
 			ToolCallID: r.tcID,
 		})
-		if !terminalHit && r.err == nil && r.name != "" {
+	}
+	var terminalAnswer string
+	var terminalHit bool
+	for _, r := range results {
+		if r.err == nil && r.name != "" && strings.TrimSpace(r.content) != "" {
 			if _, ok := terminal[r.name]; ok {
-				terminalAnswer = r.content
-				terminalHit = true
+				terminalAnswer, terminalHit = r.content, true
+				break
+			}
+		}
+	}
+	if !terminalHit && emptyTerminalIsHit {
+		for _, r := range results {
+			if r.err == nil && r.name != "" {
+				if _, ok := terminal[r.name]; ok {
+					terminalAnswer, terminalHit = r.content, true
+					break
+				}
 			}
 		}
 	}

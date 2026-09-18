@@ -17,15 +17,13 @@ function usage() {
     echo "  --enable-mcpserver                      Enables the MCP server."
     echo "  --enable-adminserver                    Enables the Admin server."
     echo "  --init-model-provider-tables            Run model provider table migrations and exit."
-    echo "  --init-superuser                        Initializes the superuser."
+    echo "  --init-superuser                        Initializes the superuser (needs --enable-adminserver)."
     echo "  --consumer-no-beg=<num>                 Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
     echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
     echo "  --mcp-host=<string>                     Address the MCP server binds to (default: 127.0.0.1)."
     echo "  --mcp-port=<num>                        Port the MCP server listens on (default: 9382)."
-    echo "  --mcp-base-url=<string>                 RAGFlow base URL the MCP server calls (default: http://127.0.0.1:9380)."
-    echo "  --mcp-script-path=<path>                MCP server entry script (default: /ragflow/mcp/server/server.py)."
     echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
     echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
     echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
@@ -40,7 +38,7 @@ function usage() {
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
     echo "  $0 --enable-adminserver"
-    echo "  $0 --init-superuser"
+    echo "  $0 --enable-adminserver --init-superuser"
     exit 1
 }
 
@@ -57,8 +55,6 @@ WORKERS=1
 
 MCP_HOST="127.0.0.1"
 MCP_PORT=9382
-MCP_BASE_URL="http://127.0.0.1:9380"
-MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
 MCP_MODE="self-host"
 MCP_HOST_API_KEY=""
 MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
@@ -118,10 +114,6 @@ for arg in "$@"; do
       MCP_PORT="${arg#*=}"
       shift
       ;;
-    --mcp-base-url=*)
-      MCP_BASE_URL="${arg#*=}"
-      shift
-      ;;
     --mcp-mode=*)
       MCP_MODE="${arg#*=}"
       shift
@@ -130,20 +122,16 @@ for arg in "$@"; do
       MCP_HOST_API_KEY="${arg#*=}"
       shift
       ;;
-    --mcp-script-path=*)
-      MCP_SCRIPT_PATH="${arg#*=}"
+    --transport-sse-enabled|--no-transport-sse-enabled)
+      MCP_TRANSPORT_SSE_FLAG="$arg"
       shift
       ;;
-    --no-transport-sse-enabled)
-      MCP_TRANSPORT_SSE_FLAG="--no-transport-sse-enabled"
+    --transport-streamable-http-enabled|--no-transport-streamable-http-enabled)
+      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="$arg"
       shift
       ;;
-    --no-transport-streamable-http-enabled)
-      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--no-transport-streamable-http-enabled"
-      shift
-      ;;
-    --no-json-response)
-      MCP_JSON_RESPONSE_FLAG="--no-json-response"
+    --json-response|--no-json-response)
+      MCP_JSON_RESPONSE_FLAG="$arg"
       shift
       ;;
     --consumer-no-beg=*)
@@ -193,78 +181,49 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
-PY=python3
 
 # -----------------------------------------------------------------------------
-# Select Nginx Configuration based on API_PROXY_SCHEME
+# Select Nginx Configuration
 # -----------------------------------------------------------------------------
+# This image ships the Go backend only, so the golang config is the only one
+# available.
 NGINX_CONF_DIR="/etc/nginx/conf.d"
-if [ -n "$API_PROXY_SCHEME" ]; then
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.hybrid"
-    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.golang (default)"
-    else
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.python"
-    fi
-else
-    # Default to python backend
-    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-    echo "Default: applied nginx config: ragflow.conf.python"
-fi
+cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
 
 # -----------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
 
-function task_exe() {
-    local consumer_id="$1"
-    local host_id="$2"
-
-    JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
-    while true; do
-        LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py -i "${host_id}_${consumer_id}" -t "common" &
-        wait;
-        sleep 1;
-    done
+# One-shot Go migration. bin/ragflow_server --migrate is a standalone action: it
+# runs the migrations and exits, independent of any server mode.
+function run_go_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [[ "$db_type" == "gaussdb" || "$db_type" == "gauss" ]]; then
+        # The Go migrations emit MySQL-only SQL and cannot run against a GaussDB
+        # metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+    echo "Running model provider table migrations..."
+    bin/ragflow_server --migrate
 }
 
-function start_mcp_server() {
-    echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    "$PY" "${MCP_SCRIPT_PATH}" \
-        --host="${MCP_HOST}" \
-        --port="${MCP_PORT}" \
-        --base-url="${MCP_BASE_URL}" \
-        --mode="${MCP_MODE}" \
-        --api-key="${MCP_HOST_API_KEY}" \
-        "${MCP_TRANSPORT_SSE_FLAG}" \
-        "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}" \
-        "${MCP_JSON_RESPONSE_FLAG}" &
-}
-
-function ensure_docling() {
-    [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
-    DOCLING_PIN="${DOCLING_VERSION:-==2.71.0}"
-    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
-}
-
-function ensure_db_init() {
-    echo "Initializing database tables..."
-    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
-    echo "Database tables initialized."
+# Whether any Go server mode will run. These are the processes that used to
+# carry --migrate, so the standalone migration must run before them.
+function go_backend_enabled() {
+    if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+        return 0
+    fi
+    if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]] || [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+        return 0
+    fi
+    return 1
 }
 
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
-#ensure_docling
-#ensure_db_init
-
 run_with_restart() {
   local process_name="$1"
   shift
@@ -280,90 +239,70 @@ run_with_restart() {
   done
 }
 
+# --init-model-provider-tables keeps its documented "run migrations and exit"
+# meaning: it migrates and exits without booting any server.
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
-    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
-    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
-    else
-        #tools/scripts/run_migrations.sh
-        echo ""
-    fi
+    run_go_migrations
+    echo "Model provider table migrations finished. Exiting."
+    exit 0
+fi
+
+# Otherwise migrate once up front, before any Go server mode boots. --migrate is
+# a standalone action, so it is no longer attached to --api/--admin/--syncer.
+if go_backend_enabled; then
+    run_go_migrations
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer --migrate &
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
 fi
 
 sleep 5
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        echo "Attempt to start Admin python server..."
-        run_with_restart "Admin python server" "$PY" admin/server/admin_server.py &
-    fi
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        echo "Starting Admin go server..."
-        run_with_restart "Admin go server" bin/ragflow_server --admin --migrate &
-    fi
+    echo "Starting Admin go server..."
+    run_with_restart "Admin go server" bin/ragflow_server --admin ${INIT_SUPERUSER_ARGS} &
 fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
 
-   if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        echo "Attempt to start RAGFlow python server..."
-        run_with_restart "RAGFlow python server" "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
+    echo "Starting RAGFlow go server..."
+    MCP_ARGS=()
+    if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+        MCP_ARGS=(
+            --enable-mcpserver
+            --mcp-host="${MCP_HOST}"
+            --mcp-port="${MCP_PORT}"
+            --mcp-mode="${MCP_MODE}"
+            --mcp-host-api-key="${MCP_HOST_API_KEY}"
+            "${MCP_TRANSPORT_SSE_FLAG}"
+            "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}"
+            "${MCP_JSON_RESPONSE_FLAG}"
+        )
     fi
-
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        echo "Starting RAGFlow go server..."
-        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate &
-    fi
+    run_with_restart "RAGFlow go server" bin/ragflow_server --api "${MCP_ARGS[@]}" &
 fi
 
+# MCP needs no separate process: --api serves it in-process at POST /mcp on the
+# main API port.
 
-
-#if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
-#    start_mcp_server
-#fi
-
-
+# Task execution is the Go ingestor's job. This image ships no Python task
+# executor (rag/svr/task_executor.py is not copied), so --ingestor is the only
+# worker that can run here.
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
-        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-            echo "Starting python task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
-            for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
-            do
-              task_exe "${i}" "${HOST_ID}" &
-            done
-        fi
-
-        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-            echo "Starting go ingestor..."
-            run_with_restart "ingestor" bin/ragflow_server --ingestor &
-        fi
+        echo "Starting go ingestor..."
+        run_with_restart "ingestor" bin/ragflow_server --ingestor &
     else
         # Otherwise, start a fixed number of workers
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
-            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-                echo "Starting python task executor..."
-                task_exe "${i}" "${HOST_ID}" &
-                sleep 1;
-            fi
-
-            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                echo "Starting go ingestor..."
-                run_with_restart "ingestor" bin/ragflow_server --ingestor &
-            fi
+            echo "Starting go ingestor..."
+            run_with_restart "ingestor" bin/ragflow_server --ingestor &
         done
     fi
 fi

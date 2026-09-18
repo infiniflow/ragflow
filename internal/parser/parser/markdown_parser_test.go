@@ -27,11 +27,151 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 		t.Fatal("JSON is empty; want at least one item")
 	}
 	// Verify heading
-	if got, _ := res.JSON[0]["text"].(string); got != "Hello" {
-		t.Fatalf("first item text = %q, want %q", got, "Hello")
+	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
+		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
 	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
 		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
+	}
+}
+
+// TestMarkdownParser_ListItemsKeepWordBoundaries pins the shape of a list in the parsed output:
+// one item per entry, marker included, and no gluing between entries.
+//
+// A list marker is structure, not a leaf: the marker lives on the list node (bullets on the item)
+// and the entry's own text carries no marker and no trailing newline. Emitting the list as a single
+// blob therefore glued the last word of one entry to the first word of the next ("GamesChina"),
+// which destroys the word boundaries the tokenizer and the retrieval index depend on - a query for
+// "China" can no longer match the merged token. Python's _markdown keeps one item per entry with the
+// marker, so this pins the same shape.
+func TestMarkdownParser_ListItemsKeepWordBoundaries(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	md := "See also\n\n* China at the Asian Games\n* China at the Paralympics\n"
+	res := p.ParseWithResult(ctx, "list.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var lists []string
+	for _, item := range res.JSON {
+		if ck, _ := item["ck_type"].(string); ck == "list" {
+			text, _ := item["text"].(string)
+			lists = append(lists, text)
+		}
+	}
+	if len(lists) != 2 {
+		t.Fatalf("want one item per list entry, got %d: %#v", len(lists), lists)
+	}
+	for i, want := range []string{"* China at the Asian Games", "* China at the Paralympics"} {
+		if lists[i] != want {
+			t.Errorf("list item %d = %q, want %q", i, lists[i], want)
+		}
+		if strings.Contains(lists[i], "GamesChina") {
+			t.Errorf("list entries are glued together: %q", lists[i])
+		}
+	}
+}
+
+// TestMarkdownParser_OrderedListKeepsNumbers covers the ordered branch of the marker
+// reconstruction: the number and its delimiter live on the list node, so they have to be rebuilt
+// from Start/Delimiter instead of being read off a leaf.
+//
+// Two of the three cases start above 1 on purpose. A list that starts at 1 cannot tell "kept the
+// numbers the source wrote" from "renumbered from 1", and this test used to run nothing but
+// "1."/"2." - it passed while the parser renumbered every ordered list in a real corpus (a
+// 2,244-entry list whose source numbers start at 996 was indexed as 1..N, which removes the source
+// numbers from the index and made them count as unserved words).
+func TestMarkdownParser_OrderedListKeepsNumbers(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	cases := []struct {
+		name string
+		md   string
+		want []string
+	}{
+		{
+			name: "starts at ten",
+			md:   "10. a\n11. b\n",
+			want: []string{"10. a", "11. b"},
+		},
+		{
+			name: "starts in the thousands",
+			md:   "996. first entry\n\n997. second entry\n\n998. third entry\n",
+			want: []string{"996. first entry", "997. second entry", "998. third entry"},
+		},
+		{
+			name: "starts at one",
+			md:   "1. first item\n2. second item\n",
+			want: []string{"1. first item", "2. second item"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := p.ParseWithResult(ctx, "ordered.md", []byte(tc.md))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			var lists []string
+			for _, item := range res.JSON {
+				if ck, _ := item["ck_type"].(string); ck == "list" {
+					text, _ := item["text"].(string)
+					lists = append(lists, text)
+				}
+			}
+			if len(lists) != len(tc.want) {
+				t.Fatalf("want %d items, got %d: %#v", len(tc.want), len(lists), lists)
+			}
+			for i := range tc.want {
+				if lists[i] != tc.want[i] {
+					t.Errorf("ordered item %d = %q, want %q", i, lists[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestMarkdownParser_TableKeepsCellsBeyondTheHeader covers the deliberate deviation from GFM.
+//
+// A row may legitimately carry more cells than its header - an unescaped '|' inside a cell,
+// e.g. a Wikipedia image spec "150x150px|alt=..." - and GFM ignores every cell beyond the
+// header's column count, so the tail of such a row (the Year and Description columns of a
+// World Heritage list) never reaches the index. Measured on the production index that cost
+// 514 documents and 18,185 words no query could reach; the header is padded to the widest row
+// instead. Fails on the old behaviour: the sentinel below is dropped.
+func TestMarkdownParser_TableKeepsCellsBeyondTheHeader(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	const sentinel = "DESCRIPTIONSENTINEL"
+	md := "| Site | Image | Year |\n" +
+		"|---|---|---|\n" +
+		"| Aachen Cathedral | 150x150px|alt=A Gothic building | 1978 | " + sentinel + " died in 814 |\n"
+	res := p.ParseWithResult(ctx, "table.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var joined strings.Builder
+	for _, item := range res.JSON {
+		text, _ := item["text"].(string)
+		joined.WriteString(text)
+		joined.WriteString("\n")
+	}
+	out := joined.String()
+	// The unescaped '|' inside the image cell becomes a cell boundary of its own, so the
+	// assertions are on cell contents: everything the row said has to be somewhere in the
+	// output, which is exactly what the column-count padding buys.
+	for _, want := range []string{"Aachen Cathedral", "150x150px", "alt=A Gothic building", "1978", sentinel} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table cell content %q is missing from the parsed output:\n%s", want, out)
+		}
 	}
 }
 
@@ -134,6 +274,97 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 	}
 	if inlineTableCount != 0 {
 		t.Fatalf("found %d doc_type_kwd:\"text\" item(s) with <table> markup; table must not be duplicated as text", inlineTableCount)
+	}
+}
+
+// TestMarkdownParser_ParseWithResult_DollarIsCurrencyNotMath guards the
+// regression that made a 13.8k-character billing report parse into 1.4k
+// characters: CommonExtensions enables MathJax, so `$...$` spans became
+// ast.Math nodes whose payload is not a Text child, and the text walker
+// dropped them. With two far-apart `$` that deletes everything in between.
+// A `$` in an ingested document is far more often a price than it is math, so
+// the text must survive verbatim, dollar signs included.
+func TestMarkdownParser_ParseWithResult_DollarIsCurrencyNotMath(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	md := "# Report\n\nFunding was provided by a $4,800 grant from the Sanctuary.\n\n" +
+		"Costs: 224.50 theodolite, 48.70 binoculars, $3.75 internet.\n\n" +
+		"Remaining funds for Winter 2002: $193.92\n"
+	res := p.ParseWithResult(ctx, "report.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var sb strings.Builder
+	for _, item := range res.JSON {
+		text, _ := item["text"].(string)
+		sb.WriteString(text)
+		sb.WriteString("\n")
+	}
+	got := sb.String()
+	// Every sentence of the source has to survive; the price table sentence is
+	// the one sitting between two '$' and used to be deleted whole.
+	for _, want := range []string{
+		"Funding was provided by a $4,800 grant from the Sanctuary.",
+		"Costs: 224.50 theodolite, 48.70 binoculars, $3.75 internet.",
+		"Remaining funds for Winter 2002: $193.92",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("parsed text lost %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// `$$...$$` display math must stay literal text as well.
+	mdDisplay := "Totals are shown as $$4,606.17 in the audit.\n"
+	resDisplay := p.ParseWithResult(ctx, "totals.md", []byte(mdDisplay))
+	if resDisplay.Err != nil {
+		t.Fatalf("ParseWithResult: %v", resDisplay.Err)
+	}
+	var sbDisplay strings.Builder
+	for _, item := range resDisplay.JSON {
+		text, _ := item["text"].(string)
+		sbDisplay.WriteString(text)
+	}
+	if !strings.Contains(sbDisplay.String(), "4,606.17 in the audit") {
+		t.Errorf("display math span was dropped: %q", sbDisplay.String())
+	}
+}
+
+// TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives guards the second
+// text-loss mechanism found in the same walker: inline raw HTML is an
+// ast.HTMLSpan whose payload (markup and the text inside it) lives on the node
+// literal, with no child Text nodes. A 664k-character report lost 397k
+// characters across 14 such spans.
+func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	// No blank line around the <table>, so gomarkdown keeps it inline inside
+	// the paragraph (an HTMLSpan) instead of a block-level HTMLBlock.
+	md := "Lead-in sentence before the table. " +
+		"<table><tr><td>theodolite</td><td>224.50</td></tr>" +
+		"<tr><td>binoculars</td><td>48.70</td></tr></table> " +
+		"Trailing sentence after the table.\n"
+	res := p.ParseWithResult(ctx, "report.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var sb strings.Builder
+	for _, item := range res.JSON {
+		text, _ := item["text"].(string)
+		sb.WriteString(text)
+		sb.WriteString("\n")
+	}
+	got := sb.String()
+	for _, want := range []string{
+		"Lead-in sentence before the table.",
+		"Trailing sentence after the table.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("parsed text lost %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// The inline HTML payload must not vanish either: the walker emits the raw
+	// markup, exactly as it stands in the source.
+	if !strings.Contains(got, "binoculars") {
+		t.Errorf("inline raw HTML payload was dropped: %q", got)
 	}
 }
 
@@ -321,7 +552,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	// Title, Intro, table item, Trailing = 4.
+	// # Title, Intro, table item, Trailing = 4.
 	if len(res.JSON) != 4 {
 		t.Fatalf("len(JSON) = %d, want 4 (one per top-level block, table as one item)", len(res.JSON))
 	}
@@ -332,7 +563,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 		text, _ := item["text"].(string)
 		all.WriteString(text)
 		all.WriteString("\n")
-		if text == "Title" {
+		if text == "# Title" {
 			sawTitle = true
 		}
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
@@ -569,7 +800,7 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
 			switch text {
-			case "Title":
+			case "# Title":
 				titleIdx = i
 			case "Middle.":
 				middleIdx = i

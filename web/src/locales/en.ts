@@ -397,18 +397,25 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
-      goToConfiguration: 'Go to configuration',
+      reselectParser: 'Reselect parse method',
+      goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
       fileModelMissing:
-        '{{name}} ({{fileType}}) requires a configured {{model}} model',
+        '{{name}} ({{fileType}}) requires adding the {{model}} model',
       missingModelAsr: 'audio (ASR)',
       missingModelVision: 'vision',
-      configureInDatasetSettingHint:
-        'You can configure it in the dataset Configuration page (Parser operator), or continue anyway.',
+      uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
+      fileTypeUnsupported:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration',
+      reselectParserAfterUploadHint:
+        'Continue uploading, then reselect a parse method for these files in the file list.',
+      reselectParserToParseHint:
+        'Reselect a parse method for the affected files, then parse again.',
+      addModelAfterUploadHint:
+        'Continue uploading, then add the required model to parse these files.',
+      addModelToParseHint: 'Add the required model, then parse again.',
       parseBlockedTitle: 'Cannot parse',
       parseBlockedPartialTitle: 'Some files cannot be parsed',
-      parseBlockedHint:
-        'Configure the model in the dataset Configuration page (Parser operator), then try again.',
       parseValidFiles: 'Parse valid files',
       parseValidFilesNote: '{{count}} valid files will be parsed.',
       metadata: {
@@ -487,7 +494,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       artifact: 'Artifact',
       toSkills: 'To skills',
       processingType: 'Processing type',
-      dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipeline: 'Select or switch the parsing mode',
       dataPipelineTitle: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
@@ -506,7 +513,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       completed: 'Completed',
       datasetLog: 'Dataset log',
       created: 'Created',
-      learnMore: 'Built-in pipeline introduction',
+      learnMore: 'View built-in parser details',
       general: 'General',
       chunkMethodTab: 'Chunk method',
       testResults: 'Results',
@@ -624,9 +631,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
-      autoKeywords: 'Auto-keyword',
+      autoKeywords: 'Number of keywords to extract',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
-      autoQuestions: 'Auto-question',
+      autoQuestions: 'Auto-question number',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
@@ -670,6 +677,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       imageTableContextWindow: 'Image & table context window',
       imageTableContextWindowTip:
         'Captures N tokens of text above and below the image & table to provide richer background context.',
+      tableContextWindow: 'Table context window',
+      tableContextWindowTip:
+        'Captures N tokens of text above and below a table to provide richer background context.',
+      imageContextWindow: 'Image context window',
+      imageContextWindowTip:
+        'Captures N tokens of text above and below an image to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU options',
       mineruParseMethod: 'Parse method',
@@ -692,7 +705,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
-      overlappedPercent: 'Overlapped percent(%)',
+      overlappedPercent: 'Overlap(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',
@@ -730,9 +743,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse type',
-      manualSetup: 'Pipeline',
-      builtIn: 'Built-in',
+      parseType: 'Parse mode',
+      manualSetup: 'Custom ingestion pipeline',
+      builtIn: 'Built-in parsing template',
       titleDescription:
         'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Dataset name',
@@ -937,6 +950,8 @@ Paragraphs:
       tagName: 'Tag',
       tagMessage: 'Please select a tag',
       frequency: 'Frequency',
+      frequencyMinMessage: 'Frequency must be at least {{min}}',
+      frequencyMaxMessage: 'Frequency must be at most {{max}}',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
       tagTable: 'Table',
@@ -1127,7 +1142,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. `,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
@@ -1147,7 +1162,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
-      quote: 'Show quote',
+      quote: 'Show citations',
       quoteTip: 'Whether to display the original text as a reference.',
       selfRag: 'Self-RAG',
       selfRagTip: 'Please refer to: https://huggingface.co/papers/2310.11511',
@@ -1221,24 +1236,47 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
-      tavilyApiKeyTip:
-        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
-      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       webSearch: 'Web search',
       webSearchProvider: 'Web search provider',
       webSearchProviderTip:
         'Select the service used when Internet search is enabled.',
       webSearchProviderPlaceholder: 'Select a web search provider',
+      webSearchApiKeyRequired:
+        'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
+      // The key field's label. {{provider}} is the provider's BRAND name, which is
+      // deliberately not translated, so this single template covers all nine.
+      webSearchApiKeyLabel: '{{provider}} API Key',
+      // One Tip/Message pair per provider, alphabetical by provider id.
+      braveApiKeyTip:
+        'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
+      braveApiKeyMessage: 'Please enter your Brave Search API Key',
+      exaApiKeyTip:
+        'Required. When Exa is selected, its web results supplement dataset retrieval. A key is needed even on the free tier of 1,000 requests/month.',
+      exaApiKeyMessage: 'Please enter your Exa API Key',
+      firecrawlApiKeyTip:
+        'When Firecrawl is selected, its search results supplement dataset retrieval. Only the search snippets are pulled, not a full page scrape.',
+      firecrawlApiKeyMessage: 'Please enter your Firecrawl API Key',
+      linkupApiKeyTip:
+        'When Linkup is selected, its web results supplement dataset retrieval.',
+      linkupApiKeyMessage: 'Please enter your Linkup API Key',
+      parallelApiKeyTip:
+        'When Parallel is selected, its search excerpts supplement dataset retrieval.',
+      parallelApiKeyMessage: 'Please enter your Parallel API Key',
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
+      tavilyApiKeyTip:
+        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
+      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       youcomApiKeyTip:
         'Optional. You.com works without a key on its rate-limited endpoint; add a key to lift those limits.',
       youcomApiKeyMessage: 'Optional — leave blank to use the free tier',
-      tavilyApiKeyHelp: 'How to get it?',
+      // Shared anchor text for every provider's "get a key" link (only the href is
+      // provider-specific), so keep it provider-agnostic — do not name a provider.
+      webSearchApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
@@ -1308,6 +1346,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Folder Path (optional)',
       dataSourceFieldBatchSize: 'Batch Size',
+      dataSourceFieldFeishuAppId: 'Feishu app ID',
+      dataSourceFieldFeishuAppSecret: 'Feishu app secret',
+      dataSourceFieldWikiSpaceId: 'Wiki space ID',
+      dataSourceFieldRootNodeToken: 'Wiki root node token',
+      dataSourceFieldIncludeExtensions: 'Allowed file extensions',
+      dataSourceFieldIncludeKeywords: 'Required filename keywords',
+      dataSourceFieldExcludeKeywords: 'Excluded filename keywords',
+      dataSourceFieldMaxFileSizeBytes: 'Maximum file size (bytes)',
+      dataSourceValidationFeishuBatchSize:
+        'Batch size must be between 1 and 10',
       dataSourceFieldMailFolder: 'Mail Folder',
       dataSourceFieldMailboxUserIds: 'Mailbox User IDs (optional)',
       dataSourceFieldInstanceUrl: 'Instance URL',
@@ -1429,6 +1477,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldIsCloud: 'Is Cloud',
       dataSourceFieldIndexMode: 'Index Mode',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps personal access token',
+      dataSourceFieldAzureDevOpsBaseUrl: 'Base URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps organization',
       dataSourceFieldAzureDevOpsRepositories: 'Repositories',
       dataSourceFieldAzureDevOpsContentTypes: 'Content types',
@@ -1581,6 +1630,8 @@ Example: Virtual Hosted Style`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      feishu_wikiDescription:
+        'Sync downloadable file nodes from a Feishu Wiki subtree.',
       gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
@@ -1618,8 +1669,10 @@ Example: Virtual Hosted Style`,
       sharepointSiteUrlTip:
         'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       azureDevOpsPatTip: 'A personal access token with the Code (Read) scope.',
+      azureDevOpsBaseUrlTip:
+        'The Base URL of your Azure DevOps instance (e.g. https://dev.azure.com, or http://tfs.corp.local:8080/tfs for Azure DevOps Server / closed network). Defaults to https://dev.azure.com if omitted.',
       azureDevOpsOrganizationTip:
-        'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
+        'Organization name (e.g. "contoso"), or project collection name (e.g. "DefaultCollection"), or the full collection URL of a self-hosted Azure DevOps Server.',
       azureDevOpsProjectsTip:
         'Comma separated team project names. E.g., Project1,Project2',
       azureDevOpsRepositoriesTip:
@@ -1763,6 +1816,8 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       mysqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      mysqlFileExtensionTip:
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       postgresqlDescription:
         'Connect to PostgreSQL database to sync data from tables using SQL queries.',
       postgresqlQueryTip:
@@ -1775,6 +1830,8 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      postgresqlFileExtensionTip:
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       bigqueryDescription:
         'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
       bigqueryProjectIdTip:
@@ -1960,9 +2017,9 @@ Example: Virtual Hosted Style`,
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
       profileDescription: 'Update your photo and personal details here.',
-      maxTokens: 'Max tokens',
-      maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokens: 'Max context length',
+      maxTokensMessage: 'Max context length is required',
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. `,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       password: 'Password',
@@ -2331,7 +2388,7 @@ Example: Virtual Hosted Style`,
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
       editCustomModelTitle: 'Edit model',
-      modelMaxTokens: 'Max tokens',
+      modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
       modelFeatureToolCall: 'Tool call',
       modelFeatureFunctionCall: 'Function call',
@@ -2454,6 +2511,7 @@ Example: Virtual Hosted Style`,
       skillDeleteTitle: 'Delete skill',
       skillDeleteDescription: 'Are you sure you want to delete this skill?',
       navTitle: 'Navigation tree',
+      navLogTitle: 'Navigation tree log',
       navEmpty: 'No navigation nodes',
       navLoadFailed: 'Failed to load the navigation tree',
       navChildLoadFailed: 'Failed to load child nodes',
@@ -2662,6 +2720,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      delimitersTip:
+        'One delimiter per row; multi-character delimiters can be typed as-is (e.g. ##). With backticks (e.g. `##`): hard split — every delimiter starts its own chunk and no token-size merge is applied. Without backticks: soft split — the delimiter is only a split point, and the pieces are still merged up to the chunk token size, so short documents may show no visible change.',
+      delimitersTipPython:
+        'One delimiter per row. Only backtick-wrapped entries (e.g. `##`) take effect: every delimiter starts its own chunk and no token-size merge is applied. Entries without backticks are ignored.',
+      childrenDelimitersTip:
+        'Child split: each parent chunk is split again at these delimiters into child chunks used for retrieval; the chunk token size does not apply.',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
@@ -3265,6 +3329,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         details: 'Version details',
         dsl: 'DSL',
         download: 'Download',
+        loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
       },
@@ -3326,9 +3391,6 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
-      documentIds: 'Document IDs',
-      documentIdsTip:
-        'Optional list of document IDs to restrict retrieval scope. Supports upstream variable references.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',
@@ -3495,8 +3557,8 @@ The Indexer will store the content in the corresponding data structures for the 
       viewResult: 'View result',
       running: 'Running',
       summary: 'Summary',
-      keywords: 'Keywords',
-      questions: 'Questions',
+      keywords: 'Auto keywords',
+      questions: 'Auto-question',
       metadata: 'Metadata',
       fieldName: 'Result destination',
       enableSummary: 'Enable Summary',
