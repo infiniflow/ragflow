@@ -182,7 +182,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	chars, extractErr := engine.ExtractChars(pg)
 	if extractErr != nil {
-		slog.Warn("processPage: ExtractChars failed", "page", pg, "err", extractErr)
+		common.Warn("deepdoc pdf parse: processPage ExtractChars failed",
+			zap.Int("page", pg), zap.Error(extractErr))
 		chars = nil
 	}
 	medianH := util.MedianCharHeight(chars)
@@ -235,7 +236,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	}
 
 	if renderErr != nil {
-		slog.Warn("processPage: RenderPageToImage failed", "page", pg, "err", renderErr)
+		common.Warn("deepdoc pdf parse: processPage RenderPageToImage failed",
+			zap.Int("page", pg), zap.Error(renderErr))
 	}
 
 	// Per-page zoom retry: if no boxes were produced at the default zoom
@@ -245,7 +247,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		// render to an unsafe DPI and spike memory on large pages.
 		const maxRetryZoom = 9.0
 		retryZoom := math.Min(p.Config.Zoom*pdf.DlaScale, maxRetryZoom)
-		slog.Debug("per-page zoom retry", "page", pg, "zoom", retryZoom)
+		common.Debug("deepdoc pdf parse: per-page zoom retry",
+			zap.Int("page", pg), zap.Float64("zoom", retryZoom))
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
 			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer, retryZoom)
@@ -254,7 +257,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 			pageImg = retryImg
 			pageZoom = retryZoom
 		} else if retryRenderErr != nil {
-			slog.Warn("processPage: retry-zoom render failed", "page", pg, "err", retryRenderErr)
+			common.Warn("deepdoc pdf parse: processPage retry-zoom render failed",
+				zap.Int("page", pg), zap.Error(retryRenderErr))
 		}
 	}
 
