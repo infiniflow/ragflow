@@ -360,6 +360,66 @@ type ListMemoryResponse struct {
 	TotalCount int64 `json:"total_count"`
 }
 
+type MemoryFilterOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+type MemoryFiltersResponse struct {
+	Filter struct {
+		Owner       []MemoryFilterOption `json:"owner"`
+		MemoryType  []MemoryFilterOption `json:"memory_type"`
+		StorageType []MemoryFilterOption `json:"storage_type"`
+	} `json:"filter"`
+	Total int64 `json:"total"`
+}
+
+func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*MemoryFiltersResponse, error) {
+	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	tenantIDs := make([]string, 0, len(userTenants)+1)
+	tenantIDs = append(tenantIDs, userID)
+	for _, tenant := range userTenants {
+		tenantIDs = append(tenantIDs, tenant.TenantID)
+	}
+	memories, _, err := s.memoryDAO.GetByFilter(ctx, dao.DB, userID, tenantIDs, nil, "", "", 1, 0)
+	if err != nil {
+		return nil, err
+	}
+	ownerCounts := map[string]int64{}
+	ownerLabels := map[string]string{}
+	typeCounts := map[string]int64{}
+	storageCounts := map[string]int64{}
+	for _, memory := range memories {
+		owner := memory.TenantID
+		label := owner
+		if memory.OwnerName != nil && *memory.OwnerName != "" {
+			label = *memory.OwnerName
+		}
+		ownerCounts[owner]++
+		ownerLabels[owner] = label
+		for _, memoryType := range dao.GetMemoryTypeHuman(memory.MemoryType) {
+			typeCounts[memoryType]++
+		}
+		storageCounts[memory.StorageType]++
+	}
+	resp := &MemoryFiltersResponse{}
+	for id, count := range ownerCounts {
+		resp.Filter.Owner = append(resp.Filter.Owner, MemoryFilterOption{ID: id, Label: ownerLabels[id], Count: count})
+	}
+	for id, count := range typeCounts {
+		resp.Filter.MemoryType = append(resp.Filter.MemoryType, MemoryFilterOption{ID: id, Label: id, Count: count})
+	}
+	for id, count := range storageCounts {
+		resp.Filter.StorageType = append(resp.Filter.StorageType, MemoryFilterOption{ID: id, Label: id, Count: count})
+	}
+	resp.Total = int64(len(memories))
+	return resp, nil
+}
+
 // CreateMemory creates a new memory with the given parameters
 // It validates the request, generates a unique name if needed, and creates the memory record
 //
