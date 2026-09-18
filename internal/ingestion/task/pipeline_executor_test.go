@@ -930,6 +930,73 @@ func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
 	}
 }
 
+// TestPipelineExecutor_Execute_EmptyOutputRecordsTerminalDuration pins the
+// no-chunk success branch: such a run never writes a terminal duration to the
+// document (processOutput returns before ApplyDocCounts), so Execute must
+// recompute from the same process_begin_at anchor and hand that value to the
+// operation log instead of letting the row keep the stale mid-run
+// progress-sink duration.
+func TestPipelineExecutor_Execute_EmptyOutputRecordsTerminalDuration(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	begin := time.Now().Add(-2 * time.Second)
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+	}).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Document{
+		ID:              "doc-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		ParserConfig:    entity.JSONMap{},
+		SourceType:      "local",
+		Type:            "pdf",
+		CreatedBy:       "tenant-1",
+		Suffix:          ".pdf",
+		ProcessBeginAt:  &begin,
+		ProcessDuration: 0.719,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	logID := "open-log"
+	taskCtx := makeTaskCtx()
+	taskCtx.Ctx = t.Context()
+	taskCtx.IngestionTask.PipelineLogID = &logID
+	taskCtx.Doc.ProcessBeginAt = &begin
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+			return map[string]any{"chunks": []map[string]any{}}, dsl, nil
+		})
+
+	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load log row: %v", err)
+	}
+	if log.OperationStatus != string(entity.TaskStatusDone) {
+		t.Fatalf("OperationStatus = %q, want DONE", log.OperationStatus)
+	}
+	if log.ProcessDuration < 2.0 || log.ProcessDuration > 3.0 {
+		t.Fatalf("ProcessDuration = %v, want ~2s measured from process_begin_at, not the stale 0.719", log.ProcessDuration)
+	}
+}
+
 // =============================================================================
 // Stub implementations for testing
 // =============================================================================

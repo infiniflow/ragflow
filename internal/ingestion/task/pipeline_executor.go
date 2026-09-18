@@ -195,6 +195,13 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		var terminalDuration *float64
 		if result != nil {
 			terminalDuration = &result.Duration
+		} else {
+			// A successful run with no chunks never wrote a terminal duration
+			// to the document, so recompute from the same process_begin_at
+			// anchor here instead of letting the log copy the stale mid-run
+			// value.
+			d := s.terminalDuration(start)
+			terminalDuration = &d
 		}
 		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
 	}
