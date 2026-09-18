@@ -286,6 +286,7 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 		"progress":         float64(0),
 		"chunk_num":        int64(0),
 		"token_num":        int64(0),
+		"process_duration": float64(0),
 		"process_begin_at": time.Now(),
 	}); err != nil {
 		common.Warn(fmt.Sprintf("prepare validated run: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
