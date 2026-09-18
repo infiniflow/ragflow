@@ -607,8 +607,8 @@ func main() {
 	if arguments.enablePProf {
 		go func() {
 			common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
-			if err = http.ListenAndServe("localhost:6060", nil); err != nil {
-				common.Error("pprof server failed", err)
+			if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
+				common.Error("pprof server failed", pprofErr)
 			}
 		}()
 	}
