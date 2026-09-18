@@ -137,6 +137,10 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	// prompt puts them in front of the answer, which must cite one passage per member and otherwise
 	// sees only the top-scoring handful.
 	st.KB.NoteCitedChunks(runtime.AnchoredItemChunks(&st.SlotTable))
+	// And the member↔passage table itself, so the compose can write the citation of every member
+	// the answer states (see runtime.CiteAnchoredMembers): which passage a member rests on is the
+	// naming node's finding, not a block number the model has to write out of a budgeted render.
+	st.KB.NoteAnchoredRefs(runtime.AnchoredItemRefs(&st.SlotTable))
 	if stats.Unknown > 0 {
 		// An enumeration that did not finish must not read as one that did. The windows with
 		// no verdict are members nobody judged, so the list above is a LOWER BOUND, and the

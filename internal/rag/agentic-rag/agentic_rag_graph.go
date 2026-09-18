@@ -2071,6 +2071,62 @@ func withCitedChunks(ranked []map[string]any, kb *runtime.Kbinfos, cap int) []ma
 	return cited
 }
 
+// compactAnchored renders each anchored member's block from the quote the naming node matched it
+// to, leaving every other chunk as it is. The block is what the budget is spent on, so whole
+// passages put only the first handful of members inside the render — and a member outside it has
+// no block number the model could cite. The quote carries the same words the record already
+// states, so no evidence is lost: the passage keeps its place in the pool and in the reference.
+func compactAnchored(chunks []map[string]any, kb *runtime.Kbinfos) []map[string]any {
+	if kb == nil {
+		return chunks
+	}
+	quotes := map[string]string{}
+	for _, ref := range kb.AnchoredRefs() {
+		if ref.ChunkID == "" || ref.Quote == "" {
+			continue
+		}
+		if _, dup := quotes[ref.ChunkID]; !dup {
+			quotes[ref.ChunkID] = ref.Quote
+		}
+	}
+	if len(quotes) == 0 {
+		return chunks
+	}
+	out := make([]map[string]any, 0, len(chunks))
+	for _, c := range chunks {
+		q, ok := quotes[runtime.ChunkIDOf(c)]
+		if !ok {
+			out = append(out, c)
+			continue
+		}
+		cp := make(map[string]any, len(c)+1)
+		for k, v := range c {
+			cp[k] = v
+		}
+		cp["content"] = q
+		out = append(out, cp)
+	}
+	return out
+}
+
+// appendMissingIDs appends the ids not already present, in order: a passage the render left out
+// (the budget admits only the first few whole chunks) still has to hold a position in the
+// published list, or nothing can cite it.
+func appendMissingIDs(ids, extra []string) []string {
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		seen[id] = true
+	}
+	for _, id := range extra {
+		if id = strings.TrimSpace(id); id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // answerPromptWithEvidence renders the parts list in order: question, answer-target
 // contract, optional no-evidence instruction, research summary, partial preamble,
 // evidence. The no-evidence flag is `abstain or empty_result or not chunks`.
@@ -2084,6 +2140,11 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	if len(citeChunks) == 0 {
 		citeChunks = chunks
 	}
+	// An anchored member's block is rendered from its QUOTE: the budget is spent per block, so a
+	// whole ~1200-char passage per member fits only the first handful of them, and every member
+	// past that one is a member neither the model nor the answer can cite. The quote is the same
+	// words the record states, and the passage itself stays in the pool and in the reference.
+	citeChunks = compactAnchored(citeChunks, kb)
 	maxTokens := d.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = evidenceBudgetTokens
@@ -2100,9 +2161,16 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// The ids come from the render's SOURCE indices, not from citeChunks: a chunk
 	// with no content renders no block, so walking citeChunks would publish an id for
 	// the skipped chunk and put every marker past it one block off.
+	//
+	// The enumerated members then follow whether or not their block rendered: the evidence
+	// budget admits only the first few whole chunks, so a member past them holds no block
+	// number the model could write — and a member with no position is a member the answer
+	// cannot cite and the user cannot open. Appending keeps the rendered prefix intact
+	// (block n is still position n) and gives the completion its target
+	// (runtime.CiteAnchoredMembers).
 	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
 	if kb != nil {
-		kb.CiteChunkIDs = citeChunkIDsAt(citeChunks, sources)
+		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(citeChunks, sources), kb.CitedChunks())
 	}
 	evidence := strings.Join(blocks, "\n")
 

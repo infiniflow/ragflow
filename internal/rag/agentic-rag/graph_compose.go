@@ -371,7 +371,7 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 		logger.Printf("[Composing the answer] composition failed: %v", err)
 		return AnswerResult{Answer: answerErrorFallback, Failed: true}
 	}
-	answer := cleanAnswer(reply.Content)
+	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}
 }
@@ -521,9 +521,19 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	if reply == nil {
 		return AnswerResult{Answer: "", Failed: true}, errors.New("streaming composition returned no reply")
 	}
-	answer := cleanAnswer(reply.Content)
+	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}, nil
+}
+
+// citeAnchoredMembers attaches the citation of every enumerated member the answer states without
+// one (see runtime.CiteAnchoredMembers). Nil-safe: a run that enumerated nothing, or whose members
+// never reached the published evidence list, comes back unchanged.
+func citeAnchoredMembers(answer string, kb *runtime.Kbinfos) string {
+	if kb == nil {
+		return answer
+	}
+	return runtime.CiteAnchoredMembers(answer, kb.AnchoredRefs(), kb.CiteChunkIDs)
 }
 
 // composeSystem builds the system prompt, applying the precedence rules.
