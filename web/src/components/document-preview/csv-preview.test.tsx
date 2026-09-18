@@ -76,7 +76,7 @@ describe('CSVFileViewer', () => {
     );
 
     expect(headerRow).not.toBeNull();
-    expect(headerRow).toHaveClass('bg-bg-canvas');
+    expect(headerRow).toHaveClass('bg-bg-base');
     expect(headerRow).not.toHaveClass('bg-background-header-bar');
   });
 });
