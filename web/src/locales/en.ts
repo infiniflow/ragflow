@@ -701,7 +701,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
-      overlappedPercent: 'Overlapped percent(%)',
+      overlappedPercent: 'Overlap(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',

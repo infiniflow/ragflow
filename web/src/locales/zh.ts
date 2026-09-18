@@ -604,7 +604,7 @@ export default {
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
-      overlappedPercentTip: '相邻两个块之间的重叠百分比',
+      overlappedPercentTip: '相邻两个块之间的重叠比例',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（Chunk 将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
@@ -691,7 +691,7 @@ export default {
       languagePlaceholder: '请输入语言',
       permissions: '权限',
       embeddingModel: 'Embedding 模型',
-      chunkTokenNumber: '建议文本块大小',
+      chunkTokenNumber: '推荐分块大小',
       chunkTokenNumberMessage: '块 Token 数是必填项',
       embeddingModelTip:
         '知识库采用的默认 Embedding 模型。一旦知识库内已经产生了文本块，更换 Embedding 模型时，系统将随机抽取若干 Chunk 进行兼容性校验，使用新 Embedding 模型重新编码并计算新旧向量的余弦相似度，样本平均相似度需 ≥ 0.9 方可切换。否则，必须删除知识库内的所有文本块后才能更改。',
@@ -3061,7 +3061,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       // group: '聚合',
       // hierarchy: '层次结构',
       regularExpressions: '正则表达式',
-      overlappedPercent: '重叠百分比（%）',
+      overlappedPercent: '重叠比例（%）',
       searchMethod: '搜索方法',
       searchMethodTip: `决定该知识库启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
