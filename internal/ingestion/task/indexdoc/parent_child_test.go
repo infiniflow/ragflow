@@ -2,9 +2,12 @@ package indexdoc
 
 import "testing"
 
-func TestParentChunkIDMatchesPythonWireFormat(t *testing.T) {
-	if got := parentChunkID("doc-a", "same parent text"); got != "3038f6a2b389d412" {
-		t.Fatalf("parentChunkID = %q, want Python-compatible xxhash64", got)
+func TestParentChunkIDScopesDatasetAndDocument(t *testing.T) {
+	if got, again := parentChunkID("kb-a", "doc-a", "same parent text"), parentChunkID("kb-a", "doc-a", "same parent text"); got != again {
+		t.Fatalf("parentChunkID is not deterministic: %q != %q", got, again)
+	}
+	if got, otherDataset := parentChunkID("kb-a", "doc-a", "same parent text"), parentChunkID("kb-b", "doc-a", "same parent text"); got == otherDataset {
+		t.Fatalf("parentChunkID collides across datasets: %q", got)
 	}
 }
 
@@ -14,7 +17,7 @@ func TestMaterializeParentChunksScopesSameParentTextToDocument(t *testing.T) {
 		{"id": "child-b", "doc_id": "doc-b", "mom": "shared parent"},
 	}
 
-	parents := MaterializeParentChunks(chunks)
+	parents := MaterializeParentChunks("kb-a", chunks)
 
 	if len(parents) != 2 {
 		t.Fatalf("parent count = %d, want 2", len(parents))

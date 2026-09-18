@@ -9,9 +9,9 @@ import (
 
 // MaterializeParentChunks turns the chunker's transient parent text into
 // hidden index rows and links every child row to its parent. A parent ID is
-// scoped to its document so equal parent text from separate documents cannot
-// overwrite each other in a shared knowledgebase index.
-func MaterializeParentChunks(chunks []map[string]any) []map[string]any {
+// scoped to its dataset and document so equal parent text from separate
+// documents or datasets cannot overwrite each other in a shared index.
+func MaterializeParentChunks(datasetID string, chunks []map[string]any) []map[string]any {
 	parentsByID := make(map[string]map[string]any)
 	parentIDs := make([]string, 0)
 
@@ -27,7 +27,7 @@ func MaterializeParentChunks(chunks []map[string]any) []map[string]any {
 		if docID == "" {
 			continue
 		}
-		parentID := parentChunkID(docID, mom)
+		parentID := parentChunkID(datasetID, docID, mom)
 		chunk["mom_id"] = parentID
 		if _, exists := parentsByID[parentID]; exists {
 			continue
@@ -57,10 +57,13 @@ func MaterializeParentChunks(chunks []map[string]any) []map[string]any {
 	return parents
 }
 
-// parentChunkID returns the cross-runtime parent row identifier. The NUL
-// separator makes the document and parent-text boundary unambiguous.
-func parentChunkID(docID, mom string) string {
+// parentChunkID returns the deterministic parent row identifier. NUL
+// separators make the dataset, document, and parent-text boundaries
+// unambiguous.
+func parentChunkID(datasetID, docID, mom string) string {
 	hasher := xxhash.New()
+	_, _ = hasher.WriteString(datasetID)
+	_, _ = hasher.Write([]byte{0})
 	_, _ = hasher.WriteString(docID)
 	_, _ = hasher.Write([]byte{0})
 	_, _ = hasher.WriteString(mom)

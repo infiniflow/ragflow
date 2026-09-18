@@ -147,6 +147,40 @@ func TestCreateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 	}
 }
 
+func TestCreateDataset_PreservesChunkerComponentOverrides(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	parserID := "general"
+	parseType := 1
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:      "ds-chunker-override",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"chunk_token_size": float64(256),
+			},
+		},
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+
+	config, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
+	}
+	chunker, ok := config["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", config["GeneralChunker:SixApplesFall"])
+	}
+	if got := chunker["chunk_token_size"]; got != float64(256) {
+		t.Fatalf("chunk_token_size = %#v, want 256", got)
+	}
+}
+
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

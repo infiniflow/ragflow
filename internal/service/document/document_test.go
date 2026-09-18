@@ -3389,6 +3389,43 @@ func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T
 	}
 }
 
+func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]any{
+			"children_delimiters": []any{},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed document parser config: %v", err)
+	}
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+}
+
 // TestUpdateDatasetDocumentRejectsInvalidPages verifies the fail-fast contract
 // for the "pages" range: an invalid range (from<1) aborts the request with
 // CodeDataError instead of being silently dropped or persisted.

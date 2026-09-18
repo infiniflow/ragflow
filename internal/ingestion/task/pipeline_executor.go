@@ -250,7 +250,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
-	parentChunks := indexdoc.MaterializeParentChunks(chunks)
+	parentChunks := indexdoc.MaterializeParentChunks(s.taskCtx.Doc.KbID, chunks)
 
 	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {

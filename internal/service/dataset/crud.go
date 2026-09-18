@@ -127,10 +127,20 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		delete(flat, "graphrag")
 		flat["llm_id"] = tenant.LLMID
 		pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, req.ParserConfig)
-		for componentID, value := range parserConfig {
-			if pipelinepkg.IsChunkerComponent(componentID) {
-				flat[componentID] = value
+		for componentID, defaults := range parserConfig {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
 			}
+			defaultParams, ok := defaults.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			overrides, ok := flat[componentID].(map[string]interface{})
+			if ok {
+				flat[componentID] = common.DeepMergeMaps(defaultParams, overrides)
+				continue
+			}
+			flat[componentID] = common.DeepMergeMaps(defaultParams, nil)
 		}
 		parserConfig = entity.JSONMap(flat)
 	}
