@@ -16,6 +16,7 @@ export const ReparseDialog = memo(
     handleOperationIconClick,
     chunk_num,
     enable_metadata = false,
+    alwaysClearChunks = false,
     visible = true,
     hideModal,
   }: DialogProps & {
@@ -25,6 +26,10 @@ export const ReparseDialog = memo(
       apply_kb: boolean;
     }) => void;
     enable_metadata?: boolean;
+    // The Go ingestion pipeline always replaces a document's prior chunks on a
+    // rerun; keeping them is not a supported outcome, so the dialog drops the
+    // choice and submits `delete: true` whenever chunks exist.
+    alwaysClearChunks?: boolean;
     visible: boolean;
     hideModal: () => void;
   }) => {
@@ -80,28 +85,24 @@ export const ReparseDialog = memo(
           </div>
         ),
       };
-      if (chunk_num > 0 && enable_metadata) {
-        setFields([deleteField, applyKBField]);
-      } else if (chunk_num > 0 && !enable_metadata) {
-        setFields([deleteField]);
-      } else if (chunk_num <= 0 && enable_metadata) {
-        setFields([applyKBField]);
-      } else {
-        setFields([]);
+      const nextFields: FormFieldConfig[] = [];
+      if (chunk_num > 0 && !alwaysClearChunks) {
+        nextFields.push(deleteField);
       }
-    }, [chunk_num, t, enable_metadata]);
+      if (enable_metadata) {
+        nextFields.push(applyKBField);
+      }
+      setFields(nextFields);
+    }, [chunk_num, t, enable_metadata, alwaysClearChunks]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
     const handleCancel = useCallback(() => {
-      // handleOperationIconClick(false);
       hideModal?.();
-      // formInstance?.reset();
       formCallbackRef?.current?.reset();
     }, [formCallbackRef, hideModal]);
 
     const handleSave = useCallback(async () => {
-      // const instance = formInstance;
       const instance = formCallbackRef?.current;
       if (!instance) {
         console.error('Form instance is null');
@@ -112,13 +113,17 @@ export const ReparseDialog = memo(
       if (check) {
         instance.submit();
         const formValues = instance.getValues();
-        console.log(formValues);
         handleOperationIconClick({
-          delete: formValues.delete,
+          delete: alwaysClearChunks && chunk_num > 0 ? true : formValues.delete,
           apply_kb: formValues.apply_kb,
         });
       }
-    }, [formCallbackRef, handleOperationIconClick]);
+    }, [
+      formCallbackRef,
+      handleOperationIconClick,
+      alwaysClearChunks,
+      chunk_num,
+    ]);
 
     return (
       <ConfirmDeleteDialog
@@ -132,28 +137,15 @@ export const ReparseDialog = memo(
           node: (
             <div>
               <DynamicForm.Root
-                onSubmit={(data) => {
-                  console.log('submit', data);
-                }}
+                onSubmit={() => {}}
                 ref={formCallbackRef}
                 fields={fields}
                 defaultValues={defaultValues}
-              >
-                {/* <DynamicForm.CancelButton
-                handleCancel={() => handleOperationIconClick(false)}
-                cancelText={t('common.cancel')}
-              />
-              <DynamicForm.SavingButton
-                buttonText={t('common.confirm')}
-                submitFunc={handleSave}
-              /> */}
-              </DynamicForm.Root>
+              ></DynamicForm.Root>
             </div>
           ),
         }}
-      >
-        {/* {children} */}
-      </ConfirmDeleteDialog>
+      ></ConfirmDeleteDialog>
     );
   },
 );

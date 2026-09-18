@@ -278,6 +278,7 @@ export function ParsingStatusCell({
       {reparseDialogVisible && (
         <ReparseDialog
           enable_metadata={record?.parser_config?.enable_metadata}
+          alwaysClearChunks={isGo}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_count}
           visible={reparseDialogVisible}

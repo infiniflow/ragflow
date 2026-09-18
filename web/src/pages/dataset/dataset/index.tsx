@@ -34,9 +34,11 @@ import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
 import { useHandleUploadDocument } from './use-upload-document';
+import { useIsGoBackend } from '@/utils/backend-variant';
 
 export default function Dataset() {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
   const {
     documentUploadVisible,
     hideDocumentUploadModal,
@@ -261,6 +263,7 @@ export default function Dataset() {
         {reparseDialogVisible && (
           <ReparseDialog
             enable_metadata={knowledgeBase?.parser_config?.enable_metadata}
+            alwaysClearChunks={isGo}
             handleOperationIconClick={handleOperationIconClick}
             chunk_num={chunkNum}
             visible={reparseDialogVisible}
