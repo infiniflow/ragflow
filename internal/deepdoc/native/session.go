@@ -94,14 +94,14 @@ type session struct {
 }
 
 // NewSession opens modelPath. inShape describes the fixed input tensor
-// dimensions (outShape is accepted for call-site compatibility but no longer
-// pinned: output tensors are allocated per Run). The session runs
+// dimensions; output tensors are allocated per Run (their shape is
+// model-determined, so no outShape argument is needed). The session runs
 // intraOpThreads intra-op threads (see the constant): one thread per Run, with
 // the process-wide ceiling owned by the inference budget the process owner
 // registers (see inference_limit.go). Input/output tensors are allocated and
 // freed on every Run (see session.Run), so a pooled session holds only its
 // weights in steady state. InitORT must have been called first.
-func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64) (*session, error) {
+func NewSession(modelPath, inName string, inShape []int64, outName string) (*session, error) {
 	opts, err := newSessionOptions()
 	if err != nil {
 		return nil, err
@@ -198,6 +198,9 @@ func (s *session) Run(ctx context.Context, input []float32) ([]float32, error) {
 		return nil, err
 	}
 	outVal := outputs[0]
+	if outVal == nil {
+		return nil, fmt.Errorf("session %s: nil output tensor", s.outName)
+	}
 	defer outVal.Destroy()
 	outT, ok := outVal.(*ort.Tensor[float32])
 	if !ok {
