@@ -41,6 +41,7 @@ def _load_service(monkeypatch):
         "api.db.services.common_service",
         "api.db.services.document_service",
         "api.db.services.knowledgebase_service",
+        "api.db.services.pipeline_dsl_version_service",
         "api.db.services.task_service",
         "common",
         "common.constants",
@@ -60,6 +61,7 @@ def _load_service(monkeypatch):
     sys.modules["api.db.services.common_service"].CommonService = object
     sys.modules["api.db.services.document_service"].DocumentService = object
     sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = object
+    sys.modules["api.db.services.pipeline_dsl_version_service"].PipelineDSLVersionService = object
     sys.modules["api.db.services.task_service"].GRAPH_RAPTOR_FAKE_DOC_ID = "fake"
     sys.modules["api.db.services.task_service"].TaskService = object
 
@@ -105,12 +107,26 @@ def pol_module(monkeypatch):
     return _load_service(monkeypatch)
 
 
-def test_remove_embedding_vectors_preserves_pipeline_runtime_outputs(pol_module):
+@pytest.mark.parametrize(
+    ("pipeline_id", "parser_id", "expected"),
+    [
+        ("pipeline-1", "general", "pipeline-1"),
+        (None, "general", "builtin:general"),
+        (None, "", None),
+    ],
+)
+def test_pipeline_dsl_id(pol_module, pipeline_id, parser_id, expected):
+    assert pol_module._pipeline_dsl_id(pipeline_id, parser_id) == expected
+
+
+def test_sanitize_pipeline_dsl_removes_runtime_state_without_mutating_input(pol_module):
     dsl = {
+        "task_id": "run-1",
         "components": {
             "Tokenizer:0": {
                 "obj": {
                     "params": {
+                        "mode": "static",
                         "outputs": {
                             "chunks": {
                                 "value": [
@@ -130,12 +146,15 @@ def test_remove_embedding_vectors_preserves_pipeline_runtime_outputs(pol_module)
         "path": ["Tokenizer:0"],
     }
 
-    result = pol_module._remove_embedding_vectors(dsl)
+    result = pol_module._sanitize_pipeline_dsl(dsl)
 
-    chunk = result["components"]["Tokenizer:0"]["obj"]["params"]["outputs"]["chunks"]["value"][0]
-    assert chunk == {"text": "content", "metadata": {"source": "test"}}
-    assert result["components"]["Tokenizer:0"]["obj"]["params"]["outputs"]["embedding_token_consumption"]["value"] == 12
+    params = result["components"]["Tokenizer:0"]["obj"]["params"]
+    assert "task_id" not in result
+    assert "outputs" not in params
+    assert params["mode"] == "static"
     assert result["path"] == ["Tokenizer:0"]
+    assert dsl["task_id"] == "run-1"
+    assert "outputs" in dsl["components"]["Tokenizer:0"]["obj"]["params"]
 
 
 def test_resolve_dsl_references_preserves_legacy_embedded_dsl(monkeypatch, pol_module):

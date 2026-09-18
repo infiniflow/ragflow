@@ -61,9 +61,10 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value={})
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, "_record_pipeline_log"):
+        with patch.object(DataflowService, "_record_pipeline_log") as record_pipeline_log:
             service = DataflowService(ctx=task_context)
             await service.run_dataflow()
+            record_pipeline_log.assert_called_once_with("doc_test", "dataflow_test", '{"id": "test"}')
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("output_key", ["chunks", "json"])
@@ -368,13 +369,14 @@ class TestDataflowServiceLoadDsl:
         """When task_type != 'dataflow', dataflow_id comes from pipeline_log.pipeline_id."""
         ctx = MagicMock()
         ctx.task_type = "raptor"
+        ctx.kb_id = "kb_test"
         dataflow_id = "pipeline_log_id"
 
         with patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService") as mock_log:
-            mock_log_instance = MagicMock()
-            mock_log_instance.dsl = '{"id": "test_pipeline"}'
-            mock_log_instance.pipeline_id = "corrected_pipeline_id"
-            mock_log.get_by_id.return_value = (True, mock_log_instance)
+            mock_log.get_by_id_and_kb_id.return_value = {
+                "dsl": '{"id": "test_pipeline"}',
+                "pipeline_id": "corrected_pipeline_id",
+            }
 
             service = DataflowService(ctx=ctx)
 
@@ -382,4 +384,4 @@ class TestDataflowServiceLoadDsl:
 
             assert dsl == '{"id": "test_pipeline"}'
             assert corrected_id == "corrected_pipeline_id"
-            mock_log.get_by_id.assert_called_once_with(dataflow_id)
+            mock_log.get_by_id_and_kb_id.assert_called_once_with(dataflow_id, "kb_test")

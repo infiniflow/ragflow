@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+from copy import deepcopy
 from datetime import datetime, timedelta
 from functools import lru_cache
 
@@ -28,6 +29,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.pipeline_dsl_version_service import PipelineDSLVersionService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import PipelineTaskType, TaskStatus
 
@@ -149,7 +151,6 @@ _EMBEDDING_VECTOR_FIELD = re.compile(r"^q_\d+_vec$")
 
 
 def _remove_embedding_vectors(value):
-    """Remove index-only embedding vectors from a runtime pipeline snapshot."""
     if isinstance(value, dict):
         for key in list(value):
             if _EMBEDDING_VECTOR_FIELD.fullmatch(str(key)):
@@ -160,6 +161,35 @@ def _remove_embedding_vectors(value):
         for item in value:
             _remove_embedding_vectors(item)
     return value
+
+
+def _sanitize_pipeline_dsl(dsl_mapping):
+    """Return the immutable pipeline definition without per-run state."""
+    sanitized = deepcopy(dsl_mapping)
+    root = sanitized.get("dsl") if isinstance(sanitized.get("dsl"), dict) else sanitized
+    root.pop("task_id", None)
+
+    components = root.get("components")
+    if isinstance(components, dict):
+        for component in components.values():
+            if not isinstance(component, dict):
+                continue
+            obj = component.get("obj")
+            if not isinstance(obj, dict):
+                continue
+            params = obj.get("params")
+            if isinstance(params, dict):
+                params.pop("outputs", None)
+
+    return _remove_embedding_vectors(sanitized)
+
+
+def _pipeline_dsl_id(pipeline_id, parser_id):
+    pipeline_id = str(pipeline_id or "").strip()
+    if pipeline_id:
+        return pipeline_id
+    parser_id = str(parser_id or "").strip()
+    return f"builtin:{parser_id}" if parser_id else None
 
 
 class PipelineOperationLogService(CommonService):
@@ -280,7 +310,7 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None, dsl: str = "{}"):
+    def create(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None, dsl=None):
         if document_id != GRAPH_RAPTOR_FAKE_DOC_ID:
             referred_document_id = document_id
 
@@ -319,7 +349,7 @@ class PipelineOperationLogService(CommonService):
         if dsl_mapping is None:
             dsl_for_log = {}
         else:
-            dsl_for_log = _remove_embedding_vectors(dsl_mapping)
+            dsl_for_log = _sanitize_pipeline_dsl(dsl_mapping)
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -398,6 +428,17 @@ class PipelineOperationLogService(CommonService):
             logger.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
             return None
 
+        dsl_id = None
+        dsl_version = None
+        if task_type == PipelineTaskType.PARSE and dsl_mapping is not None:
+            dsl_id = _pipeline_dsl_id(pipeline_id, document.parser_id)
+            if dsl_id is not None:
+                # Resolve the immutable DSL version before opening the operation
+                # log transaction. Retrying inside a long-lived MySQL
+                # REPEATABLE READ transaction could keep observing a stale head.
+                version = PipelineDSLVersionService.get_or_create(dsl_id, dsl_for_log)
+                dsl_version = version.version
+
         log = {
             "id": get_uuid(),
             "document_id": document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
@@ -414,7 +455,12 @@ class PipelineOperationLogService(CommonService):
             "progress_msg": progress_msg,
             "process_begin_at": process_begin_at,
             "process_duration": process_duration,
-            "dsl": dsl_for_log,
+            "dsl_id": dsl_id,
+            "dsl_version": dsl_version,
+            # Referenced rows do not duplicate the full definition. Missing or
+            # malformed DSL input retains the embedded snapshot fallback used
+            # by legacy rows.
+            "dsl": {} if dsl_version is not None else dsl_for_log,
             "task_type": task_type,
             "operation_status": operation_status,
             "avatar": avatar,

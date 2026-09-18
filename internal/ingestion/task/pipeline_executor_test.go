@@ -143,11 +143,14 @@ func makeTaskCtx() *TaskContext {
 
 func setupPipelineExecutorTestDB(t *testing.T) func() {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		Logger:         logger.Default.LogMode(logger.Silent),
+		TranslateError: true,
+	})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineDSLVersion{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -367,6 +370,141 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	}
 }
 
+func TestPipelineDSLID(t *testing.T) {
+	tests := []struct {
+		name       string
+		pipelineID string
+		parserID   string
+		want       string
+	}{
+		{name: "custom pipeline", pipelineID: "pipeline-1", parserID: "general", want: "pipeline-1"},
+		{name: "builtin pipeline", parserID: "general", want: "builtin:general"},
+		{name: "missing identity", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := pipelineDSLID(test.pipelineID, test.parserID); got != test.want {
+				t.Fatalf("pipelineDSLID(%q, %q) = %q, want %q", test.pipelineID, test.parserID, got, test.want)
+			}
+		})
+	}
+}
+
+func TestSanitizePipelineDSLRemovesRuntimeState(t *testing.T) {
+	dsl := entity.JSONMap{
+		"task_id": "run-1",
+		"components": map[string]any{
+			"parser": map[string]any{
+				"obj": map[string]any{
+					"params": map[string]any{
+						"mode":    "static",
+						"q_vec":   []float64{0.5},
+						"q_3_vec": []float64{0.1},
+						"outputs": map[string]any{"chunks": []any{"runtime"}},
+					},
+				},
+			},
+		},
+	}
+
+	sanitizePipelineDSL(dsl)
+
+	if _, exists := dsl["task_id"]; exists {
+		t.Fatalf("runtime task_id was not removed: %v", dsl)
+	}
+	components := dsl["components"].(map[string]any)
+	parser := components["parser"].(map[string]any)
+	obj := parser["obj"].(map[string]any)
+	params := obj["params"].(map[string]any)
+	if _, exists := params["outputs"]; exists {
+		t.Fatalf("runtime outputs were not removed: %v", params)
+	}
+	if _, exists := params["q_3_vec"]; exists {
+		t.Fatalf("indexed embedding vector was not removed: %v", params)
+	}
+	if _, exists := params["q_vec"]; !exists {
+		t.Fatalf("non-index field q_vec should be preserved: %v", params)
+	}
+	if params["mode"] != "static" {
+		t.Fatalf("static params were not preserved: %v", params)
+	}
+}
+
+func TestRecordPipelineLogStoresVersionedDSLReferences(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	documents := []struct {
+		id  string
+		dsl string
+	}{
+		{id: "doc-1", dsl: `{"task_id":"run-1","components":{"parser":{"revision":1,"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"text":"first","q_3_vec":[0.1]}]}}}}}}}`},
+		{id: "doc-2", dsl: `{"task_id":"run-2","components":{"parser":{"revision":1,"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"text":"second","q_3_vec":[0.2]}]}}}}}}}`},
+		{id: "doc-3", dsl: `{"task_id":"run-3","components":{"parser":{"revision":2,"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"text":"third","q_3_vec":[0.3]}]}}}}}}}`},
+	}
+	for _, item := range documents {
+		name := item.id + ".pdf"
+		if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+			TenantID:   "tenant-1",
+			KbID:       "kb-1",
+			DocumentID: item.id,
+			DSL:        item.dsl,
+			Status:     "done",
+			Document: entity.Document{
+				ID:         item.id,
+				KbID:       "kb-1",
+				ParserID:   "general",
+				SourceType: "local",
+				Type:       "pdf",
+				Name:       &name,
+				Suffix:     ".pdf",
+			},
+		}); err != nil {
+			t.Fatalf("RecordPipelineLog(%s): %v", item.id, err)
+		}
+	}
+
+	wantVersions := map[string]int64{"doc-1": 1, "doc-2": 1, "doc-3": 2}
+	for documentID, wantVersion := range wantVersions {
+		var log entity.PipelineOperationLog
+		if err := dao.DB.Where("document_id = ?", documentID).First(&log).Error; err != nil {
+			t.Fatalf("load pipeline log for %s: %v", documentID, err)
+		}
+		if log.DSLID == nil || *log.DSLID != "builtin:general" {
+			t.Fatalf("%s DSLID = %v, want builtin:general", documentID, log.DSLID)
+		}
+		if log.DSLVersion == nil || *log.DSLVersion != wantVersion {
+			t.Fatalf("%s DSLVersion = %v, want %d", documentID, log.DSLVersion, wantVersion)
+		}
+		if len(log.DSL) != 0 {
+			t.Fatalf("%s embedded DSL = %v, want empty", documentID, log.DSL)
+		}
+	}
+
+	var versions []entity.PipelineDSLVersion
+	if err := dao.DB.Where("dsl_id = ?", "builtin:general").Order("version").Find(&versions).Error; err != nil {
+		t.Fatalf("load pipeline DSL versions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("pipeline DSL version count = %d, want 2", len(versions))
+	}
+	for _, version := range versions {
+		if _, exists := version.DSL["task_id"]; exists {
+			t.Fatalf("version %d stores runtime task_id: %v", version.Version, version.DSL)
+		}
+		components, _ := version.DSL["components"].(map[string]any)
+		parser, _ := components["parser"].(map[string]any)
+		obj, _ := parser["obj"].(map[string]any)
+		params, _ := obj["params"].(map[string]any)
+		if _, exists := params["outputs"]; exists {
+			t.Fatalf("version %d stores runtime outputs: %v", version.Version, version.DSL)
+		}
+		if params["mode"] != "static" {
+			t.Fatalf("version %d dropped static params: %v", version.Version, version.DSL)
+		}
+	}
+}
+
 func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
@@ -431,6 +569,12 @@ func TestRecordPipelineLog_BuiltinUsesParserIDFallback(t *testing.T) {
 	if captured.PipelineID != nil {
 		t.Fatalf("PipelineID = %q, want nil for builtin pipeline", *captured.PipelineID)
 	}
+	if captured.DSLID == nil || *captured.DSLID != "builtin:general" {
+		t.Fatalf("DSLID = %v, want builtin:general", captured.DSLID)
+	}
+	if captured.DSLVersion == nil || *captured.DSLVersion != 1 {
+		t.Fatalf("DSLVersion = %v, want 1", captured.DSLVersion)
+	}
 }
 
 func TestRecordPipelineLog_CustomCanvasTitle(t *testing.T) {
@@ -469,6 +613,9 @@ func TestRecordPipelineLog_CustomCanvasTitle(t *testing.T) {
 	}
 	if captured.PipelineID == nil || *captured.PipelineID != "canvas-1" {
 		t.Fatalf("PipelineID = %v, want \"canvas-1\"", captured.PipelineID)
+	}
+	if captured.DSLID == nil || *captured.DSLID != "canvas-1" {
+		t.Fatalf("DSLID = %v, want canvas-1", captured.DSLID)
 	}
 }
 
