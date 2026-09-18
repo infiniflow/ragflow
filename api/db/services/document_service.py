@@ -1027,6 +1027,51 @@ class DocumentService(CommonService):
         return list(cls.model.select(*fields).where(cls.model.id.in_(docids)).dicts())
 
     @classmethod
+    def _find_image_document_id(cls, kb_id, image_id, doc_id=None):
+        e, kb = KnowledgebaseService.get_by_id(kb_id)
+        if not e:
+            return None
+
+        filters = {"img_id": image_id}
+        if doc_id:
+            filters["doc_id"] = doc_id
+        try:
+            result = settings.docStoreConn.search(
+                ["doc_id", "img_id"],
+                [],
+                filters,
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                search.index_name(kb.tenant_id),
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(result, ["doc_id", "img_id"])
+        except Exception:
+            logging.warning("Failed to resolve document image ownership")
+            return None
+
+        for row in (rows or {}).values():
+            if row.get("img_id") == image_id and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
+                return row["doc_id"]
+        return None
+
+    @classmethod
+    def image_belongs_to_document(cls, doc, image_id):
+        return cls._find_image_document_id(doc.kb_id, image_id, doc.id) == doc.id
+
+    @classmethod
+    def get_by_image_id(cls, kb_id, image_id):
+        doc_id = cls._find_image_document_id(kb_id, image_id)
+        if not doc_id:
+            return False, None
+        e, doc = cls.get_by_id(doc_id)
+        if not e or doc.kb_id != kb_id:
+            return False, None
+        return True, doc
+
+    @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
         if not config:

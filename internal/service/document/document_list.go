@@ -61,23 +61,14 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 		return map[string]string{}, nil
 	}
 
-	tenantIDs := []string{userID}
-	if userID != "" {
-		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
-		}
-		tenantIDs = append(tenantIDs, ids...)
-	}
-
-	documents, err := s.documentDAO.GetByIDsAndTenantIDs(ctx, dao.DB, docIDs, tenantIDs)
+	documents, err := s.documentDAO.GetByIDs(ctx, dao.DB, docIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
 	}
 
 	result := make(map[string]string, len(documents))
 	for _, document := range documents {
-		if document == nil {
+		if document == nil || !s.kbDAO.Accessible(ctx, dao.DB, document.KbID, userID) {
 			continue
 		}
 
@@ -86,11 +77,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 			if strings.HasPrefix(*document.Thumbnail, imgBase64Prefix) {
 				thumbnail = *document.Thumbnail
 			} else {
-				thumbnail = fmt.Sprintf(
-					"/api/v1/documents/images/%s-%s",
-					document.KbID,
-					*document.Thumbnail,
-				)
+				thumbnail = fmt.Sprintf("/api/v1/documents/%s/thumbnail", document.ID)
 			}
 		}
 

@@ -199,12 +199,14 @@ const FloatingChatWidgetMarkdown = ({
               <TooltipTrigger asChild>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
                 />
               </TooltipTrigger>
               <TooltipContent side="left">
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className="max-w-[80vw] max-h-[60vh] rounded"
                 />
               </TooltipContent>
@@ -292,6 +294,7 @@ const FloatingChatWidgetMarkdown = ({
             <Image
               key={`img-${i}`}
               id={imageId}
+              documentId={documentId}
               className="block object-contain max-w-full max-h-48 rounded my-2 cursor-pointer"
               onClick={handleDocumentButtonClick(
                 documentId,

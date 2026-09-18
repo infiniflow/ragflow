@@ -30,6 +30,21 @@ def test_document_image_invalid_id_contract(rest_client):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/documents/images/not-a-valid-image-id",
+        "/documents/doc-1/images/imagetemps-page-1.png",
+        "/documents/doc-1/thumbnail",
+    ],
+)
+def test_private_document_images_require_auth(rest_client_noauth, path):
+    res = rest_client_noauth.get(path)
+    assert res.status_code == 401, res.text
+    assert_auth_error(res.json(), path)
+
+
+@pytest.mark.p2
 def test_document_download_by_id_requires_auth(create_document):
     _dataset_id, document_id = create_document("document_raw_download_auth.txt")
     for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
