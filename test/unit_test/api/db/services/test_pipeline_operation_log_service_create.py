@@ -51,6 +51,7 @@ import pytest
 def _install_stubs(monkeypatch):
     # peewee.fn is referenced at module import time.
     peewee_mod = types.ModuleType("peewee")
+    peewee_mod.Tuple = lambda *a, **kw: None
     peewee_mod.fn = lambda *a, **kw: None
     monkeypatch.setitem(sys.modules, "peewee", peewee_mod)
 
@@ -82,6 +83,7 @@ def _install_stubs(monkeypatch):
     DB.connection_context = _noop_connection_context
     sys.modules["api.db.db_models"].DB = DB
     sys.modules["api.db.db_models"].Document = object
+    sys.modules["api.db.db_models"].PipelineDSLVersion = object
     # PipelineOperationLog needs concrete int returns on the count() chain
     # so create()'s `if total > limit` branch is well-typed and the
     # cleanup path doesn't blow up with `MagicMock > int`.

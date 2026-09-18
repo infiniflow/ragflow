@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -111,6 +112,9 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 	if err := query.Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
+	if err := dao.resolveDSLReferences(ctx, db, logs); err != nil {
+		return nil, 0, err
+	}
 	return logs, count, nil
 }
 
@@ -161,7 +165,65 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	if err := query.Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
+	if err := dao.resolveDSLReferences(ctx, db, logs); err != nil {
+		return nil, 0, err
+	}
 	return logs, count, nil
+}
+
+type pipelineDSLVersionKey struct {
+	DSLID   string
+	Version int64
+}
+
+func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db *gorm.DB, logs []*entity.PipelineOperationLog) error {
+	keys := make(map[pipelineDSLVersionKey]struct{})
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		if (log.DSLID == nil) != (log.DSLVersion == nil) {
+			return fmt.Errorf("pipeline operation log %q has an incomplete DSL reference", log.ID)
+		}
+		if log.DSLID != nil {
+			keys[pipelineDSLVersionKey{DSLID: *log.DSLID, Version: *log.DSLVersion}] = struct{}{}
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	pairs := make([][]any, 0, len(keys))
+	for key := range keys {
+		pairs = append(pairs, []any{key.DSLID, key.Version})
+	}
+	var versions []*entity.PipelineDSLVersion
+	if err := db.WithContext(ctx).
+		Where("(dsl_id, version) IN ?", pairs).
+		Find(&versions).Error; err != nil {
+		return fmt.Errorf("load pipeline DSL versions: %w", err)
+	}
+
+	versionsByKey := make(map[pipelineDSLVersionKey]entity.JSONMap, len(versions))
+	for _, version := range versions {
+		if version == nil {
+			continue
+		}
+		key := pipelineDSLVersionKey{DSLID: version.DSLID, Version: version.Version}
+		versionsByKey[key] = version.DSL
+	}
+	for _, log := range logs {
+		if log == nil || log.DSLID == nil {
+			continue
+		}
+		key := pipelineDSLVersionKey{DSLID: *log.DSLID, Version: *log.DSLVersion}
+		dsl, ok := versionsByKey[key]
+		if !ok {
+			return fmt.Errorf("pipeline operation log %q references missing pipeline DSL version %q@%d", log.ID, key.DSLID, key.Version)
+		}
+		log.DSL = dsl
+	}
+	return nil
 }
 
 // OpenPipelineOperationStatuses returns the operation_status values of a
@@ -338,6 +400,9 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 	if err := db.WithContext(ctx).Where("id = ? AND kb_id = ?", logID, kbID).First(&log).Error; err != nil {
 		return nil, err
 	}
+	if err := dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{&log}); err != nil {
+		return nil, err
+	}
 	return &log, nil
 }
 
@@ -347,6 +412,9 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
 	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+		return nil, err
+	}
+	if err := dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{&log}); err != nil {
 		return nil, err
 	}
 	return &log, nil

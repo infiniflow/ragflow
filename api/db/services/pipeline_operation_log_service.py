@@ -20,10 +20,10 @@ import re
 from datetime import datetime, timedelta
 from functools import lru_cache
 
-from peewee import fn
+from peewee import Tuple, fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, Document, PipelineOperationLog
+from api.db.db_models import DB, Document, PipelineDSLVersion, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -166,6 +166,53 @@ class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
 
     @classmethod
+    def _load_dsl_versions(cls, references):
+        if not references:
+            return {}
+        rows = (
+            PipelineDSLVersion.select(
+                PipelineDSLVersion.dsl_id,
+                PipelineDSLVersion.version,
+                PipelineDSLVersion.dsl,
+            )
+            .where(
+                Tuple(PipelineDSLVersion.dsl_id, PipelineDSLVersion.version).in_(
+                    sorted(references)
+                )
+            )
+            .dicts()
+        )
+        return {(row["dsl_id"], row["version"]): row["dsl"] for row in rows}
+
+    @classmethod
+    def _resolve_dsl_references(cls, logs):
+        references = set()
+        for log in logs:
+            dsl_id = log.get("dsl_id")
+            dsl_version = log.get("dsl_version")
+            if (dsl_id is None) != (dsl_version is None):
+                raise RuntimeError(
+                    f"Pipeline operation log {log.get('id')!r} has an incomplete DSL reference."
+                )
+            if dsl_id is not None:
+                references.add((dsl_id, dsl_version))
+
+        versions = cls._load_dsl_versions(references)
+        missing = references.difference(versions)
+        if missing:
+            dsl_id, dsl_version = sorted(missing)[0]
+            raise RuntimeError(
+                f"Pipeline DSL version {dsl_id!r}@{dsl_version} referenced by an operation log was not found."
+            )
+
+        for log in logs:
+            dsl_id = log.pop("dsl_id", None)
+            dsl_version = log.pop("dsl_version", None)
+            if dsl_id is not None:
+                log["dsl"] = versions[(dsl_id, dsl_version)]
+        return logs
+
+    @classmethod
     def _is_final_state(cls, progress, operation_status):
         if progress == 1 or progress == -1:
             return True
@@ -190,6 +237,8 @@ class PipelineOperationLogService(CommonService):
             cls.model.progress_msg,
             cls.model.process_begin_at,
             cls.model.process_duration,
+            cls.model.dsl_id,
+            cls.model.dsl_version,
             cls.model.dsl,
             cls.model.task_type,
             cls.model.operation_status,
@@ -458,7 +507,20 @@ class PipelineOperationLogService(CommonService):
         if page_number and items_per_page:
             logs = logs.paginate(page_number, items_per_page)
 
-        return list(logs.dicts()), count
+        return cls._resolve_dsl_references(list(logs.dicts())), count
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_id_and_kb_id(cls, log_id, kb_id):
+        log = (
+            cls.model.select(*cls.get_file_logs_fields())
+            .where((cls.model.id == log_id) & (cls.model.kb_id == kb_id))
+            .dicts()
+            .first()
+        )
+        if log is None:
+            return None
+        return cls._resolve_dsl_references([log])[0]
 
     @classmethod
     @DB.connection_context()
