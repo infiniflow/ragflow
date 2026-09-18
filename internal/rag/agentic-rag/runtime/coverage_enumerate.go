@@ -153,6 +153,43 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 	}
 	set.Recalled = len(byID)
 
+	// The vocabulary the filter below asks about. The plan's words are a guess about a text
+	// nobody had read when they were written (see Coverage.ActsAll): the passages THIS recall just
+	// brought back through the actor's own name are read here, once, so that a death stated in a
+	// phrasing the plan had no word for — 第一回's "被云长刀起处，挥为两段" — becomes a window
+	// instead of being dropped before any node ever sees it.
+	acts := cov.ActsAll()
+	sampleIDs := make([]string, 0, len(byID))
+	for id := range byID {
+		sampleIDs = append(sampleIDs, id)
+	}
+	// Sorted by chunk id: which passages are sampled is what the induced vocabulary is read from,
+	// and that vocabulary becomes a filter, so it must not vary with the map's iteration order.
+	sort.Strings(sampleIDs)
+	var samples []string
+	var probe strings.Builder
+	probe.WriteString("Passages:\n")
+	for _, id := range sampleIDs {
+		if len(samples) >= coverageVocabSamples {
+			break
+		}
+		text := strings.Join(strings.Fields(ChunkTextOf(byID[id])), " ")
+		if text == "" || (len(actors) > 0 && !coverageMentionsAny(text, actors)) {
+			continue
+		}
+		if r := []rune(text); len(r) > coverageVocabSampleChars {
+			text = string(r[:coverageVocabSampleChars])
+		}
+		samples = append(samples, text)
+		fmt.Fprintf(&probe, "[%d] %s\n", len(samples), text)
+	}
+	if induced := induceActWords(ctx, deps.Model, cov.Acts, probe.String(), samples); len(induced) > 0 {
+		for _, w := range induced {
+			acts = appendUnique(acts, w)
+		}
+		_LOG.Printf("[Coverage] vocabulary probe: read %d word(s) out of the corpus that the plan had not declared (%s) — the filter knows them now.", len(induced), strings.Join(induced, " / "))
+	}
+
 	// Sorted by chunk id: these windows are rendered into EVERY session's seed (and the
 	// cap below keeps the first N), so walking the map made both the seed's wording and
 	// which windows survived the cap differ from run to run.
@@ -162,10 +199,30 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 	}
 	sort.Strings(ids)
 
+	// An actor form that matches NOTHING in what the recall just brought back is a suspect
+	// DECLARATION, not a fact about the corpus: 2026-09-18 the plan's subject came through as
+	// "None", the actor test rejected all 852 passages this recall had returned, and the run lost
+	// every citation it could have had (the point-of-naming node was handed no window at all). A
+	// test that rejects 100% of the recall has stopped being a filter, so the passages below are
+	// judged on the act words alone — the model is the node that decides whether the deed is
+	// stated — and the miss is said out loud instead of turning into silence.
+	if len(actors) > 0 {
+		matched := false
+		for _, id := range ids {
+			if coverageMentionsAny(strings.Join(strings.Fields(ChunkTextOf(byID[id])), " "), actors) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			_LOG.Printf("[Coverage] actor %q matches NONE of the %d recalled passage(s): dropping the actor test (the declaration is suspect; the act words still stand) instead of judging nothing.", cov.Actor, len(ids))
+			actors = nil
+		}
+	}
 	for _, id := range ids {
 		c := byID[id]
 		text := strings.Join(strings.Fields(ChunkTextOf(c)), " ")
-		act := coverageFirstAct(text, cov.Acts)
+		act := coverageFirstAct(text, acts)
 		if act == "" {
 			continue
 		}
@@ -175,7 +232,7 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 		if kb != nil {
 			kb.Admit(func(p *PoolAdmitter) { p.Add(c) })
 		}
-		for _, w := range coverageWindows(text, cov.Acts, coverageWindowsPerChunk) {
+		for _, w := range coverageWindows(text, acts, coverageWindowsPerChunk) {
 			if len(set.Windows) >= coverageWindowsMax {
 				set.Truncated = true
 				break
@@ -205,7 +262,7 @@ func CoverageActsMeetActor(kb *Kbinfos, cov Coverage) bool {
 	actors := cov.Actors()
 	for _, c := range kb.Chunks {
 		text := ChunkTextOf(c)
-		if coverageFirstAct(text, cov.Acts) == "" {
+		if coverageFirstAct(text, cov.ActsAll()) == "" {
 			continue
 		}
 		if len(actors) > 0 && !coverageMentionsAny(text, actors) {

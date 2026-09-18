@@ -216,6 +216,97 @@ func ResolveCoverage(ctx context.Context, model SessionModel, question string, c
 	return members, stats
 }
 
+// CoverageVocabPrompt asks for the vocabulary of THE SOURCE, never for the vocabulary of the
+// language: the passages are what answers it, and a word that is not in them does not qualify.
+const CoverageVocabPrompt = `You are given passages from ONE source document.
+
+The direction under study is the deed named by these words — the act they stand for:
+%WORDS%
+
+List the words THIS SOURCE uses for that deed. A word qualifies only if it ACTUALLY APPEARS in the
+passages below: never list a word you know from the language but cannot see in the text. Include
+every distinct phrasing the passages use for it, including unusual and indirect ones.
+
+Answer with JSON only: {"words": ["<word>", "<word>"]}
+Every entry is copied EXACTLY as it appears in a passage, at most %MAX% entries. No prose.`
+
+// The probe's bounds: how many passages it reads, how much of each, and how many words it may
+// bring back. The call is small on purpose — it is read once per enumeration, against a point of
+// naming that judges hundreds of lines — and every word it reports is then checked against the
+// very passages it was shown.
+const (
+	coverageVocabSamples     = 12
+	coverageVocabSampleChars = 320
+	coverageVocabWords       = 24
+)
+
+// induceActWords reads the deed's vocabulary OUT OF THE CORPUS — one call, before the enumeration
+// filters with it.
+//
+// Why this exists: the planner declares the deed's words BEFORE any passage has been read (see the
+// initialize prompt's "the words the SOURCE itself uses for that deed" — asked of a text nobody
+// has looked at yet). Measured 2026-09-18 (三国演义, 1718 chunks, "关羽杀了多少有姓名的人物"):
+// the plan declared seven words, and 程远志 appears ZERO times in that run's whole log, although
+// 第一回 states his death as "被云长刀起处，挥为两段" — actor form and deed in ONE chunk, and the
+// actor's own name recalls it. It was dropped by the act-word filter, for a phrasing the plan had
+// not written down.
+//
+// The fix is not a kill-verb list in the code. Such a list is bound to one language and one corpus
+// ("挥为两段" survives no change of source, and nothing fails loudly when it stops matching), and
+// it would sit UPSTREAM of the node whose job is to judge the deed ("nothing here decides what a
+// kill is, or which words mean one" — coverage_step.go). The words the source uses have to be read
+// out of the passages this run already holds — and then CHECKED: a word no passage contains is the
+// model's memory of the language, so it is dropped rather than trusted (the validation below).
+//
+// samples is the text of the passages the caller showed it; a reported word is kept only when one
+// of them actually carries it.
+func induceActWords(ctx context.Context, model SessionModel, declared []string, passages string, samples []string) []string {
+	if model == nil || len(declared) == 0 || passages == "" || len(samples) == 0 || ctx.Err() != nil {
+		return nil
+	}
+	head := strings.Replace(CoverageVocabPrompt, "%WORDS%", strings.Join(declared, " / "), 1)
+	head = strings.Replace(head, "%MAX%", fmt.Sprint(coverageVocabWords), 1)
+	reply, err := model.Complete(ctx, []schema.Message{
+		*schema.SystemMessage(head),
+		*schema.UserMessage(passages),
+	}, nil)
+	if err != nil || reply == nil {
+		return nil
+	}
+	obj := coverageJSONObject(reply.Content)
+	if obj == nil {
+		return nil
+	}
+	var out []string
+	for _, raw := range coverageAnyList(obj["words"]) {
+		w, _ := raw.(string)
+		w = strings.TrimSpace(w)
+		// A phrase, not a sentence; and present in what the model was shown.
+		if w == "" || len([]rune(w)) > 16 || strings.ContainsAny(w, " \t\n") {
+			continue
+		}
+		if !coverageCarriedByAny(samples, w) {
+			continue
+		}
+		out = appendUnique(out, w)
+		if len(out) >= coverageVocabWords {
+			break
+		}
+	}
+	return out
+}
+
+// coverageCarriedByAny reports whether one of the passages actually carries the word — the check
+// that makes the induced vocabulary a reading of the corpus instead of a claim about it.
+func coverageCarriedByAny(samples []string, word string) bool {
+	for _, s := range samples {
+		if strings.Contains(s, word) {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveCoverageBatch puts ONE batch of jobs in front of the model and returns the members
 // it named out of that batch. The verdicts it reports are keyed by the CALLER's window
 // indices, so the caller can re-ask exactly the jobs that came back with none.
