@@ -136,10 +136,11 @@ export const useFetchMemoryList = () => {
 };
 
 export const useFetchMemoryFilters = () => {
-  const { data, isFetching: isLoading, isError } = useQuery<
-    MemoryFiltersResponse,
-    Error
-  >({
+  const {
+    data,
+    isFetching: isLoading,
+    isError,
+  } = useQuery<MemoryFiltersResponse, Error>({
     queryKey: MemoryKeys.filters(),
     initialData: {
       filter: { owner: [], memory_type: [], storage_type: [] },
@@ -358,7 +359,11 @@ export function useSelectFilters(filterData: MemoryFiltersResponse) {
 
   const filters: FilterCollection[] = useMemo(() => {
     return [
-      { field: 'owner', list: filterData.filter.owner, label: t('common.owner') },
+      {
+        field: 'owner',
+        list: filterData.filter.owner,
+        label: t('common.owner'),
+      },
       {
         field: 'memoryType',
         list: filterData.filter.memory_type,

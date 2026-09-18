@@ -139,6 +139,13 @@ async def delete_memory(memory_id):
 @manager.route("/memories", methods=["GET"])  # noqa: F821
 @login_required
 async def list_memory():
+    if request.args.get("type") == "filter":
+        try:
+            return get_json_result(message=True, data=await memory_api_service.list_memory_filters())
+        except Exception as e:
+            logging.error(e)
+            return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
+
     # Every list filter accepts repeated query keys and comma-joined values. The getlist idiom comes from
     # api/utils/validation_utils.py, which does not strip; the strip matches _split_filter_values in api/apps/services/memory_api_service.py.
     filter_params = {
