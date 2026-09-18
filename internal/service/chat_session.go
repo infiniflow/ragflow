@@ -1501,12 +1501,10 @@ func (s *ChatSessionService) ChatCompletions(
 			if result.Final {
 				failed := strings.Contains(result.Answer, "**ERROR**")
 				if session != nil && !failed {
-					content := result.Answer
-					streamedContent := fullAnswer.String()
-					// The decorated final answer excludes reasoning; keep the tagged
-					// stream when the model emitted a thinking section.
-					if content == "" || strings.Contains(streamedContent, "<think>") {
-						content = streamedContent
+					// Store with <think>thinking content</think>
+					content := fullAnswer.String()
+					if content == "" {
+						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
 					if ctx.Err() == nil {
