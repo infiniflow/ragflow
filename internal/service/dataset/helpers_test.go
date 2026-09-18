@@ -232,10 +232,13 @@ func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestValidateParserConfigRejectsFlatParentChildDelimiter(t *testing.T) {
-	err := validateDatasetParserConfig(map[string]interface{}{"children_delimiter": "|"})
-	if err == nil {
-		t.Fatal("flat children_delimiter was accepted; parent_child must be the only public source")
+func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
+	config := map[string]interface{}{"children_delimiter": "|"}
+	if err := validateDatasetParserConfig(config); err != nil {
+		t.Fatalf("flat children_delimiter should remain accepted for compatibility: %v", err)
+	}
+	if err := ValidateDocumentParserConfig(config); err != nil {
+		t.Fatalf("document parser config should accept children_delimiter: %v", err)
 	}
 }
 
