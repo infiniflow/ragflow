@@ -356,7 +356,7 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 	}
 }
 
-func TestPreserveDatasetParserConfigMetadata_FallsBackWhenIncomingNotMap(t *testing.T) {
+func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing.T) {
 	existing := entity.JSONMap{
 		"metadata": map[string]any{
 			"enabled":           true,
@@ -371,7 +371,7 @@ func TestPreserveDatasetParserConfigMetadata_FallsBackWhenIncomingNotMap(t *test
 	for name, incomingMetadata := range cases {
 		t.Run(name, func(t *testing.T) {
 			incoming := map[string]interface{}{"metadata": incomingMetadata}
-			got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+			got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
 			meta, ok := got["metadata"].(map[string]any)
 			if !ok {
 				t.Fatalf("expected existing modular metadata preserved, got %#v", got["metadata"])
@@ -384,7 +384,7 @@ func TestPreserveDatasetParserConfigMetadata_FallsBackWhenIncomingNotMap(t *test
 	}
 }
 
-func TestPreserveDatasetParserConfigMetadata_UsesValidIncomingMap(t *testing.T) {
+func TestPreserveDatasetParserConfigState_UsesValidIncomingMap(t *testing.T) {
 	existing := entity.JSONMap{
 		"metadata": map[string]any{
 			"enabled":           false,
@@ -399,7 +399,7 @@ func TestPreserveDatasetParserConfigMetadata_UsesValidIncomingMap(t *testing.T) 
 			"built_in_metadata": []any{},
 		},
 	}
-	got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+	got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
 	meta, ok := got["metadata"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected modular metadata map, got %#v", got["metadata"])

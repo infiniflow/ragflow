@@ -44,7 +44,8 @@ type SearchRequest struct {
 	SelectFields []string // List of field names to return
 
 	// Filtering
-	Filter map[string]interface{} // Filters for search
+	Filter             map[string]interface{} // Filters for search
+	IncludeUnavailable bool                   // Do not add the retrieval-only available_int=1 default
 
 	// Match expressions
 	MatchExprs []interface{} // List of match expressions: [matchText, matchDense, fusionExpr]

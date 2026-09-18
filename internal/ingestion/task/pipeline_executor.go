@@ -237,6 +237,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
+	parentChunks := indexdoc.MaterializeParentChunks(chunks)
 
 	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {
@@ -269,6 +270,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 	applyDocumentAvailability(chunks, docStatus)
+	applyDocumentAvailability(parentChunks, docStatus)
 
 	oldCompiledProductIDs, oldCompiledVariants, oldCompiledTaskTypes, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
@@ -276,6 +278,11 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
+	}
+	if len(parentChunks) > 0 {
+		if err := s.indexWriter.Write(ctx, parentChunks); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err

@@ -260,22 +260,26 @@ func TestResolveOutputFields(t *testing.T) {
 
 func TestSearchFiltersScoping(t *testing.T) {
 	// KbIDs become an IN predicate over the shared tenant table.
-	scored := searchFilters(map[string]interface{}{}, []string{"kb1", "kb2"}, true)
+	scored := searchFilters(map[string]interface{}{}, []string{"kb1", "kb2"}, true, false)
 	joined := strings.Join(scored, " AND ")
 	mustContain(t, joined, "kb_id IN ('kb1', 'kb2')")
 	mustContain(t, joined, "available_int = 1")
 	// No KbIDs and no match expr -> no predicates.
-	if got := searchFilters(map[string]interface{}{}, nil, false); len(got) != 0 {
+	if got := searchFilters(map[string]interface{}{}, nil, false, false); len(got) != 0 {
 		t.Errorf("expected no filters, got %v", got)
 	}
 	// A scored query with no available_int/status defaults available_int=1.
-	one := searchFilters(map[string]interface{}{}, nil, true)
+	one := searchFilters(map[string]interface{}{}, nil, true, false)
 	if len(one) != 1 || one[0] != "available_int = 1" {
 		t.Errorf("scored default = %v", one)
 	}
 	// Blank dataset ids are dropped, so no empty IN () is emitted.
-	if got := searchFilters(map[string]interface{}{}, []string{""}, false); len(got) != 0 {
+	if got := searchFilters(map[string]interface{}{}, []string{""}, false, false); len(got) != 0 {
 		t.Errorf("blank kb ids should yield no filter, got %v", got)
+	}
+	// Management listing explicitly opts into disabled parent chunks.
+	if got := searchFilters(map[string]interface{}{}, nil, true, true); len(got) != 0 {
+		t.Errorf("include unavailable filters = %v, want no availability default", got)
 	}
 }
 

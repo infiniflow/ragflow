@@ -110,6 +110,43 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	}
 }
 
+// TestCreateDataset_ParentChildConfigReachesGeneralChunker verifies the public
+// parent-child setting controls the component that actually performs the
+// secondary split. Dropping this mapping silently leaves parent-child disabled.
+func TestCreateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	parserID := "general"
+	parseType := 1
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:      "ds-parent-child",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"parent_child": map[string]interface{}{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+	config, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
+	}
+	chunker, ok := config["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", config["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
+	}
+}
+
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

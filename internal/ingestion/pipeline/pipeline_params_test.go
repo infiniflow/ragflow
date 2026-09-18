@@ -436,6 +436,32 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 	}
 }
 
+func TestApplyParentChildChunkerConfig(t *testing.T) {
+	config := entity.JSONMap{
+		"GeneralChunker:one": map[string]interface{}{"chunk_token_num": 256},
+		"TokenChunker:two":   map[string]interface{}{"chunk_token_num": 128},
+		"Extractor:three":    map[string]interface{}{"llm_id": "llm-1"},
+	}
+
+	ApplyParentChildChunkerConfig(config, map[string]interface{}{
+		"parent_child": map[string]interface{}{
+			"use_parent_child":   true,
+			"children_delimiter": "|",
+		},
+	})
+
+	for _, componentID := range []string{"GeneralChunker:one", "TokenChunker:two"} {
+		params := config[componentID].(map[string]interface{})
+		got, ok := params["children_delimiters"].([]string)
+		if !ok || len(got) != 1 || got[0] != "|" {
+			t.Fatalf("%s children_delimiters = %#v, want [|]", componentID, params["children_delimiters"])
+		}
+	}
+	if _, ok := config["Extractor:three"].(map[string]interface{})["children_delimiters"]; ok {
+		t.Fatal("non-chunker component was modified")
+	}
+}
+
 func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 	// Builtin template with empty Extractor params: {}
 	dsl := map[string]any{

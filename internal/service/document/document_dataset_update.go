@@ -162,6 +162,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
 			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 			if tenantErr == nil && tenant != nil {
 				cleaned = service.ApplyComponentScopedParserConfig(

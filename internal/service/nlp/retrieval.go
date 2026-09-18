@@ -920,10 +920,16 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 		parent, err := docEngine.GetChunk(ctx, indexNames[0], momID, kbIDs)
 		if err != nil {
 			common.Warn("Failed to get parent chunk", zap.String("momID", momID), zap.Error(err))
+			for _, child := range childList {
+				remainingChunks = append(remainingChunks, child.chunk)
+			}
 			continue
 		}
 		parentMap, ok := parent.(map[string]interface{})
 		if !ok {
+			for _, child := range childList {
+				remainingChunks = append(remainingChunks, child.chunk)
+			}
 			continue
 		}
 

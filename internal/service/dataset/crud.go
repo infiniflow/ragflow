@@ -126,8 +126,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		delete(flat, "raptor")
 		delete(flat, "graphrag")
 		flat["llm_id"] = tenant.LLMID
-		flat["parent_child"] = map[string]interface{}{"use_parent_child": false, "children_delimiter": "\n"}
-		flat["children_delimiter"] = ""
+		pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, req.ParserConfig)
+		for componentID, value := range parserConfig {
+			if pipelinepkg.IsChunkerComponent(componentID) {
+				flat[componentID] = value
+			}
+		}
 		parserConfig = entity.JSONMap(flat)
 	}
 

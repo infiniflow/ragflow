@@ -2,6 +2,7 @@ package nlp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -240,6 +241,38 @@ func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string,
 }
 func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
+}
+
+type parentChunkMissingEngine struct{ engine.DocEngine }
+
+func (parentChunkMissingEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return nil, errors.New("parent chunk missing")
+}
+
+// TestRetrievalByChildrenKeepsChildWhenParentIsMissing verifies a partial
+// parent-child write never turns a relevant child hit into an empty result.
+// Removing the fallback is a retrieval data-loss bug.
+func TestRetrievalByChildrenKeepsChildWhenParentIsMissing(t *testing.T) {
+	child := map[string]interface{}{
+		"chunk_id":            "child-1",
+		"mom_id":              "parent-1",
+		"kb_id":               "kb-1",
+		"content_with_weight": "matching child text",
+		"similarity":          0.8,
+	}
+
+	got := RetrievalByChildren(
+		[]map[string]interface{}{child},
+		[]string{"tenant-1"},
+		parentChunkMissingEngine{},
+		t.Context(),
+	)
+	if len(got) != 1 {
+		t.Fatalf("retrieval result count = %d, want fallback child", len(got))
+	}
+	if got[0]["chunk_id"] != "child-1" {
+		t.Fatalf("fallback chunk_id = %#v, want child-1", got[0]["chunk_id"])
+	}
 }
 
 func TestBuildInfinityFusionExprUsesVectorSimilarityWeight(t *testing.T) {

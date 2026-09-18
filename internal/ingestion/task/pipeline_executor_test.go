@@ -709,6 +709,58 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 	}
 }
 
+// TestPipelineExecutor_ProcessOutputMaterializesParentChunk verifies the
+// persistence boundary turns chunker-level mom text into one hidden parent row
+// and links every child to it. Removing that materialization would leave only
+// independently retrievable child rows, which is the parent-child regression.
+func TestPipelineExecutor_ProcessOutputMaterializesParentChunk(t *testing.T) {
+	var inserted []map[string]any
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertFunc(
+		func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+			inserted = append(inserted, chunks...)
+			return nil, nil
+		},
+	).WithLogCreateFunc(func(context.Context, *gorm.DB, *entity.PipelineOperationLog) error { return nil })
+
+	_, err := svc.processOutput(t.Context(), map[string]any{
+		"chunks": []map[string]any{
+			{"text": "child one", "mom": "full parent passage"},
+			{"text": "child two", "mom": "full parent passage"},
+		},
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	if len(inserted) != 3 {
+		t.Fatalf("persisted rows = %d, want two children and one parent", len(inserted))
+	}
+
+	var parent map[string]any
+	children := make([]map[string]any, 0, 2)
+	for _, row := range inserted {
+		if row["available_int"] == 0 && row["content_with_weight"] == "full parent passage" {
+			parent = row
+			continue
+		}
+		children = append(children, row)
+	}
+	if parent == nil {
+		t.Fatal("hidden parent row was not persisted")
+	}
+	parentID, _ := parent["id"].(string)
+	if parentID == "" {
+		t.Fatalf("parent id = %#v, want deterministic non-empty id", parent["id"])
+	}
+	for _, child := range children {
+		if child["mom_id"] != parentID {
+			t.Errorf("child mom_id = %#v, want parent id %q", child["mom_id"], parentID)
+		}
+		if _, exists := child["mom"]; exists {
+			t.Errorf("child retained pipeline-only mom field: %#v", child)
+		}
+	}
+}
+
 func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
