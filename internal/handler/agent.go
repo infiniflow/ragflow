@@ -1363,6 +1363,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	hasEvents := false
 	for ev := range events {
 		hasEvents = true
+		if ev.Type == "error" {
+			common.ResponseWithCodeData(c, common.CodeServerError, false, agentRunEventMessage(ev, "Agent run failed."))
+			return
+		}
 		var evData map[string]any
 		if err := json.Unmarshal([]byte(ev.Data), &evData); err == nil {
 			if ev.Type == "message" {
