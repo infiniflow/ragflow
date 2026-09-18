@@ -214,6 +214,20 @@ describe('ParsingStatusCell', () => {
         container.querySelector('svg.lucide-circle-x'),
       ).not.toBeInTheDocument();
     });
+
+    it('re-parses straight away without the drop-chunks confirmation', () => {
+      renderCell({
+        run: undefined,
+        ingestion_status: IngestionTaskStatus.COMPLETED,
+        chunk_count: 3,
+        parser_config: { enable_metadata: true },
+      });
+
+      fireEvent.click(screen.getByTestId('document-parse-toggle'));
+
+      expect(mockRunDocumentByIds).toHaveBeenCalledTimes(1);
+      expect(mockShowReparseDialog).not.toHaveBeenCalled();
+    });
   });
 
   it('runs a chunkless document once without opening the confirmation', () => {
