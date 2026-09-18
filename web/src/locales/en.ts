@@ -555,7 +555,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow scores each retrieved chunk with weighted keyword similarity plus weighted vector cosine similarity, and filters out chunks whose combined score is below this threshold. By default, the threshold is 0.2 (20%), meaning only chunks scoring 20 or higher are retrieved.',
+        'RAGFlow scores each retrieved chunk with weighted keyword similarity plus weighted vector cosine similarity, and filters out chunks whose combined score is below this threshold. By default, the threshold is 0.2 (20%), meaning only chunks scoring 0.2 or higher are retrieved.',
       similarityThresholdTipWithRerank:
         'A rerank model is selected, so chunks are scored with weighted keyword similarity plus the weighted reranking score, which replaces vector cosine similarity. Chunks scoring below this threshold are filtered out. By default, the threshold is 0.2 (20%).',
       vectorSimilarityWeight: 'Vector similarity weight',
