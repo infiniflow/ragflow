@@ -17,7 +17,6 @@ import time
 
 from rag.svr.task_executor_refactor.task_manager import TaskManager
 from rag.svr.task_executor_refactor.recording_context import timed_with_recording, get_recording_context, RecordingContext, set_recording_context, NullRecordingContext
-from rag.svr.parent_chunk import parent_chunk_id
 
 start_ts = time.time()
 
@@ -1338,7 +1337,7 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         mom = ck.get("mom") or ck.get("mom_with_weight") or ""
         if not mom:
             continue
-        id = parent_chunk_id(str(ck.get("doc_id") or ""), mom)
+        id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
         ck["mom_id"] = id
         if id in mother_ids:
             continue

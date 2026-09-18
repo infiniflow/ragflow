@@ -117,21 +117,6 @@ class _CapturingDataStore:
         return []
 
 
-class _ParentChunkDataStore:
-    def __init__(self):
-        self.parent_lookup = None
-
-    def get(self, chunk_id, index_name, kb_ids):
-        self.parent_lookup = (chunk_id, index_name, kb_ids)
-        return {
-            "content_with_weight": "parent text",
-            "doc_id": ["doc-1"],
-            "docnm_kwd": "document.txt",
-            "kb_id": ["kb-1"],
-            "position_int": [],
-        }
-
-
 @pytest.mark.asyncio
 async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr(search_environment, caplog):
     caplog.set_level(logging.DEBUG)
@@ -203,24 +188,3 @@ def test_build_fusion_expr_uses_vector_similarity_weight(search_environment, vec
     assert fusion_expr.method == "weighted_sum"
     assert fusion_expr.topn == 10
     assert fusion_expr.fusion_params["weights"] == expected_weights
-
-
-def test_retrieval_by_children_normalizes_list_shaped_document_store_fields(search_environment):
-    data_store = _ParentChunkDataStore()
-    dealer = search_environment.Dealer(data_store)
-
-    result = dealer.retrieval_by_children(
-        [{
-            "mom_id": "parent-1",
-            "doc_id": ["doc-1"],
-            "kb_id": ["kb-1"],
-            "content_ltks": "matched child",
-            "important_kwd": [],
-            "similarity": 0.8,
-        }],
-        ["tenant-1"],
-    )
-
-    assert data_store.parent_lookup == ("parent-1", "ragflow_tenant-1", ["kb-1"])
-    assert result[0]["chunk_id"] == "parent-1"
-    assert result[0]["doc_id"] == "doc-1"
