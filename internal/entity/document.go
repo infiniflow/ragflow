@@ -69,6 +69,7 @@ type DocumentListItem struct {
 	ContentHash     *string    `gorm:"column:content_hash" json:"content_hash,omitempty"`
 	Suffix          string     `gorm:"column:suffix" json:"suffix"`
 	IngestionStatus *string    `gorm:"column:ingestion_status" json:"ingestion_status,omitempty"`
+	PipelineLogID   *string    `gorm:"column:pipeline_log_id" json:"-"`
 	Status          *string    `gorm:"column:status" json:"status,omitempty"`
 	CreateTime      *int64     `gorm:"column:create_time" json:"create_time,omitempty"`
 	CreateDate      *time.Time `gorm:"column:create_date" json:"create_date,omitempty"`

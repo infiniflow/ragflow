@@ -895,6 +895,11 @@ OPTIONS:
     --test-integration   Run Go tests tagged 'integration' (need real services,
                     e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.
                     `$0 --test-integration ./internal/engine/...`
+    --test-integration-go  Run ONLY the generic 'integration' tier (MySQL/MinIO/
+                    Redis/NATS/Infinity/ES) without the model-backed native
+                    DeepDoc tests. Use this for the CI integration job, which
+                    brings up the service stack separately from the native
+                    backend job. e.g. `$0 --test-integration-go ./internal/storage/...`
     --test-e2e           Run Go tests tagged 'e2e' (full-pipeline, heavy).
     --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
                     ONLY, never run in CI).
@@ -918,7 +923,8 @@ EXAMPLES:
     $0 --cpp-test   # Build C++ test executable
     $0 --test       # Run all Go tests (unit tier, no build tag)
     $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
-    $0 --test-integration ./internal/engine/...      # integration tier
+    $0 --test-integration ./internal/engine/...      # integration + native tiers
+    $0 --test-integration-go ./internal/storage/...  # generic integration tier only
     $0 --test-e2e                                 # e2e tier
     $0 --test-manual                             # manual tier (very slow)
     $0 --test-all                                # integration + e2e (no manual)
@@ -978,6 +984,22 @@ main() {
                 run_go_tests_tagged integration "${args[@]:1}"
             fi
             run_native_integration_tests
+            ;;
+        --test-integration-go)
+            # Runs only the generic `integration` test tier (MySQL/MinIO/Redis/
+            # NATS/Infinity/ES/etc.) WITHOUT the model-backed native DeepDoc
+            # tests. The native tests need MODEL_DIR + the InfiniFlow/deepdoc
+            # snapshot and are covered separately by `--test-native` /
+            # `ragflow_native_backend` in CI; running them here would also force
+            # the `fetch_testdata` tag's init-time network fetch of testdata,
+            # which is undesirable in a generic CI run. Use this target for the
+            # CI integration job. e.g. `$0 --test-integration-go ./internal/storage/...`
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged integration "${args[@]:2}"
+            else
+                run_go_tests_tagged integration "${args[@]:1}"
+            fi
             ;;
         --test-e2e)
             check_go_deps

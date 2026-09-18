@@ -59,7 +59,8 @@ func (s *DocumentService) updateSourceChunkAvailability(ctx context.Context, ten
 func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, datasetID, documentID string) ([]string, error) {
 	ids := make([]string, 0)
 	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
-		result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(searchCtx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{datasetID},
 			Offset:       offset,
@@ -67,6 +68,7 @@ func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, dat
 			SelectFields: []string{"id", "compile_kwd"},
 			Filter:       map[string]any{"doc_id": []string{documentID}},
 		})
+		cancel()
 		if err != nil {
 			return nil, err
 		}
@@ -99,14 +101,33 @@ func (s *DocumentService) deleteSourceChunks(ctx context.Context, tenantID, data
 	}
 	for start := 0; start < len(ids); start += sourceChunkAvailabilityBatchSize {
 		end := min(start+sourceChunkAvailabilityBatchSize, len(ids))
-		if _, err := s.docEngine.DeleteChunks(ctx, map[string]any{
+		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		_, err = s.docEngine.DeleteChunks(batchCtx, map[string]any{
 			"id":    ids[start:end],
 			"kb_id": datasetID,
-		}, indexName, datasetID); err != nil {
+		}, indexName, datasetID)
+		cancel()
+		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// deleteDocumentGeneratedChunks removes document-scoped compiler products
+// without touching source chunks or dataset-level merged products.
+func (s *DocumentService) deleteDocumentGeneratedChunks(ctx context.Context, tenantID, datasetID, documentID string) error {
+	if s.docEngine == nil {
+		return nil
+	}
+	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	_, err := s.docEngine.DeleteChunks(batchCtx, map[string]any{
+		"doc_id":        documentID,
+		"kb_id":         datasetID,
+		"available_int": 0,
+	}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
+	cancel()
+	return err
 }
 
 func (s *DocumentService) markDocumentWikiDirty(ctx context.Context, tenantID, datasetID, documentID string) {

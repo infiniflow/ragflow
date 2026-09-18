@@ -1858,3 +1858,492 @@ jobs:
           set -euo pipefail
           ./build.sh --test-native
 
+
+  ragflow_go_integration:
+    name: ragflow_go_integration
+    # Runs the generic Go `integration` test tier against a real service stack
+    # (MySQL/MinIO/Kvrocks/NATS/Infinity/TEI) brought up via docker compose.
+    # The model-backed native DeepDoc tests are covered separately by
+    # `ragflow_native_backend`, so this job stays free of that heavy dependency.
+    needs: ragflow_preflight
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_go_changes == 'true' }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    env:
+      DOC_ENGINE: infinity
+      API_PROXY_SCHEME: go
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          allow-unsafe-pr-checkout: true
+
+      - name: Build C++ static library
+        # Produces librag_tokenizer_c_api.a (with re2 symbols renamed into the
+        # ragtokre2_ namespace). Only the .a is needed for the integration test
+        # link; we do NOT build the full ragflow:nightly image because this job
+        # starts only the dependency services, not the ragflow-cpu container.
+        run: |
+          set -euo pipefail
+          BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_go_int_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+          cleanup_builder() {
+            if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
+              sudo docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_builder EXIT
+          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -e TZ="${TZ}" \
+            -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+
+      - name: Prepare function test environment
+        working-directory: docker
+        run: |
+          set -euo pipefail
+          sudo chmod 1777 /tmp
+          ## ss already installed
+          ##sudo apt update && sudo apt install -y iproute2
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-go-int-${DOC_ENGINE}-${API_PROXY_SCHEME}"
+          echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
+          echo "RAGFLOW_CONTAINER=${COMPOSE_PROJECT_NAME}-ragflow-cpu-1" >> ${GITHUB_ENV}
+          ARTIFACTS_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}/${API_PROXY_SCHEME}
+          echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
+          rm -rf "${ARTIFACTS_DIR}" && mkdir -p "${ARTIFACTS_DIR}"
+
+          # Determine runner number (default to 1 if not found)
+               RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
+               if [[ -z "${RUNNER_NUM:-}" ]]; then
+                 # GitHub self-hosted runners always expose RUNNER_NAME; hash it to spread candidates.
+                 if [[ -n "${RUNNER_NAME:-}" ]]; then
+                   RUNNER_NUM=$(( $(printf '%d' 0x$(echo -n "${RUNNER_NAME}" | md5sum | cut -c1-4)) % 1000 ))
+                 else
+                   RUNNER_NUM=$(( GITHUB_RUN_ID % 1000 ))
+                 fi
+               fi
+
+          # Engine-specific offset partitions keep concurrent engine jobs from
+          # choosing the same host ports when they land on the same self-hosted runner.
+          # A lock plus reservation file closes the check/start race between parallel jobs.
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PARTITION_SIZE=6000
+               case "${DOC_ENGINE}" in
+                 elasticsearch) PARTITION_BASE=1000 ;;
+                 infinity) PARTITION_BASE=31000 ;;
+                 *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
+               esac
+               # Runners run inside docker containers that share the host docker daemon
+               # (/var/run/docker.sock), so neither /tmp nor `ss` can coordinate across runners:
+               # each container has its own /tmp and its own network namespace, and `ss` cannot
+               # see host ports bound by other runners' compose stacks. Use the shared daemon for
+               # both primitives:
+               #   - per-port mutex = for each host port (base+offset) we intend to bind, create
+               #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
+               #     network create is NOT idempotent (fails on name conflict), so only one runner
+               #     can claim a given port. This is per-PORT, not per-offset, because different
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
+               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #   - port availability = docker ps published ports (sees every container on the
+               #     shared daemon regardless of which runner started it).
+               # No file-system sharing required, no host netns required.
+
+               cleanup_stale_port_locks() {
+                 local now stale_after net ts before after
+                 now=$(date -u +%s)
+                 stale_after=$((60 * 60))
+                 before=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
+                 for net in $(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}'); do
+                   ts=$(sudo docker network inspect --format '{{ index .Labels "ragflow-ci-created" }}' "${net}" 2>/dev/null || true)
+                   # Remove if timestamp is non-numeric (legacy network from a previous code
+                   # version) or if it is numeric and older than stale_after.
+                   if [[ ! "${ts}" =~ ^[0-9]+$ ]] || (( now - ts > stale_after )); then
+                     sudo docker network rm "${net}" >/dev/null 2>&1 || true
+                   fi
+                 done
+                 after=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
+                 echo "  cleanup_stale_port_locks: ${before} -> ${after} guards (TTL=${stale_after}s)" >&2
+               }
+
+               reserve_port_offset() {
+                 local attempt candidate base port guard g ok reject_reason create_err guard_subnet
+                 local -a guards
+                 local used guarded need_refresh used_n guarded_n debug_count create_fail_streak
+                 cleanup_stale_port_locks
+                 echo "Reserving host ports for ${DOC_ENGINE} compose stack..." >&2
+                 # Fail fast if the shared docker daemon is not reachable — avoids a
+                 # long spin where every docker network create silently fails.
+                 if ! sudo docker info >/dev/null 2>&1; then
+                   echo "  ERROR: 'sudo docker info' failed — docker daemon is not reachable from this runner" >&2
+                   return 1
+                 fi
+                 echo "  Running containers on shared daemon: $(sudo docker ps -q 2>/dev/null | wc -l)" >&2
+                 echo "  Docker networks on shared daemon: $(sudo docker network ls -q 2>/dev/null | wc -l)" >&2
+                 need_refresh=1
+                 debug_count=0
+                 create_fail_streak=0
+                 for attempt in $(seq 0 499); do
+                   candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
+                   # Refresh snapshots on first attempt and after a failed reservation.
+                   if [[ ${need_refresh} -eq 1 ]]; then
+                     used=$(sudo docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->' | tr -d '>-' | sort -u || true)
+                     # Strip both ragflow-ci-port- (current) and ragflow-ci-portguard- (legacy) prefixes.
+                     guarded=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' 2>/dev/null | sed 's/^ragflow-ci-port\(guard\)\?-//' | sort -u || true)
+                     used_n=$(echo "${used}" | grep -c . 2>/dev/null || true)
+                     guarded_n=$(echo "${guarded}" | grep -c . 2>/dev/null || true)
+                     echo "  Snapshot: ${used_n} bound ports, ${guarded_n} guarded ports" >&2
+                     [[ ${used_n} -gt 0 ]] && echo "  Bound sample: $(echo "${used}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                     [[ ${guarded_n} -gt 0 ]] && echo "  Guarded sample: $(echo "${guarded}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                     need_refresh=0
+                   fi
+                   # Fast path: skip if any (base+candidate) port is already bound or guarded.
+                   ok=1
+                   reject_reason=""
+                   for base in "${PORT_BASES[@]}"; do
+                     port=$((base + candidate))
+                     if grep -qx "${port}" <<< "${used}" 2>/dev/null; then
+                       ok=0; reject_reason="port ${port} (base ${base}) already bound"; break
+                     fi
+                     if grep -qx "${port}" <<< "${guarded}" 2>/dev/null; then
+                       ok=0; reject_reason="port ${port} (base ${base}) already guarded"; break
+                     fi
+                   done
+                   if [[ ${ok} -eq 0 ]]; then
+                     if [[ ${debug_count} -lt 5 ]]; then
+                       echo "  Candidate ${candidate}: rejected — ${reject_reason}" >&2
+                       debug_count=$((debug_count + 1))
+                     fi
+                     continue
+                   fi
+                   # Atomically claim every (base+candidate) host port via a per-port docker
+                   # network. docker network create fails on name conflict, so only one runner
+                   # can claim a given port. If any port is already claimed, undo partial
+                   # reservations and try the next offset.
+                   guards=()
+                   ok=1
+                   for base in "${PORT_BASES[@]}"; do
+                     port=$((base + candidate))
+                     guard="ragflow-ci-port-${port}"
+                     # Use an explicit subnet from 10.0.0.0/8 (outside Docker's
+                     # default 172.17-31.x.x pools) to bypass "all predefined
+                     # address pools have been fully subnetted" errors on shared
+                     # daemons where auto-allocation is exhausted.
+                     guard_subnet="10.$((port / 256)).$((port % 256)).0/24"
+                     if ! create_err=$(sudo docker network create --subnet "${guard_subnet}" --label ragflow-ci-created="$(date -u +%s)" "${guard}" 2>&1 >/dev/null); then
+                       echo "  docker network create ${guard} failed: ${create_err}" >&2
+                       ok=0; break
+                     fi
+                     guards+=("${guard}")
+                   done
+                   if [[ ${ok} -eq 1 ]]; then
+                     PORT_OFFSET=${candidate}
+                     PORT_RESERVATION="${guards[*]}"
+                     echo "Reserved offset ${PORT_OFFSET} (attempt ${attempt})" >&2
+                     return 0
+                   fi
+                   for g in "${guards[@]}"; do
+                     sudo docker network rm "${g}" >/dev/null 2>&1 || true
+                   done
+                   # If docker network create keeps failing (daemon gone, permission, etc.),
+                   # bail out early instead of looping 6000 times. A name-conflict failure
+                   # should be rare because the fast path already filters guarded ports.
+                   create_fail_streak=$((create_fail_streak + 1))
+                   if [[ ${create_fail_streak} -ge 10 ]]; then
+                     echo "  docker network create failed ${create_fail_streak} consecutive candidates; aborting" >&2
+                     return 1
+                   fi
+                   # Another runner just claimed a port; refresh snapshots before retrying.
+                   need_refresh=1
+                 done
+                 echo "  Exhausted ${attempt} candidates. Last snapshot: ${used_n} bound, ${guarded_n} guarded" >&2
+                 return 1
+               }
+
+               if ! reserve_port_offset; then
+                 echo "Failed to reserve a free host port range for ${DOC_ENGINE} docker compose" >&2
+                 exit 1
+               fi
+               echo "PORT_RESERVATION=${PORT_RESERVATION}" >> ${GITHUB_ENV}
+               echo "Using ${DOC_ENGINE} host port offset ${PORT_OFFSET}"
+               ES_PORT=$((1200 + PORT_OFFSET))
+               OS_PORT=$((1201 + PORT_OFFSET))
+               INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
+               INFINITY_HTTP_PORT=$((23820 + PORT_OFFSET))
+               INFINITY_PSQL_PORT=$((5432 + PORT_OFFSET))
+               EXPOSE_MYSQL_PORT=$((5455 + PORT_OFFSET))
+               MINIO_PORT=$((9000 + PORT_OFFSET))
+               MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
+               REDIS_PORT=$((6379 + PORT_OFFSET))
+               EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
+               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               TEI_PORT=$((6380 + PORT_OFFSET))
+               KIBANA_PORT=$((6601 + PORT_OFFSET))
+               SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
+               ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
+               SVR_MCP_PORT=$((9382 + PORT_OFFSET))
+               GO_HTTP_PORT=$((9384 + PORT_OFFSET))
+               GO_ADMIN_PORT=$((9383 + PORT_OFFSET))
+               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
+               SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
+               SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
+               EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+               CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
+
+          # Persist computed ports into .env so docker-compose uses the correct host bindings.
+          # Remove previous CI overrides first; docker compose uses the last duplicate key.
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+          # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
+          # container, so the Go server process reads COMPOSE_PROFILES and
+          # TEI_MODEL from .env-go (not .env). Without syncing these two,
+          # the Go server's checkModelAvailable TEI bypass never triggers
+          # because .env-go's COMPOSE_PROFILES lacks "tei-", causing
+          # PATCH /models/default to fail for the Builtin/Local embedding
+          # model and datasets to be created with an empty embedding_model.
+               sed -i '/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d' .env-go
+               {
+                 echo ""
+                 echo "ES_PORT=${ES_PORT}"
+                 echo "OS_PORT=${OS_PORT}"
+                 echo "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}"
+                 echo "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}"
+                 echo "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}"
+                 echo "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}"
+                 echo "MINIO_PORT=${MINIO_PORT}"
+                 echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
+                 echo "REDIS_PORT=${REDIS_PORT}"
+                 echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
+                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
+                 echo "TEI_PORT=${TEI_PORT}"
+                 echo "KIBANA_PORT=${KIBANA_PORT}"
+                 echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
+                 echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
+                 echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
+                 echo "GO_HTTP_PORT=${GO_HTTP_PORT}"
+                 echo "GO_ADMIN_PORT=${GO_ADMIN_PORT}"
+                 echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
+                 echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
+                 echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
+                 echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+                 echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
+                # NOTE: the engine profile (${DOC_ENGINE} -> "infinity") MUST be
+                # first, otherwise the engine service never starts. We drop
+                # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
+                # because this job runs the Go tests on the runner host against
+                # the dependency services directly — no server container needed.
+                # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
+                # service; `metadata-mysql` the mysql metadata store.
+                if [ "${API_PROXY_SCHEME}" = "go" ]; then
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                else
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
+                fi
+                echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+                 echo "DOC_ENGINE=${DOC_ENGINE}"
+                 echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
+               } >> .env
+          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
+          # server container (env_file: .env-go) sees the same TEI bypass
+          # config as the Python container. Only these two affect the
+          # in-process checkModelAvailable logic; other .env keys are
+          # either yml-interpolation-only or already correct in .env-go.
+               {
+                 echo ""
+                if [ "${API_PROXY_SCHEME}" = "go" ]; then
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                else
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
+                fi
+                echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+              } >> .env-go
+               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
+               else
+                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
+               fi
+               echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
+
+               sed -i \
+                 -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
+                 -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
+                 docker-compose-base.yml
+
+               # Patch entrypoint.sh for coverage
+               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
+
+
+      - name: Start ragflow CI service stack (infinity)
+        # COMPOSE_PROFILES (set in .env by the prepare step) drops `cpu`, so the
+        # heavy ragflow-cpu image is NOT started — only the dependency services
+        # (mysql/minio/kvrocks/redis/nats/infinity/tei/clickhouse) come up.
+        run: |
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose-go.yml
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
+
+      - name: Wait for service stack to be ready
+        run: |
+          set -euo pipefail
+          _port() { grep -E "^$1=" docker/.env | head -1 | cut -d= -f2-; }
+          INFINITY_HTTP_PORT=$(_port INFINITY_HTTP_PORT)
+          # Infinity must be reachable from the runner the SAME way the Go tests
+          # reach it: via host.docker.internal (the runner's bridge to the host).
+          # This also proves host.docker.internal resolves and the host-published
+          # port is reachable — the exact path the tests use. Use the same
+          # endpoint the infinity healthcheck uses (/admin/node/current) and DO
+          # NOT pass curl -f: infinity's root path returns a non-2xx, which -f
+          # would treat as failure even when the server is up. Any HTTP response
+          # (or a refused connection) decides readiness, matching the compose
+          # healthcheck exactly.
+          INFINITY_READY=0
+          for i in $(seq 1 60); do
+            if curl -s --connect-timeout 5 "http://host.docker.internal:${INFINITY_HTTP_PORT}/admin/node/current" >/dev/null 2>&1; then
+              echo "Infinity ready after ${i} tries"
+              INFINITY_READY=1
+              break
+            fi
+            echo "Waiting for Infinity... ($i/60)"
+            sleep 5
+          done
+          if [ "${INFINITY_READY}" != "1" ]; then
+            echo "::error::Infinity did not become ready on host.docker.internal:${INFINITY_HTTP_PORT}"
+            echo "Last curl attempt (verbose, for diagnosis):"
+            curl -sv --connect-timeout 5 "http://host.docker.internal:${INFINITY_HTTP_PORT}/admin/node/current" || true
+            exit 1
+          fi
+          # Every other service brought up by the compose profiles (mysql/minio/
+          # redis/kvrocks/nats/tei/clickhouse) must be healthy before the tests
+          # run. Wait on each container's own healthcheck (defined in
+          # docker-compose-base.yml) instead of re-implementing per-service
+          # probes — this covers all of them without drift and prevents the same
+          # class of "connection refused because the dependency wasn't up yet"
+          # failure we just hit with infinity. Containers without a healthcheck
+          # are treated as immediately healthy.
+          for c in $(sudo docker ps -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}"); do
+            name=$(sudo docker inspect -f '{{.Name}}' "$c" | sed 's@^/@@')
+            st="starting"
+            for i in $(seq 1 60); do
+              st=$(sudo docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}healthy{{end}}' "$c")
+              if [ "$st" = "healthy" ]; then
+                break
+              fi
+              sleep 5
+            done
+            if [ "$st" != "healthy" ]; then
+              echo "::error::${name} did not become healthy (last status: ${st})"
+              sudo docker logs --tail 50 "$c" || true
+              exit 1
+            fi
+            echo "${name} healthy"
+          done
+
+      - name: Provide cl100k_base tiktoken vocabulary
+        # The Go integration tests (tokenizer / service / graph) panic without the
+        # cl100k_base BPE table. The runner already bakes it at
+        # /opt/ragflow_deps/cl100k_base.tiktoken, so copy from there first; fall
+        # back to the upstream openai blob only if the local copy is missing
+        # (e.g. a non-standard runner). Mirrors the ragflow_native_backend job.
+        run: |
+          set -euo pipefail
+          mkdir -p ragflow_deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
+          if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+              https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || \
+              echo "tiktoken: curl fetch failed; offline loader will fail loudly"
+          fi
+          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
+          fi
+
+      - name: Run Go integration tests
+        # The Go tests run on the runner host (a container on a bridge network).
+        # The dependency stack is brought up via docker compose on the shared host
+        # daemon, so its ports are published on the *host*, not on the runner's
+        # loopback. We therefore point the tests at host.docker.internal:<port>
+        # (the runner's bridge to the host) — 127.0.0.1 would hit the runner's own
+        # loopback and get "connection refused". This mirrors the HOST_ADDRESS
+        # mechanic already used by the Python/SDK jobs in this file.
+        # Engine-specific suites (ES/OceanBase/SereneDB) self-skip unless their
+        # opt-in env vars are set, so only the infinity + mysql/minio/redis/nats
+        # exercised paths run here.
+        # The ./test/api HTTP e2e suite requires a live ragflow server (ragflow-cpu),
+        # which this job deliberately does NOT start (we drop the `cpu` profile to
+        # avoid spinning up the heavy server image), so it is excluded here. Service-
+        # level integration (storage/engine/ingestion/etc.) runs against the
+        # dependency stack brought up above.
+        env:
+          DOC_ENGINE: infinity
+          CGO_ENABLED: '1'
+          # In-process DeepDoc backend (now the sole inference path) needs the ONNX
+          # models; the self-hosted ragflow-test runner bakes them here.
+          MODEL_DIR: /opt/ragflow-deepdoc-models
+        run: |
+          set -euo pipefail
+          _port() { grep -E "^$1=" docker/.env | head -1 | cut -d= -f2-; }
+          INFINITY_THRIFT_PORT=$(_port INFINITY_THRIFT_PORT)
+          INFINITY_HTTP_PORT=$(_port INFINITY_HTTP_PORT)
+          EXPOSE_MYSQL_PORT=$(_port EXPOSE_MYSQL_PORT)
+          MINIO_PORT=$(_port MINIO_PORT)
+          REDIS_PORT=$(_port REDIS_PORT)
+          EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
+          EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
+          export RAGFLOW_INFINITY_URI="host.docker.internal:${INFINITY_THRIFT_PORT}"
+          export RAGFLOW_MYSQL_HOST=host.docker.internal
+          export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
+          export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
+          export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
+          export RAGFLOW_NATS_HOST=host.docker.internal
+          export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
+          export RAGFLOW_CLICKHOUSE_HOST=host.docker.internal
+          export RAGFLOW_CLICKHOUSE_PORT="${EXPOSE_CLICKHOUSE_TCP_PORT}"
+          # The model-backed native DeepDoc tests under internal/deepdoc/**
+          # register the in-process backend from within their own packages and are
+          # covered separately by the ragflow_native_backend job (--test-native),
+          # so we exclude them here. The chunker cgo PDF test is different: it
+          # registers the in-process backend itself (native_analyzer.Register)
+          # when MODEL_DIR is present, so it runs for real in this job instead of
+          # skipping — the runner bakes MODEL_DIR=/opt/ragflow-deepdoc-models.
+          # The ./test/api HTTP e2e suite needs a live ragflow-cpu server, which
+          # this job does not start.
+          # Like the per-engine go jobs (ragflow_tests_{infinity,elasticsearch}),
+          # we also drop internal/storage: its MinIO-backed integration tests need
+          # a fully-ready MinIO that this CI stack does not reliably provide
+          # (the compose /live probe passes while the S3 API still 502s), so they
+          # are exercised elsewhere, not here.
+          # internal/service/nlp is also excluded: its DatasetNav integration test
+          # compiles only against source fixes (Infinity 3013/3052, nav
+          # available_int, doc_ids_kwd) that are intentionally out of scope for this
+          # CI-enabling PR, so the package is left out of this job's package list
+          # rather than patched. Those fixes land in their own PR.
+          PKGS=$(go list ./... \
+            | grep -v '/test/api' \
+            | grep -v '^ragflow/internal/deepdoc' \
+            | grep -v '/internal/storage$' \
+            | grep -v '^ragflow/internal/service/nlp$')
+          ./build.sh --test-integration-go $PKGS
+
+      - name: Tear down
+        if: always()
+        run: |
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose-go.yml
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
+          # Release the per-port docker-network guards reserved by the prepare step.
+          for g in ${PORT_RESERVATION}; do sudo docker network rm "$g" >/dev/null 2>&1 || true; done

@@ -604,6 +604,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
+	failureReporter := kc.RetryFailureReporter{}
 	attempt := 0
 	call := func() error {
 		attempt++
@@ -615,15 +616,23 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
 		if err != nil {
 			if !req.DisableRetry {
-				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, kc.CompactError(err))
-				if appcommon.IsTransientError(err) && attempt <= kcChatRetryMax {
-					message += "; retrying with exponential backoff"
+				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
+				delay := kcChatRetryDelay
+				if final {
+					delay = 0
 				}
-				runtime.ReportProgressMessage(ctx, "Compiler", message)
+				if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
+					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				}
 			}
 			return err
 		}
 		resp = r
+		if !req.DisableRetry {
+			if message, ok := failureReporter.RecoveryMessage(attempt); ok {
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
+		}
 		return nil
 	}
 	if req.DisableRetry {
