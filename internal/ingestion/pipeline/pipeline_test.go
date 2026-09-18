@@ -231,6 +231,21 @@ func (s *memCheckpointStore) deleteCount() int {
 	return s.deleted
 }
 
+// checkpointSetFailureStore fails every Set with the checkpoint-persistence
+// sentinel (mirroring KvrocksCheckPointStore wrapping a Redis write error such
+// as a broken pipe). Get/Delete delegate to the embedded in-memory store so
+// guardDSLChange and cleanup proceed.
+type checkpointSetFailureStore struct {
+	memCheckpointStore
+	failErr  error
+	setCalls int
+}
+
+func (s *checkpointSetFailureStore) Set(_ context.Context, _ string, _ []byte) error {
+	s.setCalls++
+	return fmt.Errorf("%w: %v", canvas.ErrCheckpointPersistence, s.failErr)
+}
+
 // TestPipelineRun_InstanceFactoryOverridesDefaultFactory verifies that a
 // pipeline-scoped component factory can provide task-specific components.
 func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
@@ -483,6 +498,75 @@ func (m *docIDGuardStage) snapshot() (calls, missing int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.guardCalls, m.missingInputs
+}
+
+// TestPipelineRunResumableCheckpointWriteFailureNotFatal verifies the fix for
+// the incident where a checkpoint SET failure (e.g. a Kvrocks/Redis broken
+// pipe: "failed to set checkpoint: write tcp ... broken pipe") aborted the
+// whole run and marked the parsing task FAILED. A checkpoint write error is now
+// non-fatal: it is logged and the run is reported as succeeded so the task is
+// not blocked by an infrastructure hiccup. (The run loses resume capability
+// for that checkpoint, which is acceptable degradation.)
+func TestPipelineRunResumableCheckpointWriteFailureNotFatal(t *testing.T) {
+	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
+
+	const (
+		nameA = "p.CPFailA"
+		nameB = "p.CPFailB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageB, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	// A checkpoint store whose Set always fails with the checkpoint
+	// persistence sentinel. Get/Delete still succeed so guardDSLChange and
+	// cleanup proceed.
+	store := &checkpointSetFailureStore{failErr: errors.New("write tcp 127.0.0.1:59204->127.0.0.1:6379: write: broken pipe")}
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-cp-write-fail", WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	// Run must succeed despite the checkpoint write failing.
+	if _, err = pipe.Run(t.Context(), map[string]any{"name": "doc-cp-fail"}, nil); err != nil {
+		t.Fatalf("Run: expected success despite checkpoint write failure, got: %v", err)
+	}
+	if store.setCalls == 0 {
+		t.Fatal("precondition: checkpoint store Set was never called")
+	}
+
+	// The task must NOT be marked failed (status "2"); it must be marked
+	// succeeded (status "1") by the checkpoint-error branch.
+	fields, err := tracker.Get(t.Context(), "task-cp-write-fail")
+	if err != nil {
+		t.Fatalf("tracker.Get: %v", err)
+	}
+	if status := fields["status"]; status == "2" {
+		t.Errorf("task was marked FAILED despite only a checkpoint write failure (status=%q)", status)
+	}
+	if status := fields["status"]; status != "1" {
+		t.Errorf("task status = %q, want %q (succeeded)", status, "1")
+	}
 }
 
 // TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint covers the
