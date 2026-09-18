@@ -9,7 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 
 	"go.uber.org/zap"
@@ -320,7 +320,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
 		// running worker's pollCancel detects the stop immediately rather
 		// than waiting for the next DB poll (up to 3s).
-		if rc := redis2.Get(); rc != nil {
+		if rc := kvrocks.Get(); rc != nil {
 			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
 		}
 		return task, nil
@@ -732,7 +732,7 @@ func (s *IngestionTaskService) settlePublishFailure(ctx context.Context, task *e
 // RequestStop sets for a RUNNING task. No-op when Redis is unavailable —
 // the DB STOPPING status remains the fallback cancel signal.
 func clearCancelFlag(ctx context.Context, taskID string) {
-	if rc := redis2.Get(); rc != nil {
+	if rc := kvrocks.Get(); rc != nil {
 		rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
 	}
 }
