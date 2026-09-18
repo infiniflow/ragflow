@@ -456,8 +456,9 @@ func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	// Seed the document as a partially-processed state that the start transition must reset.
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
-			"progress":     float64(0.5),
-			"progress_msg": "partial",
+			"progress":         float64(0.5),
+			"progress_msg":     "partial",
+			"process_duration": 0.719,
 		}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -488,6 +489,9 @@ func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	}
 	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
 		t.Fatal("process_begin_at not set")
+	}
+	if doc.ProcessDuration != 0 {
+		t.Fatalf("process_duration = %f, want 0", doc.ProcessDuration)
 	}
 }
 
