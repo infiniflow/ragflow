@@ -63,6 +63,35 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	}
 }
 
+func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:         "ds-default-parent-child",
+		ParserConfig: map[string]interface{}{},
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+
+	config, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
+	}
+	parentChild, ok := config["parent_child"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parent_child = %#v, want default map", config["parent_child"])
+	}
+	if parentChild["use_parent_child"] != false || parentChild["children_delimiter"] != "\n" {
+		t.Fatalf("parent_child = %#v, want disabled defaults", parentChild)
+	}
+	if config["children_delimiter"] != "" {
+		t.Fatalf("children_delimiter = %#v, want empty legacy field", config["children_delimiter"])
+	}
+}
+
 func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
