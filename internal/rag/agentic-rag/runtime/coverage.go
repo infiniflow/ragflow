@@ -22,9 +22,7 @@ import (
 	"ragflow/internal/rag/agentic-rag/slots"
 )
 
-// CoverageActWordsMax bounds the act words ONE slot may declare. Ten because a source
-// words one deed many ways (斩 / 杀 / 劈 / 挥为两段 …), and a phrasing no act word covers
-// is a passage no query ever names — which is why the planner is asked for several.
+// CoverageActWordsMax bounds the act words ONE slot may declare.
 const CoverageActWordsMax = 10
 
 // Coverage is what a question ASKS FOR when its answer is a SET OF NAMED MEMBERS: an
@@ -130,13 +128,6 @@ func CoverageOf(table State) Coverage {
 
 // coveragePlaceholderTerm reports whether a slot field carries a NULL MARKER instead of a word —
 // the "None" a planner writes when it has nothing to put in the field.
-//
-// Measured 2026-09-18 (三国, same question, the run whose citations vanished): the plan's subject
-// came through as the literal "None", so Actors() = ["None"], Operands() became ten act words plus
-// the operand "None" (which recalls nothing), and the filter's actor test — "the passage must name
-// the actor" — rejected ALL 852 recalled passages ("11 operand(s) asked, 852 passage(s) recalled,
-// 0 window(s) found"). The point-of-naming node was then handed no window at all, every member came
-// from a session's prose, and the answer could cite nothing.
 //
 // This is NOT a vocabulary (see ActsAll for why a word list must not live here): it is the plan's
 // OUTPUT CONTRACT, the same handful of null markers in any language, listing only what a model

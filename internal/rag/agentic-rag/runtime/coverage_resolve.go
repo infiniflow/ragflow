@@ -82,16 +82,18 @@ type batchResult struct {
 // failure this node exists to remove: a single call that carries them all reaches its clock
 // and answers nothing, losing a whole enumeration's worth of members to one timeout.
 //
-// These bound ONE budget, not three independent knobs: this node has to be able to judge
+// These bound ONE budget, not independent knobs: this node has to be able to judge
 // coverageWindowsMax windows inside CoverageResolveTimeoutS, and its capacity is
-// workers × (clock / the slowest call it can expect) × batch. The cap and the capacity are
-// the SAME number on purpose (6 × (30/5) × 8 = 288): a cap above the capacity is a ceiling
-// the point-of-naming step can never clear, which makes the member set a function of provider
-// latency instead of a function of the corpus, and a cap below it drops windows the
-// enumeration already paid a search for (they are reported UNKNOWN: nobody judged them).
+// workers × (clock / the slowest call it can expect) × batch. The cap must stay BELOW that
+// capacity, with room for calls slower than the five seconds assumed here — measured 2026-09-18
+// (三国, 199 lines): six workers spent the node's whole 30 seconds and left 16 lines with no
+// verdict at all ("asked=199 answered=183 unknown=16"), which makes the member set a function of
+// provider latency, the exact thing this node exists to prevent. Eight workers put 288 windows
+// (36 batches) at 3 rounds ≈ 16s: 8 × (30/5) × 8 = 384 > 288, so the cap is the binder and the
+// clock is not.
 const (
 	coverageResolveBatch      = 8
-	coverageResolveWorkers    = 6
+	coverageResolveWorkers    = 8
 	coverageResolveQuoteChars = 300
 	// coverageResolvePasses bounds the re-asking: the first pass puts every window in front of
 	// the model, and each pass after it re-asks ONLY the windows that got no verdict — a call
@@ -225,7 +227,9 @@ The direction under study is the deed named by these words — the act they stan
 
 List the words THIS SOURCE uses for that deed. A word qualifies only if it ACTUALLY APPEARS in the
 passages below: never list a word you know from the language but cannot see in the text. Include
-every distinct phrasing the passages use for it, including unusual and indirect ones.
+every distinct phrasing the passages use for it, including unusual and indirect ones — but give the
+ACT ITSELF: the verb or short phrase, never a phrase carrying a particular victim's name and never
+a whole clause.
 
 Answer with JSON only: {"words": ["<word>", "<word>"]}
 Every entry is copied EXACTLY as it appears in a passage, at most %MAX% entries. No prose.`
@@ -245,21 +249,7 @@ const (
 //
 // Why this exists: the planner declares the deed's words BEFORE any passage has been read (see the
 // initialize prompt's "the words the SOURCE itself uses for that deed" — asked of a text nobody
-// has looked at yet). Measured 2026-09-18 (三国演义, 1718 chunks, "关羽杀了多少有姓名的人物"):
-// the plan declared seven words, and 程远志 appears ZERO times in that run's whole log, although
-// 第一回 states his death as "被云长刀起处，挥为两段" — actor form and deed in ONE chunk, and the
-// actor's own name recalls it. It was dropped by the act-word filter, for a phrasing the plan had
-// not written down.
-//
-// The fix is not a kill-verb list in the code. Such a list is bound to one language and one corpus
-// ("挥为两段" survives no change of source, and nothing fails loudly when it stops matching), and
-// it would sit UPSTREAM of the node whose job is to judge the deed ("nothing here decides what a
-// kill is, or which words mean one" — coverage_step.go). The words the source uses have to be read
-// out of the passages this run already holds — and then CHECKED: a word no passage contains is the
-// model's memory of the language, so it is dropped rather than trusted (the validation below).
-//
-// samples is the text of the passages the caller showed it; a reported word is kept only when one
-// of them actually carries it.
+// has looked at yet).
 func induceActWords(ctx context.Context, model SessionModel, declared []string, passages string, samples []string) []string {
 	if model == nil || len(declared) == 0 || passages == "" || len(samples) == 0 || ctx.Err() != nil {
 		return nil
@@ -281,8 +271,11 @@ func induceActWords(ctx context.Context, model SessionModel, declared []string, 
 	for _, raw := range coverageAnyList(obj["words"]) {
 		w, _ := raw.(string)
 		w = strings.TrimSpace(w)
-		// A phrase, not a sentence; and present in what the model was shown.
-		if w == "" || len([]rune(w)) > 16 || strings.ContainsAny(w, " \t\n") {
+		// A word, not a clause; and present in what the model was shown. the ACT with the victim inside it, which can only ever
+		// match the one passage it was read from, so it spends one of the entries to buy nothing.
+		// The prompt asks for the act itself; this is the mechanical backstop for it (a phrasing
+		// long enough to carry a name is not a vocabulary item).
+		if w == "" || len([]rune(w)) > 8 || strings.ContainsAny(w, " \t\n") {
 			continue
 		}
 		if !coverageCarriedByAny(samples, w) {
