@@ -189,6 +189,21 @@ class SharedMcpCatalogTests(unittest.TestCase):
         ]
         self.assertEqual(self.ns["detail"]("server")["code"], 102)
 
+    def test_malformed_canvas_dsl_is_ignored(self):
+        malformed_dsls = [
+            {"components": "not-a-dict"},
+            {"components": {"agent": "not-a-dict"}},
+            {"components": {"agent": {"obj": "not-a-dict"}}},
+            {"components": {"agent": {"obj": {"component_name": "Agent", "params": "not-a-dict"}}}},
+            {"components": {"agent": {"obj": {"component_name": "Agent", "params": {"mcp": "not-a-list"}}}}},
+            {"components": {"agent": {"obj": {"component_name": "Agent", "params": {"mcp": ["not-a-dict"]}}}}},
+            {"components": {"agent": {"obj": {"component_name": "Agent", "params": {"mcp": [{"mcp_id": "server", "tools": "not-a-dict"}]}}}}},
+        ]
+        for dsl in malformed_dsls:
+            with self.subTest(dsl=dsl):
+                self.canvases.query.return_value = [SimpleNamespace(dsl=json.dumps(dsl))]
+                self.assertEqual(self.ns["detail"]("server")["code"], 102)
+
     def test_member_cannot_download_credentials(self):
         self.request.args["mode"] = "download"
         result = self.ns["detail"]("server")

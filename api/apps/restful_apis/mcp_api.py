@@ -70,17 +70,41 @@ def _shared_mcp_metadata(mcp_id):
     referenced = False
     for canvas in UserCanvasService.query(user_id=server.tenant_id, permission="team", canvas_category=CanvasCategory.Agent):
         dsl = safe_json_parse(canvas.dsl)
-        for component in dsl.get("components", {}).values():
-            obj = component.get("obj", {})
+        if not isinstance(dsl, dict):
+            continue
+        components = dsl.get("components")
+        if not isinstance(components, dict):
+            continue
+        for component in components.values():
+            if not isinstance(component, dict):
+                continue
+            obj = component.get("obj")
+            if not isinstance(obj, dict):
+                continue
             if obj.get("component_name") != "Agent":
                 continue
-            for mcp in obj.get("params", {}).get("mcp", []):
+            params = obj.get("params")
+            if not isinstance(params, dict):
+                continue
+            mcp_list = params.get("mcp")
+            if not isinstance(mcp_list, list):
+                continue
+            for mcp in mcp_list:
+                if not isinstance(mcp, dict):
+                    continue
                 if mcp.get("mcp_id") == mcp_id:
                     referenced = True
-                    selected.update((mcp.get("tools") or {}).keys())
+                    tools = mcp.get("tools")
+                    if isinstance(tools, dict):
+                        selected.update(tools.keys())
     if not referenced:
         return None
-    catalog = safe_json_parse(server.variables).get("tools", {})
+    variables = safe_json_parse(server.variables)
+    if not isinstance(variables, dict):
+        return None
+    catalog = variables.get("tools")
+    if not isinstance(catalog, dict):
+        return None
     fields = {"name", "title", "description", "inputSchema", "outputSchema", "annotations", "enabled"}
     tools = {name: {k: v for k, v in meta.items() if k in fields} for name, meta in catalog.items() if name in selected and isinstance(meta, dict)}
     return {"id": server.id, "name": server.name, "server_type": server.server_type, "url": "", "variables": {"tools": tools}, "read_only": True}
