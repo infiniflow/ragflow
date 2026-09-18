@@ -643,10 +643,7 @@ func (x *XiaomiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (x *XiaomiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
-	_, err := x.baseModel.GetBaseURL(apiConfig)
+	_, err := x.ListModels(ctx, apiConfig)
 	return err
 }
 
