@@ -39,8 +39,8 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
-	"ragflow/internal/rag/advanced_rag"
-	"ragflow/internal/rag/advanced_rag/harness"
+	"ragflow/internal/rag/agentic-rag"
+	agenticruntime "ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -105,7 +105,7 @@ type engineDocEngine interface {
 	Search(ctx context.Context, req *et.SearchRequest) (*et.SearchResult, error)
 }
 
-// docChunkPager is the production harness.DocChunkLister. It pages one
+// docChunkPager is the production agenticruntime.DocChunkLister. It pages one
 // document's chunks in reading order straight off the chunk index, mirroring
 // Python settings.retriever.chunk_list with sort_by_position=True
 // (rag/nlp/search.py:824). This is what the document-level tools
@@ -118,8 +118,8 @@ type docChunkPager struct {
 	docEngine engineDocEngine
 }
 
-// DocChunks implements harness.DocChunkLister.
-func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequest) ([]map[string]any, error) {
+// DocChunks implements agenticruntime.DocChunkLister.
+func (p *docChunkPager) DocChunks(ctx context.Context, req agenticruntime.DocChunksRequest) ([]map[string]any, error) {
 	if p == nil || p.docEngine == nil {
 		return nil, nil
 	}
@@ -156,7 +156,7 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequ
 	rows := make([]map[string]any, 0, len(resp.Chunks))
 	for _, ck := range resp.Chunks {
 		row := make(map[string]any, 8)
-		// The harness chunk rows need the canonical keys its citation pipeline
+		// The runtime chunk rows need the canonical keys its citation pipeline
 		// reads: chunk_id (dedup), docnm_kwd (doc title), doc_id and the text
 		// under content/content_with_weight (chunkText prefers content first).
 		if id, ok := ck["id"].(string); ok && id != "" {
@@ -1126,20 +1126,20 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
 
-	// Wire the agentic-RAG harness as the Go chat pipeline's evidence engine
+	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
 	// (internal/service/chat_pipeline.retrieveViaHarness): it searches through the
 	// runtime retrieval singleton below and runs each request on a model resolved
 	// from the caller's ModelID. Activating the agentic loop here enables the full
 	// planner/SCA path for reasoning chats.
 	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter())
-	advanced_rag.SetAgenticLoop(advanced_rag.NewAgenticLoop())
+	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
 	service.SetHarnessRetriever(func(ctx context.Context, req service.HarnessRequest) (service.HarnessResult, error) {
 		// Resolve the tenant's actual chat model, mirroring Python where RAGTools
 		// receives a fully-resolved LLMBundle: chat.LLMID may be a UUID/tenant_model
 		// id that the default invoker cannot split into a provider, so resolving here
 		// avoids falling through to a dummy driver. If resolution fails we leave model
-		// nil so the harness degrades to a direct search (no dummy fallback).
-		var model harness.SessionModel
+		// nil so the runtime degrades to a direct search (no dummy fallback).
+		var model agenticruntime.SessionModel
 		// outerModel mirrors Python RAGTools.chat_mdl: the fully-resolved chat
 		// model that drives the outer rag_agent react loop (tools=[rag,
 		// summarize_document], terminal_tools={"rag"}). Wired into RAGTools.Outer
@@ -1155,14 +1155,14 @@ func startServer(ctx context.Context, args *serverArgs) error {
 					// MaxLength mirrors Python LLMBundle.max_length (the model's
 					// context window in tokens); message-fitting nodes (calculate,
 					// structure_qa) use it as their chat.FitMessages budget.
-					model = &harness.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: contentLen}
+					model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: contentLen}
 					resolvedModelName = modelName
 					// Reuse the same resolved driver/name/api as the invoker so
 					// the outer loop and the inner tool calls share one model.
 					outerModel = modelModule.NewChatModel(driver, &modelName, apiCfg)
 				}
 			} else {
-				common.Warn("harness: failed to resolve chat model for reasoning; harness will degrade to direct search", zap.Error(mErr))
+				common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
 			}
 		}
 
@@ -1202,7 +1202,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// is what hybrid_search applies to its vector leg (search.py:143), so
 		// getting it wrong silently degrades search_chunks to keyword-only.
 		hasEmbedder := hasEmbedderFor(kbs)
-		deps := advanced_rag.RAGTools{
+		deps := agentic_rag.RAGTools{
 			Model:     model,
 			ModelName: resolvedModelName,
 			Outer:     outerModel,
@@ -1220,7 +1220,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// (chat-level doc_ids + meta_data_filter) restrict every agentic
 			// retrieval to the user-selected documents instead of the whole kb.
 			DocScope:      req.DocIDs,
-			DocIDVerifier: advanced_rag.NewDocIDLookup(),
+			DocIDVerifier: agentic_rag.NewDocIDLookup(),
 			// DocChunks pages one document's chunks in reading order off the
 			// chunk index (Python retriever.chunk_list), backing the
 			// document-level tools (summarize_document / fetch_full_document).
@@ -1231,13 +1231,13 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// dense seed leg wired to the bound dataset's own embedding model.
 			// The scope config lets each dataset be scanned under its own tenant
 			// and a doc scope be grouped by real owner, like graph_explore.
-			Expand: harness.NewCompiledExpander(
+			Expand: agenticruntime.NewCompiledExpander(
 				newDatasetCompiledStore(docEngine, modelProviderService, kbs),
-				harness.CompiledScopeConfig{
+				agenticruntime.CompiledScopeConfig{
 					DatasetIDs:        req.DatasetIDs,
 					TenantID:          req.TenantID,
 					KBs:               kbs,
-					DocTenantResolver: advanced_rag.NewDocTenantResolver(),
+					DocTenantResolver: agentic_rag.NewDocTenantResolver(),
 				},
 			),
 			// WebSearch backs the web_search tool (Python RAGTools.web_search).
@@ -1296,19 +1296,19 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// isThink=true delta, i.e. think-block content rather than answer text.
 		if req.AnswerSink != nil {
 			answerSink := req.AnswerSink
-			deps.AnswerSink = &advanced_rag.AnswerSink{
+			deps.AnswerSink = &agentic_rag.AnswerSink{
 				OnDelta: req.AnswerSink,
 			}
 			deps.Steps.Text = func(line string) { answerSink(line, true) }
 		}
 		if req.ThinkSink != nil {
-			// One type on both sides — harness.ThinkEvent is an alias of
+			// One type on both sides — agenticruntime.ThinkEvent is an alias of
 			// service.ThinkEvent — so the sink passes straight through: there is
 			// nothing to copy field by field, and no way to forget a field that
 			// was added on one side only.
 			deps.Steps.Events = req.ThinkSink
 		}
-		r := advanced_rag.Rag(ctx, deps, harness.RunRequest{
+		r := agentic_rag.Rag(ctx, deps, agenticruntime.RunRequest{
 			Question:        req.Question,
 			ThinkingMode:    req.ThinkingMode,
 			DatasetIDs:      req.DatasetIDs,
@@ -1317,14 +1317,14 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			Images:          req.Images,
 			TextAttachments: req.TextAttachments,
 		})
-		res := service.HarnessResult{Chunks: r.Chunks, DocAggs: r.DocAggs, Answer: r.Answer, SlotCitations: r.SlotCitations}
+		res := service.HarnessResult{Chunks: r.Chunks, DocAggs: r.DocAggs, Answer: r.Answer, SlotCitations: r.SlotCitations, CiteChunkIDs: r.CiteChunkIDs}
 		if r.Kbinfos != nil {
 			res.Memory = r.Kbinfos.Memory
 			res.PreSummary = r.Kbinfos.PreSummary
 		}
 		return res, nil
 	})
-	common.Info("agent: harness chat retriever wired (runtime retrieval + agentic loop)")
+	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
@@ -1429,8 +1429,8 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Install the production eino-based chat invoker as the shared chat default,
-	// so agentic-search harness LLM calls work in production. Without this,
-	// chat.GetDefaultInvoker() stays nil and the harness falls back gracefully.
+	// so agentic-search runtime LLM calls work in production. Without this,
+	// chat.GetDefaultInvoker() stays nil and the runtime falls back gracefully.
 	component.InstallDefaultChatInvoker()
 
 	// Install the dataset-nav ES-backed service (internal/service/nav +
@@ -1831,7 +1831,7 @@ func hasEmbedderFor(kbs []*entity.Knowledgebase) bool {
 	return len(kbs) > 0 && kbs[0] != nil && kbs[0].EmbdID != ""
 }
 
-// embedderForDatasets builds the embedding handle the agentic harness uses for
+// embedderForDatasets builds the embedding handle the agentic runtime uses for
 // query-side encoding outside the main retrieval leg: claim recall's KNN leg
 // (Python recall_dataset_claims, navigation.py:1837-1909, embedding with
 // tools.embed_mdl) and the structure-drill seed vector. The model is the FIRST
@@ -1954,9 +1954,9 @@ func baseModelName(embdID string) string {
 // Harness seams (compiled expansion + open-web search)
 // ---------------------------------------------------------------------------
 
-// engineCompiledStore implements harness.CompiledStore over the document
+// engineCompiledStore implements agenticruntime.CompiledStore over the document
 // engine, backing search_chunks' compiled-structure expansion (Python
-// tools/compiled_expansion.py). The harness owns the expansion strategy; this
+// tools/compiled_expansion.py). The runtime owns the expansion strategy; this
 // adapter only maps its (scope, filters, free text) request onto one engine
 // search, mirroring Python's settings.docStoreConn.search calls.
 type engineCompiledStore struct {
@@ -1973,7 +1973,7 @@ type engineCompiledStore struct {
 	embedTenantID string
 }
 
-var _ harness.CompiledStore = (*engineCompiledStore)(nil)
+var _ agenticruntime.CompiledStore = (*engineCompiledStore)(nil)
 
 // compiledQueryEncoder is the query-side embedding seam used for the compiled
 // dense seed leg. *service.NavEmbedder implements it via EncodeQueries.
@@ -1990,9 +1990,9 @@ const (
 )
 
 // newEngineCompiledStore returns nil when no engine is available so
-// harness.NewCompiledExpander disables expansion instead of searching nowhere.
+// agenticruntime.NewCompiledExpander disables expansion instead of searching nowhere.
 // A nil embed (or empty embedTenantID) keeps the keyword-only leg.
-func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embedTenantID string) harness.CompiledStore {
+func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embedTenantID string) agenticruntime.CompiledStore {
 	if e == nil {
 		return nil
 	}
@@ -2005,7 +2005,7 @@ func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embed
 // expansion; using the tenant-default model instead would compare the query
 // against rows embedded by a different model — different vector spaces, so the
 // dense hits would be noise.
-func newDatasetCompiledStore(e engineDocEngine, modelSvc *service.ModelProviderService, kbs []*entity.Knowledgebase) harness.CompiledStore {
+func newDatasetCompiledStore(e engineDocEngine, modelSvc *service.ModelProviderService, kbs []*entity.Knowledgebase) agenticruntime.CompiledStore {
 	if e == nil {
 		return nil
 	}
@@ -2047,7 +2047,7 @@ var compiledChunkSelectFields = []string{
 	"content_with_weight", "source_chunk_ids", "similarity",
 }
 
-// SearchCompiled implements harness.CompiledStore.
+// SearchCompiled implements agenticruntime.CompiledStore.
 func (s *engineCompiledStore) SearchCompiled(ctx context.Context, kbID, tenantID string, docIDs []string, filters map[string][]string, matchText string, topN int) ([]map[string]any, error) {
 	if s == nil || s.engine == nil || kbID == "" || strings.TrimSpace(tenantID) == "" {
 		return nil, nil
@@ -2130,7 +2130,7 @@ func (s *engineCompiledStore) denseExpr(ctx context.Context, text string, topN i
 	}
 }
 
-// LoadChunks implements harness.CompiledStore: fetch the referenced source
+// LoadChunks implements agenticruntime.CompiledStore: fetch the referenced source
 // chunks by id (Python compiled_expansion.py:_load_chunks_for_doc searches the
 // tenant index with an {"id": chunk_ids} condition).
 func (s *engineCompiledStore) LoadChunks(ctx context.Context, kbID, tenantID string, chunkIDs []string) ([]map[string]any, error) {
@@ -2150,7 +2150,7 @@ func (s *engineCompiledStore) LoadChunks(ctx context.Context, kbID, tenantID str
 	return res.Chunks, nil
 }
 
-// Vectorize implements harness.CompiledStore. The ported expander assigns
+// Vectorize implements agenticruntime.CompiledStore. The ported expander assigns
 // compiled chunks the similarity stored on the row and blends by that field, so
 // expansion itself never needs a query embedding.
 func (s *engineCompiledStore) Vectorize(context.Context, string) ([]float64, error) {
@@ -2168,7 +2168,7 @@ func compiledDocScopeKey(filters map[string][]string) string {
 	return "doc_id"
 }
 
-// compiledEngineFilter maps the harness' OR-list filters onto the engine filter
+// compiledEngineFilter maps the runtime' OR-list filters onto the engine filter
 // shape. available_int is a numeric column, so its string values are coerced to
 // ints (Python passes the literal 1).
 func compiledEngineFilter(filters map[string][]string) map[string]interface{} {
@@ -2192,20 +2192,20 @@ func compiledEngineFilter(filters map[string][]string) map[string]interface{} {
 }
 
 // harnessWebSearcherFunc adapts the chat pipeline's web-search callback to the
-// harness.WebSearcher seam consumed by the web_search tool. The callback is a
-// plain func so internal/service does not have to depend on the harness package.
+// agenticruntime.WebSearcher seam consumed by the web_search tool. The callback is a
+// plain func so internal/service does not have to depend on the runtime package.
 type harnessWebSearcherFunc func(ctx context.Context, queries []string) ([]string, error)
 
-// Search implements harness.WebSearcher.
+// Search implements agenticruntime.WebSearcher.
 func (f harnessWebSearcherFunc) Search(ctx context.Context, queries []string) ([]string, error) {
 	return f(ctx, queries)
 }
 
-var _ harness.WebSearcher = harnessWebSearcherFunc(nil)
+var _ agenticruntime.WebSearcher = harnessWebSearcherFunc(nil)
 
 // harnessWebSearcher wraps a non-nil callback, returning a nil WebSearcher when
 // the pipeline did not supply one — which is what hides the web_search tool.
-func harnessWebSearcher(fn func(context.Context, []string) ([]string, error)) harness.WebSearcher {
+func harnessWebSearcher(fn func(context.Context, []string) ([]string, error)) agenticruntime.WebSearcher {
 	if fn == nil {
 		return nil
 	}

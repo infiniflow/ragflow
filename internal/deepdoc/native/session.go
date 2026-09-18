@@ -122,6 +122,19 @@ func NewSession(modelPath, inName string, inShape []int64, outName string, outSh
 		outT.Destroy()
 		return nil, err
 	}
+	// Disable the BFC memory arena for this session. The arena pre-reserves a
+	// native block per session and never shrinks it, so every pooled (often
+	// idle) session hoards one. Across the rec/det/DLA/TSR pools (~220 live
+	// sessions while parsing a large PDF) this dominated the ~14 GB of native
+	// memory seen at the ~20 GB OOM peak. With the arena off, idle sessions keep
+	// only their weights; activation tensors are allocated directly and freed
+	// after each Run.
+	if err := opts.SetCpuMemArena(false); err != nil {
+		opts.Destroy()
+		inT.Destroy()
+		outT.Destroy()
+		return nil, err
+	}
 	sess, err := ort.NewAdvancedSession(modelPath,
 		[]string{inName}, []string{outName},
 		[]ort.Value{inT}, []ort.Value{outT}, opts)

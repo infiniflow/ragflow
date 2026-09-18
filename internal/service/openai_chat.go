@@ -664,7 +664,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 	for _, chunk := range chunks {
 		out = append(out, FormattedChunk{
 			ID:               strVal(getValue(chunk, "chunk_id", "id")),
-			Content:          strVal(getValue(chunk, "content_with_weight", "content")),
+			Content:          strVal(getValue(chunk, "content", "content_with_weight")),
 			DocumentID:       strVal(getValue(chunk, "doc_id", "document_id")),
 			DocumentName:     strVal(getValue(chunk, "docnm_kwd", "document_name")),
 			DatasetID:        strVal(getValue(chunk, "kb_id", "dataset_id")),

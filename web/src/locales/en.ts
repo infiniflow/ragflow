@@ -398,9 +398,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     knowledgeDetails: {
       continueUpload: 'Continue upload',
       reselectParser: 'Reselect parse method',
+      goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
       fileModelMissing:
-        '{{name}} ({{fileType}}) requires a configured {{model}} model',
+        '{{name}} ({{fileType}}) requires adding the {{model}} model',
       missingModelAsr: 'audio (ASR)',
       missingModelVision: 'vision',
       uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
@@ -410,6 +411,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Continue uploading, then reselect a parse method for these files in the file list.',
       reselectParserToParseHint:
         'Reselect a parse method for the affected files, then parse again.',
+      addModelAfterUploadHint:
+        'Continue uploading, then add the required model to parse these files.',
+      addModelToParseHint: 'Add the required model, then parse again.',
       parseBlockedTitle: 'Cannot parse',
       parseBlockedPartialTitle: 'Some files cannot be parsed',
       parseValidFiles: 'Parse valid files',
@@ -946,6 +950,8 @@ Paragraphs:
       tagName: 'Tag',
       tagMessage: 'Please select a tag',
       frequency: 'Frequency',
+      frequencyMinMessage: 'Frequency must be at least {{min}}',
+      frequencyMaxMessage: 'Frequency must be at most {{max}}',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
       tagTable: 'Table',

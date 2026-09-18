@@ -31,6 +31,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
 	"go.uber.org/zap"
@@ -1896,17 +1898,73 @@ func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	return ids
 }
 
-// GetHighlight generates highlighted text snippets for search results.
+// GetHighlight returns highlighted text for search results.
 // Matches keywords in text and wraps them with <em> tags.
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
-	if len(chunks) == 0 || len(keywords) == 0 {
-		return result
+	if fieldName == "content_with_weight" && !hasInfinityHighlightField(chunks, fieldName) {
+		fieldName = "content"
 	}
+	pattern := compileInfinityHighlightPattern(keywords)
 
-	// For Infinity, scores are already returned in search results (_score column)
-	// So GetScores just extracts scores from chunks, mimicking Python's approach
+	for _, chunk := range chunks {
+		id, ok := chunk["id"].(string)
+		if !ok || id == "" {
+			continue
+		}
+		txt, ok := chunk[fieldName].(string)
+		if !ok {
+			continue
+		}
+		if pattern != nil {
+			txt = pattern.ReplaceAllStringFunc(txt, func(match string) string {
+				return "<em>" + match + "</em>"
+			})
+		}
+		result[id] = txt
+	}
 	return result
+}
+
+func hasInfinityHighlightField(chunks []map[string]interface{}, fieldName string) bool {
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func compileInfinityHighlightPattern(keywords []string) *regexp.Regexp {
+	nonEmpty := make([]string, 0, len(keywords))
+	for _, keyword := range keywords {
+		if keyword != "" {
+			nonEmpty = append(nonEmpty, keyword)
+		}
+	}
+	if len(nonEmpty) == 0 {
+		return nil
+	}
+	sort.SliceStable(nonEmpty, func(i, j int) bool {
+		return utf8.RuneCountInString(nonEmpty[i]) > utf8.RuneCountInString(nonEmpty[j])
+	})
+	parts := make([]string, len(nonEmpty))
+	for i, keyword := range nonEmpty {
+		parts[i] = regexp.QuoteMeta(keyword)
+		if isLatinKeyword(keyword) {
+			parts[i] += `\p{Latin}*`
+		}
+	}
+	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
+}
+
+func isLatinKeyword(keyword string) bool {
+	for _, r := range keyword {
+		if !unicode.In(r, unicode.Latin) {
+			return false
+		}
+	}
+	return keyword != ""
 }
 
 // KNNScores for Infinity - since Infinity normalizes scores during fusion,

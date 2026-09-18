@@ -2222,7 +2222,7 @@ func (s *ChatSessionService) chunksFormat(reference map[string]interface{}) []ma
 	for _, chunk := range raw {
 		out = append(out, map[string]interface{}{
 			"id":                getValue(chunk, "chunk_id", "id"),
-			"content":           getValue(chunk, "content_with_weight", "content"),
+			"content":           getValue(chunk, "content", "content_with_weight"),
 			"document_id":       getValue(chunk, "doc_id", "document_id"),
 			"document_name":     getValue(chunk, "docnm_kwd", "document_name"),
 			"dataset_id":        getValue(chunk, "kb_id", "dataset_id"),
