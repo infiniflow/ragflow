@@ -817,18 +817,35 @@ print("Async bulk parsing initiated.")
 ### Parse documents (with document status)
 
 ```python
-DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
+DataSet.parse_documents(
+    document_ids: list[str],
+    *,
+    on_progress: Callable[[Document], None] | None = None,
+) -> list[tuple[str, str, int, int]]
 ```
 
 Starts parsing documents in the current dataset and synchronously waits for the results.
 
 This method calls `async_parse_documents()` and blocks while polling until all requested documents reach a terminal state or report complete progress. It then returns the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), it requests cancellation for the requested documents and continues polling for their final statuses. If a status request fails or a requested document is no longer found, the method raises an exception instead of continuing to poll.
 
+Pass `on_progress` to observe progress without implementing your own polling loop. The final return value is unchanged.
+
 #### Parameters
 
 ##### document_ids: `list[str]`, *Required*
 
 The IDs of the documents to parse.
+
+##### on_progress: `Callable[[Document], None]` or `None`
+
+An optional keyword-only, synchronous callback. Defaults to `None`.
+
+- Receives a `Document` snapshot on its first observation and when `run`, `progress`, or `progress_msg` changes. Identical consecutive snapshots for the same document do not trigger another callback.
+- The snapshot includes `id`, `run`, `progress`, `progress_msg`, `chunk_count`, and `token_count`. Values reflect the server response; for example, `run` can still be `RUNNING` when `progress` reaches `1.0` and the returned result is treated as `DONE`.
+- Reports observed terminal states (`DONE`, `FAIL`, or `CANCEL`) even if parsing finishes before the first poll. Polling can skip intermediate states that change between requests; it is not an event stream.
+- Runs in the calling thread, so slow callbacks delay polling. Keep the callback short; coroutine callbacks are not supported.
+- Callback exceptions stop the wait and propagate without cancelling server-side parsing. `KeyboardInterrupt`, including one raised by the callback, retains the cancellation behavior described above. After cancellation is requested, observation restarts and the first snapshot is reported again.
+- Does not change the final result type or ordering. Notifications for different documents have no guaranteed relative order.
 
 #### Returns
 
@@ -854,8 +871,13 @@ dataset = rag_object.create_dataset(name="dataset_name")
 documents = dataset.list_documents(keywords="test")
 ids = [doc.id for doc in documents]
 
+
+def report_progress(doc):
+    print(f"Document {doc.id}: {doc.run}, progress={doc.progress}, {doc.progress_msg}")
+
+
 try:
-    finished = dataset.parse_documents(ids)
+    finished = dataset.parse_documents(ids, on_progress=report_progress)
     for doc_id, status, chunk_count, token_count in finished:
         print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
 except Exception as e:

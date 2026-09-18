@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-"""Synchronous parsing must stop when a status lookup can no longer succeed."""
+"""Synchronous parsing reports progress and stops when a lookup cannot succeed."""
 
 import json
 import time
@@ -50,6 +50,11 @@ def parsing_api(monkeypatch):
             state["requests"].append(("POST", self.path))
             self.reply({"code": 0})
 
+        def do_DELETE(self):
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            state["requests"].append(("DELETE", self.path))
+            self.reply({"code": 0})
+
         def do_GET(self):
             doc_id = parse_qs(urlsplit(self.path).query)["id"][0]
             state["requests"].append(("GET", doc_id))
@@ -58,8 +63,8 @@ def parsing_api(monkeypatch):
 
     def bounded_sleep(_seconds):
         state["sleeps"] += 1
-        if state["sleeps"] > 2:
-            pytest.fail("status polling did not stop after a lookup failure")
+        if state["sleeps"] > state.get("max_sleeps", 2):
+            pytest.fail("status polling exceeded the test limit")
 
     monkeypatch.setattr(time, "sleep", bounded_sleep)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -74,8 +79,8 @@ def parsing_api(monkeypatch):
         thread.join()
 
 
-def document_status(doc_id="doc", run="DONE", progress=1.0):
-    return {"code": 0, "data": {"docs": [{"id": doc_id, "run": run, "progress": progress, "chunk_count": 2, "token_count": 10}]}}
+def document_status(doc_id="doc", run="DONE", progress=1.0, progress_msg=""):
+    return {"code": 0, "data": {"docs": [{"id": doc_id, "run": run, "progress": progress, "progress_msg": progress_msg, "chunk_count": 2, "token_count": 10}]}}
 
 
 @pytest.mark.parametrize("message", ["Permission denied", "Dataset not found"])
@@ -143,7 +148,7 @@ def test_keyboard_interrupt_still_cancels_and_collects_status(monkeypatch):
     monkeypatch.setattr(dataset, "async_parse_documents", lambda ids: calls.append(("start", ids)))
     monkeypatch.setattr(dataset, "async_cancel_parse_documents", lambda ids: calls.append(("cancel", ids)))
 
-    def status(ids):
+    def status(ids, *, on_progress=None):
         calls.append(("status", ids))
         if len(calls) == 2:
             raise KeyboardInterrupt
@@ -176,3 +181,146 @@ def test_parse_start_error_is_not_replaced_by_polling(monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         dataset.parse_documents(["doc"])
     assert exc.value is error
+
+
+def test_progress_reports_first_changed_and_terminal_snapshots(parsing_api):
+    dataset, state = parsing_api
+    state["max_sleeps"] = 5
+    state["responses"]["doc"] = [
+        document_status(run="RUNNING", progress=0.2, progress_msg="Reading"),
+        document_status(run="RUNNING", progress=0.2, progress_msg="Reading"),
+        document_status(run="RUNNING", progress=0.2, progress_msg="Embedding"),
+        document_status(run="RUNNING", progress=0.6, progress_msg="Embedding"),
+        document_status(run="RUNNING", progress=0.6, progress_msg="Embedding"),
+        document_status(progress_msg="Complete"),
+    ]
+    updates = []
+    assert dataset.parse_documents(["doc"], on_progress=updates.append) == [("doc", "DONE", 2, 10)]
+    assert [(doc.id, doc.run, doc.progress, doc.progress_msg) for doc in updates] == [
+        ("doc", "RUNNING", 0.2, "Reading"),
+        ("doc", "RUNNING", 0.2, "Embedding"),
+        ("doc", "RUNNING", 0.6, "Embedding"),
+        ("doc", "DONE", 1.0, "Complete"),
+    ]
+    assert state["requests"].count(("GET", "doc")) == 6
+
+
+def test_progress_is_tracked_per_document_in_a_batch(parsing_api):
+    dataset, state = parsing_api
+    for doc_id in ("first", "second"):
+        state["responses"][doc_id] = [document_status(doc_id, "RUNNING", 0.2), document_status(doc_id)]
+    state["responses"]["second"].insert(1, document_status("second", "RUNNING", 0.2))
+    updates = []
+    assert sorted(dataset.parse_documents(["first", "second"], on_progress=updates.append)) == [("first", "DONE", 2, 10), ("second", "DONE", 2, 10)]
+    for doc_id in ("first", "second"):
+        assert [(doc.run, doc.progress) for doc in updates if doc.id == doc_id] == [("RUNNING", 0.2), ("DONE", 1.0)]
+    assert state["requests"].count(("GET", "first")) == 2
+    assert state["requests"].count(("GET", "second")) == 3
+
+
+@pytest.mark.parametrize("run,progress", [("DONE", 1.0), ("FAIL", -1.0), ("CANCEL", 0.3), ("RUNNING", 1.0)])
+def test_progress_reports_a_document_that_is_already_terminal(parsing_api, run, progress):
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status(run=run, progress=progress)]
+    updates = []
+    expected_run = "DONE" if run == "RUNNING" else run
+    assert dataset.parse_documents(["doc"], on_progress=updates.append) == [("doc", expected_run, 2, 10)]
+    # The callback receives the server snapshot, even when the result infers DONE.
+    assert [(doc.run, doc.progress) for doc in updates] == [(run, progress)]
+    assert state["sleeps"] == 0
+
+
+@pytest.mark.parametrize(
+    "response,error,match",
+    [
+        ({"code": 102, "message": "Permission denied"}, Exception, "Permission denied"),
+        ({"code": 0, "data": {"docs": []}}, RuntimeError, "not found"),
+        (b"invalid json", requests.exceptions.JSONDecodeError, "Expecting value"),
+    ],
+)
+def test_progress_preserves_lookup_errors_without_synthesizing_updates(parsing_api, response, error, match):
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2), response]
+    updates = []
+    with pytest.raises(error, match=match):
+        dataset.parse_documents(["doc"], on_progress=updates.append)
+    assert [(doc.run, doc.progress) for doc in updates] == [("RUNNING", 0.2)]
+    assert not any(method == "DELETE" for method, _ in state["requests"])
+
+
+def test_progress_callback_error_propagates_without_cancelling(parsing_api):
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2)]
+    error = RuntimeError("progress consumer failed")
+
+    def report(_doc):
+        raise error
+
+    with pytest.raises(RuntimeError) as exc:
+        dataset.parse_documents(["doc"], on_progress=report)
+    assert exc.value is error
+    assert state["requests"] == [("POST", "/api/v1/datasets/kb/chunks"), ("GET", "doc")]
+    assert state["sleeps"] == 0
+
+
+def test_progress_callback_cannot_change_polling_results(parsing_api):
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2), document_status()]
+
+    def report(doc):
+        doc.run = "FAIL"
+        doc.progress = -1.0
+        doc.chunk_count = 999
+
+    assert dataset.parse_documents(["doc"], on_progress=report) == [("doc", "DONE", 2, 10)]
+    assert state["requests"].count(("GET", "doc")) == 2
+
+
+@pytest.mark.parametrize("interrupt_from_callback", [False, True])
+def test_progress_continues_after_keyboard_interrupt_requests_cancellation(parsing_api, monkeypatch, interrupt_from_callback):
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status(run="RUNNING", progress=0.2), document_status(run="CANCEL", progress=0.2)]
+    updates = []
+
+    def interrupt(_seconds):
+        raise KeyboardInterrupt
+
+    def report(doc):
+        updates.append(doc)
+        if interrupt_from_callback and doc.run == "RUNNING":
+            raise KeyboardInterrupt
+
+    if not interrupt_from_callback:
+        monkeypatch.setattr(time, "sleep", interrupt)
+    assert dataset.parse_documents(["doc"], on_progress=report) == [("doc", "CANCEL", 2, 10)]
+    assert [(doc.run, doc.progress) for doc in updates] == [("RUNNING", 0.2), ("CANCEL", 0.2)]
+    assert state["requests"] == [
+        ("POST", "/api/v1/datasets/kb/chunks"),
+        ("GET", "doc"),
+        ("DELETE", "/api/v1/datasets/kb/chunks"),
+        ("GET", "doc"),
+    ]
+
+
+def test_progress_accepts_a_falsey_callable(parsing_api):
+    dataset, state = parsing_api
+    state["responses"]["doc"] = [document_status()]
+    updates = []
+
+    class Reporter:
+        def __bool__(self):
+            return False
+
+        def __call__(self, doc):
+            updates.append(doc.id)
+
+    dataset.parse_documents(["doc"], on_progress=Reporter())
+    assert updates == ["doc"]
+
+
+def test_progress_is_not_called_for_an_empty_batch(parsing_api):
+    dataset, state = parsing_api
+    updates = []
+    assert dataset.parse_documents([], on_progress=updates.append) == []
+    assert updates == []
+    assert state["requests"] == [("POST", "/api/v1/datasets/kb/chunks")]
