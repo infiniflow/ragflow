@@ -57,9 +57,9 @@ describe('AudioPreviewer', () => {
 
     render(<AudioPreviewer url="/api/v1/agents/attachments/doc2/preview" />);
 
-    await waitFor(() =>
-      expect(MockRequest).toHaveBeenCalled(),
-    );
-    expect(screen.queryByTestId('document-audio-player')).not.toBeInTheDocument();
+    await waitFor(() => expect(MockRequest).toHaveBeenCalled());
+    expect(
+      screen.queryByTestId('document-audio-player'),
+    ).not.toBeInTheDocument();
   });
 });

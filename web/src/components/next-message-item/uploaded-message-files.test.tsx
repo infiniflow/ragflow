@@ -16,7 +16,9 @@ jest.mock('../image', () => ({
 
 jest.mock('../svg-icon', () => ({
   __esModule: true,
-  default: ({ name }: { name: string }) => <div data-testid="svg-icon">{name}</div>,
+  default: ({ name }: { name: string }) => (
+    <div data-testid="svg-icon">{name}</div>
+  ),
 }));
 
 jest.mock('../ui/modal/modal', () => ({
@@ -74,7 +76,9 @@ describe('UploadedMessageFiles audio playback', () => {
   });
 
   it('opens an inline player when an uploaded audio chip is clicked', () => {
-    render(<UploadedMessageFiles files={[uploadedAudio]}></UploadedMessageFiles>);
+    render(
+      <UploadedMessageFiles files={[uploadedAudio]}></UploadedMessageFiles>,
+    );
 
     expect(screen.queryByTestId('audio-modal')).not.toBeInTheDocument();
 
