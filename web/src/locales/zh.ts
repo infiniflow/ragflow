@@ -854,7 +854,7 @@ export default {
       compilationTemplateRequired: '请选择算子',
       createTemplate: '创建模板',
       scopeFile: '文件',
-      pageRank: '页面排名',
+      pageRank: 'PageRank 权重',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
       tagMessage: '请选择标签',
