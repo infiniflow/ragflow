@@ -106,7 +106,6 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 		zap.String("llmID", llmID),
 		zap.Strings("languages", languages))
 
-	modelProviderSvc := NewModelProviderService()
 	modelSolver := NewModelSolver()
 	var chatModel *modelModule.ChatModel
 	var err error
