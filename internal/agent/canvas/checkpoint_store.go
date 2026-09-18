@@ -15,7 +15,7 @@
 //
 
 // checkpoint_store.go implements the eino CheckPointStore / CheckPointDeleter
-// interfaces backed by Redis. See plan §2.6 (Redis-backed CheckPointStore).
+// interfaces backed by Redis. See plan §2.6 (Kvrocks-backed CheckPointStore).
 //
 // The store holds raw eino-serialized checkpoint bytes keyed by
 // "agent:cp:{id}". Business metadata (canvas_id, run_id, status, ...) lives
@@ -25,7 +25,7 @@ package canvas
 import (
 	"context"
 	"errors"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -35,44 +35,44 @@ import (
 // The full key is "agent:cp:{id}".
 const checkpointKeyPrefix = "agent:cp:"
 
-// RedisCheckPointStore is a Redis-backed eino CheckPointStore /
+// KvrocksCheckPointStore is a Kvrocks-backed eino CheckPointStore /
 // CheckPointDeleter. Values are stored as raw bytes — the eino Serializer
 // has already marshaled the structured payload, so we do not re-encode.
-type RedisCheckPointStore struct {
+type KvrocksCheckPointStore struct {
 	client *redis.Client
 	ttl    time.Duration
 }
 
-// NewRedisCheckPointStore returns a store wired to the global Redis client
+// NewKvrocksCheckPointStore returns a store wired to the global Kvrocks client
 // from internal/cache. Returns a non-nil store even when the cache is
 // uninitialized (client is nil); Get/Set/Delete will return an error in that
 // case rather than nil-deref, but the type stays usable for tests that
 // inject their own client via struct-literal construction.
-func NewRedisCheckPointStore(ttl time.Duration) *RedisCheckPointStore {
+func NewKvrocksCheckPointStore(ttl time.Duration) *KvrocksCheckPointStore {
 	var client *redis.Client
-	if rc := redis2.Get(); rc != nil {
+	if rc := kvrocks.Get(); rc != nil {
 		client = rc.GetClient()
 	}
-	return &RedisCheckPointStore{client: client, ttl: ttl}
+	return &KvrocksCheckPointStore{client: client, ttl: ttl}
 }
 
-// NewRedisCheckPointStoreWithClient returns a store wired to a
+// NewKvrocksCheckPointStoreWithClient returns a store wired to a
 // caller-supplied redis.Client. Same rationale as
 // NewRunTrackerWithClient: enables test code (or any code that
 // needs a dedicated Redis pool) to inject a client without going
 // through the global cache singleton.
-func NewRedisCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) *RedisCheckPointStore {
-	return &RedisCheckPointStore{client: client, ttl: ttl}
+func NewKvrocksCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) *KvrocksCheckPointStore {
+	return &KvrocksCheckPointStore{client: client, ttl: ttl}
 }
 
-// RedisCheckpointExists reports whether a pipeline checkpoint is present for
+// KvrocksCheckpointExists reports whether a pipeline checkpoint is present for
 // id. It is used by ingestion progress handling to distinguish a fresh run
 // from a resume: resumed nodes may not emit lifecycle events again, so their
 // previous completed progress rows must be retained.
-func RedisCheckpointExists(ctx context.Context, id string) (bool, error) {
-	rc := redis2.Get()
+func KvrocksCheckpointExists(ctx context.Context, id string) (bool, error) {
+	rc := kvrocks.Get()
 	if rc == nil || rc.GetClient() == nil {
-		return false, errors.New("checkpoint store: redis client not initialized")
+		return false, errors.New("checkpoint store: kvrocks client not initialized")
 	}
 	found, err := rc.GetClient().Exists(ctx, checkpointKeyPrefix+id).Result()
 	return found > 0, err
@@ -81,9 +81,9 @@ func RedisCheckpointExists(ctx context.Context, id string) (bool, error) {
 // Get implements eino's CheckPointStore.Get. Returns (nil, false, nil) when
 // the key does not exist (redis.Nil) so callers can distinguish "missing"
 // from "present-but-error".
-func (s *RedisCheckPointStore) Get(ctx context.Context, id string) ([]byte, bool, error) {
+func (s *KvrocksCheckPointStore) Get(ctx context.Context, id string) ([]byte, bool, error) {
 	if s == nil || s.client == nil {
-		return nil, false, errors.New("checkpoint store: redis client not initialized")
+		return nil, false, errors.New("checkpoint store: kvrocks client not initialized")
 	}
 	data, err := s.client.Get(ctx, checkpointKeyPrefix+id).Bytes()
 	if errors.Is(err, redis.Nil) {
@@ -97,18 +97,18 @@ func (s *RedisCheckPointStore) Get(ctx context.Context, id string) ([]byte, bool
 
 // Set implements eino's CheckPointStore.Set. The TTL is applied on every
 // call so a frequently-updated checkpoint does not expire mid-run.
-func (s *RedisCheckPointStore) Set(ctx context.Context, id string, payload []byte) error {
+func (s *KvrocksCheckPointStore) Set(ctx context.Context, id string, payload []byte) error {
 	if s == nil || s.client == nil {
-		return errors.New("checkpoint store: redis client not initialized")
+		return errors.New("checkpoint store: kvrocks client not initialized")
 	}
 	return s.client.Set(ctx, checkpointKeyPrefix+id, payload, s.ttl).Err()
 }
 
 // Delete implements eino's optional CheckPointDeleter. It is safe to call
 // on a non-existent key (Del returns 0, no error).
-func (s *RedisCheckPointStore) Delete(ctx context.Context, id string) error {
+func (s *KvrocksCheckPointStore) Delete(ctx context.Context, id string) error {
 	if s == nil || s.client == nil {
-		return errors.New("checkpoint store: redis client not initialized")
+		return errors.New("checkpoint store: kvrocks client not initialized")
 	}
 	return s.client.Del(ctx, checkpointKeyPrefix+id).Err()
 }

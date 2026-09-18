@@ -15,14 +15,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/agentic-rag/slots"
 	"ragflow/internal/rag/prompts"
+
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 )
 
 // Test doubles
@@ -745,19 +746,19 @@ func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
 // leg is keyword-only (weight 0, top_n=60, query terms folded into the query),
 // the semantic-bypass leg has the vector weight on (top_n=30, plain query).
 type channelRetriever struct {
-	weights []float64
-	topN    []int
-	queries []string
+	keywordsWeights []float64
+	topN            []int
+	queries         []string
 }
 
 func (r *channelRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
-	// Each leg names its weight explicitly; nil (the control was not supplied)
+	// Each leg names its keyword weight explicitly; nil (the control was not supplied)
 	// is recorded as -1 so the assertions below catch a leg that drops it.
 	weight := -1.0
-	if req.VectorSimilarityWeight != nil {
-		weight = *req.VectorSimilarityWeight
+	if req.KeywordsSimilarityWeight != nil {
+		weight = *req.KeywordsSimilarityWeight
 	}
-	r.weights = append(r.weights, weight)
+	r.keywordsWeights = append(r.keywordsWeights, weight)
 	r.topN = append(r.topN, req.TopN)
 	r.queries = append(r.queries, req.Query)
 	return nil, nil
@@ -777,13 +778,13 @@ func TestFanoutSearchIsDualChannel(t *testing.T) {
 	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8, 60)
 
 	// Two fan-outs x two channels.
-	if len(r.weights) != 4 {
-		t.Fatalf("expected 4 retrieve calls (2 fan-outs x 2 channels), got %d", len(r.weights))
+	if len(r.keywordsWeights) != 4 {
+		t.Fatalf("expected 4 retrieve calls (2 fan-outs x 2 channels), got %d", len(r.keywordsWeights))
 	}
 	for i := 0; i < 4; i += 2 {
 		// Channel A: keyword-only weight, wide pool, query terms folded in.
-		if r.weights[i] != 0 {
-			t.Errorf("fan-out %d channel A: weight = %v, want 0 (BM25 keyword leg)", i/2, r.weights[i])
+		if r.keywordsWeights[i] != 1 {
+			t.Errorf("fan-out %d channel A: keyword weight = %v, want 1 (BM25 keyword leg)", i/2, r.keywordsWeights[i])
 		}
 		if r.topN[i] != fanoutBM25TopN {
 			t.Errorf("fan-out %d channel A: TopN = %d, want %d", i/2, r.topN[i], fanoutBM25TopN)
@@ -792,8 +793,8 @@ func TestFanoutSearchIsDualChannel(t *testing.T) {
 			t.Errorf("fan-out %d channel A: query = %q, want the fan-out query (terms folded in)", i/2, r.queries[i])
 		}
 		// Channel B: vector weight on, top_n=30 (narrowing bypassed).
-		if r.weights[i+1] <= 0 {
-			t.Errorf("fan-out %d channel B: weight = %v, want > 0 (semantic bypass leg)", i/2, r.weights[i+1])
+		if r.keywordsWeights[i+1] >= 1 {
+			t.Errorf("fan-out %d channel B: keyword weight = %v, want < 1 (semantic bypass leg)", i/2, r.keywordsWeights[i+1])
 		}
 		if r.topN[i+1] != fanoutHybridTopN {
 			t.Errorf("fan-out %d channel B: TopN = %d, want %d", i/2, r.topN[i+1], fanoutHybridTopN)

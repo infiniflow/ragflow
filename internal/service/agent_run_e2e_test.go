@@ -20,7 +20,7 @@
 // These tests pin the production chain end-to-end: loadCanvasForUser
 // → versionDAO.GetLatest → decodeCanvasFromDSL → canvas.Compile →
 // cc.Workflow.Invoke → orchestrator answer extraction. They also
-// cover the boot-wiring surface (Redis-backed CheckPointStore +
+// cover the boot-wiring surface (Kvrocks-backed CheckPointStore +
 // RunTracker) and the failure paths (compile error, invoke
 // error, wait-for-user resume cycle). If any of these tests
 // fails, the RunAgent path has regressed.
@@ -197,7 +197,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		t.Context(),
@@ -589,7 +589,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	// stateSerializer is intentionally nil so eino's default
 	// InternalSerializer is used (which knows about CanvasState
 	// via runtime.RegisterSerializableType[CanvasState]). The
@@ -794,7 +794,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	events1, err := svc.RunAgent(
@@ -1005,7 +1005,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	events1, err := svc.RunAgent(
@@ -1126,7 +1126,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	sessionID := "session-all-loop-multi"
@@ -1222,7 +1222,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	sessionID := "session-all-iteration"
@@ -1335,7 +1335,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		t.Context(),
@@ -1419,7 +1419,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		t.Context(),
@@ -1593,7 +1593,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events1, err := svc.RunAgent(
 		t.Context(),
@@ -1794,7 +1794,7 @@ func newRunTrackerForTest(t *testing.T, ttl time.Duration) (*canvas.RunTracker, 
 // TestRunAgent_RunTracker_AttachCheckpoint_CallSequence pins the
 // production boot path that v3.6.0 enables: an AgentService
 // constructed via NewAgentServiceWithOptions (with a real
-// RedisCheckPointStore + CanvasStateSerializer + RunTracker) must
+// KvrocksCheckPointStore + CanvasStateSerializer + RunTracker) must
 // record the full Start → AttachCheckpoint → MarkSucceeded sequence
 // against the run hash during a single successful run.
 //
@@ -1836,7 +1836,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
-	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
+	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 
 	dsl := map[string]any{
 		"components": map[string]any{
