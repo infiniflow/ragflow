@@ -31,6 +31,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 
 def _stub(monkeypatch, name, **attrs):
     """Register a synthetic ``name`` in ``sys.modules`` with the given attrs.
@@ -213,6 +215,21 @@ def test_non_numeric_check_num_returns_argument_error(monkeypatch):
     assert ok is False
     assert "must be an integer" in msg
     assert "500" not in msg and "Internal" not in msg
+    doc_store.search.assert_not_called()
+    llmbundle.assert_not_called()
+
+
+@pytest.mark.parametrize("raw_check_num", [float("inf"), float("-inf")])
+def test_non_finite_check_num_returns_argument_error(monkeypatch, raw_check_num):
+    """Non-finite floats must return the integer argument error, not raise."""
+    svc = _load_check_embedding_module(monkeypatch)
+    doc_store, _ = _stub_doc_store_with_chunks(monkeypatch, n_chunks=3)
+    llmbundle = sys.modules["api.db.services.llm_service"].LLMBundle
+
+    ok, msg = svc.check_embedding("kb-1", "t-1", {"embd_id": "m1", "check_num": raw_check_num})
+
+    assert ok is False
+    assert "must be an integer" in msg
     doc_store.search.assert_not_called()
     llmbundle.assert_not_called()
 

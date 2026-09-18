@@ -1348,7 +1348,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     raw_check_num = req.get("check_num", 5)
     try:
         n = int(raw_check_num)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False, "`check_num` must be an integer."
     if isinstance(raw_check_num, bool) or n <= 0:
         return False, "`check_num` must be greater than 0."
