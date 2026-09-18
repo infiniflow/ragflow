@@ -584,7 +584,7 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 	}
 
 	if s.docEngine != nil {
-		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+		if err := s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
 			return err
 		}
 	}

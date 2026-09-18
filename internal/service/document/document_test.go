@@ -299,19 +299,26 @@ type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
 	search           *types.SearchRequest
+	updateValues     []map[string]interface{}
 }
 
 func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "tree-1", "compile_kwd": "tree"},
+		// structure stamps its inferred kind verbatim; both are final products.
+		{"id": "struct-1", "compile_kwd": "hypergraph"},
+		{"id": "pageindex-1", "compile_kwd": "page_index"},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
 		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
-	}, Total: 3}, nil
+		{"id": "nav-1", "compile_kwd": "dataset_nav"},
+	}, Total: 7}, nil
 }
 
-func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, _ map[string]interface{}, _, _ string) error {
+func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, _, _ string) error {
 	e.updateConditions = append(e.updateConditions, condition)
+	e.updateValues = append(e.updateValues, newValue)
 	return nil
 }
 
@@ -2550,20 +2557,27 @@ func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T
 	}
 }
 
-func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
+// TestUpdateDocumentChunkAvailabilityTogglesFinalProducts pins the disable/enable
+// contract: source chunks and final compiled products (tree/structure/mindmap)
+// follow the document status; wiki staging and unknown-kwd rows stay hidden.
+func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	docEngine := &sourceAvailabilityDocEngine{}
 	svc := testDocumentService(t)
 	svc.docEngine = docEngine
 
-	if err := svc.updateSourceChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
-		t.Fatalf("updateSourceChunkAvailability failed: %v", err)
+	if err := svc.updateDocumentChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 0); err != nil {
+		t.Fatalf("updateDocumentChunkAvailability failed: %v", err)
 	}
 	if len(docEngine.updateConditions) != 1 {
 		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
 	}
 	ids, ok := docEngine.updateConditions[0]["id"].([]string)
-	if !ok || len(ids) != 1 || ids[0] != "source-1" {
-		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
+	want := []string{"source-1", "tree-1", "struct-1", "pageindex-1"}
+	if !ok || !reflect.DeepEqual(ids, want) {
+		t.Fatalf("updated ids = %#v, want %v (wiki/unknown-kwd rows excluded)", docEngine.updateConditions[0]["id"], want)
+	}
+	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
+		t.Fatalf("available_int = %#v, want 0", got)
 	}
 	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
 		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
