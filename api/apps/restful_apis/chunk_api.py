@@ -118,13 +118,8 @@ def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary, mode="append
     try:
         store_chunk_image(dataset_id, chunk_id, image_binary, mode=mode)
     except Exception:
-<<<<<<< ours
-        logging.exception(
-            "Failed to store chunk image. dataset_id=%s chunk_id=%s mode=%s",
-=======
         logger.exception(
-            "Failed to store chunk image. dataset_id=%s chunk_id=%s",
->>>>>>> theirs
+            "Failed to store chunk image. dataset_id=%s chunk_id=%s mode=%s",
             dataset_id,
             chunk_id,
             mode,
@@ -853,46 +848,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     except Exception as e:
         return server_error_response(e)
 
-<<<<<<< ours
-=======
-    # RAPTOR summary graph is stored as a standalone blob rather than raw
-    # knowledge_graph_kwd entity/relation rows, so include its arrays explicitly.
-    raptor_entities: list[dict] = []
-    raptor_relations: list[dict] = []
-    try:
-        res_raptor = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["content_with_weight", "compile_kwd"],
-            [],
-            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            16,
-            index_name,
-            [dataset_id],
-        )
-        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
-    except Exception:
-        logger.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
-        raptor_rows = {}
-    for row in raptor_rows.values():
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-        r_entities = graph.get("entities") or []
-        r_relations = graph.get("relations") or []
-        if isinstance(r_entities, list):
-            raptor_entities.extend(r_entities)
-        if isinstance(r_relations, list):
-            raptor_relations.extend(r_relations)
-    total_entities += len(raptor_entities)
-    total_relations += len(raptor_relations)
-
->>>>>>> theirs
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
         if isinstance(raw, list):
