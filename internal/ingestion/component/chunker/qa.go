@@ -601,10 +601,9 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			// the HTML fallback for parsers that do not expose typed cells.
 			//
 			// Route on the payload, not on doc_type_kwd. The type says what
-			// the producer meant, and the two disagree in both directions:
-			// pdf_postprocess.go:222 sets "table" from the layout class with
-			// plain text under it, and a docx or markdown table can arrive
-			// with no type at all.
+			// the producer meant. pdf_postprocess.go:222 sets "table" from the
+			// layout class alone, with plain text under it, so the pairs are
+			// lost. The text shape is the fact.
 			if isTableHTML(txt) {
 				tmp = extractQATable(txt, strictCSV)
 			} else {
