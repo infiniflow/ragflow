@@ -12,8 +12,8 @@ import (
 // scoped to its dataset and document so equal parent text from separate
 // documents or datasets cannot overwrite each other in a shared index.
 func MaterializeParentChunks(datasetID string, chunks []map[string]any) []map[string]any {
-	parentsByID := make(map[string]map[string]any)
-	parentIDs := make([]string, 0)
+	seen := make(map[string]struct{})
+	parents := make([]map[string]any, 0)
 
 	for _, chunk := range chunks {
 		mom := parentText(chunk)
@@ -29,7 +29,7 @@ func MaterializeParentChunks(datasetID string, chunks []map[string]any) []map[st
 		}
 		parentID := parentChunkID(datasetID, docID, mom)
 		chunk["mom_id"] = parentID
-		if _, exists := parentsByID[parentID]; exists {
+		if _, exists := seen[parentID]; exists {
 			continue
 		}
 
@@ -46,13 +46,8 @@ func MaterializeParentChunks(datasetID string, chunks []map[string]any) []map[st
 				parent[field] = value
 			}
 		}
-		parentsByID[parentID] = parent
-		parentIDs = append(parentIDs, parentID)
-	}
-
-	parents := make([]map[string]any, 0, len(parentIDs))
-	for _, parentID := range parentIDs {
-		parents = append(parents, parentsByID[parentID])
+		seen[parentID] = struct{}{}
+		parents = append(parents, parent)
 	}
 	return parents
 }

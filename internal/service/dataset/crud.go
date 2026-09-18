@@ -135,12 +135,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			if !ok {
 				continue
 			}
-			overrides, ok := flat[componentID].(map[string]interface{})
-			if ok {
-				flat[componentID] = common.DeepMergeMaps(defaultParams, overrides)
-				continue
+			var overrides map[string]interface{}
+			if value, ok := flat[componentID].(map[string]interface{}); ok {
+				overrides = value
 			}
-			flat[componentID] = common.DeepMergeMaps(defaultParams, nil)
+			flat[componentID] = common.DeepMergeMaps(defaultParams, overrides)
 		}
 		parserConfig = entity.JSONMap(flat)
 	}

@@ -245,20 +245,13 @@ func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm
 
 type parentChunkMissingEngine struct{ engine.DocEngine }
 
-func (parentChunkMissingEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+func (parentChunkMissingEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
 	return nil, errors.New("parent chunk missing")
 }
 
 type parentChunkScopeEngine struct {
 	engine.DocEngine
 	parentSearch *types.SearchRequest
-}
-
-func (e *parentChunkScopeEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
-	return map[string]interface{}{
-		"doc_id":              "doc-b",
-		"content_with_weight": "wrong document parent",
-	}, nil
 }
 
 func (e *parentChunkScopeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -300,6 +293,7 @@ func TestRetrievalByChildrenKeepsChildWhenParentIsMissing(t *testing.T) {
 	child := map[string]interface{}{
 		"chunk_id":            "child-1",
 		"mom_id":              "parent-1",
+		"doc_id":              "doc-1",
 		"kb_id":               "kb-1",
 		"content_with_weight": "matching child text",
 		"similarity":          0.8,

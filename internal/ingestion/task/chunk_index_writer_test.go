@@ -33,7 +33,9 @@ func TestChunkIndexWriter_EmptyChunks(t *testing.T) {
 			}
 			return nil, nil
 		},
-		"test-base", "kb-1", 10,
+		"test-base",
+		"kb-1",
+		10,
 	)
 	if err := w.Write(t.Context(), nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,7 +58,9 @@ func TestChunkIndexWriter_SingleBatch(t *testing.T) {
 			}
 			return nil, nil
 		},
-		"test-base", "kb-1", 10,
+		"test-base",
+		"kb-1",
+		10,
 	)
 	chunks := make([]map[string]any, 5)
 	if err := w.Write(t.Context(), chunks); err != nil {
@@ -77,7 +81,9 @@ func TestChunkIndexWriter_MultipleBatches(t *testing.T) {
 			batchSizes = append(batchSizes, len(chunks))
 			return nil, nil
 		},
-		"base", "kb-1", 3,
+		"base",
+		"kb-1",
+		3,
 	)
 	chunks := make([]map[string]any, 7)
 	if err := w.Write(t.Context(), chunks); err != nil {
@@ -98,7 +104,9 @@ func TestChunkIndexWriter_BulkSizeZero(t *testing.T) {
 			lastBatchSize = len(chunks)
 			return nil, nil
 		},
-		"base", "kb-1", 0,
+		"base",
+		"kb-1",
+		0, // bulkSize=0 → should use len(chunks)
 	)
 	chunks := make([]map[string]any, 20)
 	if err := w.Write(t.Context(), chunks); err != nil {

@@ -886,7 +886,6 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	// rows that used hash(mom) without document scope.
 	type childChunk struct {
 		chunk map[string]interface{}
-		kbID  string
 	}
 	type parentKey struct {
 		momID string
@@ -909,7 +908,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			continue
 		}
 		key := parentKey{momID: momID, docID: docID, kbID: kbID}
-		momChunks[key] = append(momChunks[key], childChunk{chunk: ck, kbID: kbID})
+		momChunks[key] = append(momChunks[key], childChunk{chunk: ck})
 	}
 
 	if len(momChunks) == 0 {

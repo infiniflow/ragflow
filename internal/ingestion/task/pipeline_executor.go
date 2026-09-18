@@ -283,7 +283,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 	applyDocumentAvailability(chunks, docStatus)
-	applyDocumentAvailability(parentChunks, docStatus)
 
 	oldCompiledProductIDs, oldCompiledVariants, oldCompiledTaskTypes, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
