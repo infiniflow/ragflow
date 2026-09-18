@@ -15,6 +15,7 @@
 import io
 import logging
 import sys
+import threading
 from copy import deepcopy
 from functools import partial
 
@@ -31,6 +32,20 @@ PDF_PREVIEW_CONTEXT = 120
 PDF_PREVIEW_ZOOM = 3
 PDF_POSITIONS_KEY = "_pdf_positions"
 PDF_MULTI_COLUMN_ZOOM = 3
+PDFPLUMBER_SHARED_LOCK_KEY = "global_shared_lock_pdfplumber"
+_pdfplumber_lock_init_guard = threading.Lock()
+
+
+def _pdfplumber_shared_lock():
+    """Return the process-wide pdfplumber lock (same key as deepdoc.parser.pdf_parser)."""
+    lock = sys.modules.get(PDFPLUMBER_SHARED_LOCK_KEY)
+    if lock is None:
+        with _pdfplumber_lock_init_guard:
+            lock = sys.modules.get(PDFPLUMBER_SHARED_LOCK_KEY)
+            if lock is None:
+                lock = threading.Lock()
+                sys.modules[PDFPLUMBER_SHARED_LOCK_KEY] = lock
+    return lock
 
 
 def _extract_raw_positions(item):
@@ -108,6 +123,102 @@ def normalize_pdf_items_metadata(items):
     for item in items:
         normalize_pdf_item_metadata(item)
     return items
+
+
+def _embedded_image_region_key(page_number, x0, top, x1, bottom):
+    return (
+        int(page_number),
+        round(float(x0), 1),
+        round(float(top), 1),
+        round(float(x1), 1),
+        round(float(bottom), 1),
+    )
+
+
+def _collect_represented_embedded_regions(bboxes):
+    regions = set()
+    for box in bboxes or []:
+        if box.get("image") is None:
+            continue
+        page_number = box.get("page_number")
+        if page_number is not None and all(box.get(key) is not None for key in ("x0", "x1", "top", "bottom")):
+            regions.add(_embedded_image_region_key(page_number, box["x0"], box["top"], box["x1"], box["bottom"]))
+        for pos in box.get("positions") or []:
+            if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+                continue
+            regions.add(_embedded_image_region_key(pos[0], pos[1], pos[3], pos[2], pos[4]))
+    return regions
+
+
+def supplement_deepdoc_bboxes_with_embedded_images(
+    blob,
+    bboxes,
+    zoom=PDF_PREVIEW_ZOOM,
+    from_page=0,
+    to_page=10**9,
+):
+    """Recover figure boxes when DeepDOC layout finds no text (image-only PDFs).
+
+    Merges pdfplumber embedded-image boxes with existing DeepDOC bboxes instead of
+    replacing them. Page bounds follow ``parse_into_bboxes`` (0-based ``from_page``,
+    ``to_page`` is an exclusive end index; 1-based PDF page numbers are included when
+    ``from_page + 1 <= page_number <= to_page``).
+    """
+    merged = list(bboxes or [])
+    represented = _collect_represented_embedded_regions(merged)
+    supplemented = []
+    with _pdfplumber_shared_lock():
+        with pdfplumber.open(io.BytesIO(blob)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                if not (from_page + 1 <= page_number <= to_page):
+                    continue
+                if page.images:
+                    for im in page.images:
+                        x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
+                        if x1 <= x0 or bottom <= top:
+                            continue
+                        if (x1 - x0) < 11 or (bottom - top) < 11:
+                            continue
+                        region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
+                        if region in represented:
+                            continue
+                        represented.add(region)
+                        cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
+                        supplemented.append(
+                            {
+                                "page_number": page_number,
+                                "x0": float(x0),
+                                "x1": float(x1),
+                                "top": float(top),
+                                "bottom": float(bottom),
+                                "layout_type": "figure",
+                                "text": "",
+                                "image": cropped,
+                                "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
+                                "_embedded_supplement": True,
+                            }
+                        )
+                elif not page.chars:
+                    pil = page.to_image(resolution=72 * zoom, antialias=True).original
+                    width, height = pil.size
+                    region = _embedded_image_region_key(page_number, 0, 0, width, height)
+                    if region in represented:
+                        continue
+                    represented.add(region)
+                    supplemented.append(
+                        {
+                            "page_number": page_number,
+                            "layout_type": "figure",
+                            "text": "",
+                            "image": pil,
+                            "positions": [[page_number, 0, width, 0, height]],
+                            "_embedded_supplement": True,
+                        }
+                    )
+
+    if not supplemented:
+        return merged
+    return merged + supplemented
 
 
 def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):
@@ -198,9 +309,7 @@ def _fetch_source_blob(from_upstream, canvas):
 
 
 def _load_pdf_page_images(blob, zoom=PDF_PREVIEW_ZOOM):
-    from deepdoc.parser.pdf_parser import LOCK_KEY_pdfplumber
-
-    with sys.modules[LOCK_KEY_pdfplumber]:
+    with _pdfplumber_shared_lock():
         with pdfplumber.open(io.BytesIO(blob)) as pdf:
             return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]
 

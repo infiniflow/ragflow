@@ -122,8 +122,7 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, lang="Englis
 
 def vision_figure_parser_pdf_wrapper(tbls, callback=None, lang="English", **kwargs):
     lang = _normalize_vision_language(lang)
-    if not tbls:
-        return []
+    tbls = list(tbls or [])
     sections = kwargs.get("sections")
     parser_config = kwargs.get("parser_config", {})
     context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
