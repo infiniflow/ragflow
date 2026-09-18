@@ -1,11 +1,10 @@
-from abc import ABC
 import os
-from functools import cmp_to_key
+from abc import ABC
 
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
-
+# ruff: noqa: BLE001, PLW1508
 # Type rank for the ListOperations ``sort`` op. Pairs of same-rank values
 # compare numerically (numbers) or lexicographically (everything else). Across
 # ranks, the lower rank always wins — this gives a strict, transitive
@@ -31,14 +30,31 @@ def _scalar_rank(v):
 def _go_format_scalar(v):
     """Render ``v`` the way Go's ``fmt.Sprintf(\"%v\", v)`` does for the
     non-numeric branch. Python's ``str()`` differs from Go's ``%v`` for
-    some types (``None`` → ``\"None\"`` vs ``\"<nil>\"``,
-    ``True``/``False`` → ``\"True\"/\"False\"`` vs ``\"true\"/\"false\"``).
-    Pin a uniform formatter so the Python and Go runtimes agree on the
-    lexicographic fallback (CodeRabbit review on PR #19782)."""
+    some types (``None`` renders as ``"<nil>"`` and bools as lowercase
+    ``"true"``/``"false"``). Pin a uniform formatter so the Python and Go
+    runtimes agree on the lexicographic fallback (CodeRabbit review on PR
+    #19782).
+
+    Containers are rendered recursively with Go's ``%v`` rules: lists and
+    tuples as ``[a b c]`` (space-separated, string elements unquoted,
+    bools lowercase) and dicts as ``map[k:v ...]`` with entries ordered
+    by their formatted key, matching Go's deterministic map printing.
+    Python's ``str()`` would instead quote string elements and capitalise
+    bools, pulling the two runtimes' lexicographic fallback out of
+    alignment.
+    """
     if v is None:
         return "<nil>"
     if isinstance(v, bool):
         return "true" if v else "false"
+    if isinstance(v, (list, tuple)):
+        return "[" + " ".join(_go_format_scalar(item) for item in v) + "]"
+    if isinstance(v, dict):
+        entries = sorted(
+            (_go_format_scalar(k), _go_format_scalar(val))
+            for k, val in v.items()
+        )
+        return "map[" + " ".join(f"{k}:{val}" for k, val in entries) + "]"
     return str(v)
 
 
@@ -81,19 +97,22 @@ def _scalar_compare(a, b):
 def _scalar_sort_key(v):
     """Return a sort key for ``v`` that ``sorted`` can use safely.
 
-    For numbers (rank 0), the key is ``(0, float(v), formatted)`` —
-    including the float value forces Python's tuple comparison to order
-    numbers numerically (``2 < 10``, not ``"10" < "2"`` lex order).
+    For numbers (rank 0), the key is ``(0, v)`` — the original numeric
+    value. Python compares ``int`` and ``float`` values directly and
+    exactly, so the numeric branch orders numerically (``2 < 10``, not
+    ``"10" < "2"`` lex order) while preserving very large integers such
+    as ``10**400`` (``float(v)`` would raise ``OverflowError``) and
+    distinct integers beyond float precision around ``2**53``
+    (``float(v)`` would collapse them).
 
     For everything else (rank 1), the key is ``(1, formatted)`` — the
     rank itself ensures all numbers sort before all non-numbers, and the
     formatted string orders non-numbers lex (matching Go's
     ``fmt.Sprintf(\"%v\", v)``).
     """
-    formatted = _go_format_scalar(v)
     if _scalar_rank(v) == _NUMERIC_RANK:
-        return (0, float(v), formatted)
-    return (1, formatted)
+        return (0, v)
+    return (1, _go_format_scalar(v))
 
 
 class ListOperationsParam(ComponentParamBase):

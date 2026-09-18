@@ -188,6 +188,40 @@ class TestScalarSortKey:
         # Non-numbers (rank 1, Go format lex): "10", "5", "<nil>", "abc", "false", "true".
         assert result == [1, 3, 5.5, "10", "5", None, "abc", False, True]
 
+    def test_numeric_values_order_numerically_not_lex(self, lo_module):
+        """Regression (CodeRabbit PR #19782): when numeric rank keys were
+        formatted strings, a transitive rank-based sort still ordered
+        ``10`` before ``2`` lexicographically. The numeric branch must
+        carry the original value so ``[2, 3, 10, "11"]`` results."""
+        key = lo_module._scalar_sort_key
+        assert sorted([10, 2, 3, "11"], key=key) == [2, 3, 10, "11"]
+
+    def test_sort_key_preserves_huge_int(self, lo_module):
+        """Regression: ``float(10**400)`` raises ``OverflowError``. The
+        sort key must keep the original integer so huge ints sort
+        numerically instead of crashing."""
+        key = lo_module._scalar_sort_key
+        huge = 10**400
+        assert sorted([huge, 2, 10], key=key) == [2, 10, huge]
+        assert key(huge) == (0, huge)
+
+    def test_sort_key_distinguishes_ints_beyond_float_precision(self, lo_module):
+        """Regression: ``float(2**53) == float(2**53 + 1)`` — a
+        float-based key collapses distinct integers around ``2**53`` and
+        can misorder them. Original values compare exactly."""
+        key = lo_module._scalar_sort_key
+        base = 2**53
+        assert float(base) == float(base + 1)  # the collapse being guarded
+        assert sorted([base + 1, base], key=key) == [base, base + 1]
+        assert sorted([base, base + 1, base - 1], key=key) == [base - 1, base, base + 1]
+
+    def test_sort_key_mixed_int_and_float_exact(self, lo_module):
+        """int/float pairs in the numeric rank compare exactly (no float
+        round-trip), so a huge int still orders above any finite float."""
+        key = lo_module._scalar_sort_key
+        huge = 10**400
+        assert sorted([huge, 1.5, 2], key=key) == [1.5, 2, huge]
+
     def test_reverse_sort(self, lo_module):
         key = lo_module._scalar_sort_key
         items = [3, None, "abc", True, 5.5, 1, "5", False, "10"]
@@ -261,6 +295,25 @@ class TestScalarSortKey:
         # Python's ``str(3.14)`` → ``\"3.14\"``. Go's ``%v`` on a float64
         # also prints minimal precision, so they match for most values.
         assert fmt(3.14) == "3.14"
+
+    def test_go_format_list_recursive(self, lo_module):
+        """Go's ``%v`` renders a list as ``[a b c]``: space-separated,
+        string elements unquoted, bools lowercase, nested values
+        recursive. Python's ``str()`` would produce ``"[1, 'a', True]"``.
+        """
+        fmt = lo_module._go_format_scalar
+        assert fmt([1, "a", True, None]) == "[1 a true <nil>]"
+        assert fmt([]) == "[]"
+        assert fmt([[1, 2], "x"]) == "[[1 2] x]"
+
+    def test_go_format_map_recursive(self, lo_module):
+        """Go's ``%v`` renders a map as ``map[k:v ...]`` with entries in
+        a deterministic (key-sorted) order; keys and values format
+        recursively."""
+        fmt = lo_module._go_format_scalar
+        assert fmt({"b": 1, "a": True}) == "map[a:true b:1]"
+        assert fmt({}) == "map[]"
+        assert fmt({"k": [1, "x"]}) == "map[k:[1 x]]"
 
     def test_handles_dict_field_with_mixed_values(self, lo_module):
         """The dict path sorts by ``tuple(field_value for field in sort_by)``,
