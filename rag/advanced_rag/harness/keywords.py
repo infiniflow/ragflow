@@ -22,6 +22,7 @@ Public interface
 """
 
 import logging
+import re
 
 _LOG = logging.getLogger(__name__)
 
@@ -35,6 +36,23 @@ _KEYWORD_ASPECTS = ("entity", "aliases", "fact_type", "qualifiers")
 _KEYWORD_ENTITY_REPEAT = 3  # copies of each entity term in the query, to weight it up
 _KEYWORD_QUALIFIER_REPEAT = 3  # copies of each qualifier (year / version / jurisdiction), weighted up like entity
 _KEYWORD_MAX_CHARS = 400  # hard cap on the weighted query so it never pollutes
+
+
+def _literal_identifiers(question: str) -> list[str]:
+    """Return letter-led code-like terms that must survive keyword extraction."""
+    candidates = re.findall(
+        r"(?<![\w/:])(?:v\d+(?:\.\d+)+|[A-Za-z](?:[A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)+|(?=[A-Za-z0-9]*\d)[A-Za-z0-9]*))(?![\w/])(?!\.[A-Za-z0-9])",
+        question,
+    )
+    identifiers: list[str] = []
+    seen: set[str] = set()
+    for term in candidates:
+        key = _norm_keyword(term)
+        if key not in seen:
+            seen.add(key)
+            identifiers.append(term)
+    return identifiers
+
 
 _KEYWORDS_SYSTEM = """You turn ONE question into search terms for a keyword/BM25 search engine.
 
@@ -83,7 +101,7 @@ def _norm_keyword(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
-def _parse_aspects(raw: str) -> dict[str, list[str]]:
+def _parse_aspects(raw: str) -> dict[str, list[str]] | None:
     """Parse the LLM's JSON into one deduped list per aspect.
 
     ONE dedup set spans all four categories: a term the model emits as both an
@@ -94,21 +112,26 @@ def _parse_aspects(raw: str) -> dict[str, list[str]]:
 
     import json_repair
 
-    data: dict = {}
     cleaned = re.sub(r"^.*</think>", "", raw or "", flags=re.DOTALL).strip()
     cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", cleaned).strip()
     try:
         parsed = json_repair.loads(cleaned)
-        if isinstance(parsed, dict):
-            data = parsed
     except Exception:
-        pass
+        _LOG.warning("keyword extraction returned invalid JSON")
+        return None
+    if not isinstance(parsed, dict):
+        _LOG.warning("keyword extraction returned a non-object JSON value")
+        return None
+    data = parsed
 
-    aspects: dict[str, list[str]] = {}
+    aspects: dict[str, list[str]] = {aspect: [] for aspect in _KEYWORD_ASPECTS}
     seen: set[str] = set()
     for aspect in _KEYWORD_ASPECTS:
         terms: list[str] = []
-        for k in data.get(aspect) or []:
+        values = data.get(aspect)
+        if not isinstance(values, list):
+            continue
+        for k in values:
             term = str(k).strip()
             key = _norm_keyword(term)
             if term and key and key not in seen:
@@ -116,6 +139,17 @@ def _parse_aspects(raw: str) -> dict[str, list[str]]:
                 terms.append(term)
         aspects[aspect] = terms
     return aspects
+
+
+def _preserve_literal_identifiers(aspects: dict[str, list[str]], question: str) -> None:
+    """Keep identifiers from the question ahead of optional model-generated terms."""
+    identifiers = _literal_identifiers(question)
+    identifier_keys = {_norm_keyword(identifier) for identifier in identifiers}
+    entities = identifiers[:]
+    entities.extend(term for term in aspects["entity"] if _norm_keyword(term) not in identifier_keys)
+    aspects["entity"] = entities
+    for aspect in _KEYWORD_ASPECTS[1:]:
+        aspects[aspect] = [term for term in aspects[aspect] if _norm_keyword(term) not in identifier_keys]
 
 
 async def extract_weighted_keywords(llm, question: str) -> tuple[str, str]:
@@ -135,16 +169,22 @@ async def extract_weighted_keywords(llm, question: str) -> tuple[str, str]:
         return "", ""
     from rag.prompts.generator import form_message, message_fit_in
 
-    aspects: dict[str, list[str]] = {}
+    aspects: dict[str, list[str]] = {aspect: [] for aspect in _KEYWORD_ASPECTS}
+    extraction_succeeded = False
     try:
         _, msg = message_fit_in(form_message(_KEYWORDS_SYSTEM, question), llm.max_length)
         ans = await llm.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.1})
         if isinstance(ans, tuple):
             ans = ans[0]
-        aspects = _parse_aspects(ans if isinstance(ans, str) else "")
+        parsed_aspects = _parse_aspects(ans if isinstance(ans, str) else "")
+        if parsed_aspects is not None:
+            aspects = parsed_aspects
+            extraction_succeeded = True
     except Exception:
         _LOG.exception("extract_weighted_keywords failed")
 
+    if extraction_succeeded:
+        _preserve_literal_identifiers(aspects, question)
     keywords = ", ".join(t for aspect in _KEYWORD_ASPECTS for t in aspects.get(aspect) or []) or question
     # Entity and qualifier terms are repeated so BM25 weights them up: the entity
     # is what the fact is about, and a year / edition / jurisdiction is just as
