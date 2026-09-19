@@ -217,6 +217,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
 					chatModelForFilter = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+					// The context window, not the max_output the target carries
+					// alongside it: the metadata filter's prompt budget is
+					// measured against the model's total context.
+					chatModelForFilter.ContextLength = target.ContextLength
 				}
 			}
 
@@ -226,6 +230,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
 				} else {
 					chatModelForFilter = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+					chatModelForFilter.ContextLength = target.ContextLength
 				}
 			}
 		}

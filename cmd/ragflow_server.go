@@ -1147,7 +1147,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		nil,
 		retrievalEnhancer,
 	)
-	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*agenttool.ResolvedModel, error) {
 		var target *service.ModelTarget
 		var err error
 		if strings.TrimSpace(modelRef) == "" {
@@ -1156,9 +1156,15 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			target, err = modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
 		}
 		if err != nil {
-			return nil, "", nil, 0, err
+			return nil, err
 		}
-		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
+		return &agenttool.ResolvedModel{
+			Driver:        target.Driver,
+			Name:          target.ModelName,
+			APIConfig:     target.APIConfig,
+			MaxTokens:     target.MaxTokens,
+			ContextLength: target.ContextLength,
+		}, nil
 	})
 	agenttool.SetRetrievalService(retrievalAdapter)
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
