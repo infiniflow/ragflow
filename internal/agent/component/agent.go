@@ -1136,10 +1136,13 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 }
 
 // artifactEntry is the shape of a single tool-returned artifact
-// surfaced through the Agent's outputs["artifacts"].
+// surfaced through the Agent's outputs["artifacts"]. URL is always a
+// hosted location — inline payload fallbacks are deliberately absent so
+// a tool result can never flood the final answer with base64.
 type artifactEntry struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	MimeType string `json:"mime_type,omitempty"`
 }
 
 // artifactCollectorKey is the context key used to share the
@@ -1283,19 +1286,11 @@ func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
 		}
 		name, _ := m["name"].(string)
 		url, _ := m["url"].(string)
-		if url == "" {
-			if content, ok := m["content_b64"].(string); ok && content != "" {
-				mime, _ := m["mime_type"].(string)
-				if mime == "" {
-					mime = "application/octet-stream"
-				}
-				url = "data:" + mime + ";base64," + content
-			}
-		}
+		mime, _ := m["mime_type"].(string)
 		if name == "" || url == "" {
 			continue
 		}
-		out = append(out, artifactEntry{Name: name, URL: url})
+		out = append(out, artifactEntry{Name: name, URL: url, MimeType: mime})
 	}
 	return out
 }
@@ -1334,16 +1329,30 @@ func formatArtifactMarkdown(artifacts []artifactEntry, existingText string) stri
 		if strings.Contains(existingText, a.URL) {
 			continue
 		}
-		lower := strings.ToLower(a.URL)
-		if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
-			strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
-			strings.HasSuffix(lower, ".webp") {
+		if isImageArtifact(a) {
 			fmt.Fprintf(&sb, "\n\n![%s](%s)", a.Name, a.URL)
 		} else {
 			fmt.Fprintf(&sb, "\n\n[Download %s](%s)", a.Name, a.URL)
 		}
 	}
 	return sb.String()
+}
+
+// isImageArtifact routes an artifact to image or download Markdown,
+// mirroring Python's `_collect_tool_artifact_markdown`: an image/* MIME
+// type wins; the URL extension is only a fallback for records that lack
+// a MIME type.
+func isImageArtifact(a artifactEntry) bool {
+	if strings.HasPrefix(strings.ToLower(a.MimeType), "image/") {
+		return true
+	}
+	lower := strings.ToLower(a.URL)
+	if idx := strings.IndexByte(lower, '?'); idx >= 0 {
+		lower = lower[:idx]
+	}
+	return strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp")
 }
 
 // extractToolCalls converts eino ToolCalls from a message into the

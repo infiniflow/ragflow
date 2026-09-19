@@ -18,16 +18,20 @@ package tool
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/storage"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -68,9 +72,10 @@ type codeExecArgs struct {
 
 // codeExecResult is the JSON envelope returned to the model. The output
 // shape mirrors the Python tool's `content` / `_ERROR` / `actual_type`
-// fields so downstream nodes can pattern-match unchanged. Artifacts and
-// Attachments are surfaced for the model and downstream component
-// consumption (e.g. Message component's artifact Markdown formatter).
+// fields so downstream nodes can pattern-match unchanged. Artifacts
+// carries hosted artifact records ({name, url, mime_type, size}) and
+// Attachments the same records as Markdown links — raw artifact bytes
+// never appear in the envelope.
 type codeExecResult struct {
 	Content     string           `json:"content,omitempty"`
 	ActualType  string           `json:"actual_type,omitempty"`
@@ -81,7 +86,7 @@ type codeExecResult struct {
 	Stdout      string           `json:"stdout,omitempty"`
 	Stderr      string           `json:"stderr,omitempty"`
 	Artifacts   []map[string]any `json:"_ARTIFACTS,omitempty"`
-	Attachments []map[string]any `json:"attachments,omitempty"`
+	Attachments []string         `json:"attachments,omitempty"`
 }
 
 // CodeExecTool is the  for the CodeExec tool
@@ -166,7 +171,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		// ReAct loop instead of prompting retries against broken infrastructure.
 		return codeExecStubResult(err.Error()), err
 	}
-	out, mErr := codeExecResultJSON(resp)
+	out, mErr := codeExecResultJSON(ctx, resp)
 	if mErr != nil {
 		return codeExecStubResult(mErr.Error()), mErr
 	}
@@ -175,25 +180,22 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 
 // codeExecResultJSON serializes a SandboxResponse into the envelope
 // the eino tool contract returns. Field mapping mirrors the Python
-// tool's `code_exec.py:385-490` `_process_execution_result`:
+// tool's `_process_execution_result`:
 //
 //   - Stdout / Stderr / ExitCode: stream directly through.
 //   - Returned → Content (the model's natural "what did main() give
 //     us back" field).
 //   - StructuredResult["actual_type"] → ActualType (Python
 //     `infer_actual_type` surface for downstream Message component).
-//   - Metadata["artifacts"] → Artifacts (the model AND the Message
-//     component's `_ARTIFACTS` collector both consume this; we
-//     surface it as `_ARTIFACTS` to match the Python envelope).
-//   - Metadata["attachments"] → Attachments (rendered into
-//     downstream Markdown by Message via the same path the Agent
-//     tool artifact Markdown uses).
+//   - Metadata["artifacts"] → hosted records in Artifacts and Markdown
+//     links in Attachments, mirroring Python's `_upload_artifacts` +
+//     `_build_attachment_markdown_list`.
 //
-// Artifacts / Attachments with the wrong element type (anything
-// other than map[string]any) are silently dropped with a log
-// warning. This matches the Python tool's "skip on shape mismatch"
-// semantics — better to lose one artifact than to abort the run.
-func codeExecResultJSON(r *SandboxResponse) (string, error) {
+// Artifacts with the wrong element type (anything other than
+// map[string]any) are silently dropped with a log warning. This matches
+// the Python tool's "skip on shape mismatch" semantics — better to lose
+// one artifact than to abort the run.
+func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error) {
 	if r == nil {
 		return codeExecStubResult("empty response"), nil
 	}
@@ -203,8 +205,8 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		Stderr:   r.Stderr,
 	}
 	if r.Metadata != nil {
-		out.Artifacts = extractArtifactList(r.Metadata, "artifacts")
-		out.Attachments = extractArtifactList(r.Metadata, "attachments")
+		out.Artifacts = publishSandboxArtifacts(ctx, extractArtifactList(r.Metadata, "artifacts"))
+		out.Attachments = artifactMarkdownList(out.Artifacts)
 	}
 	hasStructuredResult := false
 	resolvedValue, usedStdoutFallback := resolveCodeExecResultValue(r)
@@ -261,6 +263,98 @@ func extractArtifactList(meta map[string]any, key string) []map[string]any {
 			continue
 		}
 		out = append(out, m)
+	}
+	return out
+}
+
+// artifactURLPathPrefix is the authenticated route that serves objects
+// from the sandbox artifact bucket.
+const artifactURLPathPrefix = "/api/v1/documents/artifact/"
+
+// publishSandboxArtifacts turns raw sandbox artifact records into hosted
+// records the model and downstream components can reference by URL. A
+// record that already carries a URL passes through (payload stripped); a
+// record carrying only name + content_b64 is decoded and uploaded to the
+// sandbox artifact bucket, mirroring Python's `_upload_artifacts`.
+// Records that cannot be hosted are dropped so base64 payloads never
+// reach the model-visible envelope.
+func publishSandboxArtifacts(ctx context.Context, artifacts []map[string]any) []map[string]any {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	var store storage.Storage
+	published := make([]map[string]any, 0, len(artifacts))
+	for _, art := range artifacts {
+		name, _ := art["name"].(string)
+		url, _ := art["url"].(string)
+		if name == "" {
+			continue
+		}
+		mime, _ := art["mime_type"].(string)
+		size := art["size"]
+		if url == "" {
+			contentB64, _ := art["content_b64"].(string)
+			if contentB64 == "" {
+				continue
+			}
+			if store == nil {
+				store = storage.GetStorageFactory().GetStorage()
+				if store == nil {
+					fmt.Fprintln(os.Stderr, "code_exec: artifact storage not initialized; dropping unhosted artifacts")
+					continue
+				}
+			}
+			blob, err := base64.StdEncoding.DecodeString(contentB64)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "code_exec: artifact %q is not valid base64; dropping\n", name)
+				continue
+			}
+			storageName := uuid.NewString() + strings.ToLower(filepath.Ext(name))
+			if err := store.Put(ctx, common.SandboxArtifactBucket(), storageName, blob); err != nil {
+				fmt.Fprintf(os.Stderr, "code_exec: upload artifact %q failed: %v\n", name, err)
+				continue
+			}
+			url = artifactURLPathPrefix + storageName
+			if size == nil {
+				size = len(blob)
+			}
+		}
+		entry := map[string]any{"name": name, "url": url}
+		if mime != "" {
+			entry["mime_type"] = mime
+		}
+		if size != nil {
+			entry["size"] = size
+		}
+		published = append(published, entry)
+	}
+	return published
+}
+
+// artifactMarkdownList renders hosted artifact records as Markdown,
+// mirroring Python's `_build_attachment_markdown_list`: image/* entries
+// become ![name](url), everything else a download link.
+func artifactMarkdownList(published []map[string]any) []string {
+	if len(published) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(published))
+	for _, art := range published {
+		name, _ := art["name"].(string)
+		url, _ := art["url"].(string)
+		if name == "" {
+			continue
+		}
+		if url == "" {
+			out = append(out, name)
+			continue
+		}
+		mime, _ := art["mime_type"].(string)
+		if strings.HasPrefix(strings.ToLower(mime), "image/") {
+			out = append(out, fmt.Sprintf("![%s](%s)", name, url))
+		} else {
+			out = append(out, fmt.Sprintf("[Download %s](%s)", name, url))
+		}
 	}
 	return out
 }

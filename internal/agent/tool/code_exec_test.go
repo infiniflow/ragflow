@@ -18,10 +18,14 @@ package tool
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/storage"
 )
 
 func TestCodeExec_StubsErrorWhenClientMissing(t *testing.T) {
@@ -195,7 +199,7 @@ func TestCodeExec_ResultExtractsArtifacts(t *testing.T) {
 			},
 		},
 	}
-	out, err := codeExecResultJSON(resp)
+	out, err := codeExecResultJSON(t.Context(), resp)
 	if err != nil {
 		t.Fatalf("codeExecResultJSON: %v", err)
 	}
@@ -209,6 +213,12 @@ func TestCodeExec_ResultExtractsArtifacts(t *testing.T) {
 	if got.Artifacts[0]["name"] != "chart.png" {
 		t.Errorf("Artifacts[0][name] = %v, want chart.png", got.Artifacts[0]["name"])
 	}
+	if got.Artifacts[0]["url"] != "minio://b/chart.png" {
+		t.Errorf("Artifacts[0][url] = %v, want passthrough of the hosted url", got.Artifacts[0]["url"])
+	}
+	if strings.Contains(out, "content_b64") {
+		t.Errorf("envelope leaks content_b64: %s", out)
+	}
 }
 
 // TestCodeExec_ResultDropsBadArtifactShape ensures the extractor
@@ -221,13 +231,13 @@ func TestCodeExec_ResultDropsBadArtifactShape(t *testing.T) {
 		Returned: "ok",
 		Metadata: map[string]any{
 			"artifacts": []any{
-				"just a string",                  // bad shape
-				map[string]any{"name": "ok.png"}, // good
-				42,                               // bad shape
+				"just a string", // bad shape
+				map[string]any{"name": "ok.png", "url": "u/ok.png"}, // good
+				42, // bad shape
 			},
 		},
 	}
-	out, err := codeExecResultJSON(resp)
+	out, err := codeExecResultJSON(t.Context(), resp)
 	if err != nil {
 		t.Fatalf("codeExecResultJSON: %v", err)
 	}
@@ -243,21 +253,23 @@ func TestCodeExec_ResultDropsBadArtifactShape(t *testing.T) {
 	}
 }
 
-// TestCodeExec_ResultExtractsAttachments pins the attachments
-// (rendered to downstream Message Markdown) path. Distinct from
-// artifacts so renderers can route them differently.
-func TestCodeExec_ResultExtractsAttachments(t *testing.T) {
+// TestCodeExec_ResultBuildsAttachmentMarkdown pins the attachments
+// surface: hosted artifacts are rendered to Markdown links so the model
+// and downstream Message component can reference them without ever
+// seeing raw payloads.
+func TestCodeExec_ResultBuildsAttachmentMarkdown(t *testing.T) {
 	t.Parallel()
 
 	resp := &SandboxResponse{
 		Returned: "ok",
 		Metadata: map[string]any{
-			"attachments": []any{
-				map[string]any{"name": "report.pdf", "url": "minio://b/report.pdf"},
+			"artifacts": []any{
+				map[string]any{"name": "chart.png", "url": "/api/v1/documents/artifact/a.png", "mime_type": "image/png"},
+				map[string]any{"name": "report.pdf", "url": "/api/v1/documents/artifact/b.pdf", "mime_type": "application/pdf"},
 			},
 		},
 	}
-	out, err := codeExecResultJSON(resp)
+	out, err := codeExecResultJSON(t.Context(), resp)
 	if err != nil {
 		t.Fatalf("codeExecResultJSON: %v", err)
 	}
@@ -265,8 +277,73 @@ func TestCodeExec_ResultExtractsAttachments(t *testing.T) {
 	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
 		t.Fatalf("output not valid JSON: %v", jerr)
 	}
-	if len(got.Attachments) != 1 {
-		t.Fatalf("Attachments len = %d, want 1", len(got.Attachments))
+	want := []string{
+		"![chart.png](/api/v1/documents/artifact/a.png)",
+		"[Download report.pdf](/api/v1/documents/artifact/b.pdf)",
+	}
+	if len(got.Attachments) != len(want) {
+		t.Fatalf("Attachments = %#v, want %v", got.Attachments, want)
+	}
+	for i := range want {
+		if got.Attachments[i] != want[i] {
+			t.Errorf("Attachments[%d] = %q, want %q", i, got.Attachments[i], want[i])
+		}
+	}
+}
+
+// TestCodeExec_UploadsArtifactsAndStripsBase64 pins the artifact
+// publishing contract: a sandbox artifact that only carries
+// content_b64 is uploaded to the artifact bucket and surfaced as a
+// hosted URL, and the model-visible envelope never contains the
+// payload. This test mutates the global storage factory; it must not
+// run in parallel with the other CodeExec tests.
+func TestCodeExec_UploadsArtifactsAndStripsBase64(t *testing.T) {
+	t.Setenv(common.EnvSandboxArtifactBucket, "code-exec-artifact-tests")
+
+	blob := []byte("png-bytes")
+	resp := &SandboxResponse{
+		Returned: "ok",
+		Metadata: map[string]any{
+			"artifacts": []any{
+				map[string]any{
+					"name":        "chart.png",
+					"mime_type":   "image/png",
+					"content_b64": base64.StdEncoding.EncodeToString(blob),
+				},
+			},
+		},
+	}
+
+	factory := storage.GetStorageFactory()
+	prev := factory.GetStorage()
+	mem := storage.NewMemoryStorage()
+	factory.SetStorage(mem)
+	t.Cleanup(func() { factory.SetStorage(prev) })
+
+	out, err := codeExecResultJSON(t.Context(), resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	if strings.Contains(out, "content_b64") || strings.Contains(out, base64.StdEncoding.EncodeToString(blob)) {
+		t.Fatalf("envelope leaks the artifact payload: %s", out)
+	}
+	var got codeExecResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", jerr)
+	}
+	if len(got.Artifacts) != 1 {
+		t.Fatalf("Artifacts len = %d, want 1 (raw=%s)", len(got.Artifacts), out)
+	}
+	url, _ := got.Artifacts[0]["url"].(string)
+	if !strings.HasPrefix(url, "/api/v1/documents/artifact/") || !strings.HasSuffix(url, ".png") {
+		t.Fatalf("Artifacts[0][url] = %q, want hosted .png url", url)
+	}
+	stored, serr := mem.Get(t.Context(), common.SandboxArtifactBucket(), strings.TrimPrefix(url, "/api/v1/documents/artifact/"))
+	if serr != nil || string(stored) != string(blob) {
+		t.Fatalf("stored artifact = %q, %v; want %q", stored, serr, blob)
+	}
+	if size, ok := got.Artifacts[0]["size"].(float64); !ok || int(size) != len(blob) {
+		t.Errorf("Artifacts[0][size] = %#v, want %d", got.Artifacts[0]["size"], len(blob))
 	}
 }
 
@@ -284,7 +361,7 @@ func TestCodeExec_ResultSurfacesActualType(t *testing.T) {
 			},
 		},
 	}
-	out, err := codeExecResultJSON(resp)
+	out, err := codeExecResultJSON(t.Context(), resp)
 	if err != nil {
 		t.Fatalf("codeExecResultJSON: %v", err)
 	}
@@ -310,7 +387,7 @@ func TestCodeExec_ResultUsesStructuredResultValue(t *testing.T) {
 			"value":   float64(8),
 		},
 	}
-	out, err := codeExecResultJSON(resp)
+	out, err := codeExecResultJSON(t.Context(), resp)
 	if err != nil {
 		t.Fatalf("codeExecResultJSON: %v", err)
 	}
@@ -335,7 +412,7 @@ func TestCodeExec_ResultFallsBackToStdoutJSON(t *testing.T) {
 	resp := &SandboxResponse{
 		Stdout: `{"a":[1,2]}`,
 	}
-	out, err := codeExecResultJSON(resp)
+	out, err := codeExecResultJSON(t.Context(), resp)
 	if err != nil {
 		t.Fatalf("codeExecResultJSON: %v", err)
 	}
