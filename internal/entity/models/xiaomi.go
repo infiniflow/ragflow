@@ -608,7 +608,34 @@ func (x *XiaomiModel) ParseFile(ctx context.Context, modelName *string, content 
 }
 
 func (x *XiaomiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	suffix := x.baseModel.URLSuffix.Models
+	if suffix == "" {
+		suffix = "models"
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, suffix)
+
+	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 func (x *XiaomiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {

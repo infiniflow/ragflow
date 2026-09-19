@@ -353,6 +353,72 @@ func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
 	}
 }
 
+func TestXiaomiListModels(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("expected path=/v1/models, got %s", r.URL.Path)
+			return
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+			return
+		}
+		if got := r.Header.Get("api-key"); got != "test-key" {
+			t.Errorf("expected api-key=test-key, got %q", got)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("expected no Authorization header, got %q", got)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"object": "list",
+			"data": []map[string]interface{}{
+				{"id": "mimo-v2.5-pro", "object": "model", "owned_by": "xiaomi"},
+				{"id": "mimo-v3-remote-only", "object": "model", "owned_by": "xiaomi"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	driver := NewXiaomiModel(map[string]string{"default": srv.URL}, URLSuffix{Models: "v1/models"})
+	models, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	names := make([]string, 0, len(models))
+	for _, m := range models {
+		names = append(names, m.Name)
+	}
+	if len(names) != 2 || names[0] != "mimo-v2.5-pro" || names[1] != "mimo-v3-remote-only" {
+		t.Errorf("names=%v", names)
+	}
+}
+
+func TestXiaomiListModelsUsesConfiguredSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/catalog" {
+			t.Errorf("expected path=/catalog, got %s", r.URL.Path)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "mimo-v2.5"}}})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := NewXiaomiModel(map[string]string{"default": srv.URL}, URLSuffix{Models: "catalog"})
+	models, err := model.ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "mimo-v2.5" {
+		t.Errorf("models=%v", models)
+	}
+}
+
 func TestXiaomiUnsupportedMethods(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
