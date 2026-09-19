@@ -196,6 +196,27 @@ Run the following to check the logs the RAGFlow server and the MCP server:
 docker logs docker-ragflow-cpu-1
 ```
 
+## Environment Variables
+
+Every command-line option above has an environment-variable equivalent. **The environment variable wins over the command-line option**, and `mcp/server/server.py` calls `load_dotenv()` before reading them, so a `.env` file in the working directory silently overrides a flag you typed:
+
+| Variable | Overrides |
+| --- | --- |
+| `RAGFLOW_MCP_BASE_URL` | `--base-url` |
+| `RAGFLOW_MCP_HOST` | `--host` |
+| `RAGFLOW_MCP_PORT` | `--port` |
+| `RAGFLOW_MCP_LAUNCH_MODE` | `--mode` |
+| `RAGFLOW_MCP_HOST_API_KEY` | `--api-key` |
+| `RAGFLOW_MCP_TRANSPORT_SSE_ENABLED` | `--transport-sse-enabled` |
+| `RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED` | `--transport-streamable-http-enabled` |
+| `RAGFLOW_MCP_JSON_RESPONSE` | `--json-response` |
+
+The three boolean variables accept `1`, `true`, `yes` or `on` (case-insensitive); anything else is false.
+
+:::tip INFO
+If a flag you passed appears to be ignored, check for one of these variables in your shell or in a `.env` file next to where you launched the server. The ASCII banner printed at startup reports the mode, host and port actually in use.
+:::
+
 ## Security Considerations
 
 As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses [API key](../acquire_ragflow_api_key.md) to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`).
