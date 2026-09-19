@@ -171,6 +171,14 @@ function SearchSetting({
     control: formMethods.control,
     name: 'search_config.reference_metadata.include',
   });
+  const isRerankSwitchOn = useWatch({
+    control: formMethods.control,
+    name: 'search_config.use_rerank',
+  });
+  const selectedRerankId = useWatch({
+    control: formMethods.control,
+    name: 'search_config.rerank_id',
+  });
   const { data: metadataKeys, loading: metadataKeysLoading } =
     useFetchKnowledgeMetadataKeys(selectedKbIds || []);
   const metadataFieldOptions = useMemo(() => {
@@ -387,6 +395,7 @@ function SearchSetting({
               isTooltipShown
               similarityName="search_config.similarity_threshold"
               similarityWeightName="search_config.vector_similarity_weight"
+              isRerankEnabled={isRerankSwitchOn && Boolean(selectedRerankId)}
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField

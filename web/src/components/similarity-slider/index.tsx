@@ -17,7 +17,7 @@
 import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { useFormContext } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { SliderInputFormField } from '../slider-input-form-field';
 import { SingleFormSlider } from '../ui/dual-range-slider';
@@ -34,6 +34,8 @@ interface SimilaritySliderFormFieldProps {
   similarityName?: string;
   similarityWeightName?: string;
   similarityWeightType?: 'vector' | 'keyword';
+  rerankName?: string;
+  isRerankEnabled?: boolean;
   isTooltipShown?: boolean;
   numberInputClassName?: string;
 }
@@ -59,16 +61,37 @@ export const initialVectorSimilarityWeightValue = {
   vector_similarity_weight: 0.3,
 };
 
+export const similarityThresholdTipKey = (usesRerankModel: boolean) =>
+  usesRerankModel
+    ? 'similarityThresholdTipWithRerank'
+    : 'similarityThresholdTip';
+
+export const similarityWeightTipKey = (
+  usesRerankModel: boolean,
+  isVector: boolean,
+) =>
+  usesRerankModel
+    ? isVector
+      ? 'vectorSimilarityWeightTipWithRerank'
+      : 'keywordSimilarityWeightTipWithRerank'
+    : isVector
+      ? 'vectorSimilarityWeightTip'
+      : 'keywordSimilarityWeightTip';
+
 export function SimilaritySliderFormField({
   similarityName = 'similarity_threshold',
   similarityWeightName = 'vector_similarity_weight',
   similarityWeightType = 'vector',
+  rerankName = 'rerank_id',
+  isRerankEnabled,
   isTooltipShown,
   numberInputClassName,
 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('knowledgeDetails');
   const form = useFormContext();
   const isVector = similarityWeightType === 'vector';
+  const rerankModelId = useWatch({ control: form.control, name: rerankName });
+  const usesRerankModel = isRerankEnabled ?? Boolean(rerankModelId);
   const normalizeWeight = (weight: number) =>
     Number(Math.min(1, Math.max(0, weight)).toFixed(2));
   const getVectorWeight = (weight: number) =>
@@ -86,7 +109,9 @@ export function SimilaritySliderFormField({
         max={1}
         step={0.01}
         layout={FormLayout.Vertical}
-        tooltip={isTooltipShown && t('similarityThresholdTip')}
+        tooltip={
+          isTooltipShown && t(similarityThresholdTipKey(usesRerankModel))
+        }
         numberInputClassName={numberInputClassName}
         percentage
       ></SliderInputFormField>
@@ -101,11 +126,7 @@ export function SimilaritySliderFormField({
             <FormLabel
               tooltip={
                 isTooltipShown &&
-                t(
-                  isVector
-                    ? 'vectorSimilarityWeightTip'
-                    : 'keywordSimilarityWeightTip',
-                )
+                t(similarityWeightTipKey(usesRerankModel, isVector))
               }
             >
               {t(
@@ -118,7 +139,7 @@ export function SimilaritySliderFormField({
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-1">
                       <label className="italic text-xs text-text-secondary">
-                        vector
+                        {usesRerankModel ? 'rerank' : 'vector'}
                       </label>
                       <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
                         {getVectorWeight(field.value).toFixed(2)}

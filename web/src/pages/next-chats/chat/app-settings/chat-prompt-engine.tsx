@@ -217,6 +217,7 @@ export function ChatPromptEngine({
           isTooltipShown
           similarityName={prefixName(prefix, 'similarity_threshold')}
           similarityWeightName={prefixName(prefix, 'vector_similarity_weight')}
+          rerankName={prefixName(prefix, 'rerank_id')}
         ></SimilaritySliderFormField>
         <RerankCandidatesCountFormField
           name={prefixName(prefix, 'rerank_candidates_count')}
