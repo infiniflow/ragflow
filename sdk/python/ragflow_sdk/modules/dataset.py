@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import inspect
+from collections.abc import Callable
 from typing import Any
 
 from .base import Base
@@ -110,13 +112,15 @@ class DataSet(Base):
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def _get_documents_status(self, document_ids):
+    def _get_documents_status(self, document_ids, *, on_progress: Callable[[Document], None] | None = None):
+        """Poll pending documents and synchronously report changed snapshots."""
         import time
 
         terminal_states = {"DONE", "FAIL", "CANCEL"}
         interval_sec = 1
         pending = set(document_ids)
         finished = []
+        previous_status = {}
         while pending:
             for doc_id in list(pending):
                 docs = self.list_documents(id=doc_id)
@@ -129,6 +133,16 @@ class DataSet(Base):
                 elif float(doc.progress or 0.0) >= 1.0:
                     finished.append((doc_id, "DONE", doc.chunk_count, doc.token_count))
                     pending.discard(doc_id)
+                if on_progress is not None:
+                    status = (doc.run, doc.progress, doc.progress_msg)
+                    if previous_status.get(doc_id) != status:
+                        previous_status[doc_id] = status
+                        # Capture completion before handing the snapshot to user code.
+                        result = on_progress(doc)
+                        if inspect.isawaitable(result):
+                            if inspect.iscoroutine(result):
+                                result.close()
+                            raise TypeError("on_progress must not return an awaitable")
             if pending:
                 time.sleep(interval_sec)
         return finished
@@ -139,14 +153,26 @@ class DataSet(Base):
         if res.get("code") != 0:
             raise Exception(res.get("message"))
 
-    def parse_documents(self, document_ids):
+    def parse_documents(self, document_ids, *, on_progress: Callable[[Document], None] | None = None):
+        """Wait for parsing results, optionally reporting changed Document snapshots.
+
+        The synchronous callback receives the first observed snapshot of each
+        document and updates to its run, progress, or progress_msg fields.
+        Callback exceptions propagate; KeyboardInterrupt requests cancellation
+        and continues observing the final statuses.
+        """
+        if on_progress is not None:
+            if not callable(on_progress):
+                raise TypeError("on_progress must be callable or None")
+            if inspect.iscoroutinefunction(on_progress) or inspect.iscoroutinefunction(on_progress.__call__):
+                raise TypeError("on_progress must be a synchronous callable")
         try:
             self.async_parse_documents(document_ids)
-            return self._get_documents_status(document_ids)
+            return self._get_documents_status(document_ids, on_progress=on_progress)
         except KeyboardInterrupt:
             self.async_cancel_parse_documents(document_ids)
 
-        return self._get_documents_status(document_ids)
+        return self._get_documents_status(document_ids, on_progress=on_progress)
 
     def async_cancel_parse_documents(self, document_ids):
         res = self.rm(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
