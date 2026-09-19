@@ -44,6 +44,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -136,7 +137,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 
 	// Step 1: SSRF guard for the target URL. The validated
 	// hostname + resolved public IP are reused for DNS pinning.
-	host, pinnedIP, err := utility.AssertURLSafe(rawURL)
+	host, pinnedIP, err := common.AssertURLSafe(rawURL)
 	if err != nil {
 		return invokeSSRFError("url", rawURL, err), nil
 	}
@@ -175,7 +176,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			return invokeSSRFError("url", rawURL,
 				fmt.Errorf("Invoke: proxy mode requires a literal-IP target URL (hostnames are unsafe because the proxy re-resolves them)")), nil
 		}
-		ph, pip, perr := utility.AssertURLSafe(proxyStr)
+		ph, pip, perr := common.AssertURLSafe(proxyStr)
 		if perr != nil {
 			return invokeSSRFError("proxy", proxyStr, perr), nil
 		}

@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"sync"
@@ -743,7 +742,7 @@ func logProviderCall(providerURL, payload string, statusCode int, responseBody s
 type schemeSafeTransport struct{ base http.RoundTripper }
 
 func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := utility.AssertURLSchemeSafe(req.URL.String()); err != nil {
+	if err := common.AssertURLSchemeSafe(req.URL.String()); err != nil {
 		return nil, err
 	}
 	return t.base.RoundTrip(req)
@@ -757,7 +756,7 @@ func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, erro
 type strictSSRFTransport struct{ base http.RoundTripper }
 
 func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
+	if _, _, err := common.AssertURLSafe(req.URL.String()); err != nil {
 		return nil, err
 	}
 	return t.base.RoundTrip(req)

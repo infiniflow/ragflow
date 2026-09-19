@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
@@ -30,8 +31,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -44,7 +43,7 @@ const (
 // azureAssertURLSafe is the SSRF guard used for caller-supplied endpoint URLs.
 // It is an indirection over utility.AssertURLSafe so unit tests can substitute
 // a stub without touching the shared global guard.
-var azureAssertURLSafe = utility.AssertURLSafe
+var azureAssertURLSafe = common.AssertURLSafe
 
 // azureBlobTextExtensions mirrors the extension set used by the OneDrive
 // family of file sources in the blob connector.

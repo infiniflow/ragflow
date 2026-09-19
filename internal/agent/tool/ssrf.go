@@ -23,8 +23,6 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
-
-	"ragflow/internal/utility"
 )
 
 // ErrSSRFBlocked is returned when a tool is asked to fetch a URL whose
@@ -187,7 +185,7 @@ func ValidateDBHost(host string) (string, error) {
 		if ip := net.ParseIP(host); ip != nil {
 			return ip.String(), nil
 		}
-		addrs, lerr := utility.LookupHost(host)
+		addrs, lerr := common.LookupHost(host)
 		if lerr != nil {
 			return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 		}
@@ -218,7 +216,7 @@ func ValidateDBHost(host string) (string, error) {
 	// Resolve via utility.LookupHost so tests can stub DNS without
 	// touching real network — matches the stubbing pattern used by
 	// the utility package (see internal/utility/ssrf.go LookupHost).
-	addrs, lerr := utility.LookupHost(host)
+	addrs, lerr := common.LookupHost(host)
 	if lerr != nil {
 		return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 	}
