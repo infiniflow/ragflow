@@ -1270,6 +1270,18 @@ class DaoXE(OpenAIAPICompatible):
     _FACTORY_NAME = "DaoXE"
 
 
+class YAPI(OpenAIAPICompatible):
+    """Y-API catalog lister.
+
+    The live catalog is account-scoped and changes over time, so the list is
+    read from the gateway's own ``/v1/models`` endpoint (inherited behavior)
+    rather than pinned in ``conf/models/y-api.json``, which stays empty on
+    purpose.
+    """
+
+    _FACTORY_NAME = "Y-API"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 
