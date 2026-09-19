@@ -7301,8 +7301,15 @@
         "gemini-3-1-flash"
       ],
       "model_types": [
-        "chat"
-      ]
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1048576,
+      "max_output": 65536
     },
     {
       "name": "google/gemini-3.1-flash-image",
@@ -7384,6 +7391,7 @@
     {
       "name": "google/gemini-3.1-pro-preview",
       "alias": [
+        "gemini-3.1-pro",
         "gemini-3.1-pro-preview",
         "models/gemini-3.1-pro-preview",
         "google/gemini-3.1-pro"
