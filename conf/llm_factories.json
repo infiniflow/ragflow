@@ -192,6 +192,41 @@
             "url": "https://api.openai.com/v1",
             "llm": [
                 {
+                    "llm_name": "gpt-5.6",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-sol",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-cyber",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-luna",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-terra",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5.5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,

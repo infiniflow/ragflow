@@ -22572,7 +22572,77 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-sol",
+      "alias": [
+        "gpt-5.6-sol"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-cyber",
+      "alias": [
+        "gpt-5.6-cyber"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-luna",
+      "alias": [
+        "gpt-5.6-luna"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-terra",
+      "alias": [
+        "gpt-5.6-terra"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
     },
     {
       "name": "openai/gpt-5.5-2026-04-23",
