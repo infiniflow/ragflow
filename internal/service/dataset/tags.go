@@ -190,6 +190,8 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 }
 
 func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
+	fromTag = strings.TrimSpace(fromTag)
+	toTag = strings.TrimSpace(toTag)
 	datasetID, err := normalizeDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, err

@@ -113,7 +113,7 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("code=%d want=%d", code, common.CodeSuccess)
 	}
-	if result["from"] != "old-tag " || result["to"] != " new-tag " {
+	if result["from"] != "old-tag" || result["to"] != "new-tag" {
 		t.Fatalf("result=%v", result)
 	}
 	if len(docEngine.updateCalls) != 1 {
@@ -127,8 +127,8 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	if call.DatasetID != kbID {
 		t.Fatalf("datasetID=%q want=%q", call.DatasetID, kbID)
 	}
-	if got := call.Condition["tag_kwd"]; got != "old-tag " {
-		t.Fatalf("condition tag_kwd=%v want=%q", got, "old-tag ")
+	if got := call.Condition["tag_kwd"]; got != "old-tag" {
+		t.Fatalf("condition tag_kwd=%v want=%q", got, "old-tag")
 	}
 	if got := call.Condition["kb_id"]; got != kbID {
 		t.Fatalf("condition kb_id=%v want=%q", got, kbID)
@@ -139,8 +139,32 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	if got := remove["tag_kwd"]; got != "old-tag" {
 		t.Fatalf("remove tag_kwd=%v want=%q", got, "old-tag")
 	}
-	if got := add["tag_kwd"]; got != " new-tag " {
-		t.Fatalf("add tag_kwd=%v want=%q", got, " new-tag ")
+	if got := add["tag_kwd"]; got != "new-tag" {
+		t.Fatalf("add tag_kwd=%v want=%q", got, "new-tag")
+	}
+}
+
+func TestDatasetServiceRenameTagTrimsOperandsBeforeMatchingAndWriting(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	kbID := "123e4567e89b12d3a456426614174000"
+	insertRenameTagKB(t, kbID, "user-1", string(entity.TenantPermissionMe))
+	docEngine := &renameTagMockEngine{}
+
+	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(t.Context(), kbID, "user-1", "  old tag  ", "  new tag  ")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("RenameTag err=%v code=%d", err, code)
+	}
+	if result["from"] != "old tag" || result["to"] != "new tag" {
+		t.Fatalf("result=%v", result)
+	}
+	call := docEngine.updateCalls[0]
+	if call.Condition["tag_kwd"] != "old tag" {
+		t.Fatalf("condition=%v", call.Condition)
+	}
+	add, _ := call.NewValue["add"].(map[string]interface{})
+	if add["tag_kwd"] != "new tag" {
+		t.Fatalf("new value=%v", add)
 	}
 }
 
