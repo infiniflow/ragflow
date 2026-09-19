@@ -215,9 +215,9 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
-                return get_data_error_result("Commit not found")
+                return get_data_error_result(message="Commit not found")
             if commit.folder_id != folder_id:
-                return get_data_error_result("Commit not found in workspace")
+                return get_data_error_result(message="Commit not found in workspace")
 
             # Artifact commits carry a non-null ``title``; use that as
             # the discriminator to pick the enriched response shape.
@@ -228,7 +228,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
                     commit_id=commit_id,
                 )
                 if detail is None:
-                    return get_data_error_result("Commit not found")
+                    return get_data_error_result(message="Commit not found")
                 return get_json_result(data=detail)
 
             items = FileCommitService.list_commit_files(commit_id)
@@ -265,9 +265,9 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
-                return get_data_error_result("Commit not found")
+                return get_data_error_result(message="Commit not found")
             if commit.folder_id != folder_id:
-                return get_data_error_result("Commit not found in workspace")
+                return get_data_error_result(message="Commit not found in workspace")
             items = FileCommitService.list_commit_files(commit_id)
             return get_json_result(
                 data=[
@@ -296,14 +296,14 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         from_id = request.args.get("from")
         to_id = request.args.get("to")
         if not from_id or not to_id:
-            return get_data_error_result("'from' and 'to' parameters are required")
+            return get_data_error_result(message="'from' and 'to' parameters are required")
         try:
             from_commit = FileCommitService.get_commit(from_id)
             to_commit = FileCommitService.get_commit(to_id)
             if not from_commit or not to_commit:
-                return get_data_error_result("Commit not found")
+                return get_data_error_result(message="Commit not found")
             if from_commit.folder_id != folder_id or to_commit.folder_id != folder_id:
-                return get_data_error_result("Commit not found in workspace")
+                return get_data_error_result(message="Commit not found in workspace")
             diff = FileCommitService.diff_commits(from_id, to_id)
             return get_json_result(data=diff)
         except Exception as e:
@@ -328,9 +328,9 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
-                return get_data_error_result("Commit not found")
+                return get_data_error_result(message="Commit not found")
             if commit.folder_id != folder_id:
-                return get_data_error_result("Commit not found in workspace")
+                return get_data_error_result(message="Commit not found in workspace")
             tree = FileCommitService.get_commit_tree(commit_id)
             return get_json_result(data=tree)
         except Exception as e:
@@ -344,12 +344,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
-                return get_data_error_result("Commit not found")
+                return get_data_error_result(message="Commit not found")
             if commit.folder_id != folder_id:
-                return get_data_error_result("Commit not found in workspace")
+                return get_data_error_result(message="Commit not found in workspace")
             content = FileCommitService.get_commit_file_content(folder_id, commit_id, file_id)
             if content is None:
-                return get_data_error_result("File not found in this commit")
+                return get_data_error_result(message="File not found in this commit")
             return get_json_result(data={"content": content.decode("utf-8", errors="replace")})
         except Exception as e:
             return server_error_response(e)
@@ -384,7 +384,7 @@ async def get_file_version_history(file_id):
     try:
         e, file = FileService.get_by_id(file_id)
         if not e or not check_file_team_permission(file, current_user.id):
-            return get_data_error_result("File not found")
+            return get_data_error_result(message="File not found")
         versions = FileCommitService.get_file_version_history(file_id)
         return get_json_result(data=versions)
     except Exception as e:
