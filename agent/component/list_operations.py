@@ -48,6 +48,9 @@ class ListOperationsParam(ComponentParamBase):
 class ListOperations(ComponentBase, ABC):
     component_name = "ListOperations"
 
+    def param_refs(self) -> list[str]:
+        return [self._param.query]
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         self.input_objects = []

@@ -56,6 +56,9 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
+    def param_refs(self) -> list[str]:
+        return [item.get("cpn_id") for condition in self._param.conditions for item in condition.get("items", []) if isinstance(item, dict)]
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Switch processing"):
