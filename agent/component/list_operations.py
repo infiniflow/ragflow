@@ -1,7 +1,131 @@
-from abc import ABC
+import math
 import os
+from abc import ABC
+
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
+
+# ruff: noqa: BLE001, PLW1508
+# Type rank for the ListOperations ``sort`` op. Pairs of same-rank values
+# compare numerically (numbers) or lexicographically (everything else). Across
+# ranks, the lower rank always wins — this gives a strict, transitive
+# ordering that avoids the cycle the previous ``lessScalar``-style
+# comparator produced (``10 > 2``, ``2 > "11"``, ``"11" > 10``). The Go
+# runtime port (internal/agent/component/list_operations.go ``lessKey``)
+# uses the same rank-then-compare scheme, so flows run on either runtime
+# produce the same ordering — see issue #19427 follow-up review.
+_NUMERIC_RANK = 0
+_TEXT_RANK = 1
+
+
+def _scalar_rank(v):
+    """Return the rank for ``v`` (lower wins). Numbers (``int``/``float``,
+    excluding ``bool`` since Python treats ``bool`` as an ``int`` subclass)
+    come first; everything else (``str``, ``None``, ``bool``, ``list``,
+    etc.) sorts into the text rank. Matches Go's ``lessKey`` rank."""
+    if not isinstance(v, bool) and isinstance(v, (int, float)):
+        return _NUMERIC_RANK
+    return _TEXT_RANK
+
+
+def _go_format_scalar(v):
+    """Render ``v`` the way Go's ``fmt.Sprintf(\"%v\", v)`` does for the
+    non-numeric branch. Python's ``str()`` differs from Go's ``%v`` for
+    some types (``None`` renders as ``"<nil>"`` and bools as lowercase
+    ``"true"``/``"false"``). Pin a uniform formatter so the Python and Go
+    runtimes agree on the lexicographic fallback (CodeRabbit review on PR
+    #19782).
+
+    Containers are rendered recursively with Go's ``%v`` rules: lists and
+    tuples as ``[a b c]`` (space-separated, string elements unquoted,
+    bools lowercase) and dicts as ``map[k:v ...]`` with entries ordered
+    by their formatted key, matching Go's deterministic map printing.
+    Python's ``str()`` would instead quote string elements and capitalise
+    bools, pulling the two runtimes' lexicographic fallback out of
+    alignment.
+    """
+    if v is None:
+        return "<nil>"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float):
+        # Go's default %g-style rendering omits the trailing decimal point
+        # for integral mantissas (1.0 -> 1), unlike Python's str().
+        if math.isnan(v):
+            return "NaN"
+        if math.isinf(v):
+            return "+Inf" if v > 0 else "-Inf"
+        formatted = repr(v)
+        mantissa, separator, exponent = formatted.partition("e")
+        if mantissa.endswith(".0"):
+            mantissa = mantissa[:-2]
+        return mantissa + (separator + exponent if separator else "")
+    if isinstance(v, (list, tuple)):
+        return "[" + " ".join(_go_format_scalar(item) for item in v) + "]"
+    if isinstance(v, dict):
+        entries = sorted(
+            (_go_format_scalar(k), _go_format_scalar(val))
+            for k, val in v.items()
+        )
+        return "map[" + " ".join(f"{k}:{val}" for k, val in entries) + "]"
+    return str(v)
+
+
+def _scalar_compare(a, b):
+    """Comparator for the ListOperations ``sort`` op — transitive order
+    matching the Go runtime's ``lessKey`` (internal/agent/component/list_operations.go).
+
+    1. Rank by type: numbers (``int``/``float`` excluding ``bool``) before
+       everything else. This breaks the previous cycle
+       (``10 > 2``, ``2 > "11"``, ``"11" > 10``) where two numbers
+       compared numerically but a number-vs-string fell through to
+       lexicographic.
+    2. Within the numeric rank: compare numerically.
+    3. Within the text rank: compare lexicographically via
+       :func:`_go_format_scalar` so Python ``str()`` / ``True`` / ``None``
+       differences don't pull the ordering out of alignment with Go's
+       ``fmt.Sprintf(\"%v\", v)`` fallback.
+
+    ``bool`` is excluded from the numeric branch (matches Go's
+    ``toFloat64OK`` returning ``false`` for ``bool``); ``True``/``False``
+    sort by their Go-formatted string (``\"true\"`` < ``\"false\"``).
+    """
+    a_rank, b_rank = _scalar_rank(a), _scalar_rank(b)
+    if a_rank != b_rank:
+        return -1 if a_rank < b_rank else 1
+    if a_rank == _NUMERIC_RANK:
+        if a < b:
+            return -1
+        if a > b:
+            return 1
+        return 0
+    sa, sb = _go_format_scalar(a), _go_format_scalar(b)
+    if sa < sb:
+        return -1
+    if sa > sb:
+        return 1
+    return 0
+
+
+def _scalar_sort_key(v):
+    """Return a sort key for ``v`` that ``sorted`` can use safely.
+
+    For numbers (rank 0), the key is ``(0, v)`` — the original numeric
+    value. Python compares ``int`` and ``float`` values directly and
+    exactly, so the numeric branch orders numerically (``2 < 10``, not
+    ``"10" < "2"`` lex order) while preserving very large integers such
+    as ``10**400`` (``float(v)`` would raise ``OverflowError``) and
+    distinct integers beyond float precision around ``2**53``
+    (``float(v)`` would collapse them).
+
+    For everything else (rank 1), the key is ``(1, formatted)`` — the
+    rank itself ensures all numbers sort before all non-numbers, and the
+    formatted string orders non-numbers lex (matching Go's
+    ``fmt.Sprintf(\"%v\", v)``).
+    """
+    if _scalar_rank(v) == _NUMERIC_RANK:
+        return (0, v)
+    return (1, _go_format_scalar(v))
 
 
 class ListOperationsParam(ComponentParamBase):
@@ -184,9 +308,12 @@ class ListOperations(ComponentBase, ABC):
             sort_by_raw = getattr(self._param, "sort_by", "") or ""
             sort_by = [k.strip() for k in sort_by_raw.split(",") if k.strip()]
             if sort_by:
+                # Wrap each field value with ``_scalar_sort_key`` so the
+                # resulting tuple of ``(rank, formatted_str[, float])``
+                # keys compares cleanly across heterogeneous field types.
                 outputs = sorted(
                     items,
-                    key=lambda x: tuple(x.get(k) for k in sort_by),
+                    key=lambda x: tuple(_scalar_sort_key(x.get(k)) for k in sort_by),
                     reverse=reverse,
                 )
             else:
@@ -196,7 +323,7 @@ class ListOperations(ComponentBase, ABC):
                     reverse=reverse,
                 )
         else:
-            outputs = sorted(items, reverse=reverse)
+            outputs = sorted(items, key=_scalar_sort_key, reverse=reverse)
 
         self._set_outputs(outputs)
 
