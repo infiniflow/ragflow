@@ -19,11 +19,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
+	"ragflow/internal/tokenizer"
 	"regexp"
 
 	"strconv"
@@ -164,27 +167,22 @@ func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, currentDate st
 	return prompt
 }
 
-// GenMetaFilter generates filter conditions using LLM based on metadata and question.
-func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaData common.MetaData, question string, constraints map[string]string) (*MetaFilterResult, error) {
+// GenMetaFilter generates filter conditions using LLM based on the metadata
+// value space and the question.
+//
+// valueSpace carries no document IDs on purpose: the generator only ever shows
+// the model the distinct values, and building that space from an aggregation
+// rather than from a document scan is what makes it complete.
+func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, valueSpace common.MetaValueSpace, question string, constraints map[string]string) (*MetaFilterResult, error) {
 	if chatModel == nil {
 		return nil, fmt.Errorf("chat model is nil")
 	}
 
-	if len(metaData) == 0 {
+	if len(valueSpace) == 0 {
 		return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
 	}
 
-	// Build metadata structure for prompt
-	metaDataStructure := make(map[string][]string)
-	for key, values := range metaData {
-		keys := make([]string, 0, len(values))
-		for k := range values {
-			keys = append(keys, k)
-		}
-		metaDataStructure[key] = keys
-	}
-
-	metaDataJSON, _ := json.Marshal(metaDataStructure)
+	metaDataJSON, _ := json.Marshal(valueSpace)
 	constraintsJSON := ""
 	if constraints != nil {
 		constraintsBytes, _ := json.Marshal(constraints)
@@ -197,6 +195,37 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 
 	// Build user message
 	userMessage := "Generate filters:"
+
+	// The metadata block is the whole value space of the dataset, so its size is
+	// set by the data rather than by anything here: one high-cardinality key can
+	// push the system prompt past the model's context on its own, and that got
+	// more likely -- not less -- once the value space stopped being cut short by
+	// the doc store's result window. Left unchecked the result is a failed model
+	// request rather than a degraded filter.
+	//
+	// Trimming to fit would be worse than refusing. The conditions returned here
+	// are applied as a hard document scope, so a filter chosen from a value list
+	// that lost entries excludes matching documents, and the model cannot report
+	// that it only saw part of the metadata -- the answer looks exactly as
+	// confident either way. So when the prompt does not fit, return no conditions
+	// and skip the model call that could only produce an answer we must not use.
+	// Empty conditions leave the search unscoped, which ApplyMetaDataFilter reads
+	// as "no scope": a filter that fails to narrow is recoverable, one that
+	// narrows to the wrong documents is not.
+	//
+	// A ContextLength of 0 means it could not be resolved; tokenizer.Fit reads
+	// that as 8192, exactly as Python's message_fit_in normalizes a non-positive
+	// max_length.
+	fitted, _, _ := tokenizer.Fit([]tokenizer.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userMessage},
+	}, chatModel.ContextLength)
+	if len(fitted) != 2 || fitted[0].Content != systemPrompt {
+		common.Warn("GenMetaFilter: the metadata value space does not fit the model context; returning no conditions so the search stays unscoped rather than filtered on a partial value list",
+			zap.Int("context_length", chatModel.ContextLength),
+			zap.Int("keys", len(valueSpace)))
+		return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
+	}
 
 	// Build messages: system prompt + user message
 	messages := []modelModule.Message{
@@ -600,6 +629,13 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 	return strings.Join(filtered, ",")
 }
 
+// metaValueSpaceLoader reads the metadata value space the filter generator is
+// shown. A package-level var so tests can drive the incomplete-read path
+// without a configured doc engine.
+var metaValueSpaceLoader = func(ctx context.Context, kbIDs []string) (common.MetaValueSpace, error) {
+	return NewMetadataService().GetMetaValueSpaceByKBs(ctx, kbIDs)
+}
+
 // ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
 // Supports three modes:
 // - auto: generate filter conditions via LLM
@@ -624,6 +660,52 @@ func ApplyMetaDataFilter(
 	}
 
 	method, _ := metaDataFilter["method"].(string)
+
+	// What the model is shown. Deliberately not metaData: that is built by
+	// GetFlattedMetaByKBs, which reads the doc-meta index with a fixed size cap
+	// and so stops at the doc store's result window -- past it the model is
+	// handed the metadata of an arbitrary prefix and asked to pick a value that
+	// may not be in it. It then either picks a wrong value (search scoped to the
+	// wrong documents) or picks nothing (filter dropped, whole-corpus search);
+	// neither failure surfaces. An aggregation sees every document regardless of
+	// the window, and the generator only ever needs the values -- the document
+	// IDs stay in metaData for the in-memory filter, the only caller that needs
+	// them.
+	//
+	// ok=false means the value space could not be read in full, which is not the
+	// same as empty: any filter generated from what did arrive could exclude
+	// matching documents, so the caller skips filtering rather than substituting
+	// the result-window limited scan, which is incomplete in the same way.
+	var (
+		valueSpace     common.MetaValueSpace
+		valueSpaceRead bool
+		valueSpaceOK   bool
+	)
+	getValueSpace := func() (common.MetaValueSpace, bool) {
+		if valueSpaceRead {
+			return valueSpace, valueSpaceOK
+		}
+		valueSpaceRead = true
+		valueSpaceOK = true
+		if len(kbIDs) > 0 {
+			space, err := metaValueSpaceLoader(ctx, kbIDs)
+			switch {
+			case errors.Is(err, types.ErrMetaValueSpaceIncomplete):
+				common.Warn("Metadata value space came back incomplete; skipping metadata filtering",
+					zap.Strings("kb_ids", kbIDs), zap.Error(err))
+				valueSpaceOK = false
+				return nil, false
+			case err != nil:
+				common.Warn("Metadata value-space lookup failed; falling back to the flattened scan", zap.Error(err))
+			default:
+				valueSpace = space
+			}
+		}
+		if len(valueSpace) == 0 {
+			valueSpace = metaData.ValueSpace()
+		}
+		return valueSpace, true
+	}
 
 	// Helper to run metadata filter with push-down fallback
 	// runMetadataFilter executes filter conditions via push-down (ES/Infinity)
@@ -662,7 +744,11 @@ func ApplyMetaDataFilter(
 
 	switch method {
 	case "auto":
-		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
+		space, ok := getValueSpace()
+		if !ok {
+			return nil, true
+		}
+		filters, err := GenMetaFilter(ctx, chatModel, space, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
 			return baseDocIDs, false
@@ -695,16 +781,20 @@ func ApplyMetaDataFilter(
 		}
 
 		if len(selectedKeys) > 0 {
-			// Filter metadata to only selected keys
-			filteredMeta := make(common.MetaData)
+			space, ok := getValueSpace()
+			if !ok {
+				return nil, true
+			}
+			// Filter the value space to only selected keys
+			filteredSpace := make(common.MetaValueSpace)
 			for _, key := range selectedKeys {
-				if val, exists := metaData[key]; exists {
-					filteredMeta[key] = val
+				if val, exists := space[key]; exists {
+					filteredSpace[key] = val
 				}
 			}
 
-			if len(filteredMeta) > 0 {
-				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
+			if len(filteredSpace) > 0 {
+				filters, err := GenMetaFilter(ctx, chatModel, filteredSpace, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
 					return baseDocIDs, false
