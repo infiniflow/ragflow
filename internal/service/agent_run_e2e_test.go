@@ -86,10 +86,10 @@ func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID strin
 }
 
 // drainAgentEvents drains the channel returned by RunAgent and
-// collects the typed events into the three buckets. The 5-second
-// deadline protects against driver deadlocks — a successful run
-// always closes the channel within milliseconds.
-func drainAgentEvents(t *testing.T, events <-chan canvas.RunEvent) (messages []canvas.MessageEvent, waiting []canvas.WaitingForUserEvent, errors_ []canvas.ErrorEvent, done bool) {
+// collects the typed events into buckets, counting message_end
+// events. The 5-second deadline protects against driver deadlocks —
+// a successful run always closes the channel within milliseconds.
+func drainAgentEvents(t *testing.T, events <-chan canvas.RunEvent) (messages []canvas.MessageEvent, waiting []canvas.WaitingForUserEvent, errors_ []canvas.ErrorEvent, messageEnds int, done bool) {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	for {
@@ -118,6 +118,8 @@ func drainAgentEvents(t *testing.T, events <-chan canvas.RunEvent) (messages []c
 					t.Fatalf("drain: bad error payload: %v", err)
 				}
 				errors_ = append(errors_, e)
+			case "message_end":
+				messageEnds++
 			case "done":
 				done = true
 			}
@@ -209,7 +211,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
@@ -297,7 +299,7 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RunAgent(%q): %v", input, err)
 		}
-		messages, waiting, errs, done := drainAgentEvents(t, events)
+		messages, waiting, errs, _, done := drainAgentEvents(t, events)
 		if len(errs) != 0 || len(waiting) != 0 || !done {
 			t.Fatalf("RunAgent(%q): messages=%+v waiting=%+v errors=%+v done=%v", input, messages, waiting, errs, done)
 		}
@@ -393,7 +395,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first RunAgent: %v", err)
 	}
-	firstMessages, waiting, errs, done := drainAgentEvents(t, events)
+	firstMessages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) != 0 || len(waiting) != 0 || !done || len(firstMessages) != 1 {
 		t.Fatalf("first run: messages=%+v waiting=%+v errors=%+v done=%v", firstMessages, waiting, errs, done)
 	}
@@ -424,7 +426,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second RunAgent: %v", err)
 	}
-	secondMessages, waiting, errs, done := drainAgentEvents(t, events)
+	secondMessages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) != 0 || len(waiting) != 0 || !done || len(secondMessages) != 1 {
 		t.Fatalf("second run: messages=%+v waiting=%+v errors=%+v done=%v", secondMessages, waiting, errs, done)
 	}
@@ -609,7 +611,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
-	_, waiting1, errs1, _ := drainAgentEvents(t, events1)
+	_, waiting1, errs1, _, _ := drainAgentEvents(t, events1)
 	if len(errs1) > 0 {
 		t.Fatalf("run 1: unexpected error events: %+v", errs1)
 	}
@@ -643,7 +645,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
-	messages2, waiting2, errs2, done2 := drainAgentEvents(t, events2)
+	messages2, waiting2, errs2, _, done2 := drainAgentEvents(t, events2)
 	if len(errs2) > 0 {
 		t.Fatalf("run 2: unexpected error events: %+v", errs2)
 	}
@@ -723,7 +725,7 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) != 0 || len(waiting) != 1 || !done {
 		t.Fatalf("messages=%+v waiting=%+v errors=%+v done=%v", messages, waiting, errs, done)
 	}
@@ -948,7 +950,7 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
@@ -1018,7 +1020,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
-	messages1, waiting1, errs1, done1 := drainAgentEvents(t, events1)
+	messages1, waiting1, errs1, _, done1 := drainAgentEvents(t, events1)
 	if len(errs1) > 0 {
 		t.Fatalf("run 1: unexpected error events: %+v", errs1)
 	}
@@ -1058,7 +1060,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
-	messages2, waiting2, errs2, done2 := drainAgentEvents(t, events2)
+	messages2, waiting2, errs2, _, done2 := drainAgentEvents(t, events2)
 	if len(errs2) > 0 {
 		t.Fatalf("run 2: unexpected error events: %+v", errs2)
 	}
@@ -1081,7 +1083,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
 	}
-	messages2, waiting3, errs3, done3 := drainAgentEvents(t, events3)
+	messages2, waiting3, errs3, _, done3 := drainAgentEvents(t, events3)
 	if len(errs3) > 0 || len(waiting3) > 0 || !done3 {
 		t.Fatalf("run 3: errs=%+v waiting=%+v done=%v", errs3, waiting3, done3)
 	}
@@ -1144,7 +1146,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RunAgent run %d (%q): %v", i+1, input, err)
 		}
-		messages, waiting, errs, done := drainAgentEvents(t, events)
+		messages, waiting, errs, _, done := drainAgentEvents(t, events)
 		if len(errs) > 0 {
 			t.Fatalf("run %d (%q): unexpected error events: %+v", i+1, input, errs)
 		}
@@ -1237,7 +1239,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
-	messages1, waiting1, errs1, done1 := drainAgentEvents(t, events1)
+	messages1, waiting1, errs1, _, done1 := drainAgentEvents(t, events1)
 	if len(errs1) > 0 {
 		t.Fatalf("run 1: unexpected error events: %+v", errs1)
 	}
@@ -1266,7 +1268,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
-	messages2, waiting2, errs2, done2 := drainAgentEvents(t, events2)
+	messages2, waiting2, errs2, _, done2 := drainAgentEvents(t, events2)
 	if len(errs2) > 0 {
 		t.Fatalf("run 2: unexpected error events: %+v", errs2)
 	}
@@ -1289,7 +1291,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
 	}
-	messages2, waiting3, errs3, done3 := drainAgentEvents(t, events3)
+	messages2, waiting3, errs3, _, done3 := drainAgentEvents(t, events3)
 	if len(errs3) > 0 {
 		t.Fatalf("run 3: unexpected error events: %+v", errs3)
 	}
@@ -1347,7 +1349,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
@@ -1372,7 +1374,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent resume: %v", err)
 	}
-	messages, waiting, errs, done = drainAgentEvents(t, events)
+	messages, waiting, errs, _, done = drainAgentEvents(t, events)
 	if len(errs) > 0 || len(waiting) > 0 || !done {
 		t.Fatalf("resume: messages=%+v waiting=%+v errs=%+v done=%v", messages, waiting, errs, done)
 	}
@@ -1431,7 +1433,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
@@ -1456,7 +1458,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent resume: %v", err)
 	}
-	messages, waiting, errs, done = drainAgentEvents(t, events)
+	messages, waiting, errs, _, done = drainAgentEvents(t, events)
 	if len(errs) > 0 || len(waiting) > 0 || !done {
 		t.Fatalf("resume: messages=%+v waiting=%+v errs=%+v done=%v", messages, waiting, errs, done)
 	}
@@ -1533,7 +1535,7 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
-	_, _, errs, _ := drainAgentEvents(t, events)
+	_, _, errs, _, _ := drainAgentEvents(t, events)
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Compile of DSL with unknown component name")
 	}
@@ -1605,7 +1607,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
-	messages1, waiting1, errs1, done1 := drainAgentEvents(t, events1)
+	messages1, waiting1, errs1, _, done1 := drainAgentEvents(t, events1)
 	t.Logf("run1: messages=%d waiting=%d errs=%d done=%v", len(messages1), len(waiting1), len(errs1), done1)
 	for i, e := range errs1 {
 		t.Logf("  run1 err[%d]: %s", i, e.Message)
@@ -1633,7 +1635,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
-	messages2, waiting2, errs2, done2 := drainAgentEvents(t, events2)
+	messages2, waiting2, errs2, _, done2 := drainAgentEvents(t, events2)
 	t.Logf("run2: messages=%d waiting=%d errs=%d done=%v", len(messages2), len(waiting2), len(errs2), done2)
 	for i, e := range errs2 {
 		t.Logf("  run2 err[%d]: %s", i, e.Message)
@@ -1669,7 +1671,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
 	}
-	messages2, waiting3, errs3, done3 := drainAgentEvents(t, events3)
+	messages2, waiting3, errs3, _, done3 := drainAgentEvents(t, events3)
 	if len(errs3) != 0 || len(waiting3) != 0 || !done3 {
 		t.Fatalf("run 3: messages=%+v waiting=%+v errs=%+v done=%v", messages2, waiting3, errs3, done3)
 	}
@@ -1763,7 +1765,7 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
-	_, _, errs, _ := drainAgentEvents(t, events)
+	_, _, errs, _, _ := drainAgentEvents(t, events)
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Invoke of DSL with bad component query ref")
 	}
@@ -1870,7 +1872,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, _, errs, done := drainAgentEvents(t, events)
+	messages, _, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events: %+v", errs)
 	}
@@ -2045,7 +2047,7 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent with files: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events with files: %+v", errs)
 	}
@@ -2119,7 +2121,7 @@ func TestRunAgent_MissingUploadEmitsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	messages, _, errs, done := drainAgentEvents(t, events)
+	messages, _, errs, _, done := drainAgentEvents(t, events)
 	if len(messages) != 0 {
 		t.Fatalf("messages = %+v, want none", messages)
 	}
@@ -2190,7 +2192,7 @@ func TestRunAgent_NoFilesRunsNormally(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent without files: %v", err)
 	}
-	messages, waiting, errs, done := drainAgentEvents(t, events)
+	messages, waiting, errs, _, done := drainAgentEvents(t, events)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected error events without files: %+v", errs)
 	}
