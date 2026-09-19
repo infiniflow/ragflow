@@ -294,9 +294,9 @@ async def search_message():
     if len(memory_ids) == 1 and "," in memory_ids[0]:
         memory_ids = memory_ids[0].split(",")
     query = args.get("query")
-    similarity_threshold = float(args.get("similarity_threshold", 0.2))
-    keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
     try:
+        similarity_threshold = float(args.get("similarity_threshold", 0.2))
+        keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
         validate_rest_api_ids(memory_ids, "memory_id")
         top_n = validate_rest_api_page_size(int(args.get("top_n", 5)))
     except ValueError as exc:
