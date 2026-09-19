@@ -23,11 +23,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -63,7 +61,9 @@ type documentServiceIface interface {
 	GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error)
 	GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
-	GetDocumentImage(ctx context.Context, imageID string) ([]byte, error)
+	GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error)
+	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
+	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error
 	DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error
@@ -194,22 +194,60 @@ func parseThumbnailDocIDs(c *gin.Context) []string {
 
 // GetDocumentImage returns a document image from object storage.
 func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
 	imageID := c.Param("image_id")
 	ctx := c.Request.Context()
-	data, err := h.documentService.GetDocumentImage(ctx, imageID)
+	data, err := h.documentService.GetDocumentImage(ctx, user.ID, imageID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
 		return
 	}
+	h.writeDocumentImage(c, data)
+}
 
-	contentType := documentImageContentType(imageID, data)
+func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	data, err := h.documentService.GetDocumentImageForDocument(c.Request.Context(), user.ID, c.Param("id"), c.Param("image_id"))
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		return
+	}
+	h.writeDocumentImage(c, data)
+}
+
+func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), user.ID, c.Param("id"))
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		return
+	}
+	h.writeDocumentImage(c, data)
+}
+
+func (h *DocumentHandler) writeDocumentImage(c *gin.Context, data []byte) {
+	contentType := documentImageContentType(data)
+	if contentType == "" {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, contentType, data)
 }
 
-func documentImageContentType(imageID string, data []byte) string {
-	if contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(imageID))); strings.HasPrefix(contentType, "image/") {
-		return contentType
-	}
+func documentImageContentType(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
 		return "image/png"
@@ -222,7 +260,7 @@ func documentImageContentType(imageID string, data []byte) string {
 	case bytes.HasPrefix(data, []byte("BM")):
 		return "image/bmp"
 	default:
-		return "application/octet-stream"
+		return ""
 	}
 }
 

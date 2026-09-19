@@ -189,12 +189,14 @@ const MarkdownContent = ({
               <PopoverTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </PopoverTrigger>
               <PopoverContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceImagePreview}
                 ></Image>
               </PopoverContent>
@@ -266,7 +268,7 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent, t],
+    [getPopoverContent],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

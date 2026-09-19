@@ -253,12 +253,14 @@ const MarkdownContent = ({
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceImagePreview}
                 ></Image>
               </HoverCardContent>
@@ -343,7 +345,7 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent, t],
+    [getPopoverContent],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
