@@ -149,11 +149,13 @@ class LLMBundle(LLM4Tenant):
         self.close()
         return False
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session, tools, tool_display_names=None):
         if not self.is_tools:
             logging.warning("Model does not support tool call, but you have assigned one or more tools to it!")
             return
         self.mdl.bind_tools(toolcall_session, tools)
+        if tool_display_names is not None:
+            self.mdl.tool_display_names = dict(tool_display_names)
 
     def encode(self, texts: list):
         if self.langfuse:

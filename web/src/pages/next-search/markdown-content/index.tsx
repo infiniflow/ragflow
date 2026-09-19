@@ -40,6 +40,7 @@ import {
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  replaceToolCallToSection,
   unescapeAngleBrackets,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
@@ -90,7 +91,15 @@ const MarkdownContent = ({
     const safeContent = escapeUnmatchedAngleBrackets(content);
 
     let text = DOMPurify.sanitize(safeContent, {
-      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
+      ADD_TAGS: [
+        'think',
+        'section',
+        'details',
+        'summary',
+        'retrieving',
+        'tool_call',
+        'pre',
+      ],
       ADD_ATTR: ['class'],
     });
     // let text = content;
@@ -102,6 +111,7 @@ const MarkdownContent = ({
       pipe(
         replaceThinkToSection,
         replaceRetrievingToSection,
+        replaceToolCallToSection,
         preprocessLaTeX,
       )(nextText),
     );

@@ -78,11 +78,14 @@ class Agent(LLM, ToolBase):
     def __init__(self, canvas, id, param: LLMParam):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
+        self.tool_display_names = {}
         for idx, cpn in enumerate(self._param.tools):
+            display_name = str(cpn.get("name") or "").strip()
             cpn = self._load_tool_obj(cpn)
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
+            self.tool_display_names[indexed_name] = display_name or original_name
         model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
         chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
@@ -92,7 +95,9 @@ class Agent(LLM, ToolBase):
             max_retries=self._param.max_retries,
             retry_interval=self._param.delay_after_error,
             max_rounds=self._param.max_rounds,
-            verbose_tool_use=False,
+            # Emit <tool_call> into the SSE body so the web UI can render
+            # collapsible tool sections (see replaceToolCallToSection).
+            verbose_tool_use=True,
         )
         self.tool_meta = []
         for indexed_name, tool_obj in self.tools.items():
@@ -111,10 +116,11 @@ class Agent(LLM, ToolBase):
                 tool_idx += 1
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
                 self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
+                self.tool_display_names[indexed_name] = str((meta or {}).get("name") or tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback, default_timeout=self._param.tool_timeout)
         if self.tool_meta:
-            self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
+            self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta, tool_display_names=self.tool_display_names)
 
     def _fit_messages(self, prompt: str, msg: list[dict]) -> tuple[list[dict] | None, str | None]:
         msg_fit, fit_error = LLM.fit_messages(prompt, msg, self.chat_mdl.max_length)
@@ -130,6 +136,9 @@ class Agent(LLM, ToolBase):
 
     @staticmethod
     def _clean_formatted_answer(ans: str) -> str:
+        # Verbose tool markup is for the stream UI only; strip it before
+        # structured-output JSON parsing.
+        ans = re.sub(r"<tool_call>.*?</tool_call>", "", ans, flags=re.DOTALL)
         ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
         return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
@@ -328,7 +337,9 @@ class Agent(LLM, ToolBase):
                     self.set_output("content", delta)
                     yield delta
                 return
-            if not need2cite or cited:
+            # Citation rewrite may buffer the first pass, but frontends render
+            # <tool_call> from the SSE body — always forward those chunks.
+            if (not need2cite or cited) or "<tool_call>" in delta:
                 yield delta
             answer += delta
 

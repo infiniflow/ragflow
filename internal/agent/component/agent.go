@@ -349,6 +349,9 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
+		// Track assistant tool_calls by id so tool-result messages can be
+		// rendered as Python-compatible <tool_call> verbose blocks for the UI.
+		pendingToolCalls := map[string]schema.ToolCall{}
 		iter := future.GetMessageStreams()
 		for {
 			msgStream, hasNext, err := iter.Next()
@@ -376,8 +379,22 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 				if msg == nil {
 					continue
 				}
+				for _, tc := range msg.ToolCalls {
+					if tc.ID != "" {
+						pendingToolCalls[tc.ID] = tc
+					}
+				}
 				if msg.Role == schema.Tool {
 					recordArtifactsFromToolMessage(ctx, msg)
+					// Mirror Python verbose_tool_use: stream <tool_call> so the
+					// web UI can render collapsible tool sections. Go has no
+					// citation first-pass buffer; this is the frontend parity.
+					if !(runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx)) {
+						runtime.EmitAgentMessage(ctx, formatVerboseToolCall(msg, pendingToolCalls), "")
+					}
+					if msg.ToolCallID != "" {
+						delete(pendingToolCalls, msg.ToolCallID)
+					}
 					continue
 				}
 				if msg.Role != "" && msg.Role != schema.Assistant {
@@ -396,6 +413,46 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 		done <- firstErr
 	}()
 	return done
+}
+
+// formatVerboseToolCall builds the same <tool_call>{json}</tool_call> markup
+// Python's Base._verbose_tool_use emits for the chat UI.
+func formatVerboseToolCall(msg *schema.Message, pending map[string]schema.ToolCall) string {
+	name := ""
+	argsRaw := ""
+	if msg != nil {
+		if tc, ok := pending[msg.ToolCallID]; ok {
+			name = tc.Function.Name
+			argsRaw = tc.Function.Arguments
+		}
+	}
+	if name == "" {
+		name = "tool"
+	}
+	var args any
+	if argsRaw != "" {
+		if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+			args = argsRaw
+		}
+	} else {
+		args = map[string]any{}
+	}
+	result := ""
+	if msg != nil {
+		result = msg.Content
+		if result == "" {
+			result = toolMessageTextContent(msg)
+		}
+	}
+	payload, err := json.MarshalIndent(map[string]any{
+		"name":   name,
+		"args":   args,
+		"result": result,
+	}, "", "  ")
+	if err != nil {
+		payload = []byte(fmt.Sprintf(`{"name":%q,"args":{},"result":%q}`, name, result))
+	}
+	return "<tool_call>" + string(payload) + "</tool_call>"
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
