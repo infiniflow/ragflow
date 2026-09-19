@@ -168,7 +168,7 @@ class OSConnection(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int, parser_id: str = None):
+    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int, parser_id: str = None, language: str = None):
         if self.index_exist(indexName, knowledgebaseId):
             return True
         try:

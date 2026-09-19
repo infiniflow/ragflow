@@ -101,7 +101,7 @@ func validateTaskContext(taskCtx *TaskContext) error {
 // an engine that implements it can write chunks without waiting for an index
 // refresh.
 type noRefreshChunkInserter interface {
-	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 }
 
 // insertChunksForIngestion writes chunks through the engine's no-refresh path
@@ -114,12 +114,14 @@ type noRefreshChunkInserter interface {
 // Python's ingestion does - it inserts with refresh=False
 // (rag/svr/task_executor_refactor/chunk_service.py:386 and :423) while its API
 // default stays "wait_for" - so this keeps the two ingestion paths in step.
-func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
+// The first write creates the chunk store, and on Infinity that fixes the
+// fulltext analyzer, so the dataset language travels with every insert.
+func insertChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
-			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
+			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID, language)
 		}
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 	}
 }
 
@@ -138,7 +140,7 @@ func NewPipelineExecutor(
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
-		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
+		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get(), datasetLanguage(taskCtx)), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
@@ -1257,4 +1259,14 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+// datasetLanguage is the language of the dataset being ingested, or "" when it
+// is unset. It selects the fulltext analyzer on engines that fix it when the
+// chunk store is created.
+func datasetLanguage(taskCtx *TaskContext) string {
+	if taskCtx == nil || taskCtx.KB.Language == nil {
+		return ""
+	}
+	return *taskCtx.KB.Language
 }

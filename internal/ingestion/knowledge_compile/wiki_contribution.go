@@ -107,7 +107,7 @@ func (s *engineWikiContributionStore) Put(ctx context.Context, tenantID, dataset
 		"content_with_weight": string(payload),
 		"available_int":       0,
 	}
-	_, err = s.engine.InsertChunks(ctx, []map[string]any{row}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
+	_, err = s.engine.InsertChunks(ctx, []map[string]any{row}, fmt.Sprintf("ragflow_%s", tenantID), datasetID, "")
 	return err
 }
 

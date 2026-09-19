@@ -426,6 +426,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		RerankModel:            rerankModel,
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 
 	// Call RetrievalService to perform retrieval
@@ -856,7 +857,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		if queryBuilder == nil {
 			queryBuilder = nlp.NewQueryBuilder()
 		}
-		if matchText, _ := queryBuilder.Question(keywords, "", 0.3); matchText != nil {
+		if matchText, _ := queryBuilder.Question(keywords, "", 0.3, datasetLanguageOf(kb)); matchText != nil {
 			matchExprs = append(matchExprs, matchText)
 		}
 	}
@@ -1436,7 +1437,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
-	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID, datasetLanguageOf(kb)); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
@@ -1765,4 +1766,14 @@ func releaseChunkImageMergeLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageMergeLocks.locks, key)
 	}
+}
+
+// datasetLanguageOf is the dataset's language, or "" when unset. It selects the
+// fulltext analyzer on engines that fix it when the chunk store is created, so
+// a write that may create the store has to carry it.
+func datasetLanguageOf(kb *entity.Knowledgebase) string {
+	if kb == nil || kb.Language == nil {
+		return ""
+	}
+	return *kb.Language
 }

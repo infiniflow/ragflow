@@ -61,7 +61,7 @@ def _dealer(token_similarity_spy=None):
     dealer = Dealer.__new__(Dealer)
 
     class _Queryer:
-        def question(self, query):
+        def question(self, query, language=None):
             return None, ["kw"]
 
         def token_similarity(self, keywords, ins_tw):

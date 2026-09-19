@@ -40,8 +40,14 @@ const (
 // DocEngine document storage engine interface
 type DocEngine interface {
 	// Chunk operations
-	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error
-	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	// CreateChunkStore creates the chunk store for a dataset. language is the
+	// dataset language, needed by engines whose fulltext analyzer is fixed when
+	// the index is created; the others ignore it.
+	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error
+	// InsertChunks writes chunks, creating the chunk store on first write.
+	// language is the dataset language, needed there for the same reason as in
+	// CreateChunkStore; engines that analyse client-side ignore it.
+	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error
 	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
 	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
