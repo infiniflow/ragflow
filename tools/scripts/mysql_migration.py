@@ -1613,10 +1613,16 @@ class ModelTypeMergeStage(MigrationStage):
             return 0, []
 
         # Create temporary table with model_type as INTEGER
-        self.create_target_table()
+        if not self.dry_run:
+            self.create_target_table()
+        else:
+            logger.info("[DRY RUN] Would create temporary table %s", self.target_tables)
 
         if self.create_table_only:
-            logger.info("[CREATE TABLE ONLY] Temporary table created, skipping data merge")
+            if self.dry_run:
+                logger.info("[DRY RUN] [CREATE TABLE ONLY] Would create temporary table %s, skipping data merge", self.target_tables)
+            else:
+                logger.info("[CREATE TABLE ONLY] Temporary table created, skipping data merge")
             return 0, self.target_tables
 
         # Load all records from tenant_model
@@ -1644,7 +1650,12 @@ class ModelTypeMergeStage(MigrationStage):
 
             for row in rows:
                 _, _, _, _, model_type_str, status, _, _, _, _, _ = row
-                type_bit = self.MODEL_TYPE_STR_TO_INT.get(model_type_str, 0)
+                type_bit = self.MODEL_TYPE_STR_TO_INT.get(str(model_type_str).lower(), 0)
+                if not type_bit:
+                    try:
+                        type_bit = int(model_type_str)
+                    except (ValueError, TypeError):
+                        type_bit = 0
                 if status == "unsupported":
                     unsupported_bits |= type_bit
                 else:
@@ -1723,6 +1734,10 @@ class ModelTypeMergeStage(MigrationStage):
 
     def create_target_table(self):
         """Create temporary table tenant_model_merge_tmp with model_type as INTEGER"""
+        if self.dry_run:
+            logger.info("[DRY RUN] Would create temporary table tenant_model_merge_tmp")
+            return
+
         create_sql = """
         CREATE TABLE IF NOT EXISTS tenant_model_merge_tmp (
             id VARCHAR(32) NOT NULL PRIMARY KEY,
@@ -1962,9 +1977,14 @@ class TenantModelIdMigrationStage(MigrationStage):
         )
         lookup = {}
         for model_id, model_name, model_type, tenant_id, provider_name in cursor.fetchall():
+            try:
+                model_type_int = int(model_type)
+            except (ValueError, TypeError):
+                model_type_int = self.MODEL_TYPE_TO_INT.get(str(model_type).lower(), 0)
+
             # model_type is a binary integer; we check each bit
             for type_str, type_bit in self.MODEL_TYPE_TO_INT.items():
-                if model_type & type_bit:
+                if model_type_int & type_bit:
                     key = (tenant_id, model_name, provider_name, type_str)
                     lookup[key] = model_id
         return lookup
