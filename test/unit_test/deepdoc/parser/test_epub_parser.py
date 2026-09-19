@@ -32,6 +32,9 @@ import zipfile
 from io import BytesIO
 from unittest import mock
 
+import pytest
+from bs4 import ParserRejectedMarkup
+
 # Import RAGFlowEpubParser directly by file path to avoid triggering
 # deepdoc/parser/__init__.py which pulls in heavy dependencies
 # (pdfplumber, xgboost, etc.) that may not be available in test environments.
@@ -388,9 +391,11 @@ class TestEpubParserUnreadableChapter:
     ]
 
     def _parse(self, epub_bytes):
+        """Parse `epub_bytes` and join the sections into one string."""
         return " ".join(RAGFlowEpubParser()(None, binary=epub_bytes, chunk_token_num=512))
 
     def test_all_three_chapters_when_the_book_is_intact(self):
+        """The fixture book parses in full when nothing is broken."""
         combined = self._parse(_make_epub(self._CHAPTERS))
 
         assert "ALPHA" in combined
@@ -455,3 +460,103 @@ class TestEpubParserUnreadableChapter:
 
         assert "ALPHA" in combined
         assert "CHARLIE" in combined
+
+    def test_a_chapter_with_rejected_markup_is_skipped(self):
+        """bs4 raises ParserRejectedMarkup when html.parser rejects the markup. Which markup that is depends on the CPython version, so the rejection is simulated."""
+        parser_txt = _epub_mod.RAGFlowHtmlParser.parser_txt
+
+        def reject_bravo(txt, chunk_token_num):
+            if "BRAVO" in txt:
+                raise ParserRejectedMarkup("rejected")
+            return parser_txt(txt, chunk_token_num)
+
+        with mock.patch.object(_epub_mod.RAGFlowHtmlParser, "parser_txt", side_effect=reject_bravo):
+            combined = self._parse(_make_epub(self._CHAPTERS))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    def test_a_chapter_nested_too_deep_to_walk_is_skipped(self):
+        """The HTML walker recurses once per element, so enough unclosed tags raise RecursionError."""
+        chapters = [
+            ("ch1.xhtml", _simple_html("ALPHA chapter")),
+            ("ch2.xhtml", _simple_html("<span>BRAVO " * sys.getrecursionlimit())),
+            ("ch3.xhtml", _simple_html("CHARLIE chapter")),
+        ]
+
+        combined = self._parse(_make_epub(chapters))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    def test_a_chapter_with_an_oversized_character_reference_is_skipped(self):
+        """A numeric character reference past Python's 4300-digit int limit raises ValueError."""
+        chapters = [
+            ("ch1.xhtml", _simple_html("ALPHA chapter")),
+            ("ch2.xhtml", _simple_html("BRAVO &#" + "1" * 5000 + "; chapter")),
+            ("ch3.xhtml", _simple_html("CHARLIE chapter")),
+        ]
+
+        combined = self._parse(_make_epub(chapters))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    def test_a_parser_bug_is_not_skipped_as_an_unreadable_chapter(self):
+        """Only failures caused by the chapter itself are skipped; any other error propagates."""
+        with mock.patch.object(_epub_mod.RAGFlowHtmlParser, "parser_txt", side_effect=TypeError("parser bug")), pytest.raises(TypeError, match="parser bug"):
+            self._parse(_make_epub(self._CHAPTERS))
+
+
+class TestEpubParserNothingReadable:
+    """A book in which no chapter could be read must fail instead of parsing to nothing."""
+
+    _CHAPTERS = TestEpubParserUnreadableChapter._CHAPTERS
+
+    def _parse(self, epub_bytes):
+        """Parse `epub_bytes` and return the sections."""
+        return RAGFlowEpubParser()(None, binary=epub_bytes, chunk_token_num=512)
+
+    def test_a_book_with_every_chapter_encrypted_raises(self):
+        """A DRM-protected book used to come back as zero sections."""
+        epub_bytes = _make_epub(self._CHAPTERS)
+        for name, _ in self._CHAPTERS:
+            epub_bytes = _set_encrypted_flag(epub_bytes, f"OEBPS/{name}".encode())
+
+        with pytest.raises(ValueError, match=r"No readable content in EPUB: 3 of 3 content items .* is encrypted"):
+            self._parse(epub_bytes)
+
+    def test_a_book_with_every_chapter_undecodable_raises(self):
+        """Parse failures count as well as read failures."""
+        chapters = [
+            ("ch1.xhtml", bytes(range(256)) * 8),
+            ("ch2.xhtml", bytes(range(256)) * 8),
+        ]
+
+        with pytest.raises(ValueError, match="No readable content in EPUB: 2 of 2 content items"):
+            self._parse(_make_epub(chapters))
+
+    def test_a_book_whose_spine_points_only_at_missing_files_raises(self):
+        """A missing spine item is a failure too."""
+        # Rename the members in the ZIP headers, so every spine href points at nothing.
+        epub_bytes = _make_epub(self._CHAPTERS).replace(b"OEBPS/ch", b"OEBPS/xx")
+
+        with pytest.raises(ValueError, match=r"No readable content in EPUB: 3 of 3 content items .* no item named"):
+            self._parse(epub_bytes)
+
+    def test_an_empty_chapter_next_to_an_unreadable_one_raises(self):
+        """Nothing readable is left, even though only one of the two items failed."""
+        chapters = [
+            ("ch1.xhtml", b""),
+            ("ch2.xhtml", bytes(range(256)) * 8),
+        ]
+
+        with pytest.raises(ValueError, match="No readable content in EPUB: 1 of 2 content items"):
+            self._parse(_make_epub(chapters))
+
+    def test_a_book_whose_only_chapter_is_empty_still_returns_nothing(self):
+        """An empty chapter is not a failure, so there is nothing to report."""
+        assert self._parse(_make_epub([("ch1.xhtml", b"")])) == []
