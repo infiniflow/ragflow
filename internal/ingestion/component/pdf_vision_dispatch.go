@@ -324,6 +324,33 @@ func monkeyOCRv2APIConfigValue(apiConfig *modelModule.APIConfig, keys ...string)
 	return ""
 }
 
+func mineruServerURL(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) string {
+	if value, ok := setup["mineru_server_url"].(string); ok {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	if value := monkeyOCRv2APIConfigValue(apiConfig, "mineru_server_url", common.EnvMineruServerURL); value != "" {
+		return value
+	}
+	return os.Getenv(common.EnvMineruServerURL)
+}
+
+func mineruBackend(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) string {
+	if value, ok := setup["mineru_backend"].(string); ok {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	if value := monkeyOCRv2APIConfigValue(apiConfig, "mineru_backend", common.EnvMineruBackend); value != "" {
+		return value
+	}
+	if value := os.Getenv(common.EnvMineruBackend); value != "" {
+		return value
+	}
+	return "pipeline"
+}
+
 func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
 	value := ""
 	if raw, ok := setup["monkeyocrv2_timeout"]; ok {
@@ -507,9 +534,10 @@ func dispatchMinerUPDF(
 	parseMethod := getStringOr(setup, "parse_method", "auto")
 	lang := getStringOr(setup, "mineru_lang", "English")
 	mineruLang := mineruLangCode(lang)
-	backend := getStringOr(setup, "mineru_backend", "pipeline")
+	backend := mineruBackend(setup, apiConfig)
+	serverURL := mineruServerURL(setup, apiConfig)
 
-	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend)
+	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
@@ -630,7 +658,7 @@ func mineruLangCode(lang string) string {
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod, lang, backend string) ([]byte, error) {
+func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod, lang, backend, serverURL string) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -643,6 +671,9 @@ func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod
 	}
 
 	_ = writer.WriteField("backend", backend)
+	if serverURL != "" {
+		_ = writer.WriteField("server_url", serverURL)
+	}
 	_ = writer.WriteField("parse_method", parseMethod)
 	_ = writer.WriteField("lang_list", lang)
 	_ = writer.WriteField("return_md", "true")

@@ -661,8 +661,15 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	withSSRFBypass(t)
+	var gotBackend, gotServerURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("parse multipart: %v", err)
+			} else {
+				gotBackend = r.FormValue("backend")
+				gotServerURL = r.FormValue("server_url")
+			}
 			buf := new(bytes.Buffer)
 			zw := zip.NewWriter(buf)
 			f, _ := zw.Create("content_list.json")
@@ -688,6 +695,8 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["mineru_backend"] = "vlm-http-client"
+	setups["pdf"]["mineru_server_url"] = "http://mineru.local:8080"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -703,6 +712,70 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 		t.Fatalf("output_format = %v, want json", got)
 	}
 	requireJSONText(t, out, "Title")
+	if gotBackend != "vlm-http-client" {
+		t.Fatalf("backend = %q, want vlm-http-client", gotBackend)
+	}
+	if gotServerURL != "http://mineru.local:8080" {
+		t.Fatalf("server_url = %q, want http://mineru.local:8080", gotServerURL)
+	}
+}
+
+func TestDispatch_PDFMinerUJSON_FallsBackToAPIKeyJSON(t *testing.T) {
+	withSSRFBypass(t)
+	var gotBackend, gotServerURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("parse multipart: %v", err)
+			} else {
+				gotBackend = r.FormValue("backend")
+				gotServerURL = r.FormValue("server_url")
+			}
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	baseURL := server.URL
+	apiKeyJSON := `{"mineru_server_url":"http://tenant.mineru:9000","mineru_backend":"hybrid-http-client"}`
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKeyJSON, BaseURL: &baseURL}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["output_format"], "json"; got != want {
+		t.Fatalf("output_format = %v, want %v", got, want)
+	}
+	requireJSONText(t, out, "Title")
+	if gotBackend != "hybrid-http-client" {
+		t.Fatalf("backend = %q, want hybrid-http-client", gotBackend)
+	}
+	if gotServerURL != "http://tenant.mineru:9000" {
+		t.Fatalf("server_url = %q, want http://tenant.mineru:9000", gotServerURL)
+	}
 }
 
 func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
