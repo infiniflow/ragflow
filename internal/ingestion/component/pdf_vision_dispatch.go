@@ -201,7 +201,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 			}
 			if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
 				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
-			} else if configuredURL := monkeyOCRv2APIConfigValue(apiConfig, "monkeyocrv2_server_url", common.EnvMonkeyOCRv2ServerURL); configuredURL != "" {
+			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_server_url"); configuredURL != "" {
 				baseURL = strings.TrimRight(configuredURL, "/")
 			}
 			timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
@@ -305,32 +305,13 @@ func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binar
 	return data, nil
 }
 
-func monkeyOCRv2APIConfigValue(apiConfig *modelModule.APIConfig, keys ...string) string {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return ""
-	}
-	var config map[string]any
-	if err := json.Unmarshal([]byte(*apiConfig.ApiKey), &config); err != nil {
-		return ""
-	}
-	if nested, ok := config["api_key"].(map[string]any); ok {
-		config = nested
-	}
-	for _, key := range keys {
-		if value, ok := config[key]; ok && value != nil {
-			return strings.TrimSpace(fmt.Sprint(value))
-		}
-	}
-	return ""
-}
-
 func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
 	value := ""
 	if raw, ok := setup["monkeyocrv2_timeout"]; ok {
 		value = strings.TrimSpace(fmt.Sprint(raw))
 	}
 	if value == "" {
-		value = monkeyOCRv2APIConfigValue(apiConfig, "monkeyocrv2_timeout", common.EnvMonkeyOCRv2Timeout)
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_timeout")
 	}
 	if value == "" {
 		value = os.Getenv(common.EnvMonkeyOCRv2Timeout)
@@ -494,9 +475,18 @@ func dispatchMinerUPDF(
 			"parser: MinerU requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant", driver.Name())
 	}
 
+	apiKeyRaw := ""
+	if apiConfig.ApiKey != nil {
+		apiKeyRaw = *apiConfig.ApiKey
+	}
+	providerCfg := modelModule.MinerUProviderConfigFromAPIKey(apiKeyRaw)
+
 	baseURL := ""
 	if apiConfig.BaseURL != nil {
 		baseURL = *apiConfig.BaseURL
+	}
+	if baseURL == "" {
+		baseURL = providerCfg.APIServer
 	}
 	if baseURL == "" {
 		baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
@@ -507,9 +497,13 @@ func dispatchMinerUPDF(
 	parseMethod := getStringOr(setup, "parse_method", "auto")
 	lang := getStringOr(setup, "mineru_lang", "English")
 	mineruLang := mineruLangCode(lang)
-	backend := getStringOr(setup, "mineru_backend", "pipeline")
+	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
+	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
+	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+		return parser.ParseResult{}, err
+	}
 
-	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend)
+	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
@@ -630,7 +624,7 @@ func mineruLangCode(lang string) string {
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod, lang, backend string) ([]byte, error) {
+func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -655,6 +649,9 @@ func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod
 	_ = writer.WriteField("return_model_output", "true")
 	_ = writer.WriteField("formula_enable", "true")
 	_ = writer.WriteField("table_enable", "true")
+	if strings.TrimSpace(serverURL) != "" {
+		_ = writer.WriteField("server_url", strings.TrimRight(strings.TrimSpace(serverURL), "/"))
+	}
 
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("finalize form: %w", err)
@@ -668,8 +665,8 @@ func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	if apiKey != nil && *apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+*apiKey)
+	if token := modelModule.MinerUBearerTokenFromAPIKey(apiKey); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

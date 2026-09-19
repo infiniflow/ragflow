@@ -69,6 +69,7 @@ type PDFParser struct {
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
+	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
 	PaddleOCRBaseURL                  string
 	PaddleOCRAPIKey                   string
@@ -107,7 +108,7 @@ func NewPDFParser() *PDFParser {
 		LibType:                        "pdf_oxide",
 		ParseMethod:                    "deepdoc",
 		OutputFormat:                   "json",
-		MinerUBackend:                  "pipeline",
+		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
 		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
@@ -155,6 +156,9 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["mineru_backend"].(string); ok && v != "" {
 		p.MinerUBackend = v
+	}
+	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
+		p.MinerUServerURL = v
 	}
 	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
 		p.MinerUPollTimeout = time.Duration(v) * time.Second
