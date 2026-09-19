@@ -119,6 +119,26 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 	common.SuccessWithData(c, status, "success")
 }
 
+// OceanBaseStatus reports the configured OceanBase document engine health.
+// The handler preserves Python's HTTP-200 envelope for expected API errors.
+func (h *SystemHandler) OceanBaseStatus(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	data, code, err := h.systemService.GetOceanBaseStatus(c.Request.Context())
+	if err != nil {
+		message := "Failed to get OceanBase status: " + err.Error()
+		common.ResponseWithCodeData(c, code, map[string]interface{}{
+			"status":  "error",
+			"message": message,
+		}, "success")
+		return
+	}
+	common.ResponseWithCodeData(c, code, data, "success")
+}
+
 // GetVersion get RAGFlow version
 // @Summary Get RAGFlow Version
 // @Description Get the current version of the application
