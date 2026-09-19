@@ -904,6 +904,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
     },
     chunk: {
       chunk: '解析块',
+      copyChunkId: '复制解析块 ID',
       createChunk: '创建解析块',
       editChunk: '编辑解析块',
       bulk: '批量',
