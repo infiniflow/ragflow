@@ -1010,11 +1010,30 @@ async def delete_session_message(chat_id, session_id, msg_id):
         for i, msg in enumerate(conv["message"]):
             if msg_id != msg.get("id", ""):
                 continue
-            assert conv["message"][i + 1]["id"] == msg_id
+            if (
+                i + 1 >= len(conv["message"])
+                or conv["message"][i + 1].get("id") != msg_id
+                or conv["message"][i + 1].get("role") != "assistant"
+            ):
+                # The paired follow-up message is missing or not the match
+                # (e.g. the assistant message was already removed): report a
+                # data error instead of falling into the generic 500 via an
+                # IndexError/assert.
+                return get_data_error_result(message="Message is not paired")
+            # The reference list is indexed by QA pair, not by message
+            # position: a leading assistant prologue shifts every pair by
+            # one message index, so ``(i - 1) // 2`` popped the wrong
+            # reference (index -1, i.e. the last one) for sessions without
+            # a prologue. Count the user messages before this pair instead
+            # — that is the pair index regardless of a prologue.
+            pair_index = sum(
+                1 for m in conv["message"][:i] if m.get("role") == "user"
+            )
             conv["message"].pop(i)
             conv["message"].pop(i)
-            ref_index = (i - 1) // 2
-            conv["reference"].pop(ref_index)
+            references = conv.get("reference") or []
+            if 0 <= pair_index < len(references):
+                references.pop(pair_index)
             break
         ConversationService.update_by_id(conv["id"], conv)
         return get_json_result(data=_build_session_response(conv))
