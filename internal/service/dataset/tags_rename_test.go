@@ -10,7 +10,37 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
+
+func TestDatasetServiceRenameTagDatasetLookupError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	kbID := "123e4567e89b12d3a456426614174000"
+	insertRenameTagKB(t, kbID, "user-1", string(entity.TenantPermissionMe))
+	wantErr := errors.New("dataset lookup failed")
+	queries := 0
+	if err := db.Callback().Query().Before("gorm:query").Register("rename_tag_lookup_failure", func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Dest.(*entity.Knowledgebase); ok {
+			queries++
+			// Authorization reads the dataset first; fail the subsequent lookup.
+			if queries == 2 {
+				tx.AddError(wantErr)
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	docEngine := &renameTagMockEngine{}
+	_, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(t.Context(), kbID, "user-1", "old", "new")
+	if queries != 2 || code != common.CodeServerError || !errors.Is(err, wantErr) {
+		t.Fatalf("queries=%d code=%d err=%v", queries, code, err)
+	}
+	if len(docEngine.updateCalls) != 0 {
+		t.Fatal("dataset lookup failure updated the document engine")
+	}
+}
 
 type renameTagUpdateCall struct {
 	Condition map[string]interface{}
@@ -76,7 +106,7 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	docEngine := &renameTagMockEngine{}
 	ctx := t.Context()
 
-	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(ctx, kbInput, "user-1", "old-tag ", "new-tag")
+	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(ctx, kbInput, "user-1", "old-tag ", " new-tag ")
 	if err != nil {
 		t.Fatalf("RenameTag failed: %v", err)
 	}
@@ -111,6 +141,30 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	}
 	if got := add["tag_kwd"]; got != "new-tag" {
 		t.Fatalf("add tag_kwd=%v want=%q", got, "new-tag")
+	}
+}
+
+func TestDatasetServiceRenameTagTrimsOperandsBeforeMatchingAndWriting(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	kbID := "123e4567e89b12d3a456426614174000"
+	insertRenameTagKB(t, kbID, "user-1", string(entity.TenantPermissionMe))
+	docEngine := &renameTagMockEngine{}
+
+	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(t.Context(), kbID, "user-1", "  old tag  ", "  new tag  ")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("RenameTag err=%v code=%d", err, code)
+	}
+	if result["from"] != "old tag" || result["to"] != "new tag" {
+		t.Fatalf("result=%v", result)
+	}
+	call := docEngine.updateCalls[0]
+	if call.Condition["tag_kwd"] != "old tag" {
+		t.Fatalf("condition=%v", call.Condition)
+	}
+	add, _ := call.NewValue["add"].(map[string]interface{})
+	if add["tag_kwd"] != "new tag" {
+		t.Fatalf("new value=%v", add)
 	}
 }
 
