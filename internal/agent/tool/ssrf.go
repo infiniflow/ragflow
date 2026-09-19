@@ -213,7 +213,7 @@ func ValidateDBHost(host string) (string, error) {
 		return ip.String(), nil
 	}
 
-	// Resolve via utility.LookupHost so tests can stub DNS without
+	// Resolve via common.LookupHost so tests can stub DNS without
 	// touching real network — matches the stubbing pattern used by
 	// the utility package (see internal/utility/ssrf.go LookupHost).
 	addrs, lerr := common.LookupHost(host)

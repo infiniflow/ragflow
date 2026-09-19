@@ -33,7 +33,7 @@ import (
 )
 
 // connectorAssertURLSafe is the SSRF guard shared by all connectors. It is an
-// indirection over utility.AssertURLSafe so unit tests can substitute a stub
+// indirection over common.AssertURLSafe so unit tests can substitute a stub
 // without touching the shared utility guard (same pattern as sitemap.go and
 // azure_blob.go).
 var connectorAssertURLSafe = common.AssertURLSafe

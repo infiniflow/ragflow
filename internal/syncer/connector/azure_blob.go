@@ -41,7 +41,7 @@ const (
 )
 
 // azureAssertURLSafe is the SSRF guard used for caller-supplied endpoint URLs.
-// It is an indirection over utility.AssertURLSafe so unit tests can substitute
+// It is an indirection over common.AssertURLSafe so unit tests can substitute
 // a stub without touching the shared global guard.
 var azureAssertURLSafe = common.AssertURLSafe
 

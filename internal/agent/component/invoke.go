@@ -24,7 +24,7 @@
 // traceparent headers.
 //
 // SSRF guard (PR #15426): every outbound URL is validated against
-// the shared utility.AssertURLSafe before any network I/O. Both the
+// the shared common.AssertURLSafe before any network I/O. Both the
 // target URL and an optional proxy URL are checked — the proxy
 // vector matters because the Go transport hands the request to the
 // proxy host, which would otherwise re-resolve the original host
@@ -89,7 +89,7 @@ func (i *InvokeComponent) Name() string { return i.name }
 // param
 //
 // SSRF flow (PR #15426):
-//  1. Validate the target URL via utility.AssertURLSafe (loopback /
+//  1. Validate the target URL via common.AssertURLSafe (loopback /
 //     link-local / RFC1918 / metadata / unresolvable are rejected).
 //  2. Validate the optional proxy URL the same way (the proxy
 //     re-resolves the target host; an unsafe proxy would defeat

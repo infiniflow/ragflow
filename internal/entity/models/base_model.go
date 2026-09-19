@@ -470,7 +470,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 //
 // allowPrivate selects the guard strictness:
 //   - false (cloud-hosted drivers): every request is validated with
-//     utility.AssertURLSafe — scheme + host must be present and every resolved
+//     common.AssertURLSafe — scheme + host must be present and every resolved
 //     IP must be globally routable (private/loopback/link-local/metadata are
 //     rejected). This is the default and closes the go/request-forgery sink.
 //   - true (local-inference drivers): requests are validated with
