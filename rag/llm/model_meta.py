@@ -1270,6 +1270,28 @@ class DaoXE(OpenAIAPICompatible):
     _FACTORY_NAME = "DaoXE"
 
 
+class YAPI(OpenAIAPICompatible):
+    """Y-API catalog lister.
+
+    The live catalog is account-scoped and changes over time, so the list is
+    read from the gateway's own ``/v1/models`` endpoint (inherited behavior)
+    rather than pinned in ``conf/models/y-api.json``, which stays empty on
+    purpose.
+    """
+
+    _FACTORY_NAME = "Y-API"
+
+    @classmethod
+    def _infer_model_types(cls, model_name):
+        # ``conf/models/y-api.json`` declares a ``chat`` suffix and nothing
+        # else, so a non-chat type here would be routed to an adapter the
+        # provider does not have. The catalog is read live, so an id like
+        # "*-embed" or "*-vl" appearing later would otherwise be typed by name
+        # into an unusable entry. Drop this override once the config grows a
+        # matching endpoint.
+        return [LLMType.CHAT.value]
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 
