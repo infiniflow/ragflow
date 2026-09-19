@@ -15,14 +15,14 @@
 #
 import copy
 import json
-import re
-
 import logging
+import re
 
 from quart import Response, request
 
 from agent.canvas import Canvas
 from api.apps import AUTH_BETA, login_required
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
@@ -30,26 +30,23 @@ from api.db.services.conversation_service import async_iframe_completion as ifra
 from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import TenantService
-from common.metadata_utils import apply_meta_data_filter
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
-from api.db.services.llm_service import resolve_llm_setting
-from common.misc_utils import thread_pool_exec
-from api.utils.api_utils import get_error_data_result, get_json_result, add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
-from rag.app.tag import label_question
-from rag.prompts.template import load_prompt
-from rag.prompts.generator import cross_languages, keyword_extraction
-from common.constants import RetCode, LLMType, StatusEnum
-from common import settings
-from rag.utils.web_search_conn import has_web_search_provider
+from api.db.services.user_service import TenantService, UserTenantService
+from api.utils.api_utils import add_tenant_id_to_kwargs, get_error_data_result, get_json_result, get_request_json, get_result, server_error_response, validate_request
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from common import settings
+from common.constants import LLMType, RetCode, StatusEnum
+from common.metadata_utils import apply_meta_data_filter
+from common.misc_utils import thread_pool_exec
+from rag.app.tag import label_question
+from rag.prompts.generator import cross_languages, keyword_extraction
+from rag.prompts.template import load_prompt
+from rag.utils.web_search_conn import has_web_search_provider
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +186,7 @@ async def agent_bot_completions(agent_id, tenant_id=None):
                 async for answer in agent_completion(tenant_id, agent_id, **req):
                     yield answer
             except Exception as e:
-                logging.exception(e)
+                logger.exception("SearchBots request failed")
                 error_result = get_error_data_result(message=str(e) or "Unknown error")
                 yield (
                     "data:"
@@ -232,8 +229,8 @@ async def agent_bot_completions(agent_id, tenant_id=None):
                     continue
                 try:
                     ans = json.loads(payload)
-                except Exception as e:
-                    logging.debug("agent_bot_completions: skipping malformed SSE frame: %s", e)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("agent_bot_completions: skipping malformed SSE frame: %s", e)
                     continue
                 event = ans.get("event")
                 if event == "message":
@@ -259,7 +256,7 @@ async def agent_bot_completions(agent_id, tenant_id=None):
             final_ans["data"]["structured"] = structured_output
         return get_result(data=final_ans)
     except Exception as e:
-        logging.exception(e)
+        logger.exception("SearchBots request failed")
         return get_error_data_result(message=str(e) or "Unknown error")
 
 
@@ -303,7 +300,7 @@ async def agent_bot_logs(shared_id, message_id, tenant_id=None):
         payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
         return get_json_result(data=json.loads(payload))
     except Exception as exc:
-        logging.exception(exc)
+        logger.exception("SearchBots request failed")
         return server_error_response(exc)
 
 
@@ -317,9 +314,8 @@ async def ask_about_embedded(tenant_id=None):
 
     search_id = req.get("search_id", "")
     search_config = {}
-    if search_id:
-        if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
-            search_config = search_app.get("search_config", {})
+    if search_id and (search_app := await thread_pool_exec(SearchService.get_detail, search_id)):
+        search_config = search_app.get("search_config", {})
 
     effective_kb_ids = search_config.get("kb_ids", req["kb_ids"])
     if not await _accessible_kbs(effective_kb_ids, uid):
@@ -335,7 +331,7 @@ async def ask_about_embedded(tenant_id=None):
         try:
             async for ans in async_ask(req["question"], req["kb_ids"], uid, chat_llm_name=chat_llm_name, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
@@ -362,11 +358,17 @@ async def retrieval_test_embedded(tenant_id=None):
     if not kb_ids:
         return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.0))
-    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    numeric_fields = ("similarity_threshold", "vector_similarity_weight", "top_k", "rerank_candidates_count")
+    if any(isinstance(req.get(field), bool) for field in numeric_fields):
+        return get_error_data_result("`top_k` and `rerank_candidates_count` must be integers and `similarity_threshold` and `vector_similarity_weight` must be numbers")
+    try:
+        similarity_threshold = float(req.get("similarity_threshold", 0.0))
+        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+        top = int(req.get("top_k", 1024))
+        rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
+    except (TypeError, ValueError):
+        return get_error_data_result("`top_k` and `rerank_candidates_count` must be integers and `similarity_threshold` and `vector_similarity_weight` must be numbers")
     use_kg = req.get("use_kg", False)
-    top = int(req.get("top_k", 1024))
-    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
@@ -405,13 +407,16 @@ async def retrieval_test_embedded(tenant_id=None):
                 top = int(search_config.get("top_k", top))
             if not req.get("rerank_id"):
                 rerank_id = search_config.get("rerank_id", "")
-            if not req.get("rerank_candidates_count"):
+            if "rerank_candidates_count" not in req:
                 rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
+
+        if rerank_candidates_count <= 0:
+            return get_error_data_result("`rerank_candidates_count` must be greater than 0")
 
         if meta_data_filter:
             local_doc_ids = await apply_meta_data_filter(
@@ -486,7 +491,7 @@ async def retrieval_test_embedded(tenant_id=None):
 
     try:
         return await _retrieval()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if "not_found" in str(e):
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
         return server_error_response(e)
@@ -503,9 +508,8 @@ async def related_questions_embedded(tenant_id=None):
 
     search_id = req.get("search_id", "")
     search_config = {}
-    if search_id:
-        if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
-            search_config = search_app.get("search_config", {})
+    if search_id and (search_app := await thread_pool_exec(SearchService.get_detail, search_id)):
+        search_config = search_app.get("search_config", {})
 
     question = req["question"]
 
@@ -553,7 +557,7 @@ async def detail_share_embedded(tenant_id=None):
         if not search:
             return get_error_data_result(message="Can't find this Search App!")
         return get_json_result(data=search)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return server_error_response(e)
 
 
