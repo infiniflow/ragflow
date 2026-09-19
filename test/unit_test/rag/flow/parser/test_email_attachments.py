@@ -218,3 +218,48 @@ def test_nested_multipart_walks_into_the_alternative_and_the_attachment(monkeypa
     assert "html body" in content["text_html"]
     assert [a["filename"] for a in content["attachments"]] == ["report.pdf"]
     assert content["attachments"][0]["payload"] == ""
+
+
+def _forwarded(*, outer_body="See the thread below.", inner_body="Q3 revenue was up 12 percent.", inner_html=None):
+    """Build the shape every mail client produces for "forward as attachment": an
+    outer message carrying a whole second message as a `message/rfc822` part."""
+    inner = EmailMessage()
+    inner["From"] = "analyst@example.com"
+    inner["To"] = "sender@example.com"
+    inner["Subject"] = "Q3 revenue"
+    inner.set_content(inner_body)
+    if inner_html is not None:
+        inner.add_alternative(inner_html, subtype="html")
+
+    outer = EmailMessage()
+    outer["From"] = "sender@example.com"
+    outer["To"] = "receiver@example.com"
+    outer["Subject"] = "Fwd: Q3 revenue"
+    outer.set_content(outer_body)
+    outer.add_attachment(inner)
+    return outer.as_bytes()
+
+
+@pytest.mark.p2
+def test_forwarded_message_body_is_walked_into(monkeypatch):
+    """`message/rfc822` is a container — `is_multipart()` is True and `iter_parts()`
+    yields the forwarded message — but its content type does not contain the string
+    "multipart", so a substring test walks straight past the forwarded content."""
+    parser_module = _load_parser_module(monkeypatch)
+
+    content = _parse(parser_module, _forwarded())
+
+    assert "See the thread below." in content["text"]
+    assert "Q3 revenue was up 12 percent." in content["text"]
+
+
+@pytest.mark.p2
+def test_forwarded_message_html_body_is_walked_into(monkeypatch):
+    """The forwarded message is itself `multipart/alternative`, so recovering its
+    HTML takes two descents: through the `message/rfc822` part and then through
+    the alternative inside it."""
+    parser_module = _load_parser_module(monkeypatch)
+
+    content = _parse(parser_module, _forwarded(inner_html="<p>Q3 revenue chart</p>"))
+
+    assert "Q3 revenue chart" in content["text_html"]

@@ -1290,11 +1290,15 @@ class Parser(ProcessBase):
                     # Read the part that was handed in, not the top-level message:
                     # get_payload(decode=True) on a multipart container returns None,
                     # so any message with an attachment used to fail here.
+                    #
+                    # Recurse on the structure, not on the name: `message/rfc822` — a
+                    # forwarded mail — is a container as well, and its content type
+                    # carries no "multipart" substring.
                     if content_type == "text/plain":
                         body_text.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
                     elif content_type == "text/html":
                         body_html.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
-                    elif "multipart" in content_type and m.is_multipart():
+                    elif m.is_multipart():
                         for part in m.iter_parts():
                             _add_content(part, part.get_content_type())
 
