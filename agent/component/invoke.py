@@ -144,17 +144,39 @@ class Invoke(ComponentBase, ABC):
 
     def _resolve_arg_value(self, para: dict, kwargs: dict) -> object:
         ref = (para.get("ref") or "").strip()
-        if ref and (ref in kwargs or self._canvas.get_variable_value(ref) is not None):
+        if ref and ref in kwargs:
             return self._resolve_variable_value(ref, kwargs)
+
+        canvas_value = None
+        if ref:
+            try:
+                canvas_value = self._canvas.get_variable_value(ref)
+            except KeyError:
+                canvas_value = None
+            except Exception as exc:
+                # The canvas raises a bare Exception("Can't find variable: ...")
+                # for missing references; any other error is a real bug and
+                # must propagate instead of being treated as a fallback.
+                if "Can't find variable" not in str(exc):
+                    raise
+                logging.warning(
+                    "Invoke could not resolve canvas variable %s; falling back to the parameter value",
+                    ref,
+                    exc_info=True,
+                )
+                canvas_value = None
+
+        if canvas_value is not None:
+            if isinstance(canvas_value, partial):
+                canvas_value = "".join(canvas_value())
+                self.set_input_value(ref, canvas_value)
+            return canvas_value
 
         if para.get("value") is not None:
             value = para["value"]
             if isinstance(value, str):
                 return self._resolve_template_text(value, kwargs)
             return value
-
-        if ref:
-            return self._resolve_variable_value(ref, kwargs)
 
         return ""
 
