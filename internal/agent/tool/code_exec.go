@@ -18,16 +18,20 @@ package tool
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/storage"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -166,7 +170,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		// ReAct loop instead of prompting retries against broken infrastructure.
 		return codeExecStubResult(err.Error()), err
 	}
-	out, mErr := codeExecResultJSON(resp)
+	out, mErr := codeExecResultJSON(ctx, resp)
 	if mErr != nil {
 		return codeExecStubResult(mErr.Error()), mErr
 	}
@@ -182,9 +186,10 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 //     us back" field).
 //   - StructuredResult["actual_type"] → ActualType (Python
 //     `infer_actual_type` surface for downstream Message component).
-//   - Metadata["artifacts"] → Artifacts (the model AND the Message
-//     component's `_ARTIFACTS` collector both consume this; we
-//     surface it as `_ARTIFACTS` to match the Python envelope).
+//   - Metadata["artifacts"] → Artifacts, published to the sandbox
+//     artifact bucket and exposed as `_ARTIFACTS` references
+//     ({name, url, mime_type, size}); the blob payload stays out of
+//     the model-visible envelope.
 //   - Metadata["attachments"] → Attachments (rendered into
 //     downstream Markdown by Message via the same path the Agent
 //     tool artifact Markdown uses).
@@ -193,7 +198,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 // other than map[string]any) are silently dropped with a log
 // warning. This matches the Python tool's "skip on shape mismatch"
 // semantics — better to lose one artifact than to abort the run.
-func codeExecResultJSON(r *SandboxResponse) (string, error) {
+func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error) {
 	if r == nil {
 		return codeExecStubResult("empty response"), nil
 	}
@@ -203,7 +208,7 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		Stderr:   r.Stderr,
 	}
 	if r.Metadata != nil {
-		out.Artifacts = extractArtifactList(r.Metadata, "artifacts")
+		out.Artifacts = publishSandboxArtifacts(ctx, extractArtifactList(r.Metadata, "artifacts"))
 		out.Attachments = extractArtifactList(r.Metadata, "attachments")
 	}
 	hasStructuredResult := false
@@ -238,6 +243,64 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		return "", fmt.Errorf("code_exec: marshal result: %w", err)
 	}
 	return string(b), nil
+}
+
+// publishSandboxArtifacts turns sandbox artifact descriptors into
+// hosted references: each blob is uploaded to the sandbox artifact
+// bucket and the entry keeps only {name, url, mime_type, size}, so
+// raw base64 never enters the model-visible envelope or the final
+// chat message. Entries that cannot be published are dropped — the
+// /api/v1/documents/artifact route only serves uploaded objects.
+func publishSandboxArtifacts(ctx context.Context, artifacts []map[string]any) []map[string]any {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	published := make([]map[string]any, 0, len(artifacts))
+	for _, art := range artifacts {
+		if entry := publishSandboxArtifact(ctx, art); entry != nil {
+			published = append(published, entry)
+		}
+	}
+	if len(published) == 0 {
+		return nil
+	}
+	return published
+}
+
+func publishSandboxArtifact(ctx context.Context, art map[string]any) map[string]any {
+	name, _ := art["name"].(string)
+	if name == "" {
+		return nil
+	}
+	mime, _ := art["mime_type"].(string)
+	if url, _ := art["url"].(string); url != "" {
+		return map[string]any{"name": name, "url": url, "mime_type": mime, "size": art["size"]}
+	}
+	contentB64, _ := art["content_b64"].(string)
+	if contentB64 == "" {
+		return nil
+	}
+	blob, err := base64.StdEncoding.DecodeString(contentB64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "code_exec: artifact %q is not valid base64: %v; dropping\n", name, err)
+		return nil
+	}
+	impl := storage.GetStorageFactory().GetStorage()
+	if impl == nil {
+		fmt.Fprintf(os.Stderr, "code_exec: storage not initialized; dropping artifact %q\n", name)
+		return nil
+	}
+	storageName := uuid.NewString() + strings.ToLower(filepath.Ext(name))
+	if err := impl.Put(ctx, common.SandboxArtifactBucket(), storageName, blob); err != nil {
+		fmt.Fprintf(os.Stderr, "code_exec: upload artifact %q: %v; dropping\n", name, err)
+		return nil
+	}
+	return map[string]any{
+		"name":      name,
+		"url":       "/api/v1/documents/artifact/" + storageName,
+		"mime_type": mime,
+		"size":      art["size"],
+	}
 }
 
 // extractArtifactList pulls a list of dict-shaped entries out of
