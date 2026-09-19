@@ -25,6 +25,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from api.db import CanvasCategory
+
 
 class _DummyManager:
     def route(self, *_args, **_kwargs):
@@ -194,7 +196,12 @@ def _load_mcp_api(monkeypatch):
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.TenantService = _DummyTenantService
+    user_service_mod.UserTenantService = SimpleNamespace(get_tenants_by_user_id=lambda _user_id: [])
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    canvas_service_mod = ModuleType("api.db.services.canvas_service")
+    canvas_service_mod.UserCanvasService = SimpleNamespace(query=lambda **_kwargs: [])
+    monkeypatch.setitem(sys.modules, "api.db.services.canvas_service", canvas_service_mod)
 
     mcp_conn_mod = ModuleType("common.mcp_tool_call_conn")
     mcp_conn_mod.MCPToolCallSession = _DummyMCPToolCallSession
@@ -265,6 +272,7 @@ def _load_mcp_api(monkeypatch):
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
+    module.CanvasCategory = CanvasCategory
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
     return module
