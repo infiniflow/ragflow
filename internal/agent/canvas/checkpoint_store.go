@@ -25,6 +25,7 @@ package canvas
 import (
 	"context"
 	"errors"
+	"fmt"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"time"
 
@@ -34,6 +35,17 @@ import (
 // checkpointKeyPrefix is the Redis key namespace for checkpoint payloads.
 // The full key is "agent:cp:{id}".
 const checkpointKeyPrefix = "agent:cp:"
+
+// ErrCheckpointPersistence is the sentinel returned (wrapped) by
+// KvrocksCheckPointStore.Set when the underlying write fails. The ingestion
+// pipeline uses it to distinguish a checkpoint-durability hiccup from a real
+// workflow failure, so a transient Kvrocks/Redis error (e.g. a broken pipe)
+// never marks an otherwise-complete parse task as FAILED — the run simply
+// loses resume capability for that checkpoint.
+//
+// It is deliberately NOT wrapped around the "client not initialized" error:
+// that is a configuration error and must stay fatal.
+var ErrCheckpointPersistence = errors.New("checkpoint persistence failed")
 
 // KvrocksCheckPointStore is a Kvrocks-backed eino CheckPointStore /
 // CheckPointDeleter. Values are stored as raw bytes — the eino Serializer
@@ -96,12 +108,17 @@ func (s *KvrocksCheckPointStore) Get(ctx context.Context, id string) ([]byte, bo
 }
 
 // Set implements eino's CheckPointStore.Set. The TTL is applied on every
-// call so a frequently-updated checkpoint does not expire mid-run.
+// call so a frequently-updated checkpoint does not expire mid-run. A write
+// failure is wrapped with ErrCheckpointPersistence so callers can treat a
+// checkpoint-durability hiccup as non-fatal.
 func (s *KvrocksCheckPointStore) Set(ctx context.Context, id string, payload []byte) error {
 	if s == nil || s.client == nil {
 		return errors.New("checkpoint store: kvrocks client not initialized")
 	}
-	return s.client.Set(ctx, checkpointKeyPrefix+id, payload, s.ttl).Err()
+	if err := s.client.Set(ctx, checkpointKeyPrefix+id, payload, s.ttl).Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrCheckpointPersistence, err)
+	}
+	return nil
 }
 
 // Delete implements eino's optional CheckPointDeleter. It is safe to call

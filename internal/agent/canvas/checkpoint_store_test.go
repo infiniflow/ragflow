@@ -17,6 +17,9 @@
 package canvas
 
 import (
+	"context"
+	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -136,5 +139,29 @@ func TestRedisCheckPointStore_NilClient(t *testing.T) {
 	}
 	if err := store.Delete(ctx, "x"); err == nil {
 		t.Fatal("Delete with nil client: err = nil, want error")
+	}
+}
+
+// TestKvrocksCheckPointStore_SetWrapsPersistenceError verifies that a
+// checkpoint write failure is wrapped with ErrCheckpointPersistence so the
+// ingestion pipeline can treat it as a non-fatal durability hiccup rather than
+// a real workflow failure.
+func TestKvrocksCheckPointStore_SetWrapsPersistenceError(t *testing.T) {
+	// A client whose dialer always fails forces every command (including
+	// Set) to error, exercising the write-failure path.
+	client := redis.NewClient(&redis.Options{
+		Dialer: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return nil, errors.New("simulated connection refused")
+		},
+	})
+	t.Cleanup(func() { _ = client.Close() })
+
+	store := NewKvrocksCheckPointStoreWithClient(client, time.Hour)
+	err := store.Set(t.Context(), "cpn_x", []byte("payload"))
+	if err == nil {
+		t.Fatal("Set: expected error from failing dialer")
+	}
+	if !errors.Is(err, ErrCheckpointPersistence) {
+		t.Fatalf("Set error must wrap ErrCheckpointPersistence, got %v", err)
 	}
 }

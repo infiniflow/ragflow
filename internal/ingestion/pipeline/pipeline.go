@@ -646,6 +646,23 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
+			// A checkpoint-persistence failure (e.g. a transient Kvrocks/Redis
+			// connection error such as a broken pipe) must NOT mark the parsing
+			// task FAILED: the actual document processing already happened. We
+			// log it, mark the run succeeded, and return a clean result so the
+			// task is not blocked by an infrastructure hiccup. The run simply
+			// loses resume capability for this checkpoint (acceptable
+			// degradation — a re-run starts fresh and re-does the work, the
+			// per-chunk cache absorbing the cost).
+			if errors.Is(invokeErr, canvas.ErrCheckpointPersistence) {
+				common.Error(fmt.Sprintf("pipeline: checkpoint persistence failed for %s, run continues and task is NOT marked failed (resume unavailable for this checkpoint): %v", p.taskID, invokeErr), invokeErr)
+				stateCtx, stateCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer stateCancel()
+				if tracker != nil {
+					utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(stateCtx, cpID) })
+				}
+				return nil, nil
+			}
 			// Same detached-ctx guarantee as the success/cancel paths: the
 			// run ctx may be cancelled by the time the failure surfaces.
 			failCtx, failCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
