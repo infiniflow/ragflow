@@ -3221,6 +3221,56 @@
             "rank": "997",
             "llm": [
                 {
+                    "llm_name": "gemini-3.5-flash",
+                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-3.1-pro",
+                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-3.1-flash",
+                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-3.1-flash-lite",
+                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-3-flash-preview",
+                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gemini-3-pro-preview",
                     "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
@@ -3282,6 +3332,12 @@
                 },
                 {
                     "llm_name": "gemini-embedding-001",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 2048,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "text-embedding-004",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 2048,
                     "model_type": "embedding"
