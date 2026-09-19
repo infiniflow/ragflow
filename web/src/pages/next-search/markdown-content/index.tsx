@@ -248,7 +248,7 @@ const MarkdownContent = ({
   const renderReference = useCallback(
     (text: string) => {
       const replacedText = reactStringReplace(text, currentReg, (match) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
 
         return (
           <Popover>
