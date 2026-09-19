@@ -792,3 +792,18 @@ def test_test_mcp_route_matrix_unit(monkeypatch):
     res = _run(module.test_mcp("mcp-1"))
     assert res["code"] == 100
     assert "session explode" in res["message"]
+
+
+@pytest.mark.p2
+def test_list_mcp_page_size_above_max_returns_argument_error(monkeypatch):
+    """Regression: page_size over the public maximum must surface an
+    argument error, not an unhandled ValueError from
+    validate_rest_api_page_size."""
+    module = _load_mcp_api(monkeypatch)
+    sys.modules["api.utils.api_utils"].get_error_argument_result = lambda message="": {"code": 101, "message": message}
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({"page_size": "101"})))
+
+    res = _run(module.list_mcp())
+
+    assert res["code"] == 101
+    assert res["message"] == "page_size must be less than or equal to 100"
