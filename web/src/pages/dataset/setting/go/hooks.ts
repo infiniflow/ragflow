@@ -9,6 +9,7 @@ import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { checkEmbedding } from '@/services/knowledge-service';
 import {
   getOperatorType,
+  persistTableColumnSettings,
   transformFormConfigToApi,
   transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
@@ -133,7 +134,7 @@ export const useSaveDatasetSetting = () => {
         if (extractorMetadataGroup) {
           transformedConfig.metadata = extractorMetadataGroup;
         }
-        payload.parser_config = transformedConfig;
+        payload.parser_config = persistTableColumnSettings(transformedConfig);
       }
 
       if (payload.parse_type === ParseType.BuiltIn) {

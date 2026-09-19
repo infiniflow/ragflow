@@ -22,9 +22,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -88,6 +90,8 @@ type fakeDocumentService struct {
 	metadataByKBs          map[string]interface{}
 	hasActiveTasks         bool
 	hasActiveTasksErr      error
+	probeResult            []string
+	probeErr               error
 }
 
 func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
@@ -274,6 +278,13 @@ func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []st
 }
 func (f *fakeDocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
 	return f.removeIngestionTasks, f.removeIngestionTaskErr
+}
+
+func (f *fakeDocumentService) ProbeTable(r io.Reader, filename string) ([]string, error) {
+	if f.probeResult != nil || f.probeErr != nil {
+		return f.probeResult, f.probeErr
+	}
+	return []string{"col1", "col2"}, nil
 }
 
 func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -750,6 +761,67 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 	if fake.uploadOverride != nil {
 		t.Fatalf("bad parser_config should be ignored, got %v", fake.uploadOverride)
+	}
+}
+
+func TestUploadDocumentsHandler_AllowsDocumentTableColumnsBeforeParsing(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{uploadLocalData: []map[string]interface{}{{"id": "doc-1", "name": "table.csv"}}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parser_config": `{"table_column_mode":"manual","table_column_names":["Name","City"],"table_column_roles":{"Name":"indexing","City":"metadata"}}`,
+	}, "table.csv", []byte("Name,City\nAlice,Beijing\n"))
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	wantNames := []interface{}{"Name", "City"}
+	if !reflect.DeepEqual(fake.uploadOverride["table_column_names"], wantNames) {
+		t.Fatalf("table_column_names = %#v, want %#v", fake.uploadOverride["table_column_names"], wantNames)
+	}
+}
+
+// Python's API boundary rejects a role its vocabulary does not know
+// (api/utils/validation_utils.py:430), so the Go upload path does too: the
+// value would otherwise be persisted and silently excluded at parse time.
+func TestUploadDocumentsHandler_RejectsUnknownTableColumnRole(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{uploadLocalData: []map[string]interface{}{{"id": "doc-1"}}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parser_config": `{"table_column_mode":"manual","table_column_roles":{"Name":"skip"}}`,
+	}, "table.csv", []byte("Name,City\nAlice,Beijing\n"))
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (error codes travel in the body), got %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != int(common.CodeArgumentError) {
+		t.Fatalf("code = %d, want CodeArgumentError; body=%s", body.Code, w.Body.String())
+	}
+	if !strings.Contains(body.Message, `table_column_roles["Name"]`) {
+		t.Fatalf("message %q does not name the offending role", body.Message)
+	}
+	if fake.uploadOverride != nil {
+		t.Fatalf("an invalid override must not reach the upload service: %#v", fake.uploadOverride)
 	}
 }
 
@@ -2050,5 +2122,122 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 	}
 	if resp["message"] != "document not found" {
 		t.Fatalf("foreign user must get the same message as a missing document, got %v", resp["message"])
+	}
+}
+
+func TestProbeTable_Success(t *testing.T) {
+	fakeSvc := &fakeDocumentService{
+		probeResult: []string{"Name", "City", "Age"},
+	}
+	h := NewDocumentHandler(fakeSvc, nil, nil)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "table.csv")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	part.Write([]byte("Name,City,Age\nAlice,Paris,30\n"))
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest("POST", "/api/v1/documents/probe_table", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Request = req
+
+	h.ProbeTable(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v", common.CodeSuccess, resp["code"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data not map: %v", resp["data"])
+	}
+	cols, ok := data["columns"].([]interface{})
+	if !ok || len(cols) != 3 {
+		t.Fatalf("unexpected columns: %v", data["columns"])
+	}
+}
+
+func TestProbeTable_NoFile(t *testing.T) {
+	fakeSvc := &fakeDocumentService{}
+	h := NewDocumentHandler(fakeSvc, nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest("POST", "/api/v1/documents/probe_table", nil)
+	c.Request = req
+
+	h.ProbeTable(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("expected argument error code, got %v", resp["code"])
+	}
+}
+
+// A file the probe declines is something the caller works around by reading the
+// header locally, so it must not be reported as a server failure. The Python
+// endpoint answers the same requests with an argument error.
+func TestProbeTable_ErrorCodeFollowsFailureKind(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want common.ErrorCode
+	}{
+		{
+			name: "unsupported format",
+			err:  fmt.Errorf("%w: %s", document.ErrUnsupportedTableFormat, ".pdf"),
+			want: common.CodeArgumentError,
+		},
+		{
+			name: "unreadable workbook",
+			err:  errors.New("zip: not a valid zip file"),
+			want: common.CodeServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewDocumentHandler(&fakeDocumentService{probeErr: tt.err}, nil, nil)
+
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("file", "table.pdf")
+			if err != nil {
+				t.Fatalf("create form file: %v", err)
+			}
+			part.Write([]byte("anything"))
+			writer.Close()
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			req := httptest.NewRequest("POST", "/api/v1/documents/probe_table", body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			c.Request = req
+
+			h.ProbeTable(c)
+
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal resp: %v", err)
+			}
+			if resp["code"] != float64(tt.want) {
+				t.Fatalf("code = %v, want %d", resp["code"], tt.want)
+			}
+		})
 	}
 }

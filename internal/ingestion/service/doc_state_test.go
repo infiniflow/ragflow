@@ -25,14 +25,21 @@ import (
 )
 
 type stubDocStateSvc struct {
-	metaData        map[string]any
-	gotDocID        string
-	gotKbID         string
-	gotChunkNum     int
-	gotTokenNum     int
-	gotDuration     float64
-	setCalled       bool
-	incrementCalled bool
+	metaData           map[string]any
+	gotDocID           string
+	gotKbID            string
+	gotChunkNum        int
+	gotTokenNum        int
+	gotDuration        float64
+	gotSaveDocID       string
+	gotSaveDocCols     []string
+	gotSaveKbID        string
+	gotSaveKbCols      []string
+	gotSaveFieldMap    map[string]interface{}
+	setCalled          bool
+	incrementCalled    bool
+	saveColsCalled     bool
+	saveFieldMapCalled bool
 }
 
 func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error) {
@@ -44,12 +51,7 @@ func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID str
 
 func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	s.setCalled = true
-	if s.metaData == nil {
-		s.metaData = make(map[string]any)
-	}
-	for k, v := range meta {
-		s.metaData[k] = v
-	}
+	s.metaData = meta
 	return nil
 }
 
@@ -60,6 +62,21 @@ func (s *stubDocStateSvc) ApplyDocCounts(ctx context.Context, docID, kbID string
 	s.gotChunkNum = chunkNum
 	s.gotTokenNum = tokenNum
 	s.gotDuration = duration
+	return nil
+}
+
+func (s *stubDocStateSvc) SaveDocumentTableColumns(ctx context.Context, docID string, names []string) error {
+	s.saveColsCalled = true
+	s.gotSaveDocID = docID
+	s.gotSaveDocCols = names
+	return nil
+}
+
+func (s *stubDocStateSvc) SaveKBTableState(ctx context.Context, kbID string, names []string, fieldMap map[string]interface{}) error {
+	s.saveFieldMapCalled = true
+	s.gotSaveKbID = kbID
+	s.gotSaveKbCols = names
+	s.gotSaveFieldMap = fieldMap
 	return nil
 }
 
@@ -280,5 +297,111 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 	}
 	if svc.metaData["author"] != "Alice" {
 		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
+	}
+}
+
+func TestDocStateUpdater_StripKeysOnReparse(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"author":     "Alice",
+		"status":     []string{"active", "pending"},
+		"department": "sales",
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:     "doc-1",
+		KbID:      "kb-1",
+		StripKeys: []string{"status", "department"},
+		Metadata: map[string]any{
+			"department": []string{"engineering"},
+		},
+		ChunkCount:       1,
+		TokenConsumption: 1,
+	})
+	if !svc.setCalled {
+		t.Fatal("SetDocumentMetadata must be called")
+	}
+	if _, ok := svc.metaData["status"]; ok {
+		t.Errorf("status must be stripped, got %v", svc.metaData["status"])
+	}
+	if svc.metaData["author"] != "Alice" {
+		t.Errorf("author must be preserved, got %v", svc.metaData["author"])
+	}
+	if dept, ok := svc.metaData["department"].([]string); !ok || len(dept) != 1 || dept[0] != "engineering" {
+		t.Errorf("department should be updated to [engineering], got %v", svc.metaData["department"])
+	}
+}
+
+func TestDocStateUpdater_StripKeysWithEmptyMetadata(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"author": "Alice",
+		"status": []string{"active"},
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:            "doc-1",
+		KbID:             "kb-1",
+		StripKeys:        []string{"status"},
+		Metadata:         map[string]any{},
+		ChunkCount:       1,
+		TokenConsumption: 1,
+	})
+	if !svc.setCalled {
+		t.Fatal("SetDocumentMetadata must be called when StripKeys present even if Metadata empty")
+	}
+	if _, ok := svc.metaData["status"]; ok {
+		t.Errorf("status must be stripped, got %v", svc.metaData["status"])
+	}
+	if svc.metaData["author"] != "Alice" {
+		t.Errorf("author must be preserved, got %v", svc.metaData["author"])
+	}
+}
+
+func TestDocStateUpdater_PersistsTableColumnsAndFieldMap(t *testing.T) {
+	svc := &stubDocStateSvc{}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+
+	r := &taskpkg.PipelineResult{
+		DocID:             "doc-123",
+		KbID:              "kb-456",
+		DiscoveredColumns: []string{"ColA", "ColB"},
+		FieldMapUpdates:   map[string]interface{}{"ColA": "ColA"},
+	}
+
+	u.apply(ctx, r)
+
+	if !svc.saveColsCalled || svc.gotSaveDocID != "doc-123" || len(svc.gotSaveDocCols) != 2 {
+		t.Errorf("SaveDocumentTableColumns not called properly: %+v", svc)
+	}
+	if !svc.saveFieldMapCalled || svc.gotSaveKbID != "kb-456" || svc.gotSaveFieldMap["ColA"] != "ColA" {
+		t.Errorf("SaveKBTableState not called properly: %+v", svc)
+	}
+	if len(svc.gotSaveKbCols) != 2 {
+		t.Errorf("the dataset must receive the discovered columns too: %+v", svc)
+	}
+}
+
+// A run on an engine without a chunk_data column publishes the discovered names
+// and reports no field map; the dataset write must still happen for the names.
+func TestDocStateUpdater_PersistsTableColumnsWithoutFieldMap(t *testing.T) {
+	svc := &stubDocStateSvc{}
+	u := &docStateUpdater{docSvc: svc}
+
+	u.apply(t.Context(), &taskpkg.PipelineResult{
+		DocID:             "doc-123",
+		KbID:              "kb-456",
+		DiscoveredColumns: []string{"ColA"},
+	})
+
+	if !svc.saveFieldMapCalled {
+		t.Fatalf("SaveKBTableState must be called for the discovered columns: %+v", svc)
+	}
+	if svc.gotSaveFieldMap != nil {
+		t.Errorf("no field map must be published, got %#v", svc.gotSaveFieldMap)
+	}
+	if len(svc.gotSaveKbCols) != 1 || svc.gotSaveKbCols[0] != "ColA" {
+		t.Errorf("dataset columns = %#v, want [ColA]", svc.gotSaveKbCols)
 	}
 }

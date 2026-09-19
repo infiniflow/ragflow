@@ -302,6 +302,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			documents := v1.Group("/documents")
 			{
 				documents.POST("/upload", r.documentHandler.UploadInfo)
+				documents.POST("/probe_table", r.documentHandler.ProbeTable)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
@@ -699,6 +700,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
 				doc.POST("/set_meta", r.documentHandler.SetMeta)
 				doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
+				doc.POST("/probe_table", r.documentHandler.ProbeTable)
 			}
 
 			// Chunk routes

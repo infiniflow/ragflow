@@ -8,6 +8,7 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { TableColumnSettingsFields } from '@/components/table-column-settings-form-fields';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -30,12 +31,15 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
   { label: 'Text', value: '1' },
 ];
 
-export function SpreadsheetFormFields({ prefix }: CommonProps) {
+export function SpreadsheetFormFields({ prefix, isTableParser }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
   const ownerTenantId = useOwnerTenantId();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
+  const columnModeName = buildFieldNameWithPrefix('column_mode', prefix);
+  const columnRolesName = buildFieldNameWithPrefix('column_roles', prefix);
+  const columnNamesName = buildFieldNameWithPrefix('column_names', prefix);
 
   const parseMethod = useWatch({
     name: parseMethodName,
@@ -43,6 +47,44 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
   const flattenMediaToText = useWatch({
     name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
+  const columnMode = useWatch({
+    control: form.control,
+    name: columnModeName,
+    defaultValue: 'auto',
+  });
+  const columnNames = useWatch({
+    control: form.control,
+    name: columnNamesName,
+    defaultValue: [],
+  });
+  const columnRoles = useWatch({
+    control: form.control,
+    name: columnRolesName,
+    defaultValue: {},
+  });
+
+  const handleModeChange = (value: string) => {
+    form.setValue(columnModeName, value as 'auto' | 'manual', {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+  };
+
+  const handleRoleChange = (columnName: string, role: string) => {
+    const current =
+      (form.getValues(columnRolesName) as Record<string, string>) || {};
+    form.setValue(
+      columnRolesName,
+      {
+        ...current,
+        [columnName]: role,
+      },
+      {
+        shouldValidate: true,
+        shouldDirty: true,
+      },
+    );
+  };
 
   // Spreadsheet only supports DeepDOC and TCADPParser
   const optionsWithoutLLM = [
@@ -132,6 +174,16 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
             )}
           </RAGFlowFormItem>
         </>
+      )}
+      {isTableParser !== false && (
+        <TableColumnSettingsFields
+          idPrefix={prefix}
+          mode={columnMode}
+          columns={columnNames}
+          roles={columnRoles}
+          onModeChange={handleModeChange}
+          onRoleChange={handleRoleChange}
+        />
       )}
     </>
   );

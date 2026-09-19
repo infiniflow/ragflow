@@ -148,6 +148,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
+		// Reject table column values the vocabulary does not know, as Python's
+		// API does (rag/app/table.py would silently exclude such a column).
+		if err = common.ValidateTableColumnSettings(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 	}
 
 	var requestedPagerank int64
@@ -305,7 +310,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				effectiveParserConfig,
 				llmID,
 			)
-			updates["parser_config"] = effectiveParserConfig
+			updates["parser_config"] = service.NormalizeTableColumnSettings(
+				effectiveParserConfig,
+				req.ParserConfig,
+				lockedKB.ParserConfig,
+			)
 		}
 
 		if len(updates) > 0 {

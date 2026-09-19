@@ -251,6 +251,9 @@ export function transformParserParams(params: ParserFormSchemaType) {
             parse_method: cur.parse_method,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            column_mode: cur.column_mode,
+            column_roles: cur.column_roles,
+            column_names: cur.column_names,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {

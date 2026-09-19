@@ -11,6 +11,7 @@ import { getExtension, getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildParserGapModalContent } from './parser-gap-content';
+import { buildTableUploadParserConfig } from './table-upload-parser-config';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { getFileTypeByExtension, hasUnsupportedTypeGap } from './utils';
 
@@ -31,22 +32,19 @@ export const useHandleUploadDocument = () => {
         fileList,
         parseOnCreation,
         tableColumnMode,
+        tableColumnNames,
+        tableColumnNamesByFile,
         tableColumnRoles,
       }: UploadFormSchemaType,
       failingFileTypes: Set<FileType>,
     ) => {
-      // Build parser_config if column roles are configured
-      let parserConfig: Record<string, any> | undefined;
-      if (
-        tableColumnMode === 'manual' &&
-        tableColumnRoles &&
-        Object.keys(tableColumnRoles).length > 0
-      ) {
-        parserConfig = {
-          table_column_mode: 'manual',
-          table_column_roles: tableColumnRoles,
-        };
-      }
+      // Build parser_config if column settings are configured
+      const parserConfig = buildTableUploadParserConfig(fileList, {
+        tableColumnMode,
+        tableColumnNames,
+        tableColumnNamesByFile,
+        tableColumnRoles,
+      });
 
       const ret = await uploadDocument(fileList as File[], parserConfig);
 

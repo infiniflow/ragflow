@@ -14,18 +14,32 @@
  *  limitations under the License.
  */
 
+import { probeTableColumns } from '@/services/knowledge-service';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
 /**
- * Extracts column headers from a CSV or Excel file.
- * Returns an empty array if the file type is not supported or headers cannot be read.
+ * Extracts column headers from a CSV, TSV, or Excel file.
+ * Tries server-side schema probe first for streaming efficiency and parser parity;
+ * falls back to client-side parsing if the server probe is unreachable.
  */
 export async function extractTableColumns(file: File): Promise<string[]> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const body = await probeTableColumns(formData);
+    if (body?.code === 0 && Array.isArray(body?.data?.columns)) {
+      return body.data.columns;
+    }
+  } catch {
+    // A probe that is unreachable or declines the format is not a failure the
+    // user acted on: the local parse below answers the same question.
+  }
+
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
 
-  if (ext === 'csv') {
-    return extractCsvColumns(file);
+  if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
+    return extractCsvColumns(file, ext !== 'csv');
   }
 
   if (['xlsx', 'xls'].includes(ext)) {
@@ -35,15 +49,30 @@ export async function extractTableColumns(file: File): Promise<string[]> {
   return [];
 }
 
-function extractCsvColumns(file: File): Promise<string[]> {
+function extractCsvColumns(
+  file: File,
+  tabDelimited: boolean,
+): Promise<string[]> {
   return new Promise((resolve) => {
     Papa.parse(file, {
-      preview: 1, // Only read the first row (header)
-      header: true,
-      skipEmptyLines: true,
+      preview: 5, // Read initial rows to skip leading empties
+      header: false,
+      skipEmptyLines: false,
+      // A delimited header is indexed exactly as written (Python reads tables
+      // with csv.reader, whose skipinitialspace default keeps every field), so
+      // trimming here would name a column the parser never creates.
+      trimValues: false,
+      // A .txt table is tab-separated, like a .tsv (rag/app/table.py).
+      delimiter: tabDelimited ? '\t' : undefined,
       complete(results) {
-        const fields = results.meta?.fields ?? [];
-        resolve(fields.filter((f) => f.trim().length > 0));
+        const rows = (results.data as string[][]) ?? [];
+        for (const row of rows) {
+          if (row.some((cell) => String(cell ?? '').trim().length > 0)) {
+            resolve(tableColumnHeaderNames(row, 'delimited'));
+            return;
+          }
+        }
+        resolve([]);
       },
       error() {
         resolve([]);
@@ -58,7 +87,7 @@ function extractExcelColumns(file: File): Promise<string[]> {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array', sheetRows: 1 });
+        const workbook = XLSX.read(data, { type: 'array', sheetRows: 5 });
         const firstSheetName = workbook.SheetNames[0];
         if (!firstSheetName) {
           resolve([]);
@@ -66,14 +95,13 @@ function extractExcelColumns(file: File): Promise<string[]> {
         }
         const sheet = workbook.Sheets[firstSheetName];
         const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
-        if (rows.length > 0) {
-          const headers = rows[0]
-            .map((h) => String(h ?? '').trim())
-            .filter((h) => h.length > 0);
-          resolve(headers);
-        } else {
-          resolve([]);
+        for (const row of rows) {
+          if (row.some((cell) => String(cell ?? '').trim().length > 0)) {
+            resolve(tableColumnHeaderNames(row, 'spreadsheet'));
+            return;
+          }
         }
+        resolve([]);
       } catch {
         resolve([]);
       }
@@ -83,10 +111,69 @@ function extractExcelColumns(file: File): Promise<string[]> {
   });
 }
 
+function deduplicateColumns(columns: string[]): string[] {
+  const reserved = new Set(columns);
+  const used = new Set<string>();
+  const counts = new Map<string, number>();
+  const unique: string[] = [];
+  for (const col of columns) {
+    counts.set(col, (counts.get(col) ?? 0) + 1);
+    if (!used.has(col)) {
+      unique.push(col);
+      used.add(col);
+      continue;
+    }
+    let suffix = counts.get(col)!;
+    let newName = `${col}_${suffix}`;
+    while (used.has(newName) || reserved.has(newName)) {
+      suffix++;
+      newName = `${col}_${suffix}`;
+    }
+    counts.set(col, suffix);
+    used.add(newName);
+    unique.push(newName);
+  }
+  return unique;
+}
+
+// Spreadsheet bookkeeping columns carry no content: the table parser deletes
+// them before rendering (rag/app/table.py:539-541), so the client-side fallback
+// must drop them as well — otherwise it would offer a role for a column that
+// never reaches a chunk. Kept in sync with tableBookkeepingColumns in
+// internal/parser/parser/table_row_render.go.
+const BOOKKEEPING_COLUMNS = ['id', '_id', 'index', 'idx'];
+
+// tableColumnHeaderNames applies the ingestion header rules of a file kind to a
+// raw header row: drop bookkeeping columns and dedupe the survivors. Only a
+// spreadsheet also trims each cell and names an empty one by position
+// (_parse_simple_headers); a delimited header is indexed exactly as read, so a
+// padded or empty cell keeps that spelling as its column name. Applies the same
+// rules rag/app/table.py indexes with (`_parse_simple_headers` at :206-228, the
+// first record as read at :507), which are the Go TableHeaderRule.
+function tableColumnHeaderNames(
+  row: unknown[],
+  rule: 'spreadsheet' | 'delimited',
+): string[] {
+  const spreadsheet = rule === 'spreadsheet';
+  const raw = row.map((cell, idx) => {
+    if (!spreadsheet) {
+      return String(cell ?? '');
+    }
+    const trimmed = String(cell ?? '').trim();
+    return trimmed.length > 0 ? trimmed : `Column_${idx + 1}`;
+  });
+  return deduplicateColumns(
+    raw.filter((name) => !BOOKKEEPING_COLUMNS.includes(name)),
+  );
+}
+
 /**
- * Check if a file is a table file (CSV or Excel).
+ * Check if a file is a table file: every format the Go table parser reads, which
+ * is also what the schema probe accepts. Python serves this set only through the
+ * Go path: its own canvas parser reads no column mode and it exposes no probe
+ * endpoint.
  */
 export function isTableFile(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  return ['csv', 'xlsx', 'xls'].includes(ext);
+  return ['csv', 'tsv', 'txt', 'xlsx', 'xls'].includes(ext);
 }

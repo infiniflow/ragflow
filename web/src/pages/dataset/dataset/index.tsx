@@ -21,6 +21,7 @@ import {
   useSelectedIds,
 } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { resolveTableColumnSettings } from '@/utils/table-column-settings';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -215,7 +216,13 @@ export default function Dataset() {
             onOk={onDocumentUploadOk}
             loading={documentUploadLoading}
             showParseOnCreation
-            isTableParser={knowledgeBase?.chunk_method === 'table'}
+            isTableParser={
+              (knowledgeBase?.chunk_method ?? knowledgeBase?.parser_id) ===
+              'table'
+            }
+            defaultTableColumnSettings={resolveTableColumnSettings(
+              knowledgeBase?.parser_config as Record<string, any>,
+            )}
           ></FileUploadDialog>
         )}
         {createVisible && (

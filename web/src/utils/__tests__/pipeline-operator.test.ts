@@ -1,8 +1,10 @@
 import {
   buildOperatorNode,
   getOperatorType,
+  persistTableColumnSettings,
   transformApiConfigToForm,
   transformFormConfigToApi,
+  transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
 
 let mockIsGoBackend = true;
@@ -140,5 +142,241 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
     const form = (node.data as Record<string, any>).form;
     expect(form.fields).toBe('text');
     expect(form).not.toHaveProperty('metadata');
+  });
+});
+
+// A minimal DSL-shaped Parser node whose component spreadsheet config carries
+// column_mode:"auto" — the value a canvas wrote, which must not mask the user's
+// upload-time "manual" selection.
+const parserNodeWithAutoColumnMode = {
+  id: 'Parser:HipSignsRhyme',
+  data: {
+    form: {
+      setups: [
+        {
+          fileFormat: 'spreadsheet',
+          column_mode: 'auto',
+          column_names: [],
+          column_roles: {},
+          parse_method: 'DeepDOC',
+          output_format: 'json',
+        },
+      ],
+    },
+  },
+} as any;
+
+describe('buildOperatorNode spreadsheet column settings', () => {
+  beforeEach(() => {
+    mockIsGoBackend = true;
+  });
+
+  it('root-level table_column_mode wins over DSL component column_mode:"auto"', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'auto',
+          column_names: [],
+          column_roles: {},
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_names: ['col_a', 'col_b'],
+      table_column_roles: { col_a: 'indexing', col_b: 'both' },
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup).toBeDefined();
+    // Root-level "manual" must win over component-level "auto".
+    expect(spreadsheetSetup.column_mode).toBe('manual');
+    expect(spreadsheetSetup.column_names).toEqual(['col_a', 'col_b']);
+    expect(spreadsheetSetup.column_roles).toEqual({
+      col_a: 'indexing',
+      col_b: 'both',
+    });
+  });
+
+  it('component-level column_mode wins when root level is absent', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_names: ['x'],
+          column_roles: { x: 'both' },
+        },
+      },
+      // no root-level table_column_mode
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_mode).toBe('manual');
+    expect(spreadsheetSetup.column_names).toEqual(['x']);
+  });
+
+  // An untouched setup has to stay unset. The form renders "auto" for an empty
+  // value, but a value written here is saved back into the component entry and
+  // lifted to the dataset root, where it outranks a manual profile the user
+  // configures afterwards.
+  it('leaves column_mode unset when no level states one', () => {
+    const node = buildOperatorNode(
+      {
+        id: 'Parser:HipSignsRhyme',
+        data: {
+          form: {
+            setups: [
+              {
+                fileFormat: 'spreadsheet',
+                // no column_mode at all
+                column_names: [],
+                column_roles: {},
+              },
+            ],
+          },
+        },
+      } as any,
+      {
+        'Parser:HipSignsRhyme': {
+          spreadsheet: { column_names: [], column_roles: {} },
+        },
+        // no table_column_mode
+      },
+    );
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_mode).toBeUndefined();
+  });
+
+  it('root-level table_column_names wins over component-level column_names', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_names: ['stale_col'],
+          column_roles: {},
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_names: ['fresh_col_a', 'fresh_col_b'],
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_names).toEqual([
+      'fresh_col_a',
+      'fresh_col_b',
+    ]);
+  });
+
+  // Published names alone do not pin the parser to auto: the component profile
+  // stays reachable so a document can be reconfigured after its first parse.
+  it('keeps a component profile when the root only carries published names', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_names: ['col_a'],
+          column_roles: { col_a: 'metadata' },
+        },
+      },
+      table_column_names: ['col_a'],
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_mode).toBe('manual');
+    expect(spreadsheetSetup.column_roles).toEqual({ col_a: 'metadata' });
+  });
+});
+
+// The document dialog seeds its outer form from transformSavedParserConfigToForm
+// and then lets that value override the operator tab, so the resolver has to run
+// there too or the dialog shows the component's stale mode.
+describe('transformSavedParserConfigToForm table column settings', () => {
+  beforeEach(() => {
+    mockIsGoBackend = true;
+  });
+
+  it('seeds the spreadsheet setup with the root-level manual profile', () => {
+    const form = transformSavedParserConfigToForm({
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'auto',
+          column_roles: {},
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_names: ['col_a'],
+      table_column_roles: { col_a: 'metadata' },
+    });
+
+    const setup = form?.['Parser:HipSignsRhyme'].setups.find(
+      (entry: any) => entry.fileFormat === 'spreadsheet',
+    );
+    expect(setup.column_mode).toBe('manual');
+    expect(setup.column_roles).toEqual({ col_a: 'metadata' });
+    expect(setup.column_names).toEqual(['col_a']);
+  });
+
+  it('leaves a built-in config untouched', () => {
+    const parserConfig = { chunk_token_num: 256 };
+    expect(transformSavedParserConfigToForm(parserConfig)).toBe(parserConfig);
+  });
+});
+
+describe('persistTableColumnSettings', () => {
+  it('lifts the parser form intent to the root keys', () => {
+    expect(
+      persistTableColumnSettings({
+        'Parser:HipSignsRhyme': {
+          spreadsheet: {
+            column_mode: 'manual',
+            column_roles: { col_a: 'metadata' },
+            column_names: ['col_a'],
+          },
+        },
+      }),
+    ).toEqual({
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_roles: { col_a: 'metadata' },
+          column_names: ['col_a'],
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_roles: { col_a: 'metadata' },
+    });
+  });
+
+  // Writing an unconfigured "auto" to the root would outrank a profile set on
+  // the other path, and copying published names would make the dialog the
+  // author of a schema it only reads.
+  it('stays silent for a parser that states no mode or roles', () => {
+    expect(
+      persistTableColumnSettings({
+        'Parser:HipSignsRhyme': {
+          spreadsheet: { column_names: ['col_a'], output_format: 'markdown' },
+        },
+        'Tokenizer:SomeNode': { fields: 'text' },
+      }),
+    ).toEqual({
+      'Parser:HipSignsRhyme': {
+        spreadsheet: { column_names: ['col_a'], output_format: 'markdown' },
+      },
+      'Tokenizer:SomeNode': { fields: 'text' },
+    });
   });
 });

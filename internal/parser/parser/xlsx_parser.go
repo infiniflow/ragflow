@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -34,6 +35,8 @@ type XLSXParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
+	ColumnMode                     string
+	ColumnRoles                    map[string]string
 }
 
 func NewXLSXParser(libType string) (*XLSXParser, error) {
@@ -77,6 +80,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+	applyTableColumnSetup(setup, &p.ColumnMode, &p.ColumnRoles)
 }
 
 func normalizeXLSXParseMethod(raw string) string {
@@ -115,6 +119,32 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
+	// Structured JSON row rendering applies only to the JSON output format: an
+	// html/markdown canvas setup keeps its legacy rendering. A setup that states
+	// no column_mode renders auto — every column lands in text and chunk_data,
+	// which is what rag/app/table.py does when table_column_mode is not manual.
+	if strings.EqualFold(p.OutputFormat, "json") {
+		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
+		if err == nil {
+			return spreadsheetRowParseResult(filename, "xlsx", items, allColumns, warnings, sheets)
+		}
+
+		normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
+		if normalizeErr != nil {
+			return ParseResult{Err: fmt.Errorf("xlsx parse: %w; normalize: %v", err, normalizeErr)}
+		}
+		if !changed {
+			return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
+		}
+		items, allColumns, retryWarnings, sheets, retryErr := parseXLSXRowsJSON(normalized, p.ColumnMode, p.ColumnRoles)
+		if retryErr != nil {
+			return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
+		}
+		warnings = append(normalizeWarnings, warnings...)
+		warnings = append(warnings, retryWarnings...)
+		return spreadsheetRowParseResult(filename, "xlsx", items, allColumns, warnings, sheets)
+	}
+
 	items, warnings, sheets, err := parseXLSXBytes(data, p.HTML4Excel)
 	if err == nil {
 		return xlsxParseResult(filename, items, warnings, sheets)
@@ -133,6 +163,102 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	warnings = append(normalizeWarnings, warnings...)
 	return xlsxParseResult(filename, items, warnings, sheets)
+}
+
+func parseXLSXRowsJSON(data []byte, columnMode string, columnRoles map[string]string) ([]map[string]any, []string, []string, int, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	allItems := make([]map[string]any, 0)
+	warnings := make([]string, 0)
+	allColSet := make(map[string]struct{})
+	allColumns := make([]string, 0)
+
+	for _, sheet := range sheets {
+		rows, err := f.GetRows(sheet)
+		if err != nil {
+			return nil, nil, warnings, len(sheets), fmt.Errorf("read XLSX sheet %q: %w", sheet, err)
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		rows = cleanIllegalControlChars(rows)
+		items, headers := RenderRowsToJSONChunks(rows, sheet, columnMode, columnRoles, TableHeaderRuleSpreadsheet)
+		allItems = append(allItems, items...)
+		for _, h := range headers {
+			if _, ok := allColSet[h]; !ok {
+				allColSet[h] = struct{}{}
+				allColumns = append(allColumns, h)
+			}
+		}
+	}
+	return allItems, allColumns, warnings, len(sheets), nil
+}
+
+// ProbeSpreadsheetColumnNames returns the column names parseXLSXRowsJSON would
+// index for the given workbook stream: the first row with content of every
+// sheet, unioned in the order the columns are first seen, which is the order
+// ingestion writes to table_column_names. The caller bounds the reader; a
+// header fits the prefix it reads.
+//
+// A sheet with merged or multi-level headers is parsed hierarchically, which
+// this preview cannot reproduce — the parser stays authoritative.
+func ProbeSpreadsheetColumnNames(r io.Reader) ([]string, error) {
+	f, err := excelize.OpenReader(r)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	seen := make(map[string]struct{})
+	names := make([]string, 0)
+	for _, sheet := range f.GetSheetList() {
+		rows, err := f.Rows(sheet)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			cols, err := rows.Columns()
+			if err != nil {
+				continue
+			}
+			cols = cleanIllegalControlChars([][]string{cols})[0]
+			if !tableRowHasContent(cols) {
+				continue
+			}
+
+			header, _ := tableColumnHeaderNames(cols, TableHeaderRuleSpreadsheet)
+			for _, name := range header {
+				if _, ok := seen[name]; ok {
+					continue
+				}
+				seen[name] = struct{}{}
+				names = append(names, name)
+			}
+			break
+		}
+		rows.Close()
+	}
+
+	return names, nil
+}
+
+func spreadsheetRowParseResult(filename, format string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
+	return ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":               filename,
+			"format":             format,
+			"sheets":             sheets,
+			"table_column_names": columns,
+		},
+		JSON:     items,
+		Warnings: warnings,
+	}
 }
 
 func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, int, error) {

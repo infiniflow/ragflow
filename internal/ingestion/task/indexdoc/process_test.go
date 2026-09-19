@@ -1,8 +1,11 @@
 package indexdoc
 
 import (
+	"reflect"
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // =============================================================================
@@ -495,5 +498,306 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 	}
 	if ck["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %v, want doc-1 (the strip must not touch persist fields)", ck["doc_id"])
+	}
+}
+
+// =============================================================================
+// Table Column Mode & Metadata Aggregation Tests
+// =============================================================================
+
+func TestResolveTableProfile_RootTier(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_mode":  "manual",
+		"table_column_roles": map[string]interface{}{"col1": "indexing", "col2": "metadata"},
+		"table_column_names": []interface{}{"col1", "col2"},
+	}
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want a profile from the root keys")
+	}
+	if profile.Mode != common.TableColumnModeManual {
+		t.Errorf("mode = %q, want manual", profile.Mode)
+	}
+	if len(profile.Roles) != 2 {
+		t.Errorf("roles = %#v, want 2", profile.Roles)
+	}
+	if len(profile.Columns) != 2 {
+		t.Errorf("columns = %#v, want 2", profile.Columns)
+	}
+}
+
+func TestResolveTableProfile_RootWriterShapes(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_mode":  "auto",
+		"table_column_roles": map[string]string{"col1": "both", "col2": "Both"},
+		"table_column_names": []string{"col1", "col2"},
+	}
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want a profile from the root keys")
+	}
+	got := profile.ToRolesInterfaceMap()
+	if len(got) != 2 ||
+		got["col1"] != string(common.ColumnRoleBoth) ||
+		got["col2"] != string(common.ColumnRoleNone) {
+		t.Errorf("roles = %v, want col1 %q and an out-of-vocabulary value %q",
+			got, common.ColumnRoleBoth, common.ColumnRoleNone)
+	}
+	if !reflect.DeepEqual(profile.Columns, []string{"col1", "col2"}) {
+		t.Errorf("columns = %v, want [col1 col2]", profile.Columns)
+	}
+}
+
+func TestResolveTableProfile_ComponentTier(t *testing.T) {
+	nested := map[string]interface{}{
+		"Parser:B": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]string{"age": "Metadata"},
+				"column_names": []string{"name", "age"},
+			},
+		},
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode": "auto",
+			},
+		},
+	}
+	profile := ResolveTableProfile(nested)
+	if profile == nil {
+		t.Fatal("want a profile from the parser entries")
+	}
+	if profile.Mode != common.TableColumnModeAuto {
+		t.Errorf("mode = %q, want deterministic lowest Parser id (auto)", profile.Mode)
+	}
+	if len(profile.Roles) != 0 {
+		t.Errorf("roles = %v, want empty from the lowest id", profile.Roles)
+	}
+	// The column list is its own axis, so the names the other entry states are
+	// still the published schema.
+	if !reflect.DeepEqual(profile.Columns, []string{"name", "age"}) {
+		t.Errorf("columns = %v, want [name age]", profile.Columns)
+	}
+}
+
+// A canvas can carry a spreadsheet block for a component nobody configured.
+// Stopping at it would hide the profile a later component does declare, so the
+// resolution continues to the next id that states a mode or a role.
+func TestResolveTableProfile_SkipsEmptySpreadsheetEntry(t *testing.T) {
+	cfg := map[string]interface{}{
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{},
+		},
+		"Parser:B": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"age": "metadata"},
+			},
+		},
+	}
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want the profile the second entry declares")
+	}
+	if profile.Mode != common.TableColumnModeManual {
+		t.Errorf("mode = %q, want \"manual\" from the entry that states one", profile.Mode)
+	}
+	if len(profile.Roles) != 1 || profile.Roles["age"] != common.ColumnRoleMetadata {
+		t.Errorf("roles = %v, want age=metadata", profile.Roles)
+	}
+	if len(profile.Columns) != 0 {
+		t.Errorf("columns = %v, want none", profile.Columns)
+	}
+
+	// A component that states no mode and no roles leaves no profile at all.
+	emptyOnly := map[string]interface{}{
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_mode": "", "column_roles": map[string]interface{}{}},
+		},
+	}
+	if profile := ResolveTableProfile(emptyOnly); profile != nil {
+		t.Errorf("empty component = %#v, want no profile", profile)
+	}
+}
+
+// A run publishes the columns it discovered onto the root keys. That is system
+// output rather than a column configuration, so it must not make the root
+// authoritative over the manual profile a document dialog stored on the parser
+// entry — otherwise the first successful parse would freeze the setting.
+func TestResolveTableProfile_PublishedSchemaIsNotIntent(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_names": []interface{}{"name", "age"},
+		"Parser:Table": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"age": "metadata"},
+			},
+		},
+	}
+	profile := ResolveTableProfile(cfg)
+	if profile == nil {
+		t.Fatal("want the component's manual profile")
+	}
+	if profile.Mode != common.TableColumnModeManual {
+		t.Errorf("mode = %q, want manual", profile.Mode)
+	}
+	if len(profile.Roles) != 1 || profile.Roles["age"] != common.ColumnRoleMetadata {
+		t.Errorf("roles = %#v, want age=metadata", profile.Roles)
+	}
+	if !reflect.DeepEqual(profile.Columns, []string{"name", "age"}) {
+		t.Errorf("columns = %v, want the published schema", profile.Columns)
+	}
+}
+
+func TestResolveTableColumnNames(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_names": []interface{}{"root"},
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_names": []interface{}{"component"}},
+		},
+	}
+	if got := ResolveTableColumnNames(cfg); !reflect.DeepEqual(got, []string{"root"}) {
+		t.Errorf("got %v, want the root copy first", got)
+	}
+
+	withoutRoot := map[string]interface{}{
+		"Parser:B": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_names": []interface{}{"second"}},
+		},
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{"column_names": []interface{}{"first"}},
+		},
+	}
+	if got := ResolveTableColumnNames(withoutRoot); !reflect.DeepEqual(got, []string{"first"}) {
+		t.Errorf("got %v, want the lowest Parser id", got)
+	}
+
+	if got := ResolveTableColumnNames(map[string]interface{}{"Parser:A": "not a component"}); got != nil {
+		t.Errorf("got %v, want nothing", got)
+	}
+	if got := ResolveTableColumnNames(nil); got != nil {
+		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestTableParserStripDocMetadataKeys(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_names": []interface{}{"col1", "col2", "col1", "  "},
+	}
+	keys := TableParserStripDocMetadataKeys(cfg)
+	if len(keys) != 2 || keys[0] != "col1" || keys[1] != "col2" {
+		t.Errorf("keys = %v, want [col1, col2]", keys)
+	}
+
+	// Fallback to roles if names absent
+	cfgRoles := map[string]interface{}{
+		"table_column_roles": map[string]interface{}{"roleA": "both"},
+	}
+	keysRoles := TableParserStripDocMetadataKeys(cfgRoles)
+	if len(keysRoles) != 1 || keysRoles[0] != "roleA" {
+		t.Errorf("keysRoles = %v, want [roleA]", keysRoles)
+	}
+}
+
+func TestAggregateTableDocMetadata_AutoMode(t *testing.T) {
+	chunks := []map[string]any{
+		{
+			"text": "- Name: Alice\n- City: Beijing",
+			"chunk_data": map[string]interface{}{
+				"Name": "Alice",
+				"City": "Beijing",
+			},
+		},
+		{
+			"text": "- Name: Bob\n- City: Beijing",
+			"chunk_data": map[string]interface{}{
+				"Name": "Bob",
+				"City": "Beijing",
+			},
+		},
+	}
+	cfg := map[string]interface{}{
+		"table_column_mode": "auto",
+	}
+	meta := AggregateTableDocMetadata(chunks, cfg)
+	if meta == nil {
+		t.Fatal("expected non-nil meta")
+	}
+	cities, ok := meta["City"].([]string)
+	if !ok || len(cities) != 1 || cities[0] != "Beijing" {
+		t.Errorf("City = %v, want [Beijing]", meta["City"])
+	}
+	names, ok := meta["Name"].([]string)
+	if !ok || len(names) != 2 {
+		t.Errorf("Name = %v, want 2 names", meta["Name"])
+	}
+}
+
+func TestAggregateTableDocMetadata_ManualMode(t *testing.T) {
+	chunks := []map[string]any{
+		{
+			"text": "- Name: Alice",
+			"chunk_data": map[string]interface{}{
+				"Age": "30",
+			},
+		},
+		{
+			"text": "- Name: Bob",
+			"chunk_data": map[string]interface{}{
+				"Age": "25",
+			},
+		},
+	}
+	cfg := map[string]interface{}{
+		"table_column_mode": "manual",
+		"table_column_roles": map[string]interface{}{
+			"Name": "indexing",
+			"Age":  "metadata",
+		},
+	}
+	meta := AggregateTableDocMetadata(chunks, cfg)
+	if meta == nil {
+		t.Fatal("expected non-nil meta")
+	}
+	if _, hasName := meta["Name"]; hasName {
+		t.Errorf("Name should not be in doc metadata when role is indexing")
+	}
+	ages, ok := meta["Age"].([]string)
+	if !ok || len(ages) != 2 {
+		t.Errorf("Age = %v, want 2 entries", meta["Age"])
+	}
+}
+
+// Python compares the stored role as is (rag/utils/table_es_metadata.py:187,
+// like the chunk-body membership tests at rag/app/table.py:629-631), so a
+// differently cased role excludes the column from document metadata. Only
+// "metadata" and "both" aggregate, so the indexing alias "vectorize" excludes
+// it as well.
+func TestAggregateTableDocMetadata_RoleIsCaseSensitive(t *testing.T) {
+	chunks := []map[string]any{
+		{
+			"text":       "- A: 1",
+			"chunk_data": map[string]interface{}{"A": "1", "B": "2"},
+		},
+	}
+	cfg := map[string]interface{}{
+		"table_column_mode": "manual",
+		"table_column_roles": map[string]interface{}{
+			"A": "Metadata",
+			"B": "VECTORIZE",
+		},
+		"table_column_names": []interface{}{"A", "B"},
+	}
+	if meta := AggregateTableDocMetadata(chunks, cfg); len(meta) != 0 {
+		t.Fatalf("a differently cased role must exclude both columns, got %v", meta)
+	}
+
+	cfg["table_column_roles"] = map[string]interface{}{"A": "metadata", "B": "vectorize"}
+	meta := AggregateTableDocMetadata(chunks, cfg)
+	if _, ok := meta["A"]; !ok {
+		t.Errorf("A with the canonical role metadata must aggregate, got %v", meta)
+	}
+	if _, hasB := meta["B"]; hasB {
+		t.Errorf("B with the legacy vectorize alias must not aggregate, got %v", meta)
 	}
 }

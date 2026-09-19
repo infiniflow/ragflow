@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -41,6 +42,8 @@ type CSVParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
+	ColumnMode                     string
+	ColumnRoles                    map[string]string
 }
 
 func NewCSVParser() *CSVParser {
@@ -52,6 +55,62 @@ func NewCSVParser() *CSVParser {
 
 func (p *CSVParser) String() string {
 	return "CSVParser"
+}
+
+// newCSVReader configures the delimited reader the table parser uses. The
+// schema probe reads a header through the same function so the columns it
+// reports are the columns this parser indexes; a second reader definition
+// would drift on any of these knobs.
+func newCSVReader(filename, text string) *csv.Reader {
+	reader := csv.NewReader(strings.NewReader(text))
+	name := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(name, ".tsv"), strings.HasSuffix(name, ".txt"):
+		// Python splits a .txt table on a tab (rag/app/table.py:481,
+		// kwargs.get("delimiter", "\t")) and a .tsv on the same default (:574).
+		reader.Comma = '\t'
+	case !strings.Contains(text, ",") && strings.Contains(text, "\t"):
+		reader.Comma = '\t'
+	}
+	reader.LazyQuotes = true
+	// TrimLeadingSpace is deliberately left off: Python reads a table with
+	// csv.reader, whose skipinitialspace default keeps every field exactly as
+	// written, and with a tab delimiter Go's trim also swallows the tab that
+	// starts an empty field, silently shifting the rest of the row left.
+	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
+	return reader
+}
+
+// decodeDelimitedText decodes a delimited table the way Python reads one: with
+// utf-8-sig (rag/nlp/__init__.py decode_text), so a BOM never reaches the first
+// header cell. Column names are the keys of table_column_names and of the
+// column-role map, so a retained BOM would name a column no role can match.
+func decodeDelimitedText(data []byte) (string, string) {
+	decoded, encName := DecodeToUTF8(data, "text/csv")
+	return strings.TrimPrefix(string(decoded), "\uFEFF"), encName
+}
+
+// ProbeDelimitedColumnNames returns the column names this parser would index for
+// the given delimited stream, from its first row with content. The caller
+// bounds the reader; a header fits the prefix it reads.
+func ProbeDelimitedColumnNames(r io.Reader, filename string) ([]string, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	text, _ := decodeDelimitedText(data)
+
+	records, err := newCSVReader(filename, text).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range cleanIllegalControlChars(records) {
+		if tableRowHasContent(record) {
+			names, _ := tableColumnHeaderNames(record, TableHeaderRuleDelimited)
+			return names, nil
+		}
+	}
+	return []string{}, nil
 }
 
 func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
@@ -80,10 +139,13 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+	applyTableColumnSetup(setup, &p.ColumnMode, &p.ColumnRoles)
 }
 
 // ParseWithResult implements ParseResultProducer. It reads CSV rows and emits
 // a header item followed by ordered data-row items.
+// When OutputFormat is "json", it renders structured row records
+// respecting column_mode and column_roles (one chunk per row).
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
@@ -105,9 +167,20 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		// for CSV processing.
 	}
 
-	decoded, encName := DecodeToUTF8(data, "text/csv")
-	text := string(decoded)
+	text, encName := decodeDelimitedText(data)
 	if strings.TrimSpace(text) == "" {
+		if strings.EqualFold(p.OutputFormat, "json") {
+			return ParseResult{
+				OutputFormat: "json",
+				File: map[string]any{
+					"name":               filename,
+					"size":               len(data),
+					"encoding":           encName,
+					"table_column_names": []string{},
+				},
+				JSON: []map[string]any{},
+			}
+		}
 		var emptyJSON []map[string]any
 		if p.HTML4Excel {
 			emptyJSON = []map[string]any{NewTableJSONItem("<table><caption>Data</caption></table>", csvSheetName, [][]float64{{1, 1, 1, 1, 1}})}
@@ -125,11 +198,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	reader := csv.NewReader(strings.NewReader(text))
-	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
-	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
-
+	reader := newCSVReader(filename, text)
 	records, err := reader.ReadAll()
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
@@ -137,6 +206,20 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 
 	// Clean illegal control characters from all cells.
 	records = cleanIllegalControlChars(records)
+
+	if strings.EqualFold(p.OutputFormat, "json") {
+		items, headers := RenderRowsToJSONChunks(records, "", p.ColumnMode, p.ColumnRoles, TableHeaderRuleDelimited)
+		return ParseResult{
+			OutputFormat: "json",
+			File: map[string]any{
+				"name":               filename,
+				"size":               len(data),
+				"encoding":           encName,
+				"table_column_names": headers,
+			},
+			JSON: items,
+		}
+	}
 
 	dataRows := make([]int, len(records)-1)
 	for i := range dataRows {

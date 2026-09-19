@@ -38,12 +38,13 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
 // indexed, and these bookkeeping inputs remain for the caller to apply to
-// document state (metadata merge + chunk/token counter bumps).
+// document and task state.
 type PipelineResult struct {
 	DocID            string
 	KbID             string
@@ -58,6 +59,9 @@ type PipelineResult struct {
 	DocName               string
 	BuiltInMetadataConfig []any
 	AutoMetadataEnabled   bool
+	StripKeys             []string
+	DiscoveredColumns     []string
+	FieldMapUpdates       map[string]interface{}
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -68,6 +72,13 @@ type PipelineExecutor struct {
 	taskCtx     *TaskContext
 	canvasID    string
 	docBulkSize int
+
+	// resolvedParserConfig is the component configuration this run executes
+	// with: the document's parser_config plus the dataset's table column
+	// fallback and, for debug runs, the page cap. It is set once per run by
+	// runPipelineWithDSL and read by processOutput, so neither has to reach
+	// into (and mutate) the task context's document.
+	resolvedParserConfig map[string]interface{}
 
 	indexWriter     *chunkIndexWriter
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
@@ -268,14 +279,55 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
-	if tableMeta != nil {
-		if metadata == nil {
-			metadata = make(map[string]any)
+	// Table column handling belongs to the table parser: for any other parser
+	// the document's metadata must not be keyed by table columns (the strip
+	// stage deletes metadata entries named after the configured columns), and
+	// the dataset's table settings must not be discovered onto the document.
+	// Mirrors Python's post_processor, which returns early unless
+	// parser_id == "table".
+	var stripKeys []string
+	var discoveredCols []string
+	var fieldMapUpdates map[string]interface{}
+	if s.isTableParserRun() {
+		parserConfigForTable := s.effectiveParserConfig()
+		tableMeta := indexdoc.AggregateTableDocMetadata(chunks, parserConfigForTable)
+		stripKeys = indexdoc.TableParserStripDocMetadataKeys(parserConfigForTable)
+		for _, stripKey := range stripKeys {
+			delete(metadata, stripKey)
 		}
-		for k, v := range tableMeta {
-			if _, exists := metadata[k]; !exists {
-				metadata[k] = v
+		if tableMeta != nil {
+			if metadata == nil {
+				metadata = make(map[string]any)
+			}
+			for k, v := range tableMeta {
+				if _, exists := metadata[k]; !exists {
+					metadata[k] = v
+				}
+			}
+		}
+
+		// Parser-discovered column names and field map updates are packaged into
+		// PipelineResult so the document-state finalizer (docStateUpdater.apply)
+		// can persist them cleanly without side-effect writes inside the executor.
+		if names := tableColumnNamesFromPayload(pipelineOutput); len(names) > 0 {
+			discoveredCols = names
+			// The dataset field_map is the SQL-retrieval contract of engines
+			// that keep table metadata in a chunk_data column (the map keys are
+			// the raw column names, exactly what chunk_data holds). An engine
+			// that addresses columns directly has no matching fields yet, so
+			// such a run publishes only the discovered names and leaves the
+			// dataset's field_map untouched. An engine that does publish one
+			// always replaces it: a column whose role changed away from
+			// metadata/both must stop being offered to the SQL prompt.
+			if s.taskCtx.Doc.KbID != "" && engine.StoresTableChunkData(engine.GetEngineType()) {
+				profile := indexdoc.ResolveTableProfile(parserConfigForTable)
+				if profile == nil {
+					profile = indexdoc.NewTableProfile(common.TableColumnModeAuto)
+				}
+				fieldMapUpdates = indexdoc.BuildFieldMap(profile, names)
+				if fieldMapUpdates == nil {
+					fieldMapUpdates = map[string]interface{}{}
+				}
 			}
 		}
 	}
@@ -363,6 +415,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
 		Metadata:              metadata,
+		StripKeys:             stripKeys,
+		DiscoveredColumns:     discoveredCols,
+		FieldMapUpdates:       fieldMapUpdates,
 		ChunkCount:            chunkCount,
 		TokenConsumption:      embeddingTokenConsumption,
 		Duration:              s.terminalDuration(start),
@@ -1062,11 +1117,194 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 		dslCPNs[s.CpnID] = struct{}{}
 	}
 	for cpnID := range parserConfig {
+		if cpnID == "table_column_mode" || cpnID == "table_column_roles" || cpnID == "table_column_names" {
+			continue
+		}
 		if _, ok := dslCPNs[cpnID]; !ok {
 			common.Warn(fmt.Sprintf(
 				"parser_config references cpnID %q not present in the pipeline DSL; it will be ignored at runtime", cpnID))
 		}
 	}
+}
+
+// injectTableColumnOverride folds the resolved column intent into the parser
+// component entry the runtime executes, and is the only place the root keys are
+// projected onto a component. Discovered column names are deliberately not
+// folded: no component parameter consumes them, and writing them would put a
+// run's findings into the canvas author's own configuration.
+func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map[string]interface{} {
+	if docConfig == nil {
+		docConfig = map[string]interface{}{}
+	}
+	profile := indexdoc.ResolveTableProfile(docConfig)
+	if profile == nil {
+		return docConfig
+	}
+	mode := string(profile.Mode)
+	roles := profile.ToRolesInterfaceMap()
+	if mode == "" && len(roles) == 0 {
+		return docConfig
+	}
+	parserCpnID := pipelinepkg.ExtractParserCpnID(dsl, component.ComponentNameParser)
+	if parserCpnID == "" {
+		return docConfig
+	}
+	// Copy the entries on the write path: the caller's map is the task
+	// context's document configuration and must not be modified — the resolved
+	// configuration is per-run state.
+	docConfig = cloneParserConfig(docConfig)
+	cpnEntry := map[string]any{}
+	if existing, ok := docConfig[parserCpnID].(map[string]any); ok {
+		for k, v := range existing {
+			cpnEntry[k] = v
+		}
+	}
+	ssEntry, ok := cpnEntry["spreadsheet"].(map[string]any)
+	if ok {
+		copied := make(map[string]any, len(ssEntry)+2)
+		for k, v := range ssEntry {
+			copied[k] = v
+		}
+		ssEntry = copied
+	} else {
+		ssEntry = map[string]any{}
+	}
+	cpnEntry["spreadsheet"] = ssEntry
+	docConfig[parserCpnID] = cpnEntry
+	if mode != "" {
+		ssEntry["column_mode"] = mode
+	}
+	if len(roles) > 0 {
+		ssEntry["column_roles"] = roles
+	}
+	common.Debug("inject table column override",
+		zap.String("parser", parserCpnID),
+		zap.String("column_mode", mode),
+		zap.Int("column_roles", len(roles)),
+	)
+	return docConfig
+}
+
+// cloneParserConfig returns a shallow copy of a component-keyed parser config.
+// Nested entries are only ever rewritten through injectTableColumnOverride,
+// which copies the entry it writes into, so a shallow copy is enough to keep
+// the caller's map untouched.
+func cloneParserConfig(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in)+1)
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// resolveTableColumnSettings folds the document's and the dataset's table column
+// settings onto the document's root keys, the one place this run reads them
+// from: the parser-entry injection, the metadata aggregation, the strip-key
+// computation and column discovery all resolve the same values there.
+//
+// Per key the document's own value wins, then the dataset's, then nothing, which
+// leaves the parser's default in place. A document mode counts as a value only
+// when it is "manual": both dialogs emit "auto" for a form the user never
+// touched, so a bare "auto" would otherwise shadow the dataset's manual settings
+// and make dataset-level column configuration unreachable.
+func resolveTableColumnSettings(docConfig, kbConfig map[string]interface{}) map[string]interface{} {
+	docMode, docRoles := statedTableColumnSettings(indexdoc.ResolveTableProfile(docConfig))
+	kbMode, kbRoles := statedTableColumnSettings(indexdoc.ResolveTableProfile(kbConfig))
+	docNames := indexdoc.ResolveTableColumnNames(docConfig)
+	kbNames := indexdoc.ResolveTableColumnNames(kbConfig)
+	if docMode == "" && len(docRoles) == 0 && len(docNames) == 0 &&
+		kbMode == "" && len(kbRoles) == 0 && len(kbNames) == 0 {
+		return docConfig
+	}
+	if docConfig == nil {
+		docConfig = map[string]interface{}{}
+	}
+
+	mode := docMode
+	if mode != string(common.TableColumnModeManual) {
+		mode = kbMode
+	}
+	if mode != "" {
+		docConfig["table_column_mode"] = mode
+	}
+	roles := docRoles
+	if len(roles) == 0 {
+		roles = kbRoles
+	}
+	if len(roles) > 0 {
+		docConfig["table_column_roles"] = roles
+	}
+	names := docNames
+	if len(names) == 0 {
+		names = kbNames
+	}
+	if len(names) > 0 {
+		docConfig["table_column_names"] = names
+	}
+	return docConfig
+}
+
+// statedTableColumnSettings reports the mode and roles a resolved profile
+// carries, with an empty mode for a configuration that states no column intent
+// at all.
+func statedTableColumnSettings(profile *indexdoc.TableProfile) (string, map[string]interface{}) {
+	if profile == nil {
+		return "", nil
+	}
+	return string(profile.Mode), profile.ToRolesInterfaceMap()
+}
+
+// isTableParserRun reports whether this run belongs to the table parser, which
+// owns the column-mode capability. Python gates the same capability on
+// task["parser_id"] == "table" (rag/utils/table_es_metadata.py:35,
+// rag/svr/task_executor_refactor/post_processor.py:69). The document's own
+// parser_id is authoritative; a document without one — canvas pipeline mode
+// clears it (document_upload.go) — inherits the dataset's declared parser_id,
+// which is retained when a canvas is selected (dataset/update.go).
+func (s *PipelineExecutor) isTableParserRun() bool {
+	if s == nil || s.taskCtx == nil {
+		return false
+	}
+	parserID := strings.TrimSpace(s.taskCtx.Doc.ParserID)
+	if parserID == "" {
+		parserID = strings.TrimSpace(s.taskCtx.KB.ParserID)
+	}
+	return strings.EqualFold(parserID, "table")
+}
+
+// effectiveParserConfig returns the component configuration of the current run.
+// It falls back to the task context's document config for callers that never ran
+// a pipeline (a debug preview, or a test driving processOutput directly).
+func (s *PipelineExecutor) effectiveParserConfig() map[string]interface{} {
+	if s.resolvedParserConfig != nil {
+		return s.resolvedParserConfig
+	}
+	return map[string]interface{}(s.taskCtx.Doc.ParserConfig)
+}
+
+// applyTableColumnOverride folds the document's and the dataset's table column
+// settings into the parser component entry, and is a no-op for a run that does
+// not belong to the table parser.
+func (s *PipelineExecutor) applyTableColumnOverride(parserConfig map[string]interface{}, dsl []byte) map[string]interface{} {
+	if !s.isTableParserRun() {
+		if indexdoc.ResolveTableProfile(parserConfig) != nil || indexdoc.ResolveTableProfile(map[string]interface{}(s.taskCtx.KB.ParserConfig)) != nil {
+			common.Debug("table column settings ignored: run is not the table parser",
+				zap.String("doc_id", s.taskCtx.Doc.ID),
+				zap.String("doc_parser_id", s.taskCtx.Doc.ParserID),
+				zap.String("dataset_parser_id", s.taskCtx.KB.ParserID),
+			)
+		}
+		return parserConfig
+	}
+	// The resolved configuration is per-run state: work on a copy so the task
+	// context's document configuration is never rewritten by a run.
+	parserConfig = cloneParserConfig(parserConfig)
+	parserConfig = injectTableColumnOverride(parserConfig, dsl)
+	if s.taskCtx.KB.ParserConfig != nil {
+		parserConfig = resolveTableColumnSettings(parserConfig, map[string]interface{}(s.taskCtx.KB.ParserConfig))
+		parserConfig = injectTableColumnOverride(parserConfig, dsl)
+	}
+	return parserConfig
 }
 
 func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (map[string]any, string, error) {
@@ -1081,6 +1319,13 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
+
+	// Table column settings reach the parser only for a table-parsed document:
+	// the keys are otherwise inert (a root-level table_column_* key is not a
+	// component id, so the runtime merge drops it) and must not be pushed into
+	// another parser's setup.
+	parserConfig = s.applyTableColumnOverride(parserConfig, []byte(dsl))
+	s.resolvedParserConfig = parserConfig
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;
@@ -1173,7 +1418,30 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	if err != nil {
 		return nil, dsl, err
 	}
-	return payload, logDSL, nil
+	return withRunState(payload, output), logDSL, nil
+}
+
+// withRunState carries the run's per-component state snapshot onto the payload
+// a run hands to processOutput.
+//
+// ExtractPayload narrows the run result to the terminal component's own output
+// by construction, which drops the snapshot finalizeResult attaches at the top
+// level — and with it the only copy of what an upstream component discovered
+// mid-run (the Parser's discovered table columns). Copying rather than writing
+// into the payload keeps the run result itself unchanged.
+func withRunState(payload, output map[string]any) map[string]any {
+	if payload == nil || output["state"] == nil {
+		return payload
+	}
+	if _, ok := payload["state"]; ok {
+		return payload
+	}
+	merged := make(map[string]any, len(payload)+1)
+	for k, v := range payload {
+		merged[k] = v
+	}
+	merged["state"] = output["state"]
+	return merged
 }
 
 // buildLogDSL returns the DSL string recorded for a pipeline run. The PERSISTED
@@ -1257,4 +1525,65 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+// tableColumnNamesFromPayload extracts the parser-discovered column names from
+// the payload a run hands to processOutput.
+//
+// The parser publishes them on its file metadata (file.table_column_names), but
+// a narrowing downstream component does not re-emit that map — the chunker and
+// tokenizer outputs carry only their own chunks (see
+// globals.GlobalMetadataKeys for why run-level fields live in CanvasState
+// instead of being threaded through every output). The parser's output is
+// therefore read from the run state snapshot, which runPipelineWithDSL carries
+// on the payload as payload["state"][<cpnID>]. A payload that carries the file
+// map directly (a caller driving processOutput without a run, e.g. a test) is
+// accepted too.
+func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
+	if pipelineOutput == nil {
+		return nil
+	}
+	if names := tableColumnNamesFromFileMap(pipelineOutput["file"]); len(names) > 0 {
+		return names
+	}
+	state, ok := pipelineOutput["state"].(map[string]map[string]any)
+	if !ok {
+		return nil
+	}
+	// Ascending component id, so a canvas with more than one Parser resolves to
+	// the same one on every run.
+	parserIDs := make([]string, 0, len(state))
+	for cpnID := range state {
+		if strings.HasPrefix(cpnID, component.ComponentNameParser+":") {
+			parserIDs = append(parserIDs, cpnID)
+		}
+	}
+	sort.Strings(parserIDs)
+	for _, cpnID := range parserIDs {
+		if names := tableColumnNamesFromFileMap(state[cpnID]["file"]); len(names) > 0 {
+			return names
+		}
+	}
+	return nil
+}
+
+func tableColumnNamesFromFileMap(raw any) []string {
+	fileMap, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch names := fileMap["table_column_names"].(type) {
+	case []string:
+		return names
+	case []interface{}:
+		out := make([]string, 0, len(names))
+		for _, n := range names {
+			if s, ok := n.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

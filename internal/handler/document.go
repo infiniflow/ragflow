@@ -84,6 +84,7 @@ type documentServiceIface interface {
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
+	ProbeTable(r io.Reader, filename string) ([]string, error)
 }
 
 type latestIngestionEventLookup interface {
@@ -996,16 +997,21 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 
 	// Optional parser_config override — only the allow-listed table column keys.
 	// Python ignores malformed or non-object input here instead of failing the
-	// whole upload request.
+	// whole upload request, but it does reject values its role vocabulary does
+	// not know; so does the check below (common.ValidateTableColumnSettings).
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
 		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
 			override = map[string]interface{}{}
-			for _, k := range []string{"table_column_mode", "table_column_roles"} {
+			for _, k := range []string{"table_column_mode", "table_column_roles", "table_column_names", "table_column_names_by_file"} {
 				if v, ok := parsed[k]; ok {
 					override[k] = v
 				}
+			}
+			if err := common.ValidateTableColumnSettings(override); err != nil {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+				return
 			}
 			if len(override) == 0 {
 				override = nil
@@ -2049,4 +2055,34 @@ func pythonJSONKindName(typeErr *json.UnmarshalTypeError) string {
 		return "dictionary"
 	}
 	return "value"
+}
+
+// ProbeTable handles POST /documents/probe_table (and POST /document/probe_table).
+// It inspects an uploaded table file (CSV/TSV/XLSX) and extracts the column headers
+// without persisting or running ingestion.
+func (h *DocumentHandler) ProbeTable(c *gin.Context) {
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file provided or failed to read multipart form")
+		return
+	}
+	defer file.Close()
+
+	cols, err := h.documentService.ProbeTable(file, header.Filename)
+	if err != nil {
+		// A format the probe declines is a property of the request, and the
+		// caller already falls back to reading the header locally; report it as
+		// an argument error instead of a server failure.
+		if errors.Is(err, document.ErrUnsupportedTableFormat) {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, fmt.Sprintf("Failed to probe table schema: %v", err))
+		return
+	}
+
+	common.SuccessWithData(c, gin.H{
+		"columns":       cols,
+		"total_columns": len(cols),
+	}, "success")
 }

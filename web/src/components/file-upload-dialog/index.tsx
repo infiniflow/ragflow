@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { TableColumnSettingsFields } from '@/components/table-column-settings-form-fields';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,41 +23,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { IModalProps } from '@/interfaces/common';
 import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
+import {
+  TableColumnRole,
+  TableColumnSettings,
+} from '@/utils/table-column-settings';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { FileUploader } from '../file-uploader';
 import { RAGFlowFormItem } from '../ragflow-form';
 import { Form } from '../ui/form';
-import { Label } from '../ui/label';
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Switch } from '../ui/switch';
-
-const ROLE_OPTIONS = [
-  { value: 'both', labelKey: 'knowledgeConfiguration.tableColumnRoleBoth' },
-  {
-    value: 'indexing',
-    labelKey: 'knowledgeConfiguration.tableColumnRoleIndexing',
-  },
-  {
-    value: 'metadata',
-    labelKey: 'knowledgeConfiguration.tableColumnRoleMetadata',
-  },
-] as const;
-
-export type TableColumnRoles = Record<string, 'indexing' | 'metadata' | 'both'>;
 
 function buildUploadFormSchema(t: TFunction) {
   const FormSchema = z.object({
@@ -73,6 +55,8 @@ function buildUploadFormSchema(t: TFunction) {
       )
       .min(1, { message: t('fileManager.pleaseUploadAtLeastOneFile') }),
     tableColumnMode: z.enum(['auto', 'manual']).optional(),
+    tableColumnNames: z.array(z.string()).optional(),
+    tableColumnNamesByFile: z.array(z.array(z.string())).optional(),
     tableColumnRoles: z
       .record(z.enum(['indexing', 'metadata', 'both']))
       .optional(),
@@ -91,11 +75,18 @@ type UploadFormProps = {
   submit: (values?: UploadFormSchemaType) => void;
   showParseOnCreation?: boolean;
   isTableParser?: boolean;
+  // Dataset-level table column settings, shown as the initial selection so an
+  // untouched dialog displays what ingestion will use. They are deliberately
+  // NOT submitted: only a mode/role the user changed in this dialog is sent,
+  // otherwise the document would pin the dataset's default and later dataset
+  // changes could never reach it.
+  defaultTableColumnSettings?: TableColumnSettings;
 };
 function UploadForm({
   submit,
   showParseOnCreation,
   isTableParser,
+  defaultTableColumnSettings,
 }: UploadFormProps) {
   const { t } = useTranslation();
   const FormSchema = buildUploadFormSchema(t);
@@ -106,34 +97,54 @@ function UploadForm({
     defaultValues: {
       parseOnCreation: false,
       fileList: [],
-      tableColumnMode: 'auto',
+      tableColumnNames: [],
+      tableColumnNamesByFile: [],
       tableColumnRoles: {},
     },
   });
 
   const [extractedColumns, setExtractedColumns] = useState<string[]>([]);
-  const [columnMode, setColumnMode] = useState<'auto' | 'manual'>('auto');
-  const [columnRoles, setColumnRoles] = useState<TableColumnRoles>({});
+  const [columnMode, setColumnMode] = useState<'auto' | 'manual'>(
+    defaultTableColumnSettings?.mode ?? 'auto',
+  );
+  const [columnRoles, setColumnRoles] = useState<TableColumnSettings['roles']>(
+    defaultTableColumnSettings?.roles ?? {},
+  );
+  // Guards the async column-extraction loop: rapid file-list changes must not
+  // let a stale extraction overwrite the latest selection.
+  const extractionVersion = useRef(0);
 
   const handleFilesChange = useCallback(
     async (files: any[]) => {
+      const version = ++extractionVersion.current;
       if (!isTableParser || !files || files.length === 0) {
         setExtractedColumns([]);
+        form.setValue('tableColumnNames', []);
+        form.setValue('tableColumnNamesByFile', []);
         return;
       }
 
-      // Extract columns from the first table file
       const allColumns = new Set<string>();
+      const columnsByFile: string[][] = [];
       for (const f of files) {
         const file = f instanceof File ? f : f.file;
         if (file && isTableFile(file)) {
           const cols = await extractTableColumns(file);
           cols.forEach((c) => allColumns.add(c));
+          columnsByFile.push(cols);
+        } else {
+          columnsByFile.push([]);
         }
       }
-      setExtractedColumns(Array.from(allColumns));
+      const columns = Array.from(allColumns);
+      if (version !== extractionVersion.current) {
+        return;
+      }
+      setExtractedColumns(columns);
+      form.setValue('tableColumnNames', columns);
+      form.setValue('tableColumnNamesByFile', columnsByFile);
     },
-    [isTableParser],
+    [form, isTableParser],
   );
 
   const handleModeChange = (value: 'auto' | 'manual') => {
@@ -141,11 +152,8 @@ function UploadForm({
     form.setValue('tableColumnMode', value);
   };
 
-  const handleRoleChange = (col: string, role: string) => {
-    const updated = {
-      ...columnRoles,
-      [col]: role as 'indexing' | 'metadata' | 'both',
-    };
+  const handleRoleChange = (col: string, role: TableColumnRole) => {
+    const updated = { ...columnRoles, [col]: role };
     setColumnRoles(updated);
     form.setValue('tableColumnRoles', updated);
   };
@@ -153,7 +161,7 @@ function UploadForm({
   // Sync column roles to form when columns are extracted
   useEffect(() => {
     if (columnMode === 'manual' && extractedColumns.length > 0) {
-      const roles: TableColumnRoles = {};
+      const roles: TableColumnSettings['roles'] = {};
       extractedColumns.forEach((col) => {
         roles[col] = columnRoles[col] || 'both';
       });
@@ -201,73 +209,14 @@ function UploadForm({
 
         {showColumnConfig && (
           <div className="space-y-3 border rounded-md p-3">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {t('knowledgeConfiguration.tableColumnMode')}
-              </Label>
-              <RadioGroup
-                value={columnMode}
-                onValueChange={handleModeChange}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="auto" id="upload-mode-auto" />
-                  <label
-                    htmlFor="upload-mode-auto"
-                    className="text-sm font-normal cursor-pointer"
-                  >
-                    {t('knowledgeConfiguration.tableColumnModeAuto')}
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="manual" id="upload-mode-manual" />
-                  <label
-                    htmlFor="upload-mode-manual"
-                    className="text-sm font-normal cursor-pointer"
-                  >
-                    {t('knowledgeConfiguration.tableColumnModeManual')}
-                  </label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {columnMode === 'auto' && (
-              <p className="text-sm text-muted-foreground">
-                {t('knowledgeConfiguration.tableColumnModeAutoDescription')}
-              </p>
-            )}
-
-            {columnMode === 'manual' && (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {t('knowledgeConfiguration.tableColumnRolesTip')}
-                </p>
-                <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {extractedColumns.map((col) => (
-                    <div key={col} className="flex items-center gap-3">
-                      <Label className="min-w-[120px] shrink-0 text-sm font-normal truncate">
-                        {col}
-                      </Label>
-                      <Select
-                        value={columnRoles[col] || 'both'}
-                        onValueChange={(value) => handleRoleChange(col, value)}
-                      >
-                        <SelectTrigger className="w-[140px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ROLE_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {t(opt.labelKey)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <TableColumnSettingsFields
+              idPrefix="upload"
+              mode={columnMode}
+              columns={extractedColumns}
+              roles={columnRoles}
+              onModeChange={handleModeChange}
+              onRoleChange={handleRoleChange}
+            />
           </div>
         )}
       </form>
@@ -276,13 +225,17 @@ function UploadForm({
 }
 
 type FileUploadDialogProps = IModalProps<UploadFormSchemaType> &
-  Pick<UploadFormProps, 'showParseOnCreation' | 'isTableParser'>;
+  Pick<
+    UploadFormProps,
+    'showParseOnCreation' | 'isTableParser' | 'defaultTableColumnSettings'
+  >;
 export function FileUploadDialog({
   hideModal,
   onOk,
   loading,
   showParseOnCreation = false,
   isTableParser = false,
+  defaultTableColumnSettings,
 }: FileUploadDialogProps) {
   const { t } = useTranslation();
 
@@ -299,6 +252,7 @@ export function FileUploadDialog({
           submit={onOk!}
           showParseOnCreation={showParseOnCreation}
           isTableParser={isTableParser}
+          defaultTableColumnSettings={defaultTableColumnSettings}
         />
         <DialogFooter>
           <ButtonLoading type="submit" loading={loading} form={UploadFormId}>

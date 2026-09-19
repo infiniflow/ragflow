@@ -81,6 +81,14 @@ func GetEngineType() string {
 	return engineType
 }
 
+// SetDocEngineType installs the document engine type without constructing an
+// engine instance. Like SetMessageQueueEngine it exists as a test seam, so
+// engine-dependent behaviour (e.g. StoresTableChunkData) can be exercised
+// without a running engine; production code sets it through InitDocEngine.
+func SetDocEngineType(docEngineType string) {
+	engineType = docEngineType
+}
+
 // Get gets global document engine instance
 func Get() DocEngine {
 	return globalEngine

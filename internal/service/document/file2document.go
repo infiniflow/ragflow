@@ -230,7 +230,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				ID:           utility.GenerateUUID(),
 				KbID:         kb.ID,
 				ParserID:     parserID,
-				ParserConfig: kb.ParserConfig,
+				ParserConfig: cloneParserConfigForDocument(kb.ParserConfig),
 				CreatedBy:    userID,
 				Type:         file.Type,
 				Name:         &docName,

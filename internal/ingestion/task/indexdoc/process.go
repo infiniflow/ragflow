@@ -18,6 +18,7 @@ package indexdoc
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -229,35 +230,55 @@ func processChunkPositions(ck map[string]any) {
 // for columns with role "metadata" or "both", merges them into document metadata.
 // Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
-	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
-	if mode == "" {
-		mode = "auto"
+	profile := ResolveTableProfile(parserConfig)
+	if profile == nil {
+		profile = NewTableProfile(common.TableColumnModeAuto)
 	}
-	if mode != "auto" && mode != "manual" {
-		return nil
+	cols := profile.Columns
+	if len(cols) == 0 {
+		for _, ck := range chunks {
+			if names, ok := ck["table_column_names"].([]string); ok && len(names) > 0 {
+				cols = names
+				break
+			}
+			if names, ok := ck["table_column_names"].([]interface{}); ok && len(names) > 0 {
+				for _, n := range names {
+					if s, ok := n.(string); ok {
+						cols = append(cols, s)
+					}
+				}
+				break
+			}
+		}
 	}
-	if roles == nil {
-		roles = map[string]interface{}{}
+	if len(cols) == 0 && !isManualProfile(profile) {
+		seen := make(map[string]struct{})
+		for _, ck := range chunks {
+			if cd, ok := ck["chunk_data"].(map[string]interface{}); ok {
+				for k := range cd {
+					if _, ok := seen[k]; !ok {
+						seen[k] = struct{}{}
+						cols = append(cols, k)
+					}
+				}
+			}
+		}
 	}
+
 	var metaCols []string
-	if len(tableColumnNames) > 0 {
-		for _, n := range tableColumnNames {
-			col, _ := n.(string)
-			if col == "" {
-				continue
-			}
-			role, _ := roles[col].(string)
-			if role == "" {
-				role = "both"
-			}
-			if role == "metadata" || role == "both" {
+	if len(cols) > 0 {
+		// The column name is the chunk_data key, so it is matched verbatim;
+		// trimming or dropping a blank one here would silently exclude a column
+		// that exists (rag/utils/table_es_metadata.py:187).
+		for _, col := range cols {
+			role := roleFor(profile, col)
+			if role.Stored() {
 				metaCols = append(metaCols, col)
 			}
 		}
-	} else {
-		for col, v := range roles {
-			role, _ := v.(string)
-			if role == "metadata" || role == "both" {
+	} else if len(profile.Roles) > 0 {
+		for col, role := range profile.Roles {
+			if role.Stored() {
 				metaCols = append(metaCols, col)
 			}
 		}
@@ -302,38 +323,163 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 	return out
 }
 
-// resolveTableColumnConfig reads table column settings from parser_config.
-// Tries root-level flat keys first; falls back to resolving from a Parser
-// component entry's spreadsheet config in a component-ID-keyed parser_config.
-func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
-	mode, _ = parserConfig["table_column_mode"].(string)
-	roles, _ = parserConfig["table_column_roles"].(map[string]interface{})
-	rawNames, _ := parserConfig["table_column_names"].([]interface{})
-	if mode != "" || roles != nil || len(rawNames) > 0 {
-		return mode, roles, rawNames
+// ResolveTableProfile extracts the strongly-typed TableProfile from parser_config.
+//
+// The root flat keys carry the column intent someone set for this document or
+// dataset, so they are authoritative as soon as they state a mode or a role. A
+// Parser component's spreadsheet entry is that run's canvas parameters, and is
+// consulted only while the root states no intent — that is how a canvas
+// author's column settings reach a document configured nowhere else.
+//
+// Discovered column names are not intent: every successful run publishes them to
+// the root, so they never decide which tier wins. ResolveTableColumnNames
+// answers that question on its own.
+func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
+	if parserConfig == nil {
+		return nil
 	}
-	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "Parser:") {
-			continue
+	modeStr, _ := parserConfig["table_column_mode"].(string)
+	roles := parseTableColumnRoles(parserConfig["table_column_roles"])
+	columns := ResolveTableColumnNames(parserConfig)
+	if modeStr != "" || len(roles) > 0 {
+		return &TableProfile{
+			Mode:    common.NormalizeTableColumnMode(modeStr),
+			Roles:   roles,
+			Columns: columns,
 		}
-		comp, _ := raw.(map[string]interface{})
-		if comp == nil {
-			continue
-		}
+	}
+	for _, cid := range sortedParserComponentIDs(parserConfig) {
+		comp, _ := parserConfig[cid].(map[string]interface{})
 		ss, _ := comp["spreadsheet"].(map[string]interface{})
 		if ss == nil {
 			continue
 		}
-		if v, ok := ss["column_mode"].(string); ok {
-			mode = v
+		mode, _ := ss["column_mode"].(string)
+		ssRoles := parseTableColumnRoles(ss["column_roles"])
+		// An entry that states nothing is not a profile: a canvas can carry a
+		// spreadsheet block for a component the user never configured, and
+		// stopping there would hide the profile a later component does declare.
+		if mode == "" && len(ssRoles) == 0 {
+			continue
 		}
-		if v, ok := ss["column_roles"].(map[string]interface{}); ok {
-			roles = v
+		return &TableProfile{
+			Mode:    common.NormalizeTableColumnMode(mode),
+			Roles:   ssRoles,
+			Columns: columns,
 		}
-		if v, ok := ss["column_names"].([]interface{}); ok {
-			rawNames = v
-		}
-		return mode, roles, rawNames
 	}
-	return "", nil, nil
+	return nil
+}
+
+// ResolveTableColumnNames returns the column list the last table run published:
+// the root copy this document or dataset carries, or otherwise the first Parser
+// component, in ascending component-id order, that states one.
+func ResolveTableColumnNames(parserConfig map[string]interface{}) []string {
+	if parserConfig == nil {
+		return nil
+	}
+	if names := parseTableColumnNames(parserConfig["table_column_names"]); len(names) > 0 {
+		return names
+	}
+	for _, cid := range sortedParserComponentIDs(parserConfig) {
+		comp, _ := parserConfig[cid].(map[string]interface{})
+		ss, _ := comp["spreadsheet"].(map[string]interface{})
+		if ss == nil {
+			continue
+		}
+		if names := parseTableColumnNames(ss["column_names"]); len(names) > 0 {
+			return names
+		}
+	}
+	return nil
+}
+
+func parseTableColumnRoles(raw any) map[string]common.ColumnRole {
+	switch m := raw.(type) {
+	case map[string]string:
+		out := make(map[string]common.ColumnRole, len(m))
+		for k, v := range m {
+			out[k] = common.NormalizeColumnRole(v)
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]common.ColumnRole, len(m))
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				out[k] = common.NormalizeColumnRole(s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func parseTableColumnNames(raw any) []string {
+	if raw == nil {
+		return nil
+	}
+	switch list := raw.(type) {
+	case []string:
+		return list
+	case []interface{}:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			// Verbatim, including a blank name: table_column_names carries the
+			// columns as the parser named them, and that exact string is both the
+			// key a role is looked up under and the key chunk_data is stored with
+			// (rag/app/table.py:600-603 writing what :519 built).
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// sortedParserComponentIDs returns the Parser:-prefixed component ids in
+// ascending order so nested-config resolution is deterministic.
+func sortedParserComponentIDs(parserConfig map[string]interface{}) []string {
+	var ids []string
+	for cid := range parserConfig {
+		if strings.HasPrefix(cid, "Parser:") {
+			ids = append(ids, cid)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// TableParserStripDocMetadataKeys returns the keys to strip from existing document metadata
+// on reparse.
+func TableParserStripDocMetadataKeys(parserConfig map[string]interface{}) []string {
+	// The published column list is what previous runs wrote metadata under, so
+	// it is read independently of any column intent: a document that was never
+	// configured still has a schema to clear.
+	cols := ResolveTableColumnNames(parserConfig)
+	if len(cols) == 0 {
+		profile := ResolveTableProfile(parserConfig)
+		if profile == nil {
+			return nil
+		}
+		cols = make([]string, 0, len(profile.Roles))
+		for column := range profile.Roles {
+			cols = append(cols, column)
+		}
+	}
+	seen := make(map[string]struct{}, len(cols))
+	keys := make([]string, 0, len(cols))
+	for _, s := range cols {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			keys = append(keys, s)
+		}
+	}
+	return keys
 }

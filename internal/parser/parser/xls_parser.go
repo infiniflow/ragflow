@@ -19,6 +19,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type XLSParser struct {
@@ -30,6 +31,8 @@ type XLSParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
+	ColumnMode                     string
+	ColumnRoles                    map[string]string
 }
 
 func NewXLSParser(libType string) (*XLSParser, error) {
@@ -73,6 +76,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+	applyTableColumnSetup(setup, &p.ColumnMode, &p.ColumnRoles)
 }
 
 func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
@@ -90,6 +94,25 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	default:
 		return ParseResult{
 			Err: fmt.Errorf("unsupported XLS parse method: %q", p.ParseMethod),
+		}
+	}
+
+	// Structured JSON row rendering applies only to the JSON output format,
+	// matching the CSV/XLSX gate. Legacy .xls (OLE/BIFF) bytes cannot be
+	// opened by excelize, so normalize first the same way the XLSX parser
+	// does; an un-normalizable legacy payload falls through to the legacy
+	// HTML path and fails there with the pre-existing (non-column) error.
+	if strings.EqualFold(p.OutputFormat, "json") {
+		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
+		if err == nil {
+			return spreadsheetRowParseResult(filename, "xls", items, allColumns, warnings, sheets)
+		}
+		if normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data); normalizeErr == nil && changed {
+			if items, allColumns, retryWarnings, sheets, retryErr := parseXLSXRowsJSON(normalized, p.ColumnMode, p.ColumnRoles); retryErr == nil {
+				warnings = append(normalizeWarnings, warnings...)
+				warnings = append(warnings, retryWarnings...)
+				return spreadsheetRowParseResult(filename, "xls", items, allColumns, warnings, sheets)
+			}
 		}
 	}
 
