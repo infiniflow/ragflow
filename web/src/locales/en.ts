@@ -387,6 +387,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       welcome: 'Welcome back',
       description: 'Which datasets will you use today?',
       createKnowledgeBase: 'Create dataset',
+      builtInTemplate: 'Built-in template',
+      ingestionPipeline: 'Ingestion pipeline',
       name: 'Name',
       namePlaceholder: 'Please input name.',
       doc: 'Docs',

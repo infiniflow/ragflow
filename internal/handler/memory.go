@@ -335,6 +335,15 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	if c.Query("type") == "filter" {
+		result, err := h.memoryService.ListMemoryFilters(c.Request.Context(), user.ID)
+		if err != nil {
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+			return
+		}
+		common.SuccessWithData(c, result, "success")
+		return
+	}
 
 	// Parse query parameters
 	storageType := c.Query("storage_type")

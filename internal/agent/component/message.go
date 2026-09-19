@@ -377,6 +377,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	if len(matches) == 0 {
 		return text, false, nil
 	}
+	if _, err := runtime.ResolveTemplate(text, state); err != nil {
+		return "", false, err
+	}
 	// Ordinary Message templates are rendered and emitted once by Invoke.
 	// Only templates that actually reference a DeferredStream belong to the
 	// incremental presentation path below.  Emitting literals/normal variable

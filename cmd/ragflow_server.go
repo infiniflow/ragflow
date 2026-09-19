@@ -526,10 +526,8 @@ func main() {
 	// stdout-only logger exists, so anything it logs is lost from the file.
 	// Side effects that log (DeepDoc registration) move below, after the
 	// real file-backed logger is up.
-	needNativeDeepDoc := false
 	switch *arguments.mode {
 	case "api":
-		needNativeDeepDoc = true
 		apiServerConfig := globalConfig.GetAPIServerConfig()
 		port := apiServerConfig.HTTPPort
 		if arguments.port != nil {
@@ -550,7 +548,6 @@ func main() {
 			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
-		needNativeDeepDoc = true
 		if serverName == "" {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
@@ -604,8 +601,10 @@ func main() {
 	// logger exists: its registration lines (and the Fatal abort on a missing
 	// backend) must land in the run's log file, not in the pre-config
 	// stdout-only window.
-	if needNativeDeepDoc {
+	switch *arguments.mode {
+	case "api", "ingestor":
 		registerNativeDeepDoc()
+	default:
 	}
 
 	// Print all configuration settings
