@@ -46,6 +46,25 @@ const ImageExtensions = [
   'avif',
 ];
 
+const AudioExtensions = [
+  'mp3',
+  'wav',
+  'wave',
+  'aac',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'wma',
+  'aiff',
+  'aif',
+  'au',
+  'midi',
+  'opus',
+  'ape',
+  'amr',
+];
+
 export function getFileMimeType(
   file: File | IDocumentInfo | UploadResponseDataType,
 ): string {
@@ -66,4 +85,14 @@ export function isImageFile(
     return mimeType.startsWith('image/');
   }
   return ImageExtensions.includes(getExtension(file.name));
+}
+
+export function isAudioFile(
+  file: File | IDocumentInfo | UploadResponseDataType,
+): boolean {
+  const mimeType = getFileMimeType(file);
+  if (mimeType) {
+    return mimeType.startsWith('audio/');
+  }
+  return AudioExtensions.includes(getExtension(file.name));
 }
