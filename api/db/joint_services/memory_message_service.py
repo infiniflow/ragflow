@@ -183,7 +183,9 @@ async def extract_by_llm(
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     if tenant_llm_id:
         try:
-            llm_config = get_model_config_by_id(tenant_id, LLMType.CHAT, tenant_llm_id)
+            llm_config = get_model_config_by_id(
+                tenant_id, LLMType.CHAT, tenant_llm_id, expected_model_type=LLMType.CHAT
+            )
         except LookupError:
             llm_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
     else:
