@@ -17,17 +17,19 @@ import json
 import logging
 import os
 import re
+from copy import deepcopy
 from datetime import datetime, timedelta
 from functools import lru_cache
 
-from peewee import fn
+from peewee import Tuple, fn
 
 from api.db import VALID_PIPELINE_TASK_TYPES
-from api.db.db_models import DB, Document, PipelineOperationLog
+from api.db.db_models import DB, Document, PipelineDSLVersion, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.pipeline_dsl_version_service import PipelineDSLVersionService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import PipelineTaskType, TaskStatus
 
@@ -149,7 +151,6 @@ _EMBEDDING_VECTOR_FIELD = re.compile(r"^q_\d+_vec$")
 
 
 def _remove_embedding_vectors(value):
-    """Remove index-only embedding vectors from a runtime pipeline snapshot."""
     if isinstance(value, dict):
         for key in list(value):
             if _EMBEDDING_VECTOR_FIELD.fullmatch(str(key)):
@@ -162,8 +163,85 @@ def _remove_embedding_vectors(value):
     return value
 
 
+def _sanitize_pipeline_dsl(dsl_mapping):
+    """Return the immutable pipeline definition without per-run state."""
+    sanitized = deepcopy(dsl_mapping)
+    sanitized.pop("task_id", None)
+    root = sanitized.get("dsl") if isinstance(sanitized.get("dsl"), dict) else sanitized
+    root.pop("task_id", None)
+
+    components = root.get("components")
+    if isinstance(components, dict):
+        for component in components.values():
+            if not isinstance(component, dict):
+                continue
+            obj = component.get("obj")
+            if not isinstance(obj, dict):
+                continue
+            params = obj.get("params")
+            if isinstance(params, dict):
+                params.pop("outputs", None)
+
+    return _remove_embedding_vectors(sanitized)
+
+
+def _pipeline_dsl_id(pipeline_id, parser_id):
+    pipeline_id = str(pipeline_id or "").strip()
+    if pipeline_id:
+        return pipeline_id
+    parser_id = str(parser_id or "").strip()
+    return f"builtin:{parser_id}" if parser_id else None
+
+
 class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
+
+    @classmethod
+    def _load_dsl_versions(cls, references):
+        if not references:
+            return {}
+        rows = (
+            PipelineDSLVersion.select(
+                PipelineDSLVersion.dsl_id,
+                PipelineDSLVersion.version,
+                PipelineDSLVersion.dsl,
+            )
+            .where(
+                Tuple(PipelineDSLVersion.dsl_id, PipelineDSLVersion.version).in_(
+                    sorted(references)
+                )
+            )
+            .dicts()
+        )
+        return {(row["dsl_id"], row["version"]): row["dsl"] for row in rows}
+
+    @classmethod
+    def _resolve_dsl_references(cls, logs):
+        references = set()
+        for log in logs:
+            dsl_id = log.get("dsl_id")
+            dsl_version = log.get("dsl_version")
+            if (dsl_id is None) != (dsl_version is None):
+                raise RuntimeError(
+                    f"Pipeline operation log {log.get('id')!r} has an incomplete DSL reference."
+                )
+            if dsl_id is not None:
+                references.add((dsl_id, dsl_version))
+
+        versions = cls._load_dsl_versions(references)
+        missing = references.difference(versions)
+        if missing:
+            dsl_id, dsl_version = sorted(missing)[0]
+            raise RuntimeError(
+                f"Pipeline DSL version {dsl_id!r}@{dsl_version} referenced by an operation log was not found."
+            )
+
+        for log in logs:
+            dsl_id = log.pop("dsl_id", None)
+            dsl_version = log.pop("dsl_version", None)
+            if dsl_id is not None:
+                log["dsl"] = versions[(dsl_id, dsl_version)]
+        return logs
 
     @classmethod
     def _is_final_state(cls, progress, operation_status):
@@ -190,6 +268,8 @@ class PipelineOperationLogService(CommonService):
             cls.model.progress_msg,
             cls.model.process_begin_at,
             cls.model.process_duration,
+            cls.model.dsl_id,
+            cls.model.dsl_version,
             cls.model.dsl,
             cls.model.task_type,
             cls.model.operation_status,
@@ -231,7 +311,7 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None, dsl: str = "{}"):
+    def create(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None, dsl=None):
         if document_id != GRAPH_RAPTOR_FAKE_DOC_ID:
             referred_document_id = document_id
 
@@ -270,7 +350,7 @@ class PipelineOperationLogService(CommonService):
         if dsl_mapping is None:
             dsl_for_log = {}
         else:
-            dsl_for_log = _remove_embedding_vectors(dsl_mapping)
+            dsl_for_log = _sanitize_pipeline_dsl(dsl_mapping)
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -349,6 +429,17 @@ class PipelineOperationLogService(CommonService):
             logger.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
             return None
 
+        dsl_id = None
+        dsl_version = None
+        if task_type == PipelineTaskType.PARSE and dsl_mapping is not None:
+            dsl_id = _pipeline_dsl_id(pipeline_id, document.parser_id)
+            if dsl_id is not None:
+                # Resolve the immutable DSL version before opening the operation
+                # log transaction. Retrying inside a long-lived MySQL
+                # REPEATABLE READ transaction could keep observing a stale head.
+                version = PipelineDSLVersionService.get_or_create(dsl_id, dsl_for_log)
+                dsl_version = version.version
+
         log = {
             "id": get_uuid(),
             "document_id": document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
@@ -365,7 +456,12 @@ class PipelineOperationLogService(CommonService):
             "progress_msg": progress_msg,
             "process_begin_at": process_begin_at,
             "process_duration": process_duration,
-            "dsl": dsl_for_log,
+            "dsl_id": dsl_id,
+            "dsl_version": dsl_version,
+            # Referenced rows do not duplicate the full definition. Missing or
+            # malformed DSL input retains the embedded snapshot fallback used
+            # by legacy rows.
+            "dsl": {} if dsl_version is not None else dsl_for_log,
             "task_type": task_type,
             "operation_status": operation_status,
             "avatar": avatar,
@@ -458,7 +554,20 @@ class PipelineOperationLogService(CommonService):
         if page_number and items_per_page:
             logs = logs.paginate(page_number, items_per_page)
 
-        return list(logs.dicts()), count
+        return cls._resolve_dsl_references(list(logs.dicts())), count
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_id_and_kb_id(cls, log_id, kb_id):
+        log = (
+            cls.model.select(*cls.get_file_logs_fields())
+            .where((cls.model.id == log_id) & (cls.model.kb_id == kb_id))
+            .dicts()
+            .first()
+        )
+        if log is None:
+            return None
+        return cls._resolve_dsl_references([log])[0]
 
     @classmethod
     @DB.connection_context()

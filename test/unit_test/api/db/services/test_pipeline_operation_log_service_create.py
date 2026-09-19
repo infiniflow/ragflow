@@ -51,6 +51,7 @@ import pytest
 def _install_stubs(monkeypatch):
     # peewee.fn is referenced at module import time.
     peewee_mod = types.ModuleType("peewee")
+    peewee_mod.Tuple = lambda *a, **kw: None
     peewee_mod.fn = lambda *a, **kw: None
     monkeypatch.setitem(sys.modules, "peewee", peewee_mod)
 
@@ -70,6 +71,7 @@ def _install_stubs(monkeypatch):
         "api.db.services.document_service",
         "api.db.services.knowledgebase_service",
         "api.db.services.canvas_service",
+        "api.db.services.pipeline_dsl_version_service",
         "api.db.services.task_service",
     ]:
         monkeypatch.setitem(sys.modules, mod, types.ModuleType(mod))
@@ -82,6 +84,7 @@ def _install_stubs(monkeypatch):
     DB.connection_context = _noop_connection_context
     sys.modules["api.db.db_models"].DB = DB
     sys.modules["api.db.db_models"].Document = object
+    sys.modules["api.db.db_models"].PipelineDSLVersion = object
     # PipelineOperationLog needs concrete int returns on the count() chain
     # so create()'s `if total > limit` branch is well-typed and the
     # cleanup path doesn't blow up with `MagicMock > int`.
@@ -102,6 +105,16 @@ def _install_stubs(monkeypatch):
     sys.modules["api.db.services.canvas_service"].UserCanvasService = _class_stub(["get_by_id"])
     sys.modules["api.db.services.document_service"].DocumentService = _class_stub(["get_by_id", "update_progress_immediately"])
     sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = _class_stub(["get_by_id"])
+
+    class _PipelineDSLVersionService:
+        calls = []
+
+        @classmethod
+        def get_or_create(cls, dsl_id, dsl):
+            cls.calls.append((dsl_id, dsl))
+            return types.SimpleNamespace(dsl_id=dsl_id, version=1, dsl=dsl)
+
+    sys.modules["api.db.services.pipeline_dsl_version_service"].PipelineDSLVersionService = _PipelineDSLVersionService
     sys.modules["api.db.services.task_service"].TaskService = _class_stub(["get_by_id"])
     sys.modules["api.db.services.task_service"].GRAPH_RAPTOR_FAKE_DOC_ID = "fake"
     sys.modules["api.db.services.common_service"].CommonService = _class_stub(["save"])
@@ -299,19 +312,19 @@ def test_create_uses_document_parser_id_when_dsl_has_no_parser(pol_module, captu
     assert log["parser_id"] == document.parser_id
 
 
-def test_create_persists_sanitized_dsl(pol_module, captured_log, monkeypatch):
-    """create() must persist a sanitized copy of the DSL (without
-    q_<dim>_vec keys) in the dsl column — verified via the captured
-    log payload, not via a DB write."""
+def test_create_persists_sanitized_dsl_version_reference(pol_module, captured_log, monkeypatch):
+    """create() stores the sanitized definition once and references it."""
     document = _make_document(suffix="md", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
 
     dsl_with_vectors = json.dumps(
         {
+            "task_id": "run-1",
             "components": {
                 "Tokenizer:0": {
                     "obj": {
                         "params": {
+                            "mode": "static",
                             "outputs": {
                                 "chunks": {"value": [{"text": "x", "q_1024_vec": [0.1, 0.2]}]},
                             },
@@ -340,11 +353,48 @@ def test_create_persists_sanitized_dsl(pol_module, captured_log, monkeypatch):
         )
 
     log = captured_log["log"]
-    persisted_dsl = log["dsl"]
-    chunk = persisted_dsl["components"]["Tokenizer:0"]["obj"]["params"]["outputs"]["chunks"]["value"][0]
-    assert "q_1024_vec" not in chunk
-    assert chunk == {"text": "x"}
+    dsl_id, persisted_dsl = pol_module.PipelineDSLVersionService.calls[-1]
+    params = persisted_dsl["components"]["Tokenizer:0"]["obj"]["params"]
+    assert "task_id" not in persisted_dsl
+    assert "outputs" not in params
+    assert params["mode"] == "static"
+    assert dsl_id == "pipe-1"
+    assert log["dsl_id"] == "pipe-1"
+    assert log["dsl_version"] == 1
+    assert log["dsl"] == {}
     assert log["parser_id"] == "docling"
+
+
+def test_create_versions_dsl_before_log_transaction(pol_module, captured_log, monkeypatch):
+    document = _make_document()
+    user_pipeline = _make_user_pipeline()
+    events = []
+
+    def _get_or_create(cls, dsl_id, dsl):
+        events.append("version")
+        return types.SimpleNamespace(dsl_id=dsl_id, version=1, dsl=dsl)
+
+    @contextmanager
+    def _atomic():
+        events.append("log_transaction")
+        yield
+
+    monkeypatch.setattr(
+        pol_module.PipelineDSLVersionService,
+        "get_or_create",
+        classmethod(_get_or_create),
+    )
+    monkeypatch.setattr(pol_module.DB, "atomic", _atomic)
+
+    with patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)), patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)):
+        pol_module.PipelineOperationLogService.create(
+            document_id="doc-1",
+            pipeline_id="pipe-1",
+            task_type=pol_module.PipelineTaskType.PARSE,
+            dsl=_parse_dsl("pdf", "docling"),
+        )
+
+    assert events == ["version", "log_transaction"]
 
 
 def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch, caplog):
@@ -412,6 +462,9 @@ def test_create_falls_back_to_empty_dsl_for_malformed_dsl(pol_module, captured_l
 
     log = captured_log["log"]
     assert log["dsl"] == {}
+    assert log["dsl_id"] is None
+    assert log["dsl_version"] is None
+    assert pol_module.PipelineDSLVersionService.calls == []
     assert log["parser_id"] == "DeepDOC"
     assert any("Pipeline DSL is missing or malformed" in rec.message for rec in caplog.records)
 

@@ -38,6 +38,8 @@ type PipelineOperationLog struct {
 	ProgressMsg     *string    `gorm:"column:progress_msg;type:longtext" json:"progress_msg,omitempty"`
 	ProcessBeginAt  *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
+	DSLID           *string    `gorm:"column:dsl_id;size:255;index:idx_pipeline_operation_log_dsl,priority:1" json:"dsl_id,omitempty"`
+	DSLVersion      *int64     `gorm:"column:dsl_version;index:idx_pipeline_operation_log_dsl,priority:2" json:"dsl_version,omitempty"`
 	DSL             JSONMap    `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
 	TaskType        string     `gorm:"column:task_type;size:32;not null;default:''" json:"task_type"`
 	OperationStatus string     `gorm:"column:operation_status;size:32;not null" json:"operation_status"`

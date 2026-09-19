@@ -146,6 +146,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.Memory{},
 		&entity.MemoryTask{},
 		&entity.Search{},
+		&entity.PipelineDSLVersion{},
 		&entity.PipelineOperationLog{},
 		&entity.EvaluationDataset{},
 		&entity.EvaluationCase{},
@@ -203,7 +204,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
-		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
+		// Ensure the tables required by the Go runtime exist. The manual migrations are
 		// performed by the standalone --migrate action, so a server-mode process
 		// only converges the tables it needs itself.
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
@@ -224,6 +225,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	// missing column fails the whole API with Error 1054. Ensure it on both
 	// startup paths rather than trusting AutoMigrate.
 	if err = migrateIngestionTaskPipelineLogID(ctx, DB); err != nil {
+		return err
+	}
+	// pipeline_operation_log is shared with the Python backend. Add only the
+	// version-reference columns and index instead of auto-migrating the table.
+	if err = migratePipelineOperationLogDSLReference(ctx, DB); err != nil {
 		return err
 	}
 	// Seed built-in agent templates so the Go backend can serve the
@@ -329,7 +335,7 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 	return err
 }
 
-// autoMigrateRuntimeModels ensures the Go-exclusive runtime tables exist. The
+// autoMigrateRuntimeModels ensures the tables required by the Go runtime exist. The
 // manual migrations run as the standalone --migrate action, so a server-mode
 // process never runs them itself.
 func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
@@ -337,6 +343,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
 		&entity.MemoryTask{},
+		&entity.PipelineDSLVersion{},
 		&entity.ConversationMessage{},
 		&entity.ConversationReference{},
 		&entity.API4ConversationMessage{},

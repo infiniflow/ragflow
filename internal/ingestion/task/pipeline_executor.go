@@ -852,10 +852,15 @@ func recordPipelineLog(
 		return errors.New("pipeline log database is required")
 	}
 	var dslMap entity.JSONMap
+	hasVersionableDSL := false
+
 	if strings.TrimSpace(input.DSL) == "" {
 		dslMap = entity.JSONMap{}
 	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": input.DSL}
+	} else if dslMap != nil {
+		sanitizePipelineDSL(dslMap)
+		hasVersionableDSL = true
 	}
 
 	// The task context contains the document snapshot loaded when the task
@@ -918,10 +923,131 @@ func recordPipelineLog(
 	if doc.Status != nil && *doc.Status != "" {
 		statusValue = *doc.Status
 	}
-	if err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
-		return fmt.Errorf("advance pipeline log for document %s: %w", input.DocumentID, err)
+	var dslID *string
+	var dslVersion *int64
+
+	if hasVersionableDSL {
+		versionID := pipelineDSLID(input.PipelineID, doc.ParserID)
+		if versionID != "" {
+			version, err := dao.NewPipelineDSLVersionDAO().GetOrCreate(
+				ctx,
+				db,
+				versionID,
+				dslMap,
+			)
+			if err != nil {
+				return fmt.Errorf("store pipeline DSL version: %w", err)
+			}
+
+			versionID = version.DSLID
+			versionNumber := version.Version
+			dslID = &versionID
+			dslVersion = &versionNumber
+
+			// DSL definition lives in pipeline_dsl_version now.
+			dslMap = entity.JSONMap{}
+		}
 	}
+	if err := updateOpenLogRow(
+		ctx,
+		db,
+		input,
+		operationStatus,
+		statusValue,
+		pipelineID,
+		pipelineTitle,
+		pipelineAvatar,
+		dslID,
+		dslVersion,
+		dslMap,
+		doc,
+	); err != nil {
+		return fmt.Errorf(
+			"advance pipeline log for document %s: %w",
+			input.DocumentID,
+			err,
+		)
+	}
+
 	return nil
+}
+
+func pipelineDSLID(pipelineID, parserID string) string {
+	pipelineID = strings.TrimSpace(pipelineID)
+	if pipelineID != "" {
+		return pipelineID
+	}
+	parserID = strings.TrimSpace(parserID)
+	if parserID == "" {
+		return ""
+	}
+	return "builtin:" + parserID
+}
+
+// sanitizePipelineDSL removes state produced by one execution so version
+// equality reflects the immutable pipeline definition only.
+func sanitizePipelineDSL(dsl entity.JSONMap) {
+	root := map[string]any(dsl)
+
+	// Wrapper-level runtime state.
+	delete(root, "task_id")
+
+	if nested, ok := root["dsl"].(map[string]any); ok {
+		root = nested
+	}
+
+	// Nested DSL runtime state.
+	delete(root, "task_id")
+
+	if components, ok := root["components"].(map[string]any); ok {
+		for _, rawComponent := range components {
+			component, _ := rawComponent.(map[string]any)
+			obj, _ := component["obj"].(map[string]any)
+			params, _ := obj["params"].(map[string]any)
+			delete(params, "outputs")
+		}
+	}
+
+	removeIndexedEmbeddingVectors(dsl)
+}
+
+func removeIndexedEmbeddingVectors(value any) {
+	switch typed := value.(type) {
+	case entity.JSONMap:
+		removeIndexedEmbeddingVectors(map[string]any(typed))
+	case map[string]any:
+		for key, child := range typed {
+			if isIndexedEmbeddingVectorKey(key) {
+				delete(typed, key)
+				continue
+			}
+			removeIndexedEmbeddingVectors(child)
+		}
+	case []any:
+		for _, child := range typed {
+			removeIndexedEmbeddingVectors(child)
+		}
+	case []map[string]any:
+		for _, child := range typed {
+			removeIndexedEmbeddingVectors(child)
+		}
+	}
+}
+
+func isIndexedEmbeddingVectorKey(key string) bool {
+	if !strings.HasPrefix(key, "q_") || !strings.HasSuffix(key, "_vec") {
+		return false
+	}
+	if len(key) <= len("q__vec") {
+		return false
+	}
+	dimension := key[2 : len(key)-4]
+	for _, digit := range dimension {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // updateOpenLogRow advances the row this run already owns to its terminal
@@ -934,11 +1060,26 @@ func recordPipelineLog(
 // known, the write is final — a lost CAS means another writer already finalized
 // this run or the row was dropped with a superseded run, and neither may
 // produce a second entry.
-func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) error {
+func updateOpenLogRow(
+	ctx context.Context,
+	db *gorm.DB,
+	input PipelineLogInput,
+	operationStatus,
+	statusValue string,
+	pipelineID *string,
+	pipelineTitle string,
+	pipelineAvatar *string,
+	dslID *string,
+	dslVersion *int64,
+	dslMap entity.JSONMap,
+	doc entity.Document,
+) error {
 	targetID := input.PipelineLogID
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
 		"status":           statusValue,
+		"dsl_id":           dslID,
+		"dsl_version":      dslVersion,
 		"dsl":              dslMap,
 		"pipeline_id":      pipelineID,
 		"pipeline_title":   pipelineTitle,
