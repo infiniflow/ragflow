@@ -848,10 +848,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
 			} else if status, ok := req.Filter["status"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
-			} else if !isSkillIndex {
+			} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 				filterParts = append(filterParts, "available_int=1")
 			}
-		} else if !isSkillIndex {
+		} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 			filterParts = append(filterParts, "available_int=1")
 		}
 	}
@@ -1042,7 +1042,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 
 				denseFilterStr := filterStr
-				if denseFilterStr == "" && !isSkillIndex {
+				if denseFilterStr == "" && shouldDefaultAvailableFilter(req, isSkillIndex) {
 					denseFilterStr = "available_int=1"
 				}
 
@@ -1222,6 +1222,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		Chunks: allResults,
 		Total:  totalHits,
 	}, nil
+}
+
+func shouldDefaultAvailableFilter(req *types.SearchRequest, isSkillIndex bool) bool {
+	return !isSkillIndex && !req.IncludeUnavailable
 }
 
 // GetChunk gets a chunk by ID

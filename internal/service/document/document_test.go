@@ -235,6 +235,7 @@ type rerunDeleteDocEngine struct {
 	condition   map[string]interface{}
 	indexName   string
 	datasetID   string
+	search      *types.SearchRequest
 }
 
 type failingDeleteDocEngine struct {
@@ -273,11 +274,13 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
-func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *rerunDeleteDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "parent-1", "available_int": 0},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
-	}, Total: 2}, nil
+	}, Total: 3}, nil
 }
 
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -295,10 +298,12 @@ func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interf
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
 	updateValues     []map[string]interface{}
 }
 
-func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
 		{"id": "tree-1", "compile_kwd": "tree"},
@@ -2462,8 +2467,11 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 2 {
 		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1", "parent-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+	if engine.search == nil || !engine.search.IncludeUnavailable {
+		t.Fatalf("reparse search = %#v, want hidden parent rows included", engine.search)
 	}
 }
 
@@ -2570,6 +2578,9 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
 		t.Fatalf("available_int = %#v, want 0", got)
+	}
+	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
 	}
 }
 
@@ -3392,6 +3403,43 @@ func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T
 	}
 }
 
+func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]any{
+			"children_delimiters": []any{},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed document parser config: %v", err)
+	}
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+}
+
 // TestUpdateDatasetDocumentRejectsInvalidPages verifies the fail-fast contract
 // for the "pages" range: an invalid range (from<1) aborts the request with
 // CodeDataError instead of being silently dropped or persisted.
@@ -3421,6 +3469,36 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want CodeDataError", code)
+	}
+}
+
+func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+	parentChild, ok := resp.ParserConfig["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("parent_child = %#v, want persisted public setting", resp.ParserConfig["parent_child"])
 	}
 }
 

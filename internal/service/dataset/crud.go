@@ -126,8 +126,33 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		delete(flat, "raptor")
 		delete(flat, "graphrag")
 		flat["llm_id"] = tenant.LLMID
-		flat["parent_child"] = map[string]interface{}{"use_parent_child": false, "children_delimiter": "\n"}
-		flat["children_delimiter"] = ""
+		// Preserve the public default shape when parser_config is empty. The
+		// parent_child block remains the single source of truth; chunker
+		// children_delimiters are still derived below only when it is configured.
+		if _, ok := flat["parent_child"]; !ok {
+			flat["parent_child"] = map[string]interface{}{
+				"use_parent_child":   false,
+				"children_delimiter": "\n",
+			}
+		}
+		if _, ok := flat["children_delimiter"]; !ok {
+			flat["children_delimiter"] = ""
+		}
+		pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, req.ParserConfig)
+		for componentID, defaults := range parserConfig {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			defaultParams, ok := defaults.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			var overrides map[string]interface{}
+			if value, ok := flat[componentID].(map[string]interface{}); ok {
+				overrides = value
+			}
+			flat[componentID] = common.DeepMergeMaps(defaultParams, overrides)
+		}
 		parserConfig = entity.JSONMap(flat)
 	}
 
