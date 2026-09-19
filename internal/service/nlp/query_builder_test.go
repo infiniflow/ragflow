@@ -16,6 +16,7 @@ package nlp
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -304,6 +305,31 @@ func TestQueryBuilder_Question(t *testing.T) {
 				t.Errorf("Question(%q) keywords check failed, got %v", tt.txt, keywords)
 			}
 		})
+	}
+}
+
+func TestQueryBuilder_QuestionHyphenatedKeywordKeepsPhrase(t *testing.T) {
+	qb := NewQueryBuilder()
+
+	expr, _ := qb.Question("PPR-9087", "test", 0.5)
+	if expr == nil {
+		t.Fatal("Question returned nil expression for a hyphenated keyword")
+	}
+
+	const phrase = `"ppr\-9087"^5.0`
+	if !strings.Contains(expr.MatchingText, phrase) {
+		t.Fatalf("hyphenated query %q does not preserve the complete phrase: %q", phrase, expr.MatchingText)
+	}
+	if !strings.HasPrefix(expr.MatchingText, phrase+" ") {
+		t.Fatalf("complete hyphenated phrase should be evaluated before split terms: %q", expr.MatchingText)
+	}
+
+	plainExpr, _ := qb.Question("PPR 9087", "test", 0.5)
+	if plainExpr == nil {
+		t.Fatal("Question returned nil expression for a plain keyword query")
+	}
+	if strings.Contains(plainExpr.MatchingText, phrase) {
+		t.Fatalf("plain keyword query unexpectedly contains a hyphenated phrase: %q", plainExpr.MatchingText)
 	}
 }
 
