@@ -102,10 +102,16 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
-	// For qwen/glm models, use async chat endpoint
-	modelType := strings.Split(modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+	// Some hosted configs route qwen/glm models through a separate async chat
+	// endpoint. Only providers that actually configure a non-empty async_chat
+	// suffix may take that path — conf/models/vllm.json defines none, and a
+	// blank suffix would rewrite the URL to the bare base URL and break every
+	// chat call for qwen/glm-named models (#19004).
+	if asyncChat := strings.TrimSpace(v.baseModel.URLSuffix.AsyncChat); asyncChat != "" {
+		modelType := strings.Split(modelName, "-")[0]
+		if modelType == "qwen" || modelType == "glm" {
+			url = fmt.Sprintf("%s/%s", resolvedBaseURL, asyncChat)
+		}
 	}
 
 	// Build request body
@@ -135,9 +141,11 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 		return err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
-	modelType := strings.Split(modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+	if asyncChat := strings.TrimSpace(v.baseModel.URLSuffix.AsyncChat); asyncChat != "" {
+		modelType := strings.Split(modelName, "-")[0]
+		if modelType == "qwen" || modelType == "glm" {
+			url = fmt.Sprintf("%s/%s", resolvedBaseURL, asyncChat)
+		}
 	}
 
 	// Build request body with streaming enabled
