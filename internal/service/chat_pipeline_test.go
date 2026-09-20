@@ -324,6 +324,47 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 	}
 }
 
+// TestDecorateAnswer_CitesThinkBlock ensures citations emitted inside the
+// hidden thinking block still determine the returned reference documents.
+func TestDecorateAnswer_CitesThinkBlock(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "hello world",
+				"doc_id":              "d1",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "doc.txt"},
+		},
+	}
+	result := s.decorateAnswer(
+		t.Context(),
+		"<think>Supported by [ID:0].</think>visible answer",
+		kbinfos,
+		"system prompt",
+		[]string{"q"},
+		0,
+		timer,
+		nil, 0.0, true,
+		nil,
+		"",
+		nil,
+		"",
+		nil,
+		true,
+	)
+	if result.Reference == nil {
+		t.Fatal("a think-block citation must carry a reference")
+	}
+	if aggs, _ := result.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 || aggs[0].(map[string]interface{})["doc_id"] != "d1" {
+		t.Fatalf("reference doc_aggs = %#v, want the cited document", result.Reference["doc_aggs"])
+	}
+}
+
 // TestDecorateAnswer_PreCheckSkipsInsertCitations covers P0.11: when
 // the LLM already emitted canonical [ID:N] markers, insertCitations
 // is skipped (so we don't double-tag). We verify by checking that
@@ -723,13 +764,13 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	}
 	result := s.decorateAnswer(
 		t.Context(),
-		"x",
+		"x [ID:0]",
 		kb,
 		"system prompt",
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -1967,13 +2008,9 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	return keys
 }
 
-// TestDecorateHarnessAnswerUncitedStillCarriesReference: an agentic answer the
-// model composed WITHOUT citation markers must still ship the passages it was
-// composed from. Python's `refs = ... if doc_ids else []` returned an empty
-// reference for exactly that case (a one-passage pool is the common one), which
-// left the user with an answer and nothing to open — while the naive path hands
-// the passages back unconditionally.
-func TestDecorateHarnessAnswerUncitedStillCarriesReference(t *testing.T) {
+// TestDecorateHarnessAnswerUncitedOmitsReference ensures an agentic answer
+// without citation markers does not expose the internal evidence pool.
+func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
 			{
@@ -1991,16 +2028,35 @@ func TestDecorateHarnessAnswerUncitedStillCarriesReference(t *testing.T) {
 
 	s := &ChatPipelineService{}
 	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil)
+	if res.Reference != nil {
+		t.Fatalf("uncited answer must not carry a reference, got %#v", res.Reference)
+	}
+}
+
+// TestDecorateHarnessAnswerCitesThinkBlock ensures citations emitted inside the
+// hidden thinking block still resolve to client-visible source documents.
+func TestDecorateHarnessAnswerCitesThinkBlock(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "the wolf is grey",
+				"doc_id":              "d1",
+				"docnm_kwd":           "wolf.jpg",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
+		},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("<think>Supported by [ID:0].</think>小狼的颜色是灰色的。", kbinfos, nil, []string{"c1"})
 	if res.Reference == nil {
-		t.Fatal("an agentic answer with a citation pool must carry a reference")
+		t.Fatal("a think-block citation must carry a reference")
 	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["document_name"] != "wolf.jpg" {
-		t.Fatalf("reference chunks = %#v, want the pool in the client-facing shape", res.Reference["chunks"])
-	}
-	// Nothing was cited, so no document can be filtered out.
-	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
-		t.Fatalf("reference doc_aggs = %#v, want the whole pool kept", res.Reference["doc_aggs"])
+	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 || aggs[0].(map[string]interface{})["doc_id"] != "d1" {
+		t.Fatalf("reference doc_aggs = %#v, want the cited document", res.Reference["doc_aggs"])
 	}
 }
 
@@ -2043,8 +2099,8 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 	if strings.Contains(res.Answer, "[ID:1]") {
 		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
 	}
-	if res.Reference == nil {
-		t.Fatal("the reference must survive a dropped marker")
+	if res.Reference != nil {
+		t.Fatalf("an answer without a resolvable citation must not carry a reference, got %#v", res.Reference)
 	}
 }
 
