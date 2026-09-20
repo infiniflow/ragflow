@@ -1103,6 +1103,8 @@ func (e *Ingestor) releaseTask(taskID string) {
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
+	const documentBulkSize = 32
+
 	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
@@ -1123,7 +1125,11 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	// The sink owns all document/ingestion_task_log/ingestion_task.component_total
 	// writes for this run; inject it into the executor so the pipeline reports
 	// progress to the service layer instead of touching the DAO directly.
-	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, 0)
+	// Keep the final document write bounded. Compiler products can contain large
+	// text, source-chunk references, images, or vectors, so sending the whole
+	// document through one Elasticsearch bulk request can exceed the request
+	// size limit even when the individual chunks are valid.
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, documentBulkSize)
 	if err != nil {
 		return err
 	}
