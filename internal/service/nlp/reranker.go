@@ -30,6 +30,11 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	removeRedundantSpacesLeftRE  = regexp.MustCompile(`([^\sa-z0-9.,\)>]) +([^\s])`)
+	removeRedundantSpacesRightRE = regexp.MustCompile(`([^\s]) +([^\sa-z0-9.,\(])`)
+)
+
 // SearchResult represents the result of a search operation
 type SearchResult struct {
 	Total       int
@@ -419,28 +424,23 @@ func HybridSimilarity(
 // TokenSimilarity calculates token-based similarity
 func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float64 {
 	atksDict, atksKeyOrder := tokensToDict(atks, qb)
-	btkssDicts := make([]map[string]float64, len(btkss))
+	similarities := make([]float64, len(btkss))
 	for i, btks := range btkss {
-		btkssDicts[i], _ = tokensToDict(btks, qb)
-	}
-
-	similarities := make([]float64, len(btkssDicts))
-	for i, btkDict := range btkssDicts {
+		btkDict, _ := tokensToDict(btks, qb)
 		similarities[i] = tokenDictSimilarity(atksDict, btkDict, atksKeyOrder)
 	}
-
 	return similarities
 }
 
 // tokensToDict converts tokens to a weighted dictionary.
 // Also returns the insertion order of keys to match Python's dict insertion order.
 func tokensToDict(tks []string, qb *QueryBuilder) (map[string]float64, []string) {
-	d := make(map[string]float64)
-	var keyOrder []string
 	if qb == nil || qb.termWeight == nil {
-		return d, keyOrder
+		return map[string]float64{}, nil
 	}
 	wts := qb.termWeight.Weights(tks, false)
+	d := make(map[string]float64, len(wts)*2)
+	keyOrder := make([]string, 0, len(wts)*2)
 
 	for i, tw := range wts {
 		t := tw.Term
@@ -554,11 +554,12 @@ func extractContentTokens(fields map[string]interface{}, cfield string) []string
 	}
 
 	// Split by whitespace to get individual tokens
-	seen := make(map[string]bool)
-	var result []string
+	capacity := strings.Count(v, " ") + 1
+	seen := make(map[string]struct{}, capacity)
+	result := make([]string, 0, capacity)
 	for t := range strings.FieldsSeq(v) {
-		if !seen[t] {
-			seen[t] = true
+		if _, exists := seen[t]; !exists {
+			seen[t] = struct{}{}
 			result = append(result, t)
 		}
 	}
@@ -664,11 +665,11 @@ func cosineSimilarity(a, b []float64) float64 {
 func RemoveRedundantSpaces(s string) string {
 	// First pass: remove spaces after left-boundary characters (opening brackets, etc.)
 	// e.g., "（ text" -> "（text", "【 text" -> "【text"
-	s = regexp.MustCompile(`([^\sa-z0-9.,\)>]) +([^\s])`).ReplaceAllString(s, "$1$2")
+	s = removeRedundantSpacesLeftRE.ReplaceAllString(s, "$1$2")
 
 	// Second pass: remove spaces before right-boundary characters (closing brackets, punctuation)
 	// e.g., "text ！" -> "text！"
-	s = regexp.MustCompile(`([^\s]) +([^\sa-z0-9.,\(])`).ReplaceAllString(s, "$1$2")
+	s = removeRedundantSpacesRightRE.ReplaceAllString(s, "$1$2")
 
 	return s
 }

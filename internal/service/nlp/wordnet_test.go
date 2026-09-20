@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"sync"
 	"testing"
 )
 
@@ -135,6 +136,28 @@ func TestSynsets(t *testing.T) {
 			t.Logf("  - %s: %s", s.Name, s.Definition)
 		}
 	}
+}
+
+func TestSynsetsConcurrent(t *testing.T) {
+	requireWordNetData(t)
+	wn, err := NewWordNet(testWordNetDir)
+	if err != nil {
+		t.Fatalf("Failed to create WordNet: %v", err)
+	}
+	defer wn.Close()
+
+	const workers = 32
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if synsets := wn.Synsets("dog", NOUN); len(synsets) == 0 {
+				t.Errorf("Synsets(%q, %q) returned no results", "dog", NOUN)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestSynsetsDetailed(t *testing.T) {

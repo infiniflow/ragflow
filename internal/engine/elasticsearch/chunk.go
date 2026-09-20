@@ -1417,7 +1417,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// the first page and the caller gets the wrong page.
 	var (
 		totalHits  int64
-		allResults []map[string]interface{}
+		allResults = make([]map[string]interface{}, 0, len(req.IndexNames)*limit)
 		err        error
 	)
 
@@ -1427,12 +1427,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			return nil, err
 		}
 	} else {
-		// WithBody takes an io.Reader that the Go client streams
-		// directly into the request. Reusing &buf across iterations
-		// would drain it on the first request and leave the rest
-		// with an empty body — so we copy the bytes once and hand
-		// each iteration a fresh bytes.NewReader.
-		payload := append([]byte(nil), buf.Bytes()...)
+		// WithBody takes an io.Reader that the Go client streams directly into
+		// the request. Each request gets a fresh reader over the same immutable
+		// payload so the query body is not copied for every index.
+		payload := buf.Bytes()
 		for _, indexName := range req.IndexNames {
 			res, err := e.client.Search(
 				e.client.Search.WithContext(ctx),
@@ -1444,10 +1442,9 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(err))
 				continue
 			}
-			defer res.Body.Close()
-
 			if res.IsError() {
 				bodyBytes, _ := io.ReadAll(res.Body)
+				_ = res.Body.Close()
 				common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
 				continue
 			}
@@ -1455,9 +1452,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Parse response and return results
 			var esResp SearchResponse
 			if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+				_ = res.Body.Close()
 				common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
 				continue
 			}
+			_ = res.Body.Close()
 
 			searchChunks := convertESResponse(&esResp, "")
 			totalHits += esResp.Hits.Total.Value
@@ -1567,7 +1566,7 @@ func searchAfterPaginate(
 	var (
 		cursor        []interface{}
 		totalHits     int64
-		collected     []map[string]interface{}
+		collected     = make([]map[string]interface{}, 0, max(limit, 0))
 		collectedTake int
 		firstCall     = true
 	)
