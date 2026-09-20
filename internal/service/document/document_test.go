@@ -3596,7 +3596,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 
 	mockStorage := useFakeStorage(t)
 	data := []byte("artifact content")
-	if err := mockStorage.Put(ctx, sandboxArtifactBucket(), "result.png", data); err != nil {
+	if err := mockStorage.Put(ctx, common.SandboxArtifactBucket(), "result.png", data); err != nil {
 		t.Fatalf("seed artifact: %v", err)
 	}
 
