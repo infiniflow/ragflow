@@ -30,7 +30,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -1512,10 +1511,12 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 		}, nil
 	}
 
-	// 1) Key validation against the dataset's REAL metadata fields: a dataset without the
-	//    requested key (e.g. no title) must degrade to a hint, never to an empty retrieval
-	//    the model retries forever.
-	metas, err := e.deps.MetadataResolver.GetFlattedMetaByKBs(ctx, targetIDs)
+	// 1) Key validation against the dataset's OFFERED metadata fields — the same union of
+	//    declared and indexed fields the tool schema advertises (see resolveMetadataFields).
+	//    Validating against anything else would let the schema offer a key the tool then
+	//    rejects; a dataset without the requested key must degrade to a hint, never to an
+	//    empty retrieval the model retries forever.
+	known, _, _, err := resolveMetadataFields(ctx, e.deps)
 	if err != nil {
 		logger.Printf("[Metadata search] metadata index read failed: %v", err)
 		return ToolOutcome{
@@ -1528,11 +1529,6 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
 		}, nil
 	}
-	known := make([]string, 0, len(metas))
-	for k := range metas {
-		known = append(known, k)
-	}
-	sort.Strings(known)
 	knownSet := make(map[string]bool, len(known))
 	for _, k := range known {
 		knownSet[k] = true
@@ -1561,7 +1557,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 		for k, v := range f {
 			nf[k] = v
 		}
-		nf["value"] = normalizeMetadataValue(f["value"], asString(f["op"]))
+		nf["value"] = NormalizeMetadataValue(f["value"], asString(f["op"]))
 		normalized = append(normalized, nf)
 	}
 	logic := argString(args, "logic")
@@ -1675,12 +1671,15 @@ func metadataFiltersOf(args map[string]any) []map[string]any {
 	return out
 }
 
-// normalizeMetadataValue coerces a model-supplied filter value to the single value the
-// executor expects. The string ops (contains / = / start with / end with / not contains)
-// take ONE keyword: a list that sneaks in collapses to its first non-empty element (one
-// call = one keyword) and is logged, so the model can re-call per keyword. 'in' / 'not in'
-// keep their list (the value SET); empty / not empty take no value.
-func normalizeMetadataValue(value any, op string) any {
+// NormalizeMetadataValue coerces a model-supplied filter value to the single value a
+// metadata filter expects. The string ops (contains / = / start with / end with /
+// not contains) take ONE keyword: a list that sneaks in collapses to its first non-empty
+// element (one condition = one keyword) and is logged, so the caller can re-issue per
+// keyword. 'in' / 'not in' keep their list (the value SET); empty / not empty take no value.
+//
+// Exported because the two callers that accept model-written metadata conditions — the
+// metadata_search tool and the pre-search fan-out channel — must coerce them identically.
+func NormalizeMetadataValue(value any, op string) any {
 	if op == "in" || op == "not in" {
 		return value
 	}
@@ -1701,7 +1700,7 @@ func normalizeMetadataValue(value any, op string) any {
 		return nil
 	}
 	if len(flat) > 1 {
-		_LOG.Printf("[Metadata search] value list collapsed to the single keyword %q (ignored: %v); to match all, call metadata_search once per keyword", flat[0], flat[1:])
+		_LOG.Printf("[Metadata search] value list collapsed to the single keyword %q (ignored: %v); to match all, issue one condition per keyword", flat[0], flat[1:])
 	}
 	return flat[0]
 }

@@ -1020,10 +1020,10 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "metadata_search",
-			Description: `WHEN TO CALL: PRE-FILTER the document set by title BEFORE retrieving chunks — the question names a document by title or recognizable name; or you need a named document subset; or the corpus is large and a title filter would sharpen recall. Prefer 'contains' with a distinctive substring. ` +
+			Description: `WHEN TO CALL: PRE-FILTER the document set by METADATA BEFORE retrieving chunks — the question names something a metadata field would carry (a title, a file name, an author, a date) or needs a named subset. Use ONLY the fields listed under AVAILABLE METADATA, preferring 'contains' with a distinctive substring. ` +
 				`CALL AT MOST ONCE PER DIRECTION: then use search_chunks / retrieve inside those documents. ` +
 				`DO NOT CALL: nothing names a document/subset; you already hold a doc_id (use list_chunks); counting or enumerating. ` +
-				`ARGUMENTS: query — 1-2 strings. filters — [{key, value, op}]; key is only 'title'; op — see enum; logic 'and'|'or'. For the string ops the value MUST be ONE keyword, never a list — one call per keyword; 'in' takes a list; 'empty' takes no value. Titles use spaces, not underscores. Example: [{key: 'title', op: 'contains', value: 'New York'}]. ` +
+				`ARGUMENTS: query — 1-2 strings. filters — [{key, value, op}] over the AVAILABLE METADATA fields; op — see enum; logic 'and'|'or'. For the string ops the value MUST be ONE keyword, never a list — one call per keyword; 'in' takes a list; 'empty' takes no value. Copy a value exactly as the dataset stores it — never re-normalise it. Example: [{key: 'author', op: 'contains', value: 'Alice'}]. ` +
 				`OUTPUT: ranked chunks from ONLY the matching documents. ok = new evidence; redundant = already seen; miss = nothing matched. ` +
 				`IF IT FAILS: 'no documents match' — shorten the substring, or drop the filter and use search_chunks. Do NOT retry the same filter.`,
 			Parameters: map[string]any{
@@ -1041,10 +1041,11 @@ var (
 						"items": map[string]any{
 							"type": "object",
 							"properties": map[string]any{
-								// Only `title` is exposed for now. Extending to other
-								// metadata fields is a matter of adding to this enum —
-								// the executor is already field-agnostic.
-								"key": paramEnum("the document title", "title"),
+								// The field enum is rendered PER SESSION from the dataset's
+								// catalog (see metadataSearchSpecForCatalog); the shipped
+								// parameter deliberately carries no enum, so no field is
+								// advertised as available before the dataset says it is.
+								"key": paramString("a metadata field of this dataset — one of those listed under AVAILABLE METADATA"),
 								"value": map[string]any{
 									"type": []any{"string", "array", "null"},
 									"description": "the keyword/value to match: ONE string keyword for contains / = / start with / " +
@@ -1186,6 +1187,68 @@ func paramEnum(desc string, values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": values, "description": desc}
 }
 
+const (
+	// maxToolDescriptionRunes is the per-tool description budget TestToolSpecsHavePlaybookSections
+	// pins.
+	maxToolDescriptionRunes = 1200
+)
+
+// metadataSearchSpecForCatalog renders the metadata_search schema for a session's catalog: the
+// `key` enum becomes the fields the dataset offers, so a model can name any of them. The
+// description is dataset-independent (it points at AVAILABLE METADATA and never names a field),
+// so it needs no per-session rewriting and cannot outgrow its budget.
+//
+// An empty (or nil) catalog returns the base spec UNCHANGED: no field is advertised at all —
+// the `key` stays the free-form string the shipped spec carries, which is also how an empty
+// enum is avoided (some providers reject `"enum": []`).
+//
+// The base spec is the shared package-level ToolMap entry, so every map this touches is
+// COPIED — mutating them in place would leak one session's dataset fields into every other
+// session (and into a session's concurrent rag calls, see Toolset.mu).
+func metadataSearchSpecForCatalog(base ToolSpec, cat *MetadataCatalog) ToolSpec {
+	if cat == nil || cat.Empty() {
+		return base
+	}
+
+	baseProps, _ := base.Function.Parameters["properties"].(map[string]any)
+	filters, _ := baseProps["filters"].(map[string]any)
+	items, _ := filters["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	if baseProps == nil || filters == nil || items == nil || itemProps == nil {
+		// The schema shape changed under us; the unpatched spec is still valid.
+		return base
+	}
+
+	patchedItemProps := copyAnyMap(itemProps)
+	patchedItemProps["key"] = paramEnum("one of this dataset's metadata fields (see AVAILABLE METADATA)", cat.Keys...)
+
+	patchedItems := copyAnyMap(items)
+	patchedItems["properties"] = patchedItemProps
+
+	patchedFilters := copyAnyMap(filters)
+	patchedFilters["items"] = patchedItems
+
+	patchedProps := copyAnyMap(baseProps)
+	patchedProps["filters"] = patchedFilters
+
+	patchedParams := copyAnyMap(base.Function.Parameters)
+	patchedParams["properties"] = patchedProps
+
+	out := base
+	out.Function.Parameters = patchedParams
+	return out
+}
+
+// copyAnyMap shallow-copies a JSON-shaped map, so a patched tool spec shares no map with
+// ToolMap.
+func copyAnyMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // ToolMap is the multi-tool registry.
 // executeTool dispatches by name; add a tool by registering its schema here.
 var ToolMap = map[string]ToolSpec{
@@ -1232,6 +1295,11 @@ type Toolset struct {
 	// HasWebSearch reports whether a web provider is configured. When false,
 	// web_search is hidden from the surface rather than merely discouraged.
 	HasWebSearch bool
+	// MetadataFields is the session's metadata catalog (see MetadataCatalogFor). It supplies
+	// the metadata_search key enum and rides the session seed, so a filter can name the fields
+	// the dataset really carries. Nil or empty advertises no field at all — there is no field
+	// name baked into the shipped schema to fall back on.
+	MetadataFields *MetadataCatalog
 	// DisabledTools holds tools proven unavailable this session (no compiled
 	// structure of their kind).
 	DisabledTools map[string]bool
@@ -1275,6 +1343,11 @@ func (t *Toolset) ActiveToolSpecs() []ToolSpec {
 			continue
 		}
 		if s, ok := ToolMap[name]; ok {
+			if name == "metadata_search" {
+				// Per-session rewrite: the catalog names the dataset's real fields. It
+				// returns the shared spec untouched when there is no catalog.
+				s = metadataSearchSpecForCatalog(s, t.MetadataFields)
+			}
 			out = append(out, s)
 		}
 	}
@@ -3610,6 +3683,17 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 			// point: the seed carries what the enumeration FOUND, not queries to make
 			// (see enumerationSeed).
 			_LOG.Printf("[Action Session] enumeration windows in the seed (%d char(s)) — the corpus was asked, not the model.", len(seed))
+		}
+	}
+
+	// AVAILABLE METADATA: the dataset's real metadata fields, so a metadata_search filter
+	// can name one the dataset actually carries. Omitted entirely when the catalog is
+	// empty (no metadata, an unreadable index, or no resolver wired), which keeps a
+	// metadata-free corpus's prompt exactly as it shipped.
+	if deps.Tools != nil && deps.Tools.MetadataFields != nil {
+		if block := deps.Tools.MetadataFields.Render(); block != "" {
+			seedUser += "\n\n" + block
+			_LOG.Printf("[Action Session] metadata catalog in the seed (%d field(s))", len(deps.Tools.MetadataFields.Keys))
 		}
 	}
 

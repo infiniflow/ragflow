@@ -710,6 +710,282 @@ func TestMetadataSearchWithoutResolverIsInert(t *testing.T) {
 	}
 }
 
+// ===================== metadata catalog =====================
+
+// TestMetadataCatalogForBuildsSortedKeysWithSamples pins what the model gets to see: the
+// dataset's real fields, deterministically ordered, each with its strongest values.
+func TestMetadataCatalogForBuildsSortedKeysWithSamples(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"title":  {"Boston": {"d1"}, "New York City": {"d2", "d3", "d4"}},
+		"author": {"Alice": {"d1"}, "Bob": {"d2"}},
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "author,title" {
+		t.Fatalf("keys = %q, want author,title (sorted, deterministic)", got)
+	}
+	samples := cat.Samples["title"]
+	if len(samples) != 2 {
+		t.Fatalf("title samples = %v, want 2", samples)
+	}
+	// Ordered by document count: the value most documents carry is the useful one to show.
+	if samples[0].Value != "New York City" || samples[0].Docs != 3 {
+		t.Errorf("first title sample = %+v, want New York City (3 docs)", samples[0])
+	}
+
+	render := cat.Render()
+	for _, want := range []string{"AVAILABLE METADATA", "title", "author", "New York City"} {
+		if !strings.Contains(render, want) {
+			t.Errorf("render missing %q:\n%s", want, render)
+		}
+	}
+	if n := utf8.RuneCountInString(render); n > metadataCatalogRenderMax {
+		t.Errorf("render = %d runes, cap is %d", n, metadataCatalogRenderMax)
+	}
+}
+
+// TestMetadataCatalogForDropsSystemAndLabelKeys pins the blacklist: identifiers and
+// benchmark annotations must never become filters — a `question_id` filter would let the
+// model shrink retrieval to the very documents that answer the question.
+func TestMetadataCatalogForDropsSystemAndLabelKeys(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"title":       {"A": {"d1"}},
+		"question_id": {"444": {"d1"}},
+		"source_uri":  {"s3://x": {"d1"}},
+		"pageid":      {"1": {"d1"}},
+		"outline":     {"intro": {"d1"}},
+		"_version":    {"2": {"d1"}},
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "title" {
+		t.Fatalf("keys = %q, want only title", got)
+	}
+	if render := cat.Render(); strings.Contains(render, "question_id") {
+		t.Errorf("the benchmark-annotation key leaked into the catalog:\n%s", render)
+	}
+}
+
+// TestMetadataCatalogForDegradesToEmpty pins the failure contract every "no metadata" path
+// depends on: a nil resolver, an unreadable index, a metadata-free dataset or no bound
+// datasets all yield the EMPTY catalog — never an error and never a panic. An empty
+// catalog is what makes the session keep the shipped title-only schema.
+func TestMetadataCatalogForDegradesToEmpty(t *testing.T) {
+	ctx := context.Background()
+	base, _ := newTestSearchDeps(&stubRetriever{})
+
+	// No resolver wired (deployment without the metadata link).
+	if cat := MetadataCatalogFor(ctx, base); !cat.Empty() {
+		t.Errorf("keys = %v, want empty without a resolver", cat.Keys)
+	}
+	if ptr := MetadataCatalogPtr(ctx, base); ptr != nil {
+		t.Error("MetadataCatalogPtr must be nil for an empty catalog")
+	}
+
+	// Index unreadable.
+	broken := base
+	broken.MetadataResolver = &stubMetadataResolver{flattenErr: errors.New("es down")}
+	if cat := MetadataCatalogFor(ctx, broken); !cat.Empty() {
+		t.Errorf("keys = %v, want empty when the index is unreadable", cat.Keys)
+	}
+
+	// Dataset carries metadata rows but no usable field.
+	blank := base
+	blank.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"_version": {"2": {"d1"}}, // hidden by the blacklist
+		"empty":    {},            // no value to match
+	}}
+	if cat := MetadataCatalogFor(ctx, blank); !cat.Empty() {
+		t.Errorf("keys = %v, want empty when no field is usable", cat.Keys)
+	}
+
+	// No bound datasets at all.
+	unbound, _ := newTestSearchDeps(&stubRetriever{})
+	unbound.KbIDs = nil
+	unbound.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{"title": {"A": {"d1"}}}}
+	if cat := MetadataCatalogFor(ctx, unbound); !cat.Empty() {
+		t.Errorf("keys = %v, want empty without datasets", cat.Keys)
+	}
+}
+
+// TestActiveToolSpecsRendersCatalogKeyEnum pins the payoff: the advertised `key` enum is
+// the dataset's real fields, so a model can name one. Before this it was ["title"] and no
+// other field could be asked for however plainly the question named it.
+func TestActiveToolSpecsRendersCatalogKeyEnum(t *testing.T) {
+	cat := &MetadataCatalog{
+		Keys:    []string{"author", "title"},
+		Samples: map[string][]MetadataSample{"author": {{Value: "Alice", Docs: 1}}},
+	}
+	ts := &Toolset{ThinkingMode: "high", MetadataFields: cat}
+	spec, ok := findSpec(ts.ActiveToolSpecs(), "metadata_search")
+	if !ok {
+		t.Fatal("metadata_search missing from the high-mode surface")
+	}
+
+	if got := strings.Join(metadataKeyEnum(spec), ","); got != "author,title" {
+		t.Errorf("key enum = %q, want the catalog's fields", got)
+	}
+	desc := spec.Function.Description
+	for _, want := range []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTPUT", "IF IT FAILS", "AVAILABLE METADATA"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description missing %q:\n%s", want, desc)
+		}
+	}
+	// The key parameter's description is dataset-independent — it points at AVAILABLE METADATA
+	// and names no field, so a dataset's field list can never leak into another session's view
+	// of the tool; the fields themselves reach the model through the enum asserted above and
+	// through the seed's block.
+	const wantKeyDesc = "one of this dataset's metadata fields (see AVAILABLE METADATA)"
+	if got, _ := metadataKeyParam(spec)["description"].(string); got != wantKeyDesc {
+		t.Errorf("key description = %q, want %q", got, wantKeyDesc)
+	}
+	if n := utf8.RuneCountInString(desc); n > maxToolDescriptionRunes {
+		t.Errorf("description = %d runes, cap = %d", n, maxToolDescriptionRunes)
+	}
+}
+
+// TestActiveToolSpecsKeepsStaticSpecWithoutCatalog pins the "no metadata = no field
+// advertised" contract: without a catalog the shipped spec is returned untouched — same
+// struct — and it names NO field, so a model cannot be told `title` is filterable on a
+// dataset that never said so. That is also how an empty enum (which some providers reject)
+// is avoided.
+func TestActiveToolSpecsKeepsStaticSpecWithoutCatalog(t *testing.T) {
+	for _, cat := range []*MetadataCatalog{nil, &MetadataCatalog{}} {
+		ts := &Toolset{ThinkingMode: "high", MetadataFields: cat}
+		spec, ok := findSpec(ts.ActiveToolSpecs(), "metadata_search")
+		if !ok {
+			t.Fatal("metadata_search missing from the high-mode surface")
+		}
+		if !reflect.DeepEqual(spec, ToolMap["metadata_search"]) {
+			t.Errorf("catalog %v: an empty catalog must leave the shipped spec untouched", cat)
+		}
+		if got := metadataKeyEnum(spec); len(got) != 0 {
+			t.Errorf("key enum = %v, want NO advertised field without a catalog", got)
+		}
+		key, _ := metadataKeyParam(spec)["enum"]
+		if key != nil {
+			t.Errorf("key enum key = %v, want it absent (an empty enum is rejected by some providers)", key)
+		}
+		if strings.Contains(spec.Function.Description, "'title'") {
+			t.Errorf("the shipped description still names a field:\n%s", spec.Function.Description)
+		}
+	}
+}
+
+// metadataKeyParam reads the metadata_search `key` parameter object off a spec.
+func metadataKeyParam(spec ToolSpec) map[string]any {
+	props, _ := spec.Function.Parameters["properties"].(map[string]any)
+	filters, _ := props["filters"].(map[string]any)
+	items, _ := filters["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	key, _ := itemProps["key"].(map[string]any)
+	return key
+}
+
+// stubDeclaredMetadata is a scripted DeclaredMetadataResolver.
+type stubDeclaredMetadata struct {
+	defs []common.MetadataFieldDef
+	err  error
+}
+
+func (s *stubDeclaredMetadata) DeclaredMetadataFields(context.Context, []string) ([]common.MetadataFieldDef, error) {
+	return s.defs, s.err
+}
+
+// TestMetadataCatalogForIncludesDeclaredFields pins the declarative half: a dataset that
+// declares its fields is described with what each field MEANS and which values it accepts,
+// which is what the metadata index alone cannot supply. It also pins that the blacklist
+// applies to the declarative source too.
+func TestMetadataCatalogForIncludesDeclaredFields(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"author": {"Alice": {"d1", "d2"}},
+	}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "author", Type: "string", Description: "who wrote it"},
+		{Key: "doc_type", Type: "string", Description: "kind of document", Enum: []string{"report", "paper"}},
+		{Key: "question_id", Description: "benchmark label"}, // blacklisted
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "author,doc_type" {
+		t.Fatalf("keys = %q, want the declared fields (minus the blacklist), sorted", got)
+	}
+	if cat.Fields["author"].Description != "who wrote it" {
+		t.Errorf("declared definition lost: %+v", cat.Fields["author"])
+	}
+
+	render := cat.Render()
+	for _, want := range []string{
+		"author — who wrote it",
+		"doc_type — kind of document",
+		"one of: report / paper",
+		`values seen: "Alice" (2 doc(s))`,
+	} {
+		if !strings.Contains(render, want) {
+			t.Errorf("render missing %q:\n%s", want, render)
+		}
+	}
+	if strings.Contains(render, "question_id") {
+		t.Errorf("the blacklist must cover the declarative source too:\n%s", render)
+	}
+}
+
+// TestMetadataCatalogForOffersDeclaredFieldWithoutIndexedValues pins the case the
+// observational source cannot see at all: a field declared but not yet indexed is still a
+// legitimate filter, so it is offered (with its description) and advertised in the schema.
+func TestMetadataCatalogForOffersDeclaredFieldWithoutIndexedValues(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "doc_type", Description: "kind of document", Enum: []string{"report"}},
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "doc_type" {
+		t.Fatalf("keys = %q, want the declared field even with no indexed value", got)
+	}
+	if len(cat.Samples["doc_type"]) != 0 {
+		t.Errorf("samples = %v, want none: the index carries no value yet", cat.Samples["doc_type"])
+	}
+
+	ts := &Toolset{ThinkingMode: "high", MetadataFields: &cat}
+	spec, ok := findSpec(ts.ActiveToolSpecs(), "metadata_search")
+	if !ok {
+		t.Fatal("metadata_search missing from the high-mode surface")
+	}
+	if got := strings.Join(metadataKeyEnum(spec), ","); got != "doc_type" {
+		t.Errorf("key enum = %q, want the declared field advertised", got)
+	}
+}
+
+// TestMetadataCatalogForDegradesWhenDeclaredReadFails pins the independence of the two
+// halves: an unreadable parser_config leaves the observational source untouched, and vice
+// versa (see TestMetadataCatalogForDegradesToEmpty for the index failure).
+func TestMetadataCatalogForDegradesWhenDeclaredReadFails(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{"title": {"A": {"d1"}}}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{err: errors.New("kb row unreadable")}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "title" {
+		t.Errorf("keys = %q, want the observational half alone", got)
+	}
+}
+
+// metadataKeyEnum reads the metadata_search `key` enum off a rendered spec.
+func metadataKeyEnum(spec ToolSpec) []string {
+	props, _ := spec.Function.Parameters["properties"].(map[string]any)
+	filters, _ := props["filters"].(map[string]any)
+	items, _ := filters["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	key, _ := itemProps["key"].(map[string]any)
+	out, _ := key["enum"].([]string)
+	return out
+}
+
 func (s *stubExpander) Expand(_ context.Context, _ *Kbinfos, _, _ string, _ []string) error {
 	s.calls++
 	return nil

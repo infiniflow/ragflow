@@ -158,6 +158,29 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 	}, nil
 }
 
+// DeclaredMetadataFields implements runtime.DeclaredMetadataResolver: it reads the metadata
+// fields each dataset DECLARES in its parser_config — the {key, type, description, enum}
+// definitions the metadata config API writes for extraction.
+//
+// One row read per dataset and no index scan, so it is cheap enough to run per
+// metadata_search call. An unknown dataset is skipped rather than failing the read, and a
+// dataset that declares nothing contributes nothing: the caller always has the metadata
+// index as its other half.
+func (s *MetadataService) DeclaredMetadataFields(ctx context.Context, kbIDs []string) ([]common.MetadataFieldDef, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	var out []common.MetadataFieldDef
+	for _, kbID := range kbIDs {
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+		if err != nil || kb == nil {
+			continue
+		}
+		out = append(out, common.DeclaredMetadataFieldsFromParserConfig(kb.ParserConfig)...)
+	}
+	return out, nil
+}
+
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
 func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {

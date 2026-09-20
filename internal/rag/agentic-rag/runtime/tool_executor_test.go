@@ -1374,7 +1374,7 @@ func TestMetadataSearchToolBadArgsAndKeyHints(t *testing.T) {
 	deps, _ := newTestSearchDeps(&stubRetriever{})
 	deps.MetadataResolver = &stubMetadataResolver{
 		pushdownOK: true,
-		metas:      common.MetaData{"question_id": {"444": {"d1"}}},
+		metas:      common.MetaData{"author": {"Alice": {"d1"}}},
 	}
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 	ctx := context.Background()
@@ -1400,7 +1400,7 @@ func TestMetadataSearchToolBadArgsAndKeyHints(t *testing.T) {
 	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
 		t.Errorf("status/reason = %s/%s, want miss/bad_args for a missing key", out.Status, out.Reason)
 	}
-	if note := toolNote(out); !strings.Contains(note, "question_id") {
+	if note := toolNote(out); !strings.Contains(note, "author") {
 		t.Errorf("note = %q, want the dataset's REAL keys listed", note)
 	}
 }
@@ -1471,6 +1471,139 @@ func TestMetadataSearchToolScopesResultsToMatchedDocuments(t *testing.T) {
 	}
 }
 
+// TestMetadataSearchToolAcceptsCatalogFieldKey pins the non-title path end to end at the
+// executor: a field the dataset really carries is accepted, the push-down resolves the
+// documents, and the retrieval is scoped to them. Before the catalog the schema never let a
+// model emit this filter, so the executor's field-agnosticism was unreachable in practice.
+func TestMetadataSearchToolAcceptsCatalogFieldKey(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"id": "c1", "doc_id": "d1", "content": "Written by Alice."},
+	}}
+	deps, kb := newTestSearchDeps(r)
+	resolver := &stubMetadataResolver{
+		pushdownOK:  true,
+		pushdownIDs: []string{"d1"},
+		metas:       common.MetaData{"author": {"Alice": {"d1"}}},
+	}
+	deps.MetadataResolver = resolver
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"query":   []any{"who wrote it"},
+		"filters": []any{map[string]any{"key": "author", "op": "contains", "value": "Alice"}},
+		"logic":   "and",
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s), want ok — a field the dataset carries must not be rejected", out.Status, out.Reason)
+	}
+	if len(resolver.gotFilters) != 1 || resolver.gotFilters[0]["key"] != "author" {
+		t.Errorf("resolver filters = %v, want the author condition", resolver.gotFilters)
+	}
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
+		t.Errorf("doc_scope = %v, want the author-matched document", scope)
+	}
+	if len(kb.Chunks) != 1 {
+		t.Errorf("pool chunks = %d, want the hit admitted", len(kb.Chunks))
+	}
+}
+
+// TestMetadataSearchToolWithoutMetadataIsMissNotError pins the metadata-free outcome: a
+// call against a dataset whose metadata index carries NOTHING is a query-level bad_args
+// miss with the fallback named — never an ERROR, which would tell the model the
+// infrastructure failed and it should give up on the whole line of search.
+func TestMetadataSearchToolWithoutMetadataIsMissNotError(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, metas: common.MetaData{}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"query":   []any{"q"},
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status == StatusError {
+		t.Fatalf("status = error (reason %s); a metadata-free dataset is NOT an infrastructure failure", out.Reason)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Errorf("status/reason = %s/%s, want miss/bad_args", out.Status, out.Reason)
+	}
+	note := toolNote(out)
+	if !strings.Contains(note, "NONE") {
+		t.Errorf("note = %q, want the explicit no-metadata hint", note)
+	}
+	if !strings.Contains(note, "search_chunks") {
+		t.Errorf("note = %q, want the fallback tools named", note)
+	}
+}
+
+// TestMetadataSearchToolAcceptsDeclaredOnlyField pins the consistency the declarative source
+// forces: a field the dataset DECLARES but has not indexed yet is advertised by the schema, so
+// the executor — which validates against the same union — must accept it rather than answer
+// "no such key" to the very filter it offered.
+func TestMetadataSearchToolAcceptsDeclaredOnlyField(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"id": "c1", "doc_id": "d1", "content": "A report about towers."},
+	}}
+	deps, _ := newTestSearchDeps(r)
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1"}, metas: common.MetaData{}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "doc_type", Description: "kind of document", Enum: []string{"report"}},
+	}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"query":   []any{"towers"},
+		"filters": []any{map[string]any{"key": "doc_type", "op": "=", "value": "report"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s); a declared field must be accepted, not answered with bad_args", out.Status, out.Reason)
+	}
+	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
+		t.Errorf("doc_scope = %v, want the declared-field match", scope)
+	}
+}
+
+// TestMetadataSearchToolRejectsSystemKey pins the blacklist at the enforcement point: a key
+// the catalog refuses to advertise (benchmark labels, connector fields) is ALSO refused when
+// the model names it anyway, so the leak cannot be reached by guessing.
+func TestMetadataSearchToolRejectsSystemKey(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, metas: common.MetaData{
+		"title":       {"Culdcept": {"d1"}},
+		"question_id": {"444": {"d1"}},
+	}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"query":   []any{"q"},
+		"filters": []any{map[string]any{"key": "question_id", "op": "=", "value": "444"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Fatalf("status/reason = %s/%s, want miss/bad_args for a blacklisted key", out.Status, out.Reason)
+	}
+	note := toolNote(out)
+	if !strings.Contains(note, "Available: title") {
+		t.Errorf("note = %q, want the offered fields only (no question_id)", note)
+	}
+	if strings.Contains(note, "444") {
+		t.Errorf("note = %q, must not echo a blacklisted key's value", note)
+	}
+}
+
 // TestNormalizeMetadataValue pins the value coercion: a list where one keyword is expected
 // collapses to its first non-empty element (one call = one keyword), 'in' keeps its list,
 // and an all-empty list becomes no value at all.
@@ -1487,8 +1620,8 @@ func TestNormalizeMetadataValue(t *testing.T) {
 		{"New York", "contains", "New York"},
 	}
 	for _, c := range cases {
-		if got := normalizeMetadataValue(c.value, c.op); fmt.Sprint(got) != fmt.Sprint(c.want) {
-			t.Errorf("normalizeMetadataValue(%v, %q) = %v, want %v", c.value, c.op, got, c.want)
+		if got := NormalizeMetadataValue(c.value, c.op); fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("NormalizeMetadataValue(%v, %q) = %v, want %v", c.value, c.op, got, c.want)
 		}
 	}
 }

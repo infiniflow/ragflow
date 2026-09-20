@@ -189,6 +189,11 @@ type RAGTools struct {
 	// metadata_search tool and the pre-search metadata channel
 	// (implemented by internal/service.MetadataService). Nil leaves both unavailable.
 	MetadataResolver runtime.MetadataResolver
+	// DeclaredMetadata reads the metadata fields the datasets DECLARE in their
+	// parser_config, which is what lets the metadata_search catalog describe a field
+	// (its meaning and allowed values) instead of only naming it. Same implementation as
+	// MetadataResolver; nil leaves the catalog with the metadata index alone.
+	DeclaredMetadata runtime.DeclaredMetadataResolver
 	// Outer is the outer-layer chat model that drives the rag_agent react loop
 	// (dialog_service.rag_agent): it binds tools=[rag, summarize_document] with
 	// terminal_tools={"rag"}. When non-nil, Rag runs that outer loop: the model may call
@@ -978,6 +983,7 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req runtime.RunRequest, d
 		DocChunks:         deps.DocChunks,
 		DocTenantResolver: dbDocTenantResolver{},
 		MetadataResolver:  deps.MetadataResolver,
+		DeclaredMetadata:  deps.DeclaredMetadata,
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
 		// Python retrieve:614-646 — configuration is the middle precedence
@@ -2427,9 +2433,11 @@ func runSingleSession(ctx context.Context, deps RAGTools, req runtime.RunRequest
 			ThinkingMode: resp.Mode.Label,
 			// Provider gate: without a wired provider the tool is hidden rather than
 			// advertised dead.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields (see NewAgenticLoop).
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		},
 		Model:   deps.Model,
 		Prompts: deps.Prompts,

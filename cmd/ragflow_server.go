@@ -1259,10 +1259,25 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// is what hybrid_search applies to its vector leg (search.py:143), so
 		// getting it wrong silently degrades search_chunks to keyword-only.
 		hasEmbedder := hasEmbedderFor(kbs)
+		// Retrieval tuning mirrors the dialog's own settings, so the agentic
+		// searches run with the same budget as the standard path. Without it the
+		// harness falls back to its package defaults (top_n=12) and the dialog's
+		// configured top_n is silently ignored.
+		//
+		// The runtime carries the KEYWORD leg's weight and derives the vector leg
+		// as its complement (runtime.resolveKeywordsSimilarityWeight, and the
+		// RetrieveRequest contract: 0.7 hybrid / 0.0 vector-only / 1.0
+		// keyword-only). The dialog configures the VECTOR weight, so it is inverted
+		// here; the dialog's default 0.3 therefore yields the runtime's own 0.7.
+		keywordsWeight := 1 - req.Retrieval.VectorSimilarityWeight
 		deps := agentic_rag.RAGTools{
-			Model:     model,
-			ModelName: resolvedModelName,
-			Outer:     outerModel,
+			Model:                    model,
+			ModelName:                resolvedModelName,
+			Outer:                    outerModel,
+			TopN:                     req.Retrieval.TopN,
+			SimilarityThreshold:      req.Retrieval.SimilarityThreshold,
+			KeywordsSimilarityWeight: &keywordsWeight,
+			RerankCandidatesCount:    req.Retrieval.RerankCandidatesCount,
 			// OriginalQuestion mirrors Python RAGTools(original_user_question=...):
 			// the user's own, unrewritten question as received from the chat
 			// layer. The outer model's `rag(question=...)` argument is
@@ -1283,6 +1298,10 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// fallback). metadataService already carries the doc engine and the DAO
 			// the metadata index reads need.
 			MetadataResolver: metadataService,
+			// DeclaredMetadata lets the metadata_search catalog describe each field
+			// (meaning + allowed values) from the dataset's own parser_config, not just
+			// name it. Same service: it also carries the KB DAO that read needs.
+			DeclaredMetadata: metadataService,
 			// DocChunks pages one document's chunks in reading order off the
 			// chunk index (Python retriever.chunk_list), backing the
 			// document-level tools (summarize_document / fetch_full_document).

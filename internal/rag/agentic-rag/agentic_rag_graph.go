@@ -1721,9 +1721,13 @@ func NewAgenticLoop() AgenticLoop {
 			// web_search is visible only when the mode exposes it AND a provider is actually
 			// wired. Advertising it without a provider leaves the model calling a tool that can
 			// only return an infra error.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields, read once here and rendered into the
+			// metadata_search schema and the session seed. Nil (no metadata / unreadable
+			// index / no resolver) keeps the shipped title-only schema.
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		}
 
 		st, runErr := BuildAgenticGraph(ctx, RAGTools{

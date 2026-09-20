@@ -173,6 +173,21 @@ type MetadataResolver interface {
 	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
 }
 
+// DeclaredMetadataResolver reads the metadata fields a dataset DECLARES in its
+// parser_config — the {key, type, description, enum} definitions a user configured for
+// extraction. Optional: nil leaves the catalog with only what the metadata index carries.
+//
+// It is separate from MetadataResolver because it answers a different question (what the
+// dataset is CONFIGURED to filter on, before anything is indexed) from a different store
+// (the KB row, not the doc-metadata index), and because the declarative read is cheap enough
+// to run per metadata_search call while the observational one scans documents.
+type DeclaredMetadataResolver interface {
+	// DeclaredMetadataFields returns the declared fields of the given datasets, in
+	// configuration order. An error means "no declarative source available"; callers degrade
+	// to the metadata index alone rather than failing.
+	DeclaredMetadataFields(ctx context.Context, kbIDs []string) ([]common.MetadataFieldDef, error)
+}
+
 // RetrieveRequest is one retrieval call.
 //
 // Weight is the keyword-similarity weight: 0.7 hybrid (default), 0.0 vector-only,
@@ -398,6 +413,11 @@ type SearchDeps struct {
 	// metadata_search tool and the pre-search metadata channel. Nil leaves both
 	// unavailable: the tool reports a clean miss and the channel is skipped.
 	MetadataResolver MetadataResolver
+	// DeclaredMetadata reads the metadata fields the datasets DECLARE in their
+	// parser_config (description/enum included), which is what lets the metadata_search
+	// catalog say what a field MEANS and not just that it exists. Nil leaves the catalog
+	// with the metadata index alone.
+	DeclaredMetadata DeclaredMetadataResolver
 	// DoRefer: when true, summarize_document
 	// prefixes the citation rules so the model cites the blocks it summarises.
 	DoRefer bool
@@ -916,6 +936,240 @@ func metadataTargetIDs(deps SearchDeps) []string {
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
+	}
+	return out
+}
+
+// Metadata-search catalog caps: fields listed, values shown per field, and the rendered
+// block's length in CODE POINTS (a byte cap would cut CJK fields early).
+const (
+	metadataCatalogKeysMax       = 20
+	metadataCatalogSamplesPerKey = 8
+	metadataCatalogRenderMax     = 2000
+)
+
+// metadataCatalogSystemKeys are metadata keys that exist in the doc-metadata index but
+// must never be offered as filters: unique identifiers and benchmark annotations let a
+// model shrink retrieval to the answer's own documents (the FRAMES `question_id` stamps
+// every document of one question with the same id), and the PDF/connector-derived fields
+// describe the file rather than its content.
+var metadataCatalogSystemKeys = map[string]bool{
+	"question_id": true,
+	"source_uri":  true,
+	"pageid":      true,
+	"outline":     true,
+}
+
+// MetadataSample is one value of a metadata field plus how many documents carry it.
+type MetadataSample struct {
+	Value string `json:"value"`
+	Docs  int    `json:"docs"`
+}
+
+// MetadataCatalog is what a dataset offers as metadata_search filters, drawn from BOTH
+// sources it has:
+//
+//   - the DECLARATIVE one (Fields): the {key, type, description, enum} definitions stored in
+//     the dataset's parser_config. They exist BEFORE anything is indexed, and they carry what
+//     the observational source cannot: what a field MEANS and which values it accepts;
+//   - the OBSERVATIONAL one (Samples): the values the doc-metadata index actually carries,
+//     with document counts.
+//
+// It is rendered into three places: the metadata_search tool schema (the `key` enum), the
+// action-session seed (the AVAILABLE METADATA block) and the pre-search fan-out channel's
+// field vocabulary. Nothing is baked in as a fallback — no field is advertised, filtered on or
+// named in a prompt unless the dataset's catalog carries it. The tool's own key check reads the
+// same two sources (see resolveMetadataFields), so what is advertised is what is accepted.
+type MetadataCatalog struct {
+	Keys    []string
+	Samples map[string][]MetadataSample
+	// Fields holds a key's DECLARED definition when the dataset declares one. A key present
+	// only here is declared but not yet indexed: still a legitimate filter, just with no value
+	// sample to show for it.
+	Fields map[string]common.MetadataFieldDef
+}
+
+// Empty reports whether the catalog carries no usable field. An empty catalog means
+// "leave the tool spec exactly as it ships" — never "offer a field list that is empty",
+// because some providers reject an empty enum.
+func (c MetadataCatalog) Empty() bool { return len(c.Keys) == 0 }
+
+// Render builds the seed block. Empty catalogs render as "" so the caller can append
+// unconditionally. Each field carries what is known about it — its declared meaning, the
+// values it accepts, and the values seen in the index — so the model fills a filter instead
+// of guessing. The result is capped at metadataCatalogRenderMax code points.
+func (c MetadataCatalog) Render() string {
+	if c.Empty() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("AVAILABLE METADATA (dataset fields usable as metadata_search filters):")
+	for _, k := range c.Keys {
+		b.WriteString("\n- ")
+		b.WriteString(k)
+		b.WriteString(describeMetadataField(c.Fields[k]))
+		if samples := c.Samples[k]; len(samples) > 0 {
+			b.WriteString("; values seen: ")
+			for i, s := range samples {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				fmt.Fprintf(&b, "%q (%d doc(s))", s.Value, s.Docs)
+			}
+		}
+	}
+	b.WriteString("\nFields NOT listed here are unusable as filters — never invent one.")
+	return truncateRunes(b.String(), metadataCatalogRenderMax)
+}
+
+// describeMetadataField renders a field's declared meaning and allowed values, shared by
+// Render and FieldList so the two can never describe the same field differently.
+func describeMetadataField(def common.MetadataFieldDef) string {
+	var b strings.Builder
+	if def.Description != "" {
+		b.WriteString(" — ")
+		b.WriteString(def.Description)
+	}
+	if len(def.Enum) > 0 {
+		b.WriteString(" (one of: ")
+		b.WriteString(strings.Join(def.Enum, " / "))
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
+// MetadataCatalogFor reads the metadata fields the session's datasets offer, for the
+// metadata_search schema and the session seed.
+//
+// It is DELIBERATELY error-free: the observational read is the same GetFlattedMetaByKBs the
+// executor already performs for its key check, and a nil resolver, an unreadable index or an
+// empty KB set all degrade to whatever the other half provides — "keep today's behaviour"
+// rather than failing the session. (A resolver failure is still reported to the model by the
+// tool itself as ERROR/infra if a call reaches the executor.)
+func MetadataCatalogFor(ctx context.Context, deps SearchDeps) MetadataCatalog {
+	keys, metas, declared, err := resolveMetadataFields(ctx, deps)
+	if err != nil || len(keys) == 0 {
+		return MetadataCatalog{}
+	}
+	cat := MetadataCatalog{
+		Keys:    keys,
+		Fields:  declared,
+		Samples: make(map[string][]MetadataSample, len(keys)),
+	}
+	for _, k := range keys {
+		if samples := topMetadataSamples(metas[k], metadataCatalogSamplesPerKey); len(samples) > 0 {
+			cat.Samples[k] = samples
+		}
+	}
+	return cat
+}
+
+// MetadataCatalogPtr is MetadataCatalogFor returning nil for an empty catalog, so a
+// Toolset carries "no catalog" as nil and every render path skips it by construction.
+func MetadataCatalogPtr(ctx context.Context, deps SearchDeps) *MetadataCatalog {
+	cat := MetadataCatalogFor(ctx, deps)
+	if cat.Empty() {
+		return nil
+	}
+	return &cat
+}
+
+// resolveMetadataFields is the single resolution both the catalog (what to advertise) and the
+// executor (what to accept) run. It returns the offered keys in sorted order, the flattened
+// observational view (for value samples), the declared definitions by key, and — unlike the
+// catalog's own view — the metadata-index read error, which the executor reports as infra
+// rather than folding into "this dataset has no metadata".
+//
+// Both halves are best-effort and independent: no declared resolver or a failing parser_config
+// read leaves the observational half alone, and vice versa. A DECLARED key is offered even
+// when the index has no value for it yet (it is a real filter that currently matches nothing);
+// an OBSERVED key is offered only when it carries at least one usable value.
+func resolveMetadataFields(ctx context.Context, deps SearchDeps) ([]string, common.MetaData, map[string]common.MetadataFieldDef, error) {
+	targetIDs := metadataTargetIDs(deps)
+	if len(targetIDs) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	declared := map[string]common.MetadataFieldDef{}
+	if deps.DeclaredMetadata != nil {
+		if defs, err := deps.DeclaredMetadata.DeclaredMetadataFields(ctx, targetIDs); err == nil {
+			for _, def := range defs {
+				if metadataCatalogExcluded(def.Key) {
+					continue
+				}
+				if _, dup := declared[def.Key]; dup {
+					continue
+				}
+				declared[def.Key] = def
+			}
+		}
+	}
+
+	metas := common.MetaData{}
+	if deps.MetadataResolver != nil {
+		got, err := deps.MetadataResolver.GetFlattedMetaByKBs(ctx, targetIDs)
+		if err != nil {
+			return nil, nil, declared, err
+		}
+		metas = got
+	}
+
+	seen := make(map[string]bool, len(declared)+len(metas))
+	keys := make([]string, 0, len(declared)+len(metas))
+	for k := range declared {
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	for k := range metas {
+		if seen[k] || metadataCatalogExcluded(k) {
+			continue
+		}
+		if len(topMetadataSamples(metas[k], 1)) == 0 {
+			// No usable value: offering the key would only invite a call that cannot match.
+			continue
+		}
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) > metadataCatalogKeysMax {
+		keys = keys[:metadataCatalogKeysMax]
+	}
+	if len(declared) == 0 {
+		declared = nil
+	}
+	return keys, metas, declared, nil
+}
+
+// metadataCatalogExcluded reports whether a metadata key must stay out of the catalog:
+// blank, a connector/derived field (leading underscore is how they are namespaced), or a
+// system/label field (see metadataCatalogSystemKeys).
+func metadataCatalogExcluded(key string) bool {
+	k := strings.TrimSpace(key)
+	if k == "" || strings.HasPrefix(k, "_") {
+		return true
+	}
+	return metadataCatalogSystemKeys[k]
+}
+
+// topMetadataSamples orders one field's values by document count (descending) then value,
+// so the rendered sample is deterministic, and caps them at n (n <= 0 means "no cap").
+func topMetadataSamples(values common.MetaValueDocs, n int) []MetadataSample {
+	out := make([]MetadataSample, 0, len(values))
+	for v, docs := range values {
+		if strings.TrimSpace(v) == "" || len(docs) == 0 {
+			continue
+		}
+		out = append(out, MetadataSample{Value: v, Docs: len(docs)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Docs != out[j].Docs {
+			return out[i].Docs > out[j].Docs
+		}
+		return out[i].Value < out[j].Value
+	})
+	if n > 0 && len(out) > n {
+		out = out[:n]
 	}
 	return out
 }

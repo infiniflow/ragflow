@@ -1393,3 +1393,93 @@ func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
 		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries", evidenceDigestChars)
 	}
 }
+
+// seedRecordingModel captures the messages of every completion call, so a test can assert
+// what the session seed actually carried. The canned reply is an empty state patch, which
+// ends the session after its first turn.
+type seedRecordingModel struct{ seen [][]schema.Message }
+
+func (m *seedRecordingModel) Complete(_ context.Context, msgs []schema.Message, _ []ToolSpec) (*ModelReply, error) {
+	cp := make([]schema.Message, len(msgs))
+	copy(cp, msgs)
+	m.seen = append(m.seen, cp)
+	return &ModelReply{Content: `<state>{"new_states": []}</state>`}, nil
+}
+
+// TestRunActionSessionSeedCarriesMetadataCatalog pins the seed half of the catalog: the
+// session is TOLD which fields its dataset carries, so a metadata_search filter can name
+// one without a trial-and-error call first. Without a catalog the block is absent — a
+// metadata-free corpus's prompt stays exactly as it shipped.
+func TestRunActionSessionSeedCarriesMetadataCatalog(t *testing.T) {
+	cases := []struct {
+		name string
+		cat  *MetadataCatalog
+		want bool
+	}{
+		{
+			name: "catalog",
+			cat: &MetadataCatalog{
+				Keys:    []string{"author"},
+				Samples: map[string][]MetadataSample{"author": {{Value: "Alice", Docs: 1}}},
+			},
+			want: true,
+		},
+		{name: "no metadata", cat: nil, want: false},
+	}
+	for _, c := range cases {
+		mdl := &seedRecordingModel{}
+		deps := SessionDeps{
+			Tools: &Toolset{ThinkingMode: "high", MetadataFields: c.cat},
+			Model: mdl,
+			KB:    &Kbinfos{},
+		}
+		RunActionSession(context.Background(), deps, "who wrote it", State{State: []Variable{{ID: 0, Type: "aspect"}}}, 60, "", nil, nil)
+		if len(mdl.seen) == 0 {
+			t.Fatalf("%s: the session never called the model", c.name)
+		}
+		var joined strings.Builder
+		for _, m := range mdl.seen[0] {
+			// Only the USER message is the seed: the system prompt names AVAILABLE
+			// METADATA in its playbook, so scanning every message would pass vacuously.
+			if m.Role != schema.User {
+				continue
+			}
+			joined.WriteString(m.Content)
+			joined.WriteString("\n")
+		}
+		seed := joined.String()
+		if got := strings.Contains(seed, "AVAILABLE METADATA"); got != c.want {
+			t.Errorf("%s: seed carries AVAILABLE METADATA = %v, want %v:\n%s", c.name, got, c.want, seed)
+		}
+		if c.want && !strings.Contains(seed, "author") {
+			t.Errorf("%s: the seed block must name the dataset's field:\n%s", c.name, seed)
+		}
+	}
+}
+
+// TestActiveToolSpecsDoesNotMutateSharedToolMap pins the copy-then-patch contract: the
+// catalog rewrites the spec a SESSION sees, never the package-level ToolMap entry every
+// other session (and every concurrent rag call in this one) reads from. Rendered under
+// -race as well, so the maps a patch touches cannot be written concurrently.
+func TestActiveToolSpecsDoesNotMutateSharedToolMap(t *testing.T) {
+	cat := &MetadataCatalog{Keys: []string{"author", "title"}, Samples: map[string][]MetadataSample{}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ts := &Toolset{ThinkingMode: "high", MetadataFields: cat}
+			_ = ts.ActiveToolSpecs()
+		}()
+	}
+	wg.Wait()
+
+	shipped := ToolMap["metadata_search"]
+	if got := metadataKeyEnum(shipped); len(got) != 0 {
+		t.Errorf("shipped key enum = %v, want NO field baked into the shared spec", got)
+	}
+	if desc, _ := metadataKeyParam(shipped)["description"].(string); strings.Contains(desc, "this dataset's metadata fields") {
+		t.Errorf("a session rewrite leaked its catalog wording into the shipped key parameter: %q", desc)
+	}
+}

@@ -4537,11 +4537,12 @@ func (r *metadataScopedRetriever) Retrieve(_ context.Context, req runtime.Retrie
 	return []map[string]any{{"id": "meta-1", "doc_id": "d1", "content": "Culdcept tower height is 42 m."}}, nil
 }
 
-// fanoutMetadataResolver is a scripted MetadataResolver for the fan-out channel: the
-// push-down always answers with the configured documents, and the filters/logic it was
-// handed are recorded.
+// fanoutMetadataResolver is a scripted MetadataResolver: the push-down always answers with
+// the configured documents, the flattened view answers with metas, and the filters/logic it
+// was handed are recorded.
 type fanoutMetadataResolver struct {
 	ids     []string
+	metas   common.MetaData
 	calls   int
 	filters []map[string]any
 	logic   string
@@ -4555,19 +4556,19 @@ func (m *fanoutMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, _
 }
 
 func (m *fanoutMetadataResolver) GetFlattedMetaByKBs(context.Context, []string) (common.MetaData, error) {
-	return nil, nil
+	return m.metas, nil
 }
 
-// TestFanoutSearchMetadataChannelAdmitsTitleMatchedDocuments pins channel C: the
-// sub-question's extracted entities pre-filter the document set by title (OR), the
-// retrieval runs inside it, and its hits reach the pool even though the corpus-wide
-// channels returned nothing.
-func TestFanoutSearchMetadataChannelAdmitsTitleMatchedDocuments(t *testing.T) {
+// TestFanoutSearchMetadataChannelUsesCatalogFields pins channel C end to end with the
+// catalog-driven vocabulary: the model reads a sub-question and names a field the SESSION
+// offers — here `author`, not the historical hard-coded `title` — and the retrieval runs inside
+// the documents that field matches, even though the corpus-wide channels returned nothing.
+func TestFanoutSearchMetadataChannelUsesCatalogFields(t *testing.T) {
 	ctx := context.Background()
 	r := &metadataScopedRetriever{}
 	resolver := &fanoutMetadataResolver{ids: []string{"d1"}}
 	mdl := &scriptedModel{}
-	mdl.push(`{"entities": [["Culdcept"]]}`)
+	mdl.push(`{"filters": [[{"key":"author","op":"contains","value":"OmiyaSoft"}]]}`)
 	deps := RAGTools{
 		Search: runtime.SearchDeps{
 			Backend:          r,
@@ -4576,6 +4577,9 @@ func TestFanoutSearchMetadataChannelAdmitsTitleMatchedDocuments(t *testing.T) {
 			MetadataResolver: resolver,
 		},
 		Model: mdl,
+		Tools: &runtime.Toolset{ThinkingMode: "high", MetadataFields: &runtime.MetadataCatalog{
+			Keys: []string{"author", "title"},
+		}},
 	}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
 
@@ -4588,14 +4592,14 @@ func TestFanoutSearchMetadataChannelAdmitsTitleMatchedDocuments(t *testing.T) {
 		t.Errorf("pooled chunk = %q, want the channel-C hit", got)
 	}
 	if len(mdl.seen) != 1 {
-		t.Errorf("model calls = %d, want exactly ONE entity-extraction call for the batch", len(mdl.seen))
+		t.Errorf("model calls = %d, want exactly ONE extraction call for the batch", len(mdl.seen))
 	}
 	if resolver.calls != 1 || resolver.logic != "or" {
 		t.Errorf("resolver calls = %d logic = %q, want one OR-combined lookup", resolver.calls, resolver.logic)
 	}
-	if len(resolver.filters) != 1 || resolver.filters[0]["key"] != "title" ||
-		resolver.filters[0]["op"] != "contains" || resolver.filters[0]["value"] != "Culdcept" {
-		t.Errorf("filters = %v, want one title-contains condition per entity", resolver.filters)
+	if len(resolver.filters) != 1 || resolver.filters[0]["key"] != "author" ||
+		resolver.filters[0]["op"] != "contains" || resolver.filters[0]["value"] != "OmiyaSoft" {
+		t.Errorf("filters = %v, want the author-contains condition the catalog offered", resolver.filters)
 	}
 	if len(r.scopes) != 1 || len(r.scopes[0]) != 1 || r.scopes[0][0] != "d1" {
 		t.Errorf("scoped requests = %v, want the search restricted to the matched document", r.scopes)
@@ -4633,61 +4637,285 @@ func TestFanoutSearchSkipsMetadataChannelUnlessAsked(t *testing.T) {
 	}
 }
 
-// TestParseFanoutEntitiesShapesAndGuards pins the reply shapes and the guards: a copied
-// sub-question, an answer sentence, a duplicate and an over-long entity are all dropped,
-// and at most three entities survive per sub-question.
-func TestParseFanoutEntitiesShapesAndGuards(t *testing.T) {
-	fanouts := []string{"q one", "q two"}
+// TestFanoutSearchGatesMetadataChannelOnFilterableFields pins the gate that keeps Channel C
+// from being pure cost: a session whose catalog offers NO filterable field pays neither the
+// extraction call nor one guaranteed-empty scoped retrieval per sub-question.
+//
+// The gate is the field VOCABULARY, not one particular field: a catalog that offers `author`
+// and no `title` is perfectly usable, because the model may name whichever field the
+// sub-question fits. Nothing is baked in as a fallback — a caller that wired no toolset, or a
+// session whose catalog is empty because the dataset carries no metadata, is skipped too.
+func TestFanoutSearchGatesMetadataChannelOnFilterableFields(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name      string
+		cat       *runtime.MetadataCatalog
+		noToolset bool
+		want      int
+	}{
+		{
+			name: "wired session, no metadata",
+			cat:  nil,
+			want: 0,
+		},
+		{
+			name: "wired session, empty catalog",
+			cat:  &runtime.MetadataCatalog{},
+			want: 0,
+		},
+		{
+			name:      "caller wired no tool surface",
+			noToolset: true,
+			want:      0,
+		},
+		{
+			name: "catalog offers a non-title field",
+			cat: &runtime.MetadataCatalog{
+				Keys:    []string{"author"},
+				Samples: map[string][]runtime.MetadataSample{"author": {{Value: "OmiyaSoft", Docs: 1}}},
+			},
+			want: 1,
+		},
+	}
+	for _, c := range cases {
+		r := &metadataScopedRetriever{}
+		resolver := &fanoutMetadataResolver{ids: []string{"d1"}}
+		mdl := &scriptedModel{}
+		mdl.push(`{"filters": [[{"key":"author","op":"contains","value":"OmiyaSoft"}]]}`)
+		deps := RAGTools{
+			Search: runtime.SearchDeps{
+				Backend:          r,
+				KbIDs:            []string{"kb1"},
+				HasEmbedder:      true,
+				MetadataResolver: resolver,
+			},
+			Model: mdl,
+		}
+		if !c.noToolset {
+			deps.Tools = &runtime.Toolset{ThinkingMode: "high", MetadataFields: c.cat}
+		}
+		st := &AgenticState{KB: &runtime.Kbinfos{}}
 
-	// Positional arrays: one group per sub-question, in order.
-	got := parseFanoutEntities(`{"entities": [["Alpha Corp", "Beta"], ["Gamma"]]}`, fanouts)
-	if len(got) != 2 || len(got[0]) != 2 || got[0][0] != "Alpha Corp" || got[1][0] != "Gamma" {
+		added := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, 60, true)
+		if added != c.want {
+			t.Errorf("%s: added = %d, want %d", c.name, added, c.want)
+		}
+		if c.want == 0 {
+			if len(mdl.seen) != 0 {
+				t.Errorf("%s: model calls = %d, want none — the extraction must not run when no field is filterable", c.name, len(mdl.seen))
+			}
+			if resolver.calls != 0 || len(r.scopes) != 0 {
+				t.Errorf("%s: resolver calls = %d scoped searches = %d, want none", c.name, resolver.calls, len(r.scopes))
+			}
+		}
+	}
+}
+
+// TestParseFanoutFiltersShapesAndGuards pins the reply shapes and the guards. The guard set is
+// what keeps the channel from filtering on something the session never offered: a field outside
+// the catalog (which is also how the blacklist holds here), a WIDENING operator, a copied
+// sub-question, an answer sentence, an over-long value, a duplicate and an empty value are all
+// dropped, and at most three conditions survive per sub-question.
+func TestParseFanoutFiltersShapesAndGuards(t *testing.T) {
+	fanouts := []string{"q one", "q two"}
+	allowed := map[string]bool{"title": true, "author": true}
+
+	// Positional arrays: one condition-group per sub-question, in order.
+	got := parseFanoutFilters(`{"filters": [[`+
+		`{"key":"title","op":"contains","value":"Alpha Corp"},`+
+		`{"key":"author","op":"=","value":"Beta"}],`+
+		`[{"key":"title","op":"contains","value":"Gamma"}]]}`, fanouts, allowed)
+	if len(got) != 2 || len(got[0]) != 2 || got[0][0]["value"] != "Alpha Corp" ||
+		got[0][1]["key"] != "author" || got[1][0]["value"] != "Gamma" {
 		t.Errorf("positional = %v", got)
 	}
 
 	// Dict form matched by sub-question text: the unmatched one stays empty.
-	got = parseFanoutEntities(`{"entities": [{"sub_question": "q two", "entities": ["Delta"]}]}`, fanouts)
-	if len(got[0]) != 0 || len(got[1]) != 1 || got[1][0] != "Delta" {
+	got = parseFanoutFilters(`{"filters": [{"sub_question":"q two","filters":[{"key":"title","op":"contains","value":"Delta"}]}]}`, fanouts, allowed)
+	if len(got[0]) != 0 || len(got[1]) != 1 || got[1][0]["value"] != "Delta" {
 		t.Errorf("by-text = %v", got)
 	}
 
-	// A flat list of strings is read POSITIONALLY: one entity per sub-question, so a
-	// single-string list only fills the first one.
-	got = parseFanoutEntities(`{"entities": ["Alpha"]}`, fanouts)
-	if len(got[0]) != 1 || got[0][0] != "Alpha" || len(got[1]) != 0 {
+	// A flat list of conditions is read POSITIONALLY: one condition per sub-question, so a
+	// single-condition list only fills the first one.
+	got = parseFanoutFilters(`{"filters": [{"key":"author","op":"=","value":"Alice"}]}`, fanouts, allowed)
+	if len(got[0]) != 1 || got[0][0]["value"] != "Alice" || len(got[1]) != 0 {
 		t.Errorf("flat = %v", got)
 	}
 
-	// Guards: an answer/prose entity, an over-long one, an 11-word one, a duplicate and an
-	// empty string are dropped; the cap is three.
-	long := strings.Repeat("x", metadataEntityMaxChars+1)
-	reply := `{"entities": [["` + long + `", "one two three four five six seven eight nine ten eleven", ` +
-		`"see https://example.com", "Dup", "dup", "", "e1", "e2", "e3", "e4"]]}`
-	got = parseFanoutEntities(reply, fanouts)
+	// Guards: an unoffered field, a widening operator, an over-long value, an 11-word value, a
+	// prose/citation value, a duplicate and an empty value are dropped; the cap is three.
+	long := strings.Repeat("x", metadataValueMaxChars+1)
+	reply := `{"filters": [[` +
+		`{"key":"question_id","op":"contains","value":"444"},` +
+		`{"key":"title","op":"not contains","value":"Alpha"},` +
+		`{"key":"title","op":"contains","value":"` + long + `"},` +
+		`{"key":"title","op":"contains","value":"one two three four five six seven eight nine ten eleven"},` +
+		`{"key":"title","op":"contains","value":"see https://example.com"},` +
+		`{"key":"title","op":"contains","value":"Dup"},` +
+		`{"key":"title","op":"contains","value":"Dup"},` +
+		`{"key":"title","op":"contains","value":""},` +
+		`{"key":"title","op":"contains","value":"e1"},` +
+		`{"key":"title","op":"contains","value":"e2"},` +
+		`{"key":"title","op":"contains","value":"e3"},` +
+		`{"key":"title","op":"contains","value":"e4"}]]}`
+	got = parseFanoutFilters(reply, fanouts, allowed)
 	want := []string{"Dup", "e1", "e2"}
 	if len(got[0]) != len(want) {
 		t.Fatalf("guarded = %v, want %v", got[0], want)
 	}
 	for i, w := range want {
-		if got[0][i] != w {
-			t.Errorf("guarded[%d] = %q, want %q", i, got[0][i], w)
+		if got[0][i]["value"] != w {
+			t.Errorf("guarded[%d] = %v, want %q", i, got[0][i], w)
 		}
 	}
 
-	// No JSON at all: nothing extracted, and the fan-outs are still order-aligned.
-	got = parseFanoutEntities("no json here", fanouts)
+	// 'in' keeps its list (the value SET) and needs at least one entry.
+	got = parseFanoutFilters(`{"filters": [[{"key":"title","op":"in","value":["A","B"]}]]}`, fanouts, allowed)
+	if len(got[0]) != 1 {
+		t.Fatalf("in = %v, want one condition", got)
+	}
+	if list, ok := got[0][0]["value"].([]any); !ok || len(list) != 2 {
+		t.Errorf("in value = %v, want the list kept", got[0][0]["value"])
+	}
+	if got := parseFanoutFilters(`{"filters": [[{"key":"title","op":"in","value":[]}]]}`, fanouts, allowed); len(got[0]) != 0 {
+		t.Errorf("empty 'in' = %v, want it dropped", got[0])
+	}
+
+	// No JSON at all: nothing parsed, and the fan-outs are still order-aligned.
+	got = parseFanoutFilters("no json here", fanouts, allowed)
 	if len(got) != 2 || len(got[0]) != 0 || len(got[1]) != 0 {
 		t.Errorf("non-JSON = %v", got)
 	}
 }
 
-// TestExtractFanoutEntitiesWithoutModelIsInert pins the best-effort contract: no chat model
-// means no entities (the channel is skipped), never a failure.
-func TestExtractFanoutEntitiesWithoutModelIsInert(t *testing.T) {
-	if got := ExtractFanoutEntities(context.Background(), RAGTools{}, []string{"q"}); got != nil {
-		t.Errorf("entities = %v, want nil without a model", got)
+// TestExtractFanoutFiltersDegradesToNothing pins the best-effort contract: no chat model, no
+// sub-questions, or a reply with nothing usable all mean NO conditions (nil, the channel
+// simply skipped), never a failure.
+func TestExtractFanoutFiltersDegradesToNothing(t *testing.T) {
+	if got := ExtractFanoutFilters(context.Background(), RAGTools{}, []string{"q"}); got != nil {
+		t.Errorf("filters = %v, want nil without a model", got)
 	}
-	if got := ExtractFanoutEntities(context.Background(), RAGTools{Model: &scriptedModel{}}, nil); got != nil {
-		t.Errorf("entities = %v, want nil without sub-questions", got)
+	if got := ExtractFanoutFilters(context.Background(), RAGTools{Model: &scriptedModel{}}, nil); got != nil {
+		t.Errorf("filters = %v, want nil without sub-questions", got)
+	}
+	if got := ExtractFanoutFilters(context.Background(), RAGTools{Model: &scriptedModel{}}, []string{"q"}); got != nil {
+		t.Errorf("filters = %v, want nil when the caller wired no tool surface", got)
+	}
+}
+
+// slotResearchWithMetadataTool builds one action session whose tool executor is the REAL
+// metadata_search executor, so a tool call made by the model is observed end to end: the
+// resolver records the filter, and the retriever records the scoped search.
+func slotResearchWithMetadataTool(resolver *fanoutMetadataResolver, retriever *corpusRetriever, cat *runtime.MetadataCatalog, replies []*runtime.ModelReply) (*AgenticState, *runtime.Kbinfos, *fakeModel) {
+	kb := &runtime.Kbinfos{}
+	sd := runtime.SearchDeps{
+		Backend:          retriever,
+		KbIDs:            []string{"kb1"},
+		HasEmbedder:      true,
+		KB:               kb,
+		MetadataResolver: resolver,
+	}
+	mdl := &fakeModel{replies: replies}
+	st := &AgenticState{
+		Question: "who wrote it?",
+		KB:       kb,
+		SlotTable: runtime.NewState([]runtime.Variable{
+			{ID: 0, Type: "aspect", QuestionClues: []string{"who wrote it?"}},
+		}, 0, nil),
+	}
+	deps := runtime.SessionDeps{
+		Model: mdl,
+		Tools: &runtime.Toolset{
+			ThinkingMode:   "high",
+			MetadataFields: cat,
+			Exec:           runtime.NewSearchExecutor(sd, runtime.RunRequest{ThinkingMode: "high"}),
+		},
+		KB: kb,
+	}
+	RunSlotResearchPass(context.Background(), context.Background(), deps, "who wrote it?", st, 60)
+	return st, kb, mdl
+}
+
+// TestSlotResearchSessionUsesCatalogFieldForMetadataSearch pins the whole chain in one run:
+// the catalog advertises `author`, the model spends its one metadata_search on that field,
+// and the real executor resolves documents by it. The resolver seeing the author condition
+// is the observation that the advertised field is the one that reaches the index — the
+// schema, the tool call and the executor all agreeing.
+func TestSlotResearchSessionUsesCatalogFieldForMetadataSearch(t *testing.T) {
+	resolver := &fanoutMetadataResolver{
+		ids:   []string{"doc-culdcept"},
+		metas: common.MetaData{"author": {"Alice": {"doc-culdcept"}}, "title": {"Culdcept History": {"doc-culdcept"}}},
+	}
+	cat := &runtime.MetadataCatalog{
+		Keys:    []string{"author", "title"},
+		Samples: map[string][]runtime.MetadataSample{"author": {{Value: "Alice", Docs: 1}}},
+	}
+	_, _, mdl := slotResearchWithMetadataTool(resolver, &corpusRetriever{}, cat, []*runtime.ModelReply{
+		{
+			Content: "Narrowing by author.",
+			ToolCalls: []runtime.ToolCall{{
+				ID:   "call_0",
+				Name: "metadata_search",
+				Args: map[string]any{
+					"query":   []any{"who wrote it?"},
+					"filters": []any{map[string]any{"key": "author", "op": "contains", "value": "Alice"}},
+				},
+			}},
+		},
+		{Content: `<state>{"new_states": []}</state>`},
+	})
+
+	if resolver.calls == 0 {
+		t.Fatal("the session never resolved documents by metadata; the advertised field did not reach the executor")
+	}
+	if len(resolver.filters) != 1 || resolver.filters[0]["key"] != "author" {
+		t.Errorf("resolver filters = %v, want the author condition the catalog advertised", resolver.filters)
+	}
+	if mdl.calls < 2 {
+		t.Errorf("model calls = %d, want the session to have continued after the tool result", mdl.calls)
+	}
+}
+
+// TestSlotResearchSessionSurvivesMetadataSearchWithoutMetadata pins the requirement that a
+// metadata-free dataset must not derail the run: the index carries NO field, the model still
+// spends its one metadata_search on `title`, and the session must read that as a query-level
+// miss and carry on with the next tool — never abort, never disable the run.
+func TestSlotResearchSessionSurvivesMetadataSearchWithoutMetadata(t *testing.T) {
+	resolver := &fanoutMetadataResolver{} // no ids, no metas: a dataset with no metadata
+	retriever := &corpusRetriever{}
+	// No catalog: the shipped title-only schema is what the model sees.
+	_, _, mdl := slotResearchWithMetadataTool(resolver, retriever, nil, []*runtime.ModelReply{
+		{
+			Content: "Trying a title filter.",
+			ToolCalls: []runtime.ToolCall{{
+				ID:   "call_0",
+				Name: "metadata_search",
+				Args: map[string]any{
+					"query":   []any{"who wrote it?"},
+					"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
+				},
+			}},
+		},
+		{
+			Content: "Falling back to retrieval.",
+			ToolCalls: []runtime.ToolCall{{
+				ID:   "call_1",
+				Name: "retrieve",
+				Args: map[string]any{"query": []any{"who wrote it?"}},
+			}},
+		},
+		{Content: `<state>{"new_states": []}</state>`},
+	})
+
+	// The metadata miss must not have stopped the loop: the session went on to retrieval.
+	if len(retriever.calls) == 0 {
+		t.Fatalf("retriever calls = 0; a metadata-free dataset aborted the session instead of degrading to retrieval")
+	}
+	if mdl.calls < 3 {
+		t.Errorf("model calls = %d, want the session to have kept running to its own empty patch", mdl.calls)
+	}
+	if resolver.calls != 0 {
+		t.Errorf("push-down calls = %d, want none: an unknown key is rejected before the index is touched", resolver.calls)
 	}
 }
