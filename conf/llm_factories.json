@@ -3369,7 +3369,8 @@
                     ],
                     "is_tools": true,
                     "features": [
-                        "is_tools"
+                        "is_tools",
+                        "thinking"
                     ]
                 },
                 {
