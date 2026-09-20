@@ -248,6 +248,11 @@ func (h *HTTPHelper) DoPinned(
 func (h *HTTPHelper) pinnedClient(pinnedIP net.IP) *http.Client {
 	base := h.baseTransport.Clone()
 	base.Proxy = nil
+	// This transport is created for one pinned destination and is not shared
+	// between requests. Keeping its idle pool alive would leave a pair of
+	// persistConn goroutines behind for every pinned request until the
+	// transport is collected.
+	base.DisableKeepAlives = true
 	base.DialContext = (&pinnedDialer{
 		pinnedIP: pinnedIP,
 		base: &net.Dialer{

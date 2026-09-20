@@ -48,6 +48,10 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 		ResponseHeaderTimeout: timeout,
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     false,
+		// Pinned clients are created for a single request. Do not retain an
+		// idle connection pool, otherwise every request can leave its own
+		// persistConn goroutines alive until the client is collected.
+		DisableKeepAlives: true,
 	}
 	return &http.Client{
 		Transport: transport,

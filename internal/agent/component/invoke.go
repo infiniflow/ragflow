@@ -258,6 +258,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 				ResponseHeaderTimeout: timeout,
 				ExpectContinueTimeout: 1 * time.Second,
 				ForceAttemptHTTP2:     false,
+				DisableKeepAlives:     true,
 			}),
 			CheckRedirect: noRedirects,
 		}

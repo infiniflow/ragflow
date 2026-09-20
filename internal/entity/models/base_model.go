@@ -63,6 +63,28 @@ type BaseModel struct {
 	authHeader func(*APIConfig) (string, string)
 }
 
+var (
+	driverTransportOnce sync.Once
+	driverTransport     *http.Transport
+)
+
+func sharedDriverTransport() *http.Transport {
+	driverTransportOnce.Do(func() {
+		if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+			driverTransport = defaultTransport.Clone()
+		} else {
+			driverTransport = &http.Transport{Proxy: http.ProxyFromEnvironment}
+		}
+		driverTransport.MaxIdleConns = 100
+		driverTransport.MaxIdleConnsPerHost = 10
+		driverTransport.IdleConnTimeout = 90 * time.Second
+		driverTransport.DisableCompression = false
+		driverTransport.ResponseHeaderTimeout = 20 * time.Minute
+		driverTransport.TLSHandshakeTimeout = 30 * time.Second
+	})
+	return driverTransport
+}
+
 // chatResponseParts is the provider-normalized result of a non-streaming chat
 // completion. Provider response structs remain provider-specific; only the
 // common ChatResponse and model-usage handling is shared.
@@ -477,18 +499,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 //     utility.AssertURLSchemeSafe — only the scheme and a non-empty host are
 //     enforced, so self-hosted backends on private networks or loopback work.
 func NewDriverHTTPClient(allowPrivate bool) *http.Client {
-	var t *http.Transport
-	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-		t = dt.Clone()
-	} else {
-		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
-	}
-	t.MaxIdleConns = 100
-	t.MaxIdleConnsPerHost = 10
-	t.IdleConnTimeout = 90 * time.Second
-	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 20 * time.Minute
-	t.TLSHandshakeTimeout = 30 * time.Second
+	t := sharedDriverTransport()
 
 	var rt http.RoundTripper = t
 	if allowPrivate {
