@@ -81,7 +81,7 @@ type serverArgs struct {
 	mode          *string // admin | api | ingestor | syncer
 	helpFlag      bool
 	versionFlag   bool
-	debugLog      bool
+	logLevel      *string
 	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
@@ -255,8 +255,6 @@ func parseArgs() (*serverArgs, error) {
 			args.helpFlag = true
 		case "-v", "--version":
 			args.versionFlag = true
-		case "--debug":
-			args.debugLog = true
 		case "-f", "--config":
 			if i+1 >= len(os.Args) {
 				return nil, fmt.Errorf("%s requires a value", arg)
@@ -303,6 +301,17 @@ func parseArgs() (*serverArgs, error) {
 			args.name = &os.Args[i]
 		case "--profile":
 			args.enablePProf = true
+		case "--log":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--log requires a value")
+			}
+			i++
+			logLevel := strings.ToLower(os.Args[i])
+			if logLevel == "error" || logLevel == "info" || logLevel == "debug" || logLevel == "warn" {
+				args.logLevel = &logLevel
+			} else {
+				return nil, fmt.Errorf("invalid log level: %s", logLevel)
+			}
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
@@ -504,8 +513,11 @@ func main() {
 	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
-	if arguments.debugLog {
+	switch *arguments.logLevel {
+	case "debug":
 		logLevel = "debug"
+	default:
+		logLevel = "info"
 	}
 
 	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
@@ -586,8 +598,8 @@ func main() {
 		logLevel = "info"
 	}
 
-	if arguments.debugLog {
-		logLevel = "debug"
+	if arguments.logLevel != nil {
+		logLevel = *arguments.logLevel
 	}
 
 	globalConfig.SetLogLevel(logLevel)
@@ -763,8 +775,11 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 	}
 
 	logLevel := "info"
-	if args.debugLog {
+	switch *args.logLevel {
+	case "debug":
 		logLevel = "debug"
+	default:
+		logLevel = "info"
 	}
 	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
 		return fmt.Errorf("initialize logger: %w", err)
@@ -784,8 +799,8 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 	if logConfig.Level != "" {
 		logLevel = logConfig.Level
 	}
-	if args.debugLog {
-		logLevel = "debug"
+	if args.logLevel != nil {
+		logLevel = *args.logLevel
 	}
 	globalConfig.SetLogLevel(logLevel)
 
