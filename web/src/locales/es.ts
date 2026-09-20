@@ -111,7 +111,9 @@ export default {
         'Durante la recuperación, RAGFlow utiliza una combinación de similitud ponderada de palabras clave y similitud coseno vectorial ponderada o, cuando se selecciona un modelo de reordenamiento, una combinación de similitud ponderada de palabras clave y puntuación ponderada de reordenamiento. Este parámetro establece el umbral de similitud entre la consulta del usuario y los fragmentos. Los fragmentos con una puntuación de similitud inferior a este umbral se excluirán de los resultados. De forma predeterminada, el umbral se establece en 20. Esto significa que solo se recuperarán los fragmentos con una puntuación de similitud híbrida de 20 o superior. Si el peso de similitud vectorial se establece en 0, este umbral no se aplica.',
       vectorSimilarityWeight: 'Peso de similitud de palabras clave',
       vectorSimilarityWeightTip:
-        'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores o la puntuación de reordenamiento (0~1). La suma de ambos pesos es 1.0.',
+        'Establece el peso de la similitud vectorial en la puntuación de similitud combinada, ya sea con la similitud coseno vectorial o con la puntuación de reordenamiento. La suma de ambos pesos debe ser igual a 1.0.',
+      keywordSimilarityWeightTip:
+        'Establece el peso de la similitud de palabras clave en la puntuación de similitud combinada. La suma de los pesos vectorial y de palabras clave debe ser igual a 1.0.',
       testText: 'Texto de prueba',
       testTextPlaceholder: '¡Por favor ingresa tu pregunta',
       testingLabel: 'Prueba',

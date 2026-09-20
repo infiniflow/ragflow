@@ -119,7 +119,9 @@ export default {
         'Durante a recuperação, o RAGFlow usa uma combinação de similaridade ponderada de palavras-chave e similaridade de cosseno vetorial ponderada ou, quando um modelo de reranking é selecionado, uma combinação de similaridade ponderada de palavras-chave e pontuação de reranking ponderada. Este parâmetro define o limite de similaridade entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo desse limite será excluído dos resultados. Por padrão, o limite é definido como 20. Isso significa que apenas os fragmentos com uma pontuação de similaridade híbrida igual ou superior a 20 serão recuperados. Se o peso da similaridade vetorial for definido como 0, esse limite não se aplica.',
       vectorSimilarityWeight: 'Peso da similaridade de palavras-chave',
       vectorSimilarityWeightTip:
-        'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
+        'Define o peso da similaridade vetorial na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
+      keywordSimilarityWeightTip:
+        'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada. A soma dos pesos vetorial e de palavras-chave deve ser igual a 1.0.',
       testText: 'Texto de teste',
       testTextPlaceholder: 'Insira sua pergunta aqui!',
       testingLabel: 'Testando',

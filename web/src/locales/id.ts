@@ -116,7 +116,9 @@ export default {
         'Saat melakukan pengambilan, RAGFlow menggunakan kombinasi kesamaan kata kunci berbobot dan kesamaan kosinus vektor berbobot, atau kombinasi kesamaan kata kunci berbobot dan skor pemeringkatan ulang berbobot ketika model pemeringkat ulang dipilih. Parameter ini menetapkan ambang kesamaan antara kueri pengguna dan potongan. Potongan dengan skor kesamaan di bawah ambang ini akan dikecualikan dari hasil. Secara default, ambang ditetapkan ke 20. Artinya, hanya potongan dengan skor kesamaan hibrida 20 atau lebih tinggi yang akan diambil. Jika bobot kesamaan vektor ditetapkan ke 0, ambang ini tidak berlaku.',
       vectorSimilarityWeight: 'Bobot kesamaan kata kunci',
       vectorSimilarityWeightTip:
-        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor atau skor rerank (0~1). Jumlah dari kedua bobot adalah 1.0.',
+        'Menetapkan bobot kesamaan vektor dalam skor kesamaan gabungan, baik saat digunakan dengan kesamaan kosinus vektor maupun dengan skor pemeringkatan ulang. Jumlah kedua bobot harus sama dengan 1.0.',
+      keywordSimilarityWeightTip:
+        'Menetapkan bobot kesamaan kata kunci dalam skor kesamaan gabungan. Jumlah bobot vektor dan kata kunci harus sama dengan 1.0.',
       testText: 'Teks uji',
       testTextPlaceholder: 'Silakan masukkan pertanyaan Anda!',
       testingLabel: 'Pengujian',

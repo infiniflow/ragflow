@@ -122,7 +122,9 @@ export default {
         'Trong quá trình truy hồi, RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosin vectơ có trọng số, hoặc kết hợp giữa độ tương đồng từ khóa có trọng số và điểm tái xếp hạng có trọng số khi một mô hình tái xếp hạng được chọn. Tham số này đặt ngưỡng tương đồng giữa truy vấn của người dùng và các đoạn. Mọi đoạn có điểm tương đồng thấp hơn ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 20. Điều này có nghĩa là chỉ những đoạn có điểm tương đồng kết hợp từ 20 trở lên mới được truy hồi. Nếu trọng số tương đồng vectơ được đặt thành 0, ngưỡng này không được áp dụng.',
       vectorSimilarityWeight: 'Trọng số tương đồng từ khóa',
       vectorSimilarityWeightTip:
-        'Cài đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng vectơ cosin hoặc với điểm xếp hạng được tính lại. Tổng của hai trọng số phải bằng 1.0.',
+        'Đặt trọng số của độ tương đồng vectơ trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng cosin vectơ hoặc điểm tái xếp hạng. Tổng của hai trọng số phải bằng 1.0.',
+      keywordSimilarityWeightTip:
+        'Đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp. Tổng trọng số vectơ và từ khóa phải bằng 1.0.',
       testText: 'Văn bản kiểm tra',
       testTextPlaceholder: 'Nhập câu hỏi của bạn tại đây!',
       testingLabel: 'Kiểm tra',
