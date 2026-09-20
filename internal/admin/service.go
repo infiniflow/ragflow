@@ -1032,6 +1032,16 @@ func serviceEndpoint(raw string, defaultPort int) (string, int) {
 	return raw, defaultPort
 }
 
+// messageQueueServiceStatus maps the message queue engine's connection state
+// onto the shared service status vocabulary (alive/timeout) used by every
+// other row of the service status list.
+func messageQueueServiceStatus(connState string) (status, message string) {
+	if connState == "CONNECTED" {
+		return "alive", ""
+	}
+	return "timeout", connState
+}
+
 // ListServices get all services
 func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 
@@ -1091,11 +1101,10 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		results = append(results, newServiceStatus("cache", cacheType, redisConfig.Host, redisConfig.Port, "not available", time.Now(), "not supported cache type"))
 	}
 
-	// message queue
 	messageQueueImpl := engine.GetMessageQueueEngine()
-	messageQueueStatus := messageQueueImpl.CheckStatus()
 	natsConfig := globalConfig.GetNATSConfig()
-	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), natsConfig.Host, natsConfig.Port, messageQueueStatus, time.Now(), ""))
+	queueStatus, queueMessage := messageQueueServiceStatus(messageQueueImpl.CheckStatus())
+	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), natsConfig.Host, natsConfig.Port, queueStatus, time.Now(), queueMessage))
 
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
