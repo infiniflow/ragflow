@@ -88,6 +88,11 @@ type fakeDocumentService struct {
 	metadataByKBs          map[string]interface{}
 	hasActiveTasks         bool
 	hasActiveTasksErr      error
+	imageData              []byte
+	imageErr               error
+	imageUserID            string
+	imageID                string
+	imageDocumentID        string
 }
 
 func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
@@ -220,8 +225,21 @@ func (f *fakeDocumentService) GetThumbnails(ctx context.Context, userID string, 
 	f.thumbnailDocIDs = append([]string(nil), docIDs...)
 	return f.thumbnails, f.thumbnailErr
 }
-func (f *fakeDocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
-	return nil, nil
+func (f *fakeDocumentService) GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error) {
+	f.imageUserID = userID
+	f.imageID = imageID
+	return f.imageData, f.imageErr
+}
+func (f *fakeDocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
+	f.imageUserID = userID
+	f.imageDocumentID = docID
+	f.imageID = imageID
+	return f.imageData, f.imageErr
+}
+func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
+	f.imageUserID = userID
+	f.imageDocumentID = docID
+	return f.imageData, f.imageErr
 }
 func (f *fakeDocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
@@ -1775,7 +1793,7 @@ func TestGetThumbnail_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeDocumentService{
 		thumbnails: map[string]string{
-			"doc-1": "/api/v1/documents/images/kb-1-thumb-1.png",
+			"doc-1": "/api/v1/documents/doc-1/thumbnail",
 			"doc-2": "",
 		},
 	}
@@ -1805,11 +1823,83 @@ func TestGetThumbnail_Success(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeSuccess, resp["code"])
 	}
 	data := resp["data"].(map[string]interface{})
-	if data["doc-1"] != "/api/v1/documents/images/kb-1-thumb-1.png" {
+	if data["doc-1"] != "/api/v1/documents/doc-1/thumbnail" {
 		t.Fatalf("unexpected thumbnail for doc-1: %v", data["doc-1"])
 	}
 	if data["doc-2"] != "" {
 		t.Fatalf("unexpected thumbnail for doc-2: %v", data["doc-2"])
+	}
+}
+
+func TestGetDocumentImagePassesPrincipalAndDisablesCaching(t *testing.T) {
+	fake := &fakeDocumentService{imageData: []byte("\x89PNG\r\n\x1a\nimage")}
+	h := &DocumentHandler{documentService: fake}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/doc-1/images/imagetemps-page-1.png", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}, {Key: "image_id", Value: "imagetemps-page-1.png"}}
+
+	h.GetDocumentImageForDocument(c)
+
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("unexpected response: status=%d content-type=%q cache=%q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"))
+	}
+	if fake.imageUserID != "user-1" || fake.imageDocumentID != "doc-1" || fake.imageID != "imagetemps-page-1.png" {
+		t.Fatalf("service arguments: user=%q doc=%q image=%q", fake.imageUserID, fake.imageDocumentID, fake.imageID)
+	}
+}
+
+func TestGetDocumentImageRequiresPrincipal(t *testing.T) {
+	fake := &fakeDocumentService{imageData: []byte("\x89PNG\r\n\x1a\nimage")}
+	h := &DocumentHandler{documentService: fake}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/documents/doc-1/images/imagetemps-page-1.png", nil)
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}, {Key: "image_id", Value: "imagetemps-page-1.png"}}
+
+	h.GetDocumentImageForDocument(c)
+
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] == float64(common.CodeSuccess) || fake.imageID != "" {
+		t.Fatalf("anonymous request reached image service: response=%s image=%q", w.Body.String(), fake.imageID)
+	}
+}
+
+func TestGetDocumentImageRejectsNonImagePayload(t *testing.T) {
+	fake := &fakeDocumentService{imageData: []byte("%PDF-1.7")}
+	h := &DocumentHandler{documentService: fake}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/images/anything.png", "")
+	c.Params = gin.Params{{Key: "image_id", Value: "anything.png"}}
+
+	h.GetDocumentImage(c)
+
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] != float64(common.CodeDataError) {
+		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+func TestDocumentImageContentTypeSupportedFormats(t *testing.T) {
+	tests := map[string]struct {
+		data []byte
+		want string
+	}{
+		"png":  {[]byte("\x89PNG\r\n\x1a\n"), "image/png"},
+		"jpeg": {[]byte{0xff, 0xd8, 0xff}, "image/jpeg"},
+		"gif":  {[]byte("GIF89a"), "image/gif"},
+		"webp": {[]byte("RIFF\x00\x00\x00\x00WEBP"), "image/webp"},
+		"bmp":  {[]byte("BM"), "image/bmp"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := documentImageContentType(test.data); got != test.want {
+				t.Fatalf("documentImageContentType() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
