@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -178,8 +179,9 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 	}
 
 	s := enumerationSession(4, 90)
-	if got := s.turnRunCap(); got != 8 {
-		t.Fatalf("run cap = %d, want 8 (the mode's floor 4 + the model's %d)", got, turnRunExtra)
+	cap := s.turnRunCap()
+	if cap != enumerationSession(0, 90).actionMaxTurns()+turnRunExtra {
+		t.Fatalf("run cap = %d, want the floor + %d (the runaway guard)", cap, turnRunExtra)
 	}
 	if !s.offerContinuation() {
 		t.Fatal("past the floor the session must offer the model another turn")
@@ -188,7 +190,7 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 	if last.Role != schema.User {
 		t.Fatalf("offer role = %v, want a user message the model answers", last.Role)
 	}
-	for _, want := range []string{"TURN BUDGET", "up to 8", "4 turn(s) left", "state patch NOW"} {
+	for _, want := range []string{"TURN BUDGET", fmt.Sprintf("up to %d", cap), fmt.Sprintf("%d turn(s) left", cap-4), "state patch NOW"} {
 		if !strings.Contains(last.Content, want) {
 			t.Errorf("offer %q missing %q", last.Content, want)
 		}
@@ -209,8 +211,8 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 		t.Fatal("each new turn must carry its own offer")
 	}
 
-	// The hard cap: no offer, and the session finalizes.
-	capped := enumerationSession(8, 90)
+	// The hard cap (a runaway guard, not the loop's bound): no offer, and the session finalizes.
+	capped := enumerationSession(enumerationSession(0, 90).turnRunCap(), 90)
 	if capped.offerContinuation() {
 		t.Fatal("the run cap must not be exceedable")
 	}
@@ -240,68 +242,52 @@ func enumerationSession(attempts int, deadlineLeft float64) *SessionState {
 	}
 }
 
-// TestOfferContinuationIsGatedOnTheQuestionsShape pins the cost rule. The offer is
-// an extra model call plus up to turnRunExtra more turns, and a question that is
-// not assembling a set has nothing for those turns to find: measured on
-// 2026-09-15, one enumeration question was offered four extra turns while the
-// sessions still recorded nothing, and every question in the mode paid for that
-// mechanism. The gate is the session ENUMERATING — the caller wrote a batch, or the
-// planner declared a count/list — not a mode flag, and not a candidate's separators:
-// measured the same day, with the gate reading a list-shaped CANDIDATE as a set, a
-// FRAMES run took 24 offers (and 8 extra rounds over its baseline) on questions
-// whose answer is one number.
-func TestOfferContinuationIsGatedOnTheQuestionsShape(t *testing.T) {
+// TestOfferContinuationIsBoundedByTheCapAndTheClockNotByTheShape pins the turn-budget contract
+// after the shape gate was removed.
+//
+// The offer used to require an ENUMERATING session, so a multi-hop VALUE question was cut off at
+// its halved floor with the clock unspent — the log of a stopped session reads "167 seconds of
+// research budget left" beside "TOOL BUDGET EXHAUSTED" (measured 2026-09-20, FRAMES: "turn floor
+// 8 → 4" 15 times, 8 rounds finalized by the salvage prompt, ~150s of the 180s budget unspent, and
+// the four questions that stayed at zero each hit that wall). What bounds the offer is what the
+// runtime does not delegate — the run cap and the session clock — and the ask hands the model the
+// record's own brief, so "continue" has to be justified by something the record shows is missing.
+func TestOfferContinuationIsBoundedByTheCapAndTheClockNotByTheShape(t *testing.T) {
 	value := &SessionState{
+		Tools:        &Toolset{ThinkingMode: "high"},
 		Attempts:     4,
 		DeadlineLeft: 90,
 		ParentState:  State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}},
 	}
-	if value.offerContinuation() {
-		t.Fatal("a single-value question must not be offered extra turns")
+	if !value.offerContinuation() {
+		t.Fatal("a value question past its floor must be offered another turn (the model decides)")
 	}
-	if len(value.Messages) != 0 {
-		t.Fatal("no offer message may be appended for a value question")
+	last := value.Messages[len(value.Messages)-1]
+	if last.Role != schema.User {
+		t.Fatalf("offer role = %v, want a user message the model answers", last.Role)
 	}
-	// And the route at the floor finalizes it, exactly as the mode's turn count
-	// alone used to.
-	if got := value.route(); got != routeFinalize {
-		t.Fatalf("route at the floor on a value question = %v, want routeFinalize", got)
+	// Asked once per turn, however often the route runs.
+	if !value.offerContinuation() {
+		t.Fatal("the offer must stand for the turn it was made on")
 	}
-
-	// A candidate that only LOOKS like a list is not a set: the measured FRAMES
-	// table held `Grace's、High、Falls、Colonial、Creek` — one waterfall's name cut at
-	// its separators — under a slot typed "dataset", and the offer built on it is
-	// what ran that benchmark eight rounds long.
-	prose := &SessionState{
-		Attempts:     4,
-		DeadlineLeft: 90,
-		ParentState:  State{State: []Variable{{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls")}}},
-	}
-	if prose.offerContinuation() {
-		t.Fatal("a separator-bearing candidate under a scalar type must not buy extra turns")
+	if len(value.Messages) != 1 {
+		t.Fatalf("offer appended %d messages, want exactly one per turn", len(value.Messages))
 	}
 
-	// A count-typed slot with NO batch written is NOT enumerating: the type word is a label the
-	// plan chose, and it is the same label for a count of events (see enumerating).
-	counting := &SessionState{
-		Attempts:     4,
-		DeadlineLeft: 90,
-		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}},
+	// The two bounds the runtime keeps. First the run cap: at it, nothing more is offered.
+	capped := &SessionState{
+		Tools: &Toolset{ThinkingMode: "high"}, DeadlineLeft: 90,
 	}
-	if counting.offerContinuation() {
-		t.Fatal("a count-typed slot alone must not buy the extra turn")
+	capped.Attempts = capped.turnRunCap()
+	if capped.offerContinuation() {
+		t.Fatal("at the run cap no further turn may be offered")
 	}
-
-	// And the tell that survives contact: a caller-written batch, even on a table
-	// whose slots say nothing about a set.
-	batched := &SessionState{
-		Attempts:      4,
-		DeadlineLeft:  90,
-		SearchQueries: []string{"关羽 斩 杀 颜良 文丑 华雄 蔡阳"},
-		ParentState:   State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}},
+	// Then the clock: below the floor the finalize step must still fit, so nothing is offered.
+	late := &SessionState{
+		Tools: &Toolset{ThinkingMode: "high"}, Attempts: 4, DeadlineLeft: turnAskFloorS,
 	}
-	if !batched.offerContinuation() {
-		t.Fatal("a session that wrote a batch is enumerating and must be offered the turn")
+	if late.offerContinuation() {
+		t.Fatal("with no clock left for the answer turn, no further turn may be offered")
 	}
 }
 
@@ -317,7 +303,9 @@ func TestRouteAtTheFloorOffersTheModelTheDecision(t *testing.T) {
 		t.Fatalf("messages = %d, want the offer appended", len(s.Messages))
 	}
 
-	capped := enumerationSession(8, 90)
+	// At the runaway cap there is nothing to offer — and the cap is not what usually stops a
+	// session: the clock's answer reserve is (see runActionNode, answerReserveS).
+	capped := enumerationSession(enumerationSession(0, 90).turnRunCap(), 90)
 	if got := capped.route(); got != routeFinalize {
 		t.Fatalf("route at the cap = %v, want routeFinalize", got)
 	}
@@ -488,14 +476,22 @@ func TestSessionStampsEvidenceRefsInFirstSeenOrder(t *testing.T) {
 // cite what it read.
 func TestSessionFoldsEarlierToolResults(t *testing.T) {
 	big := `{"passages":[` + strings.Repeat(`{"ref":0,"chunk_id":"c1","content":"x"},`, 40) + `{"ref":41,"chunk_id":"c2","content":"y"}]}`
+	small := func(id string) string { return `{"passages":[{"ref":0,"chunk_id":"` + id + `","content":"x"}]}` }
 	s := &SessionState{}
 	s.Messages = []schema.Message{
 		*schema.SystemMessage("system"),
 		*schema.UserMessage("q"),
-		*schema.AssistantMessage("thinking", nil),
-		*schema.ToolMessage(big, "call-1"), // turn 1 result: folded
-		*schema.AssistantMessage("thinking again", nil),
-		*schema.ToolMessage(`{"passages":[{"ref":0,"chunk_id":"c1","content":"x"}]}`, "call-2"), // last turn: kept
+		// turn 1: far enough back to be folded
+		*schema.AssistantMessage("turn 1", nil),
+		*schema.ToolMessage(big, "call-1"),
+		// turns 2-4: the last `verbatimSessionTurns` turns stay verbatim — a multi-hop chain holds
+		// the hop it read while it searches the next one.
+		*schema.AssistantMessage("turn 2", nil),
+		*schema.ToolMessage(small("c2"), "call-2"),
+		*schema.AssistantMessage("turn 3", nil),
+		*schema.ToolMessage(small("c3"), "call-3"),
+		*schema.AssistantMessage("turn 4", nil),
+		*schema.ToolMessage(small("c4"), "call-4"),
 	}
 	s.compactEarlierToolResults()
 
@@ -506,8 +502,11 @@ func TestSessionFoldsEarlierToolResults(t *testing.T) {
 	} else if !strings.Contains(got, "[ID:n]") {
 		t.Errorf("digest = %q, want it to say the refs still resolve", got)
 	}
-	if got := s.Messages[5].Content; got != `{"passages":[{"ref":0,"chunk_id":"c1","content":"x"}]}` {
-		t.Errorf("the last turn's result was folded: %q", got)
+	for _, i := range []int{5, 7, 9} {
+		if got := s.Messages[i].Content; strings.Contains(got, "folded") {
+			t.Errorf("message %d was folded; the last %d turns must stay verbatim: %q",
+				i, verbatimSessionTurns, got)
+		}
 	}
 
 	// A short result is not worth folding: the digest would cost more than it saves.
@@ -516,6 +515,10 @@ func TestSessionFoldsEarlierToolResults(t *testing.T) {
 		*schema.ToolMessage(`{"passages":[]}`, "c1"),
 		*schema.AssistantMessage("b", nil),
 		*schema.ToolMessage(`{"passages":[]}`, "c2"),
+		*schema.AssistantMessage("c", nil),
+		*schema.ToolMessage(`{"passages":[]}`, "c3"),
+		*schema.AssistantMessage("d", nil),
+		*schema.ToolMessage(`{"passages":[]}`, "c4"),
 	}}
 	short.compactEarlierToolResults()
 	if short.Messages[1].Content != `{"passages":[]}` {
@@ -580,12 +583,16 @@ func TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch(t *testing.T) {
 	}
 }
 
-// TestAppendRecordLineSkipsValueDirections pins the line's gate: it carries a set's
-// to-do list, and on a value question every field of it is empty (`members=0 |
-// probed-reached=0`) while it still costs a recomputation and a line of prompt on
-// every turn. Measured (2026-09-15, FRAMES): 214 such lines across 20 questions,
-// on a benchmark whose baseline run carried none.
-func TestAppendRecordLineSkipsValueDirections(t *testing.T) {
+// TestAppendRecordLineReachesValueDirectionsToo pins the line's reach after the shape gate was
+// removed.
+//
+// It used to be skipped on a value question, on the argument that every field of it is empty
+// there (`members=0 | probed-reached=0`). The line also carries `asked-nothing-back` (the probes
+// this session already ran and got nothing for) and `FOUND BUT NOT RECORDED` (names a passage
+// offered that no patch accounts for) — which is exactly the feedback a multi-hop VALUE session
+// needs to take its next hop instead of re-asking what it already knows, and those sessions were
+// also the ones stopped at four turns (see actionMaxTurns).
+func TestAppendRecordLineReachesValueDirectionsToo(t *testing.T) {
 	kb := &Kbinfos{}
 	kb.Admit(func(p *PoolAdmitter) {
 		p.Add(map[string]any{"chunk_id": "c1", "content": "prose"})
@@ -600,12 +607,14 @@ func TestAppendRecordLineSkipsValueDirections(t *testing.T) {
 		Messages: []schema.Message{*schema.ToolMessage(payload, "call_1")},
 	}
 	s.appendRecordLine(true)
-	if got := s.Messages[len(s.Messages)-1].Content; got != payload {
-		t.Fatalf("tool message = %q, want it untouched on a value direction", got)
+	got := s.Messages[len(s.Messages)-1].Content
+	if !strings.HasPrefix(got, payload) {
+		t.Fatalf("tool message = %q, want the payload still first", got)
 	}
-	// The record itself is still computed and kept: the continuation ask reads it,
-	// and only the model-facing line is skipped.
+	if !strings.Contains(got, "[record]") {
+		t.Fatalf("tool message = %q, want the record line on a value direction too", got)
+	}
 	if s.Record.Pool != 1 {
-		t.Fatalf("record pool = %d, want the record still computed", s.Record.Pool)
+		t.Fatalf("record pool = %d, want the record computed", s.Record.Pool)
 	}
 }

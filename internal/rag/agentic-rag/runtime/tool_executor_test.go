@@ -915,6 +915,23 @@ func TestListChunksPagesThroughADocument(t *testing.T) {
 	if len(kb.Chunks) != 100 {
 		t.Errorf("kb.Chunks = %d, want 100 (the whole document, once paged through)", len(kb.Chunks))
 	}
+
+	// Every page also went into the READ ledger: the run can now tell a passage it READ from one it
+	// was only shown as a search snippet (see Kbinfos.NoteChunksRead). Four pages, 100 distinct
+	// chunks, and the last page is not the last one the document has — this one ended.
+	progress := kb.ReadProgress()
+	if len(progress) != 1 {
+		t.Fatalf("ReadProgress = %v, want one line for doc-a", progress)
+	}
+	line := progress[0]
+	for _, want := range []string{"doc-a", "4 page(s)", "100 chunk(s) read", "offset 90"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("ReadProgress line = %q, want it to carry %q", line, want)
+		}
+	}
+	if kb.WasRead(payloadChunkID(oc.Payload[0].(map[string]any))) != true {
+		t.Error("the last page's first passage was not recorded as READ")
+	}
 }
 
 // TestLargePoolStillAdmitsNewEvidence pins that the pool has NO ceiling at the tool

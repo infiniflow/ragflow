@@ -146,102 +146,162 @@ func (r *countingRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequ
 	return []map[string]any{{"doc_id": "d1", "docnm_kwd": "doc1", "content": "Saint Lawrence River; 14 April 1865; 9 December 2019."}}, nil
 }
 
-// routeResearch unit tests. This router replaced the SCA verdict as the thing that decides
-// whether a round is taken (see its doc comment); the facts it reads are all RECORDS.
+// routeResearch unit tests. This router is the loop's ONLY decision (see its doc comment), and
+// every fact it reads is a record the round itself produced: the session's answer, the part the
+// session said it could not establish, and whether the pool grew.
 
 // TestRouteResearchClosesOutWhenTheSessionAnswered pins the paper's stop condition: the loop ends
-// because the AGENT ANSWERED. Work left and fresh evidence are both present here — the two facts
-// that would otherwise ask for another round — and the answer is what ends it.
-//
-// It is the one check that had no equivalent before: the old routing could only stop on a verdict
-// or an empty record, so a run whose session had written an answer could still spend another round
-// looking for something the answer already covered.
+// because the AGENT ANSWERED and named nothing open — even with fresh evidence in the pool, which
+// is the fact that would otherwise ask for another round.
 func TestRouteResearchClosesOutWhenTheSessionAnswered(t *testing.T) {
 	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"关羽 斩将"}}}
 	st.LastRoundNew = 40
 	st.Deadline = time.Now().Add(120 * time.Second)
 
-	if n := routeResearch(st, 3); n != nodeQueryRewrite {
-		t.Fatalf("no answer yet: route = %v, want another round", n)
-	}
 	st.CollectedAnswer = "关羽杀了十二人：华雄、颜良、文丑…"
 	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
 		t.Fatalf("answered: route = %v, want formalize_answer", n)
 	}
 }
 
-// TestRouteResearchTakesAnotherRoundWhenWorkRemainsAndEvidenceArrived pins the fallback rule for a
-// round that did NOT answer: the plan still lists unresolved slots AND the round added evidence.
-func TestRouteResearchTakesAnotherRoundWhenWorkRemainsAndEvidenceArrived(t *testing.T) {
-	st := NewAgenticState("When and where was it built?", "", 3, nil)
-	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
-	st.LastRoundNew = 40
-	st.Deadline = time.Now().Add(120 * time.Second)
+// TestRouteResearchReopensOnAnAnswerThatNamesAnOpenPart pins the L2 rule: an answer that NAMES a
+// part it could not establish is not a finished round.
+//
+// "The session answered ⇒ stop" holds when the agent answers only what it can support. A multi-hop
+// question's first answer is very often "I read X, and X does not carry Y" — an answer AND a
+// statement of work remaining — and treating it as final is how four questions stayed at zero while
+// their sessions each held the bridge and said so, with ~150s of the round's 180s unspent
+// (measured 2026-09-20, FRAMES: Quincy's mayors, Gifu's population, AP's law, Lahore in 1858).
+func TestRouteResearchReopensOnAnAnswerThatNamesAnOpenPart(t *testing.T) {
+	newState := func() *AgenticState {
+		st := NewAgenticState("What is the population of the birthplace of the writer of Culdcept Saga?", "", 3, nil)
+		st.LastRoundNew = 25
+		st.Deadline = time.Now().Add(120 * time.Second)
+		st.CollectedAnswer = "The writer is Tow Ubukata, born in Gifu Prefecture [ID:0]…"
+		st.SessionUnresolved = "the population figure for Gifu Prefecture"
+		return st
+	}
 
-	if n := routeResearch(st, 3); n != nodeQueryRewrite {
-		t.Fatalf("work left and still learning: route = %v, want another round", n)
+	if n := routeResearch(newState(), 3); n != nodeRagAgentLoop {
+		t.Fatalf("answer with an open part: route = %v, want another round", n)
+	}
+
+	// The same answer with nothing left open is final — the paper's rule, unchanged.
+	answered := newState()
+	answered.SessionUnresolved = ""
+	if n := routeResearch(answered, 3); n != nodeFormalizeAnswer {
+		t.Errorf("answer with nothing open: route = %v, want formalize_answer", n)
+	}
+
+	// Nor does an open part reopen a round whose rounds are spent.
+	spent := newState()
+	spent.SearchRounds = 3
+	if n := routeResearch(spent, 3); n != nodeFormalizeAnswer {
+		t.Errorf("open part but rounds spent: route = %v, want formalize_answer", n)
+	}
+
+	// Nor one whose clock cannot fit another round AND the finale it has to hand the question to.
+	late := newState()
+	late.Deadline = time.Now().Add(time.Duration(finaleShareS(70)+MinRoundS-1) * time.Second)
+	if n := routeResearch(late, 3); n != nodeFormalizeAnswer {
+		t.Errorf("open part but no room for the round and the finale: route = %v, want formalize_answer", n)
 	}
 }
 
-// TestRouteResearchClosesOutWhenNothingIsOpenOrNothingWasLearned pins both stops that do not need
-// an answer:
+// TestRouteResearchGivesANamedOpenPartOneZeroGrowthRound pins the single free hop: a round that
+// added NO passage may still be followed by one more attempt when the session named a part — that
+// is the bridge hop a multi-hop question is made of ("I read X, X does not carry Y") — and a SECOND
+// such round is refused, so a stall cannot spend the question.
 //
-//	work left but STALLED (+0 chunks) — another round would read the same evidence again;
-//	nothing left (a settled plan)  — there is no direction to ask about.
+// This is what replaced the slot table as the continuation fact: the slot table is the session's
+// scratchpad, and a round that read forty passages already in the pool used to look like one that
+// had learned nothing (measured 2026-09-20: three of four zero-scoring questions ended on
+// `no round is asked for (… +0 chunks this round)`).
+func TestRouteResearchGivesANamedOpenPartOneZeroGrowthRound(t *testing.T) {
+	st := NewAgenticState("When and where was it built?", "", 3, nil)
+	st.CollectedAnswer = "It was built at Geneva."
+	st.SessionUnresolved = "the year it was built"
+	st.LastRoundNew = 0
+	st.Deadline = time.Now().Add(150 * time.Second)
+
+	if n := routeResearch(st, 3); n != nodeRagAgentLoop {
+		t.Fatalf("first zero-growth round with a named part: route = %v, want another round", n)
+	}
+	// The next round learned nothing either: the hop is refused.
+	st.LastRoundNew = 0
+	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
+		t.Errorf("second zero-growth round: route = %v, want formalize_answer", n)
+	}
+}
+
+// TestRouteResearchTheSlotTableDoesNotDecide pins the 2026-09-20 decision that took the plan out of
+// the routing: two states that differ ONLY in their unresolved slots must route the same way.
 //
-// The second case is deliberately NOT treated as proof of completeness: it is the case that ended
-// 2026-09-15 with unresolved=0 and an answer six members short. It stops the loop only because
-// there is nothing left to ASK, and routeResearch says so in its log.
-func TestRouteResearchClosesOutWhenNothingIsOpenOrNothingWasLearned(t *testing.T) {
-	stalled := NewAgenticState("When and where was it built?", "", 3, nil)
-	stalled.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
-	stalled.LastRoundNew = 0
-	stalled.Deadline = time.Now().Add(120 * time.Second)
-	if n := routeResearch(stalled, 3); n != nodeFormalizeAnswer {
-		t.Errorf("work left but nothing learned: route = %v, want formalize_answer", n)
+// The slot table is the session's scratchpad (the model fills it to remember what it found), so a
+// table full of unresolved slots is not a statement that work remains — and a table empty of them
+// is not a statement that the question is answered. What decides is the session's own <unresolved>
+// statement and whether the round brought evidence in.
+func TestRouteResearchTheSlotTableDoesNotDecide(t *testing.T) {
+	withSlots := NewAgenticState("When and where was it built?", "", 3, nil)
+	withSlots.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built", "where built"}}}
+	withSlots.CollectedAnswer = "It was built in Geneva."
+	withSlots.LastRoundNew = 40
+	withSlots.Deadline = time.Now().Add(150 * time.Second)
+
+	without := NewAgenticState("When and where was it built?", "", 3, nil)
+	without.CollectedAnswer = "It was built in Geneva."
+	without.LastRoundNew = 40
+	without.Deadline = time.Now().Add(150 * time.Second)
+
+	if a, b := routeResearch(withSlots, 3), routeResearch(without, 3); a != b {
+		t.Errorf("unresolved slots changed the route: with=%v without=%v; the slot table must not decide", a, b)
+	}
+	if got := routeResearch(withSlots, 3); got != nodeFormalizeAnswer {
+		t.Errorf("route = %v, want formalize_answer (an answer that names nothing open is final)", got)
+	}
+}
+
+// TestRouteResearchRetriesARoundThatProducedNothingWhileEvidenceArrives pins the one continuation
+// that needs neither an answer nor a named part: the round FAILED (it wrote no answer) while its own
+// retrieval was still feeding the pool. A retry is the only way such a round can end in an answer,
+// and a round that added nothing is not retried.
+func TestRouteResearchRetriesARoundThatProducedNothingWhileEvidenceArrives(t *testing.T) {
+	st := NewAgenticState("When and where was it built?", "", 3, nil)
+	st.LastRoundNew = 40
+	st.Deadline = time.Now().Add(150 * time.Second)
+	if n := routeResearch(st, 3); n != nodeRagAgentLoop {
+		t.Fatalf("no answer, nothing open, but evidence arrived: route = %v, want another round", n)
 	}
 
-	settled := NewAgenticState("When and where was it built?", "", 3, nil)
-	settled.LastRoundNew = 40
-	settled.Deadline = time.Now().Add(120 * time.Second)
-	if n := routeResearch(settled, 3); n != nodeFormalizeAnswer {
-		t.Errorf("nothing left to ask: route = %v, want formalize_answer", n)
+	stalled := NewAgenticState("When and where was it built?", "", 3, nil)
+	stalled.LastRoundNew = 0
+	stalled.Deadline = time.Now().Add(150 * time.Second)
+	if n := routeResearch(stalled, 3); n != nodeFormalizeAnswer {
+		t.Errorf("no answer and nothing arrived: route = %v, want formalize_answer", n)
 	}
 }
 
 // TestRouteResearchHonoursTheRoundBudgetAndTheClock pins the two bounds that are neither the
-// answer nor the record: the mode's round count, and the clock's round headroom.
+// answer nor the record: the mode's round count, and the room a round needs — the round itself PLUS
+// the finale it hands the question over to (see canOpenRound).
 func TestRouteResearchHonoursTheRoundBudgetAndTheClock(t *testing.T) {
 	atMax := NewAgenticState("When and where was it built?", "", 3, nil)
-	atMax.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	atMax.CollectedAnswer = "It was built in Geneva."
+	atMax.SessionUnresolved = "the year"
 	atMax.LastRoundNew = 40
 	atMax.SearchRounds = 3
-	atMax.Deadline = time.Now().Add(120 * time.Second)
+	atMax.Deadline = time.Now().Add(150 * time.Second)
 	if n := routeResearch(atMax, 3); n != nodeFormalizeAnswer {
 		t.Errorf("round budget spent: route = %v, want formalize_answer", n)
 	}
 
 	tight := NewAgenticState("When and where was it built?", "", 3, nil)
-	tight.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	tight.CollectedAnswer = "It was built in Geneva."
+	tight.SessionUnresolved = "the year"
 	tight.LastRoundNew = 40
-	tight.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
+	tight.Deadline = time.Now().Add(70 * time.Second)
 	if n := routeResearch(tight, 3); n != nodeFormalizeAnswer {
-		t.Errorf("no round headroom: route = %v, want formalize_answer", n)
-	}
-}
-
-// TestRouteResearchNoProgressIsAHardStop pins NoProgress as the first stop after the answer: a
-// round that learned nothing (or whose rewrite retrieved nothing new) cannot be followed by
-// another round, whatever its record says.
-func TestRouteResearchNoProgressIsAHardStop(t *testing.T) {
-	st := NewAgenticState("When and where was it built?", "", 3, nil)
-	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
-	st.LastRoundNew = 40
-	st.NoProgress = true
-	st.Deadline = time.Now().Add(120 * time.Second)
-	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("NoProgress: route = %v, want formalize_answer", n)
+		t.Errorf("no room for a round and the finale: route = %v, want formalize_answer", n)
 	}
 }
 
@@ -904,9 +964,9 @@ func TestRunReturnsNonNilState(t *testing.T) {
 	if len(st.SlotTable.State) == 0 {
 		t.Fatal("expected the plan's slot table to travel with the round")
 	}
-	if st.NoProgress {
-		t.Fatal("a completed run should not report NoProgress")
-	}
+	// What a completed run reports is its own record — the answer its session wrote and the part
+	// it named as open (see routeResearch); the NoProgress flag the router used to carry is gone
+	// with the query-rewrite node that was its only writer.
 }
 
 // TestAgenticGraphPushesPhaseProgress asserts that the agentic loop forwards tagged
@@ -978,11 +1038,11 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	}
 }
 
-// TestAgenticGraphCyclesBackThroughQueryRewrite drives the research loop: the
-// SCA returns insufficient once, so the graph must run query_rewrite and re-enter
-// rag_agent. The loop is the only cycle in the graph — it is why the graph is
-// compiled in Pregel mode (DAG mode rejects cycles).
-func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
+// TestAgenticGraphTakesOneRoundWhenTheSessionNamesNothing drives the research loop end to end:
+// the session writes no <unresolved>, so ONE round is taken and the run closes out. The loop is the
+// only cycle in the graph — it is why the graph is compiled in Pregel mode (DAG mode rejects
+// cycles) — and it is entered by the session's own statement about what is still open.
+func TestAgenticGraphTakesOneRoundWhenTheSessionNamesNothing(t *testing.T) {
 	ctx := context.Background()
 	mdl := &promptRoutedModel{}
 
@@ -1021,13 +1081,11 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 			t.Errorf("graph did not run: missing %q; got:\n%s", want, joined)
 		}
 	}
-	// This run takes ONE round and closes out, which is the correct outcome now: nothing in its
-	// record asks for another one (the scripted model patches no slot and calls no tool, so the
-	// plan's slots stay unresolved but the round learned nothing either — see routeResearch).
-	//
-	// The cycle itself (query_rewrite → rag_agent) is decided by that router, and its tests cover
-	// both answers: TestRouteResearchTakesAnotherRoundWhenWorkRemainsAndEvidenceArrived and
-	// TestRouteResearchClosesOutWhenTheSessionAnswered.
+	// This run takes ONE round and closes out, which is the correct outcome: the scripted session
+	// wrote no answer and named no open part, so there is nothing for another round to aim at. What
+	// the slot table holds does not enter that decision (see routeResearch), and the router's own
+	// tests cover both answers: TestRouteResearchReopensOnAnAnswerThatNamesAnOpenPart and
+	// TestRouteResearchTheSlotTableDoesNotDecide.
 	if strings.Contains(joined, "[RAGAgent] Round 2 begins") {
 		t.Errorf("a round was taken with no record asking for one:\n%s", joined)
 	}
@@ -1426,67 +1484,6 @@ func TestComposedRecordSaysWhenNobodyCheckedCompleteness(t *testing.T) {
 	}
 }
 
-// TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines pins the asymmetry that used to end the
-// loop: the routing had already judged another round worth its budget (gaps exist, the review view
-// changed) and one empty reply from the rewriter cancelled that judgement — while the other
-// fallback, the unresolved slots' clues, is empty on a set question whose unknowns are names nobody
-// has proposed yet. Measured (2026-09-17, 三国/关羽): INSUFFICIENT, 3 gaps, +182 chunks, 130s left,
-// and no round.
-func TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines(t *testing.T) {
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.UnresolvedSlots = []map[string]any{
-		{"question_clues": []string{"关羽 斩 全部名称", "关羽 杀了哪些人"}},
-	}
-	st.KB = &runtime.Kbinfos{}
-	st.KB.RecordProbedAbsent("斩孟坦")
-	st.SlotTable = runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩"}, Subject: "关羽|云长"},
-	}, 0, nil)
-	st.Deadline = time.Now().Add(120 * time.Second)
-
-	mdl := &scriptedModel{}
-	mdl.push(`{"queries": []}`)
-	queryRewriteNode(context.Background(), RAGTools{
-		Model:  mdl,
-		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-	}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.NoProgress {
-		t.Fatal("NoProgress = true: the rewriter declined, and the round had already been judged worth its budget")
-	}
-	joined := strings.Join(st.CurrentQueries, "|")
-	if joined == "" || !strings.Contains(joined, "关羽") {
-		t.Fatalf("CurrentQueries = %v, want the round's own open terms", st.CurrentQueries)
-	}
-}
-
-// TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps pins: with
-// no structured SCA gaps, the unresolved slots' question_clues become the gaps,
-// so the loop keeps going instead of accepting an unresolved draft.
-func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
-	st := NewAgenticState("When and where was it built?", "", 3, nil)
-	st.UnresolvedSlots = []map[string]any{
-		{"question_clues": []string{"when opened", "where located", "ignored third clue"}},
-	}
-	st.Deadline = time.Now().Add(60 * time.Second)
-
-	mdl := &scriptedModel{}
-	mdl.push(`{"queries": [{"query": "when was it opened"}]}`)
-
-	queryRewriteNode(context.Background(), RAGTools{
-		Model:  mdl,
-		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-	}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.NoProgress {
-		t.Fatal("NoProgress = true; unresolved slot clues must be folded into the gaps and researched")
-	}
-	joined := strings.Join(st.CurrentQueries, "|")
-	if !strings.Contains(joined, "when opened") {
-		t.Errorf("CurrentQueries = %v, want the unresolved slot clue to be pursued", st.CurrentQueries)
-	}
-}
-
 // TestUnresolvedClueGapsCapsAtTwoClues pins the [:2] per-slot cap.
 func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	st := &AgenticState{UnresolvedSlots: []map[string]any{
@@ -1507,7 +1504,6 @@ func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 
 func TestAgenticNodeNameMapsRoutingToGraphKeys(t *testing.T) {
 	cases := map[agenticNode]string{
-		nodeQueryRewrite:    "query_rewrite",
 		nodeRagAgentLoop:    "rag_agent",
 		nodeFormalizeAnswer: "formalize_answer",
 	}
@@ -1718,6 +1714,97 @@ func (f *fakePrompts) Load(name string) (string, error) { return "", nil }
 // the tests can call Run/ComposeAnswer (which live here) without importing agent
 // from the runtime test package (that would be an import cycle).
 
+// TestComposeFinalAnswerUsesTheSessionAnswerOnTheStreamingPath pins the fix for the funnel every
+// production answer goes through.
+//
+// The session-answer check used to live inside ComposeAnswerWith, which production never reaches:
+// with an AnswerSink the run streams (ComposeAnswerStream) and returns from that branch. So 15 of
+// 18 answered requests had a session answer that was silently replaced by a compose call which had
+// not read the passages — the answers then cited the six blocks that call renders (rendered_blocks
+// = 6) while the pool held up to 213 passages, and six questions came back "the evidence does not
+// contain it" (measured 2026-09-20).
+//
+// The funnel must therefore take the session's answer BEFORE it chooses a path, publish the
+// session's own registry as the citation list (its [ID:n] markers index into those numbers), and
+// hand the text to the sink so a streaming client still receives it.
+func TestComposeFinalAnswerUsesTheSessionAnswerOnTheStreamingPath(t *testing.T) {
+	const sessionAnswer = "关羽 did the deed [ID:0]"
+	kb := &runtime.Kbinfos{
+		Chunks:              []map[string]any{{"chunk_id": "c-hua", "content": "云长提华雄之头"}},
+		SessionAnswer:       sessionAnswer,
+		SessionEvidenceRefs: []string{"c-hua"},
+	}
+	var delivered []string
+	sink := &AnswerSink{OnDelta: func(delta string, isThink bool) { delivered = append(delivered, delta) }}
+	model := &fakeModel{}
+	deps := RAGTools{Model: model, AnswerSink: sink}
+	resp := &RunResponse{}
+
+	composeFinalAnswer(context.Background(), deps, runtime.RunRequest{Question: "谁斩了华雄"},
+		kb, resp, nil, true, false, "谁斩了华雄")
+
+	if resp.Answer != sessionAnswer {
+		t.Errorf("Answer = %q, want the session's own answer", resp.Answer)
+	}
+	if len(resp.CiteChunkIDs) != 1 || resp.CiteChunkIDs[0] != "c-hua" {
+		t.Errorf("CiteChunkIDs = %v, want the session's registry", resp.CiteChunkIDs)
+	}
+	if !resp.Partial {
+		t.Error("Partial = false; the graph's partial flag must be reflected back")
+	}
+	if len(delivered) != 1 || delivered[0] != sessionAnswer {
+		t.Errorf("sink received %v, want the answer delivered in one piece", delivered)
+	}
+	if model.messages != nil {
+		t.Error("the model was called: an answer the session already wrote must not be re-composed")
+	}
+}
+
+// TestSessionAnswerIsRefusedOnlyForAbstentionOrAnEmptyPool is the negative half: the shortcut is
+// not a way to skip composition when there is no evidence, or when the run abstained.
+//
+// It is gated on the POOL and not on the caller's empty_result flag: that flag is the compose
+// prompt's no-evidence hedge, and the graph passes it TRUE by construction on every round, so
+// gating on it suppressed this answer in every run (measured 2026-09-20, 19:07: 20 of 20 rounds
+// wrote an answer and "Using the answer the research session wrote" was still 0).
+func TestSessionAnswerIsRefusedOnlyForAbstentionOrAnEmptyPool(t *testing.T) {
+	kb := &runtime.Kbinfos{
+		Chunks:        []map[string]any{{"chunk_id": "c1", "content": "x"}},
+		SessionAnswer: "an answer",
+	}
+	if _, ok := sessionAnswer(kb, true); ok {
+		t.Error("abstain: the session answer must not be used")
+	}
+	emptyPool := &runtime.Kbinfos{SessionAnswer: "an answer"}
+	if _, ok := sessionAnswer(emptyPool, false); ok {
+		t.Error("no evidence: the session answer must not be used")
+	}
+	blank := &runtime.Kbinfos{
+		Chunks:        []map[string]any{{"chunk_id": "c1"}},
+		SessionAnswer: "   \n ",
+	}
+	if _, ok := sessionAnswer(blank, false); ok {
+		t.Error("whitespace answer: nothing to use")
+	}
+	if _, ok := sessionAnswer(nil, false); ok {
+		t.Error("nil pool: nothing to use")
+	}
+	if ans, ok := sessionAnswer(kb, false); !ok || ans != "an answer" {
+		t.Errorf("usable pool: (%q, %v), want the answer", ans, ok)
+	}
+
+	// The reason a written answer was skipped is reported, so a run can say why.
+	if why := sessionAnswerBlocked(emptyPool, false); why != "the evidence pool is empty" {
+		t.Errorf("blocked reason = %q, want the empty-pool reason", why)
+	}
+	if why := sessionAnswerBlocked(kb, true); why != "the run abstained" {
+		t.Errorf("blocked reason = %q, want the abstention reason", why)
+	}
+	if why := sessionAnswerBlocked(kb, false); why != "" {
+		t.Errorf("blocked reason = %q, want none for a usable answer", why)
+	}
+}
+
 // fakeModel replays a scripted sequence of replies, so the session's control
 // flow can be driven without a provider.
 type fakeModel struct {
@@ -1873,6 +1960,146 @@ func TestRunAgenticDegradesToDirectWithoutModel(t *testing.T) {
 		t.Error("agentic mode without a model must degrade to direct search")
 	}
 }
+
+// TestRouteResearchOutputIsInEveryBranchsDeclaredEnds pins the invariant Eino enforces and the
+// invariant a merged router broke: Eino ABORTS the whole run when a branch returns a node that
+// branch does not declare ("unintended end node"), and the question is then answered by a fallback
+// composition that never saw the research. With the rewrite branch gone there is one router and one
+// branch, and the ends it may name are that branch's own.
+//
+// The set is a literal here on purpose: this test exists to fail when the graph's declaration
+// changes and the router's outputs stop fitting inside it.
+func TestRouteResearchOutputIsInEveryBranchsDeclaredEnds(t *testing.T) {
+	ragAgentEnds := map[string]bool{"stop": true, "rag_agent": true, "formalize_answer": true}
+
+	for _, tc := range []struct {
+		name  string
+		state func() *AgenticState
+	}{
+		{"another round", func() *AgenticState {
+			st := NewAgenticState("When and where was it built?", "", 3, nil)
+			st.SessionUnresolved = "the year it was built"
+			st.LastRoundNew = 40
+			st.Deadline = time.Now().Add(150 * time.Second)
+			return st
+		}},
+		{"closing out", func() *AgenticState {
+			st := NewAgenticState("When and where was it built?", "", 3, nil)
+			st.CollectedAnswer = "It was built in Geneva."
+			st.LastRoundNew = 40
+			st.Deadline = time.Now().Add(150 * time.Second)
+			return st
+		}},
+	} {
+		got := agenticNodeName(routeResearch(tc.state(), 3))
+		if !ragAgentEnds[got] {
+			t.Errorf("%s: routeResearch returned %q, which rag_agent does not declare", tc.name, got)
+		}
+	}
+}
+
+// TestNoteCitedItemsRegistersThePassagesBehindTheItems pins the writer side of the citation
+// registry: the passages behind a round's members go to the pool, which is what lets the closing
+// composition put them IN FRONT of the answer (see withCitedChunks).
+//
+// It is pinned on its own because the call lives in the ROUND and the consumer lives elsewhere: the
+// registry's only writer used to be in the coverage engine, and deleting the engine deleted the
+// writer while the round kept producing members with their passages. Nothing failed — the composition
+// rendered the top-ranked chunks instead, so the passages stating the answers were never shown to the
+// model (measured 2026-09-20: 9 of 23 answers with zero [ID:n] markers, 7 that read as "not found").
+func TestNoteCitedItemsRegistersThePassagesBehindTheItems(t *testing.T) {
+	table := runtime.NewState([]runtime.Variable{
+		typedAnchoredMembersVar(1, "person", "华雄、颜良"),
+		// A member with no passage is a claim: it must not reach the registry.
+		typedMembersVar(2, "person", "于禁"),
+	}, 0, nil)
+	kb := &runtime.Kbinfos{}
+	noteCitedItems(kb, &table)
+
+	got := kb.CitedChunks()
+	if len(got) == 0 {
+		t.Fatal("no passage was registered for the members that carry one")
+	}
+	for _, id := range got {
+		if id == "" {
+			t.Error("an empty id reached the citation registry")
+		}
+	}
+	// Empty inputs are no-ops rather than panics: the round calls this unconditionally.
+	noteCitedItems(nil, &table)
+	noteCitedItems(kb, nil)
+}
+
+// growingRetriever returns a NEW chunk on every call.
+//
+// A fixed stub can never drive a second round: routeResearch reads LastRoundNew (the passages the
+// round ADDED), so a retriever that keeps returning the same chunk makes every round look stalled
+// and the loop closes out after one. Tests that need the cycle have to make the evidence grow.
+type growingRetriever struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (g *growingRetriever) Retrieve(_ context.Context, _ runtime.RetrieveRequest) ([]map[string]any, error) {
+	g.mu.Lock()
+	g.n++
+	n := g.n
+	g.mu.Unlock()
+	return []map[string]any{{
+		"doc_id":    fmt.Sprintf("d%d", n),
+		"docnm_kwd": fmt.Sprintf("doc%d", n),
+		"chunk_id":  fmt.Sprintf("c%d", n),
+		"content":   "关羽斩华雄于汜水关；又斩颜良、文丑。[doc " + fmt.Sprintf("%d", n) + "]",
+	}}, nil
+}
+
+// TestRoundPutsTheMembersPassagesIntoTheCitationRegistry is the END-TO-END check of the call that was
+// deleted with the coverage engine: after a round, the passages behind its members must be in the
+// pool's registry, because the closing composition puts them in front of the answer (withCitedChunks).
+//
+// The regression it guards was invisible to every existing test: nothing failed, the round still
+// produced members with their passages, and the composition simply rendered the top-ranked chunks
+// instead. Measured 2026-09-20: 9 of 23 answers with zero [ID:n] markers, 7 that read as "not found",
+// and 三国 came back with nine names and no citation at all.
+func TestRoundPutsTheMembersPassagesIntoTheCitationRegistry(t *testing.T) {
+	ctx := context.Background()
+	mdl := &fakeModel{replies: []*runtime.ModelReply{
+		{Content: `{"slots": [{"id": 0, "type": "entity", "clues": ["killed"]}], "first_queries": ["关羽 斩"]}`},
+		{Content: "", ToolCalls: []runtime.ToolCall{{ID: "c0", Name: "retrieve", Args: map[string]any{"query": []any{"关羽 斩"}}}}},
+		{Content: `<state>{"new_states":[{"state":[{"id":0,"kind":"members","items":[{"name":"华雄","chunk_id":"c-hua","quote":"云长提华雄之头"}]}]}]}</state>`},
+		{Content: "<answer>华雄 [ID:0]</answer>"},
+	}}
+	exec := newStubExecutor()
+	exec.add("retrieve", `{"chunk_id":"c-hua","doc_id":"d1","content":"云长提华雄之头，掷于地上。"}`, runtime.StatusOK)
+	st, err := BuildAgenticGraph(ctx, RAGTools{
+		Model:  mdl,
+		Tools:  newToolset(exec),
+		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
+		Logger: log.Default(),
+	}, "关羽杀了谁？", "", 3, nil)
+	if err != nil {
+		t.Fatalf("BuildAgenticGraph: %v", err)
+	}
+	if st == nil || st.KB == nil {
+		t.Fatal("no state/pool")
+	}
+	cited := st.KB.CitedChunks()
+	found := false
+	for _, id := range cited {
+		if id == "c-hua" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("CitedChunks = %v, want the passage the recorded member rests on (record=%q)", cited, st.KB.Record)
+	}
+}
+
+// NOTE: an END-TO-END two-round test would need a session whose retrieval actually lands in the pool
+// (a stubbed toolset returns a payload that never reaches it, so every round looks stalled and the loop
+// closes out after one). It is not written here; the router fix is pinned by
+// TestRouteResearchContinueTargetIsTheBranchesOwn and
+// TestRouteResearchOutputIsInEveryBranchsDeclaredEnds, and the real proof is the next benchmark run.
 
 func TestRunAgenticSeedsSlotsAndRunsSession(t *testing.T) {
 	r := &corpusRetriever{}
@@ -2626,7 +2853,7 @@ func BenchmarkCompileActionSessionShape(b *testing.B) {
 	})
 }
 
-// agentic graph shape: 7 nodes, 4 edges, 5 branches.
+// agentic graph shape: 6 nodes, 4 edges, 4 branches.
 func BenchmarkCompileAgenticShape(b *testing.B) {
 	ctx := context.Background()
 	benchCompile(b, func() error {
@@ -2634,7 +2861,7 @@ func BenchmarkCompileAgenticShape(b *testing.B) {
 		node := func(c context.Context, s *AgenticState) (*AgenticState, error) { return s, nil }
 		for _, n := range []string{
 			"formalize_question", "planner", "prefetch", "rag_agent",
-			"query_rewrite", "formalize_answer", "stop",
+			"formalize_answer", "stop",
 		} {
 			if err := g.AddLambdaNode(n, compose.InvokableLambda(node)); err != nil {
 				return err
@@ -2654,8 +2881,7 @@ func BenchmarkCompileAgenticShape(b *testing.B) {
 			"formalize_question": {"stop": true, "planner": true, "rag_agent": true},
 			"planner":            {"stop": true, "prefetch": true, "rag_agent": true},
 			"prefetch":           {"stop": true, "rag_agent": true},
-			"rag_agent":          {"stop": true, "query_rewrite": true, "formalize_answer": true},
-			"query_rewrite":      {"stop": true, "rag_agent": true, "formalize_answer": true},
+			"rag_agent":          {"stop": true, "rag_agent": true, "formalize_answer": true},
 		}
 		for from, ends := range branches {
 			if err := g.AddBranch(from, compose.NewGraphBranch(func(context.Context, *AgenticState) (string, error) {
@@ -2730,7 +2956,7 @@ func (m delayedFormalizeModel) Complete(_ context.Context, _ []schema.Message, _
 // (agentic_rag_graph.py:1061) — after the formalization call — so that call is
 // not charged to the research budget. Arming on entry shortened every downstream
 // timeout by one LLM call, which is exactly enough to flip the
-// MinRoundHeadroomS guard near the boundary and skip a round Python would run.
+// canOpenRound guard near the boundary and skip a round Python would run.
 func TestFormalizeQuestionNodeDoesNotChargeTheBudget(t *testing.T) {
 	const delay = 300 * time.Millisecond
 	st := NewAgenticState("曹操是谁？", "", 3, []schema.Message{*schema.UserMessage("曹操是谁？")})
@@ -2796,75 +3022,12 @@ func TestRecordConsecutiveUnanswerableNoCacheIsNoOp(t *testing.T) {
 	(*RAGCache)(nil).NoteUnanswerable(true)
 }
 
-// TestRewriteContextShowsThePassageBehindAConfirmedMember pins the input side of
-// the rewrite round: what the rewriter is shown is the PASSAGE that carries each
-// confirmed name, not the first line of a stored chunk.
-//
-// The difference is the whole point of that round. The wording a text uses for the
-// relation (and the other names it mentions) lives in the middle of a passage, so
-// a first-line digest cannot carry it — and a rewrite that cannot see it can only
-// re-ask what was already asked.
-func TestRewriteContextShowsThePassageBehindAConfirmedMember(t *testing.T) {
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.KB = &runtime.Kbinfos{Chunks: []map[string]any{
-		{"chunk_id": "w1", "content": "荀正 引军来战，被关公一刀斩于马下。"},
-		{"chunk_id": "big", "content": "第一行与本题无关\n第二行才提到关公"},
-	}}
-	st.KB.RecordReachedTerm("荀正", "w1")
+// TestRewriteContextShowsThePassageBehindAConfirmedMember and
+// TestRewriteRoundCanStillAdmitOnARichPool used to live here: they pinned the input side of the
+// gap→query rewrite round (what the rewriter was shown, and that a rich pool did not stop it from
+// admitting its own retrieval). Both went with the node — with no machine writing the next round's
+// queries, there is no context to render and no rewrite round to admit anything.
 
-	ctx := renderResearchContext(st)
-	if !strings.Contains(ctx, "荀正") || !strings.Contains(ctx, "斩于马下") {
-		t.Errorf("rewrite context does not carry the passage behind the confirmed member:\n%s", ctx)
-	}
-	if strings.Contains(ctx, "第一行与本题无关") {
-		t.Errorf("rewrite context fell back to first-line digests although a confirmed member's passage was available:\n%s", ctx)
-	}
-	if !strings.Contains(ctx, "ALREADY confirmed") {
-		t.Errorf("the member section is not labelled:\n%s", ctx)
-	}
-}
-
-// TestRewriteRoundCanStillAdmitOnARichPool pins that a rewrite round on a RICH pool
-// still admits its own query.
-//
-// Sized against a ceiling, a pool past it left the round with room <= 0: it admitted
-// nothing, declared "retrieval saturated" and discarded the queries it had just built —
-// on exactly the rich rounds where more evidence was still arriving. The pool has no
-// ceiling now, so the only question left is whether the round's own retrieval lands.
-func TestRewriteRoundCanStillAdmitOnARichPool(t *testing.T) {
-	pool := make([]map[string]any, 0, 71)
-	for i := 0; i < 71; i++ {
-		pool = append(pool, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled"})
-	}
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.KB = &runtime.Kbinfos{Chunks: pool}
-	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"还有谁被关羽所杀"}}}
-	st.Deadline = time.Now().Add(60 * time.Second)
-
-	mdl := &scriptedModel{}
-	mdl.push(`{"queries": [{"query": "关羽 斩 名单 其余"}]}`)
-
-	queryRewriteNode(context.Background(), RAGTools{
-		Model:  mdl,
-		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-	}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.NoProgress {
-		t.Fatal("NoProgress = true on a pool of 71: with no ceiling a rewrite round always has somewhere to land")
-	}
-	if len(st.KB.Chunks) <= 71 {
-		t.Errorf("pool = %d, want the rewrite's own query admitted (the pool was 71 and has no ceiling)", len(st.KB.Chunks))
-	}
-}
-
-// TestRenderSlotRecordCarriesNoMachineFields pins the split between the record the
-// ANSWER is composed from and the draft the SCA reviews.
-//
-// The draft deliberately carries the machine fields that make verification
-// possible (strength, terminal type, evidence ids). Handing those to the answer
-// model as a "summary" is a different act with a different failure mode, and it
-// was measured: the composed answer quoted the bookkeeping verbatim
-// ("slot 1 [entity] … (strength=0.90) [terminal=state, evidence_ids=[…]]").
 func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
 	strong := 0.9
 	st := runtime.NewState([]runtime.Variable{
@@ -3734,5 +3897,100 @@ func TestRunSlotResearchPassRunsOneSession(t *testing.T) {
 	// record of what each session was asked (see RunSlotResearchPass).
 	if got := len(res.Attempted); got != 1 {
 		t.Fatalf("ledger rows = %d, want exactly one (one session per round)", got)
+	}
+}
+
+// The question's clock is DIVIDED, and these pin the division (see policy.go). The phases used to
+// carry a cap each — planner 45, prefetch 90, round 120, finale 60 — whose sum was 315s against a
+// 180s question, so whichever phase ran last was cut off by the wall: measured 2026-09-20, 5
+// sessions died at exactly 110s and 4 openings spent 90s with zero model calls, leaving the
+// research 30-90s of a 180s question.
+
+// TestTheOpeningShareIsBoundedAndInsideTheQuestion pins the opening's share: it has a ceiling (the
+// whole point), a floor (a question that is almost out of time still gets one decomposition), and
+// it is always smaller than the question.
+func TestTheOpeningShareIsBoundedAndInsideTheQuestion(t *testing.T) {
+	if got := openingShareS(TotalBudgetS); got != OpeningMaxS {
+		t.Errorf("openingShareS(%v) = %v, want the ceiling %v", TotalBudgetS, got, OpeningMaxS)
+	}
+	if got := openingShareS(2 * OpeningMinS); got != OpeningMinS {
+		t.Errorf("openingShareS(%v) = %v, want the floor %v", 2*OpeningMinS, got, OpeningMinS)
+	}
+	for _, remaining := range []float64{30, 60, 90, 120, 180} {
+		if got := openingShareS(remaining); got > remaining {
+			t.Errorf("openingShareS(%v) = %v, which is more than the question has left", remaining, got)
+		}
+	}
+}
+
+// TestTheFinaleKeepsItsShareAndTheResearchGetsWhatIsLeft pins the two shares that are always in
+// tension: the answer turn's floor (one slow call may not be raced by the wall) and the research
+// room the round is allowed to spend.
+func TestTheFinaleKeepsItsShareAndTheResearchGetsWhatIsLeft(t *testing.T) {
+	if got := finaleShareS(TotalBudgetS); got != 0.25*TotalBudgetS {
+		t.Errorf("finaleShareS(%v) = %v, want a quarter of the question", TotalBudgetS, got)
+	}
+	if got := finaleShareS(40); got != FinaleMinS {
+		t.Errorf("finaleShareS(40) = %v, want the floor %v (the answer call's own tail)", got, FinaleMinS)
+	}
+	// The research room is exactly the clock minus that share — no second reserve anywhere.
+	for _, remaining := range []float64{80, 120, 180} {
+		if got, want := researchRoomS(remaining), remaining-finaleShareS(remaining); got != want {
+			t.Errorf("researchRoomS(%v) = %v, want %v", remaining, got, want)
+		}
+	}
+}
+
+// TestARoundNeedsRoomForItselfAndTheFinale pins the ONE gate the router uses for time: a round is
+// opened only when the question can pay for the round AND for the answer that follows it.
+//
+// It replaced a bare headroom check that asked only whether a round could START — which is how a
+// second round was opened with less time left than the answer turn needs.
+func TestARoundNeedsRoomForItselfAndTheFinale(t *testing.T) {
+	if !canOpenRound(150) {
+		t.Error("canOpenRound(150) = false, want a round when a quarter of the question is left")
+	}
+	if canOpenRound(finaleShareS(80) + MinRoundS - 1) {
+		t.Error("canOpenRound opened a round that leaves the finale short of its share")
+	}
+	// A question that is nearly out of time has room for the answer and nothing else.
+	if canOpenRound(45) {
+		t.Error("canOpenRound(45) = true, want the answer's clock kept when that is all that is left")
+	}
+}
+
+// TestTheSharesFitInsideTheQuestionTogether pins the invariant the old per-node caps broke: opening
+// + finale, the two things every question pays, must fit inside the question with room for the
+// research between them.
+func TestTheSharesFitInsideTheQuestionTogether(t *testing.T) {
+	for _, remaining := range []float64{90, 120, 150, 180} {
+		opening, finale := openingShareS(remaining), finaleShareS(remaining)
+		if opening+finale >= remaining {
+			t.Errorf("at %vs left: opening %.0fs + finale %.0fs leaves no research room", remaining, opening, finale)
+		}
+		if researchRoomS(remaining) < MinRoundS {
+			t.Errorf("at %vs left: research room %.0fs is below the round minimum %.0fs", remaining, researchRoomS(remaining), MinRoundS)
+		}
+	}
+}
+
+// TestPrefetchSpendsWhatThePlannerLeftOfTheOpening pins the opening as ONE deadline rather than two
+// caps: the planner arms it, and the fan-out gets whatever the decomposition left of it — zero
+// (which nodeClock reports as "do not start") when the decomposition used all of it.
+func TestPrefetchSpendsWhatThePlannerLeftOfTheOpening(t *testing.T) {
+	st := NewAgenticState("q", "", 3, nil)
+	st.Deadline = time.Now().Add(TotalBudgetS * time.Second)
+
+	if got := st.openingLeftS(); got < OpeningMaxS-0.01 || got > OpeningMaxS {
+		t.Errorf("without a planner-set deadline the opening reports %v, want its own share %v", got, OpeningMaxS)
+	}
+	st.OpeningStarted = time.Now()
+	st.OpeningDeadline = st.OpeningStarted.Add(7 * time.Second)
+	if got := st.openingLeftS(); got < 6 || got > 7.5 {
+		t.Errorf("openingLeftS() = %v, want the ~7s left of the opening", got)
+	}
+	st.OpeningDeadline = st.OpeningStarted.Add(-time.Second)
+	if got := nodeClock(PrefetchTimeoutS, OpeningMinS, st.openingLeftS()); got != 0 {
+		t.Errorf("prefetch clock = %v after the opening was spent, want 0 (do not start)", got)
 	}
 }

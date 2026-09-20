@@ -298,34 +298,46 @@ func (m *failingModel) Complete(_ context.Context, _ []schema.Message, _ []ToolS
 	return nil, m.err
 }
 
-// TestRunActionNodeConvergesOnLLMError pins the convergence contract: a timed-out or
-// failed turn converges the session EMPTY (done, no new states, no found answer) so the
-// graph ends through the router and the run still returns the messages/evidence gathered so
-// far. Returning the error instead aborted the whole eino run, which RunActionSession
-// reports as a failed session and answers with an empty Result.
-func TestRunActionNodeConvergesOnLLMError(t *testing.T) {
+// TestRunActionNodeKeepsTheRecordOnAPromptFailure pins what a failed turn means: no more
+// SEARCHING, not the end of the session.
+//
+// It used to set Done and wipe NewStates — so one provider hiccup or slow call erased every patch
+// the session had written on earlier turns, and the round reported no work at all (its own comment
+// described the empty Result the entry point then returned). What the session still has is its
+// reserve and the answer turn that reserve exists for, so it goes there instead (see route), which
+// is also what the reference loops do: the paper stops the RETRIEVAL and demands an answer
+// (submit-now), WeKnora calls the model once more with ToolChoice "none".
+func TestRunActionNodeKeepsTheRecordOnAPromptFailure(t *testing.T) {
 	s := &SessionState{
 		Messages:     []schema.Message{*schema.UserMessage("q")},
 		Tools:        &Toolset{},
 		Model:        &failingModel{err: errors.New("provider down")},
-		DeadlineLeft: 30,
+		DeadlineLeft: 90,
 		ParentState:  State{State: []Variable{{ID: 0, Type: "aspect"}}},
+		// A patch written on an earlier turn: the failed turn must not take it away.
+		NewStates: []State{NewState([]Variable{{ID: 0, Type: "aspect", Candidate: strPtr("Lahore")}}, 0, nil)},
 	}
 	if err := s.runActionNode(context.Background()); err != nil {
-		t.Fatalf("runActionNode = %v; the session must converge instead of aborting the graph", err)
+		t.Fatalf("runActionNode = %v; the session must not abort the graph", err)
 	}
-	if !s.Done {
-		t.Error("Done = false; the session must converge so _route returns END")
+	if s.Done {
+		t.Error("Done = true; a failed turn stops the SEARCHING, it does not end the session")
 	}
-	if len(s.NewStates) != 0 || s.FoundAnswer != nil {
-		t.Errorf("converged session carried states/answer: %d / %v", len(s.NewStates), s.FoundAnswer)
+	if !s.ForceAnswer {
+		t.Error("ForceAnswer = false; the failed turn must send the session to its answer turn")
+	}
+	if len(s.NewStates) != 1 {
+		t.Errorf("NewStates = %d, want the patch the session had already written", len(s.NewStates))
+	}
+	if s.FoundAnswer != nil {
+		t.Errorf("FoundAnswer = %v; a failed turn answers nothing itself", s.FoundAnswer)
 	}
 	if s.Attempts != 1 {
 		t.Errorf("Attempts = %d, want 1 (the failed turn still counts)", s.Attempts)
 	}
-	// The session loop must terminate on the converged state rather than abort.
-	if err := s.sessionLoop(context.Background()); err != nil {
-		t.Fatalf("sessionLoop = %v; a converged session must end normally", err)
+	// The route must take it to the answer turn rather than end the session.
+	if got := s.route(); got != routeFinalize {
+		t.Fatalf("route after a failed turn = %v, want routeFinalize (the answer turn)", got)
 	}
 }
 
@@ -1117,10 +1129,12 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 	if got := prompts.Render(loader, "missing", "", nil); got != "" {
 		t.Errorf("unknown template with empty fallback = %q", got)
 	}
-	// Nil loader + known embedded name still resolves the canonical .md. (sca_select was the
-	// template here until the sufficiency review was removed; the rewriter is the surviving one.)
-	if got := prompts.Render(nil, "sca_query_rewrite", "", map[string]string{"question": "Q"}); !strings.Contains(got, "Q") {
-		t.Errorf("nil loader did not resolve embedded sca_query_rewrite: %q", got)
+	// Nil loader + a known embedded name still resolves the canonical .md. (sca_select was the
+	// template here until the sufficiency review was removed, then sca_query_rewrite until the
+	// rewriter was; the ACTION prompts are the surviving embedded set. action_set carries no
+	// placeholders, so the assertion is that it renders — not that a variable came back.)
+	if got := prompts.Render(nil, "action_set", "", nil); got == "" {
+		t.Error("nil loader did not resolve the embedded action_set template")
 	}
 	// Both {{k}} and {{ k }} are substituted (templates use the spaced form).
 	if got := prompts.Render(StringPromptLoader{"tpl": "a={{x}} b={{ y }}"}, "tpl", "",
@@ -1271,6 +1285,68 @@ func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 	}
 }
 
+// TestParseTerminalReadsTheAnswerWrittenBesideTheStatePatch pins the shape the finalize turn
+// ASKS FOR, and the reason it used to lose the answer.
+//
+// finalizeNode's salvage prompt ends with "Format: <state>{...}</state> followed by
+// <answer>your answer</answer> ... An answer is REQUIRED even when the state block is empty."
+// The parser used to look for <state> first and RETURN, so every session that obeyed the
+// protocol was recorded as having produced no answer: the round reported
+// collected_answer=false, and the run's real answer — written against passages the model had
+// read — was replaced by a composition call that had read none of them (measured 2026-09-20:
+// 7 of 21 rounds, 6 of them through the salvage path that shares this parser).
+//
+// A state block is bookkeeping and is applied either way; it cannot suppress the answer beside
+// it. Both blocks are read, in whichever order the model wrote them.
+func TestParseTerminalReadsTheAnswerWrittenBesideTheStatePatch(t *testing.T) {
+	parent := NewState([]Variable{{ID: 0, Type: "answer"}}, 0, nil)
+
+	// The finalize shape, state first: both the patch and the answer come back.
+	reply := `<state>{"new_states": [{"state": [{"id": 0, "candidate": "关羽", "candidate_strength": 0.9}]}]}</state>` +
+		"\n<answer>十二人：关羽 [ID:0]</answer>"
+	states, found, tt, payload := ParseTerminal(reply, parent)
+	if found == nil || *found != "十二人：关羽 [ID:0]" {
+		t.Fatalf("FoundAnswer = %v, want the prose answer beside the patch", found)
+	}
+	if tt == nil || *tt != "answer" {
+		t.Errorf("terminal type = %v, want answer (the answer is what decides the round)", tt)
+	}
+	if len(states) != 1 || states[0].State[0].Candidate == nil || *states[0].State[0].Candidate != "关羽" {
+		t.Errorf("branches = %+v, want the patch applied as well (bookkeeping is not dropped)", states)
+	}
+	if payload == nil {
+		t.Error("payload = nil, want the answer block's data")
+	}
+
+	// Same two blocks, answer written first: order in the reply must not matter.
+	states, found, tt, _ = ParseTerminal(
+		"<answer>关羽 [ID:0]</answer>\n<state>{\"new_states\": []}</state>", parent)
+	if found == nil || *found != "关羽 [ID:0]" || tt == nil || *tt != "answer" {
+		t.Errorf("answer-first reply: found=%v type=%v, want the answer", found, tt)
+	}
+	if len(states) != 0 {
+		t.Errorf("empty new_states: %d branch(es), want 0", len(states))
+	}
+
+	// A state block ALONE still reports a state terminal and no answer (unchanged).
+	_, found, tt, _ = ParseTerminal(`<state>{"new_states": []}</state>`, parent)
+	if found != nil || tt == nil || *tt != "state" {
+		t.Errorf("state-only reply: found=%v type=%v, want nil/state", found, tt)
+	}
+
+	// An answer alone is unchanged.
+	_, found, tt, _ = ParseTerminal("<answer>关羽</answer>", parent)
+	if found == nil || *found != "关羽" || tt == nil || *tt != "answer" {
+		t.Errorf("answer-only reply: found=%v type=%v, want 关羽/answer", found, tt)
+	}
+
+	// No terminal at all stays "nothing" — the session nudges and keeps working.
+	states, found, tt, _ = ParseTerminal("still thinking about it", parent)
+	if states != nil || found != nil || tt != nil {
+		t.Errorf("no terminal: states=%v found=%v type=%v, want all nil", states, found, tt)
+	}
+}
+
 // TestSnippetsPerQueryRisesWithModeAndFallsBack pins the per-query snippet cap.
 //
 // The cap decides how much of ONE query's candidate list the session reads, and
@@ -1335,50 +1411,145 @@ func TestRetrieveDescriptionCarriesTheEnumerationContract(t *testing.T) {
 	}
 }
 
-// TestTurnFloorIsPaidOnlyByASetSession pins the shape gate on the mode's turn floor.
+// TestParseUnresolvedReadsOnlyTheNamedBlock pins the signal the router reopens a round on.
 //
-// The deeper modes raised the floor for the enumeration path, and the floor is billed
-// to every turn of every session on the question, so a session with no batch to spend
-// those turns on must run on the value floor instead. The gate is the session's own
-// writing (or a parent table that declares a count/list), resolved per turn, so a
-// shape that declares itself later is not penalised.
-func TestTurnFloorIsPaidOnlyByASetSession(t *testing.T) {
-	ts := &Toolset{ThinkingMode: "high"}
-	if got := ResolveMode(ts).ActionMaxTurns; got <= valueTurnFloor {
-		t.Fatalf("mode high ActionMaxTurns = %d, want > %d (the floor this gate shares)", got, valueTurnFloor)
+// "Did the session answer?" and "is the answer finished?" are two facts, and the loop only had the
+// first. The second is taken from a block the model must write itself, because prose cannot be
+// tested for meaning: a part named as still open reopens the question (see routeResearch), an empty
+// block ends it, and no block at all means the answer is final.
+func TestParseUnresolvedReadsOnlyTheNamedBlock(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply string
+		want  string
+	}{
+		{"named part",
+			"<answer>The writer is Tow Ubukata [ID:0]</answer>\n<unresolved>the population figure for Gifu Prefecture</unresolved>",
+			"the population figure for Gifu Prefecture"},
+		{"empty block", "<answer>a [ID:0]</answer><unresolved></unresolved>", ""},
+		{"whitespace block", "<answer>a</answer><unresolved>   \n  </unresolved>", ""},
+		{"no block", "<answer>a</answer>", ""},
+		{"prose alone", "I could not find the population anywhere.", ""},
+		{"trimmed", "<unresolved>  two open parts  </unresolved>", "two open parts"},
+		{"block before the answer", "<unresolved>Gifu's population</unresolved><answer>a</answer>", "Gifu's population"},
 	}
-	modeFloor := ResolveMode(ts).ActionMaxTurns
+	for _, tc := range cases {
+		if got := ParseUnresolved(tc.reply); got != tc.want {
+			t.Errorf("%s: ParseUnresolved = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
 
-	// A value session: no batch written, and the table asks for a value.
+// TestTheSessionsClockAndToolBudgetEndBeforeItsContext pins the guard that keeps the answer call
+// from losing its race with the context deadline.
+//
+// The session's clock and its context deadline used to be the same number, so every budget derived
+// from the clock could consume exactly up to the wall: a tool call or the answer call would return
+// at the boundary, the context would fire, and the round was reported as cut with the answer it had
+// just written never parsed (measured 2026-09-20, 20:39: 4 of 20 rounds, one right after
+// `turn timed out after 62s; … asking for the answer` had already routed it to the answer turn).
+func TestTheSessionsClockAndToolBudgetEndBeforeItsContext(t *testing.T) {
+	// The clock is strictly inside the budget the context is armed with...
+	for _, budget := range []float64{180, 60, 25} {
+		if got := sessionClockFor(budget); got >= budget {
+			t.Errorf("sessionClockFor(%v) = %v, want it inside the context deadline", budget, got)
+		}
+	}
+	// ... and never negative, however small the budget.
+	if got := sessionClockFor(1); got != minSessionClockS {
+		t.Errorf("sessionClockFor(1) = %v, want the floor %v", got, minSessionClockS)
+	}
+	// A tool call may spend the SEARCHING clock and never the answering reserve.
+	if got := toolWallS(100).Seconds(); got > 100-answerReserveS {
+		t.Errorf("tool wall = %vs for a 100s clock, want at most %vs (the reserve is the answer's)",
+			got, 100-answerReserveS)
+	}
+	if got := toolWallS(1).Seconds(); got < 5 {
+		t.Errorf("tool wall = %vs with almost no clock, want the 5s floor", got)
+	}
+}
+
+// TestSessionResultCarriesWhatACutSessionRead pins the mapping BOTH session exits use.
+//
+// A session cut by its clock used to return an empty Result, which threw away every state patch it
+// had written, every passage it had read, and its answer if it had one: 5 of 19 sessions in one
+// FRAMES run (measured 2026-09-20, 20:15) were cut, and each of those rounds then had no answer AND
+// a thin citation registry, so the composition that replaced it answered from whatever ranked
+// first. A cut is how a session that spends its clock ends; it is not a reason to discard research.
+func TestSessionResultCarriesWhatACutSessionRead(t *testing.T) {
+	st := &SessionState{
+		Messages:     []schema.Message{*schema.UserMessage("q")},
+		NewStates:    []State{NewState([]Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}, 0, nil)},
+		FoundAnswer:  strPtr("1858"),
+		EvidenceRefs: []string{"c1", "c2"},
+		Unresolved:   "  the Crown's takeover year  ",
+		TerminalType: strPtr("answer"),
+	}
+	res := sessionResult(st)
+	if len(res.NewStates) != 1 {
+		t.Errorf("NewStates = %d, want the patch the session wrote before the cut", len(res.NewStates))
+	}
+	if res.FoundAnswer == nil || *res.FoundAnswer != "1858" {
+		t.Errorf("FoundAnswer = %v, want the answer it had reached", res.FoundAnswer)
+	}
+	if len(res.EvidenceRefs) != 2 {
+		t.Errorf("EvidenceRefs = %v, want the passages it read", res.EvidenceRefs)
+	}
+	if res.Unresolved != "the Crown's takeover year" {
+		t.Errorf("Unresolved = %q, want the trimmed open part", res.Unresolved)
+	}
+	if res.TerminalType == nil || *res.TerminalType != "answer" {
+		t.Errorf("TerminalType = %v, want the terminal it reached", res.TerminalType)
+	}
+	// The registry is copied, not aliased: nothing that happens to the session afterwards may
+	// rewrite what the round was handed.
+	st.EvidenceRefs[0] = "mutated"
+	if res.EvidenceRefs[0] != "c1" {
+		t.Error("EvidenceRefs is aliased to the session's own slice")
+	}
+}
+
+// TestEverySessionGetsTheModesTurnFloor pins the removal of the shape gate on the turn floor.
+//
+// The floor used to be halved for a session that was not "enumerating" (a caller-written batch of
+// terms in one query), on the argument that a question which is not assembling a set has nothing
+// to spend those turns on. The questions that come back empty are multi-hop VALUE questions, and
+// their sessions were stopped by their TURN count while their clock was still full (measured
+// 2026-09-20: "turn floor 8 → 4" 15 times in one 20-question FRAMES run, 8 rounds finalized by the
+// salvage prompt, and "167 seconds of research budget left" beside "TOOL BUDGET EXHAUSTED"; the
+// four questions that stayed at zero — Quincy's mayors, Gifu's population, AP's law, Lahore in
+// 1858 — each hit that wall). The constraint that binds is the clock, so every session runs on the
+// mode's own count and the run cap stays the only hard turn ceiling.
+func TestEverySessionGetsTheModesTurnFloor(t *testing.T) {
+	ts := &Toolset{ThinkingMode: "high"}
+	modeFloor := ResolveMode(ts).ActionMaxTurns
+	if modeFloor <= valueTurnFloor {
+		t.Fatalf("mode high ActionMaxTurns = %d, want > %d (so the test can see the difference)",
+			modeFloor, valueTurnFloor)
+	}
+
+	// A value session: no batch written, and the table asks for a value. Same floor as a set.
 	value := &SessionState{
 		Tools:        ts,
 		Direction:    "in what year did the Sikh Empire's capital come under the British Crown",
 		ParentState:  State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1849")}}},
 		DeadlineLeft: 70,
 	}
-	if got := value.actionMaxTurns(); got != valueTurnFloor {
-		t.Errorf("value session turn floor = %d, want %d", got, valueTurnFloor)
+	if got := value.actionMaxTurns(); got != modeFloor {
+		t.Errorf("value session turn floor = %d, want the mode's %d", got, modeFloor)
 	}
 
-	// The caller's own batch is the tell that survives contact: the session is now
-	// enumerating, and it pays the mode's floor for the turns it spends on it.
+	// A session that wrote a batch pays the same floor (the enumeration extras are elsewhere: the
+	// SET method and the pool excerpt, both still gated).
 	value.SearchQueries = []string{"华雄|颜良|文丑"}
 	if got := value.actionMaxTurns(); got != modeFloor {
 		t.Errorf("session that wrote a batch turn floor = %d, want %d", got, modeFloor)
 	}
 
-	// A session that WROTE A BATCH needs the floor from its first turn: it may enumerate one
-	// probe per member and never write a two-name batch again (see wroteBatch). What it is sent
-	// on — a count-typed table — is not the tell.
-	declared := &SessionState{
-		Tools:         ts,
-		Direction:     "how many officers did Guan Yu kill",
-		SearchQueries: []string{"关羽 斩 杀 颜良 文丑"},
-		ParentState:   State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("16")}}},
-		DeadlineLeft:  70,
-	}
-	if got := declared.actionMaxTurns(); got != modeFloor {
-		t.Errorf("count direction turn floor = %d, want %d", got, modeFloor)
+	// A mode that declares no count at all still falls back to the value floor.
+	blank := &SessionState{Direction: "q", DeadlineLeft: 70}
+	if got := blank.actionMaxTurns(); got != valueTurnFloor {
+		t.Errorf("mode with no count turn floor = %d, want the fallback %d", got, valueTurnFloor)
 	}
 }
 
@@ -1424,5 +1595,63 @@ func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
 	}
 	if evidenceDigestChars < 1200 {
 		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries", evidenceDigestChars)
+	}
+}
+
+// TestReadPassagesAreMarkedReadAndSearchedOnesPreview pins the read/preview distinction: the same
+// passage is "read" once a document page delivered it, and "preview" while all the run has is a
+// search snippet.
+//
+// The two arrive in one shape, and a model that cannot tell them apart answers from a ranked guess
+// as if it were the document's text. Nothing else in the run knows the difference once both are in
+// the pool, so the label is attached where the result is rendered.
+func TestReadPassagesAreMarkedReadAndSearchedOnesPreview(t *testing.T) {
+	kb := &Kbinfos{}
+	kb.NoteChunksRead("doc-a", 0, []string{"c-read"}, true)
+
+	chunks := []any{
+		map[string]any{"id": "c-read", "content": "the page"},
+		map[string]any{"id": "c-only-previewed", "content": "a snippet"},
+	}
+	markReadState(kb, chunks)
+
+	if got := chunks[0].(map[string]any)["seen"]; got != "read" {
+		t.Errorf("a chunk delivered by list_chunks is marked %v, want read", got)
+	}
+	if got := chunks[1].(map[string]any)["seen"]; got != "preview" {
+		t.Errorf("a chunk only ever searched is marked %v, want preview", got)
+	}
+}
+
+// TestTheReadLedgerCountsDistinctChunksPerDocument pins what the ledger's numbers mean: PAGES is
+// how many list_chunks calls a document was read in, CHUNKS is how many DISTINCT chunks those pages
+// delivered, and the last page's offset and "continues" flag are what a session needs to know
+// whether reading on is worth a call.
+//
+// An overlapping page (the model re-reading from an earlier offset) must not inflate the chunk
+// count: the number says how much of the document the run actually has.
+func TestTheReadLedgerCountsDistinctChunksPerDocument(t *testing.T) {
+	kb := &Kbinfos{}
+	kb.NoteChunksRead("doc-a", 0, []string{"c1", "c2"}, true)
+	kb.NoteChunksRead("doc-a", 30, []string{"c2", "c3"}, false)
+
+	progress := kb.ReadProgress()
+	if len(progress) != 1 {
+		t.Fatalf("ReadProgress = %v, want one line", progress)
+	}
+	line := progress[0]
+	for _, want := range []string{"doc-a", "2 page(s)", "3 chunk(s) read", "offset 30"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("ReadProgress line = %q, want %q", line, want)
+		}
+	}
+	if strings.Contains(line, "more behind") {
+		t.Errorf("ReadProgress line = %q, want no 'more behind' after the page that ended the document", line)
+	}
+	if kb.WasRead("c1") != true || kb.WasRead("c3") != true || kb.WasRead("c9") != false {
+		t.Errorf("WasRead = %v/%v/%v, want true/true/false", kb.WasRead("c1"), kb.WasRead("c3"), kb.WasRead("c9"))
+	}
+	if kb.ReadProgress() == nil || (&Kbinfos{}).ReadProgress() != nil {
+		t.Error("an empty pool must report no read progress, and a nil pool must not panic")
 	}
 }

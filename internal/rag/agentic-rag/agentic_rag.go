@@ -36,6 +36,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -123,10 +124,6 @@ type RAGTools struct {
 	Prompts runtime.PromptLoader
 	// Expand runs compiled-structure expansion. Optional.
 	Expand runtime.CompiledExpander
-	// SCAPrompts overrides Prompts for the sufficient-context review.
-	SCAPrompts runtime.PromptLoader
-	// RewritePrompts overrides Prompts for the gap→query rewrite call.
-	RewritePrompts runtime.PromptLoader
 	// KB is the in-flight retrieval accumulation.
 	KB *runtime.Kbinfos
 	// Logger is optional; nil uses the default logger.
@@ -515,6 +512,17 @@ type RunResponse struct {
 	// is a report of what happened rather than a judgement. Rag() appends the trailing "STOP" vs
 	// "call rag again" sentence based on the consecutive-unanswerable count.
 	SCAFeedback string
+	// ResearchStatus is that note, ready to print: SCAFeedback plus the trailing "STOP" vs "call
+	// rag again" sentence. It is MODEL-FACING — it belongs in the `rag` tool's RESULT, so an outer
+	// loop can decide whether to re-ask — and it is NOT part of the answer.
+	//
+	// It used to be concatenated onto Answer, which meant a run whose tool result IS the final
+	// answer handed the note to the user verbatim, and the answer cache stored it too (measured
+	// 2026-09-20: an answer ending with "[Research status] this round did not settle the question
+	// (66 passages read). If these gaps are material, call rag again with a question focused on
+	// them." — a self-contradicting answer, judged as such). Nothing the user sees reads this
+	// field; only the tool-result builder does (see outerReactSession.ToolCall).
+	ResearchStatus string
 	// CollectedAnswer is the research draft (SCA-reviewed) produced by the
 	// agentic loop. It feeds the final composition; prefer Answer for display.
 	CollectedAnswer string
@@ -1260,16 +1268,16 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 		compose(ctx, false, false, "")
 	}
 
-	// A "[Research status]" note is appended for EVERY non-SUFFICIENT verdict. When
-	// research has stayed unsatisfying for two
-	// consecutive turns it tells the outer agent to STOP calling rag again;
-	// otherwise it invites a focused re-ask. The counter lives on the
-	// conversation-scoped cache; it was incremented back in NewAgenticLoop once
-	// the SCA verdict was known. Skip the naive/sufficient paths: an empty
-	// answer or a SUFFICIENT verdict has nothing to annotate.
+	// A "[Research status]" note is produced for every round that did NOT settle the question:
+	// it tells the outer agent to STOP calling rag again after two consecutive unanswered
+	// rounds, and otherwise invites a focused re-ask.
+	//
+	// It goes to resp.ResearchStatus, NOT to resp.Answer. Appending it to the answer put the
+	// runtime's bookkeeping in the user's text (and in the answer cache this block writes
+	// below, so the note then travelled into a later question's answer).
 	if t := researchStatusTrailer(deps.Cache, resp); t != "" {
 		// The period closes the hint clause before the trailer sentence.
-		resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
+		resp.ResearchStatus = "\n\n[Research status] " + resp.SCAFeedback + "." + t
 	}
 
 	// Cache the freshly produced answer for later near-identical questions, and
@@ -1338,6 +1346,45 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		// in the rag terminal tool (the inner compose is text-only).
 		UserImages: req.Images,
 	}
+	// The session that read the evidence writes the answer (see the design's R2), and its text is
+	// the answer — so it is taken HERE, before the streaming/one-shot fork, because this funnel is
+	// the only code both paths share.
+	//
+	// The check used to live inside ComposeAnswerWith alone, which production never reaches: with
+	// an AnswerSink the run streams (ComposeAnswerStream) and returns. Measured 2026-09-20: 15 of
+	// 18 answered requests had a session answer, and every one of them was replaced by a compose
+	// call that had not read the passages — the answers then cited the six blocks that call
+	// renders while the pool held up to 213 passages, and 6 questions came back "the evidence does
+	// not contain it".
+	if ans, ok := sessionAnswer(kb, false); ok {
+		useSessionAnswer(kb, resp, ans)
+		if partialAnswer {
+			resp.Partial = true
+		}
+		// Deliver it through the sink so a streaming client still receives the answer the same
+		// way it receives a composed one (in one piece: the session's text is already complete).
+		if deps.AnswerSink != nil {
+			deps.AnswerSink.reset()
+			deps.AnswerSink.deliver(ans, false)
+		}
+		log := logger
+		if log == nil {
+			log = _LOG
+		}
+		log.Printf("[Agentic RAG] Using the answer the research session wrote (%d character(s)); %d passage(s) in the citation registry.",
+			utf8.RuneCountInString(ans), len(kb.CiteChunkIDs))
+		return
+	}
+	if why := sessionAnswerBlocked(kb, false); why != "" {
+		// A written answer that is not used must say so, and say why: this silence is what hid the
+		// fact that 20 of 20 rounds had an answer while the compose still ran every time.
+		log := logger
+		if log == nil {
+			log = _LOG
+		}
+		log.Printf("[Agentic RAG] the session's answer will not stand (%s); composing instead.", why)
+	}
+
 	// Stream the answer when the model and the caller both support it, so the
 	// user sees text while it is produced instead of only at the end.
 	if deps.AnswerSink != nil {
@@ -2033,15 +2080,20 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		if !composed {
 			composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger, resp.Partial, true, "")
 		}
-		// A "[Research status]" note is appended to the TOOL RESULT for every
-		// non-SUFFICIENT verdict, so the outer model can decide whether to re-run `rag` from
-		// the reported gaps. It does NOT change the streamed answer (the compose already
-		// streamed); after two consecutive unsatisfying rounds it tells the outer agent to
-		// STOP.
+		// The "[Research status]" note rides on the TOOL RESULT (below), so the outer model can
+		// decide whether to re-run `rag` from the reported gaps — and after two consecutive
+		// unsatisfying rounds it tells that model to STOP.
+		//
+		// It is deliberately NOT part of resp.Answer. This branch used to append it there, and
+		// this branch is the harness path: when the `rag` call is what ends the loop, the tool
+		// result IS the final answer, so the runtime's bookkeeping reached the user verbatim
+		// (measured 2026-09-20: "[Research status] this round did not settle the question (66
+		// passages read). If these gaps are material, call rag again with a question focused on
+		// them." inside an answer the reviewer then called self-contradicting).
 		if t := researchStatusTrailer(s.deps.Cache, resp); t != "" {
 			// Same fold as Rag's direct path: the period closes the hint
 			// clause before the trailer sentence.
-			resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
+			resp.ResearchStatus = "\n\n[Research status] " + resp.SCAFeedback + "." + t
 		}
 		s.publish(resp, kb)
 		// Close the "[Function tool] Running the rag tool with: …" line. The
@@ -2066,8 +2118,12 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		// Waiters replay this exact answer; publish already ran once above, so
 		// the evidence pool is not unioned twice and selectEvidence keeps a
 		// single unambiguous call record.
-		flight.answer = resp.Answer
-		return resp.Answer, nil
+		//
+		// The status note rides the TOOL RESULT and not the answer (see above): it is the outer
+		// model that has to act on it, while `publish` already handed the answer on.
+		toolResult := resp.Answer + resp.ResearchStatus
+		flight.answer = toolResult
+		return toolResult, nil
 	case "summarize_document":
 		docID, _ := arguments["doc_id"].(string)
 		if docID == "" {

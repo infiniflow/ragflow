@@ -29,7 +29,6 @@ func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 		"action_run",
 		"action_set",
 		"action_initialize_state",
-		"sca_query_rewrite",
 	}
 	for _, name := range names {
 		got, err := (EmbeddedPromptLoader{}).Load(name)
@@ -50,36 +49,6 @@ func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 func TestEmbeddedLoaderMissingName(t *testing.T) {
 	if _, err := (EmbeddedPromptLoader{}).Load("no_such_template"); err == nil {
 		t.Fatal("Load(no_such_template) succeeded, want error")
-	}
-}
-
-// TestRenderPromptNilLoaderQueryRewriteCanonical is the rewrite-side twin:
-// nil loader must resolve the full embedded sca_query_rewrite.md, not the
-// condensed constant.
-
-// TestRenderPromptNilLoaderQueryRewriteCanonical is the rewrite-side twin:
-// nil loader must resolve the full embedded sca_query_rewrite.md, not the
-// condensed constant.
-func TestRenderPromptNilLoaderQueryRewriteCanonical(t *testing.T) {
-	vars := map[string]string{
-		"question":         "Q?",
-		"gaps":             "G",
-		"bridge_values":    "B",
-		"research_context": "R",
-	}
-	got := Render(nil, "sca_query_rewrite", "", vars)
-
-	// Rule 1 wording exists only in the canonical template.
-	if !strings.Contains(got, "The query must name the specific missing entity") {
-		t.Errorf("canonical sca_query_rewrite render not used; got:\n%s", got)
-	}
-	for _, frag := range []string{"Q?", "G", "B", "R"} {
-		if !strings.Contains(got, frag) {
-			t.Errorf("canonical sca_query_rewrite render missing %q", frag)
-		}
-	}
-	if strings.Contains(got, "{{") {
-		t.Errorf("render left an unresolved placeholder: %q", got)
 	}
 }
 

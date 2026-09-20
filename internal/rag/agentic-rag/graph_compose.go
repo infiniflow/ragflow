@@ -297,6 +297,68 @@ func finalizeAnnounced(ctx context.Context) bool {
 	return v
 }
 
+// sessionAnswer returns the answer the RESEARCH SESSION wrote, when it is usable: the session
+// that read the passages is the answerer (see the design's R2), so its text IS the answer.
+//
+// It exists as its own function because there are TWO composition entry points — the streaming
+// one (ComposeAnswerStream) and the one-shot one (ComposeAnswerWith) — and the check used to
+// live in only one of them. That is how 15 of 18 answered requests had their session answer
+// thrown away: production takes the streaming path (deps.AnswerSink != nil), which had no such
+// branch, so the run's real answer — written against passages the model had read — was replaced
+// by a composition call that had read none of them, and every citation was then decided by the
+// handful of blocks that call happens to render (measured 2026-09-20: rendered_blocks=6 while
+// the pool held up to 213 passages). This helper is consulted by the CALLER, before it picks a
+// path, so both paths get it.
+//
+// The gate is the POOL, not the caller's empty_result flag: that flag is the compose prompt's
+// no-evidence HEDGE, and the graph sets it TRUE by construction on every round (see the note at
+// the formalize_answer node), so gating on it suppressed this answer everywhere — the fix above
+// still logged nothing while 20 of 20 rounds wrote an answer (measured 2026-09-20, 19:07 run:
+// "Using the answer the research session wrote" 0, compose ran 22 times). A session answer
+// cannot exist without evidence anyway: the registry it cites is built from the passages it was
+// shown, so `len(kb.Chunks) == 0` is exactly the case where it must not stand.
+//
+// Returning the text is not enough: the caller must also publish the session's own registry as
+// the citation list (see useSessionAnswer), because the [ID:n] markers the session wrote index
+// into the numbers it was shown.
+func sessionAnswer(kb *runtime.Kbinfos, abstain bool) (string, bool) {
+	if kb == nil || abstain || len(kb.Chunks) == 0 {
+		return "", false
+	}
+	ans := strings.TrimSpace(kb.SessionAnswer)
+	if ans == "" {
+		return "", false
+	}
+	return ans, true
+}
+
+// sessionAnswerBlocked says WHY a written session answer is not being used, for the log. Empty
+// means "there was no session answer to use".
+func sessionAnswerBlocked(kb *runtime.Kbinfos, abstain bool) string {
+	if kb == nil || strings.TrimSpace(kb.SessionAnswer) == "" {
+		return ""
+	}
+	switch {
+	case abstain:
+		return "the run abstained"
+	case len(kb.Chunks) == 0:
+		return "the evidence pool is empty"
+	}
+	return ""
+}
+
+// useSessionAnswer installs the session's answer and its evidence registry on the pool and the
+// response: kb.CiteChunkIDs is what the chat pipeline resolves the answer's [ID:n] markers
+// against, so it must be the registry the session numbered against, verbatim.
+func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
+	if kb != nil {
+		kb.CiteChunkIDs = append([]string(nil), kb.SessionEvidenceRefs...)
+	}
+	if resp != nil {
+		resp.Answer = ans
+	}
+}
+
 func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos, question string, partial, abstain, emptyResult bool) AnswerResult {
 	logger := deps.Logger
 	if logger == nil {
@@ -312,14 +374,17 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	// the passages, and it would have to re-derive — by similarity, after the fact — the [ID:n]
 	// markers the session wrote against the ref numbers it was actually shown. The registry the
 	// session built is handed over instead, so its own citations resolve verbatim.
-	if kb != nil {
-		if ans := strings.TrimSpace(kb.SessionAnswer); ans != "" && !abstain && !emptyResult && len(chunks) > 0 {
-			kb.CiteChunkIDs = append([]string(nil), kb.SessionEvidenceRefs...)
-			step(ctx, logger, "Composing the answer",
-				"Using the answer the research session wrote (%d character(s)); %s in the citation registry.",
-				utf8.RuneCountInString(ans), runtime.CountOf(len(kb.CiteChunkIDs), "passage"))
-			return AnswerResult{Answer: ans}
-		}
+	if ans, ok := sessionAnswer(kb, abstain); ok {
+		useSessionAnswer(kb, nil, ans)
+		step(ctx, logger, "Composing the answer",
+			"Using the answer the research session wrote (%d character(s)); %s in the citation registry.",
+			utf8.RuneCountInString(ans), runtime.CountOf(len(kb.CiteChunkIDs), "passage"))
+		return AnswerResult{Answer: ans}
+	}
+	if why := sessionAnswerBlocked(kb, abstain); why != "" {
+		// Silence here is what hid the two bugs above: a written answer that is not used must say
+		// so, and say why, on the one line a reader has.
+		logger.Printf("[Composing the answer] the session's answer will not stand (%s); composing instead.", why)
 	}
 
 	started := time.Now()

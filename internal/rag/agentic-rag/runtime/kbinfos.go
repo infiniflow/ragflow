@@ -19,6 +19,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -104,6 +105,23 @@ type Kbinfos struct {
 	// way round. Nothing takes mu while holding ledgerMu, and the record methods
 	// that run inside an admit batch (see Admit) are the only place the two nest.
 	ledgerMu sync.Mutex
+	// readChunks is the READ ledger: the chunks the run has actually READ (deep-read through
+	// list_chunks), as opposed to the ones it has only been SHOWN as a search snippet.
+	//
+	// The distinction is the difference between a preview and evidence, and it is the model's to
+	// act on — a search result is a ranked guess about where the answer might be, and a document
+	// page is what that document says. Nothing else in the run can tell them apart once both are
+	// in the pool, which is why the pool holds the record: the tool result for every later call
+	// marks each passage with which of the two it is (see markReadState), and the session's seed
+	// reports how far into each document the run has read.
+	//
+	// Guarded by mu, like Chunks: the sessions of a round run concurrently, and this is written
+	// from inside a tool call and read while a tool result is being rendered.
+	readChunks map[string]bool
+	// docRead is the per-document progress behind readChunks: how many pages of a document have
+	// been delivered, how many distinct chunks, where the last page started, and whether the last
+	// page said the document continues.
+	docRead map[string]*DocRead
 	// Memory is the lossless store of raw retrieved chunks backing the (lossy)
 	// Chunks list that feeds the LLM; the memory add/grep helpers maintain it.
 	Memory []map[string]any
@@ -560,6 +578,99 @@ func (k *Kbinfos) RecordProbedAbsent(term string) {
 
 // probedAbsentMax bounds ProbedAbsent (see RecordProbedAbsent).
 const probedAbsentMax = 16
+
+// DocRead is how far into ONE document the run has read (see Kbinfos.readChunks).
+type DocRead struct {
+	// Pages is how many list_chunks pages this document has been read in.
+	Pages int
+	// Chunks is how many DISTINCT chunks of it have been read.
+	Chunks int
+	// LastOffset is where the last page started.
+	LastOffset int
+	// Continues says the last page reported more of the document behind it. False means either
+	// the document ended or no page has said it continues.
+	Continues bool
+}
+
+// NoteChunksRead records a deep read: the page a list_chunks call delivered, and whether the
+// document continues behind it. Called by the tool, not by the model — the model's part is that it
+// ASKED for the page.
+func (k *Kbinfos) NoteChunksRead(docID string, offset int, ids []string, continues bool) {
+	if k == nil || len(ids) == 0 {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.readChunks == nil {
+		k.readChunks = map[string]bool{}
+	}
+	if k.docRead == nil {
+		k.docRead = map[string]*DocRead{}
+	}
+	added := 0
+	for _, id := range ids {
+		if id == "" || k.readChunks[id] {
+			continue
+		}
+		k.readChunks[id] = true
+		added++
+	}
+	if docID == "" {
+		return
+	}
+	d := k.docRead[docID]
+	if d == nil {
+		d = &DocRead{}
+		k.docRead[docID] = d
+	}
+	d.Pages++
+	d.Chunks += added
+	d.LastOffset = offset
+	d.Continues = continues
+}
+
+// WasRead reports whether the run has READ this chunk (as opposed to only having been shown it as
+// a search snippet).
+func (k *Kbinfos) WasRead(id string) bool {
+	if k == nil || id == "" {
+		return false
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.readChunks[id]
+}
+
+// ReadProgress renders what the run has read, one document per line, for the session's seed and the
+// tool results: "doc id — 2 page(s), 41 chunk(s) read, from offset 30, more behind it".
+//
+// Sorted by document id so the seed is stable: an unordered map in a prompt changes the prompt (and
+// with it the cache and the diff) on every run.
+func (k *Kbinfos) ReadProgress() []string {
+	if k == nil {
+		return nil
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if len(k.docRead) == 0 {
+		return nil
+	}
+	docs := make([]string, 0, len(k.docRead))
+	for docID := range k.docRead {
+		docs = append(docs, docID)
+	}
+	sort.Strings(docs)
+	out := make([]string, 0, len(docs))
+	for _, docID := range docs {
+		d := k.docRead[docID]
+		more := ""
+		if d.Continues {
+			more = ", more behind it"
+		}
+		out = append(out, fmt.Sprintf("%s — %d page(s), %d chunk(s) read, last page from offset %d%s",
+			docID, d.Pages, d.Chunks, d.LastOffset, more))
+	}
+	return out
+}
 
 // Add appends c unless the LIVE pool already holds it, reporting whether it appended —
 // i.e. whether the chunk was new to the shared pool.

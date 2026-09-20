@@ -19,11 +19,9 @@ package agentic_rag
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/agentic-rag/slots"
 )
@@ -250,232 +248,14 @@ func BuildSlotTable(ctx context.Context, deps runtime.SessionDeps, question stri
 	return root, firstQueries
 }
 
-// BatchFillSlots: answer several
-// unresolved slots in ONE call when their evidence overlaps.
+// The batched slot-fill pass used to live here: it clustered the slots that had retrieved
+// overlapping evidence and answered them in ONE generation call.
 //
-// Pure efficiency: neither the slot structure nor the evidence semantics
-// change — only the number of generation calls made over the same passages.
-//
-// Best-effort inside: a missing model, a failed call, or an unparsable reply skips that
-// cluster and the remaining clusters still run.
-func BatchFillSlots(ctx context.Context, deps runtime.SessionDeps, slotTable *runtime.State, slotEvidence map[string]SlotEvidence) int {
-	// Unresolved slots only, with slot_by_id over them.
-	unresolvedN := 0
-	slotByID := map[int]*runtime.Variable{}
-	evIDs := map[int][]string{} // ordered evidence ids, first-seen order
-	evSet := map[int]map[string]bool{}
-	for i := range slotTable.State {
-		v := &slotTable.State[i]
-		if v.Filled() {
-			continue
-		}
-		unresolvedN++
-		slotByID[v.ID] = v
-		// evidence ids recorded for this slot by its session,
-		// keyed by str(slot id), blanks dropped.
-		ids := map[string]bool{}
-		var ordered []string
-		for _, id := range slotEvidence[fmt.Sprint(v.ID)].EvidenceIDs {
-			if id == "" || ids[id] {
-				continue
-			}
-			ids[id] = true
-			ordered = append(ordered, id)
-		}
-		if len(ordered) > 0 {
-			evIDs[v.ID] = ordered
-			evSet[v.ID] = ids
-		}
-	}
-	if len(evSet) < 2 {
-		// Diagnostics: batching needs TWO slots that are
-		// both unresolved AND carrying evidence. Log why it did not happen,
-		// otherwise a never-firing path is indistinguishable from a working one.
-		_LOG.Printf("[SlotResearch] batching skipped: unresolved=%d with_evidence=%d", unresolvedN, len(evSet))
-		return 0
-	}
-
-	ids := make([]int, 0, len(evSet))
-	for id := range evSet {
-		ids = append(ids, id)
-	}
-	// The id set has no order of its own, so sort first: the clustering below is
-	// deterministic across runs only because this order is fixed.
-	sort.Ints(ids)
-
-	// sim: Jaccard over evidence-id sets.
-	sim := func(a, b int) float64 {
-		inter := intersectionSize(evSet[a], evSet[b])
-		union := len(evSet[a]) + len(evSet[b]) - inter
-		if union == 0 {
-			return 0.0
-		}
-		return float64(inter) / float64(union)
-	}
-
-	// Largest-incompatible-first (APT-RAG,): place the least
-	// compatible slot first, so it is not left without a cluster at the end.
-	// Counts are precomputed: the sort key is fixed before sorting.
-	incompatible := make(map[int]int, len(ids))
-	for _, i := range ids {
-		n := 0
-		for _, j := range ids {
-			if j != i && sim(i, j) < EvidenceBatchMinSim {
-				n++
-			}
-		}
-		incompatible[i] = n
-	}
-	order := append([]int(nil), ids...)
-	sort.SliceStable(order, func(x, y int) bool { return incompatible[order[x]] > incompatible[order[y]] })
-
-	// Greedy clustering（）: a slot joins the first cluster
-	// that is under the size cap AND shares ≥MIN_SHARED ids AND ≥MIN_SIM with
-	// EVERY member; otherwise it starts its own cluster.
-	clusters := [][]int{}
-	for _, i := range order {
-		placed := false
-		for ci := range clusters {
-			cl := clusters[ci]
-			if len(cl) >= EvidenceBatchMaxSlots {
-				continue
-			}
-			compatible := true
-			for _, j := range cl {
-				if intersectionSize(evSet[i], evSet[j]) < EvidenceBatchMinShared || sim(i, j) < EvidenceBatchMinSim {
-					compatible = false
-					break
-				}
-			}
-			if compatible {
-				clusters[ci] = append(cl, i)
-				placed = true
-				break
-			}
-		}
-		if !placed {
-			clusters = append(clusters, []int{i})
-		}
-	}
-
-	// by_chunk_id（）over the whole pool.
-	byChunkID := map[string]map[string]any{}
-	if deps.KB != nil {
-		for _, c := range deps.KB.Chunks {
-			if cid := runtime.ChunkIDOf(c); cid != "" {
-				byChunkID[cid] = c
-			}
-		}
-	}
-
-	filled := 0
-	for _, cl := range clusters {
-		if len(cl) < 2 {
-			continue
-		}
-		// -1645 builds union_ids as a set (arbitrary order); the
-		// port keeps first-seen order across the cluster for determinism.
-		unionIDs := []string{}
-		seenID := map[string]bool{}
-		for _, i := range cl {
-			for _, id := range evIDs[i] {
-				if !seenID[id] {
-					seenID[id] = true
-					unionIDs = append(unionIDs, id)
-				}
-			}
-		}
-		body, total := []string{}, 0
-		for _, cid := range unionIDs {
-			c := byChunkID[cid]
-			if c == nil {
-				continue
-			}
-			// content_with_weight first, content fallback.
-			text := anyString(c["content_with_weight"])
-			if text == "" {
-				text = anyString(c["content"])
-			}
-			text = strings.TrimSpace(text)
-			if text == "" {
-				continue
-			}
-			// The cap counts RUNES, not bytes: a clue that is CJK would otherwise spend
-			// three bytes of the budget per character.
-			n := utf8.RuneCountInString(text)
-			if total+n > EvidenceBatchMaxChars {
-				break
-			}
-			body = append(body, text)
-			total += n
-		}
-		if len(body) == 0 {
-			continue
-		}
-
-		lines := []string{}
-		for _, sid := range cl {
-			v := slotByID[sid]
-			if v == nil {
-				continue
-			}
-			// join ALL clues, then cut the JOINED text
-			// to 300 code points.
-			clues := truncateRunes(strings.Join(v.QuestionClues, "; "), 300)
-			lines = append(lines, fmt.Sprintf("- %d: %s", sid, clues))
-		}
-		if len(lines) < 2 {
-			continue
-		}
-
-		// .
-		user := "Sub-questions:\n" + strings.Join(lines, "\n") + "\n\nShared evidence:\n" + strings.Join(body, "\n---\n")
-		// no model: stop batching entirely.
-		if deps.Model == nil {
-			return filled
-		}
-		// async_chat(system_prompt, [user], answer_conf);
-		// the Go SessionModel takes the system message inline.
-		reply, err := deps.Model.Complete(ctx, []schema.Message{
-			*schema.SystemMessage(EvidenceBatchPrompt),
-			*schema.UserMessage(user),
-		}, nil)
-		if err != nil {
-			// one failed call must not cost the other
-			// clusters.
-			_LOG.Printf("[SlotResearch] batched answer call failed: %v", err)
-			continue
-		}
-
-		// _extract_json_object; a non-object reply
-		// skips the cluster.
-		data, ok := extractJSONObject(reply.Content).(map[string]any)
-		if !ok {
-			continue
-		}
-		for _, sid := range cl {
-			v := slotByID[sid]
-			if v == nil {
-				continue
-			}
-			// the reply maps str(slot id) to its answer;
-			// never overwrite an already-filled slot, and a blank answer
-			// counts as "evidence does not answer this".
-			val, isStr := data[fmt.Sprint(sid)].(string)
-			if !isStr {
-				continue
-			}
-			val = strings.TrimSpace(val)
-			if val == "" || v.Filled() {
-				continue
-			}
-			cand := truncateRunes(val, 400)
-			v.Candidate = &cand
-			filled++
-		}
-	}
-	return filled
-}
+// It went with the session fan-out. There is one session per round, its direction already covers
+// every clue the plan produced, and the slots it patches are its own scratchpad — so there is no
+// cluster of slots to batch and no second consumer of the evidence map. What the map is still for
+// is the round's LEDGER (see the [SlotResearch] line in RunSlotResearchPass) and, later, the
+// opening's per-clue ranking.
 
 // PrefillSlotsFromEvidence
 // answer slots that an already-pooled evidence row directly answers.
@@ -666,8 +446,16 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	for _, g := range gapTexts {
 		dirText += "\nA gap still to close (probe it the same way): " + g
 	}
+	// What the PREVIOUS round's session said it could not establish (see routeResearch). This is
+	// the round that statement reopened, so it is the round's first target — otherwise the reopened
+	// round re-walks the ground the last one covered and the open part is missed again.
+	if open := strings.TrimSpace(st.SessionUnresolved); open != "" {
+		dirText += "\n\nAn earlier round could not establish: " + open +
+			"\nThat is what THIS round exists for: probe it directly."
+	}
 	dirs := []direction{{slotID: -1, text: dirText}}
-	_LOG.Printf("[SlotResearch] one session this round (clue(s)=%d, review gap(s)=%d).", len(st.Plan), len(gapTexts))
+	_LOG.Printf("[SlotResearch] one session this round (clue(s)=%d, review gap(s)=%d, open part=%t).",
+		len(st.Plan), len(gapTexts), strings.TrimSpace(st.SessionUnresolved) != "")
 
 	// The session's own tool cache and query list. They used to be SHARED, because a round ran
 	// several sessions at once and a duplicate retrieval was worth serving once; with one
@@ -708,11 +496,18 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	// answer that comes out of this round cites these numbers.
 	var evidenceRefs []string
 	seenRefs := map[string]bool{}
+	// What the session said it could not establish (see Result.Unresolved): a round whose answer
+	// names an open part is not a finished round, and the routing reads this to decide whether the
+	// question gets another one (see routeResearch).
+	sessionUnresolved := st.SessionUnresolved
 
 	for _, item := range results {
 		r := item.result
 		if r.FoundAnswer != nil && collected == "" {
 			collected = *r.FoundAnswer
+		}
+		if u := strings.TrimSpace(r.Unresolved); u != "" {
+			sessionUnresolved = u
 		}
 		for _, id := range r.EvidenceRefs {
 			if id == "" || seenRefs[id] {
@@ -789,14 +584,6 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		_LOG.Printf("[SlotResearch] slot evidence bound: %v", bounds)
 	}
 
-	// Evidence-guided batching（）: slots that retrieved the
-	// same passages get answered together instead of one generation call each.
-	// BatchFillSlots is best-effort internally: per-cluster failures are logged and
-	// skipped, so one bad cluster never costs the others.
-	if batched := BatchFillSlots(ctx, deps, &slotTable, sessionEvidence); batched > 0 {
-		_LOG.Printf("[SlotResearch] batched generation filled %d slot(s)", batched)
-	}
-
 	unresolvedOut := make([]map[string]any, 0, len(unresolved))
 	for _, v := range slotTable.Unresolved() {
 		clues := v.DiscoveredClues
@@ -810,6 +597,17 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 			"discovered_clues": append([]string(nil), clues...),
 		})
 	}
+
+	// The passages the round's ITEMS rest on go to the pool's citation registry, so the closing
+	// composition can put them IN FRONT of the answer (see runtime.Kbinfos.NoteCitedChunks and
+	// withCitedChunks).
+	//
+	// This call lived in the coverage engine, and the engine's removal deleted it with everything
+	// else — which is how a question whose record held twelve members with the line behind each came
+	// back with nine names and NO citations at all: the registry stayed empty, so the composition
+	// rendered only the top-ranked passages and the passages that actually state the answers were
+	// never shown to the model. Measured 2026-09-20: 9 of 23 answers carried zero [ID:n] markers.
+	noteCitedItems(st.KB, &slotTable)
 
 	record := RenderSlotRecord(slotTable, collected)
 	_LOG.Printf("[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%v",
@@ -827,8 +625,12 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		// no reviewer there is nothing to drift FROM: the round's deliverable is what it found, and
 		// the answer is written by the session that read it (see the answer contract in
 		// runtime/action_session.go).
-		SlotRecord:   record,
-		Attempted:    ledger,
+		SlotRecord: record,
+		Attempted:  ledger,
+		// What the session said it could not establish, if it said anything. The round has ONE
+		// session, so the last statement wins: it is the one written against everything the session
+		// had read by then.
+		Unresolved:   sessionUnresolved,
 		EvidenceRefs: evidenceRefs,
 	}
 }
@@ -1040,6 +842,19 @@ func itemQuote(quote string) string {
 //
 // What replaces it is a STATEMENT the record makes about itself (see RenderSlotRecord): the set is
 // enumerated, and if no slot records a number then the record says so instead of inventing one.
+
+// noteCitedItems hands the passages behind the round's items to the pool's citation registry.
+//
+// It is its own function because the round is not the only thing that has to be right about it: the
+// consumer (withCitedChunks) puts these passages IN FRONT of the answer, and a registry nobody
+// writes is indistinguishable from a question whose items rest on nothing — which is how 9 of 23
+// answers came back with zero [ID:n] markers after the writer was deleted with the coverage engine.
+func noteCitedItems(kb *runtime.Kbinfos, table *runtime.State) {
+	if kb == nil || table == nil {
+		return
+	}
+	kb.NoteCitedChunks(runtime.AnchoredItemChunks(table))
+}
 
 // recordsANumber reports whether any slot holds a DECLARED number (see slots.KindCount /
 // slots.KindRange). It reads the value, never the planner's word for the slot.

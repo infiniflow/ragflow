@@ -16,16 +16,17 @@
 
 // Package agentic_rag is the outer agentic-search loop (medium / high / ultra).
 //
-// This file is the five-phase pipeline that sits ABOVE the action session:
+// This file is the pipeline that sits ABOVE the action session:
 //
-//	formalize_question → [planner → prefetch] → rag_agent → draft → sca
-//	    ├─ sufficient ──────────────────────────→ formalize_answer
-//	    └─ insufficient → query_rewrite ────────→ rag_agent (next round)
+//	formalize_question → [planner → prefetch] → rag_agent → formalize_answer
+//	                                                └────→ rag_agent (another round)
 //
-// The graph is Eino's compose.NewGraph, compiled in Pregel mode (the research loop is a
-// cycle: sca → query_rewrite → rag_agent). Node bodies and routing predicates follow the
-// five phases above. Node-visit accounting stays in this file rather than the framework's:
-// a research round costs three node visits, whereas Eino counts run steps.
+// The graph is Eino's compose.NewGraph, compiled in Pregel mode (the research loop is a cycle:
+// rag_agent → rag_agent). The interesting part is what the cycle does NOT contain: no draft node,
+// no reviewer, and no rewrite node between two rounds. One session per round reads the passages and
+// writes the answer; the router asks for another round only when that session says a part of the
+// question is still open. Node-visit accounting stays in this file rather than the framework's: a
+// research round costs several node visits, whereas Eino counts run steps.
 //
 // The run configuration and entry points live in agentic_rag.go, and the leaf primitives
 // in runtime/.
@@ -35,6 +36,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -46,7 +48,6 @@ import (
 	"ragflow/internal/agent/chat"
 	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
-	"ragflow/internal/rag/agentic-rag/runtime/orchestrator"
 	"ragflow/internal/rag/prompts"
 )
 
@@ -112,6 +113,18 @@ func ctxLeftS(ctx context.Context) float64 {
 	return room
 }
 
+// openingLeftS is how much of the opening's share is left: the seconds until OpeningDeadline, or
+// the full share when no opening has started (a node reached without the planner).
+func (s *AgenticState) openingLeftS() float64 {
+	if s == nil {
+		return 0
+	}
+	if s.OpeningDeadline.IsZero() {
+		return openingShareS(s.RemainingS())
+	}
+	return time.Until(s.OpeningDeadline).Seconds()
+}
+
 // AgenticState — the outer loop's mutable state.
 //
 // Deliberately absent: an earlier design declared `fills_found`, `research_feedback` and
@@ -145,14 +158,30 @@ type AgenticState struct {
 	Deadline     time.Time // wall-clock expiry of the research budget
 	SearchRounds int       // completed research rounds
 	Attempted    []map[string]any
-	NoProgress   bool
+	// OpeningDeadline is when the OPENING ends (see OpeningMaxS): the planner sets it and the
+	// prefetch spends what it left, so the two nodes share one share of the question instead of
+	// carrying a cap each. Zero means no opening has started. OpeningStarted is kept only so the
+	// budget line can report what the opening actually cost.
+	OpeningDeadline time.Time
+	OpeningStarted  time.Time
 	// LastRoundNew is how many chunks the last research round ADDED to the pool.
 	//
 	// It is the loop's one non-subjective signal about whether to keep going: a
 	// round that is still adding evidence is still learning, whatever the
-	// reviewer thinks of the passages it holds (see routeSCA). Zero means the
-	// round learned nothing, which is what NoProgress already means.
+	// reviewer thinks of the passages it holds (see routeResearch). Zero means the
+	// round learned nothing.
 	LastRoundNew int
+	// SessionUnresolved is what the last round's session said it could NOT establish (its
+	// <unresolved> block). It is assigned per round, never accumulated: it describes the round
+	// that just ended, and a stale value would keep the loop open on a part already answered.
+	//
+	// It is the ONLY statement of what is left: the run reads it instead of the slot table (see
+	// routeResearch), because the session read the passages and the table is only its scratchpad.
+	SessionUnresolved string
+	// ZeroGrowthRounds counts consecutive rounds that added no passage to the pool. One such round
+	// is allowed when the session named an open part — that is the "take the next hop" case — and
+	// a second one is not: it would spend the question on a stall.
+	ZeroGrowthRounds int
 }
 
 // NewAgenticState builds the initial state. It does NOT arm the global budget: the
@@ -290,7 +319,6 @@ type agenticNode int
 // routing decision, and a node no route can return is a case no switch can reach.
 const (
 	nodeFormalizeAnswer agenticNode = iota
-	nodeQueryRewrite
 	nodeRagAgentLoop
 )
 
@@ -310,11 +338,14 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 	// paper's opening move is ONE call — `first_move`: decompose, then retrieve the queries it
 	// produced — and the slot table's own call already produces them.
 	//
-	// The `-15.0` is the reservation the old planner made, not a cap: once the budget is spent
-	// the value goes NEGATIVE and InitializeState uses it as-is, timing out immediately, so an
-	// exhausted round cannot spend 15 more seconds on a decomposition it cannot afford.
+	// The opening's clock is set HERE and the prefetch spends what this call leaves of it: planner
+	// and prefetch are ONE phase (the paper's first_move), so a slow decomposition must cost the
+	// retrieval time rather than pushing the research out of the question's budget (see
+	// OpeningMaxS). `openingLeftS` is the whole share on this first call, so the planner gets it.
+	st.OpeningStarted = time.Now()
+	st.OpeningDeadline = st.OpeningStarted.Add(time.Duration(openingShareS(st.RemainingS()) * float64(time.Second)))
 	sd := deps.sessionDeps()
-	root, firstQueries := BuildSlotTable(ctx, sd, st.Question, nil, st.RemainingS()-15.0)
+	root, firstQueries := BuildSlotTable(ctx, sd, st.Question, nil, math.Max(0, st.openingLeftS()))
 	st.SlotTable = root
 
 	// The plan IS what the round will search: the table's own queries, and the slots' clues when
@@ -362,7 +393,10 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		}
 		queries = []string{st.Question}
 	}
-	timeout := nodeClock(PrefetchTimeoutS, 10.0, st.RemainingS()-MinRoundHeadroomS)
+	// The opening's remaining share, not a cap of its own: the planner set OpeningDeadline, and a
+	// decomposition that used all of it leaves this at zero — which nodeClock reports as "do not
+	// start" rather than "start and be cancelled".
+	timeout := nodeClock(PrefetchTimeoutS, OpeningMinS, st.openingLeftS())
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout*float64(time.Second)))
 	defer cancel()
 
@@ -384,6 +418,20 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	// straight to round 1, and the passages the pool already held look like they
 	// came from nowhere.
 	step(ctx, logger, "Prefetch", "Added %s to the evidence pool.", runtime.CountOf(added, "new passage"))
+	// The one line that answers "what did the opening cost, and what is left for the research".
+	// Before the shares existed there was no such line and no such fact: the opening could spend
+	// 90s of a 180s question and nothing reported it.
+	spent := spentS(st.OpeningStarted)
+	step(ctx, logger, "Budget", "the opening used %.0fs of its %.0fs share; %.0fs of the question left, of which %.0fs is the finale's (research room %.0fs).",
+		spent, spent+max(0, st.openingLeftS()), st.RemainingS(), finaleShareS(st.RemainingS()), researchRoomS(st.RemainingS()))
+}
+
+// spentS is how long ago a phase started, zero when it never did.
+func spentS(started time.Time) float64 {
+	if started.IsZero() {
+		return 0
+	}
+	return time.Since(started).Seconds()
 }
 
 // The evidence-prefill summary used to live here: it promised the number of research
@@ -468,8 +516,12 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	defer done()
 
 	timeLeft := st.RemainingS()
-	if timeLeft < MinRoundHeadroomS {
-		step(ctx, logger, "RAGAgent", "Only %.0f seconds of the research budget are left, so no further research pass will run.", timeLeft)
+	if researchRoomS(timeLeft) < MinRoundS {
+		// The finale's share is not research money: below this line the round would spend the
+		// answer's clock and lose the answer (see FinaleMinS).
+		step(ctx, logger, "RAGAgent",
+			"Only %.0f seconds of the question are left after the finale's %.0f, so no further research pass will run.",
+			researchRoomS(timeLeft), finaleShareS(timeLeft))
 		return
 	}
 	roundNo := st.SearchRounds + 1
@@ -479,7 +531,9 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "RAGAgent", "Round %d begins with %s in the evidence pool; %.0f seconds of research budget left.",
 		roundNo, runtime.CountOf(poolBefore, "passage"), timeLeft)
 
-	t := max(20.0, nodeClock(PassTimeoutS, 0, timeLeft-25.0))
+	// The round may spend the research room — the clock minus the finale's share — and nothing
+	// else: `timeLeft-25.0` used to leave the finale 25s, which is less than one slow answer call.
+	t := max(20.0, nodeClock(PassTimeoutS, 0, researchRoomS(timeLeft)))
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
 	defer cancel()
 
@@ -492,12 +546,16 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		if st.KB != nil {
 			st.LastRoundNew = len(st.KB.Chunks) - poolBefore
 		}
+		st.SearchRounds++
 		return
 	}
 	st.SlotTable = res.SlotTable
 	st.CollectedAnswer = res.CollectedAnswer
 	st.UnresolvedSlots = res.UnresolvedSlots
 	st.SlotEvidence = res.SlotEvidence
+	// Assigned per round (never accumulated): what THIS round's session said it could not
+	// establish. The routing reads it together with the answer (see routeResearch).
+	st.SessionUnresolved = strings.TrimSpace(res.Unresolved)
 	// The SCA-facing draft used to travel out of the round here (SlotDraft → RagAnswer) and the
 	// previous round's was kept when the new one was empty. Neither exists any more: the round's
 	// record is what it found, and the ANSWER is written by the session that read the passages.
@@ -522,10 +580,14 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		}
 	}
 
-	// The round's growth is the loop's continuation fact (see routeSCA): stored
+	// The round's growth is the loop's continuation fact (see routeResearch): stored
 	// on the state rather than only printed, so the routing decision reads the
 	// same number the log shows.
 	st.LastRoundNew = len(st.KB.Chunks) - poolBefore
+	// A round that ran IS a round, whether or not it answered. The count used to be incremented by
+	// the query-rewrite node, after its own retrieval; with that node gone the round that did the
+	// work is the one that counts it.
+	st.SearchRounds++
 	runtime.StepsFrom(ctx).StageLine(logger, "RAGAgent",
 		ragRoundEndLine(roundNo, st.LastRoundNew, len(st.KB.Chunks), len(res.UnresolvedSlots)))
 }
@@ -536,174 +598,17 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 // session writes the answer itself (see the note on routeResearch), and a round that ends
 // without one leaves the evidence pool for the closing composition to use.
 
-// queryRewriteNode mirrors the `query_rewrite` node: Phase-4
-// targeted gap pursuit.
-func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	ctx, done := runtime.Phase(ctx, "rewrite")
-	defer done()
-
-	// The gaps come from the round's OWN record, not from a reviewer: the router only sends a
-	// round here when it found work left (unresolved slots) and evidence still arriving, and
-	// `unresolvedClueGaps` is that record turned into retrieval directions.
-	gaps := unresolvedClueGaps(st)
-	if len(gaps) == 0 {
-		step(ctx, logger, "QueryRewriter", "The evidence check came back insufficient but named no concrete gap; accepting the draft.")
-		st.NoProgress = true
-		return
-	}
-
-	// Information-augmented rewriting: give the rewriter FULL VISIBILITY — what
-	// was tried (with outcomes), what the evidence pool holds — so it aims at
-	// uncovered angles itself, instead of rule-based dedupe.
-	researchContext := renderResearchContext(st)
-
-	t := nodeClock(RewriteTimeoutS, 10.0, st.RemainingS()-10.0)
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
-	defer cancel()
-
-	rewritten := orchestrator.RewriteGapToQuery(callCtx, orchestrator.RewriteDeps{
-		Model:           &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength},
-		Prompts:         deps.RewritePrompts,
-		ResearchContext: researchContext,
-	}, st.Question, gaps)
-
-	var queries []string
-	for _, q := range rewritten {
-		if s := strings.TrimSpace(q["query"]); s != "" {
-			queries = append(queries, s)
-		}
-	}
-	// Fold the still-unresolved slots into the rewrite queries so the next slot
-	// research pass targets exactly those unknowns. This makes an insufficient
-	// verdict drive slot completion, not a blind re-search.
-	for _, us := range st.UnresolvedSlots {
-		if clues, ok := us["question_clues"].([]string); ok {
-			for i, qc := range clues {
-				if i >= 2 {
-					break
-				}
-				if s := strings.TrimSpace(qc); s != "" {
-					queries = append(queries, s)
-				}
-			}
-		}
-	}
-	queries = dedupe(queries)
-	if len(queries) == 0 {
-		// The rewriter is a MODEL and it can decline, which used to end the round: the routing above
-		// had already judged another round worth its budget (gaps exist, the review view changed),
-		// and one empty reply cancelled that judgement. On a set question the other fallback
-		// (unresolved slots' clues) is empty too, because its unknowns are names nobody has
-		// proposed yet. So the round is kept alive with queries taken from the run's own
-		// bookkeeping instead of the model.
-		//
-		// The SCA's gaps are NOT usable here: a gap derived from a draft carries the draft's TEXT
-		// (MissingPiece.What is the whole paragraph), which as a retrieval query is noise.
-		queries = fallbackQueries(st)
-		if len(queries) > 0 {
-			step(ctx, logger, "QueryRewriter",
-				"The rewriter produced no query; re-asking the run's own open terms (%d) instead.", len(queries))
-		}
-	}
-	if len(queries) == 0 {
-		step(ctx, logger, "QueryRewriter", "No actionable query was produced; accepting the draft.")
-		st.NoProgress = true
-		return
-	}
-
-	// Dual-track pursuit of the gap: (a) programmatically pre-fetch new snippets
-	// into the SCA pool; (b) the next slot research pass picks these up via the
-	// persisted slot_table + unresolved_slots.
-	// Room is measured against the EVIDENCE POOL's ceiling, the same number the
-	// admitter enforces. Sized against the smaller snippet-pool constant, a rich
-	// round got room <= 0 and admitted nothing, so the round reported "retrieval
-	// saturated" and discarded itself while the pool still had room to take the
-	// evidence it had just asked for.
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite)
-	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
-	// snippets means further full research passes just burn latency.
-	if added == 0 && st.SearchRounds >= 1 {
-		step(ctx, logger, "QueryRewriter", "Retrieval saturated: another insufficient round added no new passages, so iteration stops.")
-		st.NoProgress = true
-		st.CurrentQueries = queries
-		return
-	}
-
-	// DECOMPOSE: promote SCA gaps to new
-	// slots so the next research pass gets a typed unknown with its own
-	// action session — that is how the plan actually expands. No extra LLM
-	// call: the SCA already told us what is missing (missing_fact + hint).
-	//
-	// ORDER: promotion runs AFTER the rewrite LLM call, the
-	// empty-query early return (:1326-1328) and the saturation early-exit
-	// (:1337-1339) — both of which DISCARD the promotion by returning before it.
-	// Promoting before the rewrite (the earlier Go port's order) mutated the slot
-	// table even on rounds that were then dropped, desyncing the table from the
-	// queries actually pursued.
-	if st.SlotTable.Depth < maxSlotDepth {
-		slots := st.SlotTable.State
-		known := map[string]bool{}
-		nextID := 0
-		for _, v := range slots {
-			for _, c := range v.QuestionClues {
-				known[strings.ToLower(strings.TrimSpace(c))] = true
-			}
-			if v.ID >= nextID {
-				nextID = v.ID + 1
-			}
-		}
-		promoted := 0
-		for _, g := range gaps {
-			if len(slots) >= maxSlotsTotal {
-				break
-			}
-			key := strings.ToLower(strings.TrimSpace(g.What))
-			if key == "" || known[key] {
-				continue
-			}
-			clues := []string{truncateRunes(g.What, 200)}
-			if strings.TrimSpace(g.SearchHint) != "" {
-				clues = append(clues, truncateRunes(g.SearchHint, 200))
-			}
-			slots = append(slots, runtime.Variable{ID: nextID, Type: "entity", QuestionClues: clues})
-			known[key] = true
-			nextID++
-			promoted++
-		}
-		if promoted > 0 {
-			st.SlotTable.State = slots
-			step(ctx, logger, "QueryRewriter", "Promoted %s to research slots (depth %d).",
-				runtime.CountOf(promoted, "gap"), st.SlotTable.Depth)
-		}
-	}
-
-	step(ctx, logger, "QueryRewriter", "Round %d came back insufficient; rewriting it into %s: %v.",
-		st.SearchRounds+1, runtime.CountOf(len(queries), "targeted query"), queries)
-	st.NoProgress = false
-	st.CurrentQueries = queries
-	st.SearchRounds++
-	for _, q := range queries {
-		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": st.SearchRounds, "new": added})
-	}
-}
-
-// fallbackQueries is what the run can still ask WITHOUT a model: the terms it probed and got
-// nothing back for — a fact about the QUERY, which is what the probe ledger is for — and the
-// direction's own subject forms.
-func fallbackQueries(st *AgenticState) []string {
-	var out []string
-	if st.KB != nil {
-		out = append(out, st.KB.ProbedAbsentTerms()...)
-	}
-	out = append(out, runtime.ActorForms(st.SlotTable)...)
-	kept := make([]string, 0, len(out))
-	for _, q := range out {
-		if q = strings.TrimSpace(q); q != "" {
-			kept = append(kept, q)
-		}
-	}
-	return dedupe(kept)
-}
+// The query-rewrite node used to live here: a model call that turned the round's record (its
+// unresolved slots plus the plan's clues) into the queries the NEXT round would run, then admitted
+// their hits to the pool programmatically.
+//
+// It is gone, and the loop it served is smaller for it: "what to search next" is the SESSION's
+// question, and the session is the only thing in this run that has read the passages. The next
+// round is opened by the router with the part the last session said it could not establish (see
+// ParseUnresolved / routeResearch) and that session writes its own queries — the paper's rule
+// ("refinements need a new clue", a clue that came from reading a document). What the rewrite node
+// also owned, and what had to be kept, is the retrieval-saturation fact it measured: a round that
+// adds nothing to the pool and names nothing open is the last one (see routeResearch).
 
 // chunkCount is the pool size, nil-safe: a graph that failed before a pool existed still reports its
 // [Finalize] step.
@@ -773,13 +678,16 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	// reading is the one that writes the answer, so the members it found are already in what
 	// it wrote (see the design's R1/R2 and the note in kbinfos.go).
 
-	// "Partial" is a statement about the EVIDENCE, decided by facts: unresolved slots are the
-	// table's own list of what it could not fill, and NoProgress means the last round learned
-	// nothing. A reviewer's verdict used to be the third input, and it made the flag unreliable
-	// in BOTH directions — a review that could not run (VerdictUnknown) shipped "partial answer,
-	// some gaps remain" on no evidence at all (2026-09-15: the SCA had timed out), while a
-	// satisfied reviewer said nothing about whether the record was finished.
-	if st.NoProgress || len(st.UnresolvedSlots) > 0 {
+	// "Partial" is a statement about the EVIDENCE, decided by facts: the session named a part it
+	// could not establish, or it never wrote an answer at all (the composition below still has to
+	// produce one from whatever it read). A reviewer's verdict used to be the third input, and it
+	// made the flag unreliable in BOTH directions — a review that could not run (VerdictUnknown)
+	// shipped "partial answer, some gaps remain" on no evidence at all (2026-09-15: the SCA had
+	// timed out), while a satisfied reviewer said nothing about whether the record was finished.
+	//
+	// The slot table is deliberately NOT read here: it is the session's own scratchpad, and a
+	// scratchpad is not a verdict (see the note on routeResearch).
+	if st.SessionUnresolved != "" || strings.TrimSpace(st.CollectedAnswer) == "" {
 		// All research attempts exhausted without a satisfying context — surface
 		// the residual findings honestly instead of refusing.
 		st.PartialAnswer = true
@@ -876,66 +784,91 @@ func (a *jsonModelAdapter) GenJSON(ctx context.Context, prompt string) (any, err
 	return nil, fmt.Errorf("agentic: no parseable JSON in the model output after %d attempts", genJSONMaxRetry)
 }
 
-// MemberWindowMax bounds how many confirmed-member passages the rewrite context
-// carries, and MemberWindowChars how much of each.
-const (
-	MemberWindowMax   = 12
-	MemberWindowChars = 220
-)
-
 // routeResearch decides whether the run takes another research round — the ONE router, used
-// after every research round (see the two branches in the graph builder).
+// after the research node (see the branch in the graph builder).
 //
-// It replaces the SCA verdict as the thing that decides. The paper's loop stops when the agent
-// ANSWERS, and that is the first check here: the session reads the evidence and writes the
-// answer, so once it has written one the run is over. Everything below is the fallback for a
-// round that ended without an answer: the round's own RECORD says what is still open, and the
-// round count and the clock bound how long the run may keep asking.
+// It replaces the SCA verdict as the thing that decides, and it reads only what the round itself
+// produced. There is no third source any more: the query rewrite that used to sit between two
+// rounds is gone (see the note where it lived), and with it the last place where CODE turned the
+// run's bookkeeping into the next thing to search. What is left is the paper's shape — the agent
+// says what it could not establish, and that statement is the next round's direction.
 //
-// The facts it reads are records, not judgements:
+// The facts it reads are the round's own records, not judgements:
 //
-//	answered       — the session wrote an <answer>. Stop.
-//	work left      — the plan still has unresolved slots, or the review named gaps.
-//	still learning — the round added evidence (+N chunks). An empty unresolved list is NOT
-//	                 proof of completeness (2026-09-15: unresolved=0 while the answer was six
-//	                 members short), and a satisfied reviewer was a judgement about the passages
-//	                 it read rather than about whether the record was finished.
-//	stalled        — NoProgress: the same evidence twice, no actionable query, or a rewrite that
-//	                 retrieved nothing new.
+//	answered       — the session wrote an <answer>.
+//	open part      — the session wrote <unresolved>: the specific fact it could not establish.
+//	                 An ANSWER plus an open part is not a finished round: a multi-hop question's
+//	                 first answer is very often "I read X, and X does not carry Y", and treating it
+//	                 as final is how four questions stayed at zero while their sessions each held
+//	                 the bridge and said so (measured 2026-09-20, FRAMES: Quincy's mayors, Gifu's
+//	                 population, AP's law, Lahore in 1858 — see runtime.ParseUnresolved).
+//	still learning — the round added evidence (+N chunks). The pool is the only growth signal
+//	                 that needs no interpretation: passages are either new to it or they are not.
 //
-// So: answered ⇒ stop; nothing left AND nothing learned ⇒ stop; work left AND still learning ⇒
-// another round; otherwise the round count and the clock decide.
+// Three cases, in the order they are checked:
+//
+//	an answer that names nothing open  ⇒ stop. The paper's rule, and the only one that ends a run
+//	                                     with an answer in hand.
+//	no answer, nothing open            ⇒ another round ONLY while the pool is still growing: the
+//	                                     round failed, and a retry is worth it only if the evidence
+//	                                     it read went somewhere.
+//	an open part                       ⇒ another round while the rounds and the clock allow it,
+//	                                     including ONE round that adds nothing: that is the
+//	                                     "take the next hop" case the slot table used to be asked
+//	                                     about. ZeroGrowthRounds bounds it so a stall cannot spend
+//	                                     the question.
+//
+// The slot table is not read here at all: it is the session's scratchpad, and a scratchpad is not
+// a statement about what is left (see the note where the rewrite node lived). What the run keeps
+// from the plan is the DIRECTION, which lists the plan's clues for the session to work through.
+//
+// The clock gate is canOpenRound, not "is there room to start": a round it opens has to leave the
+// finale its share, or the second round is paid for with the answer (see FinaleMinS).
+//
+// Measured 2026-09-20, before the rewrite node was removed: it returned one fixed node name to two
+// different callers, and on the rewrite branch that name was the branch's OWN node — which is not in
+// its declared ends, so Eino aborted the whole run ("unintended end node: query_rewrite") and the
+// question was answered by a fallback composition with no research in it. 4 of 23 requests hit it.
+// With one caller there is no second name to get wrong.
 func routeResearch(st *AgenticState, maxRounds int) agenticNode {
-	if ans := strings.TrimSpace(st.CollectedAnswer); ans != "" {
-		_LOG.Printf("[Routing] closing out: the session wrote an answer (%d rune(s)).", utf8.RuneCountInString(ans))
-		return nodeFormalizeAnswer
-	}
-	if st.NoProgress {
-		_LOG.Printf("[Routing] closing out: the round made no progress (unresolved=%d, +%d chunks).",
-			len(st.UnresolvedSlots), st.LastRoundNew)
-		return nodeFormalizeAnswer
-	}
-	gaps := unresolvedClueGaps(st)
-	work := len(gaps) > 0 || len(st.UnresolvedSlots) > 0
+	ans := strings.TrimSpace(st.CollectedAnswer)
+	open := strings.TrimSpace(st.SessionUnresolved)
 	grew := st.LastRoundNew > 0
-	if !work || !grew {
-		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, +%d chunks this round).",
-			len(st.UnresolvedSlots), len(gaps), st.LastRoundNew)
+	if grew {
+		st.ZeroGrowthRounds = 0
+	} else {
+		st.ZeroGrowthRounds++
+	}
+
+	if ans != "" && open == "" {
+		_LOG.Printf("[Routing] closing out: the session wrote an answer and named no open part (%d rune(s)).",
+			utf8.RuneCountInString(ans))
+		return nodeFormalizeAnswer
+	}
+	if ans == "" && open == "" && !grew {
+		_LOG.Printf("[Routing] closing out: the round wrote no answer, named no open part and added no passage (+%d chunks).",
+			st.LastRoundNew)
+		return nodeFormalizeAnswer
+	}
+	if !grew && st.ZeroGrowthRounds > 1 {
+		// The one free hop the previous round was given did not turn into evidence either.
+		_LOG.Printf("[Routing] closing out: %d consecutive rounds added no passage (open part=%t).",
+			st.ZeroGrowthRounds, open != "")
 		return nodeFormalizeAnswer
 	}
 	if st.SearchRounds >= maxRounds {
-		_LOG.Printf("[Routing] work remains (unresolved=%d, gaps=%d, +%d chunks this round) but the round budget is spent (%d/%d); closing out.",
-			len(st.UnresolvedSlots), len(gaps), st.LastRoundNew, st.SearchRounds, maxRounds)
+		_LOG.Printf("[Routing] closing out: the round budget is spent (%d/%d); open part=%t, +%d chunks this round.",
+			st.SearchRounds, maxRounds, open != "", st.LastRoundNew)
 		return nodeFormalizeAnswer
 	}
-	if st.RemainingS() <= MinRoundHeadroomS {
-		_LOG.Printf("[Routing] work remains (unresolved=%d, gaps=%d, +%d chunks this round) but only %.0fs left (need %.0fs); closing out.",
-			len(st.UnresolvedSlots), len(gaps), st.LastRoundNew, st.RemainingS(), MinRoundHeadroomS)
+	if !canOpenRound(st.RemainingS()) {
+		_LOG.Printf("[Routing] closing out: only %.0fs of the question left, and the finale keeps %.0fs of it (a round needs %.0fs) — open part=%t.",
+			st.RemainingS(), finaleShareS(st.RemainingS()), MinRoundS, open != "")
 		return nodeFormalizeAnswer
 	}
-	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, +%d chunks this round, rounds=%d/%d, %.0fs left.",
-		len(st.UnresolvedSlots), len(gaps), st.LastRoundNew, st.SearchRounds, maxRounds, st.RemainingS())
-	return nodeQueryRewrite
+	_LOG.Printf("[Routing] another round: open part=%q, +%d chunks this round, rounds=%d/%d, research room %.0fs of %.0fs left.",
+		trunc(open, 160), st.LastRoundNew, st.SearchRounds, maxRounds, researchRoomS(st.RemainingS()), st.RemainingS())
+	return nodeRagAgentLoop
 }
 
 // composedRecord is the record block the ANSWER prompt carries: the slot record
@@ -1208,6 +1141,9 @@ type SlotResearchResult struct {
 	// RenderSlotRecord). The two are produced together so they cannot drift.
 	SlotRecord string
 	Attempted  []map[string]any
+	// Unresolved is the session's own statement of what it could not establish, when it wrote one
+	// (see runtime.Result.Unresolved). An answer beside an open part is not a finished round.
+	Unresolved string
 }
 
 // buildSlotTableFrom wraps InitializeState, converting its non-error result into
@@ -1408,11 +1344,6 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 		ragAgentNode(ctx, deps, s, logger)
 		return s, nil
 	})
-	addNode("query_rewrite", func(ctx context.Context, s *AgenticState) (*AgenticState, error) {
-		visit(1)
-		queryRewriteNode(ctx, deps, s, logger)
-		return s, nil
-	})
 	addNode("formalize_answer", func(c context.Context, s *AgenticState) (*AgenticState, error) {
 		visit(1)
 		formalizeAnswerNode(c, deps, s, logger)
@@ -1451,16 +1382,12 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 		return guard("rag_agent"), nil
 	}, map[string]bool{"stop": true, "rag_agent": true})
 
-	// ONE router after both research nodes: a round either ends the run (the session answered)
-	// or asks for another one, and there is no separate reviewer whose verdict could ask for it
+	// ONE router after the research node: a round either ends the run (the session answered) or
+	// asks for another one, and there is no separate reviewer whose verdict could ask for it
 	// instead. The round count is the mode's, and nothing about the QUESTION shortens it: it
 	// used to be cut to two rounds for a table the planner had typed as a set, and that bound
 	// cannot be told from a slot type.
 	addBranch("rag_agent", func(_ context.Context, s *AgenticState) (string, error) {
-		return guard(agenticNodeName(routeResearch(s, maxRounds))), nil
-	}, map[string]bool{"stop": true, "query_rewrite": true, "formalize_answer": true})
-
-	addBranch("query_rewrite", func(_ context.Context, s *AgenticState) (string, error) {
 		return guard(agenticNodeName(routeResearch(s, maxRounds))), nil
 	}, map[string]bool{"stop": true, "rag_agent": true, "formalize_answer": true})
 
@@ -1497,8 +1424,6 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 // node keys.
 func agenticNodeName(n agenticNode) string {
 	switch n {
-	case nodeQueryRewrite:
-		return "query_rewrite"
 	case nodeRagAgentLoop:
 		return "rag_agent"
 	default:
@@ -1551,16 +1476,14 @@ func NewAgenticLoop() AgenticLoop {
 		}
 
 		st, runErr := BuildAgenticGraph(ctx, RAGTools{
-			Tools:          toolset,
-			Search:         sd, // dual-channel fan-out retrieves directly
-			Model:          deps.Model,
-			ModelName:      deps.ModelName,
-			Prompts:        deps.Prompts,
-			KB:             kb,
-			SCAPrompts:     deps.Prompts,
-			RewritePrompts: deps.Prompts,
-			MaxLength:      deps.MaxLength,
-			Logger:         logger,
+			Tools:     toolset,
+			Search:    sd, // dual-channel fan-out retrieves directly
+			Model:     deps.Model,
+			ModelName: deps.ModelName,
+			Prompts:   deps.Prompts,
+			KB:        kb,
+			MaxLength: deps.MaxLength,
+			Logger:    logger,
 			// The terminal composition is the formalize_answer node body; it must reach the
 			// graph even though this deps copy is rebuilt here.
 			Finalize: deps.Finalize,

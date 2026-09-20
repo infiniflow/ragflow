@@ -1510,6 +1510,12 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	if newChunks == 0 {
 		status = StatusRedundant
 	}
+	// The READ ledger: this call READ the document, it did not merely search it. Every later tool
+	// result marks the passages the run has read differently from the ones it has only been SHOWN
+	// (see the read/preview note in action_session.go's toolNode), and the session's seed says how
+	// far into each document the run got — so an answer built on a snippet can be told apart from
+	// one built on the page the snippet came from.
+	e.deps.KB.NoteChunksRead(docID, offset, evidenceIDs, hasMore)
 	// Where this page sits in the document, and whether the document continues, are DATA the
 	// model needs in order to finish reading it: without them a long document looks complete
 	// at whatever the page happened to hold, and there is no way to ask for the rest.
