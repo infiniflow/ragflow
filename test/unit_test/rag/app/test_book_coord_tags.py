@@ -16,7 +16,7 @@
 
 Background: PDF coordinate tags are embedded in section text as
 ``@@page\tleft\ttop\tright\tbottom##`` by ``Pdf.__call__`` (book.py), matching
-``extract_positions``' regex ``@@[0-9-]+\t[0-9.\t]+##``. They are extracted by
+``extract_positions``' regex ``@@[0-9-]+\t[-0-9.\t]+##``. They are extracted by
 ``crop(need_position=True)`` inside ``tokenize_chunks``. The naive branch of
 ``book.chunk`` used to run ``s.split("@")`` which destroyed the double-``@``
 tag, so the chunk lost its clickable highlight on the source page.
@@ -42,7 +42,7 @@ import pytest
 # @@<page>\t<x0>\t<x1>\t<top>\t<bottom>##  (matches extract_positions' regex).
 TAG = "@@1\t100.0\t200.0\t300.0\t400.0##"
 
-_COORD_RE = r"@@[0-9-]+\t[0-9.\t]+##"
+_COORD_RE = r"@@[0-9-]+\t[-0-9.\t]+##"
 
 
 class FakePdf:
@@ -55,7 +55,7 @@ class FakePdf:
     def crop(self, ck, need_position=False):
         self.seen.append(ck)
         # Use the SAME regex the real deepdoc crop uses
-        # (extract_positions: @@[0-9-]+\t[0-9.\t]+##) so the test fails if the
+        # (extract_positions: @@[0-9-]+\t[-0-9.\t]+##) so the test fails if the
         # coordinate tag ever drifts out of that exact shape -- not just any
         # "@@...##" string. A fake that accepted arbitrary "@@"/"##" would stay
         # green even when the real crop could no longer extract coordinates.

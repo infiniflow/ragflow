@@ -458,7 +458,7 @@ class SoMarkParser(RAGFlowPdfParser):
     @staticmethod
     def extract_positions(txt: str):
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
+        for tag in re.findall(r"@@[0-9-]+\t[-0-9.\t]+##", txt):
             pn, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
             left, right, top, bottom = (
                 float(left),

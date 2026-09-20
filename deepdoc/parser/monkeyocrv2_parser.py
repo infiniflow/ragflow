@@ -45,7 +45,7 @@ class MonkeyOCRv2Parser:
     @staticmethod
     def extract_positions(text):
         positions = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
+        for tag in re.findall(r"@@[0-9-]+\t[-0-9.\t]+##", text):
             page, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
             positions.append((int(page) - 1, float(left), float(right), float(top), float(bottom)))
         return positions

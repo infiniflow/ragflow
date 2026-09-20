@@ -1938,7 +1938,7 @@ class RAGFlowPdfParser:
     @staticmethod
     def extract_positions(txt):
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
+        for tag in re.findall(r"@@[0-9-]+\t[-0-9.\t]+##", txt):
             pn, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
             left, right, top, bottom = float(left), float(right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
