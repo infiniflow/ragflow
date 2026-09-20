@@ -243,8 +243,16 @@ func metaValueSpaceAggName(key string) string {
 //
 // A dynamically mapped string aggregates through its .keyword subfield, which
 // carries ignore_above (256 by default), so a longer value is indexed as text
-// only and has no bucket. A key the mapping gives no aggregatable field at all
-// -- an object, which a dict-valued metadata entry creates -- has none either.
+// only and has no bucket. ES records every field an indexing decision dropped
+// from a document in _ignored, and that is the question to ask: ignore_above is
+// applied to each array element on its own, so ["short", <too long>] leaves the
+// subfield present -- an existence question would see nothing wrong while the
+// long element is missing from the buckets.
+//
+// A key the mapping gives no aggregatable field at all -- an object, which a
+// dict-valued metadata entry creates -- has no bucket either. Nothing was
+// dropped at index time there, so it is asked as plain existence.
+//
 // Either one would hand the filter generator a value space that quietly omits
 // values, and a filter written from it excludes the documents holding them.
 //
@@ -253,14 +261,7 @@ func metaValueSpaceAggName(key string) string {
 func uncoveredValueFilters(fields map[string]metaAggField, unaggregatable []string) map[string]interface{} {
 	filters := make(map[string]interface{}, len(fields)+len(unaggregatable))
 	for key, field := range fields {
-		parent := "meta_fields." + key
-		if field.path == parent {
-			continue
-		}
-		filters[key] = map[string]interface{}{"bool": map[string]interface{}{
-			"filter":   []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": parent}}},
-			"must_not": []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": field.path}}},
-		}}
+		filters[key] = map[string]interface{}{"term": map[string]interface{}{"_ignored": field.path}}
 	}
 	for _, key := range unaggregatable {
 		filters[key] = map[string]interface{}{"exists": map[string]interface{}{"field": "meta_fields." + key}}
