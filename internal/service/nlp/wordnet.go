@@ -94,6 +94,7 @@ type WordNet struct {
 	dataFileCache       map[string]*os.File
 	dataFileCacheOffset map[string]int64
 	fileMutexes         map[string]*sync.Mutex // Mutex for each POS to ensure concurrency safety
+	fileCacheMu         sync.Mutex
 }
 
 // NewWordNet creates a new WordNet instance with the given WordNet directory
@@ -127,6 +128,9 @@ func NewWordNet(wordNetDir string) (*WordNet, error) {
 
 // Close closes all cached file handles
 func (wn *WordNet) Close() {
+	wn.fileCacheMu.Lock()
+	defer wn.fileCacheMu.Unlock()
+
 	for pos, f := range wn.dataFileCache {
 		if mutex, ok := wn.fileMutexes[pos]; ok {
 			mutex.Lock()
@@ -312,6 +316,9 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 	if pos == "s" { // Adjective satellite uses the same file as adjective
 		pos = ADJ
 	}
+
+	wn.fileCacheMu.Lock()
+	defer wn.fileCacheMu.Unlock()
 
 	// Get or create mutex for this POS
 	mutex, exists := wn.fileMutexes[pos]

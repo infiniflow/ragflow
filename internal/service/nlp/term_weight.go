@@ -30,6 +30,23 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	termSpaceRE         = regexp.MustCompile(`[ \t]+`)
+	termNumberRE        = regexp.MustCompile(`^[0-9,.]{2,}$`)
+	termShortLetterRE   = regexp.MustCompile(`^[a-z]{1,2}$`)
+	termNumberSpaceRE   = regexp.MustCompile(`^[0-9. -]{2,}$`)
+	termEnglishSuffixRE = regexp.MustCompile(`[a-zA-Z]$`)
+	termPostagNumberRE  = regexp.MustCompile(`^[0-9-]+`)
+	termSingleDigitRE   = regexp.MustCompile(`^[0-9]$`)
+	termPretokenChars   = "~—\t @#%!<>,.?\":;'{}[]_=()|，。？》•●○↓《；'：\"\"【¥ 】…￥！、·（）×`&/「」"
+	termShortTokenRE    = regexp.MustCompile(`^[0-9a-z]{1,2}$`)
+	termStartsAlnumRE   = regexp.MustCompile(`^[0-9a-zA-Z]`)
+	termNERWeights      = map[string]float64{
+		"toxic": 2, "func": 1, "corp": 3, "loca": 3,
+		"sch": 3, "stock": 3, "firstnm": 1,
+	}
+)
+
 // TermWeightDealer calculates term weights for text processing
 // Reference: rag/nlp/term_weight.py
 type TermWeightDealer struct {
@@ -152,8 +169,6 @@ func loadDict(fnm string) map[string]int {
 // Pretoken preprocesses and tokenizes text
 // Reference: term_weight.py L92-114
 func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
-	patt := `[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；'：""【¥ 】…￥！、·（）×\` + "`" + `&/「」\]`
-
 	res := []string{}
 	tokenized, err := tokenizer.Tokenize(txt)
 	if err != nil {
@@ -170,11 +185,11 @@ func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
 			}
 		}
 		// Check single digit (unless num is true)
-		if matched, _ := regexp.MatchString("^[0-9]$", tk); matched && !num {
+		if termSingleDigitRE.MatchString(tk) && !num {
 			continue
 		}
 		// Check patterns
-		if matched, _ := regexp.MatchString(patt, t); matched {
+		if strings.ContainsAny(t, termPretokenChars) {
 			tk = "#"
 		}
 		if tk != "#" && tk != "" {
@@ -194,8 +209,7 @@ func (d *TermWeightDealer) TokenMerge(tks []string) []string {
 			return true
 		}
 		// Match 1-2 alphanumeric characters
-		matched, _ := regexp.MatchString("^[0-9a-z]{1,2}$", t)
-		return matched
+		return termShortTokenRE.MatchString(t)
 	}
 
 	if len(tks) == 0 {
@@ -209,7 +223,7 @@ func (d *TermWeightDealer) TokenMerge(tks []string) []string {
 		if i == 0 && len(tks) > 1 && oneTerm(tks[i]) {
 			nextLen := len([]rune(tks[i+1]))
 			isNextMultiChar := nextLen > 1
-			isNextNotAlnum, _ := regexp.MatchString("^[0-9a-zA-Z]", tks[i+1])
+			isNextNotAlnum := termStartsAlnumRE.MatchString(tks[i+1])
 			if isNextMultiChar && !isNextNotAlnum {
 				res = append(res, tks[0]+" "+tks[1])
 				i = 2
@@ -282,7 +296,7 @@ func (d *TermWeightDealer) Split(txt string) []string {
 
 	tks := []string{}
 	// Normalize spaces (tabs and multiple spaces -> single space)
-	txt = regexp.MustCompile("[ \\t]+").ReplaceAllString(txt, " ")
+	txt = termSpaceRE.ReplaceAllString(txt, " ")
 	txt = strings.TrimSpace(txt)
 
 	for t := range strings.SplitSeq(txt, " ") {
@@ -291,8 +305,8 @@ func (d *TermWeightDealer) Split(txt string) []string {
 			continue
 		}
 		if len(tks) > 0 {
-			prevEndsWithLetter, _ := regexp.MatchString(".*[a-zA-Z]$", tks[len(tks)-1])
-			currEndsWithLetter, _ := regexp.MatchString(".*[a-zA-Z]$", t)
+			prevEndsWithLetter := termEnglishSuffixRE.MatchString(tks[len(tks)-1])
+			currEndsWithLetter := termEnglishSuffixRE.MatchString(t)
 			prevNE := d.ne[tks[len(tks)-1]]
 			currNE := d.ne[t]
 			if prevEndsWithLetter && currEndsWithLetter &&
@@ -309,27 +323,19 @@ func (d *TermWeightDealer) Split(txt string) []string {
 // Weights calculates weights for tokens
 // Reference: term_weight.py L163-246
 func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
-	numPattern := regexp.MustCompile("^[0-9,.]{2,}$")
-	shortLetterPattern := regexp.MustCompile("^[a-z]{1,2}$")
-	numSpacePattern := regexp.MustCompile("^[0-9. -]{2,}$")
-
 	// ner weight function
 	nerWeight := func(t string) float64 {
-		if numPattern.MatchString(t) {
+		if termNumberRE.MatchString(t) {
 			return 2
 		}
-		if shortLetterPattern.MatchString(t) {
+		if termShortLetterRE.MatchString(t) {
 			return 0.01
 		}
 		if d.ne == nil {
 			return 1
 		}
 		if neType, ok := d.ne[t]; ok {
-			weights := map[string]float64{
-				"toxic": 2, "func": 1, "corp": 3, "loca": 3,
-				"sch": 3, "stock": 3, "firstnm": 1,
-			}
-			if w, exists := weights[neType]; exists {
+			if w, exists := termNERWeights[neType]; exists {
 				return w
 			}
 		}
@@ -350,7 +356,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 			return 2
 		}
 		// Fallback to heuristic for terms without tags
-		if matched, _ := regexp.MatchString("^[0-9-]+", tag); matched {
+		if termPostagNumberRE.MatchString(tag) {
 			return 2
 		}
 		return 1
@@ -359,7 +365,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	// freq function using real frequency dictionary
 	var freq func(t string) float64
 	freq = func(t string) float64 {
-		if numSpacePattern.MatchString(t) {
+		if termNumberSpaceRE.MatchString(t) {
 			return 3
 		}
 		// Use tokenizer's freq function
@@ -407,7 +413,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	// df function
 	var df func(t string) float64
 	df = func(t string) float64 {
-		if numSpacePattern.MatchString(t) {
+		if termNumberSpaceRE.MatchString(t) {
 			return 5
 		}
 		if v, ok := d.df[t]; ok {
@@ -459,28 +465,15 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		return result
 	}
 
-	tw := []TermWeight{}
+	tw := make([]TermWeight, 0, len(tks))
+	weightBuf := make([]float64, 0, len(tks))
 
 	if !preprocess {
 		// Direct calculation without preprocessing
-		idf1Vals := make([]float64, len(tks))
-		idf2Vals := make([]float64, len(tks))
-		nerPosVals := make([]float64, len(tks))
-
-		for i, t := range tks {
-			//fmt.Println("index:", i, "term:", t)
-			idf1Vals[i] = idf(freq(t), 10000000)
-			idf2Vals[i] = idf(df(t), 1000000000)
-			nerPosVals[i] = nerWeight(t) * postagWeight(t)
-		}
-
-		wts := make([]float64, len(tks))
-		for i := range tks {
-			wts[i] = (0.3*idf1Vals[i] + 0.7*idf2Vals[i]) * nerPosVals[i]
-		}
-
-		for i, t := range tks {
-			tw = append(tw, TermWeight{Term: t, Weight: wts[i]})
+		for _, t := range tks {
+			weight := (0.3*idf(freq(t), 10000000) + 0.7*idf(df(t), 1000000000)) * nerWeight(t) * postagWeight(t)
+			tw = append(tw, TermWeight{Term: t, Weight: weight})
+			weightBuf = append(weightBuf, weight)
 		}
 	} else {
 		// With preprocessing
@@ -491,23 +484,10 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 				continue
 			}
 
-			idf1Vals := make([]float64, len(tt))
-			idf2Vals := make([]float64, len(tt))
-			nerPosVals := make([]float64, len(tt))
-
-			for i, t := range tt {
-				idf1Vals[i] = idf(freq(t), 10000000)
-				idf2Vals[i] = idf(df(t), 1000000000)
-				nerPosVals[i] = nerWeight(t) * postagWeight(t)
-			}
-
-			wts := make([]float64, len(tt))
-			for i := range tt {
-				wts[i] = (0.3*idf1Vals[i] + 0.7*idf2Vals[i]) * nerPosVals[i]
-			}
-
-			for i, t := range tt {
-				tw = append(tw, TermWeight{Term: t, Weight: wts[i]})
+			for _, t := range tt {
+				weight := (0.3*idf(freq(t), 10000000) + 0.7*idf(df(t), 1000000000)) * nerWeight(t) * postagWeight(t)
+				tw = append(tw, TermWeight{Term: t, Weight: weight})
+				weightBuf = append(weightBuf, weight)
 			}
 		}
 	}
@@ -517,11 +497,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		return tw
 	}
 
-	// Use PairwiseSum to match Python's np.sum() which uses pairwise summation
-	weightBuf := make([]float64, len(tw))
-	for i, twItem := range tw {
-		weightBuf[i] = twItem.Weight
-	}
+	// Use PairwiseSum to match Python's np.sum() which uses pairwise summation.
 	S := common.PairwiseSum(weightBuf)
 
 	if S > 0 {
