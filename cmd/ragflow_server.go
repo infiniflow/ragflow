@@ -513,11 +513,13 @@ func main() {
 	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
-	switch *arguments.logLevel {
-	case "debug":
-		logLevel = "debug"
-	default:
-		logLevel = "info"
+	if arguments.logLevel != nil {
+		switch *arguments.logLevel {
+		case "debug":
+			logLevel = "debug"
+		default:
+			logLevel = "info"
+		}
 	}
 
 	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
