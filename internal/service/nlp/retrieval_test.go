@@ -511,19 +511,21 @@ func assertFusionWeights(t *testing.T, request *types.SearchRequest, want string
 	}
 }
 
-func TestBuildRetrievalFusionExprKeepsPythonWeightsOutsideInfinity(t *testing.T) {
-	expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, float64Ptr(0.8))
-
-	// Elasticsearch must honour the caller weight exactly like Infinity does:
-	// it used to be hardcoded to "0.05,0.95", which silently discarded it.
-	if got := expr.FusionParams["weights"]; got != "0.2,0.8" {
-		t.Fatalf("expected Elasticsearch weights=0.2,0.8, got %v", got)
+func TestBuildRetrievalFusionExprMatchesPythonEngineWeights(t *testing.T) {
+	// Elasticsearch takes the reference's fixed pair regardless of the caller
+	// weight: its first search is a vector recall pass, and the caller weight is
+	// applied afterwards by RerankWithKNN.
+	for _, callerWeight := range []*float64{float64Ptr(0.8), float64Ptr(0.3), nil} {
+		expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, callerWeight)
+		if got := expr.FusionParams["weights"]; got != esFusionWeights {
+			t.Fatalf("expected Elasticsearch weights=%s, got %v", esFusionWeights, got)
+		}
 	}
 
-	// nil weight falls back to the documented default (0.3 vector).
-	expr = buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, nil)
-	if got := expr.FusionParams["weights"]; got != "0.7,0.3" {
-		t.Fatalf("expected default Elasticsearch weights=0.7,0.3, got %v", got)
+	// Infinity fuses the two legs itself, so it keeps the caller weight.
+	expr := buildRetrievalFusionExpr(string(engine.EngineInfinity), 10, float64Ptr(0.8))
+	if got := expr.FusionParams["weights"]; got != "0.2,0.8" {
+		t.Fatalf("expected Infinity weights=0.2,0.8, got %v", got)
 	}
 }
 
@@ -558,9 +560,7 @@ func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
 	}
-	// Elasticsearch must honour the caller weight (0.8 vector -> "0.2,0.8")
-	// instead of the legacy hardcoded "0.05,0.95".
-	if got := fusionExpr.FusionParams["weights"]; got != "0.2,0.8" {
-		t.Fatalf("expected Elasticsearch weights=0.2,0.8, got %v", got)
+	if got := fusionExpr.FusionParams["weights"]; got != esFusionWeights {
+		t.Fatalf("expected Elasticsearch weights=%s, got %v", esFusionWeights, got)
 	}
 }

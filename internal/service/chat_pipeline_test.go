@@ -25,7 +25,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -2159,5 +2163,265 @@ func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
 	}
 	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
 		t.Fatalf("reference doc_aggs = %#v, want d2 (c3)", aggs[0])
+	}
+}
+
+// setupChatPipelineToolSupportTestDB seeds an in-memory scope whose models differ
+// only in their persisted tool-calling flag, so the probe runs without the provider
+// catalog:
+//
+//	model-tools-on        — chat,    extra {"is_tools": true}
+//	model-tools-off       — chat,    extra {"is_tools": false}
+//	model-tools-disabled  — chat,    extra {"is_tools": true}, status inactive
+//	model-embedding-tools — embedding, extra {"is_tools": true}
+func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("failed to migrate model tables: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-tools-on", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-plus", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-tools-off", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
+		&entity.TenantModel{ID: "model-tools-disabled", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-air", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-embedding-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "embedding-3", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+		// Enrolled ONLY as image-to-text: a valid chat-pipeline input, and the case
+		// that used to be resolved as chat and rejected.
+		&entity.TenantModel{ID: "model-image2text-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v-plus", ModelType: int(entity.ModelTypeImage2Text), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+	return db
+}
+
+// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// the no-explicit-LLM branch of the probe resolves.
+func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
+	t.Helper()
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-1",
+		LLMID:  defaultLLMID,
+		Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+}
+
+// TestGetLLMModelConfigCarriesToolSupport pins that the resolution reports the
+// capability of the row it actually loaded — the config the pipeline then carries
+// through the request, which is where Python reads chat_mdl.is_tools from too.
+func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name      string
+		llm       string
+		wantTools bool
+		wantType  string
+	}{
+		{"tool-capable model", "model-tools-on", true, "chat"},
+		{"model without tool support", "model-tools-off", false, "chat"},
+		// Enrolled only as image-to-text. The type has to be resolved before the
+		// row is loaded, otherwise the load is rejected as a chat model and the
+		// capability reads as absent while the pipeline runs on this same model.
+		{"image2text-only model", "model-image2text-tools", true, "image2text"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err != nil {
+				t.Fatalf("getLLMModelConfig(%s) failed: %v", tc.llm, err)
+			}
+			if got := chatConfigSupportsTools(cfg); got != tc.wantTools {
+				t.Errorf("is_tools for %s = %v, want %v", tc.llm, got, tc.wantTools)
+			}
+			if got, _ := cfg["model_type"].(string); got != tc.wantType {
+				t.Errorf("model_type for %s = %q, want %q", tc.llm, got, tc.wantType)
+			}
+		})
+	}
+}
+
+// TestResolveChatModelTargetAcceptsImage2TextOnlyModel pins the shared entry point
+// the agentic wiring and the generation path both use: it must load a model
+// enrolled only as image-to-text — and report its capability — instead of
+// rejecting it as a chat model, which is what made such a request silently fall
+// back to the regular RAG path.
+func TestResolveChatModelTargetAcceptsImage2TextOnlyModel(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	target, err := svc.ModelProviderSvc.ResolveChatModelTarget(t.Context(), "tenant-1", "model-image2text-tools")
+	if err != nil {
+		t.Fatalf("ResolveChatModelTarget(image2text-only model) failed: %v", err)
+	}
+	if !target.ModelType.Has(entity.ModelTypeImage2Text) {
+		t.Errorf("resolved type = %v, want image2text", target.ModelType)
+	}
+	if !target.SupportsTools {
+		t.Error("resolved target reported no tool support, want true")
+	}
+}
+
+// TestGetLLMModelConfigRejectsUnusableModels pins the fail-closed rule: a disabled
+// model, a model not enrolled as a chat model, and an unenrolled reference all
+// fail to resolve (or resolve without a capability) instead of reporting tool
+// support — the same outcome as Python's `getattr(chat_mdl, "is_tools", False)`
+// default.
+func TestGetLLMModelConfigRejectsUnusableModels(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name string
+		llm  string
+	}{
+		{"disabled model", "model-tools-disabled"},
+		{"not enrolled as chat", "model-embedding-tools"},
+		{"unknown model", "no-such-model"},
+		{"unenrolled composite reference", "ghost@default@ZHIPU-AI"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err == nil && chatConfigSupportsTools(cfg) {
+				t.Errorf("unusable model %s reported tool support", tc.llm)
+			}
+		})
+	}
+}
+
+// TestGetLLMModelConfigFallsBackToTenantDefault covers the no-explicit-LLM branch:
+// the resolution must fall back to the tenant default chat model (composite
+// "model@provider" reference) and report its capability.
+func TestGetLLMModelConfigFallsBackToTenantDefault(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-plus@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if !chatConfigSupportsTools(cfg) {
+		t.Error("tenant default with is_tools=true reported no tool support, want true")
+	}
+}
+
+// TestGetLLMModelConfigTenantDefaultWithoutToolSupport is the mirror case: a
+// tenant default that cannot call tools must not be reported as capable.
+func TestGetLLMModelConfigTenantDefaultWithoutToolSupport(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if chatConfigSupportsTools(cfg) {
+		t.Error("tenant default with is_tools=false reported tool support, want false")
+	}
+}
+
+// TestChatConfigSupportsToolsFailClosed is the guard case for the config read: a
+// missing config, a config without the flag, and a flag carrying anything but a
+// truthy boolean all mean "no tool support", the same outcome as Python's default.
+func TestChatConfigSupportsToolsFailClosed(t *testing.T) {
+	if chatConfigSupportsTools(nil) {
+		t.Error("nil config reported tool support, want false")
+	}
+	if chatConfigSupportsTools(map[string]interface{}{"model_type": "chat"}) {
+		t.Error("config without an is_tools flag reported tool support, want false")
+	}
+	for _, v := range []interface{}{false, "false", "", 0, nil} {
+		if chatConfigSupportsTools(map[string]interface{}{"is_tools": v}) {
+			t.Errorf("is_tools=%#v reported tool support, want false", v)
+		}
+	}
+	if !chatConfigSupportsTools(map[string]interface{}{"is_tools": true}) {
+		t.Error("is_tools=true reported no tool support, want true")
+	}
+}
+
+// TestReasoningNeedsAgenticGraphGatesOnToolSupport pins the gate Python
+// rag_agent applies before building its agentic loop: reasoning level 0 turns it
+// off, and so does a chat model that cannot call tools. Only reasoning enabled
+// together with tool support drives the agentic graph.
+func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
+	capable := map[string]interface{}{"model_type": "chat", "is_tools": true}
+	incapable := map[string]interface{}{"model_type": "chat", "is_tools": false}
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+
+	for _, tc := range []struct {
+		name           string
+		chat           *entity.Chat
+		cfg            map[string]interface{}
+		reasoningLevel int
+		want           bool
+	}{
+		{"reasoning off", chat, capable, 0, false},
+		{"reasoning on and tool-capable", chat, capable, 2, true},
+		{"reasoning on but no tool support", chat, incapable, 2, false},
+		{"reasoning on, unresolvable model", chat, nil, 4, false},
+		{"reasoning on, nil dialog", nil, capable, 2, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := reasoningNeedsAgenticGraph(tc.chat, tc.cfg, tc.reasoningLevel); got != tc.want {
+				t.Errorf("reasoningNeedsAgenticGraph(level=%d) = %v, want %v", tc.reasoningLevel, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
+// carrying the flag on the resolution instead of memoizing it: a model edited
+// after the first request is seen by the next resolution, with no TTL to wait out.
+func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig failed: %v", err)
+	}
+	if !chatConfigSupportsTools(cfg) {
+		t.Fatal("tool-capable model reported no support")
+	}
+
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-tools-on").
+		Update("extra", `{"is_tools":false}`).Error; err != nil {
+		t.Fatalf("flip is_tools: %v", err)
+	}
+
+	cfg, _, _, _, err = svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig after the flag flip failed: %v", err)
+	}
+	if chatConfigSupportsTools(cfg) {
+		t.Error("a flipped is_tools flag was not seen by the next resolution")
 	}
 }
