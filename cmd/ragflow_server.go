@@ -1206,33 +1206,24 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// "gpt-4o"), i.e. Python chat_mdl.llm_name. It is the gen_json reply-cache
 		// key's model component; empty disables that cache.
 		resolvedModelName := ""
-		if req.ModelID != "" {
-			if target, mErr := modelSolver.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); mErr == nil {
-				if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
-					// MaxLength mirrors Python LLMBundle.max_length (the model's
-					// context window in tokens); message-fitting nodes (calculate,
-					// structure_qa) use it as their chat.FitMessages budget.
-					model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
-					resolvedModelName = target.ModelName
-					// Reuse the same resolved driver/name/api as the invoker so
-					// the outer loop and the inner tool calls share one model.
-					outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
-				}
-			} else {
-				common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
+		// The resolution goes through the same entry point the pipeline's own
+		// capability probe uses, so the model decided there is the model wired
+		// here: req.ModelID may be empty (a dialog without an llm_id), and both
+		// layers must then fall back to the tenant default rather than resolving
+		// nothing here and judging capability there.
+		if target, mErr := modelProviderService.ResolveChatModelTarget(ctx, req.TenantID, req.ModelID); mErr == nil {
+			if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
+				// MaxLength mirrors Python LLMBundle.max_length (the model's
+				// context window in tokens); message-fitting nodes (calculate,
+				// structure_qa) use it as their chat.FitMessages budget.
+				model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
+				resolvedModelName = target.ModelName
+				// Reuse the same resolved driver/name/api as the invoker so
+				// the outer loop and the inner tool calls share one model.
+				outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 			}
-		}
-
-		// OuterSupportsTools mirrors Python `if not chat_mdl.is_tools`: gate the
-		// outer react loop on the model's tool-calling capability, not mere
-		// existence of an outer model. A model that can't emit tool_calls must fall
-		// back to the direct graph (Python async_chat) rather than bind tools and
-		// return a retrieval-less direct answer.
-		outerSupportsTools := false
-		if req.ModelID != "" {
-			if ts, tsErr := modelProviderService.ResolveModelToolSupport(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); tsErr == nil {
-				outerSupportsTools = ts
-			}
+		} else {
+			common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
 		}
 
 		// Load the KB objects (mirroring Python RAGTools' self.kbs via
@@ -1270,9 +1261,6 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// first hop; resolveEffectiveQuestion (agentic_rag.py:865) prefers
 			// this original over that rewrite when both describe the same turn.
 			OriginalQuestion: req.Question,
-			// OuterSupportsTools gates the outer react loop on tool capability
-			// (Python is_tools); false → fall back to direct RunAgenticRAG.
-			OuterSupportsTools: outerSupportsTools,
 			// DocScope mirrors Python RAGTools(doc_scope=...): the narrowed doc_ids
 			// (chat-level doc_ids + meta_data_filter) restrict every agentic
 			// retrieval to the user-selected documents instead of the whole kb.

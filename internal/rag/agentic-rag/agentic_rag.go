@@ -194,11 +194,6 @@ type RAGTools struct {
 	// When nil, Rag falls back to the direct RunAgenticRAG path, so callers that don't wire
 	// an outer model see unchanged behaviour.
 	Outer *models.ChatModel
-	// OuterSupportsTools gates the outer react loop: when the outer model exists but
-	// cannot emit tool calls, the loop must be skipped (it would otherwise bind tools and,
-	// producing no tool_call, return a retrieval-less direct answer). Callers set it from
-	// ModelProviderService.ResolveModelToolSupport.
-	OuterSupportsTools bool
 	// Cache answers near-identical re-asks from an earlier answer. Rag builds a fresh
 	// per-turn RAGCache when this is nil, so caching is ON by default. To share one cache
 	// across multiple Rag() calls within a single turn (the concurrent tool_call case),
@@ -1219,7 +1214,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 		deps.Cache = NewRAGCache()
 	}
 
-	if deps.Outer != nil && deps.OuterSupportsTools {
+	if deps.Outer != nil {
 		if deps.AnswerSink != nil {
 			return runOuterReactStream(ctx, deps, req, logger)
 		}
@@ -1289,17 +1284,17 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	deps.Finalize = compose
 
 	// Say why this run goes straight to the research graph — DEVELOPER LOG ONLY.
-	// The decision is recorded where it is taken (the outer branch above did not
-	// fire, and no cache hit short-circuited), because a capability probe that fails
-	// closed is otherwise invisible: nothing in the run says whether the outer model
-	// was absent or merely reported no tool support.
+	// Only one reason remains: no outer model was wired (the outer branch above did
+	// not fire, and no cache hit short-circuited). Whether the request's chat model
+	// can call tools at all is decided before this call, by the caller that picks
+	// between the agentic path and the regular chat.
 	//
 	// It stays out of the think block on purpose: it describes the runtime' wiring,
 	// not the question or the research, and a reader gets one of these on every run
 	// in a deployment without an outer loop. The reader-visible trace simply has no
 	// "[Tool loop]" section in that configuration, which is the honest shape — the
 	// section exists when a loop ran.
-	logger.Printf("[Agentic RAG] %s", outerLoopAbsentLine(deps))
+	logger.Printf("[Agentic RAG] No outer model is wired, so this run has no outer tool loop.")
 
 	RunAgenticRAG(ctx, deps, req, searchDeps, kb, resp, logger, spec)
 
@@ -1905,22 +1900,6 @@ func outerLoopEndLine(ragCalls int, answered bool) string {
 	default:
 		return "The rag tool produced the final answer, done."
 	}
-}
-
-// outerLoopAbsentLine says why a run has NO "[Tool loop]" section — which is the
-// normal shape of a deployment that never wires an outer model, and the shape of a
-// tool-incapable one.
-//
-// It is reported to the DEVELOPER LOG only (see the call site in Rag). The two cases
-// are kept apart because they are different situations: a model that merely failed
-// to report its tool capability looks identical to one that has none (the probe
-// fails closed in cmd/ragflow_server.go), so this line is what tells an operator
-// which of the two they are looking at.
-func outerLoopAbsentLine(deps RAGTools) string {
-	if deps.Outer == nil {
-		return "No outer model is wired, so this run has no outer tool loop."
-	}
-	return "The outer model cannot call tools, so this run has no outer tool loop."
 }
 
 // outerReactSession implements models.ToolCallSession for the outer react loop.
