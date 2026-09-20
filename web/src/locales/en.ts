@@ -748,6 +748,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parseType: 'Parse mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      noConfigChunkerHint:
+        'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
         'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Dataset name',
@@ -3514,6 +3516,14 @@ This process aggregates variables from multiple branches into a single variable 
       titleChunkerDescription:
         'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
       titleChunker: 'Title Chunker',
+      oneChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      qAChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      tableChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      pageChunkerDescription:
+        'No additional configuration is required for this chunker.',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',

@@ -686,6 +686,8 @@ export default {
       parseType: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      noConfigChunkerHint:
+        '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
@@ -3060,6 +3062,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
+      oneChunkerDescription: '此 Chunker 无需额外配置。',
+      qAChunkerDescription: '此 Chunker 无需额外配置。',
+      tableChunkerDescription: '此 Chunker 无需额外配置。',
+      pageChunkerDescription: '此 Chunker 无需额外配置。',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
