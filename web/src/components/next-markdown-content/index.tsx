@@ -47,6 +47,7 @@ import {
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  replaceToolCallToSection,
   unescapeAngleBrackets,
 } from '@/utils/chat';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -206,7 +207,15 @@ function MarkdownContent({
     const safeContent = escapeUnmatchedAngleBrackets(content);
 
     let text = DOMPurify.sanitize(safeContent, {
-      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
+      ADD_TAGS: [
+        'think',
+        'section',
+        'details',
+        'summary',
+        'retrieving',
+        'tool_call',
+        'pre',
+      ],
       ADD_ATTR: ['class'],
     });
     // let text = content;
@@ -221,6 +230,7 @@ function MarkdownContent({
       pipe(
         (value: string) => replaceThinkToSection(value, thinkSummary),
         replaceRetrievingToSection,
+        replaceToolCallToSection,
         preprocessLaTeX,
       )(nextText),
     );

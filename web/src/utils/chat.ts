@@ -131,6 +131,34 @@ export function replaceRetrievingToSection(text: string = '') {
   return result;
 }
 
+/** Escape for rehypeRaw; use numeric entities so preprocessLaTeX won't undo them. */
+function escapeHtmlForToolCall(value: string): string {
+  return value
+    .replace(/&/g, '&#38;')
+    .replace(/</g, '&#60;')
+    .replace(/>/g, '&#62;');
+}
+
+export function replaceToolCallToSection(text: string = '') {
+  return text.replace(
+    /<tool_call>([\s\S]*?)<\/tool_call>/g,
+    (_match, body: string) => {
+      let summary = 'Tool call';
+      try {
+        const obj = JSON.parse(body);
+        if (obj?.name) {
+          summary = `Tool call: ${String(obj.name)}`;
+        }
+      } catch {
+        // keep default summary
+      }
+      const safeSummary = escapeHtmlForToolCall(summary);
+      const safeBody = escapeHtmlForToolCall(body.trim());
+      return `<details class="tool_call"><summary>${safeSummary}</summary><pre>${safeBody}</pre></details>`;
+    },
+  );
+}
+
 // Placeholder markers used internally to protect standalone < and > from
 // DOMPurify stripping. These Unicode symbols (U+27E8/U+27E9) are extremely
 // unlikely to appear in normal user input.
