@@ -14,7 +14,7 @@ _original_init_settings = settings.init_settings
 _original_get_secret_key = settings.get_secret_key
 _original_socket_connect = socket.socket.connect
 _original_create_connection = socket.create_connection
-_isolated_module_namespaces = ("deepdoc.parser", "rag.llm")
+_isolated_module_namespaces = ("common.connection_utils", "deepdoc.parser", "rag.llm")
 
 
 def _is_isolated_module(module_name):
