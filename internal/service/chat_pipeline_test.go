@@ -24,7 +24,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -2205,6 +2204,9 @@ func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModel{ID: "model-tools-off", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
 		&entity.TenantModel{ID: "model-tools-disabled", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-air", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
 		&entity.TenantModel{ID: "model-embedding-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "embedding-3", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+		// Enrolled ONLY as image-to-text: a valid chat-pipeline input, and the case
+		// that used to be resolved as chat and rejected.
+		&entity.TenantModel{ID: "model-image2text-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v-plus", ModelType: int(entity.ModelTypeImage2Text), Status: "active", Extra: `{"is_tools":true}`},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
@@ -2228,35 +2230,68 @@ func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID s
 	}
 }
 
-// TestChatModelSupportsToolsReadsTenantModelFlag pins that the probe reads the
-// flag persisted on the tenant model's extra JSON, in both directions — the
-// tenant's own value beats the catalog.
-func TestChatModelSupportsToolsReadsTenantModelFlag(t *testing.T) {
+// TestGetLLMModelConfigCarriesToolSupport pins that the resolution reports the
+// capability of the row it actually loaded — the config the pipeline then carries
+// through the request, which is where Python reads chat_mdl.is_tools from too.
+func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
 	for _, tc := range []struct {
-		name string
-		llm  string
-		want bool
+		name      string
+		llm       string
+		wantTools bool
+		wantType  string
 	}{
-		{"tool-capable model", "model-tools-on", true},
-		{"model without tool support", "model-tools-off", false},
+		{"tool-capable model", "model-tools-on", true, "chat"},
+		{"model without tool support", "model-tools-off", false, "chat"},
+		// Enrolled only as image-to-text. The type has to be resolved before the
+		// row is loaded, otherwise the load is rejected as a chat model and the
+		// capability reads as absent while the pipeline runs on this same model.
+		{"image2text-only model", "model-image2text-tools", true, "image2text"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
-			if got != tc.want {
-				t.Errorf("chatModelSupportsTools(%s) = %v, want %v", tc.llm, got, tc.want)
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err != nil {
+				t.Fatalf("getLLMModelConfig(%s) failed: %v", tc.llm, err)
+			}
+			if got := chatConfigSupportsTools(cfg); got != tc.wantTools {
+				t.Errorf("is_tools for %s = %v, want %v", tc.llm, got, tc.wantTools)
+			}
+			if got, _ := cfg["model_type"].(string); got != tc.wantType {
+				t.Errorf("model_type for %s = %q, want %q", tc.llm, got, tc.wantType)
 			}
 		})
 	}
 }
 
-// TestChatModelSupportsToolsRejectsInvalidReferences pins the fail-closed rule:
-// a disabled model, a model not enrolled as a chat model, and an unenrolled
-// reference all report no tool support rather than a definitive yes — the same
-// outcome as Python's `getattr(chat_mdl, "is_tools", False)` default.
-func TestChatModelSupportsToolsRejectsInvalidReferences(t *testing.T) {
+// TestResolveChatModelTargetAcceptsImage2TextOnlyModel pins the shared entry point
+// the agentic wiring and the generation path both use: it must load a model
+// enrolled only as image-to-text — and report its capability — instead of
+// rejecting it as a chat model, which is what made such a request silently fall
+// back to the regular RAG path.
+func TestResolveChatModelTargetAcceptsImage2TextOnlyModel(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	target, err := svc.ModelProviderSvc.ResolveChatModelTarget(t.Context(), "tenant-1", "model-image2text-tools")
+	if err != nil {
+		t.Fatalf("ResolveChatModelTarget(image2text-only model) failed: %v", err)
+	}
+	if !target.ModelType.Has(entity.ModelTypeImage2Text) {
+		t.Errorf("resolved type = %v, want image2text", target.ModelType)
+	}
+	if !target.SupportsTools {
+		t.Error("resolved target reported no tool support, want true")
+	}
+}
+
+// TestGetLLMModelConfigRejectsUnusableModels pins the fail-closed rule: a disabled
+// model, a model not enrolled as a chat model, and an unenrolled reference all
+// fail to resolve (or resolve without a capability) instead of reporting tool
+// support — the same outcome as Python's `getattr(chat_mdl, "is_tools", False)`
+// default.
+func TestGetLLMModelConfigRejectsUnusableModels(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
@@ -2270,55 +2305,64 @@ func TestChatModelSupportsToolsRejectsInvalidReferences(t *testing.T) {
 		{"unenrolled composite reference", "ghost@default@ZHIPU-AI"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm}); got {
-				t.Errorf("chatModelSupportsTools(%s) = true, want false", tc.llm)
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err == nil && chatConfigSupportsTools(cfg) {
+				t.Errorf("unusable model %s reported tool support", tc.llm)
 			}
 		})
 	}
 }
 
-// TestChatModelSupportsToolsFallsBackToTenantDefault covers the no-explicit-LLM
-// branch: the probe must resolve the tenant default chat model (composite
-// "model@provider" reference) and read its flag.
-func TestChatModelSupportsToolsFallsBackToTenantDefault(t *testing.T) {
+// TestGetLLMModelConfigFallsBackToTenantDefault covers the no-explicit-LLM branch:
+// the resolution must fall back to the tenant default chat model (composite
+// "model@provider" reference) and report its capability.
+func TestGetLLMModelConfigFallsBackToTenantDefault(t *testing.T) {
 	db := setupChatPipelineToolSupportTestDB(t)
 	seedChatPipelineToolSupportTenant(t, db, "glm-4-plus@ZHIPU-AI")
 	svc := NewChatPipelineService()
 
-	if got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1"}); !got {
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if !chatConfigSupportsTools(cfg) {
 		t.Error("tenant default with is_tools=true reported no tool support, want true")
 	}
 }
 
-// TestChatModelSupportsToolsTenantDefaultWithoutToolSupport is the mirror case:
-// a tenant default that cannot call tools must not be reported as capable.
-func TestChatModelSupportsToolsTenantDefaultWithoutToolSupport(t *testing.T) {
+// TestGetLLMModelConfigTenantDefaultWithoutToolSupport is the mirror case: a
+// tenant default that cannot call tools must not be reported as capable.
+func TestGetLLMModelConfigTenantDefaultWithoutToolSupport(t *testing.T) {
 	db := setupChatPipelineToolSupportTestDB(t)
 	seedChatPipelineToolSupportTenant(t, db, "glm-4-flash@ZHIPU-AI")
 	svc := NewChatPipelineService()
 
-	if got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1"}); got {
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if chatConfigSupportsTools(cfg) {
 		t.Error("tenant default with is_tools=false reported tool support, want false")
 	}
 }
 
-// TestChatModelSupportsToolsMissingDependencies is the guard case: an
-// uninitialised service or a nil dialog must not panic and must report no tool
-// support.
-func TestChatModelSupportsToolsMissingDependencies(t *testing.T) {
-	var nilSvc *ChatPipelineService
-	if got := nilSvc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}); got {
-		t.Error("nil service reported tool support, want false")
+// TestChatConfigSupportsToolsFailClosed is the guard case for the config read: a
+// missing config, a config without the flag, and a flag carrying anything but a
+// truthy boolean all mean "no tool support", the same outcome as Python's default.
+func TestChatConfigSupportsToolsFailClosed(t *testing.T) {
+	if chatConfigSupportsTools(nil) {
+		t.Error("nil config reported tool support, want false")
 	}
-
-	emptySvc := &ChatPipelineService{}
-	if got := emptySvc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}); got {
-		t.Error("service without a model provider reported tool support, want false")
+	if chatConfigSupportsTools(map[string]interface{}{"model_type": "chat"}) {
+		t.Error("config without an is_tools flag reported tool support, want false")
 	}
-
-	svc := NewChatPipelineService()
-	if got := svc.chatModelSupportsTools(t.Context(), nil); got {
-		t.Error("nil dialog reported tool support, want false")
+	for _, v := range []interface{}{false, "false", "", 0, nil} {
+		if chatConfigSupportsTools(map[string]interface{}{"is_tools": v}) {
+			t.Errorf("is_tools=%#v reported tool support, want false", v)
+		}
+	}
+	if !chatConfigSupportsTools(map[string]interface{}{"is_tools": true}) {
+		t.Error("is_tools=true reported no tool support, want true")
 	}
 }
 
@@ -2327,64 +2371,57 @@ func TestChatModelSupportsToolsMissingDependencies(t *testing.T) {
 // off, and so does a chat model that cannot call tools. Only reasoning enabled
 // together with tool support drives the agentic graph.
 func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
-	setupChatPipelineToolSupportTestDB(t)
-	svc := NewChatPipelineService()
-
-	capable := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
-	incapable := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-off"}
+	capable := map[string]interface{}{"model_type": "chat", "is_tools": true}
+	incapable := map[string]interface{}{"model_type": "chat", "is_tools": false}
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
 
 	for _, tc := range []struct {
 		name           string
 		chat           *entity.Chat
+		cfg            map[string]interface{}
 		reasoningLevel int
 		want           bool
 	}{
-		{"reasoning off", capable, 0, false},
-		{"reasoning on and tool-capable", capable, 2, true},
-		{"reasoning on but no tool support", incapable, 2, false},
-		{"reasoning on, unresolvable model", &entity.Chat{TenantID: "tenant-1", LLMID: "no-such-model"}, 4, false},
-		{"reasoning on, nil dialog", nil, 2, false},
+		{"reasoning off", chat, capable, 0, false},
+		{"reasoning on and tool-capable", chat, capable, 2, true},
+		{"reasoning on but no tool support", chat, incapable, 2, false},
+		{"reasoning on, unresolvable model", chat, nil, 4, false},
+		{"reasoning on, nil dialog", nil, capable, 2, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := svc.reasoningNeedsAgenticGraph(t.Context(), tc.chat, tc.reasoningLevel); got != tc.want {
+			if got := reasoningNeedsAgenticGraph(tc.chat, tc.cfg, tc.reasoningLevel); got != tc.want {
 				t.Errorf("reasoningNeedsAgenticGraph(level=%d) = %v, want %v", tc.reasoningLevel, got, tc.want)
 			}
 		})
 	}
 }
 
-// TestChatModelSupportsToolsProbeIsCached pins the memoization: a verdict may be
-// reused, but only for chatModelToolSupportTTL.
-func TestChatModelSupportsToolsProbeIsCached(t *testing.T) {
+// TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
+// carrying the flag on the resolution instead of memoizing it: a model edited
+// after the first request is seen by the next resolution, with no TTL to wait out.
+func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
 	db := setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
 
-	if !svc.chatModelSupportsTools(t.Context(), chat) {
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig failed: %v", err)
+	}
+	if !chatConfigSupportsTools(cfg) {
 		t.Fatal("tool-capable model reported no support")
 	}
 
-	// Flip the persisted flag: the verdict cached by the first probe must hold
-	// until its TTL lapses, which is what makes repeated reasoning turns cheap.
 	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-tools-on").
 		Update("extra", `{"is_tools":false}`).Error; err != nil {
 		t.Fatalf("flip is_tools: %v", err)
 	}
-	if !svc.chatModelSupportsTools(t.Context(), chat) {
-		t.Fatal("cached verdict was dropped before its TTL lapsed")
-	}
 
-	// Expire the entry through the same accessors the probe uses: the next call
-	// must read the row again and see the flipped flag.
-	provider := svc.ModelProviderSvc
-	provider.toolSupportMu.Lock()
-	provider.toolSupportCache[chatModelToolSupportKey("tenant-1", "model-tools-on")] = chatModelToolSupportEntry{
-		supported: true,
-		expiresAt: time.Now().Add(-time.Second),
+	cfg, _, _, _, err = svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig after the flag flip failed: %v", err)
 	}
-	provider.toolSupportMu.Unlock()
-
-	if svc.chatModelSupportsTools(t.Context(), chat) {
-		t.Fatal("expired verdict was reused instead of re-probing")
+	if chatConfigSupportsTools(cfg) {
+		t.Error("a flipped is_tools flag was not seen by the next resolution")
 	}
 }

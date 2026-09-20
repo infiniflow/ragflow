@@ -660,7 +660,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// Python rag_agent also refuses the agentic loop when the model cannot
 		// call tools, and routes those requests to async_chat.
 		reasoningLevel := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
-		useReasoning := s.reasoningNeedsAgenticGraph(ctx, chat, reasoningLevel)
+		// The chat model's tool capability rides on the config Phase 2 resolved,
+		// so the guard costs nothing here and judges the model the request
+		// actually runs on.
+		useReasoning := reasoningNeedsAgenticGraph(chat, llmModelConfig, reasoningLevel)
 		common.Info("Phase 9: Retrieval",
 			zap.Bool("has_knowledge_param", hasKnowledgeParam),
 			zap.Int("reasoning_level", reasoningLevel),
@@ -1162,7 +1165,21 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+		// The citation template joins the prompt only when the request is issued
+		// (prompt+prompt4citation, below), which is after messageFitIn sized the
+		// window — so its tokens are added here by hand. They are deliberately NOT
+		// folded into messageFitIn: the reference implementation trims on the same
+		// budget (dialog_service async_chat: message_fit_in(msg, max_tokens*0.95),
+		// then prompt + prompt4citation), and moving the trim boundary would change
+		// which messages get cut. The completion clamp is where the omission bites:
+		// it derives the completion budget from the room the prompt leaves, so
+		// leaving ~2k tokens of citation instructions out of that sum can hand the
+		// provider a prompt plus completion that overruns the context window.
+		citationTokens := 0
+		if prompt4citation != "" {
+			citationTokens = graph.NumTokensFromString(prompt4citation)
+		}
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount+citationTokens); err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
@@ -1581,7 +1598,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		target, err := s.resolveChatModelTarget(ctx, chat)
+		target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -2102,18 +2119,21 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		}
 		// Probe the default model's enrolled types so a vision-capable
 		// default dispatches as image2text (same rule as the explicit-LLM
-		// branches below).
+		// branches below), and carry the tool capability the resolution
+		// already computed.
 		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelTargetRef(target))
+		cfg["is_tools"] = target.SupportsTools
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
-	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
-	// when the LLM is registered as such, otherwise CHAT.
-	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	modelType := entity.ModelTypeChat
-	if modelTypeStr == "image2text" {
-		modelType = entity.ModelTypeImage2Text
-	}
+	// Branches 1/2: explicit LLM. Resolve the enrolled type first — IMAGE2TEXT
+	// when the LLM is registered as vision-capable, CHAT otherwise — and let the
+	// same resolution report the model's tool capability.
+	//
+	// This mirrors Python, which resolves chat_mdl once in get_models() and then
+	// reads chat_mdl.is_tools off it (dialog_service.py rag_agent): one lookup, and
+	// the model that runs is by construction the model that was judged.
+	modelType := s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
 	if err != nil {
 		return nil, "", "", "", err
@@ -2124,20 +2144,9 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = modelTypeStr
+	cfg["model_type"] = chatModelTypeName(modelType)
+	cfg["is_tools"] = target.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
-}
-
-func (s *ChatPipelineService) resolveChatModelTarget(ctx context.Context, chat *entity.Chat) (*ModelTarget, error) {
-	if chat.LLMID == "" {
-		return s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
-	}
-
-	modelType := entity.ModelTypeChat
-	if s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID) == "image2text" {
-		modelType = entity.ModelTypeImage2Text
-	}
-	return s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
 }
 
 // reasoningNeedsAgenticGraph collapses Python rag_agent's two guards: reasoning on
@@ -2145,11 +2154,11 @@ func (s *ChatPipelineService) resolveChatModelTarget(ctx context.Context, chat *
 // bound rag tool — with a model that never emits a tool_call the whole research
 // budget goes to turns that retrieve nothing, so Python routes those requests to
 // async_chat, the regular RAG branch below.
-func (s *ChatPipelineService) reasoningNeedsAgenticGraph(ctx context.Context, chat *entity.Chat, reasoningLevel int) bool {
-	if reasoningLevel <= 0 {
+func reasoningNeedsAgenticGraph(chat *entity.Chat, cfg map[string]interface{}, reasoningLevel int) bool {
+	if chat == nil || reasoningLevel <= 0 {
 		return false
 	}
-	if s.chatModelSupportsTools(ctx, chat) {
+	if chatConfigSupportsTools(cfg) {
 		return true
 	}
 	common.Info("LLM does not support tool calls; falling back to regular RAG chat",
@@ -2157,33 +2166,41 @@ func (s *ChatPipelineService) reasoningNeedsAgenticGraph(ctx context.Context, ch
 	return false
 }
 
-// chatModelSupportsTools mirrors Python's `getattr(chat_mdl, "is_tools", False)`:
-// the flag comes from ResolveChatModelToolSupport, which resolves the model the
-// request will actually run on and prefers the tenant model's persisted value over
-// the provider catalog. Unresolvable counts as unsupported, like Python's default.
-func (s *ChatPipelineService) chatModelSupportsTools(ctx context.Context, chat *entity.Chat) bool {
-	if s == nil || s.ModelProviderSvc == nil || chat == nil {
+// chatConfigSupportsTools mirrors Python's `getattr(chat_mdl, "is_tools", False)`.
+// The flag rides on the resolved model config — getLLMModelConfig copies it off
+// the resolution (resolvedModel.supportsTools) — so this is a field read, exactly
+// like Python's, with no second lookup that could resolve a different model than
+// the one the request runs on. A missing flag means the model was never resolved,
+// which counts as unsupported, the same as Python's default.
+func chatConfigSupportsTools(cfg map[string]interface{}) bool {
+	if cfg == nil {
 		return false
 	}
-	return s.ModelProviderSvc.ResolveChatModelToolSupport(ctx, chat.TenantID, chat.LLMID)
+	// Read the value the way the persisted flag is read (extraToolSupport): it is
+	// written as a JSON boolean but has historically also been spelled as a string.
+	switch v := cfg["is_tools"].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	case float64:
+		return v != 0
+	}
+	return false
 }
 
-// resolveChatModelType probes the enrolled model types for llmRef and
-// returns "image2text" when the model is vision-capable (enrolled with an
-// image2text / "vision" type), "chat" otherwise. Probe failures are
-// conservative: they yield "chat", which drops image attachments instead
-// of risking a provider-side rejection.
+// resolveChatModelType renders the enrolled type of llmRef as the config's
+// model_type value. Probe failures are conservative: they yield "chat", which
+// drops image attachments instead of risking a provider-side rejection.
 func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	modelTypes, err := s.ModelProviderSvc.modelSolver().ResolveModelType(ctx, tenantID, llmRef)
-	if err != nil {
-		return "chat"
-	}
-	for _, mt := range modelTypes {
-		// ModelType is a bitmask: a model enrolled as chat+image2text
-		// reports a combined value, so test membership, not equality.
-		if mt.Has(entity.ModelTypeImage2Text) {
-			return "image2text"
-		}
+	return chatModelTypeName(s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, tenantID, llmRef))
+}
+
+// chatModelTypeName renders a resolved model type as the model_type value
+// downstream image-attachment dispatch compares against.
+func chatModelTypeName(modelType entity.ModelType) string {
+	if modelType.Has(entity.ModelTypeImage2Text) {
+		return "image2text"
 	}
 	return "chat"
 }
@@ -2273,7 +2290,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	target, err := s.resolveChatModelTarget(ctx, chat)
+	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
@@ -2847,7 +2864,7 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	target, err := s.resolveChatModelTarget(ctx, chat)
+	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
 	if err != nil {
 		return nil
 	}

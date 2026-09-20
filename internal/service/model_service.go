@@ -30,8 +30,6 @@ import (
 	"ragflow/internal/utility"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -174,11 +172,6 @@ type ModelProviderService struct {
 	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
 	tenantDAO            *dao.TenantDAO
 	userTenantDAO        *dao.UserTenantDAO
-
-	// Memoizes capability probes (see ResolveChatModelToolSupport); accessed only
-	// through the accessors, so the zero value is a usable empty cache.
-	toolSupportMu    sync.Mutex
-	toolSupportCache map[string]chatModelToolSupportEntry
 }
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
@@ -3553,7 +3546,7 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 		if !allowed {
 			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
 		}
-		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}
@@ -3584,7 +3577,7 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 		if modelObj.Status != "active" {
 			return false, fmt.Errorf("model %q is disabled", modelRef)
 		}
-		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
@@ -3605,10 +3598,14 @@ func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenan
 	if m == nil {
 		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
 	}
+	solver := m.modelSolver()
 	if strings.TrimSpace(modelRef) == "" {
-		return m.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+		return solver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
 	}
-	return m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelRef)
+	// Resolve the enrolled type first: a reference enrolled only as image-to-text
+	// is a valid chat-pipeline input (its driver answers chat requests), and
+	// resolving it as chat would fail the type check outright.
+	return solver.ResolveModelConfig(ctx, tenantID, solver.ResolveChatModelType(ctx, tenantID, modelRef), modelRef)
 }
 
 // modelTargetRef renders a resolved model as the lookups' reference: its
@@ -3623,76 +3620,31 @@ func modelTargetRef(target *ModelTarget) string {
 	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
 }
 
-// ResolveChatModelToolSupport mirrors Python's `getattr(chat_mdl, "is_tools",
-// False)` for the model the request will run on; an unresolvable reference counts
-// as unsupported. The verdict is memoized for chatModelToolSupportTTL — Python
-// reads a field off an already-loaded model, here a probe costs several lookups —
-// and a resolution failure is not cached, so a transient error cannot pin a
-// request family to the wrong path.
-func (m *ModelProviderService) ResolveChatModelToolSupport(ctx context.Context, tenantID, modelRef string) bool {
-	if m == nil {
-		return false
-	}
-	if supported, ok := m.cachedChatModelToolSupport(tenantID, modelRef); ok {
-		return supported
-	}
-	target, err := m.ResolveChatModelTarget(ctx, tenantID, modelRef)
-	if err != nil {
-		return false
-	}
-	ok, err := m.ResolveModelToolSupport(ctx, tenantID, entity.ModelTypeChat, modelTargetRef(target))
-	if err != nil {
-		return false
-	}
-	m.storeChatModelToolSupport(tenantID, modelRef, ok)
-	return ok
-}
-
-// chatModelToolSupportTTL bounds a reuse of the probe verdict: long enough to
-// cover a page of questions, short enough that a model edit takes effect quickly.
-const chatModelToolSupportTTL = 60 * time.Second
-
-type chatModelToolSupportEntry struct {
-	supported bool
-	expiresAt time.Time
-}
-
-// An empty modelRef means "the tenant default" and is its own key.
-func chatModelToolSupportKey(tenantID, modelRef string) string {
-	return tenantID + "\x00" + strings.TrimSpace(modelRef)
-}
-
-func (m *ModelProviderService) cachedChatModelToolSupport(tenantID, modelRef string) (bool, bool) {
-	m.toolSupportMu.Lock()
-	defer m.toolSupportMu.Unlock()
-	entry, ok := m.toolSupportCache[chatModelToolSupportKey(tenantID, modelRef)]
-	if !ok || !time.Now().Before(entry.expiresAt) {
-		return false, false
-	}
-	return entry.supported, true
-}
-
-func (m *ModelProviderService) storeChatModelToolSupport(tenantID, modelRef string, supported bool) {
-	m.toolSupportMu.Lock()
-	defer m.toolSupportMu.Unlock()
-	if m.toolSupportCache == nil {
-		m.toolSupportCache = make(map[string]chatModelToolSupportEntry)
-	}
-	m.toolSupportCache[chatModelToolSupportKey(tenantID, modelRef)] = chatModelToolSupportEntry{
-		supported: supported,
-		expiresAt: time.Now().Add(chatModelToolSupportTTL),
-	}
-}
-
-// toolSupportFromTenantModel returns the is_tools flag persisted on a tenant
-// model's extra JSON when present, otherwise the provider catalog's declaration
-// for that model. Mirrors Python's model_extra.get("is_tools", is_tool).
-func toolSupportFromTenantModel(extra, providerName, modelName string) bool {
+// toolSupportFromEnrollment applies the capability precedence the rest of the
+// service uses: the is_tools flag persisted on the enrolled model, then the flag
+// carried by the instance credential payload, then the provider catalog's
+// declaration for the model.
+//
+// Python's precedence has the same shape — model_extra.get("is_tools", is_tool),
+// where is_tool comes out of the instance api_key payload — with the catalog as
+// our last resort, because a tenant may enrol a model the catalog does not
+// describe at all.
+func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
 	if ts, ok := extraToolSupport(extra); ok {
+		return ts
+	}
+	// The instance credential can be a JSON object carrying the key together with
+	// capability flags; extraToolSupport reads is_tools out of either blob and
+	// reports "absent" for a plain credential string.
+	if ts, ok := extraToolSupport(instanceAPIKey); ok {
 		return ts
 	}
 	return catalogToolSupport(providerName, modelName)
 }
+
+// The tool-calling verdict is no longer memoized: it is computed while the model
+// is resolved (see resolvedModel.supportsTools) and travels with the resolution,
+// so there is no second lookup to amortize.
 
 // tenantCanReachProviderTenant reports whether userID owns the provider's tenant
 // or is a joined member of it. Mirrors Python's tenant_model_service
