@@ -881,16 +881,21 @@ func recordPipelineLog(
 				dslMap,
 			)
 			if err != nil {
-				return fmt.Errorf("store pipeline DSL version: %w", err)
+				common.Warn(fmt.Sprintf(
+					"store pipeline DSL version %s for log %s: %v; retaining sanitized inline snapshot",
+					versionID,
+					input.PipelineLogID,
+					err,
+				))
+			} else {
+				versionID = version.DSLID
+				versionNumber := version.Version
+				dslID = &versionID
+				dslVersion = &versionNumber
+
+				// DSL definition lives in pipeline_dsl_version now.
+				dslMap = entity.JSONMap{}
 			}
-
-			versionID = version.DSLID
-			versionNumber := version.Version
-			dslID = &versionID
-			dslVersion = &versionNumber
-
-			// DSL definition lives in pipeline_dsl_version now.
-			dslMap = entity.JSONMap{}
 		}
 	}
 	if err := updateOpenLogRow(

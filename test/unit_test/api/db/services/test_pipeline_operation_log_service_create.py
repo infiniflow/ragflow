@@ -31,6 +31,7 @@ import sys
 import types
 from contextlib import contextmanager
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -107,7 +108,7 @@ def _install_stubs(monkeypatch):
     sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = _class_stub(["get_by_id"])
 
     class _PipelineDSLVersionService:
-        calls = []
+        calls: ClassVar[list] = []
 
         @classmethod
         def get_or_create(cls, dsl_id, dsl):
@@ -395,6 +396,38 @@ def test_create_versions_dsl_before_log_transaction(pol_module, captured_log, mo
         )
 
     assert events == ["version", "log_transaction"]
+
+
+def test_create_keeps_inline_snapshot_when_version_store_fails(pol_module, captured_log, monkeypatch, caplog):
+    document = _make_document()
+    user_pipeline = _make_user_pipeline()
+    dsl = json.loads(_parse_dsl("pdf", "docling"))
+    dsl["task_id"] = "run-1"
+    dsl["components"]["parser-node"]["obj"]["params"]["outputs"] = {"chunks": {"value": [{"text": "runtime", "q_3_vec": [0.1]}]}}
+
+    def _fail_version_store(cls, dsl_id, sanitized_dsl):
+        raise RuntimeError("version store unavailable")
+
+    monkeypatch.setattr(
+        pol_module.PipelineDSLVersionService,
+        "get_or_create",
+        classmethod(_fail_version_store),
+    )
+
+    with patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)), patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)):
+        pol_module.PipelineOperationLogService.create(
+            document_id="doc-1",
+            pipeline_id="pipe-1",
+            task_type=pol_module.PipelineTaskType.PARSE,
+            dsl=dsl,
+        )
+
+    log = captured_log["log"]
+    assert log["dsl_id"] is None
+    assert log["dsl_version"] is None
+    assert "task_id" not in log["dsl"]
+    assert "outputs" not in log["dsl"]["components"]["parser-node"]["obj"]["params"]
+    assert "retaining the sanitized inline snapshot" in caplog.text
 
 
 def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch, caplog):

@@ -64,6 +64,31 @@ func TestListIngestionMessagesRejectsUnnumberedRun(t *testing.T) {
 	}
 }
 
+func TestListIngestionMessagesAllowsMissingDSLVersion(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+	if err := db.Model(&entity.PipelineOperationLog{}).Where("id = ?", "run-1").Updates(map[string]any{
+		"dsl_id":      "pipeline-1",
+		"dsl_version": int64(99),
+	}).Error; err != nil {
+		t.Fatalf("set missing DSL reference: %v", err)
+	}
+	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeTerminal, "Task completed.")
+
+	response, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "run-1", 200, nil, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", response, code, err)
+	}
+	if len(response.Items) != 1 || response.Items[0].Message != "Task completed." {
+		t.Fatalf("messages = %+v, want terminal event", response.Items)
+	}
+}
+
 func TestListIngestionLogsExcludesUnnumberedRuns(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -136,6 +161,27 @@ func TestGetIngestionLogEmbedsLatestRunEvent(t *testing.T) {
 		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", result, code, err)
 	}
 	assertLatestEventMap(t, result, 1, "latest detail")
+}
+
+func TestGetIngestionLogRejectsMissingDSLVersion(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}, &entity.PipelineDSLVersion{}); err != nil {
+		t.Fatalf("migrate pipeline log tables: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+	if err := db.Model(&entity.PipelineOperationLog{}).Where("id = ?", "run-1").Updates(map[string]any{
+		"dsl_id":      "pipeline-1",
+		"dsl_version": int64(99),
+	}).Error; err != nil {
+		t.Fatalf("set missing DSL reference: %v", err)
+	}
+
+	result, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "run-1")
+	if result != nil || err == nil || code != common.CodeServerError {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want strict DSL resolution error", result, code, err)
+	}
 }
 
 func TestIngestionEventWriterFeedsRunScopedLogReaders(t *testing.T) {

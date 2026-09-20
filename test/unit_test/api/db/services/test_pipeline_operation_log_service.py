@@ -89,13 +89,7 @@ def _load_service(monkeypatch):
     sys.modules["common.time_utils"].current_timestamp = lambda: 1
     sys.modules["common.time_utils"].datetime_format = lambda value: value
 
-    service_path = (
-        Path(__file__).resolve().parents[5]
-        / "api"
-        / "db"
-        / "services"
-        / "pipeline_operation_log_service.py"
-    )
+    service_path = Path(__file__).resolve().parents[5] / "api" / "db" / "services" / "pipeline_operation_log_service.py"
     spec = importlib.util.spec_from_file_location("_pipeline_operation_log_service_test", service_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -138,7 +132,7 @@ def test_sanitize_pipeline_dsl_removes_runtime_state_without_mutating_input(pol_
                                 ]
                             },
                             "embedding_token_consumption": {"value": 12},
-                        }
+                        },
                     }
                 }
             }
@@ -212,15 +206,27 @@ def test_resolve_dsl_references_uses_exact_stored_versions(monkeypatch, pol_modu
     ]
 
 
-def test_resolve_dsl_references_rejects_incomplete_reference(pol_module):
+def test_resolve_dsl_references_isolates_incomplete_reference(pol_module):
     service = pol_module.PipelineOperationLogService
-    logs = [{"id": "broken", "dsl_id": "pipeline-1", "dsl_version": None, "dsl": {}}]
+    logs = [
+        {"id": "legacy", "dsl_id": None, "dsl_version": None, "dsl": {"legacy": True}},
+        {"id": "broken", "dsl_id": "pipeline-1", "dsl_version": None, "dsl": {"stale": True}},
+    ]
+
+    resolved = service._resolve_dsl_references(logs)
+
+    assert resolved[0] == {"id": "legacy", "dsl": {"legacy": True}}
+    assert resolved[1]["dsl"] is None
+    assert "incomplete DSL reference" in resolved[1]["dsl_resolution_error"]
 
     with pytest.raises(RuntimeError, match="incomplete DSL reference"):
-        service._resolve_dsl_references(logs)
+        service._resolve_dsl_references(
+            [{"id": "broken", "dsl_id": "pipeline-1", "dsl_version": None, "dsl": {}}],
+            strict=True,
+        )
 
 
-def test_resolve_dsl_references_rejects_missing_version(monkeypatch, pol_module):
+def test_resolve_dsl_references_isolates_missing_version(monkeypatch, pol_module):
     service = pol_module.PipelineOperationLogService
     monkeypatch.setattr(
         service,
@@ -229,5 +235,14 @@ def test_resolve_dsl_references_rejects_missing_version(monkeypatch, pol_module)
     )
     logs = [{"id": "broken", "dsl_id": "pipeline-1", "dsl_version": 3, "dsl": {"stale": True}}]
 
+    resolved = service._resolve_dsl_references(logs)
+
+    assert resolved[0]["dsl"] is None
+    assert "pipeline-1" in resolved[0]["dsl_resolution_error"]
+    assert "@3" in resolved[0]["dsl_resolution_error"]
+
     with pytest.raises(RuntimeError, match="pipeline-1.*@3.*not found"):
-        service._resolve_dsl_references(logs)
+        service._resolve_dsl_references(
+            [{"id": "broken", "dsl_id": "pipeline-1", "dsl_version": 3, "dsl": {}}],
+            strict=True,
+        )

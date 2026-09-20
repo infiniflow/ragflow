@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -181,8 +182,11 @@ func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db
 		if log == nil {
 			continue
 		}
+		log.DSLResolutionError = ""
 		if (log.DSLID == nil) != (log.DSLVersion == nil) {
-			return fmt.Errorf("pipeline operation log %q has an incomplete DSL reference", log.ID)
+			log.DSL = nil
+			log.DSLResolutionError = fmt.Sprintf("pipeline operation log %q has an incomplete DSL reference", log.ID)
+			continue
 		}
 		if log.DSLID != nil {
 			keys[pipelineDSLVersionKey{DSLID: *log.DSLID, Version: *log.DSLVersion}] = struct{}{}
@@ -212,15 +216,27 @@ func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db
 		versionsByKey[key] = version.DSL
 	}
 	for _, log := range logs {
-		if log == nil || log.DSLID == nil {
+		if log == nil || log.DSLID == nil || log.DSLVersion == nil {
 			continue
 		}
 		key := pipelineDSLVersionKey{DSLID: *log.DSLID, Version: *log.DSLVersion}
 		dsl, ok := versionsByKey[key]
 		if !ok {
-			return fmt.Errorf("pipeline operation log %q references missing pipeline DSL version %q@%d", log.ID, key.DSLID, key.Version)
+			log.DSL = nil
+			log.DSLResolutionError = fmt.Sprintf("pipeline operation log %q references missing pipeline DSL version %q@%d", log.ID, key.DSLID, key.Version)
+			continue
 		}
 		log.DSL = dsl
+	}
+	return nil
+}
+
+func (dao *PipelineOperationLogDAO) resolveDSLReference(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+	if err := dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{log}); err != nil {
+		return err
+	}
+	if log != nil && log.DSLResolutionError != "" {
+		return errors.New(log.DSLResolutionError)
 	}
 	return nil
 }
@@ -334,27 +350,35 @@ func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm
 		Update("operation_status", operationStatus).Error
 }
 
-// GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.
+// GetByIDAndKBID fetches persisted ingestion-log metadata scoped to its
+// knowledge base. It does not resolve a versioned DSL reference.
 func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm.DB, logID, kbID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
 	if err := db.WithContext(ctx).Where("id = ? AND kb_id = ?", logID, kbID).First(&log).Error; err != nil {
 		return nil, err
 	}
-	if err := dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{&log}); err != nil {
-		return nil, err
-	}
 	return &log, nil
 }
 
-// GetByID fetches a single pipeline operation log by id, regardless of
-// knowledge base. Callers that must scope to a dataset use
-// GetByIDAndKBID instead.
+// GetByIDAndKBIDWithDSL fetches a scoped ingestion log and resolves its exact
+// recorded DSL. It rejects incomplete or missing version references.
+func (dao *PipelineOperationLogDAO) GetByIDAndKBIDWithDSL(ctx context.Context, db *gorm.DB, logID, kbID string) (*entity.PipelineOperationLog, error) {
+	log, err := dao.GetByIDAndKBID(ctx, db, logID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	if err := dao.resolveDSLReference(ctx, db, log); err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+// GetByID fetches persisted pipeline-operation-log metadata by ID, regardless
+// of knowledge base. It does not resolve a versioned DSL reference. Callers
+// that must scope to a dataset use GetByIDAndKBID instead.
 func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
 	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
-		return nil, err
-	}
-	if err := dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{&log}); err != nil {
 		return nil, err
 	}
 	return &log, nil

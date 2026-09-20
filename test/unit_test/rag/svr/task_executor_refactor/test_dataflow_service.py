@@ -22,8 +22,9 @@ _get_output_type, _embed_chunks, _load_dsl, etc.) are exercised implicitly; no t
 reaches directly into those internals.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from rag.svr.task_executor_refactor.dataflow_service import DataflowService
 
@@ -48,6 +49,21 @@ class TestDataflowServiceRunDataflow:
         service = DataflowService(ctx=task_context)
         with pytest.raises(AssertionError, match="User pipeline not found"):
             await service.run_dataflow()
+
+    @pytest.mark.asyncio
+    @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
+    @patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService")
+    async def test_run_dataflow_rerun_rejects_unresolved_dsl(self, mock_pipeline_log, mock_pipeline_class, task_context):
+        task_context._task["task_type"] = "raptor"
+        task_context._task["dataflow_id"] = "pipeline_log_id"
+        task_context._task["kb_id"] = "kb_test"
+        mock_pipeline_log.get_by_id_and_kb_id.side_effect = ValueError("Pipeline operation log 'pipeline_log_id' references a missing DSL version.")
+
+        service = DataflowService(ctx=task_context)
+        with pytest.raises(ValueError, match="missing DSL version"):
+            await service.run_dataflow()
+
+        mock_pipeline_class.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")

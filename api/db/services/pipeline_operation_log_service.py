@@ -32,6 +32,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_dsl_version_service import PipelineDSLVersionService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import PipelineTaskType, TaskStatus
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +128,6 @@ def _parser_for_document_from_dsl(dsl_mapping: dict | None, document_suffix: str
     return None
 
 
-from common.misc_utils import get_uuid
-from common.time_utils import current_timestamp, datetime_format
-
 # KB-level fan-out pipeline task types (task row carries a fake doc_id; the real
 # participants live in task["doc_ids"]) → the KB ``<type>_task_finish_at`` column
 # stamped when the task completes. Membership also marks a task as KB-scoped so
@@ -206,41 +205,42 @@ class PipelineOperationLogService(CommonService):
                 PipelineDSLVersion.version,
                 PipelineDSLVersion.dsl,
             )
-            .where(
-                Tuple(PipelineDSLVersion.dsl_id, PipelineDSLVersion.version).in_(
-                    sorted(references)
-                )
-            )
+            .where(Tuple(PipelineDSLVersion.dsl_id, PipelineDSLVersion.version).in_(sorted(references)))
             .dicts()
         )
         return {(row["dsl_id"], row["version"]): row["dsl"] for row in rows}
 
     @classmethod
-    def _resolve_dsl_references(cls, logs):
+    def _resolve_dsl_references(cls, logs, *, strict=False):
         references = set()
         for log in logs:
             dsl_id = log.get("dsl_id")
             dsl_version = log.get("dsl_version")
             if (dsl_id is None) != (dsl_version is None):
-                raise RuntimeError(
-                    f"Pipeline operation log {log.get('id')!r} has an incomplete DSL reference."
-                )
+                continue
             if dsl_id is not None:
                 references.add((dsl_id, dsl_version))
 
         versions = cls._load_dsl_versions(references)
-        missing = references.difference(versions)
-        if missing:
-            dsl_id, dsl_version = sorted(missing)[0]
-            raise RuntimeError(
-                f"Pipeline DSL version {dsl_id!r}@{dsl_version} referenced by an operation log was not found."
-            )
 
         for log in logs:
             dsl_id = log.pop("dsl_id", None)
             dsl_version = log.pop("dsl_version", None)
-            if dsl_id is not None:
-                log["dsl"] = versions[(dsl_id, dsl_version)]
+            error = None
+            if (dsl_id is None) != (dsl_version is None):
+                error = f"Pipeline operation log {log.get('id')!r} has an incomplete DSL reference."
+            elif dsl_id is not None:
+                dsl = versions.get((dsl_id, dsl_version))
+                if dsl is None:
+                    error = f"Pipeline DSL version {dsl_id!r}@{dsl_version} referenced by operation log {log.get('id')!r} was not found."
+                else:
+                    log["dsl"] = dsl
+
+            if error is not None:
+                if strict:
+                    raise RuntimeError(error)
+                log["dsl"] = None
+                log["dsl_resolution_error"] = error
         return logs
 
     @classmethod
@@ -437,8 +437,17 @@ class PipelineOperationLogService(CommonService):
                 # Resolve the immutable DSL version before opening the operation
                 # log transaction. Retrying inside a long-lived MySQL
                 # REPEATABLE READ transaction could keep observing a stale head.
-                version = PipelineDSLVersionService.get_or_create(dsl_id, dsl_for_log)
-                dsl_version = version.version
+                try:
+                    version = PipelineDSLVersionService.get_or_create(dsl_id, dsl_for_log)
+                except Exception:
+                    logger.exception(
+                        "Could not store pipeline DSL version %s; retaining the sanitized inline snapshot for operation log %s.",
+                        dsl_id,
+                        document_id,
+                    )
+                    dsl_id = None
+                else:
+                    dsl_version = version.version
 
         log = {
             "id": get_uuid(),
@@ -559,15 +568,10 @@ class PipelineOperationLogService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_id_and_kb_id(cls, log_id, kb_id):
-        log = (
-            cls.model.select(*cls.get_file_logs_fields())
-            .where((cls.model.id == log_id) & (cls.model.kb_id == kb_id))
-            .dicts()
-            .first()
-        )
+        log = cls.model.select(*cls.get_file_logs_fields()).where((cls.model.id == log_id) & (cls.model.kb_id == kb_id)).dicts().first()
         if log is None:
             return None
-        return cls._resolve_dsl_references([log])[0]
+        return cls._resolve_dsl_references([log], strict=True)[0]
 
     @classmethod
     @DB.connection_context()

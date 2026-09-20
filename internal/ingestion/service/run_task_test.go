@@ -100,6 +100,36 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 }
 
+func TestRecordTerminalPipelineLogDoesNotResolveDSL(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	runID := "run-" + taskID
+	if err := db.Model(&entity.PipelineOperationLog{}).Where("id = ?", runID).Updates(map[string]any{
+		"operation_status": string(entity.TaskStatusDone),
+		"dsl_id":           "flow-1",
+		"dsl_version":      int64(99),
+	}).Error; err != nil {
+		t.Fatalf("seed terminal run with missing DSL version: %v", err)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("load ingestion task: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.recordTerminalPipelineLog(t.Context(), task, string(entity.TaskStatusDone), "Task completed.")
+
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, runID)
+	if err != nil {
+		t.Fatalf("list terminal events: %v", err)
+	}
+	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message != "Task completed." {
+		t.Fatalf("terminal events = %+v, want one completed event", logs)
+	}
+}
+
 // TestRunTask_PipelineCancelledMarksStopped: when runDocumentTask returns
 // context.Canceled (the pipeline detected a cancel signal), runTask treats
 // it as a cancel, not a failure, and transitions the task to STOPPED.

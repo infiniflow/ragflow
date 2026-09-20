@@ -547,6 +547,67 @@ func TestRecordPipelineLogStoresVersionedDSLReferences(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLogFallsBackToInlineDSLWhenVersionStoreFails(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Migrator().DropTable(&entity.PipelineDSLVersion{}); err != nil {
+		t.Fatalf("drop pipeline DSL version table: %v", err)
+	}
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "log-doc-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		OperationStatus: "5",
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	docName := "doc-1.pdf"
+	dsl := `{"task_id":"run-1","components":{"parser":{"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"q_3_vec":[0.1]}]}}}}}}}`
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		DSL:           dsl,
+		Status:        "3",
+		PipelineLogID: "log-doc-1",
+		Document: entity.Document{
+			ID:         "doc-1",
+			KbID:       "kb-1",
+			ParserID:   "general",
+			SourceType: "local",
+			Type:       "pdf",
+			Name:       &docName,
+			Suffix:     ".pdf",
+		},
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "log-doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.DSLID != nil || log.DSLVersion != nil {
+		t.Fatalf("DSL reference = %v@%v, want inline fallback", log.DSLID, log.DSLVersion)
+	}
+	if log.DSL["task_id"] != nil {
+		t.Fatalf("inline fallback retained task_id: %v", log.DSL)
+	}
+	components, _ := log.DSL["components"].(map[string]any)
+	parser, _ := components["parser"].(map[string]any)
+	obj, _ := parser["obj"].(map[string]any)
+	params, _ := obj["params"].(map[string]any)
+	if params["mode"] != "static" {
+		t.Fatalf("inline fallback lost static definition: %v", log.DSL)
+	}
+	if _, exists := params["outputs"]; exists {
+		t.Fatalf("inline fallback retained runtime outputs: %v", log.DSL)
+	}
+}
+
 func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
