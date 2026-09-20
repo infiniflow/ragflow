@@ -90,6 +90,15 @@ type fakeDocumentService struct {
 	hasActiveTasksErr      error
 }
 
+func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
+	event := &service.IngestionEventItem{ID: 42, EventType: dao.EventTypeMessage, Message: "queued"}
+	item := mapDocumentListItem(&entity.DocumentListItem{ID: "doc-1", KbID: "kb-1"}, map[string]interface{}{}, event)
+	got, ok := item["latest_ingestion_event"].(*service.IngestionEventItem)
+	if !ok || got != event {
+		t.Fatalf("latest_ingestion_event = %#v, want original event", item["latest_ingestion_event"])
+	}
+}
+
 func (f *fakeDocumentService) Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
 	f.ingestUserID = userID
 	f.ingestReq = req

@@ -128,7 +128,7 @@ func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {

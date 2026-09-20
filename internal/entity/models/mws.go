@@ -178,7 +178,7 @@ func (m *MWSModel) ChatWithMessages(ctx context.Context, modelName string, messa
 	if err != nil {
 		return nil, err
 	}
-	return HandleNonStreamingResponse(body, modelUsage, chatConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends a streaming MWS Chat Completions request.

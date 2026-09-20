@@ -871,6 +871,34 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 }
 
+func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hello","stream":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "workflow_started", Data: `{"inputs":"hello"}`},
+		{Type: "error", Data: `{"message":"Can't find variable: 'Agent:Deleted@content'","kind":"user"}`},
+	}}
+	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
+
+	var response struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Code != int(common.CodeServerError) || response.Message != "Can't find variable: 'Agent:Deleted@content'" {
+		t.Fatalf("response = %+v, want runner error", response)
+	}
+}
+
 // TestAgentChatCompletions_NonStreamingPreservesThinkMarkers covers the
 // non-streaming aggregation: start_to_think/end_to_think message events must
 // survive as <think> tags in the final content, mirroring Python

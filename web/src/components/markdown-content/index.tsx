@@ -326,7 +326,7 @@ const MarkdownContent = ({
     (text: string) => {
       const replacedText = reactStringReplace(text, ReferenceMarkerReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
-        if (!reference?.chunks?.[chunkIndex]) {
+        if (typeof chunkIndex !== 'number' || !reference?.chunks?.[chunkIndex]) {
           return match;
         }
 

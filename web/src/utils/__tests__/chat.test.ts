@@ -13,17 +13,23 @@ describe('mergeAnswerChunk', () => {
   });
 
   it('keeps streamed thinking when replacing the visible answer', () => {
-    const answer = [
+    const streamed = [
       { start_to_think: true },
       { answer: 'Checking sources.' },
       { end_to_think: true },
-      { answer: 'First fact. ' },
+      { answer: '## First fact. ' },
       { answer: 'Second fact.' },
-      { answer: 'First fact.[ID:0] Second fact.[ID:1]', final: true },
     ].reduce(mergeAnswerChunk, '');
+    expect(streamed).toBe(
+      '<think>Checking sources.</think>\n\n## First fact. Second fact.',
+    );
+    const answer = mergeAnswerChunk(streamed, {
+      answer: '## First fact.[ID:0] Second fact.[ID:1]',
+      final: true,
+    });
 
     expect(answer).toBe(
-      '<think>Checking sources.</think>First fact.[ID:0] Second fact.[ID:1]',
+      '<think>Checking sources.</think>\n\n## First fact.[ID:0] Second fact.[ID:1]',
     );
     expect(mergeAnswerChunk(answer, { answer, final: true })).toBe(answer);
   });

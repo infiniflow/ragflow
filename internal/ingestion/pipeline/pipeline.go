@@ -29,7 +29,7 @@ import (
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/utility"
@@ -47,15 +47,13 @@ type Pipeline struct {
 	// these bytes, so a stale checkpoint can be detected and discarded
 	// instead of being resumed against an incompatible graph.
 	rawDSL     []byte
-	documentID string // owning document; progress is mirrored back to the
-	// document table so the existing GET /api/v1/datasets/{dataset_id}/documents
-	// endpoint (which reads document.progress/run/progress_msg) reflects the
-	// live Go pipeline progress without a bespoke endpoint (plan §8).
+	documentID string // owning document; numeric progress is mirrored back to
+	// the document table for existing status projections.
 	canvas  *canvas.Canvas
 	store   canvas.CheckPointStore // optional injected; nil -> resolve at Run
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
 	// requireResume, when true, makes Run refuse to start if no checkpoint
-	// store can be resolved (no injected store AND no global Redis client).
+	// store can be resolved (no injected store AND no global Kvrocks client).
 	// Plan §6.a M4: a deployment that cannot persist checkpoints must
 	// not silently degrade to a non-resumable run — it must surface a clear,
 	// distinguishable error so the caller knows resume is unavailable.
@@ -76,20 +74,20 @@ var ErrResumeUnavailable = errors.New("resume unavailable: no checkpoint store (
 type PipelineOption func(*Pipeline)
 
 // WithCheckPointStore injects a checkpoint store. When unset, Run resolves
-// one from the global Redis client (and degrades to a non-resumable run when
+// one from the global Kvrocks client (and degrades to a non-resumable run when
 // Redis is unavailable — plan §6.a).
 func WithCheckPointStore(s canvas.CheckPointStore) PipelineOption {
 	return func(p *Pipeline) { p.store = s }
 }
 
 // WithRunTracker injects a RunTracker for interrupt-id persistence / crash
-// recovery. When unset, Run resolves one from the global Redis client.
+// recovery. When unset, Run resolves one from the global Kvrocks client.
 func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 	return func(p *Pipeline) { p.tracker = t }
 }
 
 // WithRequireResume makes Run refuse to start when no checkpoint store can be
-// resolved (no injected store AND no global Redis client). This is plan A: a
+// resolved (no injected store AND no global Kvrocks client). This is plan A: a
 // deployment that cannot persist checkpoints must not silently
 // degrade to a non-resumable run — it must surface a clear, distinguishable
 // error (ErrResumeUnavailable) so the caller knows resume is unavailable.
@@ -99,9 +97,8 @@ func WithRequireResume() PipelineOption {
 	return func(p *Pipeline) { p.requireResume = true }
 }
 
-// WithDocumentID binds the pipeline's owning document so progress can be
-// mirrored back into the document table (document.progress / run /
-// progress_msg) — the canonical store the document-list endpoint serves.
+// WithDocumentID binds the pipeline's owning document so numeric progress can
+// be mirrored back into the document table.
 // Pass the empty string to disable the mirror (e.g. headless/test runs where
 // the document row is not materialized).
 func WithDocumentID(docID string) PipelineOption {
@@ -516,15 +513,15 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	return p.runResumable(ctx, runCtx, current, compiled, store, tracker, runState)
 }
 
-// resolveStore returns the injected store, or a Redis-backed one when the
-// global Redis client is available. Returns nil (degraded, non-resumable)
+// resolveStore returns the injected store, or a Kvrocks-backed one when the
+// global Kvrocks client is available. Returns nil (degraded, non-resumable)
 // when neither is present.
 func (p *Pipeline) resolveStore() canvas.CheckPointStore {
 	if p.store != nil {
 		return p.store
 	}
-	if redis2.Get() != nil {
-		return canvas.NewRedisCheckPointStore(defaultCheckpointTTL)
+	if kvrocks.Get() != nil {
+		return canvas.NewKvrocksCheckPointStore(defaultCheckpointTTL)
 	}
 	return nil
 }
@@ -534,7 +531,7 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 	if p.tracker != nil {
 		return p.tracker
 	}
-	if redis2.Get() != nil {
+	if kvrocks.Get() != nil {
 		return canvas.NewRunTracker(defaultCheckpointTTL)
 	}
 	return nil
@@ -676,23 +673,8 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 // cleanupCheckpoint wipes the eino checkpoint payload and the persisted
 // interrupt id (plan §4.3.b cancelled path).
 func (p *Pipeline) cleanupCheckpoint(ctx context.Context, store canvas.CheckPointStore, tracker *canvas.RunTracker, cpID string) {
-	if store != nil {
-		if err := store.Delete(ctx, cpID); err != nil {
-			common.Error(fmt.Sprintf("pipeline: delete checkpoint %s failed: %v", cpID, err), err)
-		}
-		// Drop the DSL / override fingerprints alongside the checkpoint so
-		// they share one lifecycle on cancellation (otherwise the fingerprint
-		// keys linger up to TTL while the checkpoint is gone — harmless, but
-		// inconsistent). A later re-run overwrites them anyway.
-		if err := store.Delete(ctx, cpID+dslKeySuffix); err != nil {
-			common.Error(fmt.Sprintf("pipeline: delete DSL fingerprint %s failed: %v", cpID, err), err)
-		}
-		if err := store.Delete(ctx, cpID+ovfKeySuffix); err != nil {
-			common.Error(fmt.Sprintf("pipeline: delete override fingerprint %s failed: %v", cpID, err), err)
-		}
-	}
-	if tracker != nil {
-		_ = tracker.ClearInterruptID(ctx, cpID)
+	if err := cleanupCheckpointState(ctx, store, tracker, cpID); err != nil {
+		common.Error(fmt.Sprintf("pipeline: cleanup checkpoint %s failed: %v", cpID, err), err)
 	}
 }
 

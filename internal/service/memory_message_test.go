@@ -16,6 +16,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 )
@@ -186,6 +187,35 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "Owner"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-1", Name: "one", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-2", Name: "two", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	if filters.Total != 2 || len(filters.Filter.Owner) != 1 {
+		t.Fatalf("unexpected owner aggregate: %+v", filters)
+	}
+	if filters.Filter.Owner[0].Label != "Owner" || filters.Filter.Owner[0].Count != 2 {
+		t.Fatalf("owner filter = %+v", filters.Filter.Owner)
+	}
+	if len(filters.Filter.MemoryType) != 2 || len(filters.Filter.StorageType) != 2 {
+		t.Fatalf("unexpected type/storage filters: %+v", filters)
+	}
 }
 
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
@@ -727,8 +757,16 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	if req == nil {
 		t.Fatal("expected doc engine search request")
 	}
-	if !reflect.DeepEqual(req.IndexNames, []string{"memory_user-1"}) {
-		t.Fatalf("IndexNames = %v, want [memory_user-1]", req.IndexNames)
+	// The per-memory index name gains a `_<memoryID>` suffix on infinity
+	// (see memorySearchIndexNames). The engine type is process-global and set
+	// by sibling integration tests, so make the expectation engine-aware rather
+	// than hard-coding the non-infinity name.
+	wantIndexName := "memory_user-1"
+	if engine.GetEngineType() == "infinity" {
+		wantIndexName = "memory_user-1_mem-owned"
+	}
+	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
+		t.Fatalf("IndexNames = %v, want [%s]", req.IndexNames, wantIndexName)
 	}
 	if len(req.KbIDs) != 0 {
 		t.Fatalf("KbIDs = %v, want empty for memory message search", req.KbIDs)

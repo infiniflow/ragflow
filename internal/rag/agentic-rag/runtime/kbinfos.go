@@ -143,6 +143,9 @@ type Kbinfos struct {
 	// citedChunks are the passages the enumerated items rest on (see NoteCitedChunks).
 	// Guarded by ledgerMu.
 	citedChunks []string
+	// anchoredRefs are the enumerated members with their passages (see NoteAnchoredRefs).
+	// Guarded by ledgerMu.
+	anchoredRefs []AnchoredRef
 	// sufficiencyUnchecked records that the completeness review never ran (see
 	// NoteSufficiencyUnchecked). Guarded by ledgerMu.
 	sufficiencyUnchecked bool
@@ -498,6 +501,45 @@ func (k *Kbinfos) CitedChunks() []string {
 	k.ledgerMu.Lock()
 	defer k.ledgerMu.Unlock()
 	return append([]string(nil), k.citedChunks...)
+}
+
+// AnchoredRef is one enumerated member and the passage it rests on: the name the answer
+// states, and the chunk the naming node matched that name to.
+type AnchoredRef struct {
+	Name    string
+	ChunkID string
+	// Quote is the words the naming node matched the member to. The compose renders an anchored
+	// member's block from THIS rather than from the whole passage: the evidence budget is spent
+	// per block, so a ~1200-char chunk per member fits only the first handful of them, and the
+	// members past that are members the model cannot see (and so cannot cite).
+	Quote string
+}
+
+// NoteAnchoredRefs records the members behind the cited passages, in table order.
+//
+// The naming node has already matched every member to the passage that states its deed, so
+// the member→passage pointer is the RUNTIME's to know. The compose reads it back through
+// CiteAnchoredMembers to attach a citation to every member the answer states: a model that
+// cites only the handful of blocks it happened to read leaves the rest of the list
+// unreachable, and no prompt can make it cite a block it never saw (the evidence budget
+// admits only the first few whole chunks).
+func (k *Kbinfos) NoteAnchoredRefs(refs []AnchoredRef) {
+	if k == nil {
+		return
+	}
+	k.ledgerMu.Lock()
+	k.anchoredRefs = append([]AnchoredRef(nil), refs...)
+	k.ledgerMu.Unlock()
+}
+
+// AnchoredRefs is the list recorded by NoteAnchoredRefs, empty when nothing was enumerated.
+func (k *Kbinfos) AnchoredRefs() []AnchoredRef {
+	if k == nil {
+		return nil
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	return append([]AnchoredRef(nil), k.anchoredRefs...)
 }
 
 // StoreCoverageSet records what this question's enumeration found (see

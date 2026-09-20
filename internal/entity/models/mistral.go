@@ -153,7 +153,7 @@ func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, m
 	// to the flat string shape the shared handler understands.
 	body = normalizeMistralStructuredContent(body)
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response

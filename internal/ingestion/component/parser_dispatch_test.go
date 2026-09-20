@@ -28,10 +28,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -889,7 +886,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 		if got, want := providerName, "PaddleOCR"; got != want {
 			t.Fatalf("providerName = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
 	setups := defaultSetups()
@@ -916,30 +913,28 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 // PaddleOCR configuration contract: the tenant api_key is a JSON payload
 // (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm) and the
 // instance base_url field stays empty, mirroring Python's PaddleOCROcrModel.
-// Dispatch must unwrap that payload into a concrete base url, bearer token and
-// algorithm before handing the driver its API config.
+// The driver, not the dispatch layer, unwraps that payload into the wire
+// bearer token and server endpoint.
 func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/layout-parsing" {
-			http.NotFound(w, r)
-			return
-		}
-		if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
-			t.Errorf("Authorization = %q, want %q (must unwrap api_key payload)", got, want)
-			return
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode body: %v", err)
-			return
-		}
-		if got, want := body["algorithm"], "PaddleOCR-VL"; got != want {
-			t.Errorf("algorithm = %v, want %v (must unwrap api_key payload)", got, want)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped Title\n\nUnwrapped body.\n"}}]}}`))
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("Authorization = %q, want %q (driver must unwrap api_key payload)", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("poll Authorization = %q, want %q", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"state":"done","resultUrl":{"jsonUrl":"http://` + r.Host + `/result"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/result":
+			_, _ = w.Write([]byte(`[{"logId":"l1","errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped Title\n\nUnwrapped body.\n"}}]}}]`))
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 
@@ -953,7 +948,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 		if got, want := providerName, "PaddleOCR"; got != want {
 			t.Fatalf("providerName = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
+		return models.NewPaddleOCRModel(nil, models.URLSuffix{OCR: "v2/ocr/jobs"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
 	}
 
 	setups := defaultSetups()
@@ -1041,7 +1036,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 		if got, want := mid, modelID; got != want {
 			t.Fatalf("modelID = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	setups := defaultSetups()
@@ -1105,7 +1100,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 		if got, want := mid, modelID; got != want {
 			t.Fatalf("modelID = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	setups := defaultSetups()
@@ -1128,124 +1123,13 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
-// paddleocrTestDriver is a minimal ModelDriver mock whose Name() returns "paddleocr".
-type paddleocrTestDriver struct{}
-
-func (d *paddleocrTestDriver) NewInstance(baseURL map[string]string) models.ModelDriver { return d }
-func (d *paddleocrTestDriver) Name() string                                             { return "paddleocr" }
-func (d *paddleocrTestDriver) ChatWithMessages(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, chatModelConfig *models.ChatConfig, usage *common.ModelUsage) (*models.ChatResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, modelConfig *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) Embed(ctx context.Context, modelName *string, request models.EmbedRequest, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (d *paddleocrTestDriver) Rerank(ctx context.Context, modelName *string, request models.RerankRequest, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage) (*models.ASRResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *models.APIConfig, ttsConfig *models.TTSConfig, usage *common.ModelUsage) (*models.TTSResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *models.APIConfig, ttsConfig *models.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
-}
-
-// OCRFile mimics the local PaddleOCRLocalModel protocol: a synchronous
-// JSON POST to {baseURL}/layout-parsing carrying the file as base64, with
-// Bearer auth when the API config provides a key.
-func (d *paddleocrTestDriver) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, ocrConfig *models.OCRConfig, usage *common.ModelUsage) (*models.OCRFileResponse, error) {
-	if apiConfig == nil || apiConfig.BaseURL == nil || *apiConfig.BaseURL == "" {
-		return nil, fmt.Errorf("missing base url")
-	}
-	endpoint := strings.TrimRight(*apiConfig.BaseURL, "/") + "/layout-parsing"
-	reqData := map[string]any{
-		"file":     base64.StdEncoding.EncodeToString(content),
-		"fileType": 0,
-	}
-	if ocrConfig != nil && strings.TrimSpace(ocrConfig.Algorithm) != "" {
-		reqData["algorithm"] = ocrConfig.Algorithm
-	}
-	jsonData, err := json.Marshal(reqData)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := models.BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
-	}
-	var ocrResp struct {
-		Result struct {
-			LayoutParsingResults []struct {
-				Markdown struct {
-					Text string `json:"text"`
-				} `json:"markdown"`
-			} `json:"layoutParsingResults"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(body, &ocrResp); err != nil {
-		return nil, err
-	}
-	var md strings.Builder
-	for _, lr := range ocrResp.Result.LayoutParsingResults {
-		if lr.Markdown.Text != "" {
-			md.WriteString(lr.Markdown.Text)
-			md.WriteString("\n\n")
-		}
-	}
-	text := strings.TrimSpace(md.String())
-	return &models.OCRFileResponse{Text: &text}, nil
-}
-func (d *paddleocrTestDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, parseFileConfig *models.ParseFileConfig, usage *common.ModelUsage) (*models.ParseFileResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) ListModels(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListModelResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) Balance(ctx context.Context, apiConfig *models.APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) CheckConnection(ctx context.Context, apiConfig *models.APIConfig) error {
-	return fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListTaskStatus, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
 func TestIsPaddleOCRDriver(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		d    models.ModelDriver
 		want bool
 	}{
-		{"local", &paddleocrTestDriver{}, true},
+		{"local", &models.PaddleOCRLocalModel{}, true},
 		{"remote", &models.PaddleOCRModel{}, true},
 		{"dummy", &models.DummyModel{}, false},
 	} {

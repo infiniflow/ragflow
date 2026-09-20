@@ -179,9 +179,9 @@ export default {
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建議文字塊大小」設定的大小進行拼裝。在設定文字分段標識符前請確保理解上述文字分段切片機制。',
       html4excel: '表格轉HTML',
       html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
-      autoKeywords: '自動關鍵字',
+      autoKeywords: '自動關鍵字擷取數',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
-      autoQuestions: '自動問題',
+      autoQuestions: '自動問題擷取數',
       autoQuestionsTip: `為了提高排名分數，請使用「系統模型設定」中定義的聊天模型，為每個知識庫區塊提取 N 個問題。 請注意：這會消耗額外的 token。 結果可在區塊列表中查看和編輯。 問題提取錯誤不會阻止分塊過程； 空結果將被添加到原始區塊。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
       setMetaData: '設定元數據',
@@ -229,7 +229,7 @@ export default {
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '建議文本塊大小',
+      chunkTokenNumber: '推薦分塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
         '知識庫採用的默認嵌入模型。一旦知識庫內已經產生了文本塊，更換嵌入模型時，系統將隨機抽取若干 chunk 進行兼容性校驗，使用新嵌入模型重新編碼並計算新舊向量的餘弦相似度，樣本平均相似度需 ≥ 0.9 方可切換。否則，必須刪除知識庫內的所有文本塊後才能更改。',
@@ -364,7 +364,7 @@ export default {
         '在 RAPTOR 中，數據塊會根據它們的語義相似性進行聚類。閾值參數設定了數據塊被分到同一組所需的最小相似度。閾值越高，每個聚類中的數據塊越少；閾值越低，則每個聚類中的數據塊越多。',
       maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
-      pageRank: '頁面排名',
+      pageRank: 'PageRank 權重',
       pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '標籤',
       frequency: '頻次',
@@ -580,10 +580,41 @@ export default {
       reasoning: '推理',
       reasoningTip:
         '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
+      webSearchProvider: '網路搜尋服務',
+      webSearchProviderTip: '選擇啟用聯網搜尋時使用的搜尋服務。',
+      webSearchProviderPlaceholder: '請選擇網路搜尋服務',
+      webSearchApiKeyRequired:
+        '所選服務必須填寫 API Key —— 否則不會發起聯網搜尋，聊天框中也不會出現聯網開關。',
+      // 密鑰輸入框的標籤。{{provider}} 是 provider 的品牌名，故意不翻譯，
+      // 因此一個範本即可涵蓋全部 9 個 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
-      tavilyApiKeyHelp: '如何獲取？',
+      // 每個 provider 一組 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '選擇 Brave Search 後，將使用其搜尋結果補充知識庫檢索。Brave 的所有端點都需要 Key。',
+      braveApiKeyMessage: '請輸入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。選擇 Exa 後，將使用其搜尋結果補充知識庫檢索。即使是每月 1,000 次的免費額度，也仍然需要 Key。',
+      exaApiKeyMessage: '請輸入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '選擇 Firecrawl 後，將使用其搜尋結果補充知識庫檢索。只取搜尋摘要，不抓取整頁。',
+      firecrawlApiKeyMessage: '請輸入你的 Firecrawl API Key',
+      linkupApiKeyTip: '選擇 Linkup 後，將使用其搜尋結果補充知識庫檢索。',
+      linkupApiKeyMessage: '請輸入你的 Linkup API Key',
+      parallelApiKeyTip: '選擇 Parallel 後，將使用其搜尋摘錄補充知識庫檢索。',
+      parallelApiKeyMessage: '請輸入你的 Parallel API Key',
+      queritApiKeyTip:
+        '選擇 Querit 後，將使用 Querit 的網路搜尋結果補充知識庫檢索。',
+      queritApiKeyMessage: '請輸入你的 Querit API Key',
+      serplyApiKeyTip:
+        '選擇 Serply 後，將使用 Serply 的網路搜尋結果補充知識庫檢索。',
+      serplyApiKeyMessage: '請輸入你的 Serply API Key',
+      youcomApiKeyTip:
+        '可選。You.com 在限速端點上無需 API Key 即可使用；填寫 Key 可解除限速。',
+      youcomApiKeyMessage: '可選 —— 留空則使用免費額度',
+      webSearchApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
       showChunkMetadata: '顯示區塊中繼資料',

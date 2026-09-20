@@ -201,6 +201,19 @@ missing from the model directory.
 docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
 ```
 
+- Point the host-run Go binaries at Kvrocks. Kvrocks is published on
+  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; the Go
+  deployment disables the Valkey/Redis service so there is no clash). Export these
+  before running `./bin/ragflow_server ...` on the host, or load them from
+  `docker/.env-go`:
+```bash
+export KVROCKS_HOST=127.0.0.1
+export KVROCKS_PORT=6379
+```
+  In docker the Go services override these to `kvrocks:6379` automatically
+  (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
+  process fails fast with `failed to connect to Kvrocks`.
+
 
 - Start RAGFlow
 Note: Database migrations must complete before starting any server mode.

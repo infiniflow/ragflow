@@ -72,8 +72,10 @@ export function mergeAnswerChunk(
     // Keep streamed thinking when the final payload only contains the answer.
     const thinkEnd = previousAnswer.lastIndexOf('</think>');
     const thinking =
-      thinkEnd >= 0 && !currentAnswer.includes('</think>')
-        ? previousAnswer.slice(0, thinkEnd + '</think>'.length)
+      thinkEnd >= 0 &&
+      !currentAnswer.includes('<think>') &&
+      !currentAnswer.includes('</think>')
+        ? previousAnswer.slice(0, thinkEnd + '</think>'.length) + '\n\n'
         : '';
     nextAnswer = thinking + currentAnswer;
   } else if (previousAnswer && currentAnswer.startsWith(previousAnswer)) {
@@ -87,7 +89,8 @@ export function mergeAnswerChunk(
   }
 
   if (chunk.end_to_think === true) {
-    nextAnswer = nextAnswer + '</think>';
+    // Keep the answer's first Markdown heading on its own line.
+    nextAnswer = nextAnswer + '</think>\n\n';
   }
 
   return nextAnswer;

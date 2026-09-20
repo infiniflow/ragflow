@@ -1684,13 +1684,13 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 		// stay nil so the retrieval service keeps its own default, while a zero
 		// is a real override. Taking the address of a zero value here forced
 		// "threshold 0 / full vector weight" onto every caller that omitted them.
-		SimilarityThreshold:    req.SimilarityThreshold,
-		VectorSimilarityWeight: req.VectorSimilarityWeight,
-		DisableVectorLeg:       req.DisableVectorLeg,
-		TenantID:               req.TenantID,
-		RankFeature:            req.RankFeature,
-		// ExcludeCompiled maps onto the runtime request's OnlyOriginalText (the
-		// "no compile_kwd" exclusion).
+		SimilarityThreshold:      req.SimilarityThreshold,
+		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
+		TenantID:                 req.TenantID,
+		RankFeature:              &req.RankFeature,
+		// ExcludeCompiled maps Python hybrid_search's
+		// must_not={"exists":"compile_kwd"} onto the runtime request's
+		// OnlyOriginalText (the "no compile_kwd" exclusion).
 		OnlyOriginalText: req.ExcludeCompiled,
 	})
 	if err != nil {

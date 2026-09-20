@@ -716,7 +716,7 @@ func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServ
 	// ErrMCPInvalidURL data errors instead of being swallowed inside the
 	// generic FetchTools error and re-classified by the handler as a 500.
 	// FetchTools repeats the check internally; the second call is cheap.
-	if _, _, err := utility.AssertURLSafe(req.URL); err != nil {
+	if _, _, err := common.AssertURLSafe(req.URL); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMCPInvalidURL, err)
 	}
 

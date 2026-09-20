@@ -514,9 +514,16 @@ func assertFusionWeights(t *testing.T, request *types.SearchRequest, want string
 func TestBuildRetrievalFusionExprKeepsPythonWeightsOutsideInfinity(t *testing.T) {
 	expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, float64Ptr(0.8))
 
-	// Python Dealer.search's non-Infinity branch (rag/nlp/search.py:265).
-	if got := expr.FusionParams["weights"]; got != "0.001,1" {
-		t.Fatalf("expected Elasticsearch weights=0.001,1, got %v", got)
+	// Elasticsearch must honour the caller weight exactly like Infinity does:
+	// it used to be hardcoded to "0.05,0.95", which silently discarded it.
+	if got := expr.FusionParams["weights"]; got != "0.2,0.8" {
+		t.Fatalf("expected Elasticsearch weights=0.2,0.8, got %v", got)
+	}
+
+	// nil weight falls back to the documented default (0.3 vector).
+	expr = buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, nil)
+	if got := expr.FusionParams["weights"]; got != "0.7,0.3" {
+		t.Fatalf("expected default Elasticsearch weights=0.7,0.3, got %v", got)
 	}
 }
 
@@ -551,7 +558,9 @@ func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
 	}
-	if got := fusionExpr.FusionParams["weights"]; got != "0.001,1" {
-		t.Fatalf("expected Elasticsearch weights=0.001,1, got %v", got)
+	// Elasticsearch must honour the caller weight (0.8 vector -> "0.2,0.8")
+	// instead of the legacy hardcoded "0.05,0.95".
+	if got := fusionExpr.FusionParams["weights"]; got != "0.2,0.8" {
+		t.Fatalf("expected Elasticsearch weights=0.2,0.8, got %v", got)
 	}
 }

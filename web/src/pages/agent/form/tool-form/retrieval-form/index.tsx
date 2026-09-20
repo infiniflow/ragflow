@@ -22,7 +22,6 @@ import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
-  DocumentIdsFormField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
   useHideKnowledgeGraphField,
@@ -61,7 +60,6 @@ const RetrievalForm = () => {
     <Form {...form}>
       <FormWrapper>
         <DescriptionField></DescriptionField>
-        <DocumentIdsFormField></DocumentIdsFormField>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
