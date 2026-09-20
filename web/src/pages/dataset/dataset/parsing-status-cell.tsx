@@ -150,8 +150,10 @@ export function ParsingStatusCell({
 
   // The confirmation only offers real choices when there are existing chunks to
   // drop or auto-metadata to re-apply. Otherwise, and always when cancelling a
-  // run, the action fires straight away.
+  // run, the action fires straight away. Go re-ingests in place server-side, so
+  // the dialog is Python-only.
   const needsParseConfirm =
+    !isGo &&
     !isRunning &&
     (!isZeroChunk || Boolean(record?.parser_config?.enable_metadata));
 

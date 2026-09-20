@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -366,16 +367,16 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	}))
 	defer server.Close()
 
-	origAssert := utility.AssertURLSafe
+	origAssert := common.AssertURLSafe
 	origPinned := utility.PinnedHTTPClient
-	utility.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafe = func(rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		utility.AssertURLSafe = origAssert
+		common.AssertURLSafe = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 
@@ -413,16 +414,16 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origAssert := utility.AssertURLSafe
+	origAssert := common.AssertURLSafe
 	origPinned := utility.PinnedHTTPClient
-	utility.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafe = func(rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		utility.AssertURLSafe = origAssert
+		common.AssertURLSafe = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 

@@ -44,7 +44,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 	}
 
 	ext := strings.ToLower(filepath.Ext(basename))
-	contentType, ok := artifactContentTypes[ext]
+	contentType, ok := common.SandboxArtifactContentTypes[ext]
 	if !ok {
 		return nil, ErrArtifactInvalidFileType
 	}
@@ -60,7 +60,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	bucket := sandboxArtifactBucket()
+	bucket := common.SandboxArtifactBucket()
 	if !storageImpl.ObjExist(ctx, bucket, basename) {
 		return nil, ErrArtifactNotFound
 	}
@@ -166,13 +166,6 @@ func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filenam
 		}
 	}
 	return false
-}
-
-func sandboxArtifactBucket() string {
-	if bucket := common.GetEnv(common.EnvSandboxArtifactBucket); bucket != "" {
-		return bucket
-	}
-	return "sandbox-artifacts"
 }
 
 // sanitizeArtifactFilename scrubs characters that are unsafe inside a storage

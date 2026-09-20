@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"testing"
@@ -31,13 +32,12 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
-	"ragflow/internal/utility"
 )
 
 // Test setup: enable the test-only SSRF bypass for tests in this
 // file (the happy-path httptest server lives on 127.0.0.1, which
 // the production guard rejects). The bypass is now a process-
-// memory boolean (utility.AllowAnyHostForTest) instead of an
+// memory boolean (common.AllowAnyHostForTest) instead of an
 // env var — the previous form (ALLOW_ANY_HOST env) was a live
 // runtime toggle any operator could flip to disable the guard
 // globally. PR review round 6, Major #3.
@@ -47,9 +47,9 @@ import (
 // tests below rely on the bypass being on.
 func setupAllowAnyHost(t *testing.T, enabled bool) {
 	t.Helper()
-	prev := utility.AllowAnyHostForTest
-	utility.AllowAnyHostForTest = enabled
-	t.Cleanup(func() { utility.AllowAnyHostForTest = prev })
+	prev := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = enabled
+	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
 }
 
 // TestInvoke_GET exercises the happy path: a GET request to a stub
@@ -441,14 +441,14 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	// "rebinds" to a different answer afterward.
 	// We achieve "rebinding" by stubbing the DNS lookup
 	// to return a different IP on a second call.
-	originalLookup := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	originalLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		// Always return the already-running fake proxy. If the
 		// Invoke transport re-resolves proxy.test.invalid instead
 		// of using the pinned IP, the request will never hit it.
 		return []string{pinnedProxyIP}, nil
 	}
-	t.Cleanup(func() { utility.LookupHost = originalLookup })
+	t.Cleanup(func() { common.LookupHost = originalLookup })
 
 	c, _ := NewInvokeComponent(nil)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
