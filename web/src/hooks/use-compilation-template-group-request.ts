@@ -206,10 +206,16 @@ export const useDeleteCompilationTemplateGroup = () => {
   return { data, loading, deleteGroup };
 };
 
-export const useFetchAllCompilationTemplateGroups = () => {
-  const { data, isFetching: loading } = useQuery<ICompilationTemplateGroup[]>({
+export const useFetchAllCompilationTemplateGroups = (enabled = true) => {
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+  } = useQuery<ICompilationTemplateGroup[]>({
     queryKey: CompilationTemplateGroupKeys.all(),
     initialData: [],
+    enabled,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await compilationTemplateGroupService.listGroups(
@@ -222,7 +228,7 @@ export const useFetchAllCompilationTemplateGroups = () => {
     },
   });
 
-  return { groups: data ?? [], loading };
+  return { groups: data ?? [], loading, isFetched, isError };
 };
 
 export const useCompilationTemplateGroupOptions = () => {

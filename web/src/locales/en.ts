@@ -3498,6 +3498,12 @@ This process aggregates variables from multiple branches into a single variable 
         'Cannot save: "{{name}}" has invalid settings. Please fix them first',
       agentModelMissing:
         'Cannot save: "{{name}}" has no model selected. Please choose one first',
+      modelReferenceMissing:
+        'Cannot continue: the model referenced by "{{name}}" does not exist. Please select another one',
+      compilationOperatorMissing:
+        'Cannot continue: the compilation operator referenced by "{{name}}" does not exist. Please select another one',
+      canvasResourcesUnavailable:
+        'Resource information is temporarily unavailable. Please try again',
       retrievalDatasetMissing:
         'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
       retrievalMemoryMissing:

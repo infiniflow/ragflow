@@ -3046,6 +3046,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
+      modelReferenceMissing: '无法继续：“{{name}}”引用的模型不存在，请重新选择',
+      compilationOperatorMissing:
+        '无法继续：“{{name}}”引用的编译算子不存在，请重新选择',
+      canvasResourcesUnavailable: '资源信息暂不可用，请稍后重试',
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
       retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆，请先选择',
       retrievalTemplateDatasetHint:
