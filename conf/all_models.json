@@ -7254,6 +7254,40 @@
       "max_output": 16000
     },
     {
+      "name": "google/gemini-3.8-flash",
+      "alias": [
+        "gemini-3.8-flash",
+        "models/gemini-3.8-flash"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1048576,
+      "max_output": 65536
+    },
+    {
+      "name": "google/gemini-3.6-flash",
+      "alias": [
+        "gemini-3.6-flash",
+        "models/gemini-3.6-flash"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1048576,
+      "max_output": 65536
+    },
+    {
       "name": "google/gemini-3.5-flash",
       "alias": [
         "gemini-3.5-flash",
@@ -7269,7 +7303,7 @@
         "clear_thinking": true
       },
       "context_length": 1048576,
-      "max_output": 1048576
+      "max_output": 65536
     },
     {
       "name": "google/gemini-3.5-live-translate-preview",
@@ -7341,7 +7375,7 @@
         "clear_thinking": true
       },
       "context_length": 1048576,
-      "max_output": 1048576
+      "max_output": 65536
     },
     {
       "name": "google/gemini-3.1-flash-lite-preview",
@@ -7453,7 +7487,7 @@
         "clear_thinking": true
       },
       "context_length": 1048576,
-      "max_output": 1048576
+      "max_output": 65536
     },
     {
       "name": "google/gemini-3-pro-image",
