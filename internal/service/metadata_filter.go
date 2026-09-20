@@ -189,6 +189,10 @@ func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, descriptionsJS
 	return prompt
 }
 
+// metaFilterDescriptionLimit caps the characters of a single metadata key
+// description that reach the meta_filter prompt.
+const metaFilterDescriptionLimit = 1024
+
 // offeredMetaKeyDescriptions renders the key descriptions for the prompt, as a
 // JSON object, or "" when none apply.
 //
@@ -201,6 +205,13 @@ func offeredMetaKeyDescriptions(offeredKeys map[string][]string, descriptions ma
 	for key, description := range descriptions {
 		if _, ok := offeredKeys[key]; !ok || strings.TrimSpace(description) == "" {
 			continue
+		}
+		// A description is a legend for a value space, but the dataset config
+		// accepts 65535 characters per key. Cap it: this prompt carries no
+		// token budgeting, and a description long enough to crowd out the
+		// value space, the question or the answer costs the filter entirely.
+		if runes := []rune(description); len(runes) > metaFilterDescriptionLimit {
+			description = string(runes[:metaFilterDescriptionLimit]) + "…"
 		}
 		offered[key] = description
 	}
