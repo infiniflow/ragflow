@@ -1434,34 +1434,12 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// each iteration a fresh bytes.NewReader.
 		payload := append([]byte(nil), buf.Bytes()...)
 		for _, indexName := range req.IndexNames {
-			res, err := e.client.Search(
-				e.client.Search.WithContext(ctx),
-				e.client.Search.WithIndex(indexName),
-				e.client.Search.WithBody(bytes.NewReader(payload)),
-				e.client.Search.WithTrackTotalHits(true),
-			)
-			if err != nil {
-				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(err))
+			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
+			if esErr != nil {
+				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(esErr))
 				continue
 			}
-			defer res.Body.Close()
-
-			if res.IsError() {
-				bodyBytes, _ := io.ReadAll(res.Body)
-				common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
-				continue
-			}
-
-			// Parse response and return results
-			var esResp SearchResponse
-			if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
-				common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
-				continue
-			}
-
-			searchChunks := convertESResponse(&esResp, "")
-			totalHits += esResp.Hits.Total.Value
-
+			totalHits += indexTotal
 			allResults = append(allResults, searchChunks...)
 		}
 	}
@@ -1493,6 +1471,35 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		Chunks: allResults,
 		Total:  totalHits,
 	}, nil
+}
+
+func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithBody(bytes.NewReader(payload)),
+		e.client.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(err))
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, 0, fmt.Errorf("elasticsearch error response: %s", string(bodyBytes))
+	}
+
+	// Parse response and return results
+	var esResp SearchResponse
+	if err = json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+		common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
+		return nil, 0, err
+	}
+
+	return convertESResponse(&esResp, ""), esResp.Hits.Total.Value, nil
 }
 
 // searchAfterFetcher issues one ES search request with the given batch
