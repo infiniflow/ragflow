@@ -93,10 +93,11 @@ def _shared_mcp_metadata(mcp_id):
                 if not isinstance(mcp, dict):
                     continue
                 if mcp.get("mcp_id") == mcp_id:
-                    referenced = True
                     tools = mcp.get("tools")
-                    if isinstance(tools, dict):
-                        selected.update(tools.keys())
+                    if not isinstance(tools, dict):
+                        continue
+                    referenced = True
+                    selected.update(tools.keys())
     if not referenced:
         return None
     variables = safe_json_parse(server.variables)
