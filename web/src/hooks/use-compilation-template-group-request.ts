@@ -218,13 +218,25 @@ export const useFetchAllCompilationTemplateGroups = (enabled = true) => {
     enabled,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await compilationTemplateGroupService.listGroups(
-        {
-          params: { keywords: '', page: 1, page_size: 100 },
-        },
-        true,
-      );
-      return (data?.data?.groups ?? []) as ICompilationTemplateGroup[];
+      const groups: ICompilationTemplateGroup[] = [];
+      for (let page = 1; ; page += 1) {
+        const { data } = await compilationTemplateGroupService.listGroups(
+          { params: { keywords: '', page, page_size: 100 } },
+          true,
+        );
+        if (data?.code !== 0) {
+          throw new Error(
+            data?.message || 'Failed to fetch compilation operators',
+          );
+        }
+        const pageGroups = (data.data.groups ??
+          []) as ICompilationTemplateGroup[];
+        groups.push(...pageGroups);
+        if (groups.length >= data.data.total) return groups;
+        if (pageGroups.length === 0) {
+          throw new Error('Incomplete compilation operator list');
+        }
+      }
     },
   });
 

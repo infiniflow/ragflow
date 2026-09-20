@@ -1,8 +1,7 @@
 import { Operator } from '@/constants/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
-import { IAddedModel } from '@/interfaces/database/llm';
-import { getRealModelName, parseModelValue } from '@/utils/llm-util';
+import { buildModelValue, parseModelValue } from '@/utils/llm-util';
 
 const BuiltInParsers = new Set([
   'deepdoc',
@@ -34,25 +33,20 @@ function getModelReferences(value: unknown): string[] {
 // Undefined lists mean metadata is not ready, not that every resource is missing.
 export function findUnavailableCanvasResource(
   nodes: RAGFlowNodeType[],
-  models: IAddedModel[] | undefined,
+  modelIds: Set<string> | undefined,
   groups: ICompilationTemplateGroup[] | undefined,
 ) {
   for (const node of nodes) {
     for (const reference of getModelReferences(node.data?.form)) {
-      if (!models) {
+      if (!modelIds) {
         return { node, messageKey: 'flow.canvasResourcesUnavailable' };
       }
       const parsed = parseModelValue(reference);
-      const exists = models.some(
-        (model) =>
-          model.model_id === reference ||
-          (parsed &&
-            getRealModelName(model.name) === parsed.model_name &&
-            model.instance_name === parsed.model_instance &&
-            model.provider_name === parsed.model_provider),
-      );
-      if (!exists) {
-        return { node, messageKey: 'flow.modelReferenceMissing' };
+      if (
+        !modelIds.has(reference) &&
+        !(parsed && modelIds.has(buildModelValue(parsed)))
+      ) {
+        return { node, messageKey: 'common.modelUnavailable' };
       }
     }
 

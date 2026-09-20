@@ -5,7 +5,7 @@ import {
   useSetAgent,
 } from '@/hooks/use-agent-request';
 import { useFetchAllCompilationTemplateGroups } from '@/hooks/use-compilation-template-group-request';
-import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import { useModelValidIds } from '@/hooks/use-llm-request';
 import {
   GlobalVariableType,
   RAGFlowNodeType,
@@ -70,10 +70,10 @@ export const useSaveGraph = (
   const { buildDslData } = useBuildDslData();
   const nodes = useGraphStore((state) => state.nodes);
   const {
-    data: models,
+    validIds: modelIds,
     isFetched: modelsFetched,
     isError: modelsError,
-  } = useFetchAllAddedModels(undefined, data.user_id);
+  } = useModelValidIds(undefined, data.user_id);
   const {
     groups,
     isFetched: operatorGroupsFetched,
@@ -100,13 +100,17 @@ export const useSaveGraph = (
         findInvalidNode(nextNodes, editedNodeFormIds) ??
         findUnavailableCanvasResource(
           nextNodes,
-          modelsFetched && !modelsError ? models : undefined,
+          modelsFetched && !modelsError ? modelIds : undefined,
           operatorGroupsFetched && !operatorGroupsError ? groups : undefined,
         );
       if (invalid) {
         if (showMessage && !release) {
+          const name = invalid.node.data?.name;
+          const warning = t(invalid.messageKey, { name });
           message.warning(
-            t(invalid.messageKey, { name: invalid.node.data?.name }),
+            invalid.messageKey === 'common.modelUnavailable'
+              ? `${name}: ${warning}`
+              : warning,
           );
         }
         return;
@@ -118,9 +122,7 @@ export const useSaveGraph = (
       // itself proceeds. Autosave/publish (showMessage=false) stay silent to
       // avoid nagging toasts.
       if (showMessage) {
-        const emptyMessageNodeNames = getEmptyMessageNodeNames(
-          currentNodes ?? useGraphStore.getState().nodes,
-        );
+        const emptyMessageNodeNames = getEmptyMessageNodeNames(nextNodes);
         if (emptyMessageNodeNames.length > 0) {
           message.warning(
             `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
@@ -131,7 +133,7 @@ export const useSaveGraph = (
       const params: Record<string, any> = {
         id,
         title: data.title,
-        dsl: buildDslData(currentNodes, otherParam),
+        dsl: buildDslData(nextNodes, otherParam),
       };
 
       if (release) {
@@ -142,7 +144,7 @@ export const useSaveGraph = (
     },
     [
       id,
-      models,
+      modelIds,
       modelsFetched,
       modelsError,
       groups,
