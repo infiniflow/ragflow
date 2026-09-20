@@ -438,7 +438,7 @@ export default {
       generateArtifact:
         '从配置了知识编译模板的每个文档中编译 Artifact 页面（Entity / Concept / Topic）。每次运行仅处理新添加的 Chunk。',
       generateToSkills:
-        '从该数据集构建分层 Skills 树，并存储生成的 Skills 页面以供搜索和复用。',
+        '从该知识库构建分层 Skills 树，并存储生成的 Skills 页面以供搜索和复用。',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
       dataPipelineTitle: '数据管道',
@@ -726,7 +726,7 @@ export default {
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
 <p>本方法解析电子邮件文件，提取头部字段（如发件人、收件人、抄送、主题和日期）、正文内容以及附件。</p>`,
-      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或数据集导航）。</p>
+      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或知识库导航）。</p>
 <p>编译后的知识单元以分块形式合并进分块流输出，适合在分块文档之上构建可检索的知识层。</p>`,
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
       由于一本书很长，并不是所有部分都有用，如果是 PDF，
@@ -1444,7 +1444,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldProjectId: '项目 ID',
       dataSourceFieldLocation: '位置',
       dataSourceFieldServiceAccountJson: '服务账号 JSON',
-      dataSourceFieldDatasetId: '数据集 ID',
+      dataSourceFieldDatasetId: '知识库 ID',
       dataSourceFieldTableId: '表 ID',
       dataSourceFieldMaxBytesBilled: '最大计费字节数',
       dataSourceFieldJobTimeout: '作业超时时间（毫秒）',
@@ -1577,11 +1577,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceAzureSasTokenRequired: '使用 SAS 令牌认证时，SAS 令牌为必填项',
       dataSourceAzureContainerNameRequired: '在此认证模式下，容器名称为必填项',
       dataSourceBigqueryDatasetIdRequired:
-        '未使用自定义 SQL 查询时，数据集 ID 为必填项',
+        '未使用自定义 SQL 查询时，知识库 ID 为必填项',
       dataSourceBigqueryTableIdRequired:
         '未使用自定义 SQL 查询时，表 ID 为必填项',
       dataSourceBigqueryQueryRequired:
-        '请提供 SQL 查询，或同时提供数据集 ID 和表 ID',
+        '请提供 SQL 查询，或同时提供知识库 ID 和表 ID',
       dataSourceSalesforceInstanceUrlInvalid:
         '必须为合法的 Salesforce 域名 (https://...salesforce.com)',
       dataSourceSalesforceApiVersionInvalid: 'API 版本格式必须如 v59.0',
@@ -2070,7 +2070,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       jsonPreview: 'JSON 预览',
       processFlow: '流程视图',
       processFlowComingSoon: '流程视图预览即将到来',
-      compilationTitleSuffix: '的数据集',
+      compilationTitleSuffix: '的知识库',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -2089,7 +2089,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
-        '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
+        '确定要清空该知识库下的所有 Wiki 页面吗？此操作无法撤销。',
       update: '更新',
       updateTooltip:
         '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档，{{changed}} 个已变更文档。点击编译并合并到当前 Wiki。',
@@ -3047,7 +3047,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
       retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆，请先选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{num}} 处未绑定知识库的数据集检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalTemplateMemoryHint:
         '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalDatasetRequired: '请先选择知识库',
