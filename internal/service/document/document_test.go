@@ -2831,14 +2831,14 @@ func TestIngest_AllActiveTasks_ReturnsSuccessIdempotent(t *testing.T) {
 	}
 }
 
-func TestIngest_CompletedTask_SkippedWhenDeleteIsFalse(t *testing.T) {
+func TestIngest_CompletedTask_RestartedInPlace(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-2").Update("location", "loc-2").Error; err != nil {
+	if err := dao.DB.Model(&entity.Document{}).Where("id IN ?", []string{"doc-1", "doc-2"}).Update("location", "loc").Error; err != nil {
 		t.Fatalf("set location: %v", err)
 	}
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
@@ -2860,15 +2860,13 @@ func TestIngest_CompletedTask_SkippedWhenDeleteIsFalse(t *testing.T) {
 		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
 	}
 
-	// doc-1 (COMPLETED with Delete=false) should remain COMPLETED and not fail
-	task1, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
-	if task1 == nil || task1.Status != common.COMPLETED {
-		t.Fatalf("doc-1 task status = %v, want %s", task1, common.COMPLETED)
+	// doc-1 (COMPLETED) is re-enqueued in place; doc-2 starts its first parse.
+	if len(publisher.messages) != 2 {
+		t.Fatalf("expected 2 published messages, got %d", len(publisher.messages))
 	}
-
-	// doc-2 (unstarted) should have been started
-	if len(publisher.messages) != 1 {
-		t.Fatalf("expected 1 published message for doc-2, got %d", len(publisher.messages))
+	task1, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if task1 == nil || task1.Status != common.SCHEDULED {
+		t.Fatalf("doc-1 task status = %v, want %s", task1, common.SCHEDULED)
 	}
 }
 

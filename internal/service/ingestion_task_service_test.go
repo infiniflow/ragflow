@@ -705,6 +705,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-3", "kb-1", 0, 0)
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
@@ -716,6 +717,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	}{
 		{name: "failed", status: common.FAILED, docID: "doc-1"},
 		{name: "stopped", status: common.STOPPED, docID: "doc-2"},
+		{name: "completed", status: common.COMPLETED, docID: "doc-3"},
 	}
 
 	ctx := t.Context()

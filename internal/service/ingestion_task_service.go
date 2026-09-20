@@ -498,7 +498,7 @@ func validateTransition(from, to string) error {
 		if to == common.STOPPED {
 			return nil
 		}
-	case common.FAILED, common.STOPPED:
+	case common.FAILED, common.STOPPED, common.COMPLETED:
 		if to == common.CREATED {
 			return nil
 		}
@@ -586,7 +586,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				return nil, err
 			}
 			return s.markScheduledAfterPublish(ctx, existing.ID)
-		case common.FAILED, common.STOPPED:
+		case common.FAILED, common.STOPPED, common.COMPLETED:
 			originalStatus := existing.Status
 			existing, err = s.transition(ctx, existing.ID, common.CREATED)
 			if err != nil {

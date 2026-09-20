@@ -71,10 +71,10 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		validatedIDs = append(validatedIDs, docID)
 	}
 
-	// Start parsing: filter out in-flight documents (RUNNING, SCHEDULED,
-	// CREATED, STOPPING) so active parses continue undisturbed, and skip
-	// already COMPLETED documents when delete is false to avoid duplicate
-	// chunk errors. Only documents requiring a new parse run are started.
+	// Start parsing: filter out in-flight documents (CREATED, SCHEDULED,
+	// RUNNING, STOPPING) so active parses continue undisturbed. Terminal
+	// tasks (COMPLETED, FAILED, STOPPED) are re-enqueued in place: the
+	// pipeline replaces a document's chunks and counters on each run.
 	if run == string(entity.TaskStatusRunning) {
 		taskMap := make(map[string]*entity.IngestionTask, len(validatedIDs))
 		if s.ingestionTaskDAO != nil && len(validatedIDs) > 0 {
@@ -89,10 +89,6 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 			task := taskMap[vd.doc.ID]
 			if task != nil && common.IsActiveTaskStatus(task.Status) {
 				common.Debug(fmt.Sprintf("skip document %s ingestion, active task status: %s", vd.doc.ID, task.Status))
-				continue
-			}
-			if !req.Delete && task != nil && task.Status == common.COMPLETED {
-				common.Debug(fmt.Sprintf("skip document %s ingestion, already completed and delete is false", vd.doc.ID))
 				continue
 			}
 			toStart = append(toStart, vd)
