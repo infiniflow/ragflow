@@ -7,11 +7,6 @@ jest.mock('@/utils/request', () => ({
   default: jest.fn(),
 }));
 
-jest.mock('@/components/ui/message', () => ({
-  __esModule: true,
-  default: { error: jest.fn() },
-}));
-
 jest.mock('@/components/ui/spin', () => ({
   Spin: () => <div data-testid="spin" />,
 }));
@@ -19,12 +14,18 @@ jest.mock('@/components/ui/spin', () => ({
 const MockRequest = jest.mocked(request);
 
 beforeAll(() => {
-  URL.createObjectURL = jest.fn(() => 'blob:audio-mock');
+  URL.createObjectURL = jest.fn(
+    (blob: Blob | MediaSource) => `blob:${(blob as Blob).type}`,
+  );
   URL.revokeObjectURL = jest.fn();
 });
 
 afterAll(() => {
   jest.restoreAllMocks();
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
 });
 
 describe('AudioPreviewer', () => {
@@ -40,26 +41,60 @@ describe('AudioPreviewer', () => {
     );
     expect(MockRequest).toHaveBeenCalledWith(
       '/api/v1/agents/attachments/doc1/preview',
-      { method: 'GET', responseType: 'blob', onError: expect.any(Function) },
+      { method: 'GET', responseType: 'blob' },
     );
     expect(
       screen.getByTestId('document-audio-player').getAttribute('src'),
-    ).toBe('blob:audio-mock');
+    ).toBe('blob:audio/mpeg');
   });
 
-  it('renders no player when the request fails', async () => {
-    MockRequest.mockImplementation(
-      (_url: string, options: any) =>
-        new Promise(() => {
-          options.onError?.();
-        }),
-    );
+  it('renders an error state and no player when the response carries no blob', async () => {
+    MockRequest.mockResolvedValue({ data: { code: 1999 } });
 
     render(<AudioPreviewer url="/api/v1/agents/attachments/doc2/preview" />);
 
-    await waitFor(() => expect(MockRequest).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByTestId('document-audio-error')).toBeInTheDocument(),
+    );
     expect(
       screen.queryByTestId('document-audio-player'),
     ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('spin')).not.toBeInTheDocument();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stale response when the url changes mid-flight', async () => {
+    const pending: Record<string, (value: { data: Blob }) => void> = {};
+    MockRequest.mockImplementation(
+      (url: unknown) =>
+        new Promise((resolve) => {
+          pending[url as string] = resolve;
+        }),
+    );
+
+    const oldUrl = '/api/v1/agents/attachments/old/preview';
+    const newUrl = '/api/v1/agents/attachments/new/preview';
+    const { rerender } = render(<AudioPreviewer url={oldUrl} />);
+    rerender(<AudioPreviewer url={newUrl} />);
+
+    pending[oldUrl]({
+      data: new Blob([new Uint8Array([1])], { type: 'audio/old' }),
+    });
+
+    expect(
+      screen.queryByTestId('document-audio-player'),
+    ).not.toBeInTheDocument();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+
+    pending[newUrl]({
+      data: new Blob([new Uint8Array([2])], { type: 'audio/new' }),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('document-audio-player')).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByTestId('document-audio-player').getAttribute('src'),
+    ).toBe('blob:audio/new');
   });
 });

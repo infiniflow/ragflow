@@ -9,9 +9,22 @@ jest.mock('../file-icon', () => ({
   ),
 }));
 
+const mockUseAuthenticatedImageUrl = jest.fn(
+  (
+    url: string | null | undefined,
+  ): {
+    src: string;
+    status: 'loading' | 'ready' | 'error';
+  } => ({
+    src: url ?? '',
+    status: 'ready',
+  }),
+);
+
 jest.mock('../image', () => ({
   __esModule: true,
-  useAuthenticatedImageUrl: (url: string | null | undefined) => url ?? '',
+  useAuthenticatedImageUrl: (url: string | null | undefined) =>
+    mockUseAuthenticatedImageUrl(url),
 }));
 
 jest.mock('../svg-icon', () => ({
@@ -119,5 +132,46 @@ describe('UploadedMessageFiles audio playback', () => {
     fireEvent.click(screen.getByText('photo.png'));
 
     expect(screen.queryByTestId('audio-modal')).not.toBeInTheDocument();
+  });
+
+  it('keeps the spinner while the remote audio preview is loading', () => {
+    mockUseAuthenticatedImageUrl.mockReturnValueOnce({
+      src: '',
+      status: 'loading',
+    });
+
+    render(
+      <UploadedMessageFiles files={[uploadedAudio]}></UploadedMessageFiles>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '1.01a demo reading.mp3' }),
+    );
+
+    expect(screen.getByTestId('spin')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('uploaded-audio-player'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows an error state instead of a spinner when the remote audio fetch fails', () => {
+    mockUseAuthenticatedImageUrl.mockReturnValueOnce({
+      src: '',
+      status: 'error',
+    });
+
+    render(
+      <UploadedMessageFiles files={[uploadedAudio]}></UploadedMessageFiles>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '1.01a demo reading.mp3' }),
+    );
+
+    expect(screen.getByTestId('uploaded-audio-error')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('uploaded-audio-player'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('spin')).not.toBeInTheDocument();
   });
 });

@@ -46,7 +46,7 @@ function UploadedFileImage({
   name: string;
   mimeType?: string;
 }) {
-  const src = useAuthenticatedImageUrl(
+  const { src } = useAuthenticatedImageUrl(
     id
       ? api.getAttachmentFilePreview({ docId: id, filename: name, mimeType })
       : null,
@@ -105,7 +105,7 @@ function AudioPlayerModal({
 }) {
   const name = file.name;
   const isLocal = file instanceof File;
-  const remoteSrc = useAuthenticatedImageUrl(
+  const { src: remoteSrc, status: remoteStatus } = useAuthenticatedImageUrl(
     !isLocal && file.id
       ? api.getAttachmentFilePreview({
           docId: file.id,
@@ -149,6 +149,13 @@ function AudioPlayerModal({
           className="w-full"
           data-testid="uploaded-audio-player"
         />
+      ) : remoteStatus === 'error' ? (
+        <div
+          className="flex items-center justify-center py-6 text-text-secondary"
+          data-testid="uploaded-audio-error"
+        >
+          Failed to load audio
+        </div>
       ) : (
         <div className="flex items-center justify-center py-6">
           <Spin />

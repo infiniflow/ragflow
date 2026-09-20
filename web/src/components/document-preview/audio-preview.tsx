@@ -1,8 +1,7 @@
-import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import classNames from 'classnames';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface AudioPreviewerProps {
   className?: string;
@@ -15,27 +14,47 @@ export const AudioPreviewer: React.FC<AudioPreviewerProps> = ({
 }) => {
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  const fetchAudio = useCallback(async () => {
-    setIsLoading(true);
-    const res = await request(url, {
-      method: 'GET',
-      responseType: 'blob',
-      onError: () => {
-        message.error('Failed to load audio');
-        setIsLoading(false);
-      },
-    });
-    const objectUrl = URL.createObjectURL(res.data);
-    setAudioSrc(objectUrl);
-    setIsLoading(false);
-  }, [url]);
+  const [loadFailed, setLoadFailed] = useState<boolean>(false);
 
   useEffect(() => {
-    if (url) {
-      fetchAudio();
+    if (!url) {
+      return;
     }
-  }, [url, fetchAudio]);
+    let stale = false;
+    setIsLoading(true);
+    setLoadFailed(false);
+
+    const loadAudio = async () => {
+      try {
+        const res = await request(url, {
+          method: 'GET',
+          responseType: 'blob',
+        });
+        if (stale) {
+          return;
+        }
+        if (!(res.data instanceof Blob)) {
+          setLoadFailed(true);
+          return;
+        }
+        setAudioSrc(URL.createObjectURL(res.data));
+      } catch {
+        if (!stale) {
+          setLoadFailed(true);
+        }
+      } finally {
+        if (!stale) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadAudio();
+
+    return () => {
+      stale = true;
+    };
+  }, [url]);
 
   useEffect(() => {
     return () => {
@@ -66,6 +85,15 @@ export const AudioPreviewer: React.FC<AudioPreviewerProps> = ({
             className="w-full max-w-2xl"
             data-testid="document-audio-player"
           />
+        </div>
+      )}
+
+      {!isLoading && !audioSrc && loadFailed && (
+        <div
+          className="flex h-full items-center justify-center text-text-secondary"
+          data-testid="document-audio-error"
+        >
+          Failed to load audio
         </div>
       )}
     </div>

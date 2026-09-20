@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { AudioExtensions } from '@/constants/common';
 import { UploadResponseDataType } from '@/interfaces/database/chat';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { currentReg, parseCitationIndex } from '@/utils/chat';
@@ -44,25 +45,6 @@ const ImageExtensions = [
   'svg',
   'ico',
   'avif',
-];
-
-const AudioExtensions = [
-  'mp3',
-  'wav',
-  'wave',
-  'aac',
-  'flac',
-  'ogg',
-  'oga',
-  'm4a',
-  'wma',
-  'aiff',
-  'aif',
-  'au',
-  'midi',
-  'opus',
-  'ape',
-  'amr',
 ];
 
 export function getFileMimeType(
