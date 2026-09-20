@@ -30,24 +30,25 @@ import (
 
 func main() {
 
-	arguments, err := cli.ParseArgs(os.Args[1:])
+	var err error
+	cli.Arguments, err = cli.ParseArgs(os.Args[1:])
 	if err != nil {
 		return
 	}
 
-	if arguments.ShowHelp {
+	if cli.Arguments.ShowHelp {
 		cli.PrintUsage()
 		return
 	}
 
-	if arguments.ShowVersion {
+	if cli.Arguments.ShowVersion {
 		fmt.Println("RAGFlow CLI version 1.0.0") // Replace with actual version if needed
 		return
 	}
 
-	//arguments.Print()
+	// cli.Arguments.Print()
 	logLevel := "warn" // Default to warn (quiet mode)
-	if arguments.Verbose {
+	if cli.Arguments.Verbose {
 		logLevel = "info"
 	}
 
@@ -55,7 +56,7 @@ func main() {
 		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 
-	client, err := cli.NewCLIWithConfig(arguments)
+	client, err := cli.NewCLIWithConfig(cli.Arguments)
 	if err != nil {
 		fmt.Printf("Failed to create CLI: %v\n", err)
 		os.Exit(1)
@@ -69,8 +70,8 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if arguments.Command != nil {
-		if err = client.RunSingleCommand(arguments.Command); err != nil {
+	if cli.Arguments.Command != nil {
+		if err = client.RunSingleCommand(cli.Arguments.Command); err != nil {
 			fmt.Printf("Command execution failed: %v\n", err)
 			os.Exit(1)
 		}

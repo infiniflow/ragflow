@@ -22,10 +22,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	ce "ragflow/internal/cli/filesystem"
-	"strings"
 	"time"
 )
 
@@ -116,8 +114,10 @@ func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[strin
 type Response struct {
 	StatusCode int
 	Body       []byte
-	Headers    http.Header
+	Header     http.Header
 	Duration   float64
+	Success    int
+	Fail       int
 }
 
 // JSON parses the response body as JSON
@@ -130,7 +130,7 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 }
 
 // Request makes an HTTP request
-func (c *HTTPClient) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+func (c *HTTPClient) Request(commandCount int, method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
 	if c == nil {
 		return nil, fmt.Errorf("HTTP Client is nil")
 	}
@@ -160,144 +160,51 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 		req.Header.Set(k, v)
 	}
 
-	var resp *http.Response
+	var respBody []byte
 	startTime := time.Now()
-	resp, err = c.client.Do(req)
+	var statusCode int
+
+	successCount := 0
+	failCount := 0
+	var respHeader http.Header
+	for i := 0; i < commandCount; i++ {
+		respBody, respHeader, statusCode, err = c.HttpDo(req)
+		if err == nil {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+
+	duration := time.Since(startTime).Seconds()
+
+	return &Response{
+		StatusCode: statusCode,
+		Body:       respBody,
+		Header:     respHeader,
+		Duration:   duration,
+		Success:    successCount,
+		Fail:       failCount,
+	}, nil
+}
+
+func (c *HTTPClient) HttpDo(req *http.Request) ([]byte, http.Header, int, error) {
+	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, 500, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, resp.StatusCode, err
 	}
-	duration := time.Since(startTime).Seconds()
-
-	return &Response{
-		StatusCode: resp.StatusCode,
-		Body:       respBody,
-		Headers:    resp.Header.Clone(),
-		Duration:   duration,
-	}, nil
-}
-
-func isJSONMediaType(contentType string) bool {
-	mediaType, _, _ := mime.ParseMediaType(contentType)
-	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
-}
-
-func benchmarkResponseSucceeded(resp *Response) bool {
-	if resp.StatusCode != http.StatusOK {
-		return false
-	}
-
-	result, err := resp.JSON()
-	if err != nil {
-		// Some successful endpoints, such as ping, return plain text.
-		return !isJSONMediaType(resp.Headers.Get("Content-Type"))
-	}
-	code, hasCode := result["code"].(float64)
-	return !hasCode || code == 0
-}
-
-// RequestWithIterations makes multiple HTTP requests for benchmarking
-// Returns a map with "duration" (total time in seconds) and "response_list"
-func (c *HTTPClient) RequestWithIterations(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (*BenchmarkResponse, error) {
-	response := new(BenchmarkResponse)
-
-	if iterations <= 1 {
-		start := time.Now()
-		resp, err := c.Request(method, path, authKind, headers, jsonBody)
-		totalDuration := time.Since(start).Seconds()
-		if err != nil {
-			return nil, err
-		}
-
-		response.Code = resp.StatusCode
-		response.Duration = totalDuration
-		if benchmarkResponseSucceeded(resp) {
-			response.SuccessCount = 1
-		} else {
-			response.FailureCount = 1
-		}
-		return response, nil
-	}
-
-	url := c.BuildURL(path, authKind)
-	mergedHeaders := c.Headers(authKind, headers)
-
-	var body io.Reader
-	if jsonBody != nil {
-		jsonData, err := json.Marshal(jsonBody)
-		if err != nil {
-			return nil, err
-		}
-		body = bytes.NewReader(jsonData)
-		if mergedHeaders == nil {
-			mergedHeaders = make(map[string]string)
-		}
-		mergedHeaders["Content-Type"] = "application/json"
-	}
-
-	responseList := make([]*Response, 0, iterations)
-	var totalDuration float64
-
-	for i := 0; i < iterations; i++ {
-		start := time.Now()
-
-		var reqBody io.Reader
-		if body != nil {
-			// Need to create a new reader for each request
-			jsonData, _ := json.Marshal(jsonBody)
-			reqBody = bytes.NewReader(jsonData)
-		}
-
-		req, err := http.NewRequest(method, url, reqBody)
-		if err != nil {
-			return nil, err
-		}
-
-		for k, v := range mergedHeaders {
-			req.Header.Set(k, v)
-		}
-
-		resp, err := c.client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-
-		responseList = append(responseList, &Response{
-			StatusCode: resp.StatusCode,
-			Body:       respBody,
-			Headers:    resp.Header.Clone(),
-		})
-
-		totalDuration += time.Since(start).Seconds()
-	}
-
-	response.Code = 0
-	response.Duration = totalDuration
-	for _, resp := range responseList {
-		if benchmarkResponseSucceeded(resp) {
-			response.SuccessCount++
-		} else {
-			response.FailureCount++
-		}
-	}
-
-	return response, nil
+	return respBody, resp.Header, resp.StatusCode, nil
 }
 
 // RequestJSON makes an HTTP request and returns JSON response
 func (c *HTTPClient) RequestJSON(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (map[string]interface{}, error) {
-	resp, err := c.Request(method, path, authKind, headers, jsonBody)
+	resp, err := c.Request(1, method, path, authKind, headers, jsonBody)
 	if err != nil {
 		return nil, err
 	}
@@ -422,14 +329,14 @@ func (a *httpClientAdapter) Request(method, path string, authKind string, header
 			authKind = "web" // default
 		}
 	}
-	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
+	resp, err := a.client.Request(1, method, path, authKind, headers, jsonBody)
 	if err != nil {
 		return nil, err
 	}
 	return &ce.HTTPResponse{
 		StatusCode: resp.StatusCode,
 		Body:       resp.Body,
-		Headers:    resp.Headers,
+		Headers:    resp.Header,
 		Duration:   resp.Duration,
 	}, nil
 }
