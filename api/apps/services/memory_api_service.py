@@ -291,6 +291,24 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     return {"memory_list": memory_list, "total_count": count}
 
 
+async def list_memory_filters():
+    """Return filter aggregations for all memories visible to the caller."""
+    filter_dict = {"tenant_id": list(_joined_tenant_ids(current_user.id)), "accessible_user_id": current_user.id}
+    _, total = MemoryService.get_by_filter(filter_dict, None, 1, 1)
+    memories, _ = MemoryService.get_by_filter(filter_dict, None, 1, max(total, 1))
+    owner = {}
+    memory_type = {}
+    storage_type = {}
+    for memory in memories:
+        owner_item = owner.setdefault(memory["tenant_id"], {"id": memory["tenant_id"], "label": memory.get("owner_name") or memory["tenant_id"], "count": 0})
+        owner_item["count"] += 1
+        for item in get_memory_type_human(memory["memory_type"]):
+            memory_type.setdefault(item, {"id": item, "label": item, "count": 0})["count"] += 1
+        item = memory["storage_type"]
+        storage_type.setdefault(item, {"id": item, "label": item, "count": 0})["count"] += 1
+    return {"filter": {"owner": list(owner.values()), "memory_type": list(memory_type.values()), "storage_type": list(storage_type.values())}, "total": total}
+
+
 async def get_memory_config(memory_id):
     memory = MemoryService.get_with_owner_name_by_id(memory_id)
     if not memory or not _memory_accessible(memory):
