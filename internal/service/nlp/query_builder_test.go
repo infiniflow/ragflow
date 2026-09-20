@@ -316,7 +316,7 @@ func TestQueryBuilder_QuestionHyphenatedKeywordKeepsPhrase(t *testing.T) {
 		t.Fatal("Question returned nil expression for a hyphenated keyword")
 	}
 
-	const phrase = `"ppr\-9087"^5.0`
+	const phrase = `"ppr-9087"^5.0`
 	if !strings.Contains(expr.MatchingText, phrase) {
 		t.Fatalf("hyphenated query %q does not preserve the complete phrase: %q", phrase, expr.MatchingText)
 	}
@@ -330,6 +330,15 @@ func TestQueryBuilder_QuestionHyphenatedKeywordKeepsPhrase(t *testing.T) {
 	}
 	if strings.Contains(plainExpr.MatchingText, phrase) {
 		t.Fatalf("plain keyword query unexpectedly contains a hyphenated phrase: %q", plainExpr.MatchingText)
+	}
+}
+
+func TestQueryBuilder_AddHyphenatedPhrasesCapsInput(t *testing.T) {
+	qb := NewQueryBuilder()
+	query := qb.addHyphenatedPhrases("base", strings.Repeat("id-1 ", 257))
+
+	if got := strings.Count(query, `"id-1"^5.0`); got != 256 {
+		t.Fatalf("hyphenated phrase count = %d, want 256", got)
 	}
 }
 

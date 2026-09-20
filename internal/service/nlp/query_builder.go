@@ -173,11 +173,18 @@ func (qb *QueryBuilder) RmWWW(txt string) string {
 // tokens so identifiers such as "PPR-9087" are ranked as a whole phrase.
 func (qb *QueryBuilder) addHyphenatedPhrases(query string, txt string) string {
 	var phrases []string
-	for _, term := range strings.Fields(txt) {
+	terms := strings.Fields(txt)
+	if len(terms) > 256 {
+		terms = terms[:256]
+	}
+	for _, term := range terms {
 		if !strings.Contains(term, "-") {
 			continue
 		}
-		term = qb.SubSpecialChar(term)
+		// Infinity treats hyphen as a regular analyzer token, not an
+		// escapable query character. Escaping it would leave a backslash in
+		// the phrase because Infinity does not unescape hyphens.
+		term = strings.ReplaceAll(qb.SubSpecialChar(term), `\-`, "-")
 		if term != "" {
 			phrases = append(phrases, fmt.Sprintf(`"%s"^5.0`, term))
 		}
