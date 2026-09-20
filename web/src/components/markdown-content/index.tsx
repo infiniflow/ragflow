@@ -326,7 +326,12 @@ const MarkdownContent = ({
     (text: string) => {
       const replacedText = reactStringReplace(text, ReferenceMarkerReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
-        if (typeof chunkIndex !== 'number' || !reference?.chunks?.[chunkIndex]) {
+        if (typeof chunkIndex !== 'number') {
+          return match;
+        }
+        const hasReference = !!reference?.chunks?.[chunkIndex];
+        // Explicit markers can render while their sources are still arriving.
+        if (!hasReference && !(loading && match.startsWith('[ID:'))) {
           return match;
         }
 
@@ -337,16 +342,18 @@ const MarkdownContent = ({
                 [{chunkIndex + 1}]
               </bdi>
             </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {getPopoverContent(chunkIndex)}
-            </HoverCardContent>
+            {hasReference && (
+              <HoverCardContent className="max-w-3xl">
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            )}
           </HoverCard>
         );
       });
 
       return replacedText;
     },
-    [getPopoverContent, reference?.chunks],
+    [getPopoverContent, loading, reference?.chunks],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
