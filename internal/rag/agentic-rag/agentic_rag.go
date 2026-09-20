@@ -1567,8 +1567,14 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req runtime.RunReques
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "rag",
-				"description": "Run the full agentic research graph over the configured datasets and return a cited answer.",
+				"name": "rag",
+				"description": "Run the full agentic research graph over the configured datasets and return a cited answer. " +
+					"WHEN TO CALL: every question whose answer must come from the knowledge base — a fact, an enumeration, " +
+					"a count, \"which documents ...\", a date or updated-time range, a comparison, a multi-hop relation, " +
+					"or anything that needs citations. " +
+					"DO NOT CALL: only for pure chit-chat or a rewriting task that cannot need the datasets. " +
+					"You MUST call this before answering a knowledge-base question: the dataset names and your own prior " +
+					"knowledge are not evidence, and answering without it is a wrong answer even when it reads well.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -1584,14 +1590,18 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req runtime.RunReques
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "summarize_document",
-				"description": "Read an entire document by id into the evidence set and return a short summary the model can answer from.",
+				"name": "summarize_document",
+				"description": "Read an entire document by id into the evidence set and return a short summary the model can answer from. " +
+					"WHEN TO CALL: only when you ALREADY hold a doc_id — returned by an earlier `rag` call, or given by the user. " +
+					"DO NOT CALL: when you have no doc_id, or the question asks WHICH documents exist, or it needs several " +
+					"documents compared or aggregated — that is the `rag` tool's job. This tool cannot find a document: " +
+					"called without a real doc_id it only returns an error and wastes a round.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"doc_id": map[string]any{
 							"type":        "string",
-							"description": "The document id to read.",
+							"description": "The document id to read — one you already hold from a prior `rag` result or from the user.",
 						},
 					},
 					"required": []string{"doc_id"},
