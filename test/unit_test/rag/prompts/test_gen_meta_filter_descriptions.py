@@ -14,7 +14,7 @@ import pytest
 
 pytestmark = pytest.mark.p2
 
-from rag.prompts.generator import gen_meta_filter
+from rag.prompts.generator import META_FILTER_DESCRIPTION_LIMIT, gen_meta_filter
 
 VALUE_SPACE = {"phase": ["SP", "DRP"], "doc_type": ["report"]}
 
@@ -66,3 +66,13 @@ async def test_non_ascii_descriptions_stay_readable():
     \\u0161 instead of the word it has to match against the question."""
     prompt = await _prompt_for({"phase": "SP = dokumentácia pre stavebné povolenie"})
     assert "dokumentácia pre stavebné povolenie" in prompt
+
+
+@pytest.mark.asyncio
+async def test_long_descriptions_are_capped():
+    """The dataset config accepts 65535 characters per key; this prompt has no
+    token budgeting, so a description that long would crowd out the value
+    space, the question and the answer."""
+    prompt = await _prompt_for({"phase": "SP = " + "x" * 65535})
+    assert "x" * META_FILTER_DESCRIPTION_LIMIT not in prompt
+    assert "SP = " + "x" * (META_FILTER_DESCRIPTION_LIMIT - len("SP = ")) in prompt

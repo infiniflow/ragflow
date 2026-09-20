@@ -218,6 +218,8 @@ REFLECT = load_prompt("reflect")
 SUMMARY4MEMORY = load_prompt("summary4memory")
 RANK_MEMORY = load_prompt("rank_memory")
 META_FILTER = load_prompt("meta_filter")
+# Characters of a single metadata key description that reach META_FILTER.
+META_FILTER_DESCRIPTION_LIMIT = 1024
 ASK_SUMMARY = load_prompt("ask_summary")
 
 PROMPT_JINJA_ENV = SandboxedEnvironment(autoescape=False, trim_blocks=True, lstrip_blocks=True)
@@ -557,7 +559,17 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
     # Only the keys actually offered: a description for a key the model cannot
     # filter on is noise it may act upon. json.dumps({}) is "{}", which the
     # template would happily render, so fall to None while it is still a dict.
-    offered = {k: v for k, v in (descriptions or {}).items() if k in meta_data_structure and v}
+    offered = {}
+    for key, description in (descriptions or {}).items():
+        if key not in meta_data_structure or not description:
+            continue
+        # A description is a legend for a value space, but the dataset config
+        # accepts 65535 characters per key. Cap it: this prompt carries no
+        # token budgeting, and a description long enough to crowd out the
+        # value space, the question or the answer costs the filter entirely.
+        if isinstance(description, str) and len(description) > META_FILTER_DESCRIPTION_LIMIT:
+            description = description[:META_FILTER_DESCRIPTION_LIMIT] + "…"
+        offered[key] = description
 
     sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
         current_date=datetime.datetime.today().strftime("%Y-%m-%d"),
