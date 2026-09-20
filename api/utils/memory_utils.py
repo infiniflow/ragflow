@@ -46,6 +46,16 @@ def get_memory_type_human(memory_type: int) -> List[str]:
     return [mem_type.name.lower() for mem_type in MemoryType if memory_type & mem_type.value]
 
 
+def memory_type_names() -> List[str]:
+    return [mem_type.name.lower() for mem_type in MemoryType]
+
+
+def order_facet_options(counts: dict, canonical_order) -> List[dict]:
+    ordered = [counts[name] for name in canonical_order if name in counts]
+    ordered.extend(counts[name] for name in sorted(set(counts) - set(canonical_order)))
+    return ordered
+
+
 def calculate_memory_type(memory_type_name_list: List[str]) -> int:
     memory_type = 0
     type_value_map = {mem_type.name.lower(): mem_type.value for mem_type in MemoryType}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,6 +248,41 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 	}
 	if !reflect.DeepEqual(refreshed, filters) {
 		t.Fatalf("refreshed filters = %+v, want %+v", refreshed, filters)
+	}
+}
+
+func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "Owner"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-episodic", Name: "episodic newest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeEpisodic, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-procedural", Name: "procedural middle", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeProcedural, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-semantic", Name: "semantic oldest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	gotTypes := make([]string, 0, len(filters.Filter.MemoryType))
+	for _, option := range filters.Filter.MemoryType {
+		gotTypes = append(gotTypes, option.ID)
+	}
+	if want := []string{"raw", "semantic", "episodic", "procedural"}; !slices.Equal(gotTypes, want) {
+		t.Fatalf("memory type facet order = %v, want %v", gotTypes, want)
+	}
+	gotStorage := make([]string, 0, len(filters.Filter.StorageType))
+	for _, option := range filters.Filter.StorageType {
+		gotStorage = append(gotStorage, option.ID)
+	}
+	if want := []string{"table", "graph"}; !slices.Equal(gotStorage, want) {
+		t.Fatalf("storage type facet order = %v, want %v", gotStorage, want)
 	}
 }
 
