@@ -33,7 +33,7 @@ func TestDriverHTTPClientLogsProviderRequestAndResponseWhenEnabled(t *testing.T)
 	}))
 	defer server.Close()
 
-	client := NewDriverHTTPClient(true)
+	client := common.GetSchemeSafeHTTPClient()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/v1/rerank?key=request-secret", strings.NewReader(`{"query":"hello","api_key":"payload-secret"}`))
 	if err != nil {
 		t.Fatalf("NewRequestWithContext() error = %v", err)
