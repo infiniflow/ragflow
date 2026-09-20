@@ -42,7 +42,7 @@ func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }

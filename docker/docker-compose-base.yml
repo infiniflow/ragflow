@@ -342,7 +342,7 @@ services:
     # 6379, and the Go services reach `kvrocks:6379` inside the docker network
     # regardless of the host mapping (KVROCKS_PORT stays 6379, set by the Go overlay).
     ports:
-      - "127.0.0.1:${KVROCKS_PORT:-6379}:6379"
+      - "${KVROCKS_PORT:-6379}:6379"
     profiles:
       - ragflow-go
     volumes:

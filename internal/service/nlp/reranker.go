@@ -17,7 +17,6 @@ package nlp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"math"
 	"regexp"
 	"sort"
@@ -170,12 +169,7 @@ func RerankByModel(
 	// Get similarity scores from reranker model
 	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
 	if err != nil {
-		if errors.Is(err, models.ErrRerankTokenLimitPolicy) {
-			return nil, nil, nil, err
-		}
-		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
-		// If model fails, fall back to token similarity only
-		rerankResponse = &models.RerankResponse{}
+		return nil, nil, nil, err
 	}
 
 	// Use the Index field from the response to place scores in the correct position,
