@@ -255,6 +255,7 @@ def test_async_ask_final_event_carries_decorated_answer(monkeypatch):
 
     assert "answer" in final
     assert "reference" in final
+    assert final["reference"] == {}, "Documents must not be returned when the answer has no citations"
 
 
 @pytest.mark.p2
@@ -298,7 +299,7 @@ def test_async_ask_delta_events_carry_incremental_text_only(monkeypatch):
     for ev in delta_events:
         assert ev["reference"] == {}, f"Delta event must have empty reference, got: {ev['reference']}"
 
-    assert "chunks" in final_events[0]["reference"], "Final event reference must contain chunk data from decorate_answer()"
+    assert final_events[0]["reference"] == {}, "Documents must not be returned when the answer has no citations"
 
 
 @pytest.mark.p2
@@ -523,6 +524,29 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
 
     assert "answer" in final
     assert "reference" in final
+    assert final["reference"] == [], "Documents must not be returned when the answer has no citations"
+
+
+@pytest.mark.p2
+def test_async_chat_returns_documents_cited_only_in_think(monkeypatch):
+    chat_mdl = _StreamingChatModel("<think>The answer is supported by [0].</think>RAGFlow is a RAG engine.")
+    retriever = _StubRetriever()
+
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_config", lambda _tid, _type, _llm_id: _LLM_CONFIG)
+    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda tenant_id: None)
+    monkeypatch.setattr(dialog_service, "get_models", lambda _dialog, **_kwargs: ([_KB], chat_mdl, None, chat_mdl, None))
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB])
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service, "label_question", lambda _q, _kbs: "")
+    monkeypatch.setattr(dialog_service, "kb_prompt", lambda _kbinfos, _max_tokens, **_kw: ["RAGFlow is a RAG engine."])
+
+    final = next(
+        event for event in _collect(dialog_service.async_chat(_make_dialog(chat_mdl), [{"role": "user", "content": "What is RAGFlow?"}], stream=True, quote=True)) if event.get("final") is True
+    )
+
+    assert final["reference"]["doc_aggs"] == _KBINFOS["doc_aggs"]
 
 
 @pytest.mark.p2

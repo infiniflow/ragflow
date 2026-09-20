@@ -864,8 +864,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             idx = set([])
-            normalized_answer = normalize_arabic_digits(answer) or ""
-            if embd_mdl and not CITATION_MARKER_PATTERN.search(normalized_answer):
+            think, idx = repair_bad_citation_formats(think, kbinfos, idx)
+            answer, idx = repair_bad_citation_formats(answer, kbinfos, idx)
+            normalized_output = normalize_arabic_digits(think + answer) or ""
+            if embd_mdl and not CITATION_MARKER_PATTERN.search(normalized_output):
                 # Main retrieval no longer ships chunk vectors back from ES.
                 # Pull them on demand for the chunks we are about to cite.
                 await _hydrate_chunk_vectors(retriever, kbinfos.get("chunks", []), tenant_ids, dialog.kb_ids)
@@ -878,23 +880,20 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
-                for match in CITATION_MARKER_PATTERN.finditer(normalized_answer):
+                for match in CITATION_MARKER_PATTERN.finditer(normalized_output):
                     i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
 
-            answer, idx = repair_bad_citation_formats(answer, kbinfos, idx)
-
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
-            if not recall_docs:
-                recall_docs = kbinfos["doc_aggs"]
             kbinfos["doc_aggs"] = recall_docs
 
-            refs = deepcopy(kbinfos)
-            for c in refs["chunks"]:
-                if c.get("vector"):
-                    del c["vector"]
+            if idx:
+                refs = deepcopy(kbinfos)
+                for c in refs["chunks"]:
+                    if c.get("vector"):
+                        del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
@@ -1798,17 +1797,17 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
-        if not recall_docs:
-            recall_docs = kbinfos["doc_aggs"]
         kbinfos["doc_aggs"] = recall_docs
-        refs = deepcopy(kbinfos)
-        for c in refs["chunks"]:
-            if c.get("vector"):
-                del c["vector"]
+        refs = deepcopy(kbinfos) if idx else {}
+        if refs:
+            for c in refs["chunks"]:
+                if c.get("vector"):
+                    del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
-        refs["chunks"] = chunks_format(refs)
+        if refs:
+            refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
     gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
@@ -2132,13 +2131,13 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             answer = ans[1]
 
         idx = set([])
-        normalized_answer = normalize_arabic_digits(answer) or ""
-        for match in CITATION_MARKER_PATTERN.finditer(normalized_answer):
+        think, idx = repair_bad_citation_formats(think, rag_tools.kbinfos, idx)
+        answer, idx = repair_bad_citation_formats(answer, rag_tools.kbinfos, idx)
+        normalized_output = normalize_arabic_digits(think + answer) or ""
+        for match in CITATION_MARKER_PATTERN.finditer(normalized_output):
             i = int(match.group(1))
             if i < len(rag_tools.kbinfos["chunks"]):
                 idx.add(i)
-
-        answer, idx = repair_bad_citation_formats(answer, rag_tools.kbinfos, idx)
 
         doc_ids = set()
         for citation in idx:
@@ -2154,8 +2153,6 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                     doc_ids.add(doc_id)
 
         recall_docs = [d for d in rag_tools.kbinfos["doc_aggs"] if d["doc_id"] in doc_ids]
-        if not recall_docs:
-            recall_docs = rag_tools.kbinfos["doc_aggs"]
         rag_tools.kbinfos["doc_aggs"] = recall_docs
 
         refs = deepcopy(rag_tools.kbinfos) if doc_ids else []
