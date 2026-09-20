@@ -657,10 +657,7 @@ class Base(ABC):
                         if not content or not content.strip():
                             if not ans.strip():
                                 return (
-                                    (
-                                        f"{ERROR_PREFIX}: {LLMErrorCode.ERROR_MODEL} - Model returned an empty final answer "
-                                        f"without tool calls (finish_reason={response.choices[0].finish_reason})."
-                                    ),
+                                    (f"{ERROR_PREFIX}: {LLMErrorCode.ERROR_MODEL} - Model returned an empty final answer without tool calls (finish_reason={response.choices[0].finish_reason})."),
                                     tk_count,
                                 )
                             content = ""

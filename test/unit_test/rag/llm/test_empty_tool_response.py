@@ -22,9 +22,7 @@ def test_empty_final_answer_is_explicit_model_error(content, finish_reason, max_
 
 @pytest.mark.parametrize("reasoning_field", ["reasoning_content", "reasoning"])
 def test_tool_call_with_text_preserves_reasoning_and_length_notice(reasoning_field):
-    answer, tokens, requests = asyncio.run(
-        _run_tool_rounds("Found a document.", "length", reasoning_field=reasoning_field, reasoning="Reasoning.")
-    )
+    answer, tokens, requests = asyncio.run(_run_tool_rounds("Found a document.", "length", reasoning_field=reasoning_field, reasoning="Reasoning."))
     assert answer == "<think>Reasoning.</think>Found a document....\nThe answer is truncated by your chosen LLM due to its limitation on context length."
     assert "**ERROR**" not in answer
     assert tokens == 6
@@ -43,10 +41,7 @@ def test_empty_final_answer_preserves_accumulated_verbose_tool_output(content):
         )
     )
 
-    assert answer == (
-        '<tool_call>{\n  "name": "search",\n  "args": {},\n  "result": "Synthetic document."\n}'
-        "</tool_call><think>Reasoning.</think>"
-    )
+    assert answer == ('<tool_call>{\n  "name": "search",\n  "args": {},\n  "result": "Synthetic document."\n}</tool_call><think>Reasoning.</think>')
     assert tokens == 6
     assert len(requests) == 2
 
@@ -64,7 +59,17 @@ async def _run_tool_rounds(content, finish_reason, *, max_retries=0, reasoning_f
             if reasoning_field:
                 message[reasoning_field] = reasoning
             reason = finish_reason
-        return httpx.Response(200, json={"id": "test-completion", "object": "chat.completion", "created": 0, "model": "test-model", "choices": [{"index": 0, "message": message, "finish_reason": reason}], "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+        return httpx.Response(
+            200,
+            json={
+                "id": "test-completion",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [{"index": 0, "message": message, "finish_reason": reason}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+            },
+        )
 
     async def search(name, arguments):
         assert name == "search" and arguments == {}
