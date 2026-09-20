@@ -26,6 +26,9 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
@@ -493,6 +496,26 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 		return img
 	}
 
+	// Precompute, for each section index i, the minimum page number any
+	// section from i..end references (sectionMinPage over the suffix). A page
+	// strictly below that window can never be referenced by the current or a
+	// later section, so it is safe to evict even after a page-order break.
+	// A section with no page info (sectionMinPage == -1) does not lower the
+	// window, so a -1 entry means "a section with unknown pages is still
+	// ahead" and eviction is paused for safety.
+	minFuturePage := make([]int, len(result.Sections))
+	{
+		cur := -1
+		for j := len(result.Sections) - 1; j >= 0; j-- {
+			if mp := sectionMinPage(result.Sections[j]); mp >= 0 {
+				if cur < 0 || mp < cur {
+					cur = mp
+				}
+			}
+			minFuturePage[j] = cur
+		}
+	}
+
 	for i := range result.Sections {
 		sec := &result.Sections[i]
 		if strings.TrimSpace(sec.Image) != "" {
@@ -508,34 +531,58 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 		if len(sec.Positions) == 0 {
 			continue
 		}
-		// Minimum page this section touches; used both to prune stale cache
-		// entries and to bound the window.
-		minPage := -1
+		// Collect every distinct page this section spans.
 		pages := make(map[int]struct{})
 		for _, pos := range sec.Positions {
 			for _, pn := range pos.PageNumbers {
 				pages[pn] = struct{}{}
-				if pn < minPage || minPage < 0 {
-					minPage = pn
-				}
 			}
 		}
+		// Minimum page this section touches; used to bound the eviction
+		// window. This is the TRUE minimum across all positions, NOT
+		// firstSectionPage — see sectionMinPage. The two differ exactly when a
+		// cross-page merge leaves an earlier page in a non-first position.
+		minPage := sectionMinPage(*sec)
 		if lastMinPage >= 0 && minPage < lastMinPage {
 			if sectionsOrdered {
-				slog.Warn("cropMediaSections: sections out of page order; disabling page cache eviction",
-					"min_page", minPage, "last_min_page", lastMinPage)
+				common.Warn("cropMediaSections: sections out of page order; eviction now uses future-page window",
+					zap.Int("section_index", i),
+					zap.Int("total_sections", len(result.Sections)),
+					zap.Int("min_page", minPage),
+					zap.Int("last_min_page", lastMinPage),
+					zap.Int("min_future_page", minFuturePage[i]),
+					zap.Int("page_cache_size", len(pageCache)))
 			}
 			sectionsOrdered = false
 		}
 		lastMinPage = minPage
-		// Evict page images that no later section can reference (all future
-		// sections start at page >= minPage).
-		if sectionsOrdered {
+		// Evict every page image no current or future section can reference.
+		//
+		// minFuturePage[i] is the minimum page number referenced by sections
+		// i..end (precomputed above). When sections are in page order this
+		// reduces to pn < minPage, the original sliding-window bound. When a
+		// cross-page merge breaks the order, minPage would under-state the
+		// window and stalling eviction would let pageCache grow without bound
+		// on large PDFs — so we fall back to the TRUE future minimum page and
+		// keep evicting. A -1 window means a section with no page info is
+		// still ahead, so we retain the cache rather than risk dropping a page
+		// a later section still needs.
+		if minFuturePage[i] >= 0 {
 			for pn := range pageCache {
-				if pn < minPage {
+				if pn < minFuturePage[i] {
 					delete(pageCache, pn)
 				}
 			}
+		} else if i%64 == 0 {
+			// Future-page window unknown (a section with no page info is
+			// still ahead): eviction is paused so we never drop a page a
+			// later section may still reference. Log the cache size so a
+			// regression is observable instead of silently OOMing.
+			common.Warn("cropMediaSections: future-page window unknown; page cache retained",
+				zap.Int("section_index", i),
+				zap.Int("total_sections", len(result.Sections)),
+				zap.Int("page_cache_size", len(pageCache)),
+				zap.Int("min_page", minPage))
 		}
 		// Collect every distinct page this section spans so CropSectionByDLA
 		// can crop and vertically concatenate each page (mirroring Python's
@@ -565,6 +612,48 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 		}
 		sec.Image = util.CropSectionImage(sec.PositionTag, single, deepdoctype.DlaScale)
 	}
+}
+
+// sectionMinPage returns the minimum page number touched by any position of s.
+// It is the key cropMediaSections uses to bound its page-image sliding window.
+// It deliberately differs from firstSectionPage (Positions[0].PageNumbers[0]),
+// which sortSectionsByPosition orders sections by: a section sorted later by
+// reading order can still contain an earlier page in one of its (merged)
+// positions, so the two orderings are not equivalent.
+func sectionMinPage(s deepdoctype.Section) int {
+	minPage := -1
+	for _, pos := range s.Positions {
+		for _, pn := range pos.PageNumbers {
+			if pn < minPage || minPage < 0 {
+				minPage = pn
+			}
+		}
+	}
+	return minPage
+}
+
+// sectionOrderBreaksEviction replays the same page-order check cropMediaSections
+// runs while walking sections: it walks sections in reading order (as produced
+// by sortSectionsByPosition) and reports whether the TRUE minimum page ever
+// decreases relative to the previous section. Such a step makes
+// cropMediaSections log a "sections out of page order" warning and switch to its
+// future-page eviction window (instead of the simple pn < minPage bound) — the
+// sliding-window guard assumes the section order is monotonic in minPage, but
+// the sort only guarantees monotonicity in firstSectionPage. Eviction still runs
+// after a break (it falls back to the TRUE future minimum page), so the cache
+// stays bounded; the function is kept as an independent diagnostic of whether a
+// document has cross-page-merge reordering. The returned index is the first
+// offending section, or -1 when order holds.
+func sectionOrderBreaksEviction(sections []deepdoctype.Section) (bool, int) {
+	lastMinPage := -1
+	for i := range sections {
+		minPage := sectionMinPage(sections[i])
+		if lastMinPage >= 0 && minPage < lastMinPage {
+			return true, i
+		}
+		lastMinPage = minPage
+	}
+	return false, -1
 }
 
 // firstPDFPageWidth returns the first page's width from a map of
