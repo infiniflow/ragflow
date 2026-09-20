@@ -390,6 +390,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       welcome: 'Tekrar hoş geldiniz',
       description: 'Bugün hangi datasets kullanacaksınız?',
       createKnowledgeBase: 'Dataset oluştur',
+      builtInTemplate: 'Yerleşik şablon',
+      ingestionPipeline: 'Alım hattı',
       name: 'Ad',
       namePlaceholder: 'Lütfen ad girin.',
       doc: 'Belgeler',
@@ -399,6 +401,29 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       dataFlowRequired: 'Veri akışı zorunludur',
     },
     knowledgeDetails: {
+      continueUpload: 'Yüklemeye devam et',
+      reselectParser: 'Ayrıştırma yöntemini yeniden seç',
+      goAddModel: 'Model eklemeye git',
+      uploadMissingModelsTitle: 'Bazı dosyalar için gerekli bir model eksik',
+      fileModelMissing:
+        '{{name}} ({{fileType}}) için {{model}} modelinin eklenmesi gerekiyor',
+      missingModelAsr: 'ses (ASR)',
+      missingModelVision: 'vision',
+      uploadUnsupportedTypesTitle: 'Bazı dosya türleri ayrıştırılamıyor',
+      fileTypeUnsupported:
+        '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor',
+      reselectParserAfterUploadHint:
+        'Yüklemeye devam edin, ardından dosya listesinde bu dosyalar için ayrıştırma yöntemini yeniden seçin.',
+      reselectParserToParseHint:
+        'Etkilenen dosyalar için ayrıştırma yöntemini yeniden seçin, ardından yeniden ayrıştırın.',
+      addModelAfterUploadHint:
+        'Yüklemeye devam edin, ardından bu dosyaları ayrıştırmak için gerekli modeli ekleyin.',
+      addModelToParseHint:
+        'Gerekli modeli ekleyin, ardından yeniden ayrıştırın.',
+      parseBlockedTitle: 'Ayrıştırılamıyor',
+      parseBlockedPartialTitle: 'Bazı dosyalar ayrıştırılamıyor',
+      parseValidFiles: 'Geçerli dosyaları ayrıştır',
+      parseValidFilesNote: '{{count}} geçerli dosya ayrıştırılacak.',
       metadata: {
         fields: 'alanlar',
         selectFiles: '{{count}} dosya seçildi',
@@ -539,13 +564,13 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
       similarityThreshold: 'Benzerlik eşiği',
       similarityThresholdTip:
-        'RAGFlow, alım sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin veya ağırlıklı yeniden sıralama puanının kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Bu eşiğin altında benzerlik puanına sahip parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır, yani yalnızca 20 veya daha yüksek hibrit benzerlik puanına sahip parçalar alınacaktır.',
+        'RAGFlow, getirme sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin bir kombinasyonunu veya bir yeniden sıralayıcı model seçildiğinde ağırlıklı anahtar kelime benzerliği ile ağırlıklı yeniden sıralama puanının bir kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Benzerlik puanı bu eşiğin altında olan parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır. Bu, yalnızca hibrit benzerlik puanı 20 veya daha yüksek olan parçaların getirileceği anlamına gelir. Vektör benzerliği ağırlığı 0 olarak ayarlanırsa bu eşik uygulanmaz.',
       vectorSimilarityWeight: 'Vektör benzerlik ağırlığı',
       vectorSimilarityWeightTip:
-        "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
+        "Bu, vektör kosinüs benzerliği veya yeniden sıralama puanıyla kullanılan birleşik benzerlik puanındaki vektör benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
       keywordSimilarityWeight: 'Anahtar kelime benzerlik ağırlığı',
       keywordSimilarityWeightTip:
-        "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
+        "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. Vektör ve anahtar kelime ağırlıklarının toplamı 1.0'a eşit olmalıdır.",
       testText: 'Test metni',
       testTextPlaceholder: 'Sorunuzu buraya girin!',
       testingLabel: 'Çalıştır',
@@ -595,7 +620,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       close: 'Kapat',
       rerankModel: 'Yeniden sıralama modeli',
       rerankPlaceholder: 'Değer seçin',
-      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın. Yeniden sıralama modeli kullanmak istiyorsanız bir SaaS yeniden sıralayıcı kullandığınızdan emin olun; yerel olarak dağıtılmış yeniden sıralama modelini tercih ediyorsanız RAGFlow'u docker-compose-gpu.yml ile başlattığınızdan emin olun.`,
+      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın.`,
       topK: 'Top-K',
       topKTip: `Yeniden sıralama modeli ile birlikte kullanılır; bu ayar belirtilen yeniden sıralama modeline gönderilecek metin parçası sayısını tanımlar.`,
       delimiter: `Metin sınırlayıcısı`,
@@ -657,6 +682,12 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       imageTableContextWindow: 'Görüntü ve tablo bağlam penceresi',
       imageTableContextWindowTip:
         'Daha zengin arka plan bağlamı sağlamak için görüntü ve tablonun üstünde ve altında N token metin yakalar.',
+      tableContextWindow: 'Tablo bağlam penceresi',
+      tableContextWindowTip:
+        "Daha zengin arka plan bağlamı sağlamak için bir tablonun üstündeki ve altındaki N token'lık metni yakalar.",
+      imageContextWindow: 'Görüntü bağlam penceresi',
+      imageContextWindowTip:
+        "Daha zengin arka plan bağlamı sağlamak için bir görüntünün üstündeki ve altındaki N token'lık metni yakalar.",
       autoMetadata: 'Otomatik meta veri',
       mineruOptions: 'MinerU seçenekleri',
       mineruParseMethod: 'Ayrıştırma yöntemi',
@@ -789,6 +820,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         'Aşağıdaki ekran görüntüleri açıklama amacıyla sunulmuştur.',
       dialogueExamplesTitle: 'görüntüle',
       methodEmpty: 'Bu, dataset kategorilerinin görsel açıklamasını gösterecek',
+      imageLoadFailed: 'Görüntü yüklenemedi',
       audio: `<p>Desteklenen dosya formatları: <b>WAV, MP3, AAC, FLAC, OGG</b> ve diğer yaygın ses formatları.</p>
 <p>Bu yöntem, konuşmayı metne dönüştüren bir model kullanarak ses dosyalarını metne dönüştürür.</p>`,
       email: `<p>Desteklenen dosya formatları: <b>EML</b> ve <b>MSG</b>.</p>
@@ -919,7 +951,10 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       pageRank: 'Sayfa sıralaması',
       pageRankTip: `Alım sırasında belirli datasets'e daha yüksek PageRank puanı atayabilirsiniz. İlgili puan, bu datasetlerden alınan parçaların hibrit benzerlik puanlarına eklenir ve sıralamalarını yükseltir. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#basic-information.`,
       tagName: 'Etiket',
+      tagMessage: 'Lütfen bir etiket seçin',
       frequency: 'Sıklık',
+      frequencyMinMessage: 'Frekans en az {{min}} olmalıdır',
+      frequencyMaxMessage: 'Frekans en fazla {{max}} olmalıdır',
       searchTags: 'Etiketleri ara',
       tagCloud: 'Bulut',
       tagTable: 'Tablo',
@@ -1313,6 +1348,17 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldClientSecret: 'İstemci Gizli Anahtarı',
       dataSourceFieldFolderPathOptional: 'Klasör Yolu (isteğe bağlı)',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
+      dataSourceFieldFeishuAppId: 'Feishu uygulama kimliği',
+      dataSourceFieldFeishuAppSecret: 'Feishu uygulama gizli anahtarı',
+      dataSourceFieldWikiSpaceId: 'Wiki alan kimliği',
+      dataSourceFieldRootNodeToken: "Wiki kök düğüm token'ı",
+      dataSourceFieldIncludeExtensions: 'İzin verilen dosya uzantıları',
+      dataSourceFieldIncludeKeywords: 'Gerekli dosya adı anahtar kelimeleri',
+      dataSourceFieldExcludeKeywords:
+        'Hariç tutulan dosya adı anahtar kelimeleri',
+      dataSourceFieldMaxFileSizeBytes: 'Maksimum dosya boyutu (bayt)',
+      dataSourceValidationFeishuBatchSize:
+        'Toplu işlem boyutu 1 ile 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Posta Klasörü',
       dataSourceFieldMailboxUserIds:
         'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
@@ -1328,6 +1374,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldContainerName: 'Konteyner Adı',
       dataSourceFieldPrefixOptional: 'Ön ek (isteğe bağlı)',
       dataSourceFieldFeedUrl: "Besleme URL'si",
+      dataSourceFieldSitemapUrl: "Site haritası URL'si",
+      dataSourceFieldUrlFilter: 'URL filtresi (regex)',
+      dataSourceFieldFollowPdfLinks: 'PDF bağlantılarını izle',
+      dataSourceFieldRestrictPdfToDomain:
+        "PDF'leri site haritası alan adıyla sınırla",
+      dataSourceFieldUserAgent: 'User-Agent',
       dataSourceFieldGcsAccessKeyId: 'GCS Erişim Anahtarı Kimliği',
       dataSourceFieldGcsSecretAccessKey: 'GCS Gizli Erişim Anahtarı',
       dataSourceFieldBucketName: 'Bucket Adı',
@@ -1430,6 +1482,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldIsCloud: 'Bulut mu',
       dataSourceFieldIndexMode: 'Dizin Modu',
       dataSourceFieldAzureDevOpsPat: "Azure DevOps kişisel erişim token'ı",
+      dataSourceFieldAzureDevOpsBaseUrl: 'Temel URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps kuruluşu',
       dataSourceFieldAzureDevOpsRepositories: 'Depolar',
       dataSourceFieldAzureDevOpsContentTypes: 'İçerik türleri',
@@ -1575,6 +1628,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Bilgi alımı için Notion'dan sayfaları ve veritabanlarını senkronize edin.",
       google_driveDescription:
         "Google Drive'ınızı OAuth ile bağlayın ve belirli klasörleri veya sürücüleri senkronize edin.",
+      feishu_wikiDescription:
+        'Bir Feishu Wiki alt ağacındaki indirilebilir dosya düğümlerini eşitleyin.',
       gmailDescription:
         "E-postaları senkronize etmek için Gmail'inizi OAuth ile bağlayın.",
       webdavDescription:
@@ -1615,6 +1670,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Dizinlenecek SharePoint sitesinin tam URL'si, örneğin https://contoso.sharepoint.com/sites/MySite. Sites.Read.All ve Files.Read.All izinlerine sahip bir Azure AD uygulaması gerektirir.",
       azureDevOpsPatTip:
         "Code (Read) kapsamına sahip bir kişisel erişim token'ı.",
+      azureDevOpsBaseUrlTip:
+        "Azure DevOps örneğinizin Temel URL'si (örneğin https://dev.azure.com veya Azure DevOps Server / kapalı ağ için http://tfs.corp.local:8080/tfs). Belirtilmezse varsayılan olarak https://dev.azure.com kullanılır.",
       azureDevOpsOrganizationTip:
         'Kuruluş adı (örneğin "contoso") veya kendi barındırdığınız Azure DevOps Server\'ın tam koleksiyon URL\'si (örneğin https://tfs.contoso.com/DefaultCollection).',
       azureDevOpsProjectsTip:
@@ -1627,6 +1684,18 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Neyin dizinleneceğini seçin: kaynak dosyalar, çekme istekleri veya her ikisi.',
       sitemapDescription:
         'Listelenen web sayfalarını ve PDF belgelerini bilgi tabanınıza eşitlemek için herkese açık bir sitemap.xml bağlayın.',
+      sitemapUrlTip:
+        "Taranacak sitemap.xml veya site haritası dizininin URL'si, örneğin https://example.com/sitemap.xml. Site haritası dizinleri özyinelemeli olarak izlenir (en fazla 5 düzey).",
+      sitemapUrlFilterTip:
+        "İsteğe bağlı düzenli ifade. Yalnızca eşleşen URL'ler dizine eklenir; örneğin eşitlemeyi sitenin bir bölümüyle sınırlamak için ^https://example\\.com/docs/.",
+      sitemapFollowPdfLinksTip:
+        'Taranan HTML sayfalarından bağlantı verilen PDF dosyalarını da dizine ekleyin.',
+      sitemapRestrictPdfToDomainTip:
+        'Yalnızca site haritasıyla aynı alan adında barındırılan PDF bağlantılarını izleyin.',
+      sitemapUserAgentTip:
+        'Her istekle gönderilen User-Agent başlığı. RAGFlow-SitemapConnector/1.0 kullanmak için boş bırakın.',
+      sitemapBatchSizeTip:
+        "Toplu işlem başına alınan ve RAGFlow'a gönderilen sayfa sayısı.",
       azure_devopsDescription:
         "Depo dosyalarını ve pull request'leri senkronize etmek için Azure DevOps'u bağlayın.",
       bitbucketDescription:
@@ -1727,6 +1796,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       mysqlIdColumnTip: 'Benzersiz belge kimliği olarak kullanılacak sütun.',
       mysqlTimestampColumnTip:
         'Artımlı senkronizasyon için tarih/zaman damgası sütunu.',
+      mysqlFileExtensionTip:
+        'Bu kaynaktan eşitlenen belgeler için kullanılan uzantı (varsayılan: .txt). Her satır tek bir dosya olarak kaydedildiğinden, .html veya .md seçtiğinizde yalnızca tamamen HTML veya Markdown olan içerik sütunlarını seçin.',
       postgresqlDescription:
         'SQL sorguları kullanarak tablolardan veri senkronize etmek için PostgreSQL veritabanına bağlanın.',
       postgresqlQueryTip: 'Veritabanınızdan veri çıkarmak için SQL sorgusu.',
@@ -1738,6 +1809,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Benzersiz belge kimliği olarak kullanılacak sütun.',
       postgresqlTimestampColumnTip:
         'Artımlı senkronizasyon için tarih/zaman damgası sütunu.',
+      postgresqlFileExtensionTip:
+        'Bu kaynaktan eşitlenen belgeler için kullanılan uzantı (varsayılan: .txt). Her satır tek bir dosya olarak kaydedildiğinden, .html veya .md seçtiğinizde yalnızca tamamen HTML veya Markdown olan içerik sütunlarını seçin.',
       bigqueryDescription:
         "Bir tablodan veya özel bir GoogleSQL sorgusundan satırları eşitlemek için Google BigQuery'ye bağlanın.",
       bigqueryProjectIdTip:
@@ -1890,6 +1963,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       connectDialogTip:
         'Bu kanala gelen mesajlar, bağlı asistan tarafından yanıtlanır. Bağlantıyı kesmek için seçimi temizleyin.',
       notConnected: 'Bağlı asistan yok',
+      chatChannelAssistant: 'Sohbet asistanı',
+      chatChannelAgent: 'Ajan',
       chatChannelDesc: {
         clickclack: 'Bir ClickClack botu bağlayın',
         discord: 'Bir Discord botu bağlayın',
@@ -2338,6 +2413,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Varlık modu: her varlık veya kavram için bir Wiki sayfası. Konu modu: LLM, ilişkili varlıkları veya kavramları konuya göre aynı Wiki sayfasında gruplasın.',
       raptorTreeSettings: 'RAPTOR ağaç ayarları',
       summarizationPrompt: 'Özetleme istemi',
+      claimExtractionPrompt: 'İddia çıkarma istemi',
+      claimExtractionPromptTip:
+        'Kümelemeden önce yaprak parçalardan birebir kanıtlarıyla atomik iddialar toplamak için kullanılan sistem istemi. Yerleşik sözleşmeyi kullanmak için boş bırakın.',
       maxToken: 'Maksimum token',
       maxTokenRequired: 'Lütfen maksimum token değerini girin',
       clusteringThreshold: 'Kümeleme eşiği',
@@ -2374,6 +2452,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       topics: 'Konular',
       selectArtifact: 'Ayrıntıları görmek için içindekilerden bir öğe seçin',
       searchEntity: 'Varlık ara',
+      graphEntityCount: '{{returned}} / {{total}} varlık',
       sourceDocuments: 'Kaynak belgeler',
       clearWikiTitle: "Wiki'yi temizle",
       clearWikiDescription:
@@ -2413,6 +2492,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       skillDeleteTitle: 'Beceriyi sil',
       skillDeleteDescription: 'Bu beceriyi silmek istediğinizden emin misiniz?',
       navTitle: 'Gezinme ağacı',
+      navLogTitle: 'Gezinme ağacı günlüğü',
       navEmpty: 'Gezinme düğümü yok',
       navLoadFailed: 'Gezinme ağacı yüklenemedi',
       navChildLoadFailed: 'Alt düğümler yüklenemedi',
@@ -2614,6 +2694,12 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       tab: 'Sekme',
       space: 'Boşluk',
       delimiters: 'Sınırlayıcılar',
+      delimitersTip:
+        'Her satıra bir sınırlayıcı; çok karakterli sınırlayıcılar olduğu gibi yazılabilir (örneğin ##). Ters tırnakla (örneğin `##`): sert bölme — her sınırlayıcı kendi parçasını başlatır ve token boyutuna göre birleştirme uygulanmaz. Ters tırnaksız: yumuşak bölme — sınırlayıcı yalnızca bir bölme noktasıdır ve parçalar yine parça token boyutuna kadar birleştirilir, bu nedenle kısa belgelerde gözle görülür bir değişiklik olmayabilir.',
+      delimitersTipPython:
+        'Her satıra bir sınırlayıcı. Yalnızca ters tırnak içine alınmış girdiler (örneğin `##`) etkili olur: her sınırlayıcı kendi parçasını başlatır ve token boyutuna göre birleştirme uygulanmaz. Ters tırnaksız girdiler yok sayılır.',
+      childrenDelimitersTip:
+        'Alt bölme: her üst parça, alım için kullanılan alt parçalara ayrılmak üzere bu sınırlayıcılarda yeniden bölünür; parça token boyutu burada geçerli değildir.',
       one: 'Tek',
       oneChunkTitle: 'Not',
       oneChunkDescription:
@@ -2626,6 +2712,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       split: 'Böl',
       script: 'Komut dosyası',
       iterationItemDescription: 'Yinelemede geçerli öğeyi temsil eder.',
+      maxConcurrency: 'Maksimum eşzamanlılık',
+      maxConcurrencyTip:
+        "0 veya 1, öğeleri tek tek çalıştırır. 1'den büyük değerler o kadar öğeyi aynı anda çalıştırır.",
       guidingQuestion: 'Rehberlik sorusu',
       onFailure: 'Başarısızlıkta',
       userPromptDefaultValue: 'Bu ajana göndermeniz gereken emirdir.',
@@ -2774,6 +2863,16 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       youComFreshnessYear: 'Son yıl',
       youComApiKeyTip:
         'İsteğe bağlı. Anahtarsız ücretsiz katmanı kullanmak için boş bırakın.',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        'Sofya tarafından desteklenen bir web arama bileşeni. Sonuçlar, arama derinliğine bağlı olarak her sonuç sayfasının içeriğini veya yalnızca arama alıntısını taşır. Bir API Anahtarı gereklidir.',
+      sofyaSearchDepth: 'Arama derinliği',
+      sofyaSearchDepthTip:
+        'Temel, her sonuç sayfasının içeriğini döndürür. Alıntılar yalnızca arama alıntılarını döndürür; bu daha hızlıdır ve daha az maliyetlidir.',
+      sofyaSearchDepthBasic: 'Sayfa içeriği',
+      sofyaSearchDepthSnippets: 'Yalnızca alıntılar',
+      sofyaApiKeyTip:
+        'Zorunludur. sofya.co adresinden bir API Anahtarı oluşturun.',
       docGenerator: 'Belge Oluşturucu',
       docGeneratorDescription: `Markdown içeriğinden bir dosya oluşturur.`,
       browser: 'Tarayıcı',
@@ -3161,6 +3260,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       contentTip: 'content: E-posta içeriği (İsteğe bağlı)',
       jsonUploadTypeErrorMessage: 'Lütfen json dosyası yükleyin',
       jsonUploadContentErrorMessage: 'json dosyası hatası',
+      nameExists: 'Bu ad zaten var',
       iteration: 'Yineleme',
       iterationDescription: `Bir giriş dizisi üzerinde yineleme yapan ve her öğe için tanımlanmış mantığı yürüten bir döngü bileşeni.`,
       delimiterTip: `Bu sınırlayıcı, giriş metnini her yinelemenin girdi öğesi olarak gerçekleştirileceği birkaç metin parçasına bölmek için kullanılır.`,
@@ -3202,6 +3302,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         details: 'Sürüm ayrıntıları',
         dsl: 'DSL',
         download: 'İndir',
+        loadFailed: 'Sürüm yüklenemedi; silinmiş olabilir',
         version: 'Sürüm',
         select: 'Sürüm seçilmedi',
       },
@@ -3362,12 +3463,18 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       tokenizerRequired: 'Lütfen önce İndeksleyici düğümü ekleyin',
       nodeFormInvalid:
         'Kaydedilemiyor: "{{name}}" geçersiz ayarlar içeriyor. Lütfen önce bunları düzeltin',
+      agentModelMissing:
+        'Kaydedilemiyor: "{{name}}" için model seçilmemiş. Lütfen önce bir tane seçin',
       retrievalDatasetRequired: 'Lütfen en az bir veri kümesi seçin',
       retrievalDatasetMissing:
         'Kaydedilemiyor: "{{name}}" için veri kümesi seçilmedi. Lütfen önce bir tane seçin',
       retrievalMemoryRequired: 'Lütfen en az bir bellek seçin',
       retrievalMemoryMissing:
         'Kaydedilemiyor: "{{name}}" için bellek seçilmedi. Lütfen önce bir tane seçin',
+      retrievalTemplateDatasetHint:
+        'Bu şablon, bağlı bir bilgi tabanı olmayan {{num}} dataset alım adımı içeriyor. Aşağıdan birini seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.',
+      retrievalTemplateMemoryHint:
+        'Bu şablon, bağlı belleği olmayan {{num}} alım adımı içeriyor. Aşağıdan bellekleri seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.',
       tokenizerDescription:
         'Metni seçilen arama yöntemine bağlı olarak gerekli veri yapısına dönüştürür.',
       tokenChunker: 'Token Parçalayıcı',
@@ -3398,6 +3505,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         audio: 'Ses',
         video: 'Video',
       },
+      addFileType: 'Dosya türü ekle',
+      atLeastOneFileType: 'En az bir dosya türü gereklidir',
       fields: 'Alan',
       addParser: 'Ayrıştırıcı Ekle',
       rule: 'Kural',

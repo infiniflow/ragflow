@@ -502,13 +502,13 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 20，也就是说文本块的混合相似度得分至少 20 才会被召回。',
+        'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
       vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
-        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
+        '此项用于设置混合相似度分数中的向量相似度权重，该权重可用于向量余弦相似度或重排序分数。两个权重的总和必须等于 1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
       keywordSimilarityWeightTip:
-        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
+        '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
       testingLabel: '运行',
@@ -555,7 +555,7 @@ export default {
       close: '关闭',
       rerankModel: 'Rerank 模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `非必选项：若不选择 Rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 Rerank 模型，则混合查询中的向量相似度部分将被 Rerank 打分替代。请注意：采用 Rerank 模型会非常耗时。如需选用 Rerank 模型，建议使用 SaaS 的 Rerank 模型服务；如果你倾向使用本地部署的 Rerank 模型，请务必确保你使用 docker-compose-gpu.yml 启动 RAGFlow。`,
+      rerankTip: `非必选项：若不选择 Rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 Rerank 模型，则混合查询中的向量相似度部分将被 Rerank 打分替代。请注意：采用 Rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
@@ -686,6 +686,8 @@ export default {
       parseType: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      noConfigChunkerHint:
+        '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
@@ -3060,6 +3062,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
+      oneChunkerDescription: '此 Chunker 无需额外配置。',
+      qAChunkerDescription: '此 Chunker 无需额外配置。',
+      tableChunkerDescription: '此 Chunker 无需额外配置。',
+      pageChunkerDescription: '此 Chunker 无需额外配置。',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
