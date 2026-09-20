@@ -45,11 +45,31 @@ import (
 	"ragflow/internal/engine/types"
 )
 
-// fakeField is one metadata key in the fake index: the mapped ES type and the
-// distinct values the aggregation would report for it.
+// fakeField is one metadata key in the fake index: the mapped ES type, the
+// distinct values the aggregation would report for it, and how the indexer
+// treated the documents carrying it.
+//
+// carrying/indexed/ignored are what the coverage question is answered from.
+// ignore_above is applied to each array element on its own, so a document can
+// be counted in both indexed and ignored at once -- ["short", <too long>]
+// leaves the .keyword subfield present and still names it in _ignored. Leaving
+// carrying and indexed at zero means "one document per distinct value, all of
+// them indexed".
 type fakeField struct {
-	typ    string
-	values []string
+	typ      string
+	values   []string
+	carrying int
+	indexed  int
+	ignored  int
+}
+
+// counts resolves the defaults: a key whose documents were not described holds
+// one document per value, each fully indexed.
+func (f fakeField) counts() (carrying, indexed int) {
+	if f.carrying == 0 && f.indexed == 0 {
+		return len(f.values), len(f.values)
+	}
+	return f.carrying, f.indexed
 }
 
 // fakeES answers the three calls MetaValueSpace makes: the index existence
@@ -67,11 +87,72 @@ type fakeES struct {
 	// Injected failures for one response.
 	timedOut     bool
 	failedShards int
-	dropAgg      string
-	// uncovered is the document count the coverage aggregation reports per
-	// key: values the composite sources cannot reach.
-	uncovered         map[string]int
+	dropAgg           string
 	coverageRequested int
+}
+
+// uncoveredCount answers one coverage filter the way the fake's index would,
+// by reading the filter the caller actually sent rather than a canned number.
+func (f *fakeES) uncoveredCount(t *testing.T, key string, raw json.RawMessage) int {
+	t.Helper()
+	var clause map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &clause); err != nil {
+		t.Errorf("coverage filter for %q is not JSON: %v", key, err)
+		return 0
+	}
+	field := f.fields[key]
+	carrying, indexed := field.counts()
+	aggPath := "meta_fields." + key
+	if field.typ == "text" {
+		aggPath += ".keyword"
+	}
+
+	if raw, ok := clause["term"]; ok {
+		var term map[string]string
+		if err := json.Unmarshal(raw, &term); err != nil {
+			t.Errorf("term filter for %q is not a string map: %v", key, err)
+			return 0
+		}
+		path, ok := term["_ignored"]
+		if !ok {
+			t.Errorf("term filter for %q asks about %v, want _ignored", key, term)
+			return 0
+		}
+		if path != aggPath {
+			t.Errorf("_ignored filter for %q names %q, want %q", key, path, aggPath)
+			return 0
+		}
+		return field.ignored
+	}
+	if raw, ok := clause["exists"]; ok {
+		var exists struct {
+			Field string `json:"field"`
+		}
+		_ = json.Unmarshal(raw, &exists)
+		switch exists.Field {
+		case "meta_fields." + key:
+			return carrying
+		case aggPath:
+			return indexed
+		}
+		t.Errorf("exists filter for %q names %q", key, exists.Field)
+		return 0
+	}
+	if raw, ok := clause["bool"]; ok {
+		// The shape this check used before _ignored: the documents that carry
+		// the key with nothing in the aggregatable field. It cannot see a
+		// document whose other element was indexed.
+		var b struct {
+			Filter  []json.RawMessage `json:"filter"`
+			MustNot []json.RawMessage `json:"must_not"`
+		}
+		_ = json.Unmarshal(raw, &b)
+		if len(b.Filter) == 1 && len(b.MustNot) == 1 {
+			return carrying - indexed
+		}
+	}
+	t.Errorf("unsupported coverage filter for %q: %s", key, raw)
+	return 0
 }
 
 func newFakeES(fields map[string]fakeField) *fakeES {
@@ -145,8 +226,8 @@ func (f *fakeES) handler(t *testing.T) http.HandlerFunc {
 				if name == metaValueSpaceCoverageAgg {
 					f.coverageRequested++
 					buckets := map[string]interface{}{}
-					for key := range agg.Filters.Filters {
-						buckets[key] = map[string]interface{}{"doc_count": f.uncovered[key]}
+					for key, filter := range agg.Filters.Filters {
+						buckets[key] = map[string]interface{}{"doc_count": f.uncoveredCount(t, key, filter)}
 					}
 					aggregations[name] = map[string]interface{}{"buckets": buckets}
 					continue
@@ -406,30 +487,35 @@ func TestMetaValueSpace_RefusesIncompleteResponses(t *testing.T) {
 // and has no bucket. A key mapped as an object -- what a dict-valued metadata
 // entry creates -- has no aggregatable field at all. Either way the space would
 // be missing values the filter generator is then unable to choose, so refuse it.
+//
+// The mixed case is the one existence cannot answer: ignore_above is applied to
+// each array element, so ["alpha", <too long>] keeps the subfield present on
+// the document while the long element is missing from the buckets. Only
+// _ignored, which names the field the indexer dropped it from, sees it.
 func TestMetaValueSpace_RefusesValuesNoBucketCanShow(t *testing.T) {
 	cases := []struct {
-		name      string
-		fields    map[string]fakeField
-		uncovered map[string]int
+		name   string
+		fields map[string]fakeField
 	}{
 		{
-			name:      "value past ignore_above",
-			fields:    map[string]fakeField{"project": {typ: "text", values: []string{"alpha"}}},
-			uncovered: map[string]int{"project": 2},
+			name:   "no element short enough to index",
+			fields: map[string]fakeField{"project": {typ: "text", values: []string{"alpha"}, carrying: 3, indexed: 1, ignored: 2}},
+		},
+		{
+			name:   "one element past ignore_above beside a short one",
+			fields: map[string]fakeField{"project": {typ: "text", values: []string{"alpha"}, carrying: 1, indexed: 1, ignored: 1}},
 		},
 		{
 			name: "key with no aggregatable field",
 			fields: map[string]fakeField{
 				"phase":  {typ: "keyword", values: []string{"draft"}},
-				"nested": {typ: "object"},
+				"nested": {typ: "object", carrying: 3},
 			},
-			uncovered: map[string]int{"nested": 3},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := newFakeES(tc.fields)
-			fake.uncovered = tc.uncovered
 			e := newMetaValueSpaceEngine(t, fake)
 
 			space, err := e.MetaValueSpace(t.Context(), "t1", []string{"kb1"})

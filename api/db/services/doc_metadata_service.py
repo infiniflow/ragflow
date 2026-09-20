@@ -880,19 +880,21 @@ class DocMetadataService:
 
         A dynamically mapped string aggregates through its ``.keyword``
         subfield, which carries ``ignore_above`` (256 by default), so a longer
-        value is indexed as text only and has no bucket. A key the mapping gives
-        no aggregatable field at all -- an object, which a dict-valued metadata
-        entry creates -- has none either.
+        value is indexed as text only and has no bucket. ES records every field
+        an indexing decision dropped from a document in ``_ignored``, and that
+        is the question to ask: ``ignore_above`` is applied to each array
+        element on its own, so ``["short", <too long>]`` leaves the subfield
+        present -- an existence question would see nothing wrong while the long
+        element is missing from the buckets.
+
+        A key the mapping gives no aggregatable field at all -- an object, which
+        a dict-valued metadata entry creates -- has no bucket either. Nothing
+        was dropped at index time there, so it is asked as plain existence.
 
         Each is asked as a document count inside the caller's own scope, so a
         key that no document in scope carries costs nothing.
         """
-        filters = {
-            key: {"bool": {"filter": [{"exists": {"field": f"meta_fields.{key}"}}], "must_not": [{"exists": {"field": field}}]}}
-            for key, (field, _typ) in fields.items()
-            # Only a key aggregated through a subfield can lose values this way.
-            if field != f"meta_fields.{key}"
-        }
+        filters = {key: {"term": {"_ignored": field}} for key, (field, _typ) in fields.items()}
         filters.update({key: {"exists": {"field": f"meta_fields.{key}"}} for key in unaggregatable})
         return filters
 

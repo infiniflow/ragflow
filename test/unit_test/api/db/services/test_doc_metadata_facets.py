@@ -41,6 +41,18 @@ from common import settings
 
 pytestmark = pytest.mark.p2
 
+# The default ignore_above of the keyword subfield a dynamic string mapping
+# creates, and a value one character past it.
+IGNORE_ABOVE = 256
+TOO_LONG = "over-" + "x" * IGNORE_ABOVE
+
+
+def _elements(value) -> list:
+    """The values ES sees for one key: an array is indexed element by element."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
 
 class _FakeEs:
     """Stand-in for the ES client: mapping reads, composite and filter aggregations.
@@ -51,10 +63,9 @@ class _FakeEs:
     hands back everything.
     """
 
-    def __init__(self, docs, keys, shards=None, timed_out=False, unindexed=None, unaggregatable=None):
+    def __init__(self, docs, keys, shards=None, timed_out=False, unaggregatable=None):
         self._docs = docs
         self._keys = keys
-        self._unindexed = unindexed or {}
         self._unaggregatable = unaggregatable or []
         self._shards = shards if shards is not None else {"total": 1, "successful": 1, "failed": 0}
         self._timed_out = timed_out
@@ -79,10 +90,51 @@ class _FakeEs:
 
     @staticmethod
     def _values_of(doc, key):
-        value = doc["_source"]["meta_fields"].get(key)
-        if value is None:
-            return []
-        return [str(item) for item in (value if isinstance(value, list) else [value])]
+        """The buckets the composite source can build: an element past
+        ignore_above never reached the subfield, so it has none."""
+        return [str(item) for item in _elements(doc["_source"]["meta_fields"].get(key)) if len(str(item)) <= IGNORE_ABOVE]
+
+    def _field_state(self, doc):
+        """What one document indexed, and what the indexer dropped.
+
+        ignore_above is applied to each array element on its own, so a key
+        holding a short and an over-limit value has a perfectly present
+        ``.keyword`` subfield *and* an ``_ignored`` entry naming it -- which is
+        why existence alone cannot tell the two apart.
+        """
+        indexed, ignored = set(), set()
+        for key, value in doc["_source"]["meta_fields"].items():
+            elements = _elements(value)
+            if not elements:
+                continue
+            indexed.add(f"meta_fields.{key}")
+            if key in self._unaggregatable:
+                continue
+            subfield = f"meta_fields.{key}.keyword"
+            if any(len(str(element)) <= IGNORE_ABOVE for element in elements):
+                indexed.add(subfield)
+            if any(len(str(element)) > IGNORE_ABOVE for element in elements):
+                ignored.add(subfield)
+        return indexed, ignored
+
+    def _matches(self, doc, clause):
+        """Evaluate the filter the caller actually sent, not a canned answer."""
+        indexed, ignored = self._field_state(doc)
+        if "exists" in clause:
+            return clause["exists"]["field"] in indexed
+        if "term" in clause:
+            field, value = next(iter(clause["term"].items()))
+            assert field == "_ignored", f"unsupported term field {field}"
+            return value in ignored
+        if "bool" in clause:
+            spec = clause["bool"]
+            if not all(self._matches(doc, sub) for sub in spec.get("filter", [])):
+                return False
+            if any(self._matches(doc, sub) for sub in spec.get("must_not", [])):
+                return False
+            should = spec.get("should")
+            return not should or any(self._matches(doc, sub) for sub in should)
+        raise AssertionError(f"unsupported filter clause {clause}")
 
     def _counted(self, docs, key):
         counts = {}
@@ -98,13 +150,9 @@ class _FakeEs:
         aggregations = {}
         for name, spec in (body.get("aggs") or {}).items():
             if name == "carrying":
-                aggregations[name] = {"doc_count": sum(1 for doc in docs if any(self._values_of(doc, key) for key in self._keys))}
+                aggregations[name] = {"doc_count": sum(1 for doc in docs if self._matches(doc, spec["filter"]))}
             elif name == "uncovered":
-                aggregations[name] = {
-                    "buckets": {
-                        key: {"doc_count": sum(1 for doc in docs if self._values_of(doc, key)) if key in self._unaggregatable else self._unindexed.get(key, 0)} for key in spec["filters"]["filters"]
-                    }
-                }
+                aggregations[name] = {"buckets": {key: {"doc_count": sum(1 for doc in docs if self._matches(doc, clause))} for key, clause in spec["filters"]["filters"].items()}}
             else:
                 composite = spec["composite"]
                 size = composite["size"]
@@ -301,8 +349,21 @@ def test_values_too_long_to_aggregate_fall_back_to_the_scan(monkeypatch):
     which drops values longer than ignore_above (256 by default). Such a value
     has no bucket, so the facet would be missing an entry the file list can
     filter by -- hand the question back to the caller instead."""
-    docs = _docs({"phase": "DRP"})
-    store = _FakeDocStoreConn(docs, ["phase"], unindexed={"phase": 3})
+    docs = _docs({"phase": "DRP"}, {"phase": TOO_LONG})
+    store = _FakeDocStoreConn(docs, ["phase"])
+    _patch(monkeypatch, store)
+
+    assert DocMetadataService.get_metadata_facets("kb-1", _ids(docs)) is None
+
+
+def test_a_too_long_value_beside_a_short_one_falls_back_to_the_scan(monkeypatch):
+    """ignore_above is applied to each array element, while existence is a
+    property of the document: a key holding ``["DRP", <too long>]`` still has
+    its ``.keyword`` subfield, so only the long element is missing from the
+    buckets and nothing about the document looks wrong. ``_ignored`` is what
+    names the subfield the indexer dropped that element from."""
+    docs = _docs({"phase": ["DRP", TOO_LONG]})
+    store = _FakeDocStoreConn(docs, ["phase"])
     _patch(monkeypatch, store)
 
     assert DocMetadataService.get_metadata_facets("kb-1", _ids(docs)) is None
