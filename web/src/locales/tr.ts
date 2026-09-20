@@ -595,7 +595,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       close: 'Kapat',
       rerankModel: 'Yeniden sıralama modeli',
       rerankPlaceholder: 'Değer seçin',
-      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın. Yeniden sıralama modeli kullanmak istiyorsanız bir SaaS yeniden sıralayıcı kullandığınızdan emin olun; yerel olarak dağıtılmış yeniden sıralama modelini tercih ediyorsanız RAGFlow'u docker-compose-gpu.yml ile başlattığınızdan emin olun.`,
+      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın.`,
       topK: 'Top-K',
       topKTip: `Yeniden sıralama modeli ile birlikte kullanılır; bu ayar belirtilen yeniden sıralama modeline gönderilecek metin parçası sayısını tanımlar.`,
       delimiter: `Metin sınırlayıcısı`,

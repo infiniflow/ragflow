@@ -445,7 +445,7 @@ export default {
       cancel: 'Annuler',
       rerankModel: 'Modèle de réordonnancement',
       rerankPlaceholder: 'Veuillez sélectionner',
-      rerankTip: `Optionnel. Si vide, RAGFlow utilisera une combinaison de similarités pondérées. Un modèle de réordonnancement remplace la similarité vectorielle. Attention, cela augmente le temps de réponse. Pour un modèle local, utilisez docker-compose-gpu.yml.`,
+      rerankTip: `Optionnel. Si vide, RAGFlow utilisera une combinaison de similarités pondérées. Un modèle de réordonnancement remplace la similarité vectorielle. Attention, cela augmente le temps de réponse.`,
       topK: 'Top-K',
       topKTip: 'Nombre de segments à envoyer au modèle de réordonnancement.',
       delimiter: 'Délimiteur de texte',

@@ -559,7 +559,7 @@ export default {
       close: '닫기',
       rerankModel: 'Rerank 모델',
       rerankPlaceholder: '값 선택',
-      rerankTip: `선택 사항입니다. 비워두면 RAGFlow는 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용합니다. rerank 모델을 선택하면 가중 rerank 점수가 가중 벡터 코사인 유사도를 대체합니다. rerank 모델을 사용하면 시스템 응답 시간이 크게 증가합니다. rerank 모델을 사용하려면 SaaS reranker를 사용하거나, 로컬 배포 rerank 모델을 선호하는 경우 docker-compose-gpu.yml로 RAGFlow를 시작해야 합니다.`,
+      rerankTip: `선택 사항입니다. 비워두면 RAGFlow는 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용합니다. rerank 모델을 선택하면 가중 rerank 점수가 가중 벡터 코사인 유사도를 대체합니다. rerank 모델을 사용하면 시스템 응답 시간이 크게 증가합니다.`,
       topK: 'Top-K',
       topKTip: `Rerank 모델과 함께 사용하며, 지정된 reranking 모델로 전송할 텍스트 chunk 수를 정의합니다.`,
       delimiter: `텍스트 구분자`,

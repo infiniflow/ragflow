@@ -555,7 +555,7 @@ export default {
       close: '关闭',
       rerankModel: 'Rerank 模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `非必选项：若不选择 Rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 Rerank 模型，则混合查询中的向量相似度部分将被 Rerank 打分替代。请注意：采用 Rerank 模型会非常耗时。如需选用 Rerank 模型，建议使用 SaaS 的 Rerank 模型服务；如果你倾向使用本地部署的 Rerank 模型，请务必确保你使用 docker-compose-gpu.yml 启动 RAGFlow。`,
+      rerankTip: `非必选项：若不选择 Rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 Rerank 模型，则混合查询中的向量相似度部分将被 Rerank 打分替代。请注意：采用 Rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,

@@ -571,7 +571,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       close: 'Chiudi',
       rerankModel: 'Modello rerank',
       rerankPlaceholder: 'Seleziona valore',
-      rerankTip: `Opzionale. Se lasciato vuoto, RAGFlow userà una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata; se viene selezionato un modello rerank, un punteggio di reranking ponderato sostituirà la similarità coseno vettoriale ponderata. Tieni presente che l'uso di un modello rerank aumenterà significativamente il tempo di risposta del sistema. Se desideri usare un modello rerank, assicurati di usare un reranker SaaS; se preferisci un modello rerank distribuito localmente, assicurati di avviare RAGFlow con docker-compose-gpu.yml.`,
+      rerankTip: `Opzionale. Se lasciato vuoto, RAGFlow userà una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata; se viene selezionato un modello rerank, un punteggio di reranking ponderato sostituirà la similarità coseno vettoriale ponderata. Tieni presente che l'uso di un modello rerank aumenterà significativamente il tempo di risposta del sistema.`,
       topK: 'Top-K',
       topKTip: `Usato insieme al modello Rerank, questa impostazione definisce il numero di chunk di testo da inviare al modello di reranking specificato.`,
       delimiter: `Delimitatore per testo`,
