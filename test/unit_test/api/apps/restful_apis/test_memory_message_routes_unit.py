@@ -218,3 +218,14 @@ def test_search_message_rejects_non_numeric_weights(monkeypatch, field):
     res = _run(inspect.unwrap(module.search_message)())
     assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
     assert "could not convert string to float" in res["message"], res
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("field", ["similarity_threshold", "keywords_similarity_weight"])
+@pytest.mark.parametrize("value", ["-0.1", "1.1", "nan", "inf"])
+def test_search_message_rejects_out_of_range_and_non_finite_weights(monkeypatch, field, value):
+    module = _load_memory_routes_module(monkeypatch)
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({"memory_id": "m1", "query": "hello", field: value})))
+    res = _run(inspect.unwrap(module.search_message)())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "must be between 0 and 1" in res["message"], res

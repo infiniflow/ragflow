@@ -297,6 +297,10 @@ async def search_message():
     try:
         similarity_threshold = float(args.get("similarity_threshold", 0.2))
         keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
+        if not 0 <= similarity_threshold <= 1:
+            raise ValueError("similarity_threshold must be between 0 and 1")
+        if not 0 <= keywords_similarity_weight <= 1:
+            raise ValueError("keywords_similarity_weight must be between 0 and 1")
         validate_rest_api_ids(memory_ids, "memory_id")
         top_n = validate_rest_api_page_size(int(args.get("top_n", 5)))
     except ValueError as exc:
