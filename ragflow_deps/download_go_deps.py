@@ -101,7 +101,7 @@ DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
 # (repo, file, kind):
 #
 #   "runtime" - the counters load it in production, so the runtime images must ship it
-#               (the copy loop in Dockerfile / Dockerfile_base) and the loader must pin
+#               (the copy loop in Dockerfile / Dockerfile_go) and the loader must pin
 #               its SHA-1;
 #   "oracle"  - only scripts/gen_tokenizer_oracle.py needs it, to regenerate the test
 #               fixtures, so it is deliberately NOT shipped to the image.
