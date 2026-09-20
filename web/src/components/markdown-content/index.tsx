@@ -325,7 +325,7 @@ const MarkdownContent = ({
   const renderReference = useCallback(
     (text: string) => {
       const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
 
         return (
           <HoverCard key={i}>
