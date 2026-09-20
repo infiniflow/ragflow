@@ -68,6 +68,10 @@ type fakeES struct {
 	timedOut     bool
 	failedShards int
 	dropAgg      string
+	// uncovered is the document count the coverage aggregation reports per
+	// key: values the composite sources cannot reach.
+	uncovered         map[string]int
+	coverageRequested int
 }
 
 func newFakeES(fields map[string]fakeField) *fakeES {
@@ -87,6 +91,9 @@ type searchBody struct {
 			Sources []compositeSource          `json:"sources"`
 			After   map[string]json.RawMessage `json:"after"`
 		} `json:"composite"`
+		Filters struct {
+			Filters map[string]json.RawMessage `json:"filters"`
+		} `json:"filters"`
 	} `json:"aggs"`
 	Query map[string]interface{} `json:"query"`
 }
@@ -135,6 +142,15 @@ func (f *fakeES) handler(t *testing.T) http.HandlerFunc {
 			aggregations := map[string]interface{}{}
 			var keys []string
 			for name, agg := range body.Aggs {
+				if name == metaValueSpaceCoverageAgg {
+					f.coverageRequested++
+					buckets := map[string]interface{}{}
+					for key := range agg.Filters.Filters {
+						buckets[key] = map[string]interface{}{"doc_count": f.uncovered[key]}
+					}
+					aggregations[name] = map[string]interface{}{"buckets": buckets}
+					continue
+				}
 				if len(agg.Composite.Sources) != 1 {
 					t.Errorf("expected exactly one composite source, got %d", len(agg.Composite.Sources))
 					continue
@@ -281,8 +297,9 @@ func TestMetaValueSpace_SingleRoundTrip(t *testing.T) {
 // is carried into the next round.
 func TestMetaValueSpace_PagesPastOnePage(t *testing.T) {
 	fake := newFakeES(map[string]fakeField{
-		"phase":   {typ: "keyword", values: series("p", 2*metaValueSpacePageSize+7)},
-		"project": {typ: "keyword", values: []string{"alpha"}},
+		"phase": {typ: "keyword", values: series("p", 2*metaValueSpacePageSize+7)},
+		// text, so the coverage question has a subfield to ask about.
+		"project": {typ: "text", values: []string{"alpha"}},
 	})
 	e := newMetaValueSpaceEngine(t, fake)
 
@@ -298,6 +315,10 @@ func TestMetaValueSpace_PagesPastOnePage(t *testing.T) {
 	}
 	if fake.searches != 3 {
 		t.Fatalf("searches: got %d, want 3", fake.searches)
+	}
+	// The coverage question is asked once, not once per round.
+	if fake.coverageRequested != 1 {
+		t.Errorf("coverage aggregation requested %d times, want 1", fake.coverageRequested)
 	}
 	// The low-cardinality key finished in round one and must not be re-requested.
 	if got := fake.searchedKeys[1]; !reflect.DeepEqual(got, []string{"phase"}) {
@@ -380,6 +401,70 @@ func TestMetaValueSpace_RefusesIncompleteResponses(t *testing.T) {
 	}
 }
 
+// A dynamically mapped string aggregates through its .keyword subfield, which
+// carries ignore_above (256 by default): a longer value is indexed as text only
+// and has no bucket. A key mapped as an object -- what a dict-valued metadata
+// entry creates -- has no aggregatable field at all. Either way the space would
+// be missing values the filter generator is then unable to choose, so refuse it.
+func TestMetaValueSpace_RefusesValuesNoBucketCanShow(t *testing.T) {
+	cases := []struct {
+		name      string
+		fields    map[string]fakeField
+		uncovered map[string]int
+	}{
+		{
+			name:      "value past ignore_above",
+			fields:    map[string]fakeField{"project": {typ: "text", values: []string{"alpha"}}},
+			uncovered: map[string]int{"project": 2},
+		},
+		{
+			name: "key with no aggregatable field",
+			fields: map[string]fakeField{
+				"phase":  {typ: "keyword", values: []string{"draft"}},
+				"nested": {typ: "object"},
+			},
+			uncovered: map[string]int{"nested": 3},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeES(tc.fields)
+			fake.uncovered = tc.uncovered
+			e := newMetaValueSpaceEngine(t, fake)
+
+			space, err := e.MetaValueSpace(t.Context(), "t1", []string{"kb1"})
+			if !errors.Is(err, types.ErrMetaValueSpaceIncomplete) {
+				t.Fatalf("error: got %v, want ErrMetaValueSpaceIncomplete", err)
+			}
+			if space != nil {
+				t.Errorf("a refused read must return no space, got %v", space)
+			}
+		})
+	}
+}
+
+// The mapping enumerates every key the tenant ever indexed, so a key no
+// document in these knowledge bases carries must not disable filtering for
+// them: the coverage question is asked inside the caller's own scope.
+func TestMetaValueSpace_UnaggregatableKeyNothingCarriesIsFine(t *testing.T) {
+	fake := newFakeES(map[string]fakeField{
+		"phase":  {typ: "keyword", values: []string{"draft"}},
+		"nested": {typ: "object"},
+	})
+	e := newMetaValueSpaceEngine(t, fake)
+
+	space, err := e.MetaValueSpace(t.Context(), "t1", []string{"kb1"})
+	if err != nil {
+		t.Fatalf("MetaValueSpace: %v", err)
+	}
+	if !reflect.DeepEqual(space, map[string][]string{"phase": {"draft"}}) {
+		t.Errorf("space: got %v, want map[phase:[draft]]", space)
+	}
+	if fake.coverageRequested != 1 {
+		t.Errorf("coverage aggregation requested %d times, want 1", fake.coverageRequested)
+	}
+}
+
 // A composite terms source over a date field keys its buckets by epoch millis.
 // Left as they arrive the model is offered 1784851200000 where the document
 // holds 2026-07-23, so date buckets come back rendered; nothing else changes.
@@ -453,9 +538,12 @@ func TestMetaAggFields_FieldPaths(t *testing.T) {
 	})
 	e := newMetaValueSpaceEngine(t, fake)
 
-	fields, err := e.metaAggFields(t.Context(), "ragflow_doc_meta_t1")
+	fields, unaggregatable, err := e.metaAggFields(t.Context(), "ragflow_doc_meta_t1")
 	if err != nil {
 		t.Fatalf("metaAggFields: %v", err)
+	}
+	if !reflect.DeepEqual(unaggregatable, []string{"nested"}) {
+		t.Errorf("unaggregatable: got %v, want [nested]", unaggregatable)
 	}
 	want := map[string]metaAggField{
 		"project":   {path: "meta_fields.project.keyword", typ: "text"},

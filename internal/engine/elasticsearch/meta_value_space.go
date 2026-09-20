@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -42,6 +43,9 @@ const (
 	esMaxBuckets = 65536
 	// metaValueSpacePageSize is the per-key ceiling on one round trip.
 	metaValueSpacePageSize = 1000
+	// metaValueSpaceCoverageAgg names the aggregation that counts the values
+	// the composite sources cannot reach.
+	metaValueSpaceCoverageAgg = "uncovered"
 )
 
 // metaAggField is the aggregatable field path for a metadata key, with the ES
@@ -74,6 +78,14 @@ type compositeAggregation struct {
 	} `json:"buckets"`
 }
 
+// filtersAggregation is a keyed filters aggregation: one document count per
+// named filter.
+type filtersAggregation struct {
+	Buckets map[string]struct {
+		DocCount int `json:"doc_count"`
+	} `json:"buckets"`
+}
+
 type metaValueSpaceResponse struct {
 	TimedOut bool `json:"timed_out"`
 	Shards   struct {
@@ -82,7 +94,9 @@ type metaValueSpaceResponse struct {
 		Failed     int `json:"failed"`
 		Skipped    int `json:"skipped"`
 	} `json:"_shards"`
-	Aggregations map[string]compositeAggregation `json:"aggregations"`
+	// Left raw: the round carries composite aggregations and a filters
+	// aggregation, which do not share a shape.
+	Aggregations map[string]json.RawMessage `json:"aggregations"`
 }
 
 // MetaValueSpace returns every distinct metadata value per key for the given
@@ -96,9 +110,10 @@ type metaValueSpaceResponse struct {
 // so the result is complete for a dataset of any size.
 //
 // Returns types.ErrMetaValueSpaceIncomplete when the cluster answers with
-// partial results, rather than a space that silently omits values. An empty
-// space means the index or its mapping holds nothing aggregatable; the caller
-// decides what to do with that.
+// partial results, or when the knowledge bases hold a value no aggregation can
+// see, rather than a space that silently omits values. An empty space means the
+// index or its mapping holds nothing aggregatable; the caller decides what to
+// do with that.
 func (e *Engine) MetaValueSpace(ctx context.Context, tenantID string, kbIDs []string) (map[string][]string, error) {
 	if tenantID == "" {
 		return nil, fmt.Errorf("tenantID cannot be empty")
@@ -116,7 +131,7 @@ func (e *Engine) MetaValueSpace(ctx context.Context, tenantID string, kbIDs []st
 		return map[string][]string{}, nil
 	}
 
-	fields, err := e.metaAggFields(ctx, indexName)
+	fields, unaggregatable, err := e.metaAggFields(ctx, indexName)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +158,10 @@ func (e *Engine) MetaValueSpace(ctx context.Context, tenantID string, kbIDs []st
 		},
 	}
 
+	// What the buckets cannot show, asked once, in this scope: see
+	// uncoveredValueFilters.
+	uncovered := uncoveredValueFilters(fields, unaggregatable)
+
 	space := make(map[string][]string, len(fields))
 	after := make(map[string]map[string]json.RawMessage, len(fields))
 	pending := fields
@@ -159,6 +178,9 @@ func (e *Engine) MetaValueSpace(ctx context.Context, tenantID string, kbIDs []st
 			}
 			aggs[metaValueSpaceAggName(key)] = map[string]interface{}{"composite": composite}
 		}
+		if len(uncovered) > 0 {
+			aggs[metaValueSpaceCoverageAgg] = map[string]interface{}{"filters": map[string]interface{}{"filters": uncovered}}
+		}
 
 		resp, err := e.searchMetaValueSpace(ctx, indexName, query, aggs)
 		if err != nil {
@@ -171,15 +193,26 @@ func (e *Engine) MetaValueSpace(ctx context.Context, tenantID string, kbIDs []st
 				types.ErrMetaValueSpaceIncomplete, indexName, resp.TimedOut, resp.Shards.Failed, resp.Shards.Total)
 		}
 
+		if len(uncovered) > 0 {
+			if err := requireFullValueCoverage(resp, indexName); err != nil {
+				return nil, err
+			}
+			uncovered = nil
+		}
+
 		unfinished := make(map[string]metaAggField, len(pending))
 		for key, field := range pending {
-			agg, ok := resp.Aggregations[metaValueSpaceAggName(key)]
+			raw, ok := resp.Aggregations[metaValueSpaceAggName(key)]
 			if !ok {
 				// A requested aggregation that came back absent is not an empty
 				// result; treating it as one would silently drop the whole key
 				// from the value space.
 				return nil, fmt.Errorf("%w: aggregation %s missing from the response for index=%s",
 					types.ErrMetaValueSpaceIncomplete, metaValueSpaceAggName(key), indexName)
+			}
+			var agg compositeAggregation
+			if err := json.Unmarshal(raw, &agg); err != nil {
+				return nil, fmt.Errorf("failed to parse aggregation %s of %s: %w", metaValueSpaceAggName(key), indexName, err)
 			}
 			for _, bucket := range agg.Buckets {
 				space[key] = append(space[key], formatMetaValue(bucket.Key[key], field.typ))
@@ -203,6 +236,62 @@ func (e *Engine) MetaValueSpace(ctx context.Context, tenantID string, kbIDs []st
 // metaValueSpaceAggName namespaces a metadata key inside the aggregation body.
 func metaValueSpaceAggName(key string) string {
 	return "vs_" + key
+}
+
+// uncoveredValueFilters names one filter per way a stored value can never reach
+// a bucket.
+//
+// A dynamically mapped string aggregates through its .keyword subfield, which
+// carries ignore_above (256 by default), so a longer value is indexed as text
+// only and has no bucket. A key the mapping gives no aggregatable field at all
+// -- an object, which a dict-valued metadata entry creates -- has none either.
+// Either one would hand the filter generator a value space that quietly omits
+// values, and a filter written from it excludes the documents holding them.
+//
+// Each is asked as a document count inside the caller's own scope, so a key no
+// document in these knowledge bases carries costs nothing.
+func uncoveredValueFilters(fields map[string]metaAggField, unaggregatable []string) map[string]interface{} {
+	filters := make(map[string]interface{}, len(fields)+len(unaggregatable))
+	for key, field := range fields {
+		parent := "meta_fields." + key
+		if field.path == parent {
+			continue
+		}
+		filters[key] = map[string]interface{}{"bool": map[string]interface{}{
+			"filter":   []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": parent}}},
+			"must_not": []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": field.path}}},
+		}}
+	}
+	for _, key := range unaggregatable {
+		filters[key] = map[string]interface{}{"exists": map[string]interface{}{"field": "meta_fields." + key}}
+	}
+	return filters
+}
+
+// requireFullValueCoverage refuses a value space whose scope holds values no
+// bucket can show.
+func requireFullValueCoverage(resp *metaValueSpaceResponse, indexName string) error {
+	raw, ok := resp.Aggregations[metaValueSpaceCoverageAgg]
+	if !ok {
+		return fmt.Errorf("%w: aggregation %s missing from the response for index=%s",
+			types.ErrMetaValueSpaceIncomplete, metaValueSpaceCoverageAgg, indexName)
+	}
+	var agg filtersAggregation
+	if err := json.Unmarshal(raw, &agg); err != nil {
+		return fmt.Errorf("failed to parse aggregation %s of %s: %w", metaValueSpaceCoverageAgg, indexName, err)
+	}
+	var hidden []string
+	for key, bucket := range agg.Buckets {
+		if bucket.DocCount > 0 {
+			hidden = append(hidden, fmt.Sprintf("%s=%d", key, bucket.DocCount))
+		}
+	}
+	if len(hidden) > 0 {
+		sort.Strings(hidden)
+		return fmt.Errorf("%w: values no aggregation can see for index=%s: %s",
+			types.ErrMetaValueSpaceIncomplete, indexName, strings.Join(hidden, ", "))
+	}
+	return nil
 }
 
 // searchMetaValueSpace runs one aggregation round.
@@ -241,28 +330,31 @@ func (e *Engine) searchMetaValueSpace(ctx context.Context, indexName string, que
 }
 
 // metaAggFields maps each metadata key to the aggregatable field path and the
-// type it was mapped as.
+// type it was mapped as, and names the keys that have no aggregatable field at
+// all -- an object mapping, which a dict-valued metadata entry creates. The
+// second list is not a detail to drop: a space built from the remaining keys
+// would be missing a whole key without saying so.
 //
 // meta_fields is mapped dynamically, so the index mapping already enumerates
 // every key ever indexed for the tenant. Reading it costs one cheap metadata
 // call and -- unlike scanning documents -- cannot miss a key just because the
 // documents carrying it happen to sort late.
-func (e *Engine) metaAggFields(ctx context.Context, indexName string) (map[string]metaAggField, error) {
+func (e *Engine) metaAggFields(ctx context.Context, indexName string) (map[string]metaAggField, []string, error) {
 	req := esapi.IndicesGetMappingRequest{Index: []string{indexName}}
 	res, err := req.Do(ctx, e.client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read mapping of %s: %w", indexName, err)
+		return nil, nil, fmt.Errorf("failed to read mapping of %s: %w", indexName, err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
 		bodyBytes, _ := io.ReadAll(res.Body)
-		return nil, fmt.Errorf("failed to read mapping of %s: %s: %s", indexName, res.Status(), string(bodyBytes))
+		return nil, nil, fmt.Errorf("failed to read mapping of %s: %s: %s", indexName, res.Status(), string(bodyBytes))
 	}
 
 	var mappings map[string]esIndexMapping
 	if err := json.NewDecoder(res.Body).Decode(&mappings); err != nil {
-		return nil, fmt.Errorf("failed to parse mapping of %s: %w", indexName, err)
+		return nil, nil, fmt.Errorf("failed to parse mapping of %s: %w", indexName, err)
 	}
 
 	var props map[string]esFieldMapping
@@ -274,18 +366,24 @@ func (e *Engine) metaAggFields(ctx context.Context, indexName string) (map[strin
 	}
 
 	fields := make(map[string]metaAggField, len(props))
+	var unaggregatable []string
 	for key, spec := range props {
 		switch {
 		case spec.Type == "text":
 			// text is analysed and not aggregatable; its keyword subfield is.
 			if sub, ok := spec.Fields["keyword"]; ok && sub.Type == "keyword" {
 				fields[key] = metaAggField{path: fmt.Sprintf("meta_fields.%s.keyword", key), typ: spec.Type}
+				continue
 			}
+			unaggregatable = append(unaggregatable, key)
 		case isAggregatableType(spec.Type):
 			fields[key] = metaAggField{path: fmt.Sprintf("meta_fields.%s", key), typ: spec.Type}
+		default:
+			unaggregatable = append(unaggregatable, key)
 		}
 	}
-	return fields, nil
+	sort.Strings(unaggregatable)
+	return fields, unaggregatable, nil
 }
 
 func isAggregatableType(typ string) bool {

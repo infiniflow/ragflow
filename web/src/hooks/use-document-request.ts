@@ -389,11 +389,17 @@ export const useGetDocumentFilter = (): {
   // builds them by reading the metadata of every document in the dataset.
   // Fetch them when the popover is first opened and refresh them on later
   // opens, instead of on every visit to the file list.
-  const [filterOpened, setFilterOpened] = useState(false);
+  //
+  // Which dataset was opened, not merely that one was: the page rerenders for
+  // a new dataset id without unmounting this hook, and a boolean would carry
+  // the previous dataset's open state over and fetch the new one's counts
+  // before its popover is ever opened.
+  const [openedDatasetId, setOpenedDatasetId] = useState<string>();
   const datasetId = knowledgeId || id;
+  const filterOpened = !!datasetId && openedDatasetId === datasetId;
   const { data, dataUpdatedAt, isLoading, isFetching, refetch } = useQuery({
     queryKey: DocumentKeys.filter(debouncedSearchString, datasetId),
-    enabled: !!datasetId && filterOpened,
+    enabled: filterOpened,
     staleTime: DocumentFilterStaleTimeMs,
     queryFn: async () => {
       if (!datasetId) {
@@ -407,7 +413,7 @@ export const useGetDocumentFilter = (): {
   });
   const handleOpenChange = useCallback(
     (open: boolean) => {
-      if (!open) {
+      if (!open || !datasetId) {
         return;
       }
       if (filterOpened) {
@@ -419,9 +425,9 @@ export const useGetDocumentFilter = (): {
         }
         return;
       }
-      setFilterOpened(true);
+      setOpenedDatasetId(datasetId);
     },
-    [dataUpdatedAt, filterOpened, isFetching, refetch],
+    [dataUpdatedAt, datasetId, filterOpened, isFetching, refetch],
   );
   // Memoized so the empty and the adapted filter keep one identity across
   // renders instead of churning the memos that read them.
