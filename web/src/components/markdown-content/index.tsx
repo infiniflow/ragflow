@@ -324,32 +324,36 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, ReferenceMarkerReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
-        if (typeof chunkIndex !== 'number') {
-          return match;
-        }
-        const hasReference = !!reference?.chunks?.[chunkIndex];
-        // Explicit markers can render while their sources are still arriving.
-        if (!hasReference && !(loading && match.startsWith('[ID:'))) {
-          return match;
-        }
+      const replacedText = reactStringReplace(
+        text,
+        ReferenceMarkerReg,
+        (match, i) => {
+          const chunkIndex = getChunkIndex(match);
+          if (typeof chunkIndex !== 'number') {
+            return match;
+          }
+          const hasReference = !!reference?.chunks?.[chunkIndex];
+          // Explicit markers can render while their sources are still arriving.
+          if (!hasReference && !(loading && match.startsWith('[ID:'))) {
+            return match;
+          }
 
-        return (
-          <HoverCard key={i}>
-            <HoverCardTrigger>
-              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                [{chunkIndex + 1}]
-              </bdi>
-            </HoverCardTrigger>
-            {hasReference && (
-              <HoverCardContent className="max-w-3xl">
-                {getPopoverContent(chunkIndex)}
-              </HoverCardContent>
-            )}
-          </HoverCard>
-        );
-      });
+          return (
+            <HoverCard key={i}>
+              <HoverCardTrigger>
+                <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                  [{chunkIndex + 1}]
+                </bdi>
+              </HoverCardTrigger>
+              {hasReference && (
+                <HoverCardContent className="max-w-3xl">
+                  {getPopoverContent(chunkIndex)}
+                </HoverCardContent>
+              )}
+            </HoverCard>
+          );
+        },
+      );
 
       return replacedText;
     },
