@@ -885,17 +885,15 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		if inputs["_ERROR"] == "No dataset is selected." {
 			return map[string]any{"content": "No dataset is selected."}, nil
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.SystemPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
-			}
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.UserPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
-			}
 		}
 	}
 	if state != nil {
