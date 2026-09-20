@@ -207,18 +207,6 @@ export function useBulkOperateDataset({
 
   const list = [
     {
-      id: 'enabled',
-      label: t('knowledgeDetails.enabled'),
-      icon: <LucideToggleRight />,
-      onClick: handleEnableClick,
-    },
-    {
-      id: 'disabled',
-      label: t('knowledgeDetails.disabled'),
-      icon: <LucideToggleLeft />,
-      onClick: handleDisableClick,
-    },
-    {
       id: 'run',
       label: t('knowledgeDetails.run'),
       icon: <LucidePlayCircle />,
@@ -230,6 +218,19 @@ export function useBulkOperateDataset({
       icon: <LucideCircleX />,
       onClick: handleCancelClick,
     },
+    {
+      id: 'enabled',
+      label: t('knowledgeDetails.enabled'),
+      icon: <LucideToggleRight />,
+      onClick: handleEnableClick,
+    },
+    {
+      id: 'disabled',
+      label: t('knowledgeDetails.disabled'),
+      icon: <LucideToggleLeft />,
+      onClick: handleDisableClick,
+    },
+
     {
       id: 'batch-metadata',
       label: t('knowledgeDetails.metadata.metadata'),
