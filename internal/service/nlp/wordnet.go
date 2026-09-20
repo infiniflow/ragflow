@@ -14,8 +14,6 @@
 //  limitations under the License.
 //
 
-// Package wordnet provides a Go implementation of NLTK's WordNet synsets functionality.
-// This implementation reads WordNet 3.0 database files and provides synonym set lookup.
 package nlp
 
 import (
@@ -234,6 +232,7 @@ func (wn *WordNet) loadLemmaPosOffsetMap() error {
 			for i := 0; i < nSynsets && fieldIdx < len(fields); i++ {
 				offset, err := strconv.Atoi(fields[fieldIdx])
 				if err != nil {
+					fieldIdx++
 					continue
 				}
 				offsets = append(offsets, offset)
@@ -246,7 +245,7 @@ func (wn *WordNet) loadLemmaPosOffsetMap() error {
 			}
 			wn.lemmaPosOffsetMap[lemma][filePos] = offsets
 		}
-		if err := scanner.Err(); err != nil {
+		if err = scanner.Err(); err != nil {
 			return fmt.Errorf("error reading %s: %w", filename, err)
 		}
 	}
