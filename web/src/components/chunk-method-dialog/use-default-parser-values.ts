@@ -26,6 +26,9 @@ export function useDefaultParserValues() {
     const defaultParserValues = {
       task_page_size: 12,
       layout_recognize: ParseDocumentType.DeepDOC,
+      layout_recognize_auto_text: ParseDocumentType.DeepDOC,
+      layout_recognize_auto_scanned: ParseDocumentType.DeepDOC,
+      layout_recognize_auto_min_chars_per_page: 100,
       chunk_token_num: 512,
       delimiter: '\n',
       enable_children: false,

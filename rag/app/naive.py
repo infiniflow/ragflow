@@ -44,6 +44,7 @@ from api.db.services.llm_service import LLMBundle
 from common.constants import MAXIMUM_PAGE_NUMBER, LLMType
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import has_mineru_options, is_tenant_model_id, normalize_layout_recognizer
+from common.pdf_auto_layout import resolve_chunk_pdf_layout_recognize
 from common.text_utils import normalize_arabic_presentation_forms
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
@@ -1217,11 +1218,18 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
         tenant_id = kwargs.get("tenant_id")
-        if tenant_id and isinstance(layout_recognize_raw, str):
-            try:
-                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
-            except LookupError:
-                pass
+
+        layout_recognize_raw = resolve_chunk_pdf_layout_recognize(
+            parser_config,
+            layout_recognize_raw,
+            filename=filename,
+            binary=binary,
+            from_page=from_page,
+            to_page=to_page,
+            callback=callback,
+            tenant_id=tenant_id,
+            model_id_resolver=get_composite_model_name_by_id,
+        )
         # Skip the local normalize_layout_recognizer() call — the dispatcher
         # does it internally on the layout_recognize_override argument, so a
         # second call here just discards the parsed model_name and breaks the
