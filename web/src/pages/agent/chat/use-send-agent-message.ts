@@ -55,9 +55,9 @@ export function findMessageFromList(eventList: IEventList) {
   // output, which lands in a node_finished frame's `outputs` (and possibly
   // on a message frame). Scan every event so the toast fires regardless of
   // which frame carries it.
-  const memoryErrorHit = (eventList as any[])
-    .map((x) => x.data)
-    .find((d) => d?.memory_error || d?.outputs?.memory_error);
+  const memoryErrorHit = (eventList as any[]).find(
+    (x) => x.data?.memory_error || x.data?.outputs?.memory_error,
+  )?.data;
   const memoryError = memoryErrorHit
     ? ((memoryErrorHit.memory_error || memoryErrorHit.outputs?.memory_error) as
         | string
@@ -383,6 +383,7 @@ export const useSendAgentMessage = ({
       }
 
       try {
+        memoryErrorShownRef.current = undefined;
         const res = await send(params);
 
         clearUploadResponseList();
@@ -425,6 +426,7 @@ export const useSendAgentMessage = ({
         role: MessageType.User,
       });
       setRequestedSessionId(sessionId ?? null);
+      memoryErrorShownRef.current = undefined;
       await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
