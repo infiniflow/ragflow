@@ -794,7 +794,7 @@ class DocMetadataService:
             return {}
 
     @classmethod
-    def _agg_fields_from_mapping_es(cls, index_name: str) -> dict[str, tuple[str, str]]:
+    def _agg_fields_from_mapping_es(cls, index_name: str) -> tuple[dict[str, tuple[str, str]], list[str]]:
         """Map each metadata key to the aggregatable ES field path and its type.
 
         ``meta_fields`` is mapped ``dynamic: true``, so the index mapping already
@@ -802,17 +802,21 @@ class DocMetadataService:
         cheap metadata call and -- unlike scanning documents -- cannot miss a key
         just because the documents carrying it happen to sort late.
 
-        Returns {} when the backend is not ES or the mapping cannot be read, so
-        the caller can fall back to the document scan.
+        Returns ``({key: (field, type)}, [key with no aggregatable field])``. The
+        second list is not a detail to drop: a key mapped as an object -- which a
+        dict-valued metadata entry creates -- has no bucket at all, so an answer
+        built from the remaining keys would be missing a whole key without
+        saying so. Both are empty when the backend is not ES or the mapping
+        cannot be read, so the caller falls back to the document scan.
         """
         es = getattr(settings.docStoreConn, "es", None)
         if es is None:
-            return {}
+            return {}, []
         try:
             mapping = es.indices.get_mapping(index=index_name)
         except Exception as e:
             logging.warning(f"Cannot read mapping of {index_name}: {e}")
-            return {}
+            return {}, []
 
         raw = getattr(mapping, "body", mapping)
         props = {}
@@ -822,6 +826,7 @@ class DocMetadataService:
                 break
 
         fields = {}
+        unaggregatable = []
         for key, spec in props.items():
             typ = spec.get("type")
             if typ == "text" and "keyword" in (spec.get("fields") or {}):
@@ -829,7 +834,9 @@ class DocMetadataService:
                 fields[key] = (f"meta_fields.{key}.keyword", typ)
             elif typ in ("keyword", "long", "integer", "short", "byte", "double", "float", "boolean", "date"):
                 fields[key] = (f"meta_fields.{key}", typ)
-        return fields
+            else:
+                unaggregatable.append(key)
+        return fields, unaggregatable
 
     @staticmethod
     def _format_meta_value(value, es_type: str) -> str:
@@ -867,8 +874,40 @@ class DocMetadataService:
             raise MetaValueSpaceIncomplete(f"partial aggregation response for {label}: timed_out={payload.get('timed_out')}, shards={shards}")
         return payload.get("aggregations", {})
 
+    @staticmethod
+    def _uncovered_value_filters(fields: dict[str, tuple[str, str]], unaggregatable: list[str]) -> dict:
+        """One filter per way a stored value can never reach a bucket.
+
+        A dynamically mapped string aggregates through its ``.keyword``
+        subfield, which carries ``ignore_above`` (256 by default), so a longer
+        value is indexed as text only and has no bucket. A key the mapping gives
+        no aggregatable field at all -- an object, which a dict-valued metadata
+        entry creates -- has none either.
+
+        Each is asked as a document count inside the caller's own scope, so a
+        key that no document in scope carries costs nothing.
+        """
+        filters = {
+            key: {"bool": {"filter": [{"exists": {"field": f"meta_fields.{key}"}}], "must_not": [{"exists": {"field": field}}]}}
+            for key, (field, _typ) in fields.items()
+            # Only a key aggregated through a subfield can lose values this way.
+            if field != f"meta_fields.{key}"
+        }
+        filters.update({key: {"exists": {"field": f"meta_fields.{key}"}} for key in unaggregatable})
+        return filters
+
+    @staticmethod
+    def _require_full_value_coverage(result: dict, label: str) -> None:
+        """Raise when the scope holds values no bucket can show."""
+        agg = result.get("uncovered")
+        if agg is None:
+            raise MetaValueSpaceIncomplete(f"aggregation uncovered missing from the response for {label}")
+        hidden = {key: bucket["doc_count"] for key, bucket in (agg.get("buckets") or {}).items() if bucket.get("doc_count")}
+        if hidden:
+            raise MetaValueSpaceIncomplete(f"values no aggregation can see for {label}: {hidden}")
+
     @classmethod
-    def _iter_meta_value_buckets_es(cls, es, index_name: str, query: dict, fields: dict[str, tuple[str, str]], label: str):
+    def _iter_meta_value_buckets_es(cls, es, index_name: str, query: dict, fields: dict[str, tuple[str, str]], unaggregatable: list[str], label: str):
         """Yield ``(key, es_type, bucket)`` for every distinct value of every key.
 
         composite, not terms: a terms aggregation returns only the top ``size``
@@ -880,8 +919,14 @@ class DocMetadataService:
         with its own after_key. Only a key whose values filled an entire page is
         carried into another round, so the common case -- every key below the
         page size -- costs exactly one search.
+
+        The first round carries one more aggregation: what the buckets cannot
+        show at all (see ``_uncovered_value_filters``). Values invisible to a
+        composite source are what would turn this into a quietly narrowed
+        answer, so they raise MetaValueSpaceIncomplete instead.
         """
         page_size = max(1, min(META_VALUE_SPACE_PAGE_SIZE, ES_MAX_BUCKETS // max(1, len(fields))))
+        uncovered = cls._uncovered_value_filters(fields, unaggregatable)
         after: dict[str, dict] = {}
         pending = dict(fields)
         requests = 0
@@ -893,6 +938,8 @@ class DocMetadataService:
                 if key in after:
                     composite["after"] = after[key]
                 aggs[f"vs_{key}"] = {"composite": composite}
+            if uncovered:
+                aggs["uncovered"] = {"filters": {"filters": uncovered}}
             res = es.search(
                 index=index_name,
                 body={"size": 0, "query": query, "aggs": aggs},
@@ -900,6 +947,9 @@ class DocMetadataService:
             )
             requests += 1
             result = cls._require_complete_es_response(getattr(res, "body", res), label)
+            if uncovered:
+                cls._require_full_value_coverage(result, label)
+                uncovered = {}
             unfinished = {}
             for key, (field, typ) in pending.items():
                 agg = result.get(f"vs_{key}")
@@ -935,7 +985,8 @@ class DocMetadataService:
         for a dataset of any size.
 
         Raises MetaValueSpaceIncomplete when the doc store answers with partial
-        results, rather than returning a space that silently omits values.
+        results, or when the scope holds a value no aggregation can see, rather
+        than returning a space that silently omits values.
 
         Falls back to flattening get_flatted_meta_by_kbs() on non-ES backends,
         so behaviour there is unchanged.
@@ -955,7 +1006,7 @@ class DocMetadataService:
             if not settings.docStoreConn.index_exist(index_name, ""):
                 return {}
 
-            fields = cls._agg_fields_from_mapping_es(index_name)
+            fields, unaggregatable = cls._agg_fields_from_mapping_es(index_name)
             if not fields:
                 logging.debug("[get_meta_value_space_by_kbs] source=paged-scan reason=no-aggregatable-fields kb_count=%d", len(kb_ids))
                 return _fallback()
@@ -963,7 +1014,7 @@ class DocMetadataService:
             es = settings.docStoreConn.es
             query = {"bool": {"filter": [{"terms": {"kb_id": list(kb_ids)}}]}}
             space: dict[str, list[str]] = {}
-            for key, typ, bucket in cls._iter_meta_value_buckets_es(es, index_name, query, fields, f"kb_ids={kb_ids}"):
+            for key, typ, bucket in cls._iter_meta_value_buckets_es(es, index_name, query, fields, unaggregatable, f"kb_ids={kb_ids}"):
                 space.setdefault(key, []).append(cls._format_meta_value(bucket["key"][key], typ))
             return space
 
@@ -983,30 +1034,10 @@ class DocMetadataService:
         The facet's empty-metadata bucket is the rest of the dataset, so knowing
         this count is what keeps the whole facet independent of the document
         count.
-
-        The same request checks that no value is invisible to the aggregation:
-        a dynamically mapped string field aggregates through its ``.keyword``
-        subfield, which carries ``ignore_above`` (256 by default), so a longer
-        value is indexed as text and never appears as a bucket. Counting the
-        documents that hold such a value is one filter per key and turns a facet
-        that would silently omit values into a fall back to the scan.
         """
         aggs = {"carrying": {"filter": {"bool": {"should": [{"exists": {"field": f"meta_fields.{key}"}} for key in fields], "minimum_should_match": 1}}}}
-        # Only a key aggregated through a subfield can lose values this way.
-        unindexed = {
-            key: {"bool": {"filter": [{"exists": {"field": f"meta_fields.{key}"}}], "must_not": [{"exists": {"field": field}}]}}
-            for key, (field, _typ) in fields.items()
-            if field != f"meta_fields.{key}"
-        }
-        if unindexed:
-            aggs["unindexed"] = {"filters": {"filters": unindexed}}
-
         res = es.search(index=index_name, body={"size": 0, "query": query, "aggs": aggs}, allow_partial_search_results=False)
         result = cls._require_complete_es_response(getattr(res, "body", res), label)
-
-        dropped = {key: bucket["doc_count"] for key, bucket in ((result.get("unindexed") or {}).get("buckets") or {}).items() if bucket.get("doc_count")}
-        if dropped:
-            raise MetaValueSpaceIncomplete(f"values too long to be aggregated (keyword ignore_above) for {label}: {dropped}")
         return (result.get("carrying") or {}).get("doc_count", 0)
 
     @classmethod
@@ -1042,7 +1073,7 @@ class DocMetadataService:
                 # not created here: this is a read.
                 return {}, 0
 
-            fields = cls._agg_fields_from_mapping_es(index_name)
+            fields, unaggregatable = cls._agg_fields_from_mapping_es(index_name)
             if not fields:
                 # Either there is no metadata or the mapping could not be read,
                 # and those are not distinguishable here. Hand the question to
@@ -1062,7 +1093,7 @@ class DocMetadataService:
                     }
                 }
                 carrying += cls._count_docs_carrying_metadata_es(es, index_name, query, fields, label)
-                for key, typ, bucket in cls._iter_meta_value_buckets_es(es, index_name, query, fields, label):
+                for key, typ, bucket in cls._iter_meta_value_buckets_es(es, index_name, query, fields, unaggregatable, label):
                     value = cls._format_meta_value(bucket["key"][key], typ)
                     if not value.strip():
                         # The document scan skips blank values, and a facet entry

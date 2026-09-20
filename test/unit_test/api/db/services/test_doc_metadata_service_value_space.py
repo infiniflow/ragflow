@@ -55,9 +55,20 @@ class _FakeEs:
     hands back everything.
     """
 
-    def __init__(self, docs: list[dict], keys: list[str], shards: dict | None = None, timed_out: bool = False, drop_key: str | None = None):
+    def __init__(
+        self,
+        docs: list[dict],
+        keys: list[str],
+        shards: dict | None = None,
+        timed_out: bool = False,
+        drop_key: str | None = None,
+        unindexed: dict[str, int] | None = None,
+        unaggregatable: list[str] | None = None,
+    ):
         self._docs = docs
         self._keys = keys
+        self._unindexed = unindexed or {}
+        self._unaggregatable = unaggregatable or []
         self.requested_sizes: dict[str, int] = {}
         self.searches = 0
         self.partial_kwarg = None
@@ -68,8 +79,13 @@ class _FakeEs:
     @property
     def indices(self):
         properties = {key: {"type": "text", "fields": {"keyword": {"type": "keyword"}}} for key in self._keys}
+        # A dict-valued metadata entry maps as an object: no type, no bucket.
+        properties.update({key: {"properties": {"inner": {"type": "text"}}} for key in self._unaggregatable})
         mapping = {"idx": {"mappings": {"properties": {"meta_fields": {"properties": properties}}}}}
         return SimpleNamespace(get_mapping=lambda index: mapping)
+
+    def _carrying(self, key: str) -> int:
+        return sum(1 for doc in self._docs if doc["_source"]["meta_fields"].get(key) is not None)
 
     def _values(self, key: str) -> list[str]:
         values = {str(doc["_source"]["meta_fields"][key]) for doc in self._docs if doc["_source"]["meta_fields"].get(key) is not None}
@@ -80,6 +96,9 @@ class _FakeEs:
         self.partial_kwarg = allow_partial_search_results
         aggregations = {}
         for name, spec in (body.get("aggs") or {}).items():
+            if name == "uncovered":
+                aggregations[name] = {"buckets": {key: {"doc_count": self._carrying(key) if key in self._unaggregatable else self._unindexed.get(key, 0)} for key in spec["filters"]["filters"]}}
+                continue
             composite = spec["composite"]
             size = composite["size"]
             source = composite["sources"][0]
@@ -249,6 +268,44 @@ def test_incomplete_response_does_not_degrade_to_the_paged_scan(monkeypatch):
     assert store.paged_searches == 0
 
 
+def test_values_too_long_to_aggregate_refuse_the_space(monkeypatch):
+    """A dynamically mapped string aggregates through its ``.keyword``
+    subfield, which drops values longer than ignore_above (256 by default).
+    Such a value has no bucket, so the generator would never be offered it and
+    would pick a value that scopes the search to the wrong documents."""
+    store = _FakeDocStoreConn(_docs(), ["phase", "project"], unindexed={"phase": 2})
+    _patch(monkeypatch, store)
+
+    with pytest.raises(MetaValueSpaceIncomplete):
+        DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
+    # the paged path is incomplete in the same way, so it is not a substitute
+    assert store.paged_searches == 0
+
+
+def test_a_key_no_aggregation_can_read_refuses_the_space(monkeypatch):
+    """A dict-valued metadata entry maps as an object: it has no aggregatable
+    field at all, so the space would be missing a whole key without saying so."""
+    docs = _docs()
+    for doc in docs:
+        doc["_source"]["meta_fields"]["payload"] = {"inner": "x"}
+    store = _FakeDocStoreConn(docs, ["phase", "project"], unaggregatable=["payload"])
+    _patch(monkeypatch, store)
+
+    with pytest.raises(MetaValueSpaceIncomplete):
+        DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
+
+
+def test_a_key_no_document_in_scope_carries_costs_nothing(monkeypatch):
+    """The mapping enumerates every key the tenant ever indexed, so a key no
+    document in these knowledge bases carries must not disable filtering."""
+    store = _FakeDocStoreConn(_docs(), ["phase", "project"], unaggregatable=["payload"])
+    _patch(monkeypatch, store)
+
+    space = DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
+
+    assert space["project"] == ["p1"]
+
+
 def test_falls_back_to_the_paged_path_without_an_es_client(monkeypatch):
     """Non-ES backends keep their previous behaviour."""
     _patch(monkeypatch, _FakeDocStoreConn(_docs(), ["phase", "project"], with_es=False))
@@ -313,7 +370,7 @@ def test_value_space_formats_a_date_field(monkeypatch):
                 "vs_phase": [{"key": {"phase": "AD"}}],
             }
             return {
-                "aggregations": {name: {"buckets": buckets[name]} for name in body["aggs"]},
+                "aggregations": {name: {"buckets": buckets.get(name, {})} for name in body["aggs"]},
                 "_shards": {"total": 1, "successful": 1, "failed": 0},
                 "timed_out": False,
             }

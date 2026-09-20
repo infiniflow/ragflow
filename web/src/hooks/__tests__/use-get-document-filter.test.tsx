@@ -17,7 +17,7 @@
 import { documentFilter } from '@/services/knowledge-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { useGetDocumentFilter } from '../use-document-request';
 
 jest.mock('@/services/knowledge-service', () => ({
@@ -37,6 +37,15 @@ const createTestQueryClient = () =>
 
 let queryClient = createTestQueryClient();
 
+let navigate: ((to: string) => void) | undefined;
+
+// Switching datasets keeps this route -- and so the hook -- mounted, which is
+// the state the popover's open flag has to survive.
+function NavigationProbe() {
+  navigate = useNavigate();
+  return null;
+}
+
 const wrapper = ({ children }: { children: React.ReactNode }) => {
   return (
     <MemoryRouter initialEntries={['/dataset/files/dataset-id']}>
@@ -45,6 +54,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => {
           path="/dataset/files/:id"
           element={
             <QueryClientProvider client={queryClient}>
+              <NavigationProbe />
               {children}
             </QueryClientProvider>
           }
@@ -108,6 +118,29 @@ describe('useGetDocumentFilter', () => {
     });
 
     expect(mockDocumentFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the next dataset unfetched until its own popover opens', async () => {
+    const { result } = renderHook(() => useGetDocumentFilter(), { wrapper });
+
+    act(() => {
+      result.current.onOpenChange(true);
+    });
+    await waitFor(() => expect(mockDocumentFilter).toHaveBeenCalledTimes(1));
+
+    // The file list rerenders for the new dataset without unmounting the hook.
+    await act(async () => {
+      navigate?.('/dataset/files/other-dataset-id');
+    });
+
+    expect(mockDocumentFilter).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.onOpenChange(true);
+    });
+
+    await waitFor(() => expect(mockDocumentFilter).toHaveBeenCalledTimes(2));
+    expect(mockDocumentFilter).toHaveBeenLastCalledWith('other-dataset-id');
   });
 
   it('refreshes the counts when the popover is reopened after they went stale', async () => {

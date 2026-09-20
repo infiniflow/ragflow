@@ -51,10 +51,11 @@ class _FakeEs:
     hands back everything.
     """
 
-    def __init__(self, docs, keys, shards=None, timed_out=False, unindexed=None):
+    def __init__(self, docs, keys, shards=None, timed_out=False, unindexed=None, unaggregatable=None):
         self._docs = docs
         self._keys = keys
         self._unindexed = unindexed or {}
+        self._unaggregatable = unaggregatable or []
         self._shards = shards if shards is not None else {"total": 1, "successful": 1, "failed": 0}
         self._timed_out = timed_out
         self.searches = 0
@@ -63,6 +64,8 @@ class _FakeEs:
     @property
     def indices(self):
         properties = {key: {"type": "text", "fields": {"keyword": {"type": "keyword"}}} for key in self._keys}
+        # A dict-valued metadata entry maps as an object: no type, no bucket.
+        properties.update({key: {"properties": {"inner": {"type": "text"}}} for key in self._unaggregatable})
         mapping = {"idx": {"mappings": {"properties": {"meta_fields": {"properties": properties}}}}}
         return SimpleNamespace(get_mapping=lambda index: mapping)
 
@@ -96,8 +99,12 @@ class _FakeEs:
         for name, spec in (body.get("aggs") or {}).items():
             if name == "carrying":
                 aggregations[name] = {"doc_count": sum(1 for doc in docs if any(self._values_of(doc, key) for key in self._keys))}
-            elif name == "unindexed":
-                aggregations[name] = {"buckets": {key: {"doc_count": self._unindexed.get(key, 0)} for key in spec["filters"]["filters"]}}
+            elif name == "uncovered":
+                aggregations[name] = {
+                    "buckets": {
+                        key: {"doc_count": sum(1 for doc in docs if self._values_of(doc, key)) if key in self._unaggregatable else self._unindexed.get(key, 0)} for key in spec["filters"]["filters"]
+                    }
+                }
             else:
                 composite = spec["composite"]
                 size = composite["size"]
@@ -262,6 +269,31 @@ def test_the_scope_names_the_documents_and_the_dataset(monkeypatch):
     scope = store.es.queries[0]["bool"]["filter"]
     assert {"term": {"kb_id": "kb-1"}} in scope
     assert scope[1]["bool"]["should"] == [{"terms": {"id": ["doc-0", "doc-1"]}}, {"terms": {"_id": ["doc-0", "doc-1"]}}]
+
+
+def test_a_key_no_aggregation_can_read_falls_back_to_the_scan(monkeypatch):
+    """A dict-valued metadata entry maps as an object, which has no
+    aggregatable field at all -- so the filter menu would silently lose the
+    whole key, and the documents carrying only it would be counted as having no
+    metadata."""
+    docs = _docs({"phase": "DRP", "payload": {"inner": "x"}})
+    store = _FakeDocStoreConn(docs, ["phase"], unaggregatable=["payload"])
+    _patch(monkeypatch, store)
+
+    assert DocMetadataService.get_metadata_facets("kb-1", _ids(docs)) is None
+
+
+def test_a_key_no_document_in_scope_carries_costs_nothing(monkeypatch):
+    """The mapping enumerates every key the tenant ever indexed, so a key that
+    no document in this dataset carries must not disable the aggregation."""
+    docs = _docs({"phase": "DRP"})
+    store = _FakeDocStoreConn(docs, ["phase"], unaggregatable=["payload"])
+    _patch(monkeypatch, store)
+
+    counts, carrying = DocMetadataService.get_metadata_facets("kb-1", _ids(docs))
+
+    assert counts == {"phase": {"DRP": 1}}
+    assert carrying == 1
 
 
 def test_values_too_long_to_aggregate_fall_back_to_the_scan(monkeypatch):
