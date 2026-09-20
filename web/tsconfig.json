@@ -22,8 +22,9 @@
     /* JSX support */
     "jsx": "react-jsx",
 
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
+      "@/*": ["src/*"],
       "@parent/*": ["../src/*"]
     },
 

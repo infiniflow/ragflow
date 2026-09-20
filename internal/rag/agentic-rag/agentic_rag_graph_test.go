@@ -46,6 +46,14 @@ func (m *scriptedModel) Complete(ctx context.Context, msgs []schema.Message, _ [
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	// The pre-flight probe (probeChatModel) is infrastructure, not script: it is
+	// answered here and never consumes a scripted reply or enters `seen`, so the
+	// call order each test documents (formalize → planner → slot table → draft →
+	// SCA) stays what the test wrote. A test that wants the PROBE to fail uses
+	// errModel instead.
+	if len(msgs) == 1 && msgs[0].Role == schema.User && msgs[0].Content == probePrompt {
+		return &runtime.ModelReply{Content: "ok"}, nil
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.seen = append(m.seen, msgs)
@@ -2135,6 +2143,13 @@ type fakeModel struct {
 
 func (f *fakeModel) Complete(_ context.Context, msgs []schema.Message, _ []runtime.ToolSpec) (*runtime.ModelReply, error) {
 	f.messages = msgs
+	// The pre-flight probe (probeChatModel) opens every non-naive run with one
+	// minimal "ping". It is infrastructure, not script: answer it without
+	// consuming a scripted reply, so a test's reply sequence stays what the test
+	// wrote. A test that wants the PROBE itself to fail uses errModel instead.
+	if len(msgs) == 1 && msgs[0].Role == schema.User && msgs[0].Content == probePrompt {
+		return &runtime.ModelReply{Content: "ok"}, nil
+	}
 	if f.calls >= len(f.replies) {
 		return &runtime.ModelReply{Content: `<state>{"new_states": []}</state>`}, nil
 	}
@@ -2546,6 +2561,119 @@ func TestRunAgenticComposesFromResearchFindings(t *testing.T) {
 	}
 	if !strings.Contains(mdl.lastUserPrompt(), "Culdcept was created by OmiyaSoft and released in 1999.") {
 		t.Errorf("prompt missing the research findings:\n%s", mdl.lastUserPrompt())
+	}
+}
+
+// errModel fails every completion, standing in for a provider outage (an
+// exhausted quota, a 5xx): the compose call gets no reply at all.
+type errModel struct{ err error }
+
+func (m errModel) Complete(context.Context, []schema.Message, []runtime.ToolSpec) (*runtime.ModelReply, error) {
+	return nil, m.err
+}
+
+// TestRagPreflightFailsFastWithoutThinking pins the pre-flight: a provider that
+// cannot answer AT ALL must be reported before the run narrates anything, in the
+// same `**ERROR**: …` shape naive mode uses. Without it the failure surfaced
+// only at compose time, after a whole research run's worth of think lines.
+func TestRagPreflightFailsFastWithoutThinking(t *testing.T) {
+	var think []string
+	var streamed []string
+	resp := Rag(context.Background(), RAGTools{
+		Model: errModel{err: fmt.Errorf("minimax API error: insufficient balance")},
+		Steps: runtime.StepReporter{Text: func(line string) { think = append(think, line) }},
+		AnswerSink: &AnswerSink{OnDelta: func(delta string, isThink bool) {
+			if !isThink {
+				streamed = append(streamed, delta)
+			}
+		}},
+	}, runtime.RunRequest{Question: "who?", ThinkingMode: "high"})
+
+	if !strings.HasPrefix(resp.Answer, "**ERROR**: ") || !strings.Contains(resp.Answer, "insufficient balance") {
+		t.Fatalf("answer = %q, want **ERROR** + the provider's message", resp.Answer)
+	}
+	if len(think) != 0 {
+		t.Errorf("think block must stay closed, got %v", think)
+	}
+	if len(streamed) != 0 {
+		t.Errorf("the error must not be streamed as an answer delta, got %v", streamed)
+	}
+}
+
+// blockingModel hangs until its context is done, standing in for a provider
+// that is slow to first token rather than dead.
+type blockingModel struct{}
+
+func (blockingModel) Complete(ctx context.Context, _ []schema.Message, _ []runtime.ToolSpec) (*runtime.ModelReply, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestProbeSlowProviderIsNotAFailure pins the timeout split: a probe that only
+// ran out of ITS OWN budget must not read as a provider failure — a slow model
+// is not a dead one, and failing the whole run here would turn a long first
+// token into an outage.
+func TestProbeSlowProviderIsNotAFailure(t *testing.T) {
+	err := probeChatModelWithin(context.Background(), RAGTools{Model: blockingModel{}}, 5*time.Millisecond)
+	if !errors.Is(err, errProbeTimeout) {
+		t.Fatalf("err = %v, want errProbeTimeout (slow, not dead)", err)
+	}
+}
+
+// TestComposeFailureIsNotStreamedAsAnAnswerDelta pins the delivery rule: the
+// error answer goes out once, in the final result. Sending it through the sink
+// as well made the client render it twice (measured: 221 answer bytes for one
+// error + the research-status note, shown as two concatenated ERROR blocks).
+func TestComposeFailureIsNotStreamedAsAnAnswerDelta(t *testing.T) {
+	var streamed []string
+	deps := RAGTools{
+		Model:      errModel{err: fmt.Errorf("minimax API error: insufficient balance")},
+		AnswerSink: &AnswerSink{OnDelta: func(delta string, isThink bool) { streamed = append(streamed, delta) }},
+	}
+	resp := &RunResponse{}
+	kb := &runtime.Kbinfos{Chunks: []map[string]any{{"chunk_id": "c1", "content": "body"}}}
+
+	composeFinalAnswer(context.Background(), deps, runtime.RunRequest{Question: "who?"}, kb, resp,
+		_LOG, false, false, "who?")
+
+	if !strings.HasPrefix(resp.Answer, "**ERROR**: ") {
+		t.Fatalf("answer = %q, want **ERROR** + the provider's message", resp.Answer)
+	}
+	if len(streamed) != 0 {
+		t.Errorf("a failed compose must not stream an answer delta, got %v", streamed)
+	}
+}
+
+// TestComposeFailureReportsProviderErrorInThinkBlock pins the Go-only deviation
+// from Python: when the compose call fails, the think block carries a bounded
+// summary of the provider's own error. Python prints the bare fallback and keeps
+// the cause in the log, which made an exhausted quota look like a RAG bug to the
+// user waiting for an answer.
+func TestComposeFailureReportsProviderErrorInThinkBlock(t *testing.T) {
+	var think []string
+	ctx := runtime.WithSteps(context.Background(), runtime.StepReporter{
+		Text: func(line string) { think = append(think, line) },
+	})
+	kb := &runtime.Kbinfos{Chunks: []map[string]any{{"chunk_id": "c1", "content": "body"}}}
+	mdl := errModel{err: fmt.Errorf("minimax API error: 已达到 Token Plan 用量上限\n请升级 Token Plan 套餐或购买积分补充用量")}
+
+	res := ComposeAnswerWith(ctx, AnswerDeps{Model: mdl}, kb, "who?", false, false, false)
+	if !res.Failed {
+		t.Fatalf("res = %+v, want Failed=true", res)
+	}
+	// The answer reads like a naive-mode failure: the classic `**ERROR**: …`
+	// shape carrying the provider's own words, not Python's generic sentence.
+	if !strings.HasPrefix(res.Answer, "**ERROR**: ") ||
+		!strings.Contains(res.Answer, "已达到 Token Plan 用量上限") {
+		t.Errorf("answer = %q, want **ERROR** + the provider's message", res.Answer)
+	}
+
+	joined := strings.Join(think, "")
+	if !strings.Contains(joined, "已达到 Token Plan 用量上限") {
+		t.Errorf("think block must carry the provider's error, got %q", joined)
+	}
+	if strings.Contains(joined, "\n") {
+		t.Errorf("the summary must be a single line, got %q", joined)
 	}
 }
 

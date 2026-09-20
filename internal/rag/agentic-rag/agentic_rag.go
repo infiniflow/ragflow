@@ -30,6 +30,7 @@ package agentic_rag
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -1053,6 +1054,48 @@ func (dbDocTenantResolver) ResolveDocTenants(ctx context.Context, docIDs []strin
 	return out, nil
 }
 
+// chatModelProbeTimeout bounds the pre-flight completion. An unreachable or
+// out-of-credit provider answers in milliseconds; a slow one must not hold the
+// request before the think block has even opened.
+const chatModelProbeTimeout = 20 * time.Second
+
+// probePrompt is the one-token question the pre-flight sends. It is a constant
+// so the test models recognise the probe without a bare "ping" literal.
+const probePrompt = "ping"
+
+// errProbeTimeout marks a probe that exhausted ITS OWN budget while the request
+// context was still alive — a slow model, not a dead provider.
+var errProbeTimeout = errors.New("chat model pre-flight timed out")
+
+// probeChatModel makes the smallest possible completion to learn whether the
+// run's chat model is usable at all. It is a DETECTION call: the reply is
+// discarded and only its error matters. A nil model reports no error — the
+// existing "no model configured" fallbacks own that case.
+//
+// A probe that only timed out comes back as errProbeTimeout: a slow model is
+// not a dead one, and the caller must not turn a long first token into an
+// outage.
+func probeChatModel(ctx context.Context, deps RAGTools) error {
+	return probeChatModelWithin(ctx, deps, chatModelProbeTimeout)
+}
+
+// probeChatModelWithin is probeChatModel with an injectable budget, so a test
+// can exercise the timeout path without waiting out the real 20s.
+func probeChatModelWithin(ctx context.Context, deps RAGTools, budget time.Duration) error {
+	if deps.Model == nil {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	if _, err := deps.Model.Complete(probeCtx, []schema.Message{*schema.UserMessage(probePrompt)}, nil); err != nil {
+		if ctx.Err() == nil && probeCtx.Err() != nil {
+			return fmt.Errorf("%w after %s: %v", errProbeTimeout, budget, err)
+		}
+		return err
+	}
+	return nil
+}
+
 func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunResponse {
 	logger := deps.Logger
 	if logger == nil {
@@ -1079,6 +1122,44 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	// tool beneath reads it (runtime.StepsFrom) and reports its own step, so the
 	// per-request trace is assembled from the stages that actually run.
 	ctx = runtime.WithSteps(ctx, deps.Steps)
+
+	// LLM pre-flight, before anything is announced. The agentic modes cannot
+	// answer without a working model, and a dead provider used to surface only at
+	// COMPOSE time — after the think block had narrated a research run that could
+	// never finish (measured: MiniMax "insufficient balance" burned seconds of
+	// narration plus a series of degraded-failure lines before the fallback
+	// answer). One minimal call answers "is the provider usable at all"; when it
+	// fails the run reports the provider's own message in the classic
+	// `**ERROR**: …` shape and returns BEFORE reporting a step or starting the
+	// tool, so no think block opens and the user sees what a naive-mode failure
+	// shows.
+	//
+	// It runs ONCE per turn, at the turn's entry: Rag is called once per user turn
+	// (the outer react loop's later `rag` tool calls re-enter the research graph
+	// directly), so there is no second round to re-probe and no per-round state to
+	// keep. It is UNCONDITIONAL: nothing between the request and this call decides
+	// whether the model is checked — a provider that cannot answer must be
+	// reported, never tolerated.
+	//
+	// The probe deliberately runs BEFORE wrapModelForStats: it is a health check,
+	// not a phase's work, so its call is kept out of llm_stats.
+	if spec.Label != "naive" {
+		err := probeChatModel(ctx, deps)
+		if errors.Is(err, errProbeTimeout) {
+			// The probe's own budget ran out, not the provider's answer: let
+			// the run proceed and fail (if it must) on its real budget.
+			logger.Printf("[Agentic RAG] %v; continuing without a pre-flight verdict", err)
+		} else if err != nil {
+			// DEVELOPER LOG ONLY — no step is reported: the whole point is that
+			// the user gets the error instead of a think block narrating work
+			// that cannot happen. No GraphFailed either: that flag means the
+			// research graph itself errored (RunResponse.GraphFailed) and the
+			// graph never started; the pipeline keys on the `**ERROR**:` prefix.
+			logger.Printf("[Agentic RAG] chat model pre-flight failed: %v", err)
+			return &RunResponse{Answer: errorAnswerText(err), Mode: spec}
+		}
+	}
+
 	// The run's logger stays the DEVELOPER log — nothing intercepts it. The
 	// user-visible trace comes from the steps stages report themselves
 	// (deps.Steps), so a diagnostic line can never leak into the think block and
@@ -1086,7 +1167,9 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	//
 	// wraps the chat model in CountingChatModel(chat_mdl.clone,
 	// self.llm_stats). Go wraps the session model's invoker the same way, so
-	// calls made through deps.Model are counted per phase too.
+	// calls made through deps.Model are counted per phase too. The pre-flight
+	// above probes the UNWRAPPED model on purpose, so a health check is never
+	// counted as a phase's work.
 	if wrapped, ok := wrapModelForStats(deps.Model, stats); ok {
 		deps.Model = wrapped
 	}
@@ -1340,8 +1423,13 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 				return
 			}
 			// A partially streamed answer must not be sent twice: tell the sink
-			// to drop what it already forwarded and fall back to one shot.
-			logger.Printf("[Agentic RAG] streaming compose failed (%v); falling back to a single call", err)
+			// to drop what it already forwarded and fall back to one shot. The
+			// think block reports the provider's own error (bounded): on a dead
+			// provider this is the first failure a user would otherwise never
+			// see, and the one-shot retry below fails the same way.
+			runtime.StepsFrom(ctx).StageLineDetail(logger, "Agentic RAG",
+				"Streaming generation failed; falling back to a single call: "+providerErrorSummary(err),
+				fmt.Sprintf("streaming compose failed (%v); falling back to a single call", err))
 			deps.AnswerSink.reset()
 		}
 	}
@@ -1359,7 +1447,11 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		// composed text itself predates the flag.
 		resp.Partial = true
 	}
-	if deps.AnswerSink != nil {
+	// A FAILED compose is a terminal message, not a stream: the pipeline carries
+	// it in the final result, exactly how the classic path delivers its own
+	// `**ERROR**: …` answer. Streaming it here as well made the client show the
+	// text twice — once as an answer delta, once in the final.
+	if deps.AnswerSink != nil && !res.Failed {
 		deps.AnswerSink.deliver(res.Answer, false)
 	}
 }

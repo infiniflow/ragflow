@@ -331,7 +331,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: contents}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("embed model: %w", err)
 	}
 	if len(embeddings) != len(messages) {
 		return fmt.Errorf("embedding response count %d does not match message count %d", len(embeddings), len(messages))
