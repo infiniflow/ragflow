@@ -67,6 +67,7 @@ const (
 	chunkImageUpdateModeRemove  = "remove"
 	maxChunkImageBytes          = 10 * 1024 * 1024
 	maxChunkImageDimension      = 8192
+	maxChunkImagePixels         = int64(maxChunkImageDimension) * int64(maxChunkImageDimension)
 )
 
 func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
@@ -1237,12 +1238,16 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			}
 			switch imageMode {
 			case chunkImageUpdateModeRemove:
+				priorImageMeta := snapshotChunkImageMetadata(existing)
 				d["img_id"] = ""
 				d["doc_type_kwd"] = "text"
 				if updateErr := s.updateChunkIndexAfterImageMutation(ctx, req, indexName, d); updateErr != nil {
 					return updateErr
 				}
 				if remErr := s.removeChunkImageUnlocked(ctx, req.DatasetID, req.ChunkID); remErr != nil {
+					if rollbackErr := s.restoreChunkImageMetadata(ctx, req, indexName, priorImageMeta); rollbackErr != nil {
+						return fmt.Errorf("failed to remove chunk image: %w (failed to restore chunk image metadata: %v)", remErr, rollbackErr)
+					}
 					return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
 				}
 				return nil
@@ -1663,19 +1668,26 @@ func parseChunkImageUpdateMode(mode *string) (string, error) {
 	}
 }
 
-func validateChunkImageBytes(imageBinary []byte) error {
-	if _, _, err := image.DecodeConfig(bytes.NewReader(imageBinary)); err != nil {
-		return fmt.Errorf("invalid image data")
+func validateChunkImageDimensions(width, height int) error {
+	if width <= 0 || height <= 0 || width > maxChunkImageDimension || height > maxChunkImageDimension {
+		return fmt.Errorf("invalid image dimensions")
 	}
-	decoded, _, err := image.Decode(bytes.NewReader(imageBinary))
+	if int64(width)*int64(height) > maxChunkImagePixels {
+		return fmt.Errorf("invalid image dimensions")
+	}
+	return nil
+}
+
+func validateChunkImageBytes(imageBinary []byte) error {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(imageBinary))
 	if err != nil {
 		return fmt.Errorf("invalid image data")
 	}
-	bounds := decoded.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-	if width <= 0 || height <= 0 || width > maxChunkImageDimension || height > maxChunkImageDimension {
-		return fmt.Errorf("invalid image dimensions")
+	if err := validateChunkImageDimensions(cfg.Width, cfg.Height); err != nil {
+		return err
+	}
+	if _, _, err := image.Decode(bytes.NewReader(imageBinary)); err != nil {
+		return fmt.Errorf("invalid image data")
 	}
 	return nil
 }
@@ -1814,6 +1826,31 @@ func (s *ChunkService) withChunkImageLock(bucket, chunkID string, fn func() erro
 type chunkImageRollbackSnapshot struct {
 	hadObject bool
 	data      []byte
+}
+
+type chunkImageMetadataSnapshot struct {
+	imgID      string
+	docTypeKwd string
+}
+
+func snapshotChunkImageMetadata(existing map[string]interface{}) chunkImageMetadataSnapshot {
+	snap := chunkImageMetadataSnapshot{docTypeKwd: "text"}
+	if v, ok := existing["img_id"].(string); ok {
+		snap.imgID = v
+	}
+	if v, ok := existing["doc_type_kwd"].(string); ok && strings.TrimSpace(v) != "" {
+		snap.docTypeKwd = v
+	}
+	return snap
+}
+
+func (s *ChunkService) restoreChunkImageMetadata(ctx context.Context, req *service.UpdateChunkRequest, indexName string, snap chunkImageMetadataSnapshot) error {
+	rollback := map[string]interface{}{
+		"id":           req.ChunkID,
+		"img_id":       snap.imgID,
+		"doc_type_kwd": snap.docTypeKwd,
+	}
+	return s.updateChunkIndexAfterImageMutation(ctx, req, indexName, rollback)
 }
 
 func (s *ChunkService) updateChunkIndexAfterImageMutation(ctx context.Context, req *service.UpdateChunkRequest, indexName string, d map[string]interface{}) error {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -959,6 +960,63 @@ func TestUpdateChunkRemoveImageClearsFieldsAfterIndexUpdate(t *testing.T) {
 	}
 	if removeCalls != 1 {
 		t.Fatalf("remove calls = %d, want 1", removeCalls)
+	}
+}
+
+func TestUpdateChunkRemoveImageRestoresMetadataWhenStorageDeleteFails(t *testing.T) {
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-1",
+			"content_with_weight": "body",
+			"img_id":              "kb-1-chunk-1",
+			"doc_type_kwd":        "image",
+		},
+	}
+	removeCalls := 0
+	svc := newUpdateChunkTestService(t, engine, func(ctx context.Context, bucket, chunkID string) error {
+		removeCalls++
+		return fmt.Errorf("storage unavailable")
+	})
+
+	mode := chunkImageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:             "kb-1",
+		DocumentID:            "doc-1",
+		ChunkID:               "chunk-1",
+		TouchChunkImageFields: true,
+		ImageUpdateMode:       &mode,
+	}, "user-1")
+	if err == nil {
+		t.Fatal("UpdateChunk() expected error when storage delete fails")
+	}
+	var coded updateChunkError
+	if !errors.As(err, &coded) || coded.code != common.CodeDataError {
+		t.Fatalf("UpdateChunk() error = %v, want data error", err)
+	}
+	if removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", removeCalls)
+	}
+	if len(engine.updateCalls) != 2 {
+		t.Fatalf("UpdateChunks calls = %d, want 2 (clear then rollback)", len(engine.updateCalls))
+	}
+	rollback := engine.updateCalls[1].newValue
+	if rollback["img_id"] != "kb-1-chunk-1" {
+		t.Fatalf("rollback img_id = %#v, want kb-1-chunk-1", rollback["img_id"])
+	}
+	if rollback["doc_type_kwd"] != "image" {
+		t.Fatalf("rollback doc_type_kwd = %#v, want image", rollback["doc_type_kwd"])
+	}
+}
+
+func TestValidateChunkImageBytesRejectsExcessivePixelCountBeforeDecode(t *testing.T) {
+	if err := validateChunkImageDimensions(8192, 8192); err != nil {
+		t.Fatalf("8192x8192 should be within pixel budget, got %v", err)
+	}
+	if err := validateChunkImageDimensions(8192, 8193); err == nil {
+		t.Fatal("expected dimension above max to be rejected")
+	}
+	if err := validateChunkImageDimensions(0, 10); err == nil {
+		t.Fatal("expected non-positive width to be rejected")
 	}
 }
 
