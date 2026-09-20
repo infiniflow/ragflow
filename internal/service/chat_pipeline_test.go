@@ -226,14 +226,14 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 }
 
 // TestDecorateAnswer_RepairNotRunWhenNoQuote covers P0.10: when
-// quote=false, the citation-repair branch is gated off and the
-// answer is preserved verbatim.
+// quote=false, citation markers are removed without rewriting ordinary
+// bracketed numbers.
 func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
 		t.Context(),
-		"see (ID: 12) for details",
+		"see (ID: 12) in [2024] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
 		[]string{"q"},
@@ -247,8 +247,8 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 		nil,
 		false,
 	)
-	if result.Answer != "see (ID: 12) for details" {
-		t.Errorf("quote=false must not repair, got %q", result.Answer)
+	if result.Answer != "see  in [2024] for details" {
+		t.Errorf("quote=false citation cleanup = %q", result.Answer)
 	}
 }
 

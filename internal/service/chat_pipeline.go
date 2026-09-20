@@ -3004,6 +3004,10 @@ func (s *ChatPipelineService) decorateAnswer(
 			ans = strings.TrimSpace(parts[1])
 		}
 	}
+	if !quote {
+		think = stripCitations(think)
+		ans = stripCitations(ans)
+	}
 
 	var citationIdx map[int]struct{}
 	var refs map[string]interface{}
