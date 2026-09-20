@@ -42,6 +42,12 @@ finally:
         if _is_isolated_module(key):
             del sys.modules[key]
     sys.modules.update(_isolated_modules)
+    for key, module in _isolated_modules.items():
+        if "." not in key:
+            continue
+        parent_name, child_name = key.rsplit(".", 1)
+        if parent := sys.modules.get(parent_name):
+            setattr(parent, child_name, module)
     settings.init_settings = _original_init_settings
     settings.get_secret_key = _original_get_secret_key
     socket.socket.connect = _original_socket_connect
