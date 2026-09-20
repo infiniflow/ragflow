@@ -405,6 +405,15 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
+		// Either the chat setting or the request can disable citations. Resolve
+		// this once before any retrieval path can return early.
+		quote := true
+		if v, ok := kwargs["quote"].(bool); ok {
+			quote = v
+		}
+		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+			quote = quote && promptConfigQuote
+		}
 		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
@@ -417,11 +426,6 @@ func (s *ChatPipelineService) AsyncChat(
 		if len(fieldMap) > 0 && chatModel != nil && len(kbs) > 0 {
 			common.Info("Phase 6: Use SQL to retrieval")
 			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
-			quote := true
-			if v, ok := promptConfig["quote"].(bool); ok {
-				quote = v
-			}
-
 			ans, sqlErr := s.useSQL(
 				ctx, chat, kbs, questions[len(questions)-1], chatModel, fieldMap, quote,
 			)
@@ -649,14 +653,6 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		// Either the chat setting or the request can disable citations.
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
 		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
 		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
 		// agentic). It comes from the request kwargs first, then prompt_config.
@@ -1035,13 +1031,17 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
+				finalReference := kbinfos
+				if !quote {
+					finalReference = map[string]interface{}{}
+				}
 				out <- AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
 				}
 				out <- AsyncChatResult{
 					Answer:      emptyResp,
-					Reference:   kbinfos,
+					Reference:   finalReference,
 					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
@@ -3853,7 +3853,7 @@ func (s *ChatPipelineService) useSQL(
 	// repair doesn't yield source columns, fall through to the
 	// best-effort answer (matches Python's `returning best-effort
 	// answer` log at line 1221).
-	if !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
+	if quote && !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
 		common.Debug("SQL retrieval: result missing source columns; attempting repair",
 			zap.String("sql", sqlText))
 		expectedCol := expectedDocNameColumn(engineName)
@@ -3889,7 +3889,7 @@ func (s *ChatPipelineService) useSQL(
 	// and best-effort empty refs.
 	answerStr, ref := s.buildSQLReference(
 		ctx, docEngine, tableName, sqlText, rows,
-		sysPrompt, engineName, kbs, fieldMap,
+		sysPrompt, engineName, kbs, fieldMap, quote,
 	)
 	return map[string]interface{}{
 		"answer":    answerStr,
@@ -4603,8 +4603,12 @@ func (s *ChatPipelineService) buildSQLReference(
 	sysPrompt, engineName string,
 	kbs []*entity.Knowledgebase,
 	fieldMap map[string]interface{},
+	quote bool,
 ) (string, map[string]interface{}) {
 	if len(rows) == 0 {
+		if !quote {
+			return "No results.", map[string]interface{}{}
+		}
 		return "No results.", map[string]interface{}{
 			"chunks":   []map[string]interface{}{},
 			"doc_aggs": []interface{}{},
@@ -4615,6 +4619,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	// Scalar shortcut — matches the previous renderSQLAnswer behavior.
 	if len(rows) == 1 && len(rows[0]) == 1 {
 		for _, v := range rows[0] {
+			if !quote {
+				return cleanCellValue(v), map[string]interface{}{}
+			}
 			return cleanCellValue(v), map[string]interface{}{
 				"chunks":   []map[string]interface{}{},
 				"doc_aggs": []interface{}{},
@@ -4627,6 +4634,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	docIDIdx, docNameIdx, kbIDIdx, columns := extractSourceColumnIndexes(rows)
 	expectedCol := expectedDocNameColumn(engineName)
 	hasSrc := len(docIDIdx) > 0 && len(docNameIdx) > 0
+	showSource := quote && hasSrc
 
 	// Build the set of "display column" indices (everything except
 	// doc_id, docnm*, kb_id*). Python uses set subtraction at
@@ -4655,13 +4663,13 @@ func (s *ChatPipelineService) buildSQLReference(
 		header.WriteString(mapColumnName(columns[i], fieldMap))
 		header.WriteString("|")
 	}
-	if hasSrc {
+	if showSource {
 		header.WriteString("Source|")
 	}
 
 	// --- Separator (Python L1285) ---
 	sep := strings.Repeat("|------", len(displayCols)) + "|"
-	if hasSrc {
+	if showSource {
 		sep += "------|"
 	}
 
@@ -4674,7 +4682,7 @@ func (s *ChatPipelineService) buildSQLReference(
 			cells.WriteString(cleanCellValue(r[columns[i]]))
 			cells.WriteString("|")
 		}
-		if hasSrc {
+		if showSource {
 			cells.WriteString(fmt.Sprintf(" ##%d$$|", rowIdx))
 		}
 		// Skip rows that are entirely empty/whitespace (Python's
@@ -4687,6 +4695,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	rowsJoined := stripISOTimestamps(strings.Join(bodyRows, "\n"))
 
 	answer := strings.Join([]string{header.String(), sep, rowsJoined}, "\n")
+	if !quote {
+		return answer, map[string]interface{}{}
+	}
 
 	// --- Reference: chunks + doc_aggs ---
 	ref := map[string]interface{}{

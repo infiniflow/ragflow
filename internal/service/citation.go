@@ -482,7 +482,7 @@ func ExpandRangeCitations(answer string, poolSize int) string {
 var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
 
 func stripCitations(text string) string {
-	text = CitationMarkerPattern.ReplaceAllString(text, "")
+	text = canonicalIDMarkerPattern.ReplaceAllString(text, "")
 	text = slotCitationPattern.ReplaceAllString(text, "")
 	text = rangeCitationPattern.ReplaceAllString(text, "")
 	for _, pattern := range badCitationPatterns {
@@ -564,7 +564,7 @@ func ResolveCitationMarkers(answer string, citeIdx []int) (string, []int) {
 // "ID:" prefix — the form the citation rules prescribe, and the only one that can
 // be removed from the answer without risking ordinary text like "[2024]".
 var canonicalIDMarkerPattern = regexp.MustCompile(
-	`(?i)^\[\s*ID\s*[:： ]*\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\s*\]$`)
+	`(?i)\[\s*ID\s*[:： ]*\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\s*\]`)
 
 // rawCitationMarkers returns the citation numbers the model wrote, in order and
 // including duplicates — the repetition is what the citation observability log in

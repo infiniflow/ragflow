@@ -572,7 +572,7 @@ func TestBuildSQLReference_Scalar(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "42" {
 		t.Errorf("buildSQLReference scalar answer = %q, want %q", ans, "42")
@@ -599,7 +599,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "select id, name from t",
 		rows,
-		"sys", "elasticsearch", nil, nil,
+		"sys", "elasticsearch", nil, nil, true,
 	)
 	// No source columns → empty chunks/doc_aggs.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
@@ -1345,7 +1345,7 @@ func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "", nil,
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "No results." {
 		t.Errorf("ans = %q, want %q", ans, "No results.")
@@ -1367,7 +1367,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	if !strings.Contains(ans, "Source|") {
 		t.Errorf("expected Source column in answer, got:\n%s", ans)
@@ -1388,6 +1388,17 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 		if cm["dataset_id"] != "kb_a" {
 			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
 		}
+	}
+
+	ans, ref = s.buildSQLReference(
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		rows, "", "elasticsearch", kbs, nil, false,
+	)
+	if strings.Contains(ans, "Source|") || strings.Contains(ans, "##0$$") {
+		t.Errorf("quote=false leaked SQL citations in answer:\n%s", ans)
+	}
+	if len(ref) != 0 {
+		t.Errorf("quote=false reference = %#v, want empty", ref)
 	}
 }
 
@@ -1415,7 +1426,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	ans, ref := s.buildSQLReference(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	// Multi-cell aggregate → renders as a table, not a scalar.
 	if !strings.Contains(ans, "|42|") {
@@ -1438,7 +1449,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select title from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
 		t.Errorf("expected table data in answer, got:\n%s", ans)
@@ -1466,7 +1477,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", nil, fieldMap,
+		rows, "", "elasticsearch", nil, fieldMap, true,
 	)
 	if !strings.Contains(ans, "|My Title|") {
 		t.Errorf("expected translated column name, got:\n%s", ans)
@@ -1485,7 +1496,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if strings.Contains(ans, "T13:24:55") {
 		t.Errorf("expected ISO timestamp stripped, got:\n%s", ans)
@@ -1962,6 +1973,41 @@ func TestAsyncChatHarnessQuote(t *testing.T) {
 				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
 			}
 		})
+	}
+}
+
+func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	chat.KBIDs = entity.JSONSlice{"kb-1"}
+	chat.PromptConfig["system"] = "Answer using {knowledge}"
+	chat.PromptConfig["empty_response"] = "Nothing found."
+	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+		map[string]interface{}{"quote": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var final AsyncChatResult
+	for result := range results {
+		if result.Final {
+			final = result
+		}
+	}
+	if !final.Final || final.Answer != "Nothing found." {
+		t.Fatalf("final=%+v, want empty-response result", final)
+	}
+	if final.Reference == nil || len(final.Reference) != 0 {
+		t.Fatalf("quote=false reference = %#v, want explicit empty object", final.Reference)
 	}
 }
 
