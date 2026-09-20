@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf8"
 
@@ -852,70 +853,119 @@ func TestListChunksDeepReadsDocStore(t *testing.T) {
 	}
 }
 
-// TestListChunksCapsDeepReadAndOutput pins the two caps: the deep read may fetch up to
-// listChunksMaxDeep (80) chunks, but list_chunks admits only the first listChunksMaxOut (30)
-// into the shared pool and shows the model the same 30 — so the pool holds 30, not 80.
-func TestListChunksCapsDeepReadAndOutput(t *testing.T) {
+// TestListChunksPagesThroughADocument pins the paging reader: one call returns ONE PAGE
+// (listChunksMaxOut chunks) and its note says whether the document continues, so a long
+// document is read by advancing the offset rather than by widening the page.
+//
+// This replaced a pair of caps: the reader fetched up to listChunksMaxDeep (80) passages and
+// admitted the first listChunksMaxOut (30), and the model was told nothing about the other
+// fifty — a document was either short enough to fit one page or silently truncated.
+func TestListChunksPagesThroughADocument(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.DocChunks = docChunksFor("doc-a", 100)
 	ex := &searchExecutor{deps: deps, req: RunRequest{DatasetIDs: []string{"kb1"}, MaxLength: 1 << 20}}
 
+	// Page 1: one page admitted, and the note says where the document continues.
 	oc, err := ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a"})
 	if err != nil {
 		t.Fatalf("list_chunks: %v", err)
 	}
+	if len(oc.Payload) != listChunksMaxOut {
+		t.Fatalf("payload = %d, want one page of %d", len(oc.Payload), listChunksMaxOut)
+	}
 	if len(kb.Chunks) != listChunksMaxOut {
-		t.Errorf("kb.Chunks = %d, want admitted cap %d", len(kb.Chunks), listChunksMaxOut)
+		t.Errorf("kb.Chunks = %d, want %d admitted", len(kb.Chunks), listChunksMaxOut)
+	}
+	if !strings.Contains(oc.Note, "continues") || !strings.Contains(oc.Note, "offset=30") {
+		t.Errorf("note = %q, want the page to say the document continues at offset 30", oc.Note)
+	}
+
+	// Page 2 starts where page 1 stopped, and the pool holds both pages.
+	oc, err = ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a", "offset": float64(30)})
+	if err != nil {
+		t.Fatalf("list_chunks (page 2): %v", err)
 	}
 	if len(oc.Payload) != listChunksMaxOut {
-		t.Errorf("payload = %d, want output cap %d", len(oc.Payload), listChunksMaxOut)
+		t.Errorf("page 2 payload = %d, want %d", len(oc.Payload), listChunksMaxOut)
+	}
+	if len(kb.Chunks) != 2*listChunksMaxOut {
+		t.Errorf("kb.Chunks = %d, want %d (both pages)", len(kb.Chunks), 2*listChunksMaxOut)
+	}
+
+	// Page 3 fills in the middle, so paging is the only way to reach the end.
+	oc, err = ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a", "offset": float64(60)})
+	if err != nil {
+		t.Fatalf("list_chunks (page 3): %v", err)
+	}
+	if len(kb.Chunks) != 3*listChunksMaxOut {
+		t.Errorf("kb.Chunks = %d, want %d (three pages)", len(kb.Chunks), 3*listChunksMaxOut)
+	}
+
+	// The last page is short, and the note says the document ends here.
+	oc, err = ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a", "offset": float64(90)})
+	if err != nil {
+		t.Fatalf("list_chunks (last page): %v", err)
+	}
+	if len(oc.Payload) != 10 {
+		t.Errorf("last page payload = %d, want the remaining 10", len(oc.Payload))
+	}
+	if !strings.Contains(oc.Note, "END") {
+		t.Errorf("note = %q, want the last page to say the document ends here", oc.Note)
+	}
+	if len(kb.Chunks) != 100 {
+		t.Errorf("kb.Chunks = %d, want 100 (the whole document, once paged through)", len(kb.Chunks))
 	}
 }
 
-// TestEvidencePoolCapStopsAdmitting pins the PR's _EVIDENCE_POOL_CAP early-stop:
-// once the shared pool reaches the cap, a search admits no further chunk, so its
-// outcome collapses to MISS (nothing new was admitted) — a saturated session
-// stops bloating the pool beyond what the SCA view can read.
-func TestEvidencePoolCapStopsAdmitting(t *testing.T) {
-	pre := make([]map[string]any, 0, evidencePoolCap)
-	for i := 0; i < evidencePoolCap; i++ {
+// TestLargePoolStillAdmitsNewEvidence pins that the pool has NO ceiling at the tool
+// boundary: a search over an already-large pool still admits the chunk it found.
+//
+// The cap this replaces early-stopped admission at a hard number, and what it refused fell
+// on the MODEL's evidence rather than on storage — the passage that would have reached an
+// enumeration's last members, which are named late in the run (see the note on Kbinfos).
+// Identity is the only thing the pool still refuses, which the second half asserts.
+func TestLargePoolStillAdmitsNewEvidence(t *testing.T) {
+	pre := make([]map[string]any, 0, 400)
+	for i := 0; i < 400; i++ {
 		pre = append(pre, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "old"})
 	}
 	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
 	kb.Chunks = pre
 	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
 	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"})
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if oc.Status != StatusMiss {
-		t.Errorf("status = %s, want %s (a full pool admits nothing)", oc.Status, StatusMiss)
+	if oc.Status != StatusOK {
+		t.Errorf("status = %s, want %s (a large pool does not refuse evidence)", oc.Status, StatusOK)
 	}
-	if len(kb.Chunks) != evidencePoolCap {
-		t.Errorf("kb.Chunks = %d, want the pool to stay at the cap %d", len(kb.Chunks), evidencePoolCap)
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want %d (the hit was admitted)", len(kb.Chunks), len(pre)+1)
 	}
-	// Dropping one chunk frees a slot and admission resumes.
-	kb.Chunks = kb.Chunks[:evidencePoolCap-1]
+	// The same search again: the chunk is already pooled, so nothing new is admitted.
 	oc, err = ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"})
 	if err != nil {
-		t.Fatalf("retrieve after freeing a slot: %v", err)
+		t.Fatalf("retrieve (second): %v", err)
 	}
-	if oc.Status != StatusOK {
-		t.Errorf("status after freeing a slot = %s, want %s", oc.Status, StatusOK)
+	if oc.Status != StatusRedundant && oc.Status != StatusMiss {
+		t.Errorf("status = %s, want REDUNDANT/MISS on the repeated search", oc.Status)
+	}
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), len(pre)+1)
 	}
 }
 
-// TestEvidencePoolCapExemptsTheProbeWindow pins the cap EXEMPTION at the tool
-// boundary: a FULL pool still takes the window that answers a name the pool has
-// not reached, because that window is the probe's own RESULT.
+// TestProbeWindowLandsOnALargePool pins the INTENT the cap exemption used to serve, now
+// held by the pool itself: on a large pool a probe's per-name window is admitted, because
+// that window is the batch's RESULT rather than one more passage. Drop it and "this name was
+// found here" becomes "nothing new", which the model reads as "not a member".
 //
-// The contrasting case is the test above: the same full pool, a query that is not
-// a probe, and nothing is admitted. Both behaviours are needed — the exemption is
-// what keeps a name batch from turning a found member into "nothing new", and the
-// cap is what keeps everything else from bloating storage.
-func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
-	pre := make([]map[string]any, 0, evidencePoolCap)
-	for i := 0; i < evidencePoolCap; i++ {
+// The cap that needed an exemption to achieve this is gone (see the note on Kbinfos), so the
+// window now lands for the ordinary reason: nothing is refused for want of room.
+func TestProbeWindowLandsOnALargePool(t *testing.T) {
+	pre := make([]map[string]any, 0, 400)
+	for i := 0; i < 400; i++ {
 		pre = append(pre, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled prose"})
 	}
 	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
@@ -931,8 +981,8 @@ func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
 	if oc.Status != StatusOK {
 		t.Errorf("status = %s, want %s (the probe window answered an unanswered name)", oc.Status, StatusOK)
 	}
-	if len(kb.Chunks) != evidencePoolCap+1 {
-		t.Errorf("kb.Chunks = %d, want %d (one seat for the unanswered name)", len(kb.Chunks), evidencePoolCap+1)
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want %d (the probe's window was admitted)", len(kb.Chunks), len(pre)+1)
 	}
 	if len(oc.Payload) != 1 {
 		t.Errorf("payload = %d, want the probe's window", len(oc.Payload))
@@ -944,8 +994,8 @@ func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve (second): %v", err)
 	}
-	if len(kb.Chunks) != evidencePoolCap+1 {
-		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), evidencePoolCap+1)
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), len(pre)+1)
 	}
 	if oc.Status != StatusMiss && oc.Status != StatusRedundant {
 		t.Errorf("status = %s, want MISS/REDUNDANT on the repeated probe", oc.Status)
@@ -1038,8 +1088,23 @@ func (s docChunksStub) DocChunks(_ context.Context, req DocChunksRequest) ([]map
 	if req.DocID != s.docID {
 		return nil, nil
 	}
-	out := make([]map[string]any, 0, s.n)
-	for i := 0; i < s.n; i++ {
+	// The lister contract is page-ordered and paged ("up to Limit chunks starting at
+	// Offset; a short page means the document is exhausted"), so the stub honours both: a
+	// stub that returned everything whatever the request asked for could not tell a paging
+	// reader from one that ignores the page.
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= s.n {
+		return nil, nil
+	}
+	end := s.n
+	if req.Limit > 0 && offset+req.Limit < end {
+		end = offset + req.Limit
+	}
+	out := make([]map[string]any, 0, end-offset)
+	for i := offset; i < end; i++ {
 		out = append(out, map[string]any{
 			"chunk_id": fmt.Sprintf("c%d", i),
 			"doc_id":   s.docID,
@@ -1140,10 +1205,17 @@ func TestNavigateToolsRouteWithinSessionDocScope(t *testing.T) {
 // canvas state is attached) into the citation store.
 
 // corpusRetriever answers every query from a fixed corpus.
-type corpusRetriever struct{ calls []string }
+type corpusRetriever struct {
+	mu    sync.Mutex
+	calls []string
+}
 
 func (c *corpusRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	// Locked: the search legs run concurrently (see runSearch), so the retriever contract is
+	// concurrent and a fixture that appends without a lock is a race.
+	c.mu.Lock()
 	c.calls = append(c.calls, req.Query)
+	c.mu.Unlock()
 	return []map[string]any{{
 		"chunk_id":   "c1",
 		"content":    "Culdcept was created by OmiyaSoft and released in 1999.",
@@ -1368,12 +1440,16 @@ func TestPassageFromChunkTruncatesContent(t *testing.T) {
 // the same term twice), so a fixture must not depend on how that string is
 // assembled.
 type seatRetriever struct {
+	mu      sync.Mutex
 	byQuery map[string][]map[string]any
 	calls   []string
 }
 
 func (s *seatRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	// Locked: the seat pass runs beside the query legs, so calls arrive concurrently.
+	s.mu.Lock()
 	s.calls = append(s.calls, req.Query)
+	s.mu.Unlock()
 	seen := map[string]bool{}
 	var tokens []string
 	for _, tok := range strings.Fields(req.Query) {

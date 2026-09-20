@@ -27,6 +27,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf8"
 
@@ -35,13 +36,18 @@ import (
 
 // stubRetriever returns a fixed result and records the requests it received.
 type stubRetriever struct {
+	mu       sync.Mutex
 	chunks   []map[string]any
 	err      error
 	requests []RetrieveRequest
 }
 
 func (s *stubRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	// Locked: the search legs run concurrently (see runSearch), so a fixture that appends
+	// without a lock is a race.
+	s.mu.Lock()
 	s.requests = append(s.requests, req)
+	s.mu.Unlock()
 	if s.err != nil {
 		return nil, s.err
 	}

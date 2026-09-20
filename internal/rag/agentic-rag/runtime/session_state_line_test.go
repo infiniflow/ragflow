@@ -128,7 +128,10 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 			typedCountSlot(0, "count", 13),
 			typedMembersSlot(1, "person", "孔秀", "孟坦"),
 		}},
-		Messages: []schema.Message{*schema.ToolMessage(`{"passages": []}`, "call_1")},
+		// The record line is gated on the session ENUMERATING, and the tell is the batch the
+		// caller wrote — never a slot type (see enumerating).
+		SearchQueries: []string{"关羽 斩 杀 颜良 文丑"},
+		Messages:      []schema.Message{*schema.ToolMessage(`{"passages": []}`, "call_1")},
 	}
 	s.appendRecordLine(true)
 	got := s.Messages[len(s.Messages)-1].Content
@@ -229,7 +232,11 @@ func enumerationSession(attempts int, deadlineLeft float64) *SessionState {
 	return &SessionState{
 		Attempts:     attempts,
 		DeadlineLeft: deadlineLeft,
-		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("12")}}},
+		// What makes this session an ENUMERATING one is the batch the caller wrote, not the type
+		// of a slot (see enumerating): a count-typed slot says nothing about what the session is
+		// doing, and it is the same shape for a count of events.
+		SearchQueries: []string{"关羽 斩 杀 颜良 文丑"},
+		ParentState:   State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("12")}}},
 	}
 }
 
@@ -274,15 +281,15 @@ func TestOfferContinuationIsGatedOnTheQuestionsShape(t *testing.T) {
 		t.Fatal("a separator-bearing candidate under a scalar type must not buy extra turns")
 	}
 
-	// A count-typed slot is the other half of the tell — the shape the 三国
-	// enumeration direction's own table carries (slot 0 [count]).
+	// A count-typed slot with NO batch written is NOT enumerating: the type word is a label the
+	// plan chose, and it is the same label for a count of events (see enumerating).
 	counting := &SessionState{
 		Attempts:     4,
 		DeadlineLeft: 90,
 		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}},
 	}
-	if !counting.offerContinuation() {
-		t.Fatal("a count slot must be offered the turn")
+	if counting.offerContinuation() {
+		t.Fatal("a count-typed slot alone must not buy the extra turn")
 	}
 
 	// And the tell that survives contact: a caller-written batch, even on a table
@@ -381,38 +388,28 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 // reading of it is how a "how much shorter" record came to say "enumerated
 // members: 16" and how a `[count]` slot on a "how many times larger" question once
 // bought 24 continuation offers.
-func TestCoverageFollowsThePlannersDeclaration(t *testing.T) {
-	value := State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}}
-	if CoverageOf(value).Set {
-		t.Error("a single-value table asks for no set")
+func TestRecordReadsWhatTheTableHoldsNotItsTypeWords(t *testing.T) {
+	// A type word is a LABEL THE PLAN CHOSE, so it decides nothing. Reading "count" as "the answer
+	// is a set" is how a "how many times larger is A than B" question came to carry a member list
+	// (measured: a `[count]` slot on that question bought 24 continuation offers).
+	for _, typ := range []string{"entity", "count", "number", "dataset", "person"} {
+		table := State{State: []Variable{{ID: 0, Type: typ, Candidate: strPtr("白马坡")}}}
+		if got := len(ItemValues(&table)); got != 0 {
+			t.Errorf("a %q slot holding one value: members = %d, want 0 (nothing is held)", typ, got)
+		}
 	}
-	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}}
-	if !CoverageOf(counted).Set {
-		t.Error("a count slot asks for a set")
-	}
-	quantity := State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("2452 feet")}}}
-	if CoverageOf(quantity).Set {
-		t.Error("a number slot is a value, not a set")
-	}
-	prose := State{State: []Variable{{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls")}}}
-	if CoverageOf(prose).Set {
-		t.Error("the table must not be read through a candidate's separators")
-	}
-	// The actor's declared forms are what the corpus is read with, and the recall list is
-	// one entry per operand — never one per (actor, act) pair.
+	// The actor's forms come out of the TABLE's own Subject field, and they are what an item list
+	// must not count as members of the deed.
 	shaped := State{State: []Variable{
 		{ID: 0, Type: "count", Terms: []string{"斩", "杀", "斩"}, Subject: "关羽|云长"},
 		{ID: 1, Type: "dataset"},
 	}}
-	cov := CoverageOf(shaped)
-	if !cov.Ok() {
-		t.Fatalf("coverage = %+v, want an enumeration", cov)
+	if forms := ActorForms(shaped); len(forms) != 2 || forms[0] != "关羽" || forms[1] != "云长" {
+		t.Errorf("actor forms = %v, want the two declared spellings", forms)
 	}
-	if actors := cov.Actors(); len(actors) != 2 || actors[0] != "关羽" || actors[1] != "云长" {
-		t.Errorf("actors = %v, want the two declared forms", actors)
-	}
-	if ops := cov.Operands(); len(ops) != 4 {
-		t.Errorf("operands = %v, want 2 actor forms + 2 deduped act words", ops)
+	// A table that declares no actor declares no forms — an empty list, never a guess.
+	if forms := ActorForms(State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}); len(forms) != 0 {
+		t.Errorf("actor forms = %v, want none", forms)
 	}
 }
 
@@ -432,54 +429,65 @@ func TestCoverageFollowsThePlannersDeclaration(t *testing.T) {
 // What the seed carries alongside the method is the windows the enumeration FOUND, never the
 // queries to make (see CoverageSet.Render): a query list is advice the model did not follow, a
 // window is evidence with the chunk id a member is cited by.
-func TestEnumerationIsSeededWithTheMethod(t *testing.T) {
-	loader := StringPromptLoader{"action_set": "SET / COUNT directions — the member list IS the work"}
-	method := "SET / COUNT directions — the member list IS the work"
+// TestSessionStampsEvidenceRefsInFirstSeenOrder pins the registry the session's own citations
+// index into (see stampEvidenceRefs).
+//
+// It is the mechanical half of "the answer may only cite what was read": the model can only
+// write a number it was SHOWN, so every passage carries one, a passage reached twice keeps the
+// first number it was given (the same chunk cited from two calls cites one place), and the
+// registry is that same order — which is the list handed to the citation resolver afterwards.
+func TestSessionStampsEvidenceRefsInFirstSeenOrder(t *testing.T) {
+	s := &SessionState{}
 
-	declared := State{State: []Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("18"), Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
-		{ID: 1, Type: "dataset"},
-	}}
-	seed := "## The enumeration already ran for this direction\n\n- chunk_id=c1  \"云长手起刀落，斩孔秀于马下\"\n"
-	got := enumerationSeed(declared, loader, seed)
-	if !strings.Contains(got, method) || !strings.Contains(got, "斩孔秀于马下") {
-		t.Errorf("seed = %q, want the method AND the windows the enumeration found", got)
+	first := []any{
+		map[string]any{"chunk_id": "c1", "content": "a"},
+		map[string]any{"chunk_id": "c2", "content": "b"},
 	}
-	if strings.Contains(got, "one call per line") {
-		t.Errorf("seed = %q still lists queries to make", got)
+	s.stampEvidenceRefs(first)
+	if got := first[0].(map[string]any)["ref"]; got != 0 {
+		t.Errorf("first passage ref = %v, want 0", got)
 	}
-	// No enumeration (no clock left, no executor): the method travels alone. The seed never
-	// carries queries to make.
-	if got := enumerationSeed(declared, loader, ""); got != method {
-		t.Errorf("seed without an enumeration = %q, want the method alone", got)
+	if got := first[1].(map[string]any)["ref"]; got != 1 {
+		t.Errorf("second passage ref = %v, want 1", got)
 	}
 
-	// The ways a table FAILS to be an enumeration, each of which must leave a value question
-	// alone: a count of EVENTS (the planner declares act words for those too), one named thing
-	// with no count/set/list, a count with nothing declared to enumerate, a measured quantity, a
-	// list-shaped candidate under a scalar type, and a single value.
-	for _, tc := range []struct {
-		name  string
-		table State
-	}{
-		{"a count of events", State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("5"), Terms: []string{"won", "trophy"}, Subject: "Brazil"}}}},
-		{"one named thing", State{State: []Variable{{ID: 0, Type: "person", Terms: []string{"wrote"}, Subject: "the writer"}, {ID: 1, Type: "date"}}}},
-		{"a count with no act words", State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("18")}}}},
-		{"a measured quantity", State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("14")}}}},
-		{"a list-shaped candidate", State{State: []Variable{{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}}},
-		{"a single value", State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}},
-	} {
-		if got := enumerationSeed(tc.table, loader, seed); got != "" {
-			t.Errorf("%s must not be seeded with the member method, got %q", tc.name, got)
+	// list_chunks names its chunk "id" rather than "chunk_id", and a chunk already shown keeps
+	// the number it was shown with.
+	second := []any{
+		map[string]any{"id": "c3", "content": "c"},
+		map[string]any{"chunk_id": "c1", "content": "a again"},
+	}
+	s.stampEvidenceRefs(second)
+	if got := second[0].(map[string]any)["ref"]; got != 2 {
+		t.Errorf("list_chunks passage ref = %v, want 2 (the registry reads both id spellings)", got)
+	}
+	if got := second[1].(map[string]any)["ref"]; got != 0 {
+		t.Errorf("a chunk already in the registry got ref %v, want its original 0", got)
+	}
+
+	// A passage with no id at all is not evidence and takes no number.
+	s.stampEvidenceRefs([]any{map[string]any{"content": "no id"}})
+
+	want := []string{"c1", "c2", "c3"}
+	if len(s.EvidenceRefs) != len(want) {
+		t.Fatalf("registry = %v, want %v", s.EvidenceRefs, want)
+	}
+	for i, id := range want {
+		if s.EvidenceRefs[i] != id {
+			t.Errorf("registry[%d] = %q, want %q", i, s.EvidenceRefs[i], id)
 		}
 	}
-
-	// A loader that predates the template still travels with the evidence rather than
-	// panicking (see loadOptionalPrompt): the windows are the part the model cannot get back.
-	if got := enumerationSeed(declared, StringPromptLoader{}, seed); got != strings.TrimSpace(seed) {
-		t.Errorf("a loader without action_set must yield the evidence alone, got %q", got)
-	}
 }
+
+// The seed-time delivery of the SET method is GONE, and no test replaces it: the method now
+// reaches a session on exactly one signal, the batch the CALLER writes (appendBatchProtocol,
+// pinned by TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch).
+//
+// Why the seed path was removed rather than kept as a second delivery: it had to decide, before
+// the session had done anything, whether the question was an enumeration — from a slot type, which
+// cannot tell "how many people did X kill" from "how many times larger is A than B" (measured: the
+// shape-only version seeded value questions that merely contain a count, and the run finished 0.833
+// with two timeouts against 0.875 with none). The batch tell needs no such guess.
 
 // TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch pins the second delivery:
 // the CALLER's own batch, appended once, mid-session.

@@ -1348,11 +1348,6 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			if r == "" || seen[r] {
 				continue
 			}
-			// Admission early-stops at the pool cap, BEFORE the chunk is recorded as seen, so
-			// a rejected passage is retried once room frees.
-			if p.Full() {
-				continue
-			}
 			chunkID := fmt.Sprintf("web_%d", i)
 			seen[r] = true
 			c := map[string]any{
@@ -1396,9 +1391,10 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 
 // list_chunks deep-read caps.
 const (
-	// listChunksMaxDeep caps the deep-read pool admission.
-	listChunksMaxDeep = 80
-	// listChunksMaxOut caps the model-facing passage list.
+	// listChunksMaxOut is ONE PAGE of a document: both the pool admission and the
+	// model-facing list for a single list_chunks call. Reading on is the caller's choice
+	// (the offset argument), not a bigger page — a page the model cannot finish reading is
+	// evidence it pays tokens for and never uses.
 	listChunksMaxOut = 30
 )
 
@@ -1420,15 +1416,19 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 		// An empty doc_id is a query-level MISS.
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0}}, nil
 	}
+	offset := argInt(args, "offset", 0)
+	if offset < 0 {
+		offset = 0
+	}
 
 	var chunks []map[string]any
+	hasMore := false
 	if e.deps.DocChunks != nil {
-		// Real doc-store deep read, budgeted by the model window.
-		deep, _ := fetchFullDocument(ctx, e.deps, docID, e.req.MaxLength)
-		if len(deep) > listChunksMaxDeep {
-			deep = deep[:listChunksMaxDeep]
-		}
-		chunks = deep
+		// ONE PAGE of the document, starting where the caller left off. The read is bounded
+		// by the page size rather than by the model window, and the page itself says whether
+		// the document continues (see fetchDocumentPage): a long document used to be readable
+		// only up to the window, with nothing telling the model it had stopped early.
+		chunks, hasMore = fetchDocumentPage(ctx, e.deps, docID, offset, listChunksMaxOut)
 	} else if e.deps.KB != nil {
 		// Fallback: scan the in-memory evidence pool (unit-test / unwired path).
 		for _, c := range e.deps.KB.Chunks {
@@ -1450,13 +1450,11 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 		e.deps.KB = &Kbinfos{}
 	}
 
-	// Only the first listChunksMaxOut (30) of the listChunksMaxDeep (80) fetched passages
-	// are admitted: no-id chunks and in-call duplicates are skipped, evidence references
-	// the chunk id, and only chunks new to the shared pool are appended.
+	// The page IS the admission set — fetchDocumentPage already bounded it at
+	// listChunksMaxOut, so there is nothing left to slice here. No-id chunks and in-call
+	// duplicates are still skipped, evidence references the chunk id, and only chunks new
+	// to the shared pool are appended.
 	admit := chunks
-	if len(admit) > listChunksMaxOut {
-		admit = admit[:listChunksMaxOut]
-	}
 	seen := map[string]bool{}
 	var payload []any
 	var evidenceIDs []string
@@ -1470,10 +1468,6 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 			cid := ChunkIDOf(c)
 			if cid == "" {
 				// A blank cid is skipped in the caller, BEFORE admission.
-				continue
-			}
-			// Admission early-stops at the pool cap, BEFORE the per-call dedup.
-			if p.Full() {
 				continue
 			}
 			if seen[cid] {
@@ -1512,11 +1506,23 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	if newChunks == 0 {
 		status = StatusRedundant
 	}
+	// Where this page sits in the document, and whether the document continues, are DATA the
+	// model needs in order to finish reading it: without them a long document looks complete
+	// at whatever the page happened to hold, and there is no way to ask for the rest.
+	note := ""
+	switch {
+	case hasMore:
+		note = fmt.Sprintf("This document continues: %s shown from offset %d; call list_chunks again with doc_id=%q and offset=%d to read on.",
+			CountOf(len(payload), "passage"), offset, docID, offset+len(chunks))
+	case len(payload) > 0:
+		note = fmt.Sprintf("This is the END of the document from offset %d on: every chunk of it is now in your evidence.", offset)
+	}
 	return ToolOutcome{
 		Payload:     payload,
 		EvidenceIDs: evidenceIDs,
 		Status:      status,
 		Reason:      ReasonNone,
+		Note:        note,
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
 	}, nil
 }

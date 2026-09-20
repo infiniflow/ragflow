@@ -110,6 +110,17 @@ type Kbinfos struct {
 	// PreSummary is the merged claim-report summary produced by the action
 	// session; the final-answer call reads it when set.
 	PreSummary string
+	// SessionAnswer is the answer the RESEARCH SESSION wrote, in its own words, when it
+	// concluded it had read enough (the session is the researcher AND the answerer).
+	//
+	// It is kept here rather than only on the graph state because the terminal composition runs
+	// outside the graph (deps.Finalize) and has no access to it: what the answerer read and what
+	// it wrote are both properties of the RUN, and the pool is the run's shared record.
+	SessionAnswer string
+	// SessionEvidenceRefs is the session's evidence registry in first-seen order (the chunk ids
+	// the model was shown as [ID:0], [ID:1], …). When SessionAnswer stands as the answer, THIS
+	// list is the citation list — the [ID:n] the model wrote index into it.
+	SessionEvidenceRefs []string
 	// Record is the slot table rendered for the ANSWER prompt — the facts the
 	// research settled, without the machine fields (strength, terminal type,
 	// evidence ids) that belong to the SCA's draft.
@@ -120,10 +131,6 @@ type Kbinfos struct {
 	// and the answer quotes the bookkeeping verbatim:
 	// ("slot 1 [entity] … (strength=0.90) [terminal=state, evidence_ids=[…]]").
 	Record string
-	// novelAdmitted counts the chunks the cap EXEMPTION below has let in beyond
-	// evidencePoolCap. It is what keeps the exemption bounded rather than
-	// open-ended (see evidencePoolNoveltySlack). Guarded by mu, like Chunks.
-	novelAdmitted int
 	// ProbedAbsent is the run's record of NAMED terms a probe asked about and
 	// nothing reached (see RecordProbedAbsent). The pool holds what was found;
 	// this holds what was asked and not found, and the pair is what a rewrite
@@ -137,9 +144,6 @@ type Kbinfos struct {
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
-	// actWords / actorForms are the direction's declaration (see MarkCoverage). Guarded by ledgerMu.
-	actWords   []string
-	actorForms []string
 	// citedChunks are the passages the enumerated items rest on (see NoteCitedChunks).
 	// Guarded by ledgerMu.
 	citedChunks []string
@@ -149,13 +153,6 @@ type Kbinfos struct {
 	// sufficiencyUnchecked records that the completeness review never ran (see
 	// NoteSufficiencyUnchecked). Guarded by ledgerMu.
 	sufficiencyUnchecked bool
-	// coverageSet is what this QUESTION's enumeration found, and coverageReady records
-	// that it ran at all (see StoreCoverageSet): the windows it admits stay in the pool
-	// under the same chunk ids, so a later round reuses the same evidence rather than
-	// asking the corpus the same operand queries and putting back what is already there.
-	// Guarded by ledgerMu.
-	coverageSet   CoverageSet
-	coverageReady bool
 	// CiteChunkIDs is the ordered id list of the chunks the final-answer call
 	// rendered as numbered evidence — Python's tools._rag_cite_chunk_ids
 	// (agentic_rag_graph.py:870). The renderer puts the passages behind enumerated
@@ -245,14 +242,14 @@ func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 //
 // Inside fn do, per chunk, exactly the admission steps, in this order:
 //
-//	p.Full()   → skip the chunk. The cap check precedes the per-call dedup
-//	             (:638-646), so a rejected chunk is NOT marked seen and is
-//	             retried once room frees.
-//	then the call-local dedup (`seen`) and payload/ids bookkeeping;
+//	the call-local dedup (`seen`) and payload/ids bookkeeping;
 //	p.Add(c)   → dedup against the live pool and append.
 //
+// There is no capacity check to do first: the pool has no ceiling, so nothing is ever
+// skipped for want of room (see the note below).
+//
 // INVARIANT — fn must not call anything that takes k.mu itself (Admit, Merge,
-// MergeDocAggs, RetireClaimsCoveredBy, PoolAdmitter.Full's siblings…): the mutex
+// MergeDocAggs, RetireClaimsCoveredBy…): the mutex
 // is NOT reentrant, so that call parks the goroutine forever on a lock it already
 // holds, and a mutex wait ignores context cancellation, so the run never returns and
 // nothing is logged: the goroutine parks silently.
@@ -276,82 +273,22 @@ func (k *Kbinfos) Admit(fn func(p *PoolAdmitter)) {
 // PoolAdmitter is the pool handle, valid only inside Kbinfos.Admit's callback.
 type PoolAdmitter struct{ k *Kbinfos }
 
-// Full is the early stop at the top of admission: at the cap the chunk is skipped, and
-// nothing about it is recorded (so a rejected chunk is retried once room frees).
+// There is deliberately NO storage ceiling on the evidence pool.
 //
-// The "pool FULL" line belongs here, and it is emitted once per PROCESS. sync.Once
-// because concurrent sessions call this under their own pool lock.
-func (p *PoolAdmitter) Full() bool {
-	if p.k == nil || len(p.k.Chunks) < evidencePoolCap {
-		return false
-	}
-	evidencePoolFullLogged.Do(func() {
-		_LOG.Printf("[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.", len(p.k.Chunks), evidencePoolCap)
-	})
-	return true
-}
-
-// evidencePoolFullLogged: ["full_logged"]: a
-// PER-PROCESS flag, so the line is emitted once per
-// process — not once per rejected chunk, and NOT once per session. The pool never
-// shrinks mid-process, so no reset is needed.
-var evidencePoolFullLogged sync.Once
-
-// evidencePoolNoveltySlack bounds the cap EXEMPTION: the pool may pass
-// evidencePoolCap by at most this many chunks, and not one more.
+// The cap that used to live here (evidencePoolCap, 200) was a STORAGE number, but its only
+// reachable effect was on the MODEL's evidence: what it refused was the passage that would
+// have reached the last members of an enumeration — the ones named late, after the pool
+// was already large (see the old comment on evidencePoolCap, which said exactly this and
+// then kept the cap anyway). Nothing renders the pool whole any more (the SCA reads a
+// ranked view, the session seed injects a bounded digest, the draft is bounded), so the
+// ceiling bought no prompt budget and cost evidence.
 //
-// The cap is a STORAGE number, and it is the right number for evidence a later
-// search could find again. A PROBE's result is not that kind of evidence: a
-// batch probe ("荀正|管亥|车胄") is the model's question "does each of these exist,
-// and where?", and the per-name window it returns is the only place that answer
-// ever lives — no later search can reconstruct WHICH names came back empty.
-//
-// A batch probe can come back with passages for some of the names it asked about and none
-// for others the corpus does hold, so a cap that drops those windows converts a successful
-// probe into "nothing new", which the model then reads as "not a member".
-//
-// The slack is what keeps the exemption from being open-ended: it is charged per
-// exempted chunk, and beyond cap+slack even a novel term is refused.
-const evidencePoolNoveltySlack = 40
-
-// Novelty is the cap exemption for ONE admit batch: the batch's own terms that
-// the LIVE pool cannot answer yet.
-//
-// Build it once per batch (like ClaimCoveredIDs), then ask it per candidate:
-// a candidate that carries one of the absent terms may enter an ALREADY-FULL
-// pool, and that term is then consumed — one seat per term, so the pool grows by
-// at most one chunk per unanswered probe term. A batch with no terms (or a
-// batch whose terms the pool already carries) gets no exemption at all, which is
-// exactly the pre-existing cap behaviour.
-type Novelty struct {
-	p      *PoolAdmitter
-	absent []string
-}
-
-// Novelty derives the batch's exemption from the terms the call asked for.
-//
-// Callers pass the terms of a PROBE (the model's own alternation, see
-// probeTerms in tool_executor.go) and nothing else: a topic query states no
-// list of individuals, so its hits get no exemption and the cap behaves as it
-// always did.
-//
-// The pool-wide scan happens ONCE here, over lowered pool text, rather than once
-// per candidate.
-func (p *PoolAdmitter) Novelty(terms []string) *Novelty {
-	n := &Novelty{p: p}
-	if p.k == nil {
-		return n
-	}
-	asked := make([]string, 0, len(terms))
-	for _, t := range terms {
-		if t = strings.TrimSpace(t); t == "" || len(asked) >= GrepTermsMax {
-			continue
-		}
-		asked = append(asked, t)
-	}
-	n.absent = termsNotCarried(p.k.Chunks, asked)
-	return n
-}
+// What it dragged behind it was worse than the ceiling itself: an EXEMPTION (PoolAdmitter
+// .Novelty) so a probe's burst could still land past the cap, plus a slack constant bounding
+// that exemption, plus a once-per-process "pool FULL" line — three mechanisms and their
+// logging, all of them only meaningful while a cap existed. They are gone with it: the pool
+// takes what retrieval finds, and what the model READS is decided by the model (progress
+// lines on tool results, list_chunks paging), not by a number here.
 
 // ProbedAbsentTerms returns a copy of the named terms nothing reached, in the
 // order they were first probed.
@@ -457,30 +394,6 @@ func (k *Kbinfos) SufficiencyUnchecked() bool {
 	return k.sufficiencyUnchecked
 }
 
-// MarkCoverage records the direction's declaration — the actor's forms and the act words — for the
-// readers that have the pool but not the slot table (see CoverageDecl). Where StoreCoverageSet
-// holds what the corpus answered, this holds what the run was asking with.
-func (k *Kbinfos) MarkCoverage(cov Coverage) {
-	if k == nil {
-		return
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	k.actWords = append([]string(nil), cov.Acts...)
-	k.actorForms = cov.Actors()
-}
-
-// CoverageDecl is the direction's declaration (see MarkCoverage). Empty when no enumeration
-// direction declared itself, and its probes are read by shape alone.
-func (k *Kbinfos) CoverageDecl() (acts, actors []string) {
-	if k == nil {
-		return nil, nil
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return append([]string(nil), k.actWords...), append([]string(nil), k.actorForms...)
-}
-
 // NoteCitedChunks records the passages the enumerated items rest on (see
 // runtime.AnchoredItemChunks): the compose prompt puts them in front of the answer, which has to
 // cite one passage per element. Guarded by ledgerMu.
@@ -542,35 +455,6 @@ func (k *Kbinfos) AnchoredRefs() []AnchoredRef {
 	return append([]AnchoredRef(nil), k.anchoredRefs...)
 }
 
-// StoreCoverageSet records what this question's enumeration found (see
-// EnumerateCoverage / CoverageSet).
-func (k *Kbinfos) StoreCoverageSet(set CoverageSet) {
-	if k == nil {
-		return
-	}
-	k.ledgerMu.Lock()
-	k.coverageSet = set
-	k.coverageReady = true
-	k.ledgerMu.Unlock()
-}
-
-// CoverageSet returns the enumeration a previous round ran for this question, and whether
-// it ran at all.
-//
-// The unit is the REQUEST, not the round: the windows the enumeration admitted are in the
-// pool under the same chunk ids, so a second round asking the corpus the same operand
-// queries would spend the same store legs to re-admit what is already there, and the seed
-// would show the same windows it already showed (see StoreCoverageSet). The SET is kept
-// rather than its rendering because the last node resolves the windows themselves.
-func (k *Kbinfos) CoverageSet() (CoverageSet, bool) {
-	if k == nil {
-		return CoverageSet{}, false
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return k.coverageSet, k.coverageReady
-}
-
 // ReachedTerms returns a copy of the confirmed members and the chunk that carries
 // each.
 func (k *Kbinfos) ReachedTerms() []ReachedTerm {
@@ -586,17 +470,6 @@ func (k *Kbinfos) ReachedTerms() []ReachedTerm {
 // it is rendered into the rewrite context, so it may not grow with the number of
 // probes a long round happens to make.
 const reachedTermsMax = 24
-
-// EvidencePoolCap is the shared pool's ceiling. It is exported so that a caller
-// sizing the room for its own admissions (the rewrite round's prefetch) measures
-// it against the SAME number the admitter enforces.
-//
-// Measuring against a smaller constant is how a round came to report "retrieval
-// saturated" while the pool still had room to take evidence: the prefetch's room
-// was computed against the snippet-pool ceiling (60) while the pool itself holds
-// up to twice that, so on any rich round the rewrite's own queries had nowhere to
-// land and the round discarded itself.
-func EvidencePoolCap() int { return evidencePoolCap }
 
 // termsNotCarried reports which of terms no chunk's text carries
 // (case-insensitively), preserving the caller's order.
@@ -688,41 +561,6 @@ func (k *Kbinfos) RecordProbedAbsent(term string) {
 // probedAbsentMax bounds ProbedAbsent (see RecordProbedAbsent).
 const probedAbsentMax = 16
 
-// Admits reports whether c may enter the pool although the pool is FULL, because
-// c is the first evidence for one of the batch's unanswered terms.
-//
-// It answers only the novelty half of the admit decision: the caller still
-// checks Full() first, so a pool under the cap never consults this and behaves
-// as before. A nil Novelty (or one built from no terms) admits nothing.
-func (n *Novelty) Admits(c map[string]any) bool {
-	if n == nil || n.p == nil || n.p.k == nil || len(n.absent) == 0 {
-		return false
-	}
-	// The exemption is bounded: past cap+slack the probe's windows are refused
-	// like everything else, so a runaway enumeration cannot grow storage without
-	// limit.
-	if len(n.p.k.Chunks) >= evidencePoolCap+evidencePoolNoveltySlack {
-		return false
-	}
-	text := strings.ToLower(ChunkTextOf(c))
-	if text == "" {
-		return false
-	}
-	for i, t := range n.absent {
-		if !strings.Contains(text, strings.ToLower(t)) {
-			continue
-		}
-		// ONE seat per term: this passage answers it, so the next passage
-		// carrying only that term is refused again.
-		n.absent = append(n.absent[:i], n.absent[i+1:]...)
-		n.p.k.novelAdmitted++
-		_LOG.Printf("[Action Session] pool at the cap %d but the batch asked about %q; admitting the passage that reaches it (pool %d, novelty slack %d/%d).",
-			evidencePoolCap, t, len(n.p.k.Chunks)+1, n.p.k.novelAdmitted, evidencePoolNoveltySlack)
-		return true
-	}
-	return false
-}
-
 // Add appends c unless the LIVE pool already holds it, reporting whether it appended —
 // i.e. whether the chunk was new to the shared pool.
 //
@@ -730,10 +568,9 @@ func (n *Novelty) Admits(c map[string]any) bool {
 // would re-append a chunk another session just pooled, which must not happen under
 // parallelism.
 //
-// There is deliberately NO cap check here: the compiled-expansion path appends uncapped,
-// which is what pushes the pool past evidencePoolCap (see the comment on evidencePoolCap).
-// Callers that admit user-facing search
-// hits check Full() first.
+// There is no capacity check here, and no caller does one either: the pool has no ceiling
+// (see the note above), so this is the single admission rule — identity, against the live
+// contents.
 func (p *PoolAdmitter) Add(c map[string]any) bool {
 	if p.k == nil {
 		return false

@@ -137,10 +137,11 @@ func TestPrefillSlotsFromEvidence_Guards(t *testing.T) {
 	}
 }
 
-// TestRunSlotResearchPass_PrefilledSlotsSkipSession pins the wiring: when the pooled evidence
-// covers every slot at >= 0.6, the pass fills them WITHOUT running a single action session
-// (zero model calls).
-func TestRunSlotResearchPass_PrefilledSlotsSkipSession(t *testing.T) {
+// TestRunSlotResearchPass_PrefillFillsWithoutSpendingASession pins the wiring on both sides: the
+// pooled evidence fills the slots it covers (>= 0.6) so no session has to go looking for them,
+// and the round still runs its ONE session — that session is the answerer as well as the
+// researcher, so "every slot is filled" is no longer a reason to skip the model.
+func TestRunSlotResearchPass_PrefillFillsWithoutSpendingASession(t *testing.T) {
 	kb := &runtime.Kbinfos{Chunks: []map[string]any{
 		claimRow("claim_a", "[evidence] Eiffel Tower — built in Paris by Gustave Eiffel, opened in 1889\nEvidence (verbatim): \"...\""),
 	}}
@@ -158,9 +159,10 @@ func TestRunSlotResearchPass_PrefilledSlotsSkipSession(t *testing.T) {
 	if res == nil {
 		t.Fatal("expected a result")
 	}
-	// The prefill removed BOTH sessions: the model was never called.
-	if got := len(mdl.seen); got != 0 {
-		t.Fatalf("model calls = %d, want 0 (prefill must skip every session)", got)
+	// The prefill answered both slots from evidence already in the pool, and the round's one
+	// session still runs: it writes the answer, so it cannot be skipped.
+	if got := len(mdl.seen); got == 0 {
+		t.Fatal("model calls = 0, want the one session this round seeds")
 	}
 	for i, want := range []string{
 		"Eiffel Tower — built in Paris by Gustave Eiffel, opened in 1889",

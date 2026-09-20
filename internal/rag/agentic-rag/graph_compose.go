@@ -304,6 +304,22 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	if kb != nil {
 		chunks = kb.Chunks
 	}
+
+	// The session that read the evidence writes the answer (see the design's R2). When it did,
+	// that text IS the answer: composing again would hand the question to a model that never saw
+	// the passages, and it would have to re-derive — by similarity, after the fact — the [ID:n]
+	// markers the session wrote against the ref numbers it was actually shown. The registry the
+	// session built is handed over instead, so its own citations resolve verbatim.
+	if kb != nil {
+		if ans := strings.TrimSpace(kb.SessionAnswer); ans != "" && !abstain && !emptyResult && len(chunks) > 0 {
+			kb.CiteChunkIDs = append([]string(nil), kb.SessionEvidenceRefs...)
+			step(ctx, logger, "Composing the answer",
+				"Using the answer the research session wrote (%d character(s)); %s in the citation registry.",
+				utf8.RuneCountInString(ans), runtime.CountOf(len(kb.CiteChunkIDs), "passage"))
+			return AnswerResult{Answer: ans}
+		}
+	}
+
 	started := time.Now()
 	// The kickoff step is suppressed when the graph already reported [Finalize]
 	// (finalizeAnnounced): the verdict and the evidence have been said, and a line

@@ -233,8 +233,14 @@ type Result struct {
 	NewStates            []State
 	FoundAnswer          *string
 	RetrievedEvidenceIDs []string
-	TerminalType         *string
-	TerminalPayload      map[string]any
+	// EvidenceRefs is the session's evidence registry in first-seen order: the chunk ids the
+	// model was shown as [ID:0], [ID:1], … (see stampEvidenceRefs). A caller that lets the
+	// session's own answer stand uses it as the citation list — the numbers the model wrote are
+	// indices into THIS slice.
+	EvidenceRefs []string
+	TerminalType *string
+	// TerminalPayload carries the terminal's structured payload (see TerminalType).
+	TerminalPayload map[string]any
 }
 
 // ApplyPatch: ONLY existing
@@ -960,6 +966,28 @@ func arrayParam(desc string, minItems, maxItems int) map[string]any {
 	}
 }
 
+// arrayParamWithReason is arrayParam plus `reason`: one short statement of the SPECIFIC new clue
+// or gap this call is pursuing.
+//
+// The field is the paper's (its search tool requires a <100-word reason naming the new clue),
+// and what it buys is the failure mode our own logs showed — a call that is a paraphrase of the
+// last one. A reason that names a new clue cannot be written for a call that has none, so the
+// model has to say which one it is chasing; the near-duplicate check (SkippedDup) still catches
+// the case where it says one and searches another, but by then the call is already on record.
+//
+// It is optional in the schema on purpose: a REQUIRED field turns a retrieval the model needs
+// into a malformed call, which is a worse trade than an occasionally missing reason line.
+func arrayParamWithReason(minItems, maxItems int) map[string]any {
+	p := arrayParam("", minItems, maxItems)
+	p["properties"].(map[string]any)["reason"] = map[string]any{
+		"type": "string",
+		"description": "one sentence, under 100 words: the SPECIFIC new clue or gap this call " +
+			"pursues (a name, a date, a quoted phrase you have not searched yet). Not a " +
+			"restatement of the question, and not 'try another phrasing'.",
+	}
+	return p
+}
+
 // Tool schemas. The descriptions are the model's only guide for when to pick which tool,
 // and rephrasing them changes routing behaviour.
 var (
@@ -975,7 +1003,7 @@ var (
 				`ARGUMENTS: query — array of 1-3 strings; only a query's first ~10 snippets survive; doc_scope is NOT declared.` +
 				`OUTPUT: Exact-term snippets with doc_id and chunk id. ok = new evidence; redundant = seen.` +
 				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (record it as not a member, probe the next). redundant = stop and emit a state patch.`,
-			Parameters: arrayParam("", 1, 3),
+			Parameters: arrayParamWithReason(1, 3),
 		},
 	}
 
@@ -985,8 +1013,8 @@ var (
 			Name: "list_chunks",
 			Description: `WHEN TO CALL: You need the FULL text of one document (enumeration, counts, arithmetic over many passages) and you already have its doc_id from a prior tool result.` +
 				`DO NOT CALL: When you only need a single passage (use search_chunks or retrieve first); when you have no doc_id yet (locate it via navigate_tree or search_chunks first).` +
-				`ARGUMENTS: doc_id — string, the document id seen in a retrieve / search_chunks / navigate result. ONLY doc_id is accepted; there is no chunk_ids argument, and the tool returns the whole document (capped at 30 chunks).` +
-				`OUTPUT: All chunks of the document in reading order. ok = new evidence; redundant = already in pool.` +
+				`ARGUMENTS: doc_id — string, the document id seen in a retrieve / search_chunks / navigate result; offset — integer, the chunk to start this page at (default 0). There is no chunk_ids argument.` +
+				`OUTPUT: At most 30 chunks of the document in reading order, starting at offset. ok = new evidence; redundant = already in pool. The result's note says where this page sits and whether the document CONTINUES — a document you have not paged to the end is not fully read, so call again with the offset advanced past the chunks you were shown.` +
 				`IF IT FAILS: An unknown or blank doc_id yields an empty result (query-level miss, not a dataset fact) — pick a different doc_id or locate one first. Do not treat this as a reason to disable the tool.`,
 			Parameters: map[string]any{
 				"type": "object",
@@ -994,6 +1022,10 @@ var (
 					"doc_id": map[string]any{
 						"type":        "string",
 						"description": "document id seen in a retrieve snippet",
+					},
+					"offset": map[string]any{
+						"type":        "integer",
+						"description": "chunk to start this page at (default 0); advance it to read on",
 					},
 				},
 				"required": []string{"doc_id"},
@@ -1012,7 +1044,7 @@ var (
 				`Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM source quotes. If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. ` +
 				`ok = new evidence; redundant = already seen.` +
 				`IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it.`,
-			Parameters: arrayParam("", 1, 2),
+			Parameters: arrayParamWithReason(1, 2),
 		},
 	}
 
@@ -1762,8 +1794,21 @@ type SessionState struct {
 	FoundAnswer *string
 
 	RetrievedEvidenceIDs []string
-	Attempts             int
-	DeadlineLeft         float64
+	// EvidenceRefs is the session's evidence registry in FIRST-SEEN order:
+	// EvidenceRefs[n] is the chunk the model was shown as [ID:n] (see stampEvidenceRefs).
+	//
+	// It is what makes the model's own citations checkable. The final-answer call used to be
+	// the one that numbered the evidence (kb.CiteChunkIDs, written by the compose renderer); in
+	// a session that answers from what it read, the numbers the model saw are the registry, and
+	// the resolver is handed exactly this list.
+	EvidenceRefs []string
+	// evidenceRefOf maps a chunk id to its number in EvidenceRefs.
+	evidenceRefOf map[string]int
+	// lastReply is the previous turn's assistant text, so an exactly repeated reply can END the
+	// session (see runActionNode).
+	lastReply    string
+	Attempts     int
+	DeadlineLeft float64
 
 	// CtxBudget is the cumulative tool-payload char ceiling for the session.
 	CtxBudget int
@@ -1915,6 +1960,23 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 	s.Messages = append(s.Messages,
 		*schema.AssistantMessage(reply.Content, assistantToolCalls(reply.ToolCalls)))
 
+	// A model that repeats itself EXACTLY is not going to make progress, and every further turn
+	// costs a full round trip (the WeKnora loop stops on the same signal, maxRepeatedResponse
+	// Rounds = 2). Two identical replies in a row therefore END the session, converging with
+	// whatever the record already holds.
+	//
+	// The comparison is the whole reply — words AND tool calls — because that is what "the same
+	// turn again" means. It is a hard stop rather than a nudged retry: a nudge is another turn
+	// with the same prompt, and the point is that this prompt already produced this reply.
+	if replyText := strings.TrimSpace(reply.Content); replyText != "" && replyText == s.lastReply {
+		_LOG.Printf("[Action Session] two consecutive identical replies (%d rune(s)); stopping the session.",
+			utf8.RuneCountInString(replyText))
+		s.Done = true
+		return nil
+	} else {
+		s.lastReply = replyText
+	}
+
 	if len(reply.ToolCalls) > 0 {
 		s.PendingCalls = reply.ToolCalls
 		return nil
@@ -2050,6 +2112,10 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		// The payload stays the JSON document it always was; the call's own note
 		// rides BEHIND it, exactly like the turn's record line (appendRecordLine),
 		// so nothing that parses the payload has to learn about either.
+		//
+		// The passages are numbered BEFORE they are serialized: the model can only cite what it
+		// was shown, so a citation it writes has to be checkable against a number it saw.
+		s.stampEvidenceRefs(chunks)
 		payload := marshalPassages(chunks)
 		if oc.Note != "" {
 			payload += "\n" + oc.Note
@@ -2146,6 +2212,52 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 //
 // It rides the tool result the model is about to read, like the record line, and is
 // appended at most once per session.
+// stampEvidenceRefs numbers the passages of ONE tool result and records them in the session's
+// registry.
+//
+// The number is stamped INTO the passage the model reads ("ref": n). That is the whole point:
+// the model can only cite what it was shown, so a citation has to be checkable against a number
+// it actually saw — a number the runtime computes later, in a renderer the session never sees
+// (which is how the final-answer call used to work), cannot be written down by the model at all.
+//
+// A chunk already in the registry KEEPS its number: the same passage reached twice is one
+// place, cited the same way, and the registry stays stable across turns.
+func (s *SessionState) stampEvidenceRefs(chunks []any) {
+	if s.evidenceRefOf == nil {
+		s.evidenceRefOf = map[string]int{}
+	}
+	for _, raw := range chunks {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := payloadChunkID(m)
+		if id == "" {
+			continue
+		}
+		n, seen := s.evidenceRefOf[id]
+		if !seen {
+			n = len(s.EvidenceRefs)
+			s.evidenceRefOf[id] = n
+			s.EvidenceRefs = append(s.EvidenceRefs, id)
+		}
+		m["ref"] = n
+	}
+}
+
+// payloadChunkID is the chunk identity inside a tool payload entry. The search tools name it
+// "chunk_id"; list_chunks' passages are {"id","content"} (see listChunks), so both are read.
+func payloadChunkID(m map[string]any) string {
+	for _, key := range []string{"chunk_id", "id"} {
+		if v, ok := m[key].(string); ok {
+			if v = strings.TrimSpace(v); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 func (s *SessionState) appendBatchProtocol(ranAny bool) {
 	if s.BatchProtocolShown || !ranAny || s.EnumerationProtocol == "" || len(s.Messages) == 0 {
 		return
@@ -2270,10 +2382,6 @@ func (s *SessionState) offerContinuation() bool {
 	return true
 }
 
-// parentSet reports whether the direction this session was sent on ASKS FOR A SET —
-// what the planner DECLARED, never what a candidate looks like (see CoverageOf).
-func (s *SessionState) parentSet() bool { return CoverageOf(s.ParentState).Set }
-
 // wroteBatch reports whether the CALLER wrote a batch of terms in one query — the
 // signal that it is enumerating rather than asking a question.
 //
@@ -2289,90 +2397,27 @@ func (s *SessionState) wroteBatch() bool {
 	return false
 }
 
-// enumerating reports whether this session is assembling a SET: the caller wrote a
-// batch (the tell that survives contact), or the direction's own table asks for a
-// count/list.
+// enumerating reports whether this session is assembling a SET. The tell is the one with no
+// observed false positives: the CALLER wrote a batch of terms in one query (see wroteBatch).
 //
-// The table stays as the second half on purpose: a session may enumerate without ever
-// writing a two-name batch (one probe per member), and then the record line is exactly what
-// it needs. That half's false positives are bounded and rare (a sentence written into a
-// count-typed slot); the batch half has none.
+// The other half used to be the direction's own table — a count/list-typed slot the planner
+// had written — and it is gone with the coverage engine: a slot type cannot tell an
+// enumeration from a count of events, and being wrong about it moved the session's turn floor
+// for a question that had no members to assemble.
 func (s *SessionState) enumerating() bool {
-	return s.wroteBatch() || s.parentSet()
+	return s.wroteBatch()
 }
 
-// SessionWallS is the wall clock a session on this direction is given: the
-// enumeration clock when the table declared a set, the default one otherwise.
+// The three shape-gated helpers that used to live here are gone with the coverage engine:
+// SessionWallS (a per-shape session clock), setMethodFor (the SET method, gated on the
+// planner's typed slots) and enumerationSeed (the method plus the windows the runtime's own
+// enumeration had found).
 //
-// It is a FUNCTION of the shape rather than a constant because the shape decides
-// what the time is spent on: an enumeration session is mid-batch when its clock runs
-// out, and a batch that is cut loses the members it had already reached (see
-// setActionTimeoutS for the measurement). A value session has no such work in
-// flight, so it keeps the tighter clock and the shorter end-to-end latency.
-//
-// The caller owns the context: this number is only the budget a session is told it
-// has, and a pass whose own timeout is shorter still bounds it (see
-// RunSlotResearchPass, which hangs the session clock off the round's PARENT because
-// the round's own clock is fixed before the table — and therefore the shape — is
-// known).
-func SessionWallS(parent State) float64 {
-	// The enumeration clock is for a direction that IS one — a set of named members whose
-	// deed the planner wrote the words for (Coverage.Ok) — not for every direction that
-	// happens to contain a count: an enumeration session is mid-batch when its clock runs
-	// out and a batch that is cut loses the members it had reached (see setActionTimeoutS
-	// for the measurement), while a value session has no such work in flight and keeps the
-	// tighter clock with the shorter latency.
-	if CoverageOf(parent).Ok() {
-		return setActionTimeoutS
-	}
-	return actionTimeoutS
-}
-
-// setMethodFor returns the enumeration METHOD, or "" when the direction is not an
-// enumeration.
-//
-// The method is `action_set`, and both halves of when it is delivered are deliberate: its
-// FIRST instruction — propose more candidates than you expect — is a decision taken before
-// the first query, so a direction that has declared itself an enumeration is seeded before
-// its first turn; and a direction that has not is handed the method after the first batch it
-// writes (see appendBatchProtocol), which is the signal with no observed false positives.
-//
-// The gate is the enumeration itself (see Coverage): the method tells a session to
-// enumerate NAMED members, and a single-value question that merely contains a count must
-// not be told to assemble anything. A permissive version seeds most sessions with set
-// strategy on questions that assemble nothing, and a shape-only version still seeds the value
-// questions that merely contain a count — where it can only add cost and timeouts.
-func setMethodFor(table State, prompts PromptLoader) string {
-	if !CoverageOf(table).Ok() {
-		return ""
-	}
-	return loadOptionalPrompt(prompts, "action_set")
-}
-
-// enumerationSeed builds the text a session sent on this direction is seeded with: the
-// method, and — when the runtime has already run the enumeration — the windows it found
-// (see CoverageSet.Render).
-//
-// A list of queries in a prompt is ADVICE, and advice may simply not be taken. A window is
-// evidence — it carries the chunk id a member is cited by — so the session's job becomes
-// reading what came back. When no enumeration ran (no clock, no executor), the method
-// travels alone: the seed never carries queries to make.
-func enumerationSeed(table State, prompts PromptLoader, seed string) string {
-	if !CoverageOf(table).Ok() {
-		// Not an enumeration: nothing to assemble, so neither the method nor a window has
-		// any business in this session's seed.
-		return ""
-	}
-	method := setMethodFor(table, prompts)
-	if s := strings.TrimSpace(seed); s != "" {
-		if method != "" {
-			return method + "\n\n" + s
-		}
-		return s
-	}
-	return method
-}
-
+// What replaces them is smaller and makes no claim about the QUESTION: ONE session clock
+// (actionTimeoutS, or the budget the caller passes), and the SET method delivered by
+// appendBatchProtocol on the first batch the CALLER writes. Both halves of the old gate were
+// decisions taken before the session had done anything, and a wrong decision about a value
+// question could only add cost.
 // continuationAsk is the offer the model decides on: it names the hard bound, the
 // remaining turns, and the ONLY grounds on which another turn is granted — what
 // the record line shows is still missing. The record itself was appended to the
@@ -3501,12 +3546,25 @@ type SessionDeps struct {
 	// "ALREADY RETRIEVED" so the model does not re-retrieve evidence it already
 	// has. Nil skips the injection.
 	KB *Kbinfos
-	// CoverageSeed is what this question's enumeration already brought back (see
-	// EnumerateCoverage / CoverageSet.Render): the windows where the deed is stated, each
-	// with the chunk id a member is cited by. When non-empty it travels in this
-	// session's seed — a window is evidence, where a list of queries to make is advice.
-	CoverageSeed string
 }
+
+// answerContract is the one thing a session must be told beyond its research instructions: the
+// answer IT writes is the answer, and it may only cite passages it was shown.
+//
+// It is appended in Go rather than living in one prompt template because it is a RUNTIME
+// contract, not a strategy: the numbers come from the session's own evidence registry
+// (stampEvidenceRefs), which is what the citation resolver is handed afterwards. So a number the
+// model did not see cannot resolve, and a passage it did see can always be cited — which is what
+// stops an unsupported claim from being dressed up as a supported one.
+const answerContract = `
+
+FINAL ANSWER: when you have read enough, write the answer as <answer>…</answer> and stop
+searching. That text is what the user receives — not a draft, not a summary of what you did.
+Cite with [ID:n], where n is the "ref" number that tool results print beside each passage: only
+numbers you have actually been shown will resolve. If part of the question cannot be supported
+by passages you have read, say so in the answer (which part, and what you could not find) rather
+than leaving it out or guessing.
+`
 
 // RunActionSession: a bounded session
 // pursuing ONE direction.
@@ -3514,35 +3572,18 @@ type SessionDeps struct {
 // Returns an empty Result (no states) when no model is configured or the session fails:
 // the failure is logged and an empty Result returned rather than propagating.
 func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache *ToolCache, sharedSearchQueries []string) Result {
-	system := loadPrompt(deps.Prompts, "action_run")
+	system := loadPrompt(deps.Prompts, "action_run") + answerContract
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
-	// A direction that IS an enumeration is seeded WITH THE METHOD, before its first turn.
+	// The SET method is NOT seeded here. It is handed to a session mid-run, on the first batch
+	// the caller writes (see appendBatchProtocol): the signal is the session's OWN writing, and
+	// it is the one with no observed false positives.
 	//
-	// The method's first instruction is to propose more candidates than you expect, which is a
-	// decision taken BEFORE the first query: seeded a turn later it is already too late to
-	// change the candidates the session proposed. The gate is the enumeration itself (see
-	// Coverage) and not a reading of the candidates (see setMethodFor). A set direction that is
-	// not an enumeration gets the method from appendBatchProtocol, on the first batch it
-	// writes.
-	seededMethod := enumerationSeed(parent, deps.Prompts, deps.CoverageSeed)
-	if seededMethod != "" {
-		seedUser += "\n\n" + seededMethod
-		// The seeded direction also widens the retrieval budget (see
-		// Kbinfos.MarkSetDirection): on a set direction the caller's queries are
-		// facets of one list, so the executor must not drop them silently.
-		deps.KB.MarkSetDirection()
-		// Logged because a seeded method is text inside a prompt: without this line
-		// nothing distinguishes "the gate opened for the direction that needed it" from
-		// "the gate opened for every direction", which is the failure mode to watch.
-		_LOG.Printf("[Action Session] enumeration direction — method (and any evidence it brought back) added to the seed (%d char(s))", len(seededMethod))
-		if seed := strings.TrimSpace(deps.CoverageSeed); seed != "" {
-			// Said separately from the line above, because the difference is the whole
-			// point: the seed carries what the enumeration FOUND, not queries to make
-			// (see enumerationSeed).
-			_LOG.Printf("[Action Session] enumeration windows in the seed (%d char(s)) — the corpus was asked, not the model.", len(seed))
-		}
-	}
+	// What this replaced: seeding the method up front for directions the RUNTIME had decided
+	// were enumerations (a typed slot in the planner's table). That decision could not be made
+	// from a slot type — "how many people did X kill" and "how many times larger is A than B"
+	// are the same shape — and being wrong about it meant a value question was handed set
+	// strategy it could only pay for. The batch tell needs no such guess.
 
 	// ALREADY RETRIEVED: surface the evidence already in the shared pool so the model fills
 	// slots from it instead of re-retrieving the same ground. Without this the ReAct loop
@@ -3562,9 +3603,10 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 
 	budgetLeft := deadlineLeft
 	if budgetLeft <= 0 {
-		// A caller that omits the budget gets the shape's own clock (see
-		// SessionWallS): the direction is known here even when the caller is not.
-		budgetLeft = SessionWallS(parent)
+		// A caller that omits the budget gets the session's own clock. There is ONE clock: what
+		// a session's time is spent on is decided by what the session does, not by a reading of
+		// the direction's shape (see the note on setActionTimeoutS).
+		budgetLeft = actionTimeoutS
 	}
 
 	st := &SessionState{
@@ -3591,14 +3633,10 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ToolStrikes:          map[string]int{},
 		ToolOutcomes:         nil,
 		Direction:            direction,
-		// The method this session may be handed, resolved here so nothing mid-session
-		// needs the prompt loader. It arrives in the seed when the table declared a
-		// set (see setProtocolFor), or on the first batch the caller writes
-		// (appendBatchProtocol) — so it is loaded for every session, and shown at
-		// most ONCE: a seeded session is marked as already carrying it, or it would receive the
-		// whole text twice — once from the seed and once from the batch append.
+		// The method this session MAY be handed, resolved here so nothing mid-session needs
+		// the prompt loader. It is shown ONCE, on the first batch the caller writes
+		// (appendBatchProtocol) — never in the seed — so nothing has been shown yet.
 		EnumerationProtocol: loadOptionalPrompt(deps.Prompts, "action_set"),
-		BatchProtocolShown:  seededMethod != "",
 	}
 	if st.ToolCache == nil {
 		st.ToolCache = NewToolCache()
@@ -3641,8 +3679,12 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		NewStates:            st.NewStates,
 		FoundAnswer:          st.FoundAnswer,
 		RetrievedEvidenceIDs: st.RetrievedEvidenceIDs,
-		TerminalType:         st.TerminalType,
-		TerminalPayload:      st.TerminalPayload,
+		// The registry travels OUT of the session: a caller that lets the session's own answer
+		// stand hands THIS list to the citation resolver, so the [ID:n] the model wrote (against
+		// the numbers it was shown) resolve against the same numbering.
+		EvidenceRefs:    append([]string(nil), st.EvidenceRefs...),
+		TerminalType:    st.TerminalType,
+		TerminalPayload: st.TerminalPayload,
 	}
 }
 
@@ -3722,12 +3764,14 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			if len(clues) > 4 {
 				clues = clues[:4]
 			}
-			// The slot may DECLARE the act words its enumeration must cover (see
-			// Variable.Terms): a missing or malformed list is simply no declaration,
-			// never a reason to discard the decomposition.
+			// The slot may DECLARE the act words of its direction (see Variable.Terms): a
+			// missing or malformed list is simply no declaration, never a reason to discard
+			// the decomposition. The cap is a prompt-budget bound on a list the model wrote,
+			// like every other one here.
+			const actWordsMax = 10
 			terms, _ := asStringList(m["scan"])
-			if len(terms) > CoverageActWordsMax {
-				terms = terms[:CoverageActWordsMax]
+			if len(terms) > actWordsMax {
+				terms = terms[:actWordsMax]
 			}
 			kept := make([]string, 0, len(terms))
 			for _, t := range terms {

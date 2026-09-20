@@ -1091,9 +1091,9 @@ var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTP
 // keywords are supported by the executor but intentionally NOT declared in the
 // schema (keep the description honest with the implementation).
 var executorSupportedParams = map[string]map[string]bool{
-	"retrieve":           {"query": true, "doc_scope": true},
-	"search_chunks":      {"query": true},
-	"list_chunks":        {"doc_id": true},
+	"retrieve":           {"query": true, "doc_scope": true, "reason": true},
+	"search_chunks":      {"query": true, "reason": true},
+	"list_chunks":        {"doc_id": true, "offset": true},
 	"navigate_tree":      {"query": true, "keywords": true},
 	"navigate_structure": {"doc_id": true, "query": true, "kind": true},
 	"calculate":          {"question": true, "facts": true},
@@ -1315,13 +1315,15 @@ func TestTurnFloorIsPaidOnlyByASetSession(t *testing.T) {
 		t.Errorf("session that wrote a batch turn floor = %d, want %d", got, modeFloor)
 	}
 
-	// A direction whose table declares a set needs the floor from its first turn: it
-	// may enumerate one probe per member and never write a two-name batch.
+	// A session that WROTE A BATCH needs the floor from its first turn: it may enumerate one
+	// probe per member and never write a two-name batch again (see wroteBatch). What it is sent
+	// on — a count-typed table — is not the tell.
 	declared := &SessionState{
-		Tools:        ts,
-		Direction:    "how many officers did Guan Yu kill",
-		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("16")}}},
-		DeadlineLeft: 70,
+		Tools:         ts,
+		Direction:     "how many officers did Guan Yu kill",
+		SearchQueries: []string{"关羽 斩 杀 颜良 文丑"},
+		ParentState:   State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("16")}}},
+		DeadlineLeft:  70,
 	}
 	if got := declared.actionMaxTurns(); got != modeFloor {
 		t.Errorf("count direction turn floor = %d, want %d", got, modeFloor)
@@ -1337,30 +1339,10 @@ func TestTurnFloorIsPaidOnlyByASetSession(t *testing.T) {
 // already found and whose passages were already in the shared pool. A value session
 // has no work in flight at its deadline, so it keeps the tighter clock.
 //
-// The clock follows the ENUMERATION (a set of named members whose deed the planner wrote
-// the words for), not every table that contains a count: a count of events has no batch in
-// flight either, and buying it the enumeration clock is a cost with nothing to spend it on.
-func TestSessionWallFollowsTheEnumeration(t *testing.T) {
-	set := State{State: []Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("13"), Terms: []string{"斩", "杀"}, Subject: "关羽"},
-		{ID: 1, Type: "person"},
-	}}
-	if got := SessionWallS(set); got != setActionTimeoutS {
-		t.Errorf("enumeration direction wall = %.0f, want %.0f", got, setActionTimeoutS)
-	}
-	// A count of EVENTS: set-shaped, no names to enumerate.
-	countOnly := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("13"), Terms: []string{"won"}, Subject: "Brazil"}}}
-	if got := SessionWallS(countOnly); got != actionTimeoutS {
-		t.Errorf("count-of-events direction wall = %.0f, want %.0f", got, actionTimeoutS)
-	}
-	value := State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}
-	if got := SessionWallS(value); got != actionTimeoutS {
-		t.Errorf("value direction wall = %.0f, want %.0f", got, actionTimeoutS)
-	}
-	if setActionTimeoutS <= actionTimeoutS {
-		t.Errorf("the set clock (%.0f) must exceed the value clock (%.0f)", setActionTimeoutS, actionTimeoutS)
-	}
-}
+// What follows from that measurement is ONE clock, not two: the reason a set direction wanted
+// more time is a fact about the session's WORK in flight, and no reading of the table can decide
+// it (see the note where SessionWallS used to live). The session's own batch — the signal that
+// survives, see wroteBatch — extends the session's protocol, and the budget is the caller's.
 
 // TestDigestShowsAPassageWholeEnoughToNameSomeone pins the seed digest's per-chunk
 // cap.

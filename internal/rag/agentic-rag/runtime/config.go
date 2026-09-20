@@ -48,11 +48,11 @@ const GraphExploreTool = "graph_explore"
 // Tools is the set of tool names visible to the model in this mode. An empty
 // set means the model gets no tool loop at all.
 type ModeSpec struct {
-	Label          string
-	Agentic        bool
-	EnableSCA      bool
-	SCAMaxRounds   int
-	UseFanout      bool
+	Label        string
+	Agentic      bool
+	EnableSCA    bool
+	SCAMaxRounds int
+
 	ActionMaxTurns int
 	// SnippetsPerQuery caps how many hits of ONE query the session reads.
 	//
@@ -82,33 +82,38 @@ func allToolSet() map[string]bool {
 
 // THINKING_MODES
 //
-//   - low: one hybrid-search pass through direct_search. No action session,
-//     so no tool loop — the model never sees tools in this mode.
-//   - medium: agentic, SCA review on, no planner decomposition.
-//   - high: adds planner + prefetch fan-out over the same tool surface.
-//   - ultra: deeper sessions, more SCA rounds, and the relational tool.
+// A mode says how MUCH a question may spend and WHAT it may reach for — never HOW the
+// question is answered. Every agentic mode walks the same graph (planner → prefetch →
+// research rounds → answer), so a mode cannot change what a run means; it only changes the
+// numbers (turns, snippets per query, SCA rounds) and the tool surface.
+//
+//   - low: no agentic run at all: one hybrid-search pass through direct_search, and the
+//     model never sees a tool.
+//   - medium: the agentic loop, with a smaller turn/snippet budget.
+//   - high: the same loop with more of both.
+//   - ultra: the same loop, deeper still, plus the relational tool.
 var THINKING_MODES = map[string]ModeSpec{
 	"low": {
 		Label: "low", Agentic: false, EnableSCA: false,
-		SCAMaxRounds: 0, UseFanout: false, ActionMaxTurns: 4,
+		SCAMaxRounds: 0, ActionMaxTurns: 4,
 		SnippetsPerQuery: 0,
 		Tools:            map[string]bool{},
 	},
 	"medium": {
 		Label: "medium", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, UseFanout: false, ActionMaxTurns: 8,
+		SCAMaxRounds: 3, ActionMaxTurns: 8,
 		SnippetsPerQuery: 6,
 		Tools:            allToolSet(),
 	},
 	"high": {
 		Label: "high", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, UseFanout: true, ActionMaxTurns: 8,
+		SCAMaxRounds: 3, ActionMaxTurns: 8,
 		SnippetsPerQuery: 8,
 		Tools:            allToolSet(),
 	},
 	"ultra": {
 		Label: "ultra", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 5, UseFanout: true, ActionMaxTurns: 10,
+		SCAMaxRounds: 5, ActionMaxTurns: 10,
 		SnippetsPerQuery: 10,
 		Tools:            toolsOf(append(append([]string{}, allTools...), GraphExploreTool)...),
 	},
@@ -118,7 +123,7 @@ var THINKING_MODES = map[string]ModeSpec{
 // caller answers with plain retrieval rather than failing the request.
 var NAIVE = ModeSpec{
 	Label: "naive", Agentic: false, EnableSCA: false,
-	SCAMaxRounds: 0, UseFanout: false, ActionMaxTurns: 4,
+	SCAMaxRounds: 0, ActionMaxTurns: 4,
 	Tools: map[string]bool{},
 }
 

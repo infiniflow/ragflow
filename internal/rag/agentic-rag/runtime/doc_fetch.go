@@ -37,6 +37,64 @@ const (
 	estimateCharsPerToken = 4
 )
 
+// documentReadAllowed is THE guard every document read passes: a session may read a document
+// only if it is inside the bound datasets, and inside the session's document scope when one is
+// set. fetchFullDocument and the paging reader both call it, so adding paging cannot widen what
+// a session is allowed to see.
+func documentReadAllowed(ctx context.Context, deps SearchDeps, docID string) bool {
+	if deps.DocChunks == nil || docID == "" || len(deps.KbIDs) == 0 {
+		_LOG.Printf("[Fetch full document] skipped (doc_id=%q, datasets=%d)", docID, len(deps.KbIDs))
+		return false
+	}
+	// a session-wide document scope is authoritative.
+	if len(deps.DocScope) > 0 && !containsStr(deps.DocScope, docID) {
+		_LOG.Printf("[Fetch full document] doc_id %q is outside the session document scope", docID)
+		return false
+	}
+	// never read a document that is not in the bound datasets.
+	if belongs, verified := docInDatasets(ctx, deps, docID); verified && !belongs {
+		_LOG.Printf("[Fetch full document] doc_id %q is not in any bound dataset — refusing to fetch", docID)
+		return false
+	}
+	return true
+}
+
+// fetchDocumentPage reads ONE page of a document for the PAGING reader (list_chunks).
+//
+// Paging is what makes a document finitely readable: the document a session can read is
+// bounded by the model window, so a long one used to be readable only up to that window, with
+// nothing telling the model that it had stopped early or how to go on. The page request asks
+// for want+1 chunks because the DocChunkLister contract answers both questions in one call —
+// "a short page means the document is exhausted" — so no count query is needed.
+//
+// Returns the page and whether the document has more chunks after it.
+func fetchDocumentPage(ctx context.Context, deps SearchDeps, docID string, offset, want int) ([]map[string]any, bool) {
+	if want <= 0 {
+		want = docFetchPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if !documentReadAllowed(ctx, deps, docID) {
+		return nil, false
+	}
+	page, err := deps.DocChunks.DocChunks(ctx, DocChunksRequest{
+		DocID:      docID,
+		DatasetIDs: deps.KbIDs,
+		TenantID:   deps.TenantID,
+		Offset:     offset,
+		Limit:      want + 1,
+	})
+	if err != nil {
+		_LOG.Printf("[Fetch document page] page at offset %d failed: %v", offset, err)
+		return nil, false
+	}
+	if len(page) <= want {
+		return page, false
+	}
+	return page[:want], true
+}
+
 // fetchFullDocument
 // (agentic_rag.py:fetch_full_document): read a document end-to-end in reading order, in pages,
 // stopping before the model window would overflow.
@@ -44,18 +102,7 @@ const (
 // Returns (chunks, docAggs). Both are nil when the document is unavailable —
 // unbound datasets, a document outside the session scope, or an empty read.
 func fetchFullDocument(ctx context.Context, deps SearchDeps, docID string, maxTokens int) ([]map[string]any, []map[string]any) {
-	if deps.DocChunks == nil || docID == "" || len(deps.KbIDs) == 0 {
-		_LOG.Printf("[Fetch full document] skipped (doc_id=%q, datasets=%d)", docID, len(deps.KbIDs))
-		return nil, nil
-	}
-	// a session-wide document scope is authoritative.
-	if len(deps.DocScope) > 0 && !containsStr(deps.DocScope, docID) {
-		_LOG.Printf("[Fetch full document] doc_id %q is outside the session document scope", docID)
-		return nil, nil
-	}
-	// never read a document that is not in the bound datasets.
-	if belongs, verified := docInDatasets(ctx, deps, docID); verified && !belongs {
-		_LOG.Printf("[Fetch full document] doc_id %q is not in any bound dataset — refusing to fetch", docID)
+	if !documentReadAllowed(ctx, deps, docID) {
 		return nil, nil
 	}
 

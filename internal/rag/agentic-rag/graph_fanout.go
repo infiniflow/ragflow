@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
@@ -181,7 +182,7 @@ func ExpandFanouts(ctx context.Context, deps RAGTools, question string) []string
 // hit from an earlier one.
 //
 // Returns the number of NEW snippets admitted to the pool.
-func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN, capacity int) int {
+func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN int) int {
 	if len(queries) == 0 || st.KB == nil {
 		return 0
 	}
@@ -190,19 +191,16 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		return 0
 	}
 
-	// Dedup against what kbinfos ALREADY holds, then cap admissions at the remaining room —
-	// the pool is a shared, cross-round ceiling.
+	// Dedup against what kbinfos ALREADY holds. There is no room to compute and no early
+	// return when the pool looks "full": the pool has NO ceiling (see the note in
+	// runtime/kbinfos.go), so a call is bounded only by its own per-call quotas
+	// (rawSnippetQuota / evidencePoolQuota) and by topN — never by how much the pool already
+	// holds. The ceiling computed here is what once refused the passage that would have
+	// reached an enumeration's last members, and what made a rich round's own rewrite land
+	// nowhere (the caller passed the snippet-pool number while the pool held up to twice it).
 	seen := make(map[string]bool, len(st.KB.Chunks))
 	for _, c := range st.KB.Chunks {
 		seen[runtime.ChunkIDOf(c)] = true
-	}
-	maxTotal := capacity
-	if maxTotal <= 0 {
-		maxTotal = MaxSnippetPool
-	}
-	room := maxTotal - len(seen)
-	if room <= 0 {
-		return 0
 	}
 
 	// The planner's output is already []string, but blank entries still have to be dropped.
@@ -220,32 +218,40 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		capPerQuery = 1
 	}
 
-	// The fan-outs could run in parallel, but each one only RETRIEVES — kbinfos is mutated
-	// once, back in the caller. This keeps that "retrieve, then mutate once" structure, hence
-	// sequential: the per-request search cache and Kbinfos are shared mutable state that the
-	// retrievals never touch concurrently.
+	// The LEGS run in parallel: each one only RETRIEVES — kbinfos is mutated once, below, in a
+	// single admit stretch — and everything the retrievals do share is guarded (the
+	// per-request search cache holds its own mutex). A clue list is what the planner exists to
+	// produce, and searching nine clues one after another is nine round trips; the paper
+	// parallelises its per-clue retrieval for the same reason.
+	//
+	// What this makes explicit: the RETRIEVER contract is concurrent. Production retrievers are
+	// HTTP/DB clients and already are (the multi-session rounds called them concurrently), so
+	// the fixtures that stand in for them must be too — a stub that appends to a field needs a
+	// lock, and the fan-out fixtures carry one.
+	//
+	// Results are written BY INDEX, so the admission order below is the query order whatever the
+	// schedule does — that order is a contract: every fan-out's exact channel is admitted
+	// before any fan-out's semantic channel.
 	type fanoutPair struct {
 		exact    []map[string]any
 		semantic []map[string]any
 	}
-	pairs := make([]fanoutPair, 0, len(qs))
-	for _, q := range qs {
-		select {
-		case <-ctx.Done():
-			return 0
-		default:
-		}
-		exact, semantic := fanoutSearchQuery(ctx, sd, q, capPerQuery)
-		pairs = append(pairs, fanoutPair{exact: exact, semantic: semantic})
+	pairs := make([]fanoutPair, len(qs))
+	var wg sync.WaitGroup
+	for i, q := range qs {
+		wg.Add(1)
+		go func(i int, q string) {
+			defer wg.Done()
+			exact, semantic := fanoutSearchQuery(ctx, sd, q, capPerQuery)
+			pairs[i] = fanoutPair{exact: exact, semantic: semantic}
+		}(i, q)
 	}
+	wg.Wait()
 
 	added := 0
 	rawAdded := 0
-	admit := func(batch []map[string]any) bool {
+	admit := func(batch []map[string]any) {
 		for _, c := range batch {
-			if added >= room {
-				return true
-			}
 			id := runtime.ChunkIDOf(c)
 			isEvidence := strings.HasPrefix(id, "claim_")
 			if id != "" {
@@ -267,7 +273,6 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 				rawAdded++
 			}
 		}
-		return added >= room
 	}
 	// Channel 0: claim/evidence rows lead the pool —
 	// they are the compact, verbatim-bearing proxy for the chunks they source.
@@ -307,9 +312,7 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			break
 		}
 		channel0 = append(channel0, kept)
-		if admit(kept) {
-			return added
-		}
+		admit(kept)
 	}
 	// Evidence top-up: an evidence row carries a
 	// verbatim quote but not its surrounding passage, so pull exactly the chunks
@@ -337,21 +340,17 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		}
 		if len(wanted) > 0 {
 			fetched := runtime.LoadChunksForIDs(ctx, sd, wanted)
-			if len(fetched) > 0 && admit(fetched) {
-				return added
+			if len(fetched) > 0 {
+				admit(fetched)
 			}
 		}
 	}
 	// Channel A across every fan-out first, then channel B.
 	for _, p := range pairs {
-		if admit(p.exact) {
-			return added
-		}
+		admit(p.exact)
 	}
 	for _, p := range pairs {
-		if admit(p.semantic) {
-			return added
-		}
+		admit(p.semantic)
 	}
 	return added
 }

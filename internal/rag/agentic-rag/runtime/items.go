@@ -28,6 +28,33 @@ import (
 // The table's items, read in one place: the count the answer reports, the size the record line
 // states, and the elements a merge unions are three readings of the same fact.
 
+// ActorForms is the actor's declared alternative spellings, split out of the slots' Subject
+// field. One source words one person several ways (关羽 / 云长 / 关公), and an element list must not
+// count his own forms as members of what he did.
+//
+// It is about the TABLE, so it lives next to the readers that need it; it used to hang off
+// Coverage, which the coverage engine owned (see the note in kbinfos.go).
+func ActorForms(table State) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range table.State {
+		for _, part := range strings.FieldsFunc(v.Subject, func(r rune) bool {
+			return r == '|' || r == '｜' || r == '/' || r == '、' || r == ',' || r == '，'
+		}) {
+			if part = strings.TrimSpace(part); part == "" {
+				continue
+			}
+			key := strings.ToLower(part)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // ItemValues is the values the table's item slots declare: every slot whose value IS items
 // (slots.KindItems), deduped case-insensitively, minus the pieces that merely contain another
 // item and minus the actor's own forms. Nothing is parsed out of a slot's text: a slot holds items
@@ -36,10 +63,9 @@ func ItemValues(table *State) []string {
 	if table == nil {
 		return nil
 	}
-	// The actor of the deed is not one of its elements, so his declared forms (Coverage.Actors)
-	// are dropped here. Two spellings of a victim's name still count as two: nothing declares them
-	// as one yet.
-	actorForms := CoverageOf(*table).Actors()
+	// The actor of the deed is not one of its elements, so his declared forms are dropped here.
+	// Two spellings of a victim's name still count as two: nothing declares them as one yet.
+	actorForms := ActorForms(*table)
 	var items []string
 	seen := map[string]bool{}
 	for _, v := range table.State {

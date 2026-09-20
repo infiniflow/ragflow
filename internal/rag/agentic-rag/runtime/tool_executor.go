@@ -94,29 +94,6 @@ func NewSearchExecutor(deps SearchDeps, req RunRequest) ToolExecutor {
 	return &searchExecutor{deps: deps, req: req}
 }
 
-// CoverageRunner is the tool layer's enumeration seam: the runtime asks the EXECUTOR to
-// run the direction's own enumeration over the corpus, so the step belongs to the graph
-// rather than to a prompt.
-//
-// It is a runner rather than a caller-side helper for one reason: the runtime has to be
-// able to ask the corpus itself. Queries handed to the model as a list are advice and may
-// simply not be run, so the enumeration is a step of the graph, and the only thing it needs
-// from the tool layer is a search.
-type CoverageRunner interface {
-	EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet
-}
-
-// EnumerateCoverage runs the direction's OWN enumeration over the corpus: one recall per
-// operand (the actor's declared forms and the act words), then the windows where the deed
-// is stated (see EnumerateCoverage in coverage_enumerate.go).
-func (e *searchExecutor) EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet {
-	deps := e.deps
-	if len(deps.KbIDs) == 0 && len(e.req.DatasetIDs) > 0 {
-		deps.KbIDs = e.req.DatasetIDs
-	}
-	return EnumerateCoverage(ctx, deps, cov, kb)
-}
-
 // Execute implements ToolExecutor for the wired tools. Tools whose port has not
 // landed are classified, not errored: they report MISS (the tool is valid, this
 // call reached nothing) so the model falls back to a different tool instead of
@@ -141,6 +118,12 @@ func (e *searchExecutor) Execute(ctx context.Context, name string, args map[stri
 	// (ToolCallLine) — see there for why.
 	if logger != nil && name != "" {
 		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderedArgs)
+		// The caller's own statement of what THIS call is for (see arrayParamWithReason). It is
+		// logged as its own line because that is what makes it checkable afterwards: a run's
+		// reasons, read in order, show whether the research was moving or paraphrasing itself.
+		if reason := argString(args, "reason"); reason != "" {
+			logger.Printf("[Function tool] %s reason: %s", name, trunc(reason, 280))
+		}
 	}
 	if name != "" {
 		StepsFrom(ctx).Emit(ThinkEvent{
@@ -986,44 +969,27 @@ func argString(args map[string]any, key string) string {
 	return s
 }
 
-// evidencePoolCap is the hard cap on the shared evidence pool. It is deliberately LARGER
-// than the SCA view cap (60) so storage and review stay DECOUPLED — the pool accumulates
-// while the SCA reads a ranked top-60 view. Coupling them at 60 starved the raw-evidence
-// channel in 42% of rounds (every admit rejected -> status REDUNDANT -> the model
-// re-searched for nothing).
-//
-// Claim pseudo-chunks BYPASS this cap: they are appended directly to the pool, and the cap
-// only guards regular chunk admission.
-//
-// The cap is 200 (the old 120 was sized for a consumer that no longer exists) —
-// the round-level sweep that rendered the WHOLE pool into one prompt, where the cap
-// and that prompt's budget were the same number. Nothing renders the pool whole any
-// more (the SCA reads a ranked 60-chunk view, the session seed injects a bounded
-// digest, the draft is bounded), so the cap is a storage-discipline number again —
-// and on an enumeration it is the NEXT ceiling rather than a prompt limit: what it
-// refuses is the passage that would have reached the last members, which are named
-// late in the pool's order.
-const evidencePoolCap = 200
-
-// The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
-// the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
-// while another session appends.
-
-// probeTerms returns the terms of a PROBE query — the caller's own alternation,
-// "荀正|管亥|车胄" — and nil for every other query shape.
-//
-// An alternation is the one place the model states explicitly WHICH individuals
-// it is asking about, which makes its per-term result the batch's answer and not
-// just another search: a name that comes back empty is a name this corpus does
-// not carry, and a name that comes back with a window is a member. Both facts are
-// destroyed by a cap that drops the window (see PoolAdmitter.Novelty), so a probe
-// is exempt while a topic query is not — a topic query names no individuals, so
-// its hits compete for the cap like everything else.
-func probeTerms(q string) []string {
-	if !strings.Contains(q, "|") {
-		return nil
+// argInt reads an integer argument, returning def when it is absent or carries nothing
+// numeric. A tool call is model output: a string where a number belongs is a malformed call,
+// not a reason to fail the run.
+func argInt(args map[string]any, key string, def int) int {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return def
 	}
-	return GrepTermsFromQuery(q)
+	switch v := raw.(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case string:
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSpace(v), "%d", &n); err != nil {
+			return def
+		}
+		return n
+	}
+	return def
 }
 
 // namedTermsOf is the call's own statement of WHICH individuals it asked about:
@@ -1276,19 +1242,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			// The claim-covered set is computed from the LIVE pool once per batch, under the
 			// same critical section.
 			covered := p.ClaimCoveredIDs()
-			// The cap exemption for this batch, derived from the probe's own terms
-			// (see probeTerms / PoolAdmitter.Novelty): a full pool still takes the
-			// window that answers a name nothing in the pool has reached yet,
-			// because that window is the batch's result rather than one more
-			// passage.
-			novel := p.Novelty(probeTerms(q))
 			for _, c := range chunks {
-				// Admission early-stops once the shared pool reaches the cap, BEFORE the
-				// per-call dedup — except for the probe window above, which IS the answer the
-				// caller asked for.
-				if p.Full() && !novel.Admits(c) {
-					continue
-				}
 				cid := ChunkIDOf(c)
 				if seen[cid] {
 					continue
@@ -1359,13 +1313,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			// only.
 			var seatedIDs []string
 			e.deps.KB.Admit(func(p *PoolAdmitter) {
-				// A seat is a probe's answer, so it is exempt from the pool cap
-				// on the same grounds as the weave above (see Novelty).
-				novel := p.Novelty([]string{term})
 				for _, c := range seat {
-					if p.Full() && !novel.Admits(c) {
-						continue
-					}
 					cid := ChunkIDOf(c)
 					if cid != "" && seen[cid] {
 						continue

@@ -745,6 +745,7 @@ func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
 // leg is keyword-only (weight 0, top_n=60, query terms folded into the query),
 // the semantic-bypass leg has the vector weight on (top_n=30, plain query).
 type channelRetriever struct {
+	mu      sync.Mutex
 	weights []float64
 	topN    []int
 	queries []string
@@ -757,9 +758,13 @@ func (r *channelRetriever) Retrieve(_ context.Context, req runtime.RetrieveReque
 	if req.VectorSimilarityWeight != nil {
 		weight = *req.VectorSimilarityWeight
 	}
+	// The fan-out runs its legs concurrently (see FanoutSearch): a fixture that appends to
+	// its own fields without a lock is a race, not a stricter test.
+	r.mu.Lock()
 	r.weights = append(r.weights, weight)
 	r.topN = append(r.topN, req.TopN)
 	r.queries = append(r.queries, req.Query)
+	r.mu.Unlock()
 	return nil, nil
 }
 
@@ -774,54 +779,73 @@ func TestFanoutSearchIsDualChannel(t *testing.T) {
 	r := &channelRetriever{}
 	deps := RAGTools{Search: runtime.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, HasEmbedder: true}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8, 60)
+	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8)
 
-	// Two fan-outs x two channels.
+	// Two fan-outs x two channels. The legs run CONCURRENTLY (see FanoutSearch), so what is
+	// recorded first is the schedule's choice, not the query order: the assertion is on the
+	// SHAPE of the four calls — two keyword legs and two semantic ones — not on their arrival.
+	// The order that IS a contract (exact admitted before semantic) is pinned separately, by
+	// the admission order in TestFanoutSearchPrefersExactOverSemantic.
 	if len(r.weights) != 4 {
 		t.Fatalf("expected 4 retrieve calls (2 fan-outs x 2 channels), got %d", len(r.weights))
 	}
-	for i := 0; i < 4; i += 2 {
-		// Channel A: keyword-only weight, wide pool, query terms folded in.
-		if r.weights[i] != 0 {
-			t.Errorf("fan-out %d channel A: weight = %v, want 0 (BM25 keyword leg)", i/2, r.weights[i])
-		}
-		if r.topN[i] != fanoutBM25TopN {
-			t.Errorf("fan-out %d channel A: TopN = %d, want %d", i/2, r.topN[i], fanoutBM25TopN)
-		}
-		if !strings.Contains(r.queries[i], "built") && !strings.Contains(r.queries[i], "located") {
-			t.Errorf("fan-out %d channel A: query = %q, want the fan-out query (terms folded in)", i/2, r.queries[i])
+	keywordLegs, semanticLegs := 0, 0
+	for i := range r.weights {
+		if r.weights[i] == 0 {
+			// Channel A: keyword-only weight, wide pool, query terms folded in.
+			keywordLegs++
+			if r.topN[i] != fanoutBM25TopN {
+				t.Errorf("keyword leg %d: TopN = %d, want %d", i, r.topN[i], fanoutBM25TopN)
+			}
+			if !strings.Contains(r.queries[i], "built") && !strings.Contains(r.queries[i], "located") {
+				t.Errorf("keyword leg %d: query = %q, want the fan-out query (terms folded in)", i, r.queries[i])
+			}
+			continue
 		}
 		// Channel B: vector weight on, top_n=30 (narrowing bypassed).
-		if r.weights[i+1] <= 0 {
-			t.Errorf("fan-out %d channel B: weight = %v, want > 0 (semantic bypass leg)", i/2, r.weights[i+1])
+		semanticLegs++
+		if r.topN[i] != fanoutHybridTopN {
+			t.Errorf("semantic leg %d: TopN = %d, want %d", i, r.topN[i], fanoutHybridTopN)
 		}
-		if r.topN[i+1] != fanoutHybridTopN {
-			t.Errorf("fan-out %d channel B: TopN = %d, want %d", i/2, r.topN[i+1], fanoutHybridTopN)
-		}
+	}
+	if keywordLegs != 2 || semanticLegs != 2 {
+		t.Errorf("legs = %d keyword, %d semantic; want two of each (one per fan-out)", keywordLegs, semanticLegs)
 	}
 }
 
 // TestFanoutSearchPrefersExactOverSemantic pins the admission order across
 // FAN-OUTS: every fan-out's exact channel is admitted before any fan-out's
-// semantic channel. With room for only two snippets and two fan-outs each
-// offering one exact and one semantic hit, the two exact hits must win — a
-// single merged channel could not express this preference at all.
+// semantic channel. Two fan-outs each offer one exact and one semantic hit, and
+// the two exact hits must lead — a single merged channel could not express this
+// preference at all.
+//
+// The order used to be observable only through a pool ceiling of two (the exact
+// hits took the two free seats, the semantic ones were refused). The pool has no
+// ceiling now, so every hit lands and the ORDER is what the test reads.
 func TestFanoutSearchPrefersExactOverSemantic(t *testing.T) {
 	ctx := context.Background()
 	r := &fanoutHitRetriever{}
 	deps := RAGTools{Search: runtime.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, HasEmbedder: true}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	added := FanoutSearch(ctx, deps, st, []string{"alpha", "beta"}, 8, 2)
+	added := FanoutSearch(ctx, deps, st, []string{"alpha", "beta"}, 8)
 
-	if added != 2 {
-		t.Fatalf("added = %d, want 2 (the pool's remaining room)", added)
+	if added != 4 {
+		t.Fatalf("added = %d, want 4 (no ceiling: every hit a retrieval found is admitted)", added)
 	}
 	ids := make([]string, 0, len(st.KB.Chunks))
 	for _, c := range st.KB.Chunks {
 		ids = append(ids, runtime.ChunkIDOf(c))
 	}
-	if len(ids) != 2 || ids[0] != "ex-alpha" || ids[1] != "ex-beta" {
-		t.Errorf("admitted %v, want the two exact-leg hits [ex-alpha ex-beta]", ids)
+	if len(ids) != 4 {
+		t.Fatalf("admitted %v, want all four hits", ids)
+	}
+	if ids[0] != "ex-alpha" || ids[1] != "ex-beta" {
+		t.Errorf("first two admitted = %v, want the exact-leg hits [ex-alpha ex-beta]", ids[:2])
+	}
+	for i, id := range ids[2:] {
+		if !strings.HasPrefix(id, "sem-") {
+			t.Errorf("admitted[%d] = %q, want the semantic-leg hits after the exact ones", i+2, id)
+		}
 	}
 }
 
@@ -899,7 +923,7 @@ func TestFanoutSearchEvidenceTopUp(t *testing.T) {
 		KbIDs:     []string{"kb-1"},
 	}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, 60)
+	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8)
 	if added != 2 {
 		t.Fatalf("added = %d, want 2 (the claim row + its source chunk)", added)
 	}
@@ -1209,11 +1233,19 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	exec := newStubExecutor()
 	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"Built 1865, Geneva."}],"doc_aggs":[]}`, runtime.StatusOK)
 
+	var linesMu sync.Mutex
 	var lines []string
 	// Mirror production: the run's step reporter carries the think-block text.
 	// Each stage declares its own step, so everything asserted here is a step a
 	// node reported — never a log line that happened to match a pattern.
-	sink := func(line string) { lines = append(lines, line) }
+	//
+	// Locked: a research round's retrieval legs run concurrently (see FanoutSearch), so a
+	// step can arrive from more than one goroutine at the same time.
+	sink := func(line string) {
+		linesMu.Lock()
+		lines = append(lines, line)
+		linesMu.Unlock()
+	}
 	ctx = runtime.WithSteps(ctx, runtime.StepReporter{Text: sink})
 	st, err := BuildAgenticGraph(ctx, RAGTools{
 		Model:  mdl,
@@ -1270,8 +1302,14 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"Built 1865, Geneva."}],"doc_aggs":[]}`, runtime.StatusOK)
 
 	var buf bytes.Buffer
+	var linesMu sync.Mutex
 	var lines []string
-	sink := func(line string) { lines = append(lines, line) }
+	// Locked: the fan-out legs report their steps concurrently.
+	sink := func(line string) {
+		linesMu.Lock()
+		lines = append(lines, line)
+		linesMu.Unlock()
+	}
 	ctx = runtime.WithSteps(ctx, runtime.StepReporter{Text: sink})
 	st, err := BuildAgenticGraph(ctx, RAGTools{
 		Model:  mdl,
@@ -1489,36 +1527,9 @@ func TestPrefetchSummary(t *testing.T) {
 	}
 }
 
-// TestSlotPrefillSummary pins what the evidence prefill leaves to research. The
-// zero case matters most: it is the one that explains a round re-searching queries
-// the upfront prefetch already ran.
-//
-// The count in the sentence is the number of sessions that will RUN
-// (slotSessionsPerRound), not the number of open slots: the round opens a bounded
-// number of them and re-answers the rest from the pooled evidence, so promising the
-// open count sent a reader looking for searches that were never going to happen.
-func TestSlotPrefillSummary(t *testing.T) {
-	cases := []struct {
-		name                        string
-		prefilled, total, remaining int
-		want                        string
-	}{
-		{"nothing-prefilled", 0, 5, 5,
-			"The pooled evidence answers none of the 5 slots; opening 3 research sessions this round."},
-		{"some-prefilled", 1, 5, 4,
-			"The pooled evidence already answers 1 of the 5 slots; opening 3 research sessions for the rest."},
-		// Fewer open slots than the per-round cap: 1 is what runs, not 1 capped.
-		{"one-open", 4, 5, 1,
-			"The pooled evidence already answers 4 of the 5 slots; opening 1 research session for the rest."},
-		{"all-prefilled", 5, 5, 0,
-			"The pooled evidence already answers all 5 slots; no session to run."},
-	}
-	for _, tc := range cases {
-		if got := slotPrefillSummary(tc.prefilled, tc.total, tc.remaining); got != tc.want {
-			t.Errorf("%s: slotPrefillSummary = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
+// The evidence-prefill summary and its test are gone with the session fan-out: a round opens
+// ONE session, so "opening N research sessions" no longer names anything, and the slot table
+// that could count "answered slots" is gone too (see RunSlotResearchPass).
 
 // TestRagRoundEndLine pins the round's closing sentence, including the zero case:
 // "0 slots still unresolved" read as a double negative.
@@ -1715,8 +1726,9 @@ func TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames(t *testing.T) {
 	kb.Admit(func(p *runtime.PoolAdmitter) {
 		p.Add(map[string]any{"chunk_id": "c1", "content": "关公马快，赶上文丑，脑后一刀，将文丑斩下马来。"})
 	})
-	// The direction's own declaration: what the run is searching WITH (actor forms + act words).
-	kb.MarkCoverage(runtime.Coverage{Acts: []string{"斩", "杀"}, Actor: "关羽|云长"})
+	// There is no declaration to hand over any more (see the note on probeLedgerTerms): the filter
+	// keeps the SHAPE test alone, and the terms that only the declaration could have caught — the
+	// act words themselves, the actor's own name — are now left to the reader's judgement.
 	for _, term := range []string{
 		"文丑", "太史慈", "关羽", "斩孔秀", "亲斩", "关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德",
 	} {
@@ -1731,7 +1743,11 @@ func TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames(t *testing.T) {
 	if !strings.Contains(names, "文丑") || !strings.Contains(names, "太史慈") {
 		t.Errorf("names = %q, want the name-shaped terms kept whatever they name (文丑 is a kill, 太史慈 a judgement the answer makes)", names)
 	}
-	for _, banned := range []string{"关羽", "斩孔秀", "亲斩", "关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德"} {
+	// The candidates whose SHAPE cannot pass as a name: a pattern with an operator, and a phrase with
+	// a space. The act words ("斩孔秀", "亲斩") and the actor's own name ("关羽") are not in this list
+	// any more — telling those from names was the declaration's job, and it is gone (see
+	// probeLedgerTerms); they reach the reader as names and are judged there.
+	for _, banned := range []string{"关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德"} {
 		if strings.Contains(names, banned) {
 			t.Errorf("names = %q, must not offer %q as a name", names, banned)
 		}
@@ -1975,15 +1991,19 @@ func TestNewAgenticLoopDrivesHarnessRun(t *testing.T) {
 
 // rfRetriever records the rank feature every retrieve call carried.
 type rfRetriever struct {
+	mu        sync.Mutex
 	features  []map[string]float64
 	queries   []string
 	docScopes [][]string
 }
 
 func (r *rfRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
+	// Locked for the same reason channelRetriever is: the fan-out legs run concurrently.
+	r.mu.Lock()
 	r.features = append(r.features, req.RankFeature)
 	r.queries = append(r.queries, req.Query)
 	r.docScopes = append(r.docScopes, req.DocScope)
+	r.mu.Unlock()
 	return []map[string]any{{
 		"chunk_id": "c1",
 		"content":  "The bridge opened in 1865.",
@@ -2154,10 +2174,16 @@ func (f *fakeModel) lastUserPrompt() string {
 }
 
 // corpusRetriever answers every query from a fixed corpus.
-type corpusRetriever struct{ calls []string }
+type corpusRetriever struct {
+	mu    sync.Mutex
+	calls []string
+}
 
 func (c *corpusRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
+	// Locked: a fan-out's legs (and the search executor's own legs) run concurrently.
+	c.mu.Lock()
 	c.calls = append(c.calls, req.Query)
+	c.mu.Unlock()
 	return []map[string]any{{
 		"chunk_id":   "c1",
 		"content":    "Culdcept was created by OmiyaSoft and released in 1999.",
@@ -2439,9 +2465,14 @@ func TestComposeKickoffFollowsTheAnnouncement(t *testing.T) {
 		{"without-finalize", false, true},
 	}
 	for _, tc := range cases {
+		var linesMu sync.Mutex
 		var lines []string
 		ctx := runtime.WithSteps(context.Background(),
-			runtime.StepReporter{Text: func(line string) { lines = append(lines, line) }})
+			runtime.StepReporter{Text: func(line string) {
+				linesMu.Lock()
+				lines = append(lines, line)
+				linesMu.Unlock()
+			}})
 		if tc.mark {
 			ctx = markFinalizeAnnounced(ctx)
 		}
@@ -3219,16 +3250,15 @@ func TestRewriteContextShowsThePassageBehindAConfirmedMember(t *testing.T) {
 	}
 }
 
-// TestRewriteRoundCanStillAdmitOnARichPool pins the room a rewrite round is given:
-// it is measured against the EVIDENCE POOL's ceiling, the same number the admitter
-// enforces.
+// TestRewriteRoundCanStillAdmitOnARichPool pins that a rewrite round on a RICH pool
+// still admits its own query.
 //
-// Sized against the smaller snippet-pool constant, a pool past 60 chunks left the
-// round with room <= 0: it admitted nothing, declared "retrieval saturated" and
-// discarded the queries it had just built — on exactly the rich rounds where more
-// evidence was still arriving.
+// Sized against a ceiling, a pool past it left the round with room <= 0: it admitted
+// nothing, declared "retrieval saturated" and discarded the queries it had just built —
+// on exactly the rich rounds where more evidence was still arriving. The pool has no
+// ceiling now, so the only question left is whether the round's own retrieval lands.
 func TestRewriteRoundCanStillAdmitOnARichPool(t *testing.T) {
-	pool := make([]map[string]any, 0, runtime.EvidencePoolCap())
+	pool := make([]map[string]any, 0, 71)
 	for i := 0; i < 71; i++ {
 		pool = append(pool, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled"})
 	}
@@ -3246,10 +3276,10 @@ func TestRewriteRoundCanStillAdmitOnARichPool(t *testing.T) {
 	}, st, log.New(&bytes.Buffer{}, "", 0))
 
 	if st.NoProgress {
-		t.Fatal("NoProgress = true on a pool of 71 with room left: the round's room must be measured against the evidence pool's ceiling")
+		t.Fatal("NoProgress = true on a pool of 71: with no ceiling a rewrite round always has somewhere to land")
 	}
 	if len(st.KB.Chunks) <= 71 {
-		t.Errorf("pool = %d, want the rewrite's own query admitted (cap %d, pool was 71)", len(st.KB.Chunks), runtime.EvidencePoolCap())
+		t.Errorf("pool = %d, want the rewrite's own query admitted (the pool was 71 and has no ceiling)", len(st.KB.Chunks))
 	}
 }
 
@@ -3691,78 +3721,15 @@ func TestMemberLineCarriesTheItemsOwnWords(t *testing.T) {
 // The VALUE is the fact, so the resolve — the last node that can complete the set — runs the
 // direction's enumeration itself instead of judging only what a session happened to write down.
 // Ten names were the whole answer that day; the corpus stated more.
-func TestRunCoverageResolveEnrollsTheEnumerationThePlannerSkipped(t *testing.T) {
-	items := slots.Items(
-		slots.Item{Value: "华雄", ChunkID: "c-华雄"},
-		slots.Item{Value: "颜良", ChunkID: "c-颜良"},
-	)
-	rendered := slots.Render(items)
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩"}, Candidate: &rendered, Value: &items},
-	}, 0, nil)
-
-	exec := &coverageStubExec{}
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.KB = &runtime.Kbinfos{}
-	// The direction's words must already have MET in what the run holds, or the enrollment is spent
-	// on a recall whose windows the enumeration's own filter would drop (see
-	// CoverageActsMeetActor). Here 斩 is held; the stub's window then survives.
-	st.KB.Admit(func(p *runtime.PoolAdmitter) {
-		p.Add(map[string]any{"chunk_id": "held", "content_with_weight": "云长提刀直取，斩之"})
-	})
-	st.SlotTable = table
-	st.Deadline = time.Now().Add(120 * time.Second)
-
-	model := &scriptedModel{}
-	model.push(`{"members": [{"i": 0, "name": "孔秀"}], "not_members": []}`)
-	RunCoverageResolve(context.Background(), RAGTools{
-		Model: model,
-		Tools: &runtime.Toolset{Exec: exec},
-	}, st, nil)
-
-	if exec.ran() != 1 {
-		t.Fatalf("enumeration ran %d time(s), want the resolve to enroll it when no type word asked for it", exec.ran())
-	}
-	names := strings.Join(runtime.ItemValues(&st.SlotTable), "、")
-	if !strings.Contains(names, "孔秀") {
-		t.Fatalf("items = %q, want the window the enrolled enumeration admitted judged into the table", names)
-	}
-}
-
-// TestRunCoverageResolveSkipsTheEnumerationWhenTheWordsNeverMet pins the guard the measured waste
-// bought: on 2026-09-17 (FRAMES, resolve node) the enrollment asked 13 operands, recalled 724
-// passages and produced ZERO windows, because every window the enumeration builds must carry an act
-// word AND the actor, and this direction's two words had never met in anything the run held.
+// The two resolve-node tests that lived here are gone with the node itself. They pinned when the
+// runtime decided to run an enumeration at the answer node — enrolled because the planner had
+// skipped it, or skipped because the direction's two words had never met in one passage — and both
+// halves of that decision belonged to the coverage engine.
 //
-// The enrollment spends the ANSWER's clock, so the same conjunction is now probed against the
-// passages in hand first: a recall that cannot survive the filter is not made.
-func TestRunCoverageResolveSkipsTheEnumerationWhenTheWordsNeverMet(t *testing.T) {
-	items := slots.Items(slots.Item{Value: "Lanee Butler", ChunkID: "c-Lanee"})
-	rendered := slots.Render(items)
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "person", Terms: []string{"partner"}, Subject: "Colin Beashel", Candidate: &rendered, Value: &items},
-	}, 0, nil)
-
-	exec := &coverageStubExec{}
-	st := NewAgenticState("who is the partner of the 1984 keelboat sailor?", "", 3, nil)
-	st.KB = &runtime.Kbinfos{}
-	// Held passages mention the actor, and passages carry the act word — never both in one.
-	st.KB.Admit(func(p *runtime.PoolAdmitter) {
-		p.Add(map[string]any{"chunk_id": "held-actor", "content_with_weight": "Colin Beashel sailed the Soling class."})
-		p.Add(map[string]any{"chunk_id": "held-act", "content_with_weight": "Their partner was crewing that year."})
-	})
-	st.SlotTable = table
-	st.Deadline = time.Now().Add(120 * time.Second)
-
-	RunCoverageResolve(context.Background(), RAGTools{
-		Model: &scriptedModel{},
-		Tools: &runtime.Toolset{Exec: exec},
-	}, st, nil)
-
-	if exec.ran() != 0 {
-		t.Fatalf("enumeration ran %d time(s), want no recall for a direction whose words have never met in one passage", exec.ran())
-	}
-}
+// What replaces the whole mechanism: the session searches (its tool descriptions already carry the
+// probe shape), every tool result says how much of each document it has read, and list_chunks pages a
+// document to its end. The completeness of an enumeration is then a fact about what the model read,
+// not a window count the runtime computed.
 
 // TestCiteChunksPutTheItemsPassagesFirst pins the citation set of an enumerated answer.
 //
@@ -4241,31 +4208,11 @@ func TestRecordContractStatesTheSettledValueIsTheAnswer(t *testing.T) {
 	}
 }
 
-// TestBudgetExtensionIsBoughtOncePerQuestion pins the one-shot budget extension a
-// set-shaped pass buys.
-//
-// The budget fits ONE pass, and an enumeration needs a second one to pick up the
-// members a cut first pass never patched (measured 2026-09-16, 三国/关羽: the run
-// ended at `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone).
-// One extension, not a per-round top-up: the point is a second look, not an
-// unbounded run for any table that keeps declaring a set.
-func TestBudgetExtensionIsBoughtOncePerQuestion(t *testing.T) {
-	st := &AgenticState{Deadline: time.Now().Add(30 * time.Second)}
-	before := st.RemainingS()
-	if !st.ExtendDeadline(SetBudgetExtensionS) {
-		t.Fatal("the first extension must apply")
-	}
-	after := st.RemainingS()
-	if after < before+SetBudgetExtensionS-1 {
-		t.Errorf("remaining %.0fs after the extension, want ~%.0fs", after, before+SetBudgetExtensionS)
-	}
-	if st.ExtendDeadline(SetBudgetExtensionS) {
-		t.Error("a second extension must be refused: the budget is bought once per question")
-	}
-	if got := st.RemainingS(); got > after+1 {
-		t.Errorf("remaining %.0fs after the refused extension, want ~%.0f", got, after)
-	}
-}
+// The one-shot budget extension and its test are gone. It gave a set-shaped pass a second
+// slice of the question's clock (measured 2026-09-16, 三国/关羽: the run ended at
+// `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone), which meant the
+// clock one question had was decided by the shape of its plan rather than by the caller.
+// There is one clock per question and nothing inside a run widens it.
 
 // TestMergeSlotPatchKeepsTheDeclaration pins what the fold must NOT drop.
 //
@@ -4296,98 +4243,58 @@ func TestMergeSlotPatchKeepsTheDeclaration(t *testing.T) {
 	if got := merged.State[0].Subject; got != "关羽|云长" {
 		t.Errorf("merged Subject = %q, want the declared actor", got)
 	}
-	// The declaration is what the enumeration is built from: a fold that drops it leaves the
-	// next round with nothing to enumerate, which is the measured failure above.
-	if !runtime.CoverageOf(*merged).Ok() {
-		t.Error("the merged table is no longer an enumeration: the declaration was lost in the fold")
-	}
+	// The declaration must SURVIVE the fold: it is the only place the deed's words live, and a fold
+	// that drops them leaves the next turn with nothing to search by. The assertions above are the
+	// test — the old gate that read the fold's result as "is this still an enumeration" is gone with
+	// the coverage engine.
 }
 
-// coverageStubExec answers tool calls like sessionStubExec and is ALSO a
-// runtime.CoverageRunner, so a round's enumeration runs without a retriever.
-type coverageStubExec struct {
-	mu    sync.Mutex
-	calls []runtime.Coverage
-}
-
-func (e *coverageStubExec) Execute(_ context.Context, name string, _ map[string]any) (runtime.ToolOutcome, error) {
-	return runtime.ToolOutcome{
-		Status:      runtime.StatusOK,
-		Payload:     []any{map[string]any{"kind": name, "content": "hit"}},
-		EvidenceIDs: []string{"c-" + name},
-	}, nil
-}
-
-// EnumerateCoverage stands in for the corpus: one window stating the deed.
-func (e *coverageStubExec) EnumerateCoverage(_ context.Context, cov runtime.Coverage, kb *runtime.Kbinfos) runtime.CoverageSet {
-	e.mu.Lock()
-	e.calls = append(e.calls, cov)
-	e.mu.Unlock()
-	quote := "云长手起刀落，斩孔秀于马下"
-	if kb != nil {
-		kb.Admit(func(p *runtime.PoolAdmitter) {
-			p.Add(map[string]any{"chunk_id": "w1", "content_with_weight": quote})
-		})
-	}
-	return runtime.CoverageSet{
-		Operands: cov.Operands(),
-		Recalled: 1,
-		Windows:  []runtime.CoverageWindow{{ChunkID: "w1", Quote: quote, Act: "斩"}},
-	}
-}
-
-func (e *coverageStubExec) ran() int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return len(e.calls)
-}
-
-// TestRunSlotResearchPassEnumeratesOnce pins the wiring, and the run-once rule.
+// TestRunSlotResearchPassRunsOneSession pins the round's shape: ONE session, seeded with the
+// question and the plan's clues, and NOTHING enumerated by the runtime in code.
 //
-// The act words used to be seeded as a list of queries TO MAKE, and a whole round ran
-// without a single one of them being made: measured (2026-09-16, 三国/关羽) 2175 characters
-// of patterns in every session's seed and zero `.*` queries in the run's log, with the
-// sessions re-probing names by hand in the next round. Now the round asks the corpus
-// itself — one call, one recall per operand — admits what comes back, and seeds it.
-func TestRunSlotResearchPassEnumeratesOnce(t *testing.T) {
+// The act words used to be turned into windows by the runtime before any session started
+// (runtime.EnumerateCoverage), on the argument that "a list of queries in a prompt is advice,
+// and advice may simply not be taken". What that cost was the whole coverage engine: a shape
+// gate, a window judge, a member write-back, a per-shape budget extension and a second
+// enrolment path at the answer node — all of them reading a slot table to decide what to run.
+//
+// The same evidence is reached the other way round now: the session searches with the corpus's
+// own wording (retrieve's description already teaches the probe shape), every tool result says
+// how much of each document has been read, and list_chunks pages a document to its end. The
+// enumeration is the model reading, not the runtime asking.
+func TestRunSlotResearchPassRunsOneSession(t *testing.T) {
 	table := func() runtime.State {
 		return runtime.NewState([]runtime.Variable{
 			{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
 			{ID: 1, Type: "dataset", QuestionClues: []string{"who did he kill?"}},
 		}, 0, nil)
 	}
-	exec := &coverageStubExec{}
+	exec := newStubExecutor()
+	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"云长手起刀落，斩孔秀于马下。"}],"doc_aggs":[]}`, runtime.StatusOK)
 	kb := &runtime.Kbinfos{}
-	st := &AgenticState{Question: "关羽杀了多少有姓名的人物？", KB: kb, SlotTable: table()}
+	st := &AgenticState{
+		Question:  "关羽杀了多少有姓名的人物？",
+		KB:        kb,
+		SlotTable: table(),
+		Plan:      []string{"关羽 斩 名单", "关羽 杀 武将"},
+	}
+	mdl := &scriptedModel{replies: []string{"I could not find any evidence about that."}}
 	deps := runtime.SessionDeps{
-		Model: &scriptedModel{replies: []string{"I could not find any evidence about that."}},
-		Tools: &runtime.Toolset{Exec: exec},
+		Model: mdl,
+		Tools: newToolset(exec),
 		KB:    kb,
 	}
-	RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 60)
-
-	if got := exec.ran(); got != 1 {
-		t.Fatalf("ran %d enumeration(s), want exactly one per question", got)
+	res := RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 60)
+	if res == nil {
+		t.Fatal("expected a result")
 	}
-	if got := exec.calls[0].Operands(); len(got) != 4 {
-		t.Errorf("operands = %v, want one entry per actor form and act word", got)
+	// The session ran. It is the round's research AND its answer, so a round always runs one.
+	if got := len(mdl.seen); got == 0 {
+		t.Fatal("model calls = 0, want the one session this round seeds")
 	}
-	set, done := kb.CoverageSet()
-	if !done || len(set.Windows) != 1 || set.Windows[0].ChunkID != "w1" {
-		t.Fatalf("stored set = %+v (done=%v), want the window the enumeration found", set, done)
-	}
-	if !strings.Contains(set.Render(), "斩孔秀于马下") {
-		t.Errorf("seed = %q, want the window with the chunk id a member is cited by", set.Render())
-	}
-	if kb.PoolSize() == 0 {
-		t.Error("the enumeration's window never reached the pool: the win cannot be cited")
-	}
-
-	// A second round REUSES the set: the windows are in the pool under the same ids, so
-	// asking the corpus the same operand queries again spends the store legs for nothing.
-	second := &AgenticState{Question: st.Question, KB: kb, SlotTable: table()}
-	RunSlotResearchPass(context.Background(), context.Background(), deps, second.Question, second, 60)
-	if got := exec.ran(); got != 1 {
-		t.Errorf("second round ran the enumeration again (%d), want the stored set reused", got)
+	// ONE round is ONE session: the ledger has a single row, and the rows are the round's own
+	// record of what each session was asked (see RunSlotResearchPass).
+	if got := len(res.Attempted); got != 1 {
+		t.Fatalf("ledger rows = %d, want exactly one (one session per round)", got)
 	}
 }

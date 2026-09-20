@@ -98,26 +98,11 @@ func (s *AgenticState) RemainingS() float64 {
 	return d
 }
 
-// ExtendDeadline adds seconds to the research budget, and reports whether THIS call
-// was the one that did it. At most one extension per question.
-//
-// Only an enumeration table asks for it (see RunSlotResearchPass), and for a measured
-// reason: the budget fits one pass, an enumeration needs two, and the members a cut
-// first pass never patched are exactly what the second pass picks up. One extension
-// rather than a per-round top-up is deliberate — the point is to give the mislaid
-// members a second look, not to let a table that keeps declaring a set run forever.
-func (s *AgenticState) ExtendDeadline(seconds float64) bool {
-	if s.DeadlineExtended || seconds <= 0 {
-		return false
-	}
-	s.DeadlineExtended = true
-	if s.Deadline.IsZero() {
-		s.Deadline = time.Now()
-	}
-	s.Deadline = s.Deadline.Add(time.Duration(seconds * float64(time.Second)))
-	return true
-}
-
+// The budget extension used to live here: ExtendDeadline bought ONE extra slice of the
+// question's clock, and only an "enumeration table" could ask for it (see the note in
+// policy.go). It is gone — there is one clock per question, the caller sets it, and nothing
+// inside a run widens it. Widening it was how a shape went from "a rule that decides what to
+// do" to "a rule that also decides how long everything else has".
 // ctxRoomS reports how many seconds a context still has, and whether it is bounded
 // at all: an unbounded caller owns no deadline, so nothing here can overrun it.
 func ctxRoomS(ctx context.Context) (float64, bool) {
@@ -171,17 +156,12 @@ type AgenticState struct {
 	SCA             map[string]any
 
 	// ── budgets & counters ──
-	MaxLoops int
-	Deadline time.Time // wall-clock expiry of the research budget
-	// DeadlineExtended records that an enumeration table already bought the one-shot
-	// budget extension (see ExtendDeadline). It belongs to the QUESTION, not to a
-	// single round: applying it per round would let a table that keeps declaring a
-	// set buy round after round on a budget sized for one.
-	DeadlineExtended bool
-	SearchRounds     int    // completed SCA→query_rewrite iterations
-	SCAViewID        string // identity of the last SCA review view
-	Attempted        []map[string]any
-	NoProgress       bool
+	MaxLoops     int
+	Deadline     time.Time // wall-clock expiry of the research budget
+	SearchRounds int       // completed SCA→query_rewrite iterations
+	SCAViewID    string    // identity of the last SCA review view
+	Attempted    []map[string]any
+	NoProgress   bool
 	// LastRoundNew is how many chunks the last research round ADDED to the pool.
 	//
 	// It is the loop's one non-subjective signal about whether to keep going: a
@@ -389,7 +369,7 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 
 // prefetchNode mirrors the `prefetch` node: programmatic fan-out
 // retrieval into the snippet pool.
-func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger, firstRound bool) {
+func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
 	ctx, done := runtime.Phase(ctx, "orchestrator")
 	defer done()
 
@@ -404,11 +384,6 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout*float64(time.Second)))
 	defer cancel()
 
-	capacity := MaxSnippetPool
-	if firstRound {
-		// First-round prefetch leaves drill slots free.
-		capacity = MaxSnippetPool - DrillReserve
-	}
 	// The opening line brackets the leg lines below: FanoutSearch reports each leg
 	// under its own tag ("[BM25 search]", "[Hybrid search]") and its ONLY other
 	// caller — the query rewriter, further down this file — produces lines that
@@ -418,7 +393,7 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
 	// The legs report one level deeper: they are what this prefetch runs, not
 	// sibling steps of it.
-	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, capacity)
+	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN)
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": 0, "new": added})
 	}
@@ -429,32 +404,11 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "Added %s to the evidence pool.", runtime.CountOf(added, "new passage"))
 }
 
-// slotPrefillSummary renders what the evidence prefill left to research: how many
-// of the plan's slots the pool already answers, and how many still cost an action
-// session.
-//
-// The zero case is reported on purpose. "None of the 5 slots" is exactly what a
-// reader needs when the round then searches queries the upfront prefetch already
-// ran — it says the pooled evidence did not answer those slots, so re-searching
-// them is the pass doing its job rather than repeating work.
-//
-// The number it promises is the number of sessions that will actually RUN, not the
-// number of open slots: a round opens at most slotSessionsPerRound of them and the
-// rest are re-answered from the pooled evidence (BatchFillSlots). Promising the open
-// count ("researching all 6" over six open slots) read as six searches while three
-// ran, which is the one number a reader could not check anywhere else.
-func slotPrefillSummary(prefilled, total, remaining int) string {
-	sessions := min(remaining, slotSessionsPerRound)
-	switch {
-	case prefilled == 0:
-		return fmt.Sprintf("The pooled evidence answers none of the %d slots; opening %s this round.",
-			total, runtime.CountOf(sessions, "research session"))
-	case remaining == 0:
-		return fmt.Sprintf("The pooled evidence already answers all %d slots; no session to run.", total)
-	}
-	return fmt.Sprintf("The pooled evidence already answers %d of the %d slots; opening %s for the rest.",
-		prefilled, total, runtime.CountOf(sessions, "research session"))
-}
+// The evidence-prefill summary used to live here: it promised the number of research
+// sessions a round would open (min(open slots, slotSessionsPerRound)) and said how many of
+// the plan's slots the pooled evidence already answered. It is gone with the session fan-out
+// — a round opens ONE session, so there is no number to promise — and with the slot table,
+// which was the only thing that could say how many slots were "answered".
 
 // prefetchSummary renders what the upfront search is about to cover.
 //
@@ -576,6 +530,15 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		st.KB.Record = res.SlotRecord
 	}
 	st.Attempted = res.Attempted
+	// The session IS the answerer (see the design's R2): it read the evidence, so the answer it
+	// wrote — and the registry its [ID:n] markers index into — are recorded on the pool, where
+	// the terminal composition (which runs outside the graph) can read them.
+	if st.KB != nil {
+		if ans := strings.TrimSpace(st.CollectedAnswer); ans != "" {
+			st.KB.SessionAnswer = ans
+			st.KB.SessionEvidenceRefs = res.EvidenceRefs
+		}
+	}
 
 	// The round's growth is the loop's continuation fact (see routeSCA): stored
 	// on the state rather than only printed, so the routing decision reads the
@@ -695,7 +658,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	// round got room <= 0 and admitted nothing, so the round reported "retrieval
 	// saturated" and discarded itself while the pool still had room to take the
 	// evidence it had just asked for.
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, runtime.EvidencePoolCap())
+	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite)
 	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
 	// snippets means further full research passes just burn latency.
 	if added == 0 && st.SearchRounds >= 1 {
@@ -771,7 +734,7 @@ func fallbackQueries(st *AgenticState) []string {
 	if st.KB != nil {
 		out = append(out, st.KB.ProbedAbsentTerms()...)
 	}
-	out = append(out, runtime.CoverageOf(st.SlotTable).Actors()...)
+	out = append(out, runtime.ActorForms(st.SlotTable)...)
 	kept := make([]string, 0, len(out))
 	for _, q := range out {
 		if q = strings.TrimSpace(q); q != "" {
@@ -819,13 +782,11 @@ func onOff(on bool) string {
 // scope here — it needs the report prompt templates; the caller reads the
 // approved draft from st.KB.PreSummary.
 func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	// The enumeration's LAST NODE runs here — after the research, before the answer —
-	// because the write-back is the one step the evidence cannot do for itself: measured
-	// (2026-09-16, 三国/关羽) runs of ONE build answered 18 / 16 / 15 / 14 / 12 members with
-	// the same corpus in hand, and what differed was what a session remembered to patch. It
-	// is the last moment at which the window set is complete and the members still reach
-	// everything downstream: the count, the record the answer reads, and the answer itself.
-	RunCoverageResolve(ctx, deps, st, logger)
+	// The enumeration's own last node used to run here — a window-by-window judge whose
+	// verdicts were written back as members. It is gone with the coverage engine, and what
+	// replaced it is the same evidence reached from the other side: the session that did the
+	// reading is the one that writes the answer, so the members it found are already in what
+	// it wrote (see the design's R1/R2 and the note in kbinfos.go).
 
 	// "Partial" is a statement about the EVIDENCE, so it is decided by facts rather
 	// than by a verdict that may not exist: unresolved slots are the table's own
@@ -1110,7 +1071,10 @@ const probeNameRunes = 5
 // or too many runes is a query, and the actor's own forms are not elements of what he did. What is
 // name-shaped is left to judgement, which is what the section is for.
 func probeLedgerTerms(kb *runtime.Kbinfos, reached []runtime.ReachedTerm) (named []runtime.ReachedTerm, others []string) {
-	acts, actors := kb.CoverageDecl()
+	// The planner's declaration (the deed's act words, the actor's own forms) is gone with the
+	// coverage engine, so the filter keeps the SHAPE test alone — length, separators, an embedded
+	// space — which is the half that never guessed anything about the question.
+	var acts, actors []string
 	for _, rt := range reached {
 		if probeNameShaped(rt.Term, acts, actors) {
 			named = append(named, rt)
@@ -1358,6 +1322,11 @@ type SlotResearchResult struct {
 	UnresolvedSlots []map[string]any
 	SlotEvidence    map[string]SlotEvidence
 	SlotDraft       string
+	// EvidenceRefs is the session's evidence registry in first-seen order: the chunk ids the
+	// model was shown as [ID:0], [ID:1], … (see SessionState.EvidenceRefs). The answer the
+	// session wrote cites THESE numbers, so a caller that lets that answer stand must pass this
+	// list on as the citation list.
+	EvidenceRefs []string
 	// SlotRecord is the same table rendered for the ANSWER prompt: the facts the
 	// research settled, without the machine fields the SCA needs (see
 	// RenderSlotRecord). The two are produced together so they cannot drift.
@@ -1485,11 +1454,10 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	}
 	spec := runtime.ResolveMode(deps.Tools)
 	enableSCA := spec.EnableSCA
-	useFanout := spec.UseFanout
 	scaMaxRounds := spec.SCAMaxRounds
 
-	step(ctx, logger, "Agentic RAG", "Starting research in %s mode (self-check %s, question fan-out %s).",
-		spec.Label, onOff(enableSCA), onOff(useFanout))
+	step(ctx, logger, "Agentic RAG", "Starting research in %s mode (self-check %s).",
+		spec.Label, onOff(enableSCA))
 
 	// run_agentic_rag — there is NO whole-graph wall clock. Research stays
 	// bounded by the per-node timeouts (bounded / PassTimeoutS / SCATimeoutS…),
@@ -1497,11 +1465,6 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	// formalize_answer now composes inside the graph, the answer stream must be allowed to
 	// run until the model finishes. Capping the whole graph at TotalBudgetS+30s used to cut
 	// the composition short.
-
-	// Prefetch is gated on fan-out. NOTE: a stale comment elsewhere claims prefetch is
-	// DISABLED, but the wiring still enables it for fan-out modes — behaviour here matches
-	// the CODE, not the comment.
-	usePrefetch := useFanout
 
 	// run_agentic_rag — LangGraph counts NODE VISITS, not loop iterations: one
 	// research round is rag_agent → draft → sca = three visits. Counting run
@@ -1558,9 +1521,7 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	})
 	addNode("prefetch", func(ctx context.Context, s *AgenticState) (*AgenticState, error) {
 		visit(1)
-		// firstRound is always true here: prefetch is only reachable from the
-		// planner, which itself only runs on the first pass.
-		prefetchNode(ctx, deps, s, logger, true)
+		prefetchNode(ctx, deps, s, logger)
 		return s, nil
 	})
 	// rag_agent is one research round: rag_agent → draft → sca (build_agentic_graph).
@@ -1598,38 +1559,31 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	addEdge("formalize_answer", compose.END)
 	addEdge("stop", compose.END)
 
-	// build_agentic_graph — onward to the planner, or straight to rag_agent when
-	// fan-out is off (medium).
+	// Every mode walks the same graph: formalize_question → planner → prefetch → rag_agent →
+	// … The planner used to be skipped (and prefetch with it) for the modes whose spec said
+	// `UseFanout: false`, so the QUESTION's own structure — which mode it happened to run
+	// under — decided whether the plan step existed at all. A mode now differs only in how
+	// much it may spend (see runtime/config.go): same nodes, same edges, same semantics.
 	addBranch("formalize_question", func(_ context.Context, _ *AgenticState) (string, error) {
-		if useFanout {
-			return guard("planner"), nil
-		}
-		return guard("rag_agent"), nil
-	}, map[string]bool{"stop": true, "planner": true, "rag_agent": true})
+		return guard("planner"), nil
+	}, map[string]bool{"stop": true, "planner": true})
 
 	addBranch("planner", func(_ context.Context, _ *AgenticState) (string, error) {
-		if usePrefetch {
-			return guard("prefetch"), nil
-		}
-		return guard("rag_agent"), nil
-	}, map[string]bool{"stop": true, "prefetch": true, "rag_agent": true})
+		return guard("prefetch"), nil
+	}, map[string]bool{"stop": true, "prefetch": true})
 
 	addBranch("prefetch", func(_ context.Context, _ *AgenticState) (string, error) {
 		return guard("rag_agent"), nil
 	}, map[string]bool{"stop": true, "rag_agent": true})
 
 	addBranch("rag_agent", func(_ context.Context, s *AgenticState) (string, error) {
+		// The round count is the mode's, and nothing about the QUESTION shortens it. It used to
+		// be cut to two rounds for a table the planner had typed as a set, on the argument that
+		// an enumeration stops learning after two (measured: round 2 took a table from 11
+		// members to 14, and every round after added +0 chunks). That bound cannot be told from
+		// a slot type — and with one session per round it is the route's own NoProgress/
+		// round-count guards, not a shape, that end the loop.
 		rounds := scaMaxRounds
-		// An ENUMERATION runs a bounded number of rounds: one to ask the corpus the act
-		// patterns its seed carries and name what they return, one to recover what the
-		// round's own record shows it reached and did not record. Measured (2026-09-16,
-		// 三国/关羽, three runs): round 2 took a table from 11 members to 14 by recording
-		// 车胄 / 程远志 / 管亥 — and every round after it added `+0 chunks`, i.e. a third
-		// draft of the same list. The bound is on the ENUMERATION the planner declared
-		// (Coverage.Ok), so a value question keeps the rounds it buys accuracy with.
-		if runtime.CoverageOf(s.SlotTable).Ok() && rounds > 2 {
-			rounds = 2
-		}
 		return guard(agenticNodeName(routeSCA(s, enableSCA, rounds))), nil
 	}, map[string]bool{"stop": true, "query_rewrite": true, "formalize_answer": true})
 
