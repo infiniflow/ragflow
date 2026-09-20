@@ -45,10 +45,7 @@ import {
   useKnowledgeBaseContext,
 } from '../../../contexts/knowledge-base-context';
 import { EmbeddingSelect } from '../../embedding-select';
-import {
-  useHasParsedDocument,
-  useSelectChunkMethodList,
-} from '../hooks';
+import { useHasParsedDocument, useSelectChunkMethodList } from '../hooks';
 interface IProps {
   line?: 1 | 2;
   isEdit?: boolean;
