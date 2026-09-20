@@ -579,59 +579,8 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
-	// Align with Python's PaddleOCROcrModel: the tenant api_key for the cloud
-	// PaddleOCR provider is a JSON payload carrying paddleocr_base_url /
-	// paddleocr_api_url, paddleocr_access_token and paddleocr_algorithm, while
-	// the instance base_url field stays empty. PaddleOCR.local keeps a
-	// plain-text bearer token in api_key and its base url in the instance
-	// extra, so a non-JSON api_key passes through untouched.
-	keyBaseURL, keyAccessToken, keyAlgorithm := "", "", ""
-	if apiConfig.ApiKey != nil {
-		keyBaseURL, keyAccessToken, keyAlgorithm = modelModule.PaddleOCRConfigFromAPIKey(*apiConfig.ApiKey)
-	}
-
-	baseURL := ""
-	if apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
-	}
-	if baseURL == "" {
-		baseURL = keyBaseURL
-	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
-	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAPIURL))
-	}
-	if baseURL == "" {
-		return parser.ParseResult{}, fmt.Errorf(
-			"parser: PaddleOCR requires a base url from the tenant PaddleOCR OCR model or PADDLEOCR_BASE_URL")
-	}
-
-	apiKey := ""
-	if apiConfig.ApiKey != nil {
-		apiKey = *apiConfig.ApiKey
-	}
-	if keyAccessToken != "" {
-		apiKey = keyAccessToken
-	}
-	algorithm := strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", ""))
-	if algorithm == "" {
-		algorithm = keyAlgorithm
-	}
-	if algorithm == "" {
-		algorithm = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm))
-	}
-	if algorithm == "" {
-		algorithm = "PaddleOCR-VL"
-	}
-	ocrAPIConfig := &modelModule.APIConfig{BaseURL: &baseURL}
-	if apiKey != "" {
-		ocrAPIConfig.ApiKey = &apiKey
-	}
-
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, ocrAPIConfig, &modelModule.OCRConfig{
-		Algorithm: algorithm,
+	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, &modelModule.OCRConfig{
+		Algorithm: strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", "")),
 	}, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)

@@ -242,11 +242,20 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Extra inputs are not permitted: ext")
 		return
 	}
+	for field := range raw {
+		if !createDatasetAllowedFields[field] {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+			return
+		}
+	}
 
 	var req service.CreateDatasetRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
+	}
+	if req.ParserConfig == nil && req.PipelineID == nil {
+		req.ParserConfig = map[string]interface{}{}
 	}
 	// Mirror Python's pydantic required validation.
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
@@ -365,6 +374,12 @@ var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
+}
+
+var createDatasetAllowedFields = map[string]bool{
+	"name": true, "embedding_model": true, "parser_config": true,
+	"language": true, "permission": true, "parser_id": true,
+	"pipeline_id": true, "parse_type": true,
 }
 
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq
@@ -592,6 +607,56 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, result, "success")
+}
+
+// ListIngestionMessages handles GET
+// /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
+func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	limit := 0
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be a positive integer")
+			return
+		}
+		limit = parsed
+	}
+	afterID, ok := ingestionEventCursor(c, "after_id")
+	if !ok {
+		return
+	}
+	beforeID, ok := ingestionEventCursor(c, "before_id")
+	if !ok {
+		return
+	}
+
+	result, code, err := h.datasetsService.ListIngestionMessages(
+		c.Request.Context(), c.Param("dataset_id"), user.ID, c.Param("log_id"), limit, afterID, beforeID,
+	)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
+	raw := c.Query(name)
+	if raw == "" {
+		return nil, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, name+" must be a positive integer")
+		return nil, false
+	}
+	return &value, true
 }
 
 // DeleteDatasets handles DELETE /api/v1/datasets.

@@ -94,8 +94,51 @@ type AsyncChatResult struct {
 	Final        bool                   `json:"final"`
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
+	// ThinkEvent is one STRUCTURED reasoning step (the machine-readable twin of
+	// the think-block sentence), forwarded so a client can render steps —
+	// tool, status, counts, sources, duration — instead of paragraphs.
+	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
+}
+
+// ThinkEvent is one structured agentic-RAG reasoning step as it goes over the
+// wire (the SSE `think_event` field). This is the ONE definition: the harness
+// that produces the step aliases it (harness.ThinkEvent), because the dependency
+// runs this way only — the harness imports this package for its exploration
+// providers, so this package cannot import the harness back.
+//
+// The two sides used to carry two identical structs bridged field by field in
+// cmd. That shape compiles for as long as one side stays a subset, so a field
+// added on the harness side and not mirrored here reached the client as nothing
+// at all. The JSON tags below ARE the client contract; TestThinkEventWireKeys
+// pins them.
+type ThinkEvent struct {
+	Kind string `json:"kind"`
+	// Stage is the bracketed tag the step belongs to ("Function tool",
+	// "RAGAgent", ...). It is the grouping key.
+	Stage string `json:"stage,omitempty"`
+	// Tool is the tool name for tool_call / tool_result events.
+	Tool string `json:"tool,omitempty"`
+	// Args is the tool call's arguments, rendered for display.
+	Args string `json:"args,omitempty"`
+	// Status and Reason mirror the harness ToolOutcome.
+	Status string `json:"status,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Cause is the tool's own explanation of a failure: a bare reason such as
+	// "infra" tells a client nothing about what actually broke.
+	Cause string `json:"cause,omitempty"`
+	// Results is how many results the step returned; Documents how many
+	// distinct documents they came from.
+	Results   int `json:"results,omitempty"`
+	Documents int `json:"documents,omitempty"`
+	// Sources are the evidence anchors the step produced (capped).
+	Sources []string `json:"sources,omitempty"`
+	// DurationMS is the wall time of a tool call; 0 for a stage step.
+	DurationMS int64 `json:"duration_ms,omitempty"`
+	// Summary is the human sentence for this step, exactly what the think
+	// block shows.
+	Summary string `json:"summary"`
 }
 
 // AsyncChat is the Go equivalent of Python's async_chat() in
@@ -178,7 +221,8 @@ func (s *ChatPipelineService) AsyncChat(
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
 
-	// No KBs & no web search → fast-path to LLM-only chat.
+	// Resolve what this conversation can reach BEFORE dispatching: whether it
+	// has knowledge bases, and whether web search is enabled.
 	hasKBs := false
 	for _, raw := range chat.KBIDs {
 		if id, ok := raw.(string); ok && id != "" {
@@ -195,6 +239,7 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
+	// No KBs & no web search → fast-path to LLM-only chat.
 	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
@@ -736,6 +781,7 @@ func (s *ChatPipelineService) AsyncChat(
 						})
 					}
 				}
+				thinkSink := harnessThinkSink(ctx, out)
 				// Python dialog_service.py:2077 — the web provider is handed to
 				// RAGTools only when the internet flag enables web search;
 				// otherwise web_search stays off the agentic tool surface.
@@ -769,7 +815,7 @@ func (s *ChatPipelineService) AsyncChat(
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, harnessSystemPrompt, history)
+				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, thinkSink, harnessSystemPrompt, history)
 				// The harness streams think-then-answer inside ONE compose call.
 				// Close the block here, once that call (and its trailing
 				// narration line) has returned: a reasoning-only run would
@@ -784,7 +830,7 @@ func (s *ChatPipelineService) AsyncChat(
 					if harnessAnswer != "" {
 						common.Info("harness produced final cited answer; short-circuiting",
 							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites)
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs)
 						final.Final = true
 						out <- final
 						return
@@ -1521,7 +1567,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+		target, err := s.resolveChatModelTarget(ctx, chat)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1529,21 +1575,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 			return
 		}
-		chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+		chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
 		var ttsModel *modelModule.ChatModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				ttsDriver, ttsName, ttsConfig, _, ttsErr := s.ModelProviderSvc.GetTenantDefaultModelByType(
-					ctx, chat.TenantID, entity.ModelTypeTTS,
-				)
-				if ttsErr != nil {
+				target, ttsErr := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
+				if ttsErr != nil || target == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
 						zap.Error(ttsErr))
 				} else {
-					ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
+					ttsModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			}
 		}
@@ -1945,7 +1989,7 @@ func (s *ChatPipelineService) tavilyRetrieve(ctx context.Context, apiKey, questi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := tavilyWebSearchHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tavily: do request: %w", err)
@@ -2032,8 +2076,12 @@ func tokenizeText(text string) string {
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
+		target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		if err != nil || target == nil {
+			return nil, "", "", "", err
+		}
 		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
+			target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, err,
 		)
 		if err != nil {
 			return nil, "", "", "", err
@@ -2041,9 +2089,11 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		// Probe the default model's enrolled types so a vision-capable
 		// default dispatches as image2text (same rule as the explicit-LLM
 		// branches below).
-		if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
-			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, ref)
+		modelRef := target.ModelID
+		if modelRef == "" {
+			modelRef = fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
 		}
+		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelRef)
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
@@ -2054,8 +2104,12 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if modelTypeStr == "image2text" {
 		modelType = entity.ModelTypeImage2Text
 	}
+	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
+	if err != nil {
+		return nil, "", "", "", err
+	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
+		target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil,
 	)
 	if err != nil {
 		return nil, "", "", "", err
@@ -2064,13 +2118,25 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	return cfg, modelName, factoryName, baseURL, nil
 }
 
+func (s *ChatPipelineService) resolveChatModelTarget(ctx context.Context, chat *entity.Chat) (*ModelTarget, error) {
+	if chat.LLMID == "" {
+		return s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+	}
+
+	modelType := entity.ModelTypeChat
+	if s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID) == "image2text" {
+		modelType = entity.ModelTypeImage2Text
+	}
+	return s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
+}
+
 // resolveChatModelType probes the enrolled model types for llmRef and
 // returns "image2text" when the model is vision-capable (enrolled with an
 // image2text / "vision" type), "chat" otherwise. Probe failures are
 // conservative: they yield "chat", which drops image attachments instead
 // of risking a provider-side rejection.
 func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
+	modelTypes, err := s.ModelProviderSvc.modelSolver().ResolveModelType(ctx, tenantID, llmRef)
 	if err != nil {
 		return "chat"
 	}
@@ -2154,7 +2220,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
+			target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(
 				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
 			)
 			if err != nil {
@@ -2164,25 +2230,25 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 					zap.Error(err))
 				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
-			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+			embModel = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 		}
 	}
 
 	// Chat model.
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+	target, err := s.resolveChatModelTarget(ctx, chat)
 	var chatModel *modelModule.ChatModel
 	if err == nil {
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	}
 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
+		target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(
 			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
-			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig, maxTokens)
+			rerankModel = modelModule.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 		}
 	}
 
@@ -2190,11 +2256,9 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var ttsModel *modelModule.ChatModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			ttsDriver, ttsName, ttsConfig, _, err := s.ModelProviderSvc.GetTenantDefaultModelByType(
-				ctx, chat.TenantID, entity.ModelTypeTTS,
-			)
+			target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
 			if err == nil {
-				ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
+				ttsModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 			}
 		}
 	}
@@ -2578,6 +2642,10 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 			continue
 		}
 
+		// The id is the chunk's pool position, which is also its index in the
+		// reference the client receives (chunksFormat(chunksRaw)), so a marker copied
+		// from a block opens exactly that passage. 0-based: the first block is "ID: 0".
+		// (The compose renders a ranked subset instead, hence its own CiteChunkIDs order.)
 		cnt := fmt.Sprintf("\nID: %d", i)
 		cnt += drawNode("Title", getMapString(ck, "docnm_kwd", "document_name"))
 		cnt += drawNode("URL", getMapString(ck, "url"))
@@ -2741,11 +2809,11 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+	target, err := s.resolveChatModelTarget(ctx, chat)
 	if err != nil {
 		return nil
 	}
-	return modelModule.NewChatModel(driver, &modelName, apiConfig)
+	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 }
 
 // HydrateChunkVectors fills the `vector` field on each chunk in `kbinfos`
@@ -2760,7 +2828,7 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 // Returns the number of chunks that gained a vector.
 //
 // Skips:
-//   - chunks that already have a non-empty `vector`
+//   - chunks whose `vector` already carries signal (non-zero components)
 //   - chunks without a `chunk_id`
 //
 // Errors are non-fatal: caller logs and proceeds with whatever vectors
@@ -2771,7 +2839,10 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 // Parameters:
 //   - tenantIDs: tenant ID(s) to derive index/table names (ragflow_<tid>).
 //     If empty, no fetch is attempted.
-func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, tenantIDs []string, kbIDs []string, docEngine engine.DocEngine) (int, error) {
+//   - dim: embedding dimension, used to name the q_{dim}_vec field. Zero means
+//     "infer from the chunks"; the agentic evidence pool carries no chunk
+//     vectors at all, so its caller passes the model dimension explicitly.
+func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, tenantIDs []string, kbIDs []string, dim int, docEngine engine.DocEngine) (int, error) {
 	if kbinfos == nil {
 		return 0, nil
 	}
@@ -2786,22 +2857,27 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 		return 0, nil
 	}
 
-	// Auto-detect vector dimension from chunks that already carry a
-	// vector. If none do, there is nothing to hydrate against.
-	var dim int
+	// A vector counts as present only when it carries signal. The agentic
+	// evidence pool reaches this function with no `vector` key at all (the
+	// runtime chunk shape has no vector field), and the naive path ships zero
+	// placeholders for chunks whose embedding was not selected. Python refills
+	// both, because _hydrate_chunk_vectors treats a chunk as already hydrated
+	// only when `any(x for x in v)` (dialog_service.py:93-95). A length check
+	// alone skips exactly the chunks hydration exists for, leaving them at zero
+	// similarity where they can never be cited.
+	if dim <= 0 {
+		dim = firstChunkVectorDim(chunksRaw)
+	}
 	var missing []string
 	for _, cm := range chunksRaw {
-		if cv, ok := cm["vector"].([]float64); ok && len(cv) > 0 {
-			if dim == 0 {
-				dim = len(cv)
-			}
+		if vectorHasSignal(chunkVector(cm)) {
 			continue
 		}
 		if cid, ok := cm["chunk_id"].(string); ok && cid != "" {
 			missing = append(missing, cid)
 		}
 	}
-	if len(missing) == 0 || dim == 0 || len(tenantIDs) == 0 {
+	if len(missing) == 0 || dim <= 0 || len(tenantIDs) == 0 {
 		return 0, nil
 	}
 
@@ -2813,18 +2889,20 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 		return 0, err
 	}
 
-	// Stitch the vectors back onto the chunks.
+	// Stitch the vectors back onto the chunks. FetchChunkVectors answers with
+	// zeros for chunks it could not resolve, so only a vector with signal counts
+	// as a hit.
 	hits := 0
 	for _, cm := range chunksRaw {
-		if cv, ok := cm["vector"].([]float64); ok && len(cv) > 0 {
+		if vectorHasSignal(chunkVector(cm)) {
 			continue
 		}
 		cid, _ := cm["chunk_id"].(string)
 		if cid == "" {
 			continue
 		}
-		vec, ok := vectors[cid]
-		if !ok || len(vec) == 0 {
+		vec := vectors[cid]
+		if !vectorHasSignal(vec) {
 			continue
 		}
 		cm["vector"] = vec
@@ -2833,6 +2911,51 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 	common.Debug("HydrateChunkVectors complete",
 		zap.Int("hits", hits), zap.Int("requested", len(missing)))
 	return hits, nil
+}
+
+// chunkVector reads a chunk's embedding vector in the shapes the in-process
+// layers produce ([]float64; []interface{} after a JSON round-trip).
+func chunkVector(cm map[string]interface{}) []float64 {
+	switch v := cm["vector"].(type) {
+	case []float64:
+		return v
+	case []interface{}:
+		out := make([]float64, 0, len(v))
+		for _, item := range v {
+			f, ok := item.(float64)
+			if !ok {
+				return nil
+			}
+			out = append(out, f)
+		}
+		return out
+	}
+	return nil
+}
+
+// vectorHasSignal reports whether a vector has any non-zero component, mirroring
+// Python's `any(x for x in v)` (dialog_service.py:94). A placeholder of zeros is
+// the shape both retrieval paths leave behind for a chunk whose embedding was
+// not selected, and it must be refilled rather than treated as hydrated.
+func vectorHasSignal(v []float64) bool {
+	for _, x := range v {
+		if x != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// firstChunkVectorDim returns the dimension carried by the first chunk vector,
+// which is the dimension naming the q_{dim}_vec field. Zero means no chunk
+// carries a vector at all.
+func firstChunkVectorDim(chunksRaw []map[string]interface{}) int {
+	for _, cm := range chunksRaw {
+		if v := chunkVector(cm); len(v) > 0 {
+			return len(v)
+		}
+	}
+	return 0
 }
 
 // embeddingModelEmbedder adapts an EmbeddingModel to the Embedder interface.
@@ -2903,28 +3026,44 @@ func (s *ChatPipelineService) decorateAnswer(
 		chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 		if ok && len(chunksRaw) > 0 {
 			// P7 — _hydrate_chunk_vectors. Mirrors
-			// dialog_service.py:794. If any chunk lacks a `vector`
-			// field (true for the ES path; Infinity ships vectors
-			// inline), fetch them in one batched engine call. We only
-			// need this when we'll actually call insertCitations
-			// (i.e., the LLM didn't already emit markers).
+			// dialog_service.py:794. Fetch the chunk embeddings insertCitations
+			// scores against, in one batched engine call. The agentic evidence
+			// pool reaches here with no `vector` key at all and the naive path
+			// ships zero placeholders, so the dimension comes from the embedding
+			// model whenever no chunk carries one. Only needed when we'll
+			// actually call insertCitations (the LLM didn't emit markers).
 			if embModel != nil && !HasCitationMarkers(ans) {
-				if _, err := HydrateChunkVectors(ctx, kbinfos, tenantIDs, nil, engine.Get()); err != nil {
+				dim := firstChunkVectorDim(chunksRaw)
+				if dim <= 0 {
+					// One short probe encode buys the q_{dim}_vec field name.
+					// Every citation-scored answer already pays for a full
+					// sentence encode, so this is not a new call class.
+					probe, perr := (&embeddingModelEmbedder{embModel: embModel}).Encode(ctx, []string{"x"})
+					if perr == nil && len(probe) > 0 {
+						dim = len(probe[0])
+					}
+				}
+				if _, err := HydrateChunkVectors(ctx, kbinfos, tenantIDs, nil, dim, engine.Get()); err != nil {
 					common.Warn("hydrate chunk vectors failed", zap.Error(err))
 				}
 			}
 			if embModel != nil && !HasCitationMarkers(ans) {
-				// Build chunkVectors aligned with chunksRaw.
+				// Build chunkVectors aligned with chunksRaw. A chunk that still
+				// has no vector scores as zeros — exactly what Python does when
+				// it substitutes [0.0]*dim on a dimension mismatch
+				// (rag/nlp/search.py:463-468): that chunk simply never wins a
+				// citation, instead of one vector-less chunk (an image chunk, a
+				// web snippet) suppressing every citation in the answer.
+				dim := firstChunkVectorDim(chunksRaw)
 				chunkVectors := make([][]float64, len(chunksRaw))
-				allVec := len(chunksRaw) > 0
 				for i, cm := range chunksRaw {
-					cv, _ := cm["vector"].([]float64)
-					chunkVectors[i] = cv
-					if len(cv) == 0 {
-						allVec = false
+					cv := chunkVector(cm)
+					if len(cv) != dim {
+						cv = make([]float64, dim)
 					}
+					chunkVectors[i] = cv
 				}
-				if allVec {
+				if dim > 0 {
 					embedder := &embeddingModelEmbedder{embModel: embModel}
 					if decorated, cited := InsertCitations(ctx, ans, NewSourcedChunks(chunksRaw), embedder, chunkVectors); len(cited) > 0 {
 						ans = decorated
@@ -3097,7 +3236,25 @@ func (s *ChatPipelineService) decorateAnswer(
 // here. We only resolve the existing markers, repair bad formats, filter
 // doc_aggs to the cited docs, and build the reference from the harness citation
 // pool (chunks stripped of their vectors). Prompt stays empty, matching Python.
-func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string) AsyncChatResult {
+//
+// The answer's [ID:n] markers index the evidence list the compose rendered for
+// the model — harness.Kbinfos.CiteChunkIDs, passed in as citeChunkIDs. That list
+// is similarity-ranked and capped, and it is numbered 0-based: the client resolves
+// a marker by using its number as an index into reference.chunks, and the text it
+// already streamed carries the model's own numbers (this function repairs and drops
+// markers, and rewrites the slot-table ones, but never renumbers a citation). The
+// reference is therefore built with that list in front, in the rendered order, so
+// marker n is the n-th rendered passage — and the rest of the pool follows so no
+// source is lost. Canonical "[ID:n]" markers that name nothing are dropped (a bare
+// "[5]" is left alone: in prose it may be a footnote or a year). The reference is
+// returned whenever the pool is non-empty, so an answer the model composed without
+// markers still carries its sources.
+//
+// Precondition for marker n to open passage n: the rendered blocks resolve to pool
+// chunks in order. A block whose id the pool does not know keeps its slot — an empty
+// entry the reference carries — so the later blocks keep their numbers; its own
+// citations are dropped, since the user could not open them.
+func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string) AsyncChatResult {
 	think := ""
 	ans := answer
 	if strings.Contains(answer, "</think>") {
@@ -3108,40 +3265,58 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 	}
 
 	chunksRaw, _ := kbinfos["chunks"].([]map[string]interface{})
+	// The markers exactly as the model wrote them (before any repair), for the
+	// citation observability log below.
+	rawMarkers := rawCitationMarkers(ans, 8)
+
+	// The evidence list the model was shown, as pool positions: citeIdx[i] is the
+	// pool chunk behind the i-th rendered block. Empty ids fall back to pool
+	// order, which is the pre-CiteChunkIDs behavior.
+	citeIdx := citePoolIdx(chunksRaw, citeChunkIDs)
+	citeChunks := citeChunksByIdx(citeIdx, chunksRaw)
 
 	// Slot-table markers ("[ID:Slot 0]") are internal references the compose
 	// model leaks from the Research Summary's slot draft — they index the slot
 	// table, not any chunk the user can open. Rewrite them into citations of
 	// the chunk that filled the slot (or drop them) BEFORE the marker scan, so
-	// they resolve like any other citation.
-	ans = RepairSlotCitations(ans, slotCitations, chunksRaw)
+	// they resolve like any other citation. The rewrite emits the evidence
+	// block's 0-based index in the rendered list, the numbering the client
+	// indexes.
+	ans = RepairSlotCitations(ans, slotCitations, citeChunks)
 
 	// Range-merged citations ("[ID:1-3]") are the model compressing
 	// consecutive individual citations on its own; expand them back so every
 	// marker resolves to exactly one chunk (out-of-range ranges are dropped).
-	ans = ExpandRangeCitations(ans, len(chunksRaw))
+	// Bounds are 0-based indexes in the rendered list.
+	ans = ExpandRangeCitations(ans, len(citeChunks))
 
-	// Collect existing [ID:N] markers from the harness answer. Python runs
-	// normalize_arabic_digits then CITATION_MARKER_PATTERN (dialog_service.py:
-	// 2103-2107) and bounds each index by len(chunks).
-	citationIdx := make(map[int]struct{})
-	for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-		if ci >= 0 && ci < len(chunksRaw) {
-			citationIdx[ci] = struct{}{}
-		}
-	}
-	// repair_bad_citation_formats (dialog_service.py:2109), then re-scan so any
-	// repaired markers are also honoured.
+	// repair_bad_citation_formats (dialog_service.py:2109), then resolve the
+	// markers: each is the 0-based index of the rendered block it cites.
+	// Canonical markers that name no block are dropped; the resolved pool
+	// positions drive doc_aggs filtering.
 	ans = RepairBadCitationFormats(ans)
-	for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-		if ci >= 0 && ci < len(chunksRaw) {
-			citationIdx[ci] = struct{}{}
-		}
+	ans, citedIdx := ResolveCitationMarkers(ans, citeIdx)
+
+	// Citation observability: the markers the model wrote against the blocks it was
+	// shown, so a numbering mismatch is visible in the log (`raw_markers` is what
+	// the model actually emitted, before any repair). No judgement is attached —
+	// see zeroBasedEvidenceRule for the prompt-side guard on the numbering.
+	if len(citeIdx) > 0 {
+		common.Info("agentic citation markers",
+			zap.Int("rendered_blocks", len(citeIdx)),
+			zap.Ints("raw_markers", rawMarkers),
+			zap.Int("resolved_blocks", len(citedIdx)),
+			// Which figure points at which chunk, and whether that chunk can show a
+			// picture at all: "why is there no image under Fig. n" is asked far more
+			// often than "the numbering was off", and from the page the two look the
+			// same. See citationAudit.
+			zap.String("cited", citationAudit(citeIdx, citedIdx, chunksRaw)),
+		)
 	}
 
-	// Map cited chunk indices to doc_ids (dialog_service.py:2111-2122).
+	// Map cited chunks to doc_ids (dialog_service.py:2111-2122).
 	citedDocIDs := make(map[string]struct{})
-	for ci := range citationIdx {
+	for _, ci := range citedIdx {
 		if ci >= 0 && ci < len(chunksRaw) {
 			if docID, ok := chunksRaw[ci]["doc_id"].(string); ok && docID != "" {
 				citedDocIDs[docID] = struct{}{}
@@ -3169,22 +3344,27 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		}
 	}
 
-	// refs = deepcopy(kbinfos) if doc_ids else [] ; drop each chunk's vector
-	// (dialog_service.py:2129-2132). AsyncChatResult.Reference is a map, so an
-	// empty Python [] maps to a nil map (callers/frontend already tolerate a
-	// missing reference).
+	// refs = deepcopy(kbinfos), each chunk stripped of its vector
+	// (dialog_service.py:2129-2132). Python gates this on `doc_ids` — the answer
+	// cited at least one chunk — but an agentic answer the model composed without
+	// markers then came back with no reference at all, while the naive path
+	// returns the passages unconditionally (dialog_service.py:826-829). Build it
+	// whenever the harness left a citation pool, so the user always gets the
+	// sources the answer was composed from; doc_aggs stays filtered to the cited
+	// documents when something was cited.
 	var refs map[string]interface{}
-	if len(citedDocIDs) > 0 {
-		ref := make(map[string]interface{})
+	if len(chunksRaw) > 0 {
+		ref := make(map[string]interface{}, len(kbinfos))
 		for k, v := range kbinfos {
 			ref[k] = v
 		}
-		if cRaw, ok := ref["chunks"].([]map[string]interface{}); ok {
-			// chunksFormat builds the client-facing shape (content, document_name,
-			// dataset_id, ...) in NEW maps, so the engine keys and the per-chunk
-			// vector never reach the reference and the shared chunks stay intact.
-			ref["chunks"] = chunksFormat(cRaw)
-		}
+		// The rendered evidence list comes first, in the order the model saw it,
+		// so a marker's number is that entry's index; the remaining pool chunks
+		// follow so no retrieved passage is lost. chunksFormat builds the
+		// client-facing shape (content, document_name, dataset_id, ...) in NEW
+		// maps, so the engine keys and the per-chunk vector never reach the
+		// reference and the shared chunks stay intact.
+		ref["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
 		refs = ref
 	}
 
@@ -3200,6 +3380,122 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		Prompt:    "",
 		CreatedAt: float64(time.Now().Unix()),
 	}
+}
+
+// citePoolIdx maps the ordered evidence list the compose rendered for the model
+// (harness.Kbinfos.CiteChunkIDs) onto the pool: entry i is the index in pool of
+// the i-th rendered block. A block whose id is empty or unknown stays in the list
+// as -1 so the blocks after it keep the number the model saw; its citations simply
+// cannot be resolved. An empty id list — a harness that published none — falls
+// back to pool order, where block i is pool[i].
+func citePoolIdx(pool []map[string]interface{}, ids []string) []int {
+	if len(ids) == 0 {
+		out := make([]int, len(pool))
+		for i := range pool {
+			out[i] = i
+		}
+		return out
+	}
+	byID := make(map[string]int, len(pool))
+	for i, c := range pool {
+		if id := chunkCitationID(c); id != "" {
+			if _, dup := byID[id]; !dup {
+				byID[id] = i
+			}
+		}
+	}
+	out := make([]int, len(ids))
+	for i, id := range ids {
+		idx, found := byID[id]
+		if id == "" || !found {
+			idx = -1
+		}
+		out[i] = idx
+	}
+	return out
+}
+
+// citeChunksByIdx gathers the rendered evidence list from its pool positions,
+// keeping -1 entries as nil so positions stay aligned with the numbering the model
+// was shown (a nil chunk matches no slot-citation evidence id and resolves no
+// marker, but it must not shift the blocks after it).
+func citeChunksByIdx(citeIdx []int, pool []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, len(citeIdx))
+	for i, pi := range citeIdx {
+		if pi >= 0 && pi < len(pool) {
+			out[i] = pool[pi]
+		}
+	}
+	return out
+}
+
+// referenceChunks orders the reference payload: the evidence list the compose
+// rendered first, in exactly that order, then the rest of the pool. The client
+// resolves a citation marker by indexing this list with the number the model
+// wrote, so the rendered order has to come first — and one entry per RENDERED
+// block, at the block's own index. A block whose chunk cannot be located in the
+// pool (or a repeat of one already placed) still occupies its slot, as a nil
+// chunk: dropping it would slide every later marker one position down, onto a
+// passage the model never cited. Such a block's marker is dropped from the answer
+// upstream, so the slot is a gap in the sources panel, not a broken citation.
+//
+// The trailing chunks keep every retrieved passage reachable from the sources
+// panel.
+func referenceChunks(citeIdx []int, pool []map[string]interface{}) []map[string]interface{} {
+	if len(citeIdx) == 0 {
+		return pool
+	}
+	placed := make(map[int]struct{}, len(citeIdx))
+	out := make([]map[string]interface{}, 0, len(pool)+len(citeIdx))
+	for _, pi := range citeIdx {
+		if pi < 0 || pi >= len(pool) {
+			out = append(out, nil)
+			continue
+		}
+		if _, dup := placed[pi]; dup {
+			out = append(out, nil)
+			continue
+		}
+		placed[pi] = struct{}{}
+		out = append(out, pool[pi])
+	}
+	for i, c := range pool {
+		if _, dup := placed[i]; dup {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// citationAudit renders the resolved citations for the observability log: for every
+// cited pool chunk, the figure number(s) that point at it and whether the chunk
+// carries a picture.
+//
+// Fig. n is the client's label for rendered block n-1 (the marker's number plus
+// one), and the client draws a picture under a figure only when that chunk has an
+// image_id. So "Fig. n shows no image" has two very different explanations — the
+// marker resolved to a text-only chunk (expected, nothing to show) or the chunk
+// behind that figure is not the one the model cited (a resolution bug) — and they
+// look identical on the page. This line tells them apart without a re-run.
+func citationAudit(citeIdx, citedIdx []int, chunksRaw []map[string]interface{}) string {
+	cited := make(map[int]struct{}, len(citedIdx))
+	for _, ci := range citedIdx {
+		cited[ci] = struct{}{}
+	}
+	parts := make([]string, 0, len(citedIdx))
+	for block, ci := range citeIdx {
+		if _, ok := cited[ci]; !ok {
+			continue
+		}
+		if ci < 0 || ci >= len(chunksRaw) {
+			continue
+		}
+		imageID, _ := getChunkValue(chunksRaw[ci], "image_id", "img_id").(string)
+		parts = append(parts, fmt.Sprintf("Fig.%d=%s image=%t",
+			block+1, chunkCitationID(chunksRaw[ci]), imageID != ""))
+	}
+	return strings.Join(parts, " ")
 }
 
 // langfuseExtractTimeElapsed extracts the time-elapsed + token-usage
@@ -3227,8 +3523,10 @@ func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 // Mirrors Python's citation_prompt() in rag/prompts/generator.py.
 func citationPrompt() string {
 	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
-		"(where N is the chunk number) after each sentence where the information from that chunk is used. " +
-		"Cite each source individually ([ID:1][ID:2]); never merge consecutive citations into a range such as [ID:1-3]."
+		"after each sentence where the information from that chunk is used, " +
+		"where N is the id printed at the start of the evidence block (" +
+		"the blocks are numbered from 0, so the FIRST block is [ID:0]). " +
+		"Cite each source individually ([ID:0][ID:1]); never merge consecutive citations into a range such as [ID:1-3]."
 }
 
 // -----------------------------------------------------------------------
@@ -4679,10 +4977,12 @@ func chunksFormat(chunksRaw []map[string]interface{}) []map[string]interface{} {
 	return result
 }
 
-// getChunkValue returns the first non-nil value from a chunk map, trying k1 first then k2.
-// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38.
+// getChunkValue returns chunk[k1] when the key is present, otherwise chunk[k2].
+// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38
+// (`d.get(k1, d.get(k2))`), which falls back on KEY ABSENCE only: a key present
+// with a nil/empty value is returned as-is rather than skipping to k2.
 func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
-	if v, ok := chunk[k1]; ok && v != nil {
+	if v, ok := chunk[k1]; ok {
 		return v
 	}
 	return chunk[k2]
@@ -4730,6 +5030,10 @@ type HarnessRequest struct {
 	// tools.answer_sink), so the caller can stream instead of waiting for the
 	// whole answer. Nil disables streaming; the full answer is still returned.
 	AnswerSink func(delta string, isThink bool)
+	// ThinkSink receives the structured form of each reasoning step (the twin
+	// of what AnswerSink narrates as think text). Nil disables it; the text
+	// narration is unaffected.
+	ThinkSink func(ThinkEvent)
 	// Images are vision-gated base64 data URIs (Python image_attachments) that
 	// survive gateImageAttachments. They ride the last user message into the
 	// outer react loop so a vision model can see them. chat_pipeline drops them
@@ -4769,6 +5073,11 @@ type HarnessResult struct {
 	// that filled it (RunResponse.SlotCitations). The citation decoration uses
 	// it to rewrite leaked "[ID:Slot N]" markers into locatable chunk citations.
 	SlotCitations map[string][]string
+	// CiteChunkIDs is the ordered evidence list the compose rendered for the
+	// model (RunResponse.CiteChunkIDs): similarity-ranked and capped, so it is
+	// NOT Chunks in pool order. The answer's "[ID:n]" markers index THIS list —
+	// resolving them against Chunks by position is what lost citations.
+	CiteChunkIDs []string
 }
 
 // harnessRetriever is wired at server bootstrap (cmd/ragflow_server.go:889) to
@@ -4793,46 +5102,55 @@ func SetHarnessRetriever(fn func(ctx context.Context, req HarnessRequest) (Harne
 //
 // thinkingMode is "naive" (reasoning disabled) or one of the agentic levels
 // ("low"/"medium"/"high"/"ultra", reasoning enabled).
-// toolLoopLine forwards one Python "[Tool loop]" line into the chat think
-// block. Mirrors rag/llm/chat_model.py:689 ("Deciding what to do next
-// (step N); available tools: ..."), :782 ("Step N: running X...") and
-// :799/:804 ("The X tool produced the final answer, done." / "produced an
-// observation for step N."), which Python forwarded via the
-// "rag.llm.chat_model" namespace in _SCOPED_PREFIXES.
 //
-// ARCHITECTURAL NOTE. Python's outer model calls rag() as a @tool inside a
-// for-loop, and those lines narrate that loop. Go's chat pipeline invokes the
-// harness DIRECTLY (there is no outer tool-calling loop for it; the only
-// ReAct loop in Go is the canvas Agent component, which drives different
-// tools). So the faithful Go equivalent is to bracket the single harness
-// invocation here rather than to instrument a loop that does not exist.
+// answerSink and thinkSink are the request's two narration sinks, both optional:
+// answerSink receives the streamed answer plus think TEXT, thinkSink the structured
+// step events. They are parameters rather than something built in here because only
+// the streaming caller owns the channel they write to.
 //
-// Python emitted "<br>" + msg for its HTML think block (think_log.py:69); the
-// chat UI renders the block as HTML/markdown, where a bare "\n" collapses into
-// a space and the stage lines merge. Keep the same separator here. The literal
-// is spelled out instead of reusing advanced_rag.ThinkLineBreak because
-// advanced_rag/harness imports this package (import cycle).
-const thinkLineBreak = "<br>"
-
-func toolLoopLine(sink func(delta string, isThink bool), line string) {
-	if sink == nil {
-		return
+// The reasoning NARRATION ("[Tool loop] Deciding what to do next ...", the tool
+// calls and their results, the research stages) is not produced here: the
+// harness reports each step from where it happens, over the sinks this request
+// carries (AnswerSink for the think text, ThinkSink for the structured form).
+// The pipeline used to synthesize the "[Tool loop]" lines around its single
+// harness call, which made every non-naive run read as if an outer tool loop had
+// run — including the ones the direct graph answered.
+//
+// harnessThinkSink forwards the harness' STRUCTURED reasoning steps (the twin of
+// the think text) onto the pipeline's own channel, so the client can render
+// steps — tool, status, reason, counts, sources, duration — instead of
+// paragraphs.
+//
+// Unlike think TEXT, a late event is not dropped after the answer: text would
+// reopen a stray "Thought" block, while an event is a record a client may still
+// want. No mutex is needed either: this path touches neither the think-framing
+// state machine nor anything but the channel, which is safe for the concurrent
+// research goroutines that emit most of the events.
+func harnessThinkSink(ctx context.Context, out chan<- AsyncChatResult) func(ThinkEvent) {
+	return func(ev ThinkEvent) {
+		e := ev
+		select {
+		case out <- AsyncChatResult{
+			ThinkEvent: &e,
+			Reference:  map[string]interface{}{},
+			CreatedAt:  float64(time.Now().Unix()),
+			Final:      false,
+		}:
+		case <-ctx.Done():
+		}
 	}
-	sink(line+thinkLineBreak, true)
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, []string, string, error) {
 	if harnessRetriever == nil {
-		return nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
+		return nil, nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
 	kbIDs := kbIDStrings(kbs)
-	// Only non-naive modes run the agentic loop these lines describe, and only
-	// reasoning chats stream a think block at all.
-	narrate := thinkingMode != "naive"
-	if narrate {
-		toolLoopLine(answerSink, "[Tool loop] Deciding what to do next (step 1); available tools: rag")
-		toolLoopLine(answerSink, "[Tool loop] Step 1: running rag...")
-	}
+	// The "[Tool loop]" narration is NOT synthesized here. The outer react loop
+	// reports its own steps from where it runs (advanced_rag.runOuterReact*), so
+	// the trace describes a loop only when one actually ran — the pipeline used
+	// to emit those lines for every non-naive run, including the ones the direct
+	// graph answered, which read as a loop that had not happened.
 	res, err := harnessRetriever(ctx, HarnessRequest{
 		Question:        question,
 		Messages:        messages,
@@ -4843,22 +5161,14 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 		ModelID:         modelID,
 		SessionID:       sessionID,
 		AnswerSink:      answerSink,
+		ThinkSink:       thinkSink,
 		Images:          images,
 		TextAttachments: textAttachments,
 		WebSearch:       webSearch,
 		SystemPrompt:    dialogSystemPrompt,
 	})
 	if err != nil {
-		return nil, nil, "", err
-	}
-	if narrate {
-		// Python distinguishes the terminal tool from an observation: an answer
-		// ends the loop, otherwise the result feeds the next round.
-		if res.Answer != "" {
-			toolLoopLine(answerSink, "[Tool loop] The rag tool produced the final answer, done.")
-		} else {
-			toolLoopLine(answerSink, "[Tool loop] The rag tool produced an observation for step 1.")
-		}
+		return nil, nil, nil, "", err
 	}
 
 	kbinfos := map[string]interface{}{
@@ -4872,7 +5182,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 	if res.PreSummary != "" {
 		kbinfos["pre_summary"] = res.PreSummary
 	}
-	return kbinfos, res.SlotCitations, res.Answer, nil
+	return kbinfos, res.SlotCitations, res.CiteChunkIDs, res.Answer, nil
 }
 
 // toAnySlice widens a []map[string]any to []interface{} so the doc_aggs field

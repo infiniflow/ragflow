@@ -106,7 +106,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		return nil, common.CodeDataError, errors.New("mutually exclusive")
 	}
 
-	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+	if req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if modeErr != nil {
 			return nil, common.CodeDataError, modeErr
@@ -139,8 +139,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if req.ParserConfig != nil {
+		if err = validateDatasetParserConfig(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 		if err = validateDatasetParserConfigSize(req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
+			return nil, common.CodeArgumentError, err
 		}
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
@@ -156,9 +159,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 		if d.docEngine == nil {
 			return nil, common.CodeServerError, errors.New("document engine is not initialized")
-		}
-		if !d.docEngine.SupportsPageRank() {
-			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
 	}
 
@@ -223,9 +223,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
-					tenantEmbdID = resolvedID
+					tenantEmbdID = target.ModelID
 				}
 			}
 			updates["embd_id"] = effectiveEmbdID
@@ -250,15 +250,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				updates["parser_config"] = preserveDatasetParserConfigMetadata(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
-		if pagerankRequested {
+		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
+			if !d.docEngine.SupportsPageRank() {
+				txCode = common.CodeDataError
+				return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+			}
 			pagerankUpdate = &datasetPagerankUpdate{
 				value:     requestedPagerank,
 				index:     fmt.Sprintf("ragflow_%s", lockedKB.TenantID),
 				datasetID: lockedKB.ID,
 			}
-			if requestedPagerank != lockedKB.Pagerank {
-				updates["pagerank"] = requestedPagerank
-			}
+			updates["pagerank"] = requestedPagerank
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {

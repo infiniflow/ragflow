@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/tooltip';
 import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import storage from '@/utils/authorization-util';
@@ -50,6 +50,13 @@ export type NextMessageInputOnPressEnterParameter = {
   storeHistoryMessages?: boolean;
   omitSessionId?: boolean;
 };
+
+// The selector only offers numeric thinking levels; a value persisted by a
+// since-removed mode is not one, so it falls back to the default rather than
+// reaching the request as NaN.
+function normalizeThinkingLevel(level: string) {
+  return /^[0-4]$/.test(level) ? level : '1';
+}
 
 interface NextMessageInputProps {
   disabled: boolean;
@@ -98,7 +105,7 @@ export function NextMessageInput({
   );
 
   const [enableThinking, setEnableThinking] = useState(() =>
-    storage.getThinkingLevel(),
+    normalizeThinkingLevel(storage.getThinkingLevel()),
   );
   const [enableInternet, setEnableInternet] = useState(false);
 

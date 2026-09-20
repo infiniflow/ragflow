@@ -499,6 +499,7 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 			continue
 		}
 		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
+			sec.LayoutType != deepdoctype.DLALabelFigureCaption &&
 			sec.LayoutType != deepdoctype.LayoutTypeTable &&
 			strings.TrimSpace(sec.LayoutType) != "image" &&
 			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
@@ -656,6 +657,7 @@ func normalizePDFDocType(item map[string]any) {
 	if item == nil {
 		return
 	}
+	layoutType, _ := item["layout_type"].(string)
 	docType, _ := item["doc_type_kwd"].(string)
 	if img, _ := item["image"].(string); img != "" && docType != "table" {
 		item["doc_type_kwd"] = "image"
@@ -664,7 +666,6 @@ func normalizePDFDocType(item map[string]any) {
 	if docType != "" {
 		return
 	}
-	layoutType, _ := item["layout_type"].(string)
 	switch layoutType {
 	case "table":
 		item["doc_type_kwd"] = "table"

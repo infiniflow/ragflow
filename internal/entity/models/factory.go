@@ -83,6 +83,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHuggingFaceModel(baseURL, urlSuffix), nil
 	case "baiduyiyan":
 		return NewBaiduModel(baseURL, urlSuffix), nil
+	case "cheaper inference":
+		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "cometapi":
@@ -175,7 +177,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewSynthoraiModel(baseURL, urlSuffix), nil
 	case "anonrouter":
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
-	case "apiroute":
+	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil

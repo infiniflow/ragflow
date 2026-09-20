@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 
@@ -34,7 +35,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
-	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+	// A built-in parser_id is valid without parse_type. parse_type is only
+	// required when selecting a pipeline or explicitly supplied.
+	if req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if err != nil {
 			return nil, common.CodeDataError, err
@@ -99,11 +102,25 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserConfig, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, pipelineID)
-	if cpErr != nil {
-		common.Warn("failed to resolve component params defaults for dataset",
-			zap.String("parserID", parserID), zap.Error(cpErr))
-		parserConfig = entity.JSONMap{}
+	if req.ParserConfig != nil {
+		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+	}
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
+	parserConfig := entity.JSONMap{}
+	if dslErr != nil {
+		common.Warn("failed to load pipeline DSL for building parser_config",
+			zap.String("parserID", parserID), zap.Error(dslErr))
+	} else {
+		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
 	}
 
 	var parserConfigMap map[string]interface{} = parserConfig
@@ -119,9 +136,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+		target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
-			tenantEmbdID = resolvedID
+			tenantEmbdID = target.ModelID
 		} else {
 			return nil, common.CodeDataError, err
 		}

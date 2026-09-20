@@ -205,6 +205,33 @@ func TestValidateDatasetParserConfigSize_OverLimit(t *testing.T) {
 	}
 }
 
+func TestValidateDatasetParserConfig_AllowsNullableOptionalFields(t *testing.T) {
+	for _, config := range []map[string]interface{}{
+		{"task_page_size": nil},
+		{"pages": nil},
+	} {
+		if err := validateDatasetParserConfig(config); err != nil {
+			t.Fatalf("validateDatasetParserConfig(%#v): %v", config, err)
+		}
+	}
+}
+
+func TestValidateDatasetParserConfig_DelimiterType(t *testing.T) {
+	err := validateDatasetParserConfig(map[string]interface{}{"delimiter": float64(1)})
+	if err == nil || err.Error() != "Input should be a valid string" {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
+	if err := ValidateDocumentParserConfig(map[string]interface{}{"parser_specific": "value"}); err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if err := ValidateDocumentParserConfig(map[string]interface{}{"delimiter": float64(1)}); err == nil {
+		t.Fatal("expected known-field validation error")
+	}
+}
+
 // --- normalizeDatasetID ---
 
 func TestNormalizeDatasetID_Invalid(t *testing.T) {

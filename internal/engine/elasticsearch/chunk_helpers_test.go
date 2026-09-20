@@ -18,7 +18,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
-	}, 0, true, false)
+	}, true, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
@@ -32,13 +32,28 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
-	}, 0, false, false)
+	}, false, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("query_string missing from %#v", query)
 	}
 	assertEqual(t, queryString["fields"], []string{"name^10"})
+}
+
+func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
+	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
+	// tokens; a capitalized query term must not silently match nothing.
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		"isabel wood co-lead ross feldner bob musil bird watch wonder program")
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
@@ -250,10 +265,11 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 }
 
 // TestUpdateChunksPreservesStringSliceCondition guards the document
-// availability switch: updateSourceChunkAvailability passes a typed []string id
-// list, and a builder that only understands []interface{} silently drops the id
-// clause, widening the update-by-query to every chunk of the dataset (kb_id is
-// then the only remaining filter).
+// availability switch: the doc-service caller of UpdateChunks
+// (updateDocumentChunkAvailability) passes a typed []string id list, and a
+// builder that only understands []interface{} silently drops the id clause,
+// widening the update-by-query to every chunk of the dataset (kb_id is then the
+// only remaining filter).
 func TestUpdateChunksPreservesStringSliceCondition(t *testing.T) {
 	var updateQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -551,62 +567,46 @@ func TestElasticsearchGetChunkIDsPreservesOrderWithFallback(t *testing.T) {
 	}
 }
 
-func TestElasticsearchGetHighlightFallbackAndBoundaries(t *testing.T) {
+func TestElasticsearchGetHighlightUsesRegex(t *testing.T) {
 	engine := &Engine{}
 	chunks := []map[string]interface{}{
 		{
-			"_id":     "fallback-id",
-			"content": "Alpha beta.\nbetamax soup. BETA again!",
+			"_id":                 "full-text",
+			"content_with_weight": "Alpha beta.\nbetamax soup. BETA again!",
 		},
+		{"id": "no-match", "content_with_weight": "Keep the complete text."},
+		{"id": "missing"},
 	}
 
 	got := engine.GetHighlight(chunks, []string{"beta"}, "content_with_weight")
 	assertEqual(t, got, map[string]string{
-		"fallback-id": "Alpha <em>beta</em>... <em>BETA</em> again",
-	})
-	if gotText := got["fallback-id"]; strings.Contains(gotText, "<em>beta</em>max") {
-		t.Fatalf("highlight matched inside a larger token: %q", gotText)
-	}
-
-	gotLaterFallback := engine.GetHighlight([]map[string]interface{}{
-		{"_id": "first"},
-		{"_id": "second", "content": "Gamma beta."},
-	}, []string{"beta"}, "content_with_weight")
-	assertEqual(t, gotLaterFallback, map[string]string{
-		"second": "Gamma <em>beta</em>",
-	})
-
-	gotMixedFallback := engine.GetHighlight([]map[string]interface{}{
-		{"id": "weighted", "content_with_weight": "Weighted beta."},
-		{"id": "plain", "content": "Plain beta."},
-	}, []string{"beta"}, "content_with_weight")
-	assertEqual(t, gotMixedFallback, map[string]string{
-		"plain":    "Plain <em>beta</em>",
-		"weighted": "Weighted <em>beta</em>",
-	})
-
-	gotEmptyFallback := engine.GetHighlight([]map[string]interface{}{
-		{"id": "empty-weighted", "content_with_weight": "", "content": "Empty fallback beta."},
-	}, []string{"beta"}, "content_with_weight")
-	assertEqual(t, gotEmptyFallback, map[string]string{
-		"empty-weighted": "Empty fallback <em>beta</em>",
-	})
-
-	gotInvalidFallback := engine.GetHighlight([]map[string]interface{}{
-		{"id": "invalid-weighted", "content_with_weight": nil, "content": "Invalid fallback beta."},
-	}, []string{"beta"}, "content_with_weight")
-	assertEqual(t, gotInvalidFallback, map[string]string{
-		"invalid-weighted": "Invalid fallback <em>beta</em>",
+		"full-text": "Alpha <em>beta</em>.\n<em>betamax</em> soup. <em>BETA</em> again!",
+		"no-match":  "Keep the complete text.",
 	})
 }
 
-func TestElasticsearchGetHighlightPreservesExistingAndNonEnglish(t *testing.T) {
+func TestElasticsearchGetHighlightExpandsLatinStems(t *testing.T) {
+	engine := &Engine{}
+	chunks := []map[string]interface{}{
+		{
+			"_id":                 "latin",
+			"content_with_weight": "Required coordinated isolation. Coordinación.",
+		},
+	}
+
+	got := engine.GetHighlight(chunks, []string{"requir", "coordin", "isol"}, "content_with_weight")
+	assertEqual(t, got, map[string]string{
+		"latin": "<em>Required</em> <em>coordinated</em> <em>isolation</em>. <em>Coordinación</em>.",
+	})
+}
+
+func TestElasticsearchGetHighlightPrefersLongKeywords(t *testing.T) {
 	engine := &Engine{}
 
 	gotExisting := engine.GetHighlight([]map[string]interface{}{
 		{"id": "existing", "content_with_weight": "already <em>marked</em> text"},
 	}, []string{"marked"}, "content_with_weight")
-	assertEqual(t, gotExisting, map[string]string{"existing": "already <em>marked</em> text"})
+	assertEqual(t, gotExisting, map[string]string{"existing": "already <em><em>marked</em></em> text"})
 
 	gotNonEnglish := engine.GetHighlight([]map[string]interface{}{
 		{"id": "cn", "content_with_weight": "这是世界。你好世界"},
@@ -625,8 +625,8 @@ func TestElasticsearchGetHighlightPreservesExistingAndNonEnglish(t *testing.T) {
 	if got := engine.GetHighlight([]map[string]interface{}{{"id": "x"}}, []string{"x"}, "content_with_weight"); got == nil || len(got) != 0 {
 		t.Fatalf("missing field highlight=%#v, want empty non-nil map", got)
 	}
-	if got := engine.GetHighlight([]map[string]interface{}{{"id": "x", "content": "x"}}, nil, "content"); got == nil || len(got) != 0 {
-		t.Fatalf("empty keyword highlight=%#v, want empty non-nil map", got)
+	if got := engine.GetHighlight([]map[string]interface{}{{"id": "x", "content": "x"}}, nil, "content"); !reflect.DeepEqual(got, map[string]string{"x": "x"}) {
+		t.Fatalf("empty keyword highlight=%#v, want unchanged text", got)
 	}
 }
 

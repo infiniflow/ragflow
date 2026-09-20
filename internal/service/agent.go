@@ -349,7 +349,7 @@ type AgentService struct {
 	// in-memory; a follow-up phase moves to Redis per plan §4.9.
 	runner *canvas.Runner
 
-	// Phase 4.4 V2 — Redis-backed run infrastructure. nil = in-memory
+	// Phase 4.4 V2 — Kvrocks-backed run infrastructure. nil = in-memory
 	// / no-tracking (test path, current production boot path until
 	// cmd/server_main.go wires them in v3.6.0).
 	//
@@ -391,7 +391,7 @@ func NewAgentService() *AgentService {
 }
 
 // NewAgentServiceWithOptions is the production constructor that
-// injects the Redis-backed run infrastructure. The zero-arg
+// injects the Kvrocks-backed run infrastructure. The zero-arg
 // NewAgentService() remains as a thin wrapper that calls this with
 // all-nil options so existing call sites (cmd/server_main.go,
 // handler tests, agent_test.go) keep compiling.
@@ -1165,6 +1165,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		if err := component.ValidateDynamicEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
+		if err := validateAgentChatModels(ctx, userID, dslMap); err != nil {
+			return err
+		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
@@ -1713,6 +1716,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			dsl = dslpkg.NormalizeForRun(session.DSL)
 		}
 	}
+	if err := validateAgentChatModels(ctx, userID, dsl); err != nil {
+		return nil, err
+	}
 	// A handler may allocate the session id before calling RunAgent so the
 	// effective id is available even when the run emits no events. Treat an
 	// absent conversation row as a first touch regardless of who generated the
@@ -1857,6 +1863,33 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}()
 	registrationHandedOff = true
 	return out, nil
+}
+
+// validateAgentChatModels rejects stale Agent model references before saving or
+// execution. Agent components always invoke a chat model; model-free canvases
+// contain no Agent component and pass through.
+func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]any) error {
+	c, err := canvas.DecodeFromDSL(dsl)
+	if err != nil {
+		return nil
+	}
+	modelSolver := NewModelSolver()
+	for _, node := range c.Components {
+		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
+			continue
+		}
+		modelRef, ok := node.Obj.Params["model_id"].(string)
+		if !ok {
+			modelRef, _ = node.Obj.Params["llm_id"].(string)
+		}
+		if _, err := modelSolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
+			}
+			return fmt.Errorf("validate Agent chat model: %w: %w", err, ErrAgentStorageError)
+		}
+	}
+	return nil
 }
 
 // buildRunFunc assembles the per-run RunFunc the orchestrator (canvas.Runner)
@@ -2298,6 +2331,28 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				emit("workflow_finished", string(wfData))
 
 				s.markRunSucceeded(ctx2, runID)
+				return state, nil
+			}
+			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
+				visibleAnswer := answer
+				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
+					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					visibleAnswer = failureText
+				}
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
+					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
+				}
+				if shouldEmitMessage {
+					meData, _ := json.Marshal(canvas.MessageEndEvent{
+						Attachment: attachment,
+						Reference:  referencePayload,
+					})
+					emit("message_end", string(meData))
+				}
+				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
@@ -2805,6 +2860,23 @@ func tenantIDFromRoot(root map[string]any) string {
 	return ""
 }
 
+// deferredAgentStreamFailureText returns the user-facing failure text the
+// Message component recorded when its deferred consumption of an Agent
+// stream failed. Python surfaces that same text through the failing node's
+// outputs into the chat stream instead of aborting the SSE conversation
+// with an error frame, so the run handler keeps it in the message flow.
+// Cancellation and timeouts stay run-level errors.
+func deferredAgentStreamFailureText(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ""
+	}
+	var deferred *runtime.DeferredStreamError
+	if !errors.As(err, &deferred) {
+		return ""
+	}
+	return strings.TrimSpace(deferred.FailureText())
+}
+
 func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
 	if err == nil || answer == "" {
 		return false
@@ -2814,7 +2886,7 @@ func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
 }
 
 // markRunSucceeded records the run as completed successfully via
-// the Redis-backed RunTracker. No-op when tracker is nil (test path)
+// the Kvrocks-backed RunTracker. No-op when tracker is nil (test path)
 // or when the underlying Redis call fails (degraded boot).
 func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 	if s.runTracker == nil {
@@ -2829,7 +2901,7 @@ func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 }
 
 // markRunFailed records the run as failed (with reason) via the
-// Redis-backed RunTracker. No-op when tracker is nil or the
+// Kvrocks-backed RunTracker. No-op when tracker is nil or the
 // underlying Redis call fails.
 func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) {
 	if s.runTracker == nil {

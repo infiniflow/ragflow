@@ -388,6 +388,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id/messages", r.datasetsHandler.ListIngestionMessages)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
 				// Metadata Config

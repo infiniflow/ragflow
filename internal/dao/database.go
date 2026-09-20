@@ -107,9 +107,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	}
 
 	// Set connection pool
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetMaxIdleConns(databaseConfig.MaxConnections)
+	sqlDB.SetMaxOpenConns(databaseConfig.MaxConnections)
+	sqlDB.SetConnMaxLifetime(time.Duration(databaseConfig.StaleTimeout) * time.Second)
 
 	// Auto migrate all dataModels
 	dataModels := []interface{}{
@@ -181,6 +181,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = RunMigrations(ctx, DB); err != nil {
 			return fmt.Errorf("failed to run manual migrations: %w", err)
 		}
+		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
+			return err
+		}
 
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
@@ -189,7 +192,17 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			}
 		}
 		common.Info("Database schema migrated successfully")
+
+		// Split the conversation message and reference payloads out of their
+		// parent tables. It has to run after AutoMigrate, which unlike
+		// RunMigrations creates the child tables this backfill writes to.
+		if err = migrateConversationHistory(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate conversation history: %w", err)
+		}
 	} else {
+		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
+			return err
+		}
 		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
 		// performed by the standalone --migrate action, so a server-mode process
 		// only converges the tables it needs itself.
@@ -219,12 +232,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	if err = SeedCanvasTemplates(ctx, DB); err != nil {
 		common.Warn("Failed to seed canvas templates", zap.Error(err))
 	}
-	// Seed the built-in compilation template group (c3aa748c...) for every
-	// tenant so compiler.json's default group resolves out of the box.
-	if err = SeedBuiltinCompilationTemplates(ctx, DB); err != nil {
-		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
-	}
-
 	common.Info("Database connected and migrated successfully")
 
 	err = models.InitProviderManager("conf/models")

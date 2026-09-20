@@ -325,13 +325,13 @@ const MarkdownContent = ({
   const renderReference = useCallback(
     (text: string) => {
       const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
 
         return (
           <HoverCard key={i}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                {t('common.figure')} {chunkIndex + 1}
+                [{chunkIndex + 1}]
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">

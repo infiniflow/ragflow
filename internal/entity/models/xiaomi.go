@@ -101,7 +101,7 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -608,7 +608,34 @@ func (x *XiaomiModel) ParseFile(ctx context.Context, modelName *string, content 
 }
 
 func (x *XiaomiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
+	if modelsSuffix == "" {
+		return nil, fmt.Errorf("xiaomi: models URL suffix is not configured")
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
+
+	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 func (x *XiaomiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -616,10 +643,7 @@ func (x *XiaomiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (x *XiaomiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
-	_, err := x.baseModel.GetBaseURL(apiConfig)
+	_, err := x.ListModels(ctx, apiConfig)
 	return err
 }
 

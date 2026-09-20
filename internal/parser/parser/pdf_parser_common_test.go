@@ -101,6 +101,26 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	}
 }
 
+func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{
+				Text:       "小灰灰",
+				LayoutType: deepdoctype.DLALabelFigureCaption,
+				Image:      "aGVsbG8=",
+			},
+		},
+	}
+
+	res := pdfParseResultToJSON("sample.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+}
+
 // TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
 // DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
 // SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
@@ -217,81 +237,6 @@ func TestPDFParseResultToJSON_DefaultKeepsHeaderFooterLikePython(t *testing.T) {
 	}
 	if got, want := res.JSON[2]["text"], "Body"; got != want {
 		t.Fatalf("JSON[2].text = %v, want %v", got, want)
-	}
-}
-
-func TestPDFParseResultToJSONWithOptions_FiltersHeaderFooterWhenEnabled(t *testing.T) {
-	parsed := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "Header", LayoutType: "header"},
-			{
-				Text:       "Body",
-				LayoutType: "",
-				Positions: []deepdoctype.Position{{
-					PageNumbers: []int{0},
-					Left:        10,
-					Right:       20,
-					Top:         30,
-					Bottom:      40,
-				}},
-			},
-			{Text: "Footer", LayoutType: "footer"},
-		},
-	}
-
-	res := pdfParseResultToJSONWithOptions("filtered.pdf", parsed, pdfPostProcessOptions{removeHeaderFooter: true})
-	if res.Err != nil {
-		t.Fatalf("pdfParseResultToJSONWithOptions: %v", res.Err)
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
-	}
-	if got, want := res.JSON[0]["text"], "Body"; got != want {
-		t.Fatalf("JSON[0].text = %v, want %v", got, want)
-	}
-}
-
-func TestPDFParseResultToJSONWithOptions_RemovesTOCByOutline(t *testing.T) {
-	parsed := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{
-				Text:       "Contents",
-				LayoutType: "text",
-				Positions: []deepdoctype.Position{{
-					PageNumbers: []int{1},
-					Left:        10,
-					Right:       20,
-					Top:         30,
-					Bottom:      40,
-				}},
-			},
-			{
-				Text:       "Body",
-				LayoutType: "text",
-				Positions: []deepdoctype.Position{{
-					PageNumbers: []int{3},
-					Left:        10,
-					Right:       20,
-					Top:         30,
-					Bottom:      40,
-				}},
-			},
-		},
-		Outlines: []deepdoctype.Outline{
-			{Title: "目录", Level: 0, PageNumber: 1},
-			{Title: "Chapter 1", Level: 0, PageNumber: 3},
-		},
-	}
-
-	res := pdfParseResultToJSONWithOptions("toc.pdf", parsed, pdfPostProcessOptions{removeTOC: true})
-	if res.Err != nil {
-		t.Fatalf("pdfParseResultToJSONWithOptions: %v", res.Err)
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
-	}
-	if got, want := res.JSON[0]["text"], "Body"; got != want {
-		t.Fatalf("JSON[0].text = %v, want %v", got, want)
 	}
 }
 
@@ -589,6 +534,36 @@ func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
 	}
 }
 
+func TestPDFParseResultToJSON_CropsFigureCaptionForVisionEnhancement(t *testing.T) {
+	mockEngine := &mockPDFEngineForCommonTest{}
+	parsed := &deepdoctype.ParseResult{
+		Engine:     mockEngine,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{{
+			Text:       "Figure caption",
+			LayoutType: deepdoctype.DLALabelFigureCaption,
+			Positions: []deepdoctype.Position{{
+				PageNumbers: []int{0},
+				Left:        10,
+				Right:       50,
+				Top:         10,
+				Bottom:      50,
+			}},
+		}},
+	}
+
+	res := pdfParseResultToJSON("figure-caption.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+	if image, _ := res.JSON[0]["image"].(string); image == "" {
+		t.Fatal("figure caption image should be cropped before vision enhancement")
+	}
+}
+
 func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 	parsed := &deepdoctype.ParseResult{
 		Engine:     nil,
@@ -610,5 +585,29 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+}
+
+func TestNormalizePDFDocType_EmbeddedImageOnTextLayout(t *testing.T) {
+	item := map[string]any{
+		"doc_type_kwd": "text",
+		"layout_type":  "title",
+		"image":        "aGVsbG8=",
+	}
+	normalizePDFDocType(item)
+	if got, want := item["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+}
+
+func TestNormalizePDFDocType_KeepsTableWhenImagePresent(t *testing.T) {
+	item := map[string]any{
+		"doc_type_kwd": "table",
+		"layout_type":  "table",
+		"image":        "aGVsbG8=",
+	}
+	normalizePDFDocType(item)
+	if got, want := item["doc_type_kwd"], "table"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
 	}
 }

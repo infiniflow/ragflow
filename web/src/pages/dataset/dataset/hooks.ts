@@ -10,18 +10,15 @@ import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import { ILogInfo } from '../process-log-modal';
-import { RunningStatus } from './constant';
-import {
-  getDocumentRunningStatus,
-  ingestionStatusToRunningStatus,
-} from './utils';
+import { getDocumentProgressMessage, getDocumentRunningStatus } from './utils';
 import type { IFileLogList } from '../dataset-overview/interface';
+import { useIngestionMessages } from '../ingestion-message-hooks';
 
 const PollIntervalMs = 5000;
 
 export const DocumentLogKeys = {
   queued: (datasetId: string | undefined, documentId: string | undefined) =>
-    ['queuedDocumentLog', datasetId, documentId] as const,
+    ['documentLog', datasetId, documentId] as const,
 };
 
 export const useShowLog = (documents: IDocumentInfo[]) => {
@@ -45,54 +42,57 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     liveDoc ??
     documents.find((item: IDocumentInfo) => item.id === record?.id) ??
     record;
-  const queued =
-    isGoBackend &&
-    !!sourceDoc &&
-    ingestionStatusToRunningStatus(sourceDoc.ingestion_status) ===
-      RunningStatus.QUEUED;
-
-  // The Go backend reports a queued document via ingestion_status while the
-  // legacy document.progress_msg stays empty until the worker starts. Fall
-  // back to the early pipeline-operation-log row the Go API writes at task
-  // creation, so the queued modal shows "Task is queued..." instead of "-".
-  // Python never sets ingestion_status, so this query stays disabled there.
-  const { data: queuedLog } = useQuery<IFileLogList>({
+  // A document can have several historical runs. The list endpoint's exact
+  // document filter returns the current log identity, which scopes all event
+  // reads to the intended run.
+  const { data: documentLog } = useQuery<IFileLogList>({
     queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
-    enabled: visible && queued && !!datasetId && !!sourceDoc?.id,
+    enabled: visible && isGoBackend && !!datasetId && !!sourceDoc?.id,
     refetchInterval: PollIntervalMs,
     queryFn: async () => {
       const { data: res = {} } = await listDataPipelineLogDocument(
         datasetId || '',
         {
           page: 1,
-          page_size: 10,
           // Exact match on the document: a name search is fuzzy and can push
           // this document's row off the first page when several documents
-          // share a name, silently losing the queued message.
+          // share a name.
           document_id: sourceDoc?.id,
           log_type: 'file',
+          orderby: 'run_count',
+          desc: true,
+          page_size: 1,
         },
       );
       return (res.data || { logs: [], total: 0 }) as IFileLogList;
     },
   });
-  const queuedProgressMsg = useMemo(() => {
-    const logs = queuedLog?.logs ?? [];
-    // The endpoint filters by document_id, so the first row is this document's
-    // newest log. A miss falls back to the document progress_msg below.
-    return logs[0]?.progress_msg;
-  }, [queuedLog]);
-  // The queued fallback is only meaningful while the document is still
-  // queued. Once it starts running, the query cache may still hold the stale
-  // "Task is queued..." message and would shadow the live progress below.
-  const effectiveQueuedProgressMsg = queued ? queuedProgressMsg : undefined;
+  const logID = documentLog?.logs[0]?.id;
+  const {
+    data: messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = useIngestionMessages(datasetId, logID, visible);
+  const latestEvent = useMemo(() => {
+    const items = messages?.items ?? [];
+    return items[items.length - 1];
+  }, [messages]);
 
   const logInfo = useMemo(() => {
     const source = sourceDoc;
     let log: ILogInfo = {
       taskId: source?.id,
       fileName: source?.name || '-',
-      details: effectiveQueuedProgressMsg || source?.progress_msg || '-',
+      details: source
+        ? messages?.items.length
+          ? ''
+          : getDocumentProgressMessage({
+              ...source,
+              latest_ingestion_event:
+                latestEvent ?? source.latest_ingestion_event,
+            })
+        : '-',
     };
     if (source) {
       log = {
@@ -107,11 +107,30 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         // Go derives status from ingestion_status (queued included);
         // Python reads the legacy run field.
         status: getDocumentRunningStatus(source),
-        details: effectiveQueuedProgressMsg || source.progress_msg,
+        details: messages?.items.length
+          ? ''
+          : getDocumentProgressMessage({
+              ...source,
+              latest_ingestion_event:
+                latestEvent ?? source.latest_ingestion_event,
+            }),
+        events: messages?.items,
+        loadPreviousEvents: hasPreviousPage
+          ? () => fetchPreviousPage()
+          : undefined,
+        hasPreviousEvents: hasPreviousPage,
+        isLoadingPreviousEvents: isFetchingPreviousPage,
       };
     }
     return log;
-  }, [sourceDoc, effectiveQueuedProgressMsg]);
+  }, [
+    sourceDoc,
+    latestEvent,
+    messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  ]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

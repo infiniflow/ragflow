@@ -230,8 +230,11 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	// cache engine
 	cacheType := globalConfig.CacheEngineType()
 	switch cacheType {
-	case "redis":
-		redisConfig := globalConfig.GetRedisConfig()
+	// The Go stack talks to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template; both map to
+	// the same Kvrocks backend, so export the same connection settings.
+	case "redis", "kvrocks":
+		redisConfig := globalConfig.GetKvrocksConfig()
 		exportedRedisConfigs := redisConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedRedisConfigs)
 	default:
