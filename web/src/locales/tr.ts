@@ -539,13 +539,13 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
       similarityThreshold: 'Benzerlik eşiği',
       similarityThresholdTip:
-        'RAGFlow, alım sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin veya ağırlıklı yeniden sıralama puanının kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Bu eşiğin altında benzerlik puanına sahip parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır, yani yalnızca 20 veya daha yüksek hibrit benzerlik puanına sahip parçalar alınacaktır.',
+        'RAGFlow, getirme sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin bir kombinasyonunu veya bir yeniden sıralayıcı model seçildiğinde ağırlıklı anahtar kelime benzerliği ile ağırlıklı yeniden sıralama puanının bir kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Benzerlik puanı bu eşiğin altında olan parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır. Bu, yalnızca hibrit benzerlik puanı 20 veya daha yüksek olan parçaların getirileceği anlamına gelir. Vektör benzerliği ağırlığı 0 olarak ayarlanırsa bu eşik uygulanmaz.',
       vectorSimilarityWeight: 'Vektör benzerlik ağırlığı',
       vectorSimilarityWeightTip:
-        "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
+        "Bu, vektör kosinüs benzerliği veya yeniden sıralama puanıyla kullanılan birleşik benzerlik puanındaki vektör benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
       keywordSimilarityWeight: 'Anahtar kelime benzerlik ağırlığı',
       keywordSimilarityWeightTip:
-        "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
+        "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. Vektör ve anahtar kelime ağırlıklarının toplamı 1.0'a eşit olmalıdır.",
       testText: 'Test metni',
       testTextPlaceholder: 'Sorunuzu buraya girin!',
       testingLabel: 'Çalıştır',
@@ -595,7 +595,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       close: 'Kapat',
       rerankModel: 'Yeniden sıralama modeli',
       rerankPlaceholder: 'Değer seçin',
-      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın. Yeniden sıralama modeli kullanmak istiyorsanız bir SaaS yeniden sıralayıcı kullandığınızdan emin olun; yerel olarak dağıtılmış yeniden sıralama modelini tercih ediyorsanız RAGFlow'u docker-compose-gpu.yml ile başlattığınızdan emin olun.`,
+      rerankTip: `İsteğe bağlı. Boş bırakılırsa RAGFlow ağırlıklı anahtar kelime benzerliği ve ağırlıklı vektör kosinüs benzerliğinin kombinasyonunu kullanır; yeniden sıralama modeli seçilirse ağırlıklı yeniden sıralama puanı ağırlıklı vektör kosinüs benzerliğinin yerini alır. Yeniden sıralama modeli kullanmanın sistemin yanıt süresini önemli ölçüde artıracağını unutmayın.`,
       topK: 'Top-K',
       topKTip: `Yeniden sıralama modeli ile birlikte kullanılır; bu ayar belirtilen yeniden sıralama modeline gönderilecek metin parçası sayısını tanımlar.`,
       delimiter: `Metin sınırlayıcısı`,

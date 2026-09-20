@@ -327,13 +327,13 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
-        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Rerank-bewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 20 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
+        'RAGFlow verwendet beim Abruf entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinusähnlichkeit oder, wenn ein Reranker-Modell ausgewählt ist, eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichtetem Reranking-Score. Dieser Parameter legt den Schwellenwert für die Ähnlichkeit zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einem Ähnlichkeitswert unter diesem Schwellenwert wird aus den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 20 festgelegt. Das bedeutet, dass nur Chunks mit einem hybriden Ähnlichkeitswert von 20 oder höher abgerufen werden. Wenn die Gewichtung der Vektorähnlichkeit auf 0 gesetzt ist, gilt dieser Schwellenwert nicht.',
       vectorSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       vectorSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Damit wird die Gewichtung der Vektorähnlichkeit im kombinierten Ähnlichkeitswert festgelegt, entweder in Verbindung mit der Vektorkosinusähnlichkeit oder dem Reranking-Score. Die Summe der beiden Gewichtungen muss 1,0 ergeben.',
       keywordSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       keywordSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Damit wird die Gewichtung der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert festgelegt. Die Summe der Gewichtungen für Vektor- und Schlüsselwortähnlichkeit muss 1,0 ergeben.',
       testText: 'Testtext',
       testTextPlaceholder: 'Geben Sie hier Ihre Frage ein!',
       testingLabel: 'Testen',

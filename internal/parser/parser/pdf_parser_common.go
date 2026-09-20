@@ -499,6 +499,7 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 			continue
 		}
 		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
+			sec.LayoutType != deepdoctype.DLALabelFigureCaption &&
 			sec.LayoutType != deepdoctype.LayoutTypeTable &&
 			strings.TrimSpace(sec.LayoutType) != "image" &&
 			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
@@ -656,10 +657,18 @@ func normalizePDFDocType(item map[string]any) {
 	if item == nil {
 		return
 	}
+	layoutType, _ := item["layout_type"].(string)
 	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
+		// A figure caption can carry the cropped figure image after PDF media
+		// sections are rendered. Keep it aligned with Python's media-section
+		// contract so the downstream VLM enhancement can process it.
+		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption {
+			if img, _ := item["image"].(string); img != "" {
+				item["doc_type_kwd"] = "image"
+			}
+		}
 		return
 	}
-	layoutType, _ := item["layout_type"].(string)
 	switch layoutType {
 	case "table":
 		item["doc_type_kwd"] = "table"
