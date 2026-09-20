@@ -479,6 +479,50 @@ func TestSessionStampsEvidenceRefsInFirstSeenOrder(t *testing.T) {
 	}
 }
 
+// TestSessionFoldsEarlierToolResults pins the context bound (see compactEarlierToolResults): the
+// LAST turn's results stay verbatim — the model is about to reason over them — while everything
+// older becomes a digest that says how many passages were read and that their refs still resolve.
+//
+// The digest has to carry those two facts: without the count the model cannot tell "I read 12
+// passages here" from "I read nothing", and without the ref note it would not know it may still
+// cite what it read.
+func TestSessionFoldsEarlierToolResults(t *testing.T) {
+	big := `{"passages":[` + strings.Repeat(`{"ref":0,"chunk_id":"c1","content":"x"},`, 40) + `{"ref":41,"chunk_id":"c2","content":"y"}]}`
+	s := &SessionState{}
+	s.Messages = []schema.Message{
+		*schema.SystemMessage("system"),
+		*schema.UserMessage("q"),
+		*schema.AssistantMessage("thinking", nil),
+		*schema.ToolMessage(big, "call-1"), // turn 1 result: folded
+		*schema.AssistantMessage("thinking again", nil),
+		*schema.ToolMessage(`{"passages":[{"ref":0,"chunk_id":"c1","content":"x"}]}`, "call-2"), // last turn: kept
+	}
+	s.compactEarlierToolResults()
+
+	if got := s.Messages[3].Content; got == big || !strings.Contains(got, "folded") {
+		t.Errorf("turn 1 result = %q, want a digest", got)
+	} else if !strings.Contains(got, `"passages":41`) {
+		t.Errorf("digest = %q, want the number of passages it stood for", got)
+	} else if !strings.Contains(got, "[ID:n]") {
+		t.Errorf("digest = %q, want it to say the refs still resolve", got)
+	}
+	if got := s.Messages[5].Content; got != `{"passages":[{"ref":0,"chunk_id":"c1","content":"x"}]}` {
+		t.Errorf("the last turn's result was folded: %q", got)
+	}
+
+	// A short result is not worth folding: the digest would cost more than it saves.
+	short := &SessionState{Messages: []schema.Message{
+		*schema.AssistantMessage("a", nil),
+		*schema.ToolMessage(`{"passages":[]}`, "c1"),
+		*schema.AssistantMessage("b", nil),
+		*schema.ToolMessage(`{"passages":[]}`, "c2"),
+	}}
+	short.compactEarlierToolResults()
+	if short.Messages[1].Content != `{"passages":[]}` {
+		t.Errorf("a short result was folded: %q", short.Messages[1].Content)
+	}
+}
+
 // The seed-time delivery of the SET method is GONE, and no test replaces it: the method now
 // reaches a session on exactly one signal, the batch the CALLER writes (appendBatchProtocol,
 // pinned by TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch).

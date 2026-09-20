@@ -680,6 +680,57 @@ type fixedReplyModel struct {
 	calls int
 }
 
+// promptRecordingModel returns a canned reply and keeps the LAST prompt it was shown, so a test can
+// assert what a turn ASKED for rather than only what it did with the reply.
+type promptRecordingModel struct {
+	reply *ModelReply
+	last  []schema.Message
+	calls int
+}
+
+func (m *promptRecordingModel) Complete(_ context.Context, msgs []schema.Message, _ []ToolSpec) (*ModelReply, error) {
+	m.calls++
+	m.last = msgs
+	return m.reply, nil
+}
+
+// TestFinalizeTurnAsksForTheAnswer pins the last turn's contract: the session is asked to ANSWER,
+// and the answer it writes is what the round hands back.
+//
+// The turn used to ask for a state patch only ("output now: <state>{...}"), which is why a session
+// that had read everything still reported no answer and the run re-composed the deliverable from a
+// renderer that had never read the passages (measured 2026-09-20: 三国's record held twelve members
+// with the quoted line behind each, and the answer carried citations for a third of them).
+func TestFinalizeTurnAsksForTheAnswer(t *testing.T) {
+	mdl := &promptRecordingModel{reply: &ModelReply{Content: "<answer>关羽杀了十二人 [ID:0]</answer>"}}
+	s := &SessionState{
+		Messages: []schema.Message{
+			*schema.UserMessage("关羽杀了多少有姓名的人物？"),
+			*schema.AssistantMessage("查得：华雄、颜良、文丑。", nil),
+		},
+		Tools:        &Toolset{},
+		Model:        mdl,
+		DeadlineLeft: 30,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "count"}}},
+	}
+	if err := s.finalizeNode(context.Background()); err != nil {
+		t.Fatalf("finalizeNode = %v", err)
+	}
+	if s.FoundAnswer == nil || !strings.Contains(*s.FoundAnswer, "关羽杀了十二人") {
+		t.Fatalf("FoundAnswer = %v, want the answer the turn wrote", s.FoundAnswer)
+	}
+
+	var joined strings.Builder
+	for _, m := range mdl.last {
+		joined.WriteString(m.Content)
+	}
+	for _, want := range []string{"<answer>", "[ID:n]", "REQUIRED"} {
+		if !strings.Contains(joined.String(), want) {
+			t.Errorf("the last prompt must ASK for the answer (%q missing); got:\n%s", want, joined.String())
+		}
+	}
+}
+
 func (m *fixedReplyModel) Complete(_ context.Context, _ []schema.Message, _ []ToolSpec) (*ModelReply, error) {
 	m.calls++
 	return m.reply, nil
@@ -1066,9 +1117,10 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 	if got := prompts.Render(loader, "missing", "", nil); got != "" {
 		t.Errorf("unknown template with empty fallback = %q", got)
 	}
-	// Nil loader + known embedded name still resolves the canonical .md.
-	if got := prompts.Render(nil, "sca_select", "", map[string]string{"question": "Q"}); !strings.Contains(got, "Q") {
-		t.Errorf("nil loader did not resolve embedded sca_select: %q", got)
+	// Nil loader + known embedded name still resolves the canonical .md. (sca_select was the
+	// template here until the sufficiency review was removed; the rewriter is the surviving one.)
+	if got := prompts.Render(nil, "sca_query_rewrite", "", map[string]string{"question": "Q"}); !strings.Contains(got, "Q") {
+		t.Errorf("nil loader did not resolve embedded sca_query_rewrite: %q", got)
 	}
 	// Both {{k}} and {{ k }} are substituted (templates use the spaced form).
 	if got := prompts.Render(StringPromptLoader{"tpl": "a={{x}} b={{ y }}"}, "tpl", "",

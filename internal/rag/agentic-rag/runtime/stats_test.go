@@ -47,9 +47,9 @@ func TestLogHierarchicalRounds(t *testing.T) {
 			s.RecordUsage(PhaseClaimResearch, 0, 0, 120)
 		}()
 		func() {
-			_, d := Phase(c, PhaseSufficiency)
+			_, d := Phase(c, PhaseRewrite)
 			defer d()
-			s.RecordCall(PhaseSufficiency)
+			s.RecordCall(PhaseRewrite)
 		}()
 
 		RecordRound(c, PhaseOrchestrator)
@@ -83,8 +83,8 @@ func TestLogHierarchicalRounds(t *testing.T) {
 			t.Errorf("log output missing %q\n---\n%s", want, out)
 		}
 	}
-	if !strings.Contains(out, "sufficiency") {
-		t.Errorf("log output missing sufficiency\n---\n%s", out)
+	if !strings.Contains(out, "rewrite") {
+		t.Errorf("log output missing rewrite\n---\n%s", out)
 	}
 	// claim_research runs inside every round, so it must appear at least once
 	// per round as a nested (indented) row, not just as a flat top-level row.

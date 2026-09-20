@@ -193,20 +193,21 @@ func TestCacheLookupMissesUnrelatedQuestion(t *testing.T) {
 	}
 }
 
-func TestCacheReuseBlockedAfterInsufficientRound(t *testing.T) {
-	// when the last round was not SUFFICIENT the caller is
-	// asking again for more evidence, so the cached answer must not be reused.
+func TestCacheReuseBlockedAfterAnUnansweredRound(t *testing.T) {
+	// when the last round did not ANSWER, the caller is asking again for more evidence, so the
+	// cached answer must not be reused. This used to key off the sufficiency verdict; with no
+	// reviewer the fact the round leaves behind is whether it wrote an answer.
 	c := NewRAGCache()
 	c.Store("population of Paris 2019", "2.1 million")
-	c.noteVerdict("INSUFFICIENT")
+	c.noteAnswered(false)
 
 	if _, ok := c.Lookup("legal population of Paris in 2019"); ok {
-		t.Fatal("reuse must be blocked after an INSUFFICIENT round")
+		t.Fatal("reuse must be blocked after a round that did not answer")
 	}
 
-	c.noteVerdict("SUFFICIENT")
+	c.noteAnswered(true)
 	if _, ok := c.Lookup("legal population of Paris in 2019"); !ok {
-		t.Fatal("reuse must resume once the round is sufficient")
+		t.Fatal("reuse must resume once a round answers")
 	}
 }
 
@@ -250,7 +251,7 @@ func TestNilCacheIsInert(t *testing.T) {
 		t.Fatal("nil cache must not hit")
 	}
 	c.Store("q", "a") // must not panic
-	c.noteVerdict("SUFFICIENT")
+	c.noteAnswered(true)
 }
 
 func TestResolveEffectiveQuestionPrefersOriginal(t *testing.T) {
@@ -292,8 +293,7 @@ func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
 	cache := NewRAGCache()
 	cache.consecutiveUnanswerable = 2
 	resp := &RunResponse{
-		Verdict:     VerdictInsufficient,
-		SCAFeedback: "evidence is not yet sufficient",
+		SCAFeedback: "this round did not settle the question (40 passages read)",
 		Answer:      "Partial findings.",
 	}
 	got := researchStatusTrailer(cache, resp)
@@ -313,8 +313,7 @@ func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 	cache := NewRAGCache()
 	cache.consecutiveUnanswerable = 1
 	resp := &RunResponse{
-		Verdict:     VerdictInsufficient,
-		SCAFeedback: "evidence is not yet sufficient",
+		SCAFeedback: "this round did not settle the question (40 passages read)",
 		Answer:      "Partial findings.",
 	}
 	got := researchStatusTrailer(cache, resp)
@@ -341,9 +340,9 @@ func TestResearchStatusTrailerSkipsSufficientOrEmpty(t *testing.T) {
 		name string
 		resp *RunResponse
 	}{
-		{"sufficient verdict", &RunResponse{Verdict: VerdictSufficient, SCAFeedback: "ok", Answer: "A"}},
-		{"empty answer", &RunResponse{Verdict: VerdictInsufficient, SCAFeedback: "x", Answer: ""}},
-		{"missing sca feedback", &RunResponse{Verdict: VerdictInsufficient, SCAFeedback: "", Answer: "A"}},
+		{"answered round (no status note)", &RunResponse{SCAFeedback: "", Answer: "A"}},
+		{"empty answer", &RunResponse{SCAFeedback: "x", Answer: ""}},
+		{"missing status note", &RunResponse{SCAFeedback: "", Answer: "A"}},
 	}
 	for _, c := range cases {
 		if got := researchStatusTrailer(cache, c.resp); got != "" {
@@ -524,7 +523,7 @@ func TestOuterReactSessionPublishMergesPerCallResults(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			session.publish(
-				&RunResponse{Answer: fmt.Sprintf("answer-%d", i), Verdict: fmt.Sprintf("verdict-%d", i)},
+				&RunResponse{Answer: fmt.Sprintf("answer-%d", i), SCAFeedback: fmt.Sprintf("status-%d", i)},
 				&runtime.Kbinfos{
 					Chunks:  []map[string]any{{"chunk_id": fmt.Sprintf("c%d", i)}},
 					DocAggs: []map[string]any{{"doc_id": fmt.Sprintf("d%d", i)}},
@@ -551,8 +550,8 @@ func TestOuterReactSessionPublishMergesPerCallResults(t *testing.T) {
 	if !strings.HasPrefix(session.resp.Answer, "answer-") {
 		t.Errorf("answer = %q, want one call's answer", session.resp.Answer)
 	}
-	if !strings.HasPrefix(session.resp.Verdict, "verdict-") {
-		t.Errorf("verdict = %q, want one call's verdict", session.resp.Verdict)
+	if !strings.HasPrefix(session.resp.SCAFeedback, "status-") {
+		t.Errorf("status note = %q, want one call's note", session.resp.SCAFeedback)
 	}
 }
 
@@ -907,7 +906,7 @@ func TestRAGCacheConsecutiveUnanswerableIsSerialized(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			cache.NoteUnanswerable(VerdictInsufficient)
+			cache.NoteUnanswerable(false)
 		}()
 	}
 	wg.Wait()
@@ -915,14 +914,14 @@ func TestRAGCacheConsecutiveUnanswerableIsSerialized(t *testing.T) {
 	if got := cache.ConsecutiveUnanswerable(); got != calls {
 		t.Errorf("ConsecutiveUnanswerable = %d, want %d (increments must not be lost)", got, calls)
 	}
-	cache.NoteUnanswerable(VerdictSufficient)
+	cache.NoteUnanswerable(true)
 	if got := cache.ConsecutiveUnanswerable(); got != 0 {
-		t.Errorf("after a SUFFICIENT verdict = %d, want 0", got)
+		t.Errorf("after a round that ANSWERED = %d, want 0", got)
 	}
 	if got := (*RAGCache)(nil).ConsecutiveUnanswerable(); got != 0 {
 		t.Errorf("nil cache = %d, want 0", got)
 	}
-	(*RAGCache)(nil).NoteUnanswerable(VerdictInsufficient) // must not panic
+	(*RAGCache)(nil).NoteUnanswerable(false) // must not panic
 }
 
 // TestOuterReactSessionSelectsWinningCallEvidence pins the citation fix: the

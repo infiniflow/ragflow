@@ -1406,6 +1406,9 @@ const (
 	evidenceDigestChars = 1200
 	// maxToolResponseChars bounds ONE tool payload.
 	maxToolResponseChars = 12000
+	// foldedToolResultChars is the size above which an EARLIER turn's tool result is folded into
+	// a digest. Below it the fold costs more than it saves, and a short result is cheap to keep.
+	foldedToolResultChars = 1200
 	// emptyStrikes is how many dataset-level empties (reason=no_structure) a
 	// compiled-structure tool must accumulate before being disabled for the rest
 	// of the session. Kept above 1: a single empty can be SCOPED — graph_explore
@@ -1441,6 +1444,15 @@ const (
 	// the finalize/salvage step must still fit, or the extra turn buys evidence
 	// that never reaches the slot table.
 	turnAskFloorS = 20.0
+	// answerReserveS is the slice of the session clock that belongs to the ANSWER turn: below it
+	// the session stops searching and spends what is left writing the answer.
+	//
+	// turnAskFloorS (20s) was the only reserve, and it is sized for a SALVAGE call that writes a
+	// slot patch — not for an answer that reads the whole context and cites it. Measured
+	// 2026-09-20 (三国): the last turn timed out after 39s and the round produced no answer at all,
+	// so the run's twelve researched members had to be re-composed by a call that had never read
+	// them. The answer turn is the one turn the whole session exists for; it gets its own clock.
+	answerReserveS = 40.0
 	// finalizeTimeout bounds the salvage call in the finalize node.
 	finalizeTimeoutS = 150.0
 	// minFinalizeTimeout is the floor for the salvage call.
@@ -2198,6 +2210,9 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	s.SkippedDup += skipped
 	s.ToolStrikes = strikes
 	s.appendBatchProtocol(ranAny)
+	// Everything the model was shown EARLIER is folded: only the turn just produced stays
+	// verbatim (see compactEarlierToolResults).
+	s.compactEarlierToolResults()
 	s.appendRecordLine(ranAny)
 	return nil
 }
@@ -2212,6 +2227,62 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 //
 // It rides the tool result the model is about to read, like the record line, and is
 // appended at most once per session.
+// compactEarlierToolResults folds the tool results of EARLIER turns into one line each, keeping
+// the turn just produced verbatim.
+//
+// Why: a tool result is appended to the conversation and re-sent on EVERY later turn, so its size
+// is paid once per turn rather than once per call. A round that reads ~48k characters over eight
+// turns re-sends them about eight times — measured 2026-09-20: 10,033 prompt tokens per turn on
+// average, 18,205 on the question that read the most, and the session's own turns were 37% of the
+// run's wall clock.
+//
+// The paper bounds this at the source (a search cache with a five-result window, plus a spill file
+// for oversized results). This does the equivalent to our conversation: what the model was JUST
+// shown stays verbatim, and everything older becomes a line stating what was read, how much of it,
+// and that the words are unchanged in the pool.
+//
+// Nothing the run depends on is lost: the passages stay in the pool, the evidence registry keeps
+// their [ID:n] numbers (so an answer written later still cites what it read), and a model that
+// wants to re-read something asks again — which is allowed whenever the query is not a paraphrase
+// of an earlier one (see nearDupJaccard).
+func (s *SessionState) compactEarlierToolResults() {
+	// Keep the results of the LAST turn: they are what the model is about to reason over.
+	last := -1
+	for i := len(s.Messages) - 1; i >= 0; i-- {
+		if s.Messages[i].Role == schema.Assistant {
+			last = i
+			break
+		}
+	}
+	folded := 0
+	for i := 0; i < last; i++ {
+		m := &s.Messages[i]
+		if m.Role != schema.Tool || len(m.Content) < foldedToolResultChars {
+			continue
+		}
+		m.Content = foldedToolResult(m.Content)
+		folded++
+	}
+	if folded > 0 {
+		_LOG.Printf("[Action Session] folded %d earlier tool result(s) into digests", folded)
+	}
+}
+
+// foldedToolResult is the digest an earlier turn's tool result becomes: what was read, how much of
+// it, and the two facts a model needs to decide whether it must go back for the words.
+func foldedToolResult(content string) string {
+	n := strings.Count(content, `"ref":`)
+	if n == 0 {
+		n = strings.Count(content, `"chunk_id"`)
+	}
+	if n == 0 {
+		return `{"folded":true,"note":"This result was read earlier in the session and has been folded away; ask again if you need it."}`
+	}
+	return fmt.Sprintf(
+		`{"folded":true,"passages":%d,"note":"These %d passage(s) were read earlier in this session. Their words are unchanged in the evidence pool and their [ID:n] numbers still resolve, so you can cite them — ask for them again only if you need the exact text."}`,
+		n, n)
+}
+
 // stampEvidenceRefs numbers the passages of ONE tool result and records them in the session's
 // registry.
 //
@@ -2435,13 +2506,30 @@ func continuationAsk(taken, cap int, record string) string {
 // finalizeNode: tool budget spent — ONE last call
 // WITHOUT tools, demanding the terminal JSON to salvage whatever was learned.
 func (s *SessionState) finalizeNode(ctx context.Context) error {
-	budgetPrompt := ("TOOL BUDGET EXHAUSTED. Based ONLY on the passages retrieved above, output now — no prose outside the block:\n" +
-		"<state>{\"new_states\": [{\"state\": [{\"id\": <slot_id>, \"kind\": \"members\", " +
+	// The last turn ASKS FOR THE ANSWER.
+	//
+	// It used to ask for a state patch only ("output now: <state>{...}"), which is why the session
+	// never answered: the protocol it was given had no <answer> in it, so the round's findings
+	// always had to be re-composed by a separate call that had never read the passages (measured
+	// 2026-09-20: 三国's record held twelve members with their quoted lines, and the answer carried
+	// citations for a third of them because the composer could only cite the blocks it rendered).
+	//
+	// The paper's loop ends when the AGENT answers, so the answer is what this turn asks for. The
+	// patch stays available — a session that resolved slots must still record them — but it is the
+	// secondary output, and the answer is the one that reaches the user.
+	budgetPrompt := ("TOOL BUDGET EXHAUSTED. Based ONLY on the passages you have read, write your final answer now.\n" +
+		"Format: <state>{...}</state> (only if you have slot findings to record) followed by " +
+		"<answer>your answer</answer>.\n" +
+		"The answer is what the user receives: answer the question that was asked, in prose, and cite " +
+		"the passage behind EVERY fact with its [ID:n]. Do not include an [ID:n] you were not shown. " +
+		"If part of the question cannot be supported by a passage you read, say which part and what " +
+		"you could not find — do not leave it out and do not guess.\n" +
+		"For the state block: <state>{\"new_states\": [{\"state\": [{\"id\": <slot_id>, \"kind\": \"members\", " +
 		"\"items\": [{\"name\": \"<name>\", \"chunk_id\": \"<its passage>\"}], " +
-		"\"candidate_strength\": <0..1>}]}]}</state>\n" +
-		"Use \"kind\": \"count\" with \"count\": <n> for a number, and \"kind\": \"text\" with " +
-		"\"candidate\": \"<value>\" for one value that is neither a member list nor a number.\n" +
-		"If NOTHING was learned use: <state>{\"new_states\": []}</state>")
+		"\"candidate_strength\": <0..1>}]}]}</state>; use \"kind\": \"count\" with \"count\": <n> for a number, " +
+		"and \"kind\": \"text\" with \"candidate\": \"<value>\" for one value that is neither a member list nor a " +
+		"number; if NOTHING was learned use <state>{\"new_states\": []}</state>.\n" +
+		"An answer is REQUIRED even when the state block is empty.")
 
 	// The patch written HERE is the one that lands in the record, so the record is
 	// part of the order.
@@ -2590,6 +2678,16 @@ func (s *SessionState) route() routeTarget {
 	if len(s.PendingCalls) > 0 {
 		return routeTool
 	}
+	// The answer turn owns the last slice of the clock.
+	//
+	// Routing to finalize at 0s left is how a session ends with no answer at all: measured
+	// 2026-09-20 (三国), the last turn timed out after 39s and the round's own research — twelve
+	// members with the quoted line behind each — reached the evidence pool but never the answer.
+	// So the session stops SEARCHING with this reserve still in hand and spends it answering.
+	if s.DeadlineLeft <= answerReserveS {
+		_LOG.Printf("[Action Session] %.0fs left: stopping the search so the answer has its own clock", s.DeadlineLeft)
+		return routeFinalize
+	}
 	if s.Attempts >= s.actionMaxTurns() {
 		// The mode's turn count is a FLOOR: past it the MODEL decides whether the
 		// session takes another turn, up to the run cap (see offerContinuation).
@@ -2614,6 +2712,11 @@ func (s *SessionState) route() routeTarget {
 // emitting tool_calls, PendingCalls stayed non-empty, so the attempts check in
 // route was never reached and the session burned the whole timeout.
 func (s *SessionState) routeAfterTool() routeTarget {
+	// Same reserve as route(): the answer turn needs the clock more than another probe does.
+	if s.DeadlineLeft <= answerReserveS {
+		_LOG.Printf("[Action Session] %.0fs left: stopping the search so the answer has its own clock", s.DeadlineLeft)
+		return routeFinalize
+	}
 	if s.Attempts >= s.actionMaxTurns() {
 		// Same rule as route: the tool result that just arrived is what the continuation offer
 		// is about, so the model decides with it in hand — otherwise the last probe's result is
@@ -2806,25 +2909,36 @@ func ParseTerminal(content string, parent State) ([]State, *string, *string, map
 	}
 	if strings.Contains(content, "<answer>") {
 		block := ExtractTag(content, "answer")
-		if block == "" {
-			block = "{}"
-		}
 		data, _ := ExtractJSON(block).(map[string]any)
-		if data == nil {
-			data = map[string]any{}
+		// The block is JSON when the model wrote a payload (that shape may also carry a state
+		// patch), and PLAIN TEXT when it simply answered.
+		//
+		// Accepting only the JSON shape is what kept the session protocol patch-only: an answer
+		// written as prose — "<answer>关羽杀了十二人 [ID:0]</answer>", which is exactly what the
+		// turn now asks for — parsed to FoundAnswer="" (an empty answer is not a found answer, by
+		// the rule below), so the round reported "no answer" with the answer sitting in the reply
+		// (measured 2026-09-20: every session of the run, including the ones whose record held
+		// twelve members and their quoted lines).
+		ans := ""
+		if data != nil {
+			if raw, ok := data["answer"]; ok && raw != nil {
+				ans = strings.TrimSpace(fmt.Sprint(raw))
+			}
+		}
+		if ans == "" && data == nil {
+			ans = strings.TrimSpace(block)
 		}
 		// An empty/whitespace answer is NOT a found answer. Returning a non-nil empty
 		// string here would terminate the session with FoundAnswer="" — the slot research
 		// pass then reported
 		// collected_answer=false for a session that never answered, and the
 		// model never got the chance to re-emit a proper patch/answer.
-		ans := ""
-		if raw, ok := data["answer"]; ok && raw != nil {
-			ans = strings.TrimSpace(fmt.Sprint(raw))
-		}
 		var found *string
 		if ans != "" {
 			found = &ans
+		}
+		if data == nil {
+			data = map[string]any{}
 		}
 		patches := toPatchList(data["new_state"])
 		var branches []State

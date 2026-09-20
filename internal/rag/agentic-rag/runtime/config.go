@@ -48,10 +48,12 @@ const GraphExploreTool = "graph_explore"
 // Tools is the set of tool names visible to the model in this mode. An empty
 // set means the model gets no tool loop at all.
 type ModeSpec struct {
-	Label        string
-	Agentic      bool
-	EnableSCA    bool
-	SCAMaxRounds int
+	Label   string
+	Agentic bool
+	// MaxRounds is how many FOLLOW-UP research rounds a question may take after its first pass.
+	// It is the loop's bound that is not the clock: a round either answers — and the run stops
+	// there — or asks for another one, and this is how many times it may ask.
+	MaxRounds int
 
 	ActionMaxTurns int
 	// SnippetsPerQuery caps how many hits of ONE query the session reads.
@@ -94,26 +96,26 @@ func allToolSet() map[string]bool {
 //   - ultra: the same loop, deeper still, plus the relational tool.
 var THINKING_MODES = map[string]ModeSpec{
 	"low": {
-		Label: "low", Agentic: false, EnableSCA: false,
-		SCAMaxRounds: 0, ActionMaxTurns: 4,
+		Label: "low", Agentic: false,
+		MaxRounds: 0, ActionMaxTurns: 4,
 		SnippetsPerQuery: 0,
 		Tools:            map[string]bool{},
 	},
 	"medium": {
-		Label: "medium", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, ActionMaxTurns: 8,
+		Label: "medium", Agentic: true,
+		MaxRounds: 3, ActionMaxTurns: 8,
 		SnippetsPerQuery: 6,
 		Tools:            allToolSet(),
 	},
 	"high": {
-		Label: "high", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, ActionMaxTurns: 8,
+		Label: "high", Agentic: true,
+		MaxRounds: 3, ActionMaxTurns: 8,
 		SnippetsPerQuery: 8,
 		Tools:            allToolSet(),
 	},
 	"ultra": {
-		Label: "ultra", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 5, ActionMaxTurns: 10,
+		Label: "ultra", Agentic: true,
+		MaxRounds: 5, ActionMaxTurns: 10,
 		SnippetsPerQuery: 10,
 		Tools:            toolsOf(append(append([]string{}, allTools...), GraphExploreTool)...),
 	},
@@ -122,8 +124,8 @@ var THINKING_MODES = map[string]ModeSpec{
 // NAIVE is the fallback for an unrecognised mode label. It is not agentic — the
 // caller answers with plain retrieval rather than failing the request.
 var NAIVE = ModeSpec{
-	Label: "naive", Agentic: false, EnableSCA: false,
-	SCAMaxRounds: 0, ActionMaxTurns: 4,
+	Label: "naive", Agentic: false,
+	MaxRounds: 0, ActionMaxTurns: 4,
 	Tools: map[string]bool{},
 }
 

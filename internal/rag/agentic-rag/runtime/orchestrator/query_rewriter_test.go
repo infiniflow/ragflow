@@ -102,4 +102,21 @@ func TestRewriteGapToQueryReturnsNilOnFailure(t *testing.T) {
 	}
 }
 
-// Prompt rendering
+// Prompt rendering// stubJSONModel returns a canned JSON value (or an error), and records the last
+// prompt it was shown. It lived beside the sufficiency review's tests until the review was
+// removed; the rewriter is the only JSON call left in this package, so it lives here now.
+type stubJSONModel struct {
+	value any
+	err   error
+	calls int
+	last  string
+}
+
+func (s *stubJSONModel) GenJSON(_ context.Context, prompt string) (any, error) {
+	s.calls++
+	s.last = prompt
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.value, nil
+}

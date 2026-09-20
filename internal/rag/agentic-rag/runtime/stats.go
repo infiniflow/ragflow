@@ -71,13 +71,13 @@ const (
 	PhaseDirect        = "direct"
 	PhaseOrchestrator  = "orchestrator"
 	PhaseClaimResearch = "claim_research"
-	PhaseDraft         = "draft"
-	PhaseSufficiency   = "sufficiency"
-	PhaseSCA           = "sca"
-	PhaseRewrite       = "rewrite"
-	PhaseCompute       = "compute"
-	PhaseGrounded      = "grounded"
-	PhaseFinalize      = "finalize"
+	// The "draft", "sufficiency" and "sca" phases are gone with the SCA stage: a round is one
+	// session (rag_agent) that reads the evidence and writes its answer, so there is no separate
+	// draft to write, no review to run, and no phase ledger row for either.
+	PhaseRewrite  = "rewrite"
+	PhaseCompute  = "compute"
+	PhaseGrounded = "grounded"
+	PhaseFinalize = "finalize"
 )
 
 // phaseRoundKey identifies a phase within one orchestrator round.

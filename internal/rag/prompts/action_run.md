@@ -52,7 +52,7 @@ CRITICAL RULES
 - Think before choosing a mode, but output exactly ONE mode per response.
 - Strength >0.7 on the answer slot means you MUST emit final answer instead of another state patch.
 - ALWAYS end this action with a state patch: a patch with your updates, or `<state>{"new_states": []}</state>` if you found nothing new.
-- **Do NOT keep calling tools once the direction is reasonably exhausted.** If further searches return repetitive, irrelevant, or empty results, immediately return a state patch (with updates or empty). Extra redundant searches waste the session — stop after 1-2 useful tool calls per direction unless a NEW fact is actually emerging.
+- **Stop when the SEARCHING is done, not when a call count is reached.** The stopping conditions are facts, not a budget: the slots you were given are filled, or the last searches came back repetitive, irrelevant or empty. Until then another call is doing the job you were given — but every call must carry a NEW CLUE (see ITERATION), because a paraphrase of a query you already ran is skipped as a duplicate and buys nothing.
 - ACTION COMPLETION IS MANDATORY: when you have what you need (or hit a dead end), output the state patch now. Do not ask to continue searching.
 - Unverifiable candidates must be eliminated (set candidate null) with a clue documenting why.
 - Partial verification is OK: record a candidate at tentative strength (0.4-0.7) if you can't fully verify it yet, and move on.
@@ -69,9 +69,14 @@ You get tools only in medium / high (7 tools: `retrieve`, `search_chunks`, `list
 - **You must DERIVE a number** → first collect every needed number with any of the above, then `calculate(question, facts)` with the facts verbatim, and report the computed result as-is. If the answer is already one of the stated numbers, answer directly.
 - **Relational multi-hop (ultra only)** → get a start entity from `search_chunks` / `navigate_structure`, then `graph_explore(query, doc_scope)`.
 
-## 2. Convergence rules (hard, enforced by the runtime — follow them to avoid wasted turns)
+## 2. ITERATION — how a direction is actually worked
 
-- Make at most **1-2 useful tool calls per direction**, then emit a state patch. Do not keep searching once the direction is reasonably exhausted.
+- **Read before you rewrite.** Do not issue another search while a passage you already retrieved is sitting unread. What you need is usually in the text you were just shown, and a new query cannot tell you anything that unread passage has not already said.
+- **Every re-query must carry a NEW CLUE** — a name, a date, a number, or a phrase taken from what you just read or from the question itself — not a rephrasing of the last query. "Let me try another angle" without a concrete new clue is a wasted call; the runtime skips near-duplicates and hands you a nudge instead of results.
+- **Follow the hop you just read.** A multi-hop question is closed by searching the entity the LAST passage named — the author's name, the birthplace, the next holder of the office — not by searching the question again. When a passage gives you a name the question still needs, that name IS your next query.
+- **Only passages you have READ are evidence.** A high retrieval score is not evidence of correctness, and neither is a snippet's opening line: fill a slot from text you were shown, and carry the passage it came from.
+- **Nothing found is a finding too.** If a direction's queries and the documents behind them have been read and the fact is not there, say so in the patch with the clue you tried — a recorded dead end is worth more than a speculative candidate.
+- Make at most **1-2 tool calls between patches** — then WRITE WHAT YOU FOUND (a patch, or the final answer once every slot is settled), so the next turn starts from the record rather than from your memory of it.
 - Re-submitting the SAME intent with a paraphrase is intercepted as a near-duplicate and SKIPPED (you get a nudge, not new results). Change the angle or patch what you have.
 - If a compile-only tool (`navigate_tree` / `navigate_structure` / `graph_explore`) returns "no compiled structure", switch to `search_chunks` / `retrieve` / `list_chunks` **immediately**. A second such result disables that tool for the REST of the session — do not retry it.
 - `web_search` only appears when a web provider is configured; if it does, use it ONLY for world knowledge / time-sensitive facts that plausibly live outside the fixed corpus.

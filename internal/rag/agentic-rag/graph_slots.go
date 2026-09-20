@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -31,58 +30,14 @@ import (
 
 // The slot-research stage: the table a round is driven by, the members and counts it
 // holds, the passes that fill it, and the write-back folded into it.
-// RenderSlotDraft
-// render the slot table into a fact-preserving draft for the SCA.
+// The SCA-facing DRAFT used to be rendered here (RenderSlotDraft): the table plus the machine
+// fields a reviewer needed to check a candidate against the passages that produced it — candidate
+// strength, terminal type, evidence ids, clue tails.
 //
-// A resolved slot carries the model's own candidate strength, the evidence ids /
-// terminal type of the passages that produced it (from slotEvidence), and the
-// tail of its discovered clues, so the SCA can verify the candidate against the
-// passages that actually produced it. Unresolved slots are listed explicitly
-// with their question clues so the SCA can call them out as gaps. A collected
-// answer leads the draft — it is the strongest candidate — with the same
-// evidence metadata under the "_answer" key.
-func RenderSlotDraft(slotTable runtime.State, collectedAnswer string, slotEvidence map[string]SlotEvidence) string {
-	var lines []string
-	if collectedAnswer != "" {
-		// The collected answer leads the draft — it is the strongest candidate — and
-		// carries the same evidence metadata, read from the "_answer" key.
-		lines = append(lines, "Candidate answer: "+collectedAnswer+draftEvidenceSuffix(slotEvidence["_answer"]))
-		lines = append(lines, "")
-	}
-	if len(slotTable.State) == 0 {
-		return strings.Join(lines, "\n")
-	}
-	for _, v := range slotTable.State {
-		vtype := v.Type
-		if vtype == "" {
-			vtype = "entity"
-		}
-		cand := ""
-		if v.Candidate != nil {
-			cand = *v.Candidate
-		}
-		if cand == "" {
-			clues := v.QuestionClues
-			if len(clues) > 2 {
-				clues = clues[:2]
-			}
-			lines = append(lines, fmt.Sprintf("- slot %d [%s]: NOT RESOLVED (%s)",
-				v.ID, vtype, strings.Join(truncateEach(clues, draftUnresolvedClueChars), "; ")))
-			continue
-		}
-		strength := "?"
-		if v.CandidateStrength != nil {
-			strength = fmt.Sprintf("%.2f", *v.CandidateStrength)
-		}
-		line := fmt.Sprintf("- slot %d [%s]: %s (strength=%s)%s",
-			v.ID, vtype, cand, strength, draftEvidenceSuffix(slotEvidence[fmt.Sprint(v.ID)]))
-		if tail := draftClueTail(v.DiscoveredClues); tail != "" {
-			line += " — " + tail
-		}
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
+// It is gone with the reviewer. The table still renders, once, as the RECORD (RenderSlotRecord),
+// which is what the round reports and what a fallback composition reads; and the answer itself is
+// written by the session that read the passages (see routeResearch and the answer contract in
+// runtime/action_session.go), so there is no second rendering for it to agree or disagree with.
 
 // RenderSlotRecord renders the slot table for the ANSWER prompt.
 //
@@ -191,25 +146,27 @@ func RenderSlotRecord(slotTable runtime.State, collectedAnswer string) string {
 			// A DECLARED number (slots.KindCount / KindRange) compared with the members
 			// above. Text claims no number, so prose can no longer masquerade as a
 			// count here (or as a member list on the other side of the comparison).
-			if claimed, ok := v.Typed().Number(); ok {
-				if claimed == n {
-					continue
-				}
-				lines = append(lines, fmt.Sprintf(
-					"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — the count and the members listed disagree. Reconcile them against the evidence before answering: a count larger than the members that are listed is not evidence of members, and a list is only as complete as the passages behind it.",
-					v.ID, v.Type, claimed, n))
+			claimed, ok := v.Typed().Number()
+			if !ok || claimed == n {
 				continue
 			}
-			// The other half of the same disagreement: a count slot holding WORDS. It claims no
-			// number by contract (KindText is opaque and nothing derives from it), so it used to
-			// pass in silence — the record showed its prose beside the enumerated size and let the
-			// answer take either, which is how 14 became an answer to a table that enumerated 16.
-			// The words are not parsed; the disagreement is stated.
-			if isCountSlot(v) && v.Typed().Kind != slots.KindItems && strings.TrimSpace(*v.Candidate) != strconv.Itoa(n) {
-				lines = append(lines, fmt.Sprintf(
-					"- NOTE: slot %d [%s] holds %q as text, not a number, so nothing was derived from it while the slots above enumerate %d. State the count the evidence supports.",
-					v.ID, v.Type, truncateRunes(strings.TrimSpace(*v.Candidate), 60), n))
-			}
+			lines = append(lines, fmt.Sprintf(
+				"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — the count and the members listed disagree. Reconcile them against the evidence before answering: a count larger than the members that are listed is not evidence of members, and a list is only as complete as the passages behind it.",
+				v.ID, v.Type, claimed, n))
+		}
+		// The same disagreement from the other side: a record that enumerates a set and records NO
+		// number at all. The count the question asked for is either missing or sitting as prose in
+		// a slot, and the record then shows a list with nothing to count it by — which is how 14
+		// became an answer to a table that enumerated 16.
+		//
+		// The trigger is the VALUE-level fact (no slot carries a declared number), NOT the planner's
+		// word for a slot: a slot the planner typed "count" but whose session filled with the members
+		// themselves is a slot doing exactly what it was asked, and scolding it by its label is the
+		// kind of type-reading this design removes.
+		if !recordsANumber(slotTable) {
+			lines = append(lines, fmt.Sprintf(
+				"- NOTE: no slot records a number while the slots above enumerate %d — if the question asks for a count, state the count the evidence supports (the members and their words), never one taken from an unchecked claim.",
+				n))
 		}
 	}
 	// A session's own draft answer goes LAST and is labelled for what it is.
@@ -681,7 +638,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	// the clues say WHAT TO SEARCH (the planner's only job), the question is what the answer
 	// must satisfy, and the review's gaps are this round's follow-up. The table still travels,
 	// but as the session's own scratchpad — nothing here reads it to decide anything.
-	gaps := SCAGapsToRewrite(st.SCA)
+	gaps := unresolvedClueGaps(st)
 	gapTexts := make([]string, 0, len(gaps))
 	for _, g := range gaps {
 		text := strings.TrimSpace(g.SearchHint)
@@ -694,7 +651,12 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	}
 	dirText := strings.TrimSpace(question)
 	if len(st.Plan) > 0 {
-		dirText += "\n\nClues to cover:"
+		// The block is what to COVER, and it is addressed to the reader, not to the retriever:
+		// the instruction below says so out loud because a model that copies this block into
+		// `retrieve`'s query turns one call into searches for "Clues", "to" and "cover"
+		// (measured 2026-09-20: ~10 such legs in one 三国 round). Retrieval also sanitizes the
+		// block if it arrives anyway (see runtime.SanitizeRetrievalQuery).
+		dirText += "\n\nClues to cover (turn each into your OWN SHORT probe query — a few words; never pass this block or a whole clue list as a query):"
 		for _, c := range st.Plan {
 			if c = strings.TrimSpace(c); c != "" {
 				dirText += "\n- " + c
@@ -702,7 +664,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		}
 	}
 	for _, g := range gapTexts {
-		dirText += "\nA gap still to close: " + g
+		dirText += "\nA gap still to close (probe it the same way): " + g
 	}
 	dirs := []direction{{slotID: -1, text: dirText}}
 	_LOG.Printf("[SlotResearch] one session this round (clue(s)=%d, review gap(s)=%d).", len(st.Plan), len(gapTexts))
@@ -849,27 +811,23 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		})
 	}
 
-	// One set, one answer: a table can hold the members in one slot and the count in
-	// another, written by different sessions, with nothing keeping them in step. Raised
-	// here, before the draft the answer is written from.
-	if raised := syncCountSlots(&slotTable); len(raised) > 0 {
-		_LOG.Printf("[SlotResearch] count slot(s) %v set to the enumerated members' size", raised)
-	}
-
-	draft := RenderSlotDraft(slotTable, collected, sessionEvidence)
+	record := RenderSlotRecord(slotTable, collected)
 	_LOG.Printf("[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%v",
 		countFilled(slotTable), len(unresolvedOut), collected != "")
-	_LOG.Printf("[SlotResearch] slot table after round:\n%s", draft)
+	_LOG.Printf("[SlotResearch] slot table after round:\n%s", record)
 
 	return &SlotResearchResult{
 		SlotTable:       slotTable,
 		CollectedAnswer: collected,
 		UnresolvedSlots: unresolvedOut,
 		SlotEvidence:    sessionEvidence,
-		SlotDraft:       draft,
-		// The answer-facing record (no machine fields) is rendered here, next to
-		// the SCA-facing draft, so the two can never drift apart.
-		SlotRecord:   RenderSlotRecord(slotTable, collected),
+		// The record is the only rendering of the table that leaves this round. There used to be a
+		// second one — a "draft" carrying the machine fields a reviewer needed (candidate strength,
+		// evidence ids, clue tails) — and the two were rendered together "so they cannot drift". With
+		// no reviewer there is nothing to drift FROM: the round's deliverable is what it found, and
+		// the answer is written by the session that read it (see the answer contract in
+		// runtime/action_session.go).
+		SlotRecord:   record,
 		Attempted:    ledger,
 		EvidenceRefs: evidenceRefs,
 	}
@@ -1069,70 +1027,29 @@ func itemQuote(quote string) string {
 	return " “" + truncateRunes(quote, itemQuoteMaxRunes) + "”"
 }
 
-// isCountSlot reports whether a slot declares itself a count — the planner's word for a number
-// slot. It decides only whether a disagreement is worth STATING; nothing is derived from it
-// (syncCountSlots reads the value's KIND for that, never the type word).
-func isCountSlot(v runtime.Variable) bool {
-	return v.Candidate != nil && strings.EqualFold(strings.TrimSpace(v.Type), "count")
-}
-
-// countDerivedFloor is the smallest set a count may be derived from: one quotable item is not an
-// enumeration, and a half-filled table must not collapse a claimed number to one.
-const countDerivedFloor = 2
-
-// syncCountSlots writes the size of the enumerable set into every slot that claims a number, and
-// keeps the old claim as an alternate. Only a number-claiming slot is touched (slots.Value.Number),
-// and the size counts the items the table can point at (runtime.AnchoredItems): a count of claims
-// is a count of nothing.
+// The count RECONCILIATION used to live here: `syncCountSlots` overwrote every number-claiming
+// slot with the size of the enumerated set (keeping the old claim as an alternate), and
+// `isCountSlot` read the planner's word for a slot to decide what to say about it. Both are gone.
 //
-// The size is read across the whole table, so a question with two sets gets one number for both
-// until the planner says which count counts which set. Below countDerivedFloor there is nothing to
-// derive from and the claim stands.
+// What the machine did was answer part of the question: the set's size, written into the slot the
+// answer reads its number from. That is the one place where "code reads the answer's structure"
+// became "code writes the answer", and it is the one that cannot coexist with a session that reads
+// the passages and writes the answer itself (see routeResearch and the answer contract in
+// runtime/action_session.go). The members, their words and their ids are all still in the table —
+// what is gone is the second author.
 //
-// It returns the ids it changed, for the log.
-func syncCountSlots(table *runtime.State) []int {
-	if table == nil || len(table.State) == 0 {
-		return nil
-	}
-	union := runtime.AnchoredItems(table)
-	if len(union) < countDerivedFloor {
-		return nil
-	}
-	var raised, unreadable []int
-	for i := range table.State {
-		v := &table.State[i]
-		claimed, ok := v.Typed().Number()
-		if !ok {
-			// A slot holding ITEMS is read, just not as a number: the size is derived from the items
-			// and the record states it, so it is not an unreadable count (a session may patch the
-			// members into the slot the planner typed "count").
-			if isCountSlot(*v) && v.Typed().Kind != slots.KindItems {
-				unreadable = append(unreadable, v.ID)
-			}
-			continue
+// What replaces it is a STATEMENT the record makes about itself (see RenderSlotRecord): the set is
+// enumerated, and if no slot records a number then the record says so instead of inventing one.
+
+// recordsANumber reports whether any slot holds a DECLARED number (see slots.KindCount /
+// slots.KindRange). It reads the value, never the planner's word for the slot.
+func recordsANumber(table runtime.State) bool {
+	for _, v := range table.State {
+		if _, ok := v.Typed().Number(); ok {
+			return true
 		}
-		if claimed == len(union) {
-			continue
-		}
-		// The claim loses either way — a count larger than the members listed is not evidence
-		// of members, and a smaller one is a set that lost some. Left standing, the claim is the
-		// number the answer reports, whatever the enumerated members say.
-		//
-		// Deduped because this runs after EVERY pass (and again after the last node), so
-		// an undeduped append printed the same alternate line once per run.
-		v.Alternates = dedupe(append(v.Alternates, slots.Render(v.Typed())))
-		derived := slots.Number(len(union))
-		v.Value = &derived
-		rendered := slots.Render(derived)
-		v.Candidate = &rendered
-		raised = append(raised, v.ID)
 	}
-	if len(unreadable) > 0 {
-		// A count slot holding words cannot be corrected — nothing derives from text — so it is
-		// said out loud instead, and the record states the disagreement (see RenderSlotRecord).
-		_LOG.Printf("[Coverage] count slot(s) %v hold text, not a number: nothing was derived from them", unreadable)
-	}
-	return raised
+	return false
 }
 
 // countFilled counts slots holding a candidate.

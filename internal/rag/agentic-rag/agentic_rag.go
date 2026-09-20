@@ -509,12 +509,11 @@ type RunResponse struct {
 	// "produced nothing" before falling back to an internal-error message; an empty result
 	// on its own is not a failure.
 	GraphFailed bool
-	// Verdict is the final sufficiency verdict ("SUFFICIENT"/"INSUFFICIENT").
-	Verdict string
-	// SCAFeedback is the body of the SCA feedback note — the sufficiency status hint alone
-	// (the verdict dict carries only "status"; see scaFeedback). Rag() appends it as the
-	// "[Research status]" note for every INSUFFICIENT verdict, adding the trailing "STOP"
-	// vs "call rag again" sentence based on the consecutive-unanswerable count.
+	// SCAFeedback is the body of the "[Research status]" note: the round's OWN record when it
+	// could not answer (see researchStatusNote) — how many passages it read, and what the plan
+	// still lists as unresolved. It used to be the reviewer's verdict text; with no reviewer it
+	// is a report of what happened rather than a judgement. Rag() appends the trailing "STOP" vs
+	// "call rag again" sentence based on the consecutive-unanswerable count.
 	SCAFeedback string
 	// CollectedAnswer is the research draft (SCA-reviewed) produced by the
 	// agentic loop. It feeds the final composition; prefer Answer for display.
@@ -807,9 +806,13 @@ func resolveEffectiveQuestion(question, originalUserQuestion string) string {
 // tool_call case) injects the same *RAGCache via RAGTools.Cache instead of relying on the
 // auto-built one.
 type RAGCache struct {
-	mu          sync.Mutex
-	entries     map[string]ragCacheEntry
-	lastVerdict string
+	mu      sync.Mutex
+	entries map[string]ragCacheEntry
+	// lastAnswered / lastRated: whether the LAST research round wrote an answer (see
+	// noteAnswered). They replace the recorded sufficiency verdict; lastRated keeps "it did not
+	// answer" distinguishable from "no round has been rated yet".
+	lastAnswered bool
+	lastRated    bool
 	// consecutiveUnanswerable
 	// how many consecutive rag calls ended without a
 	// satisfying verdict. After two in a row, RAGTools.rag appends a
@@ -824,14 +827,18 @@ type RAGCache struct {
 	consecutiveUnanswerable int
 }
 
-// NoteUnanswerable records one research round's verdict on the shared cache.
-func (c *RAGCache) NoteUnanswerable(verdict string) {
+// NoteUnanswerable records whether one research round ANSWERED, on the shared cache.
+//
+// The counter used to be driven by the reviewer's verdict (SUFFICIENT reset it, anything else
+// bumped it). With no reviewer the fact it tracks is the one the loop actually has: the round
+// either wrote an answer or it did not.
+func (c *RAGCache) NoteUnanswerable(answered bool) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if verdict == VerdictSufficient {
+	if answered {
 		c.consecutiveUnanswerable = 0
 	} else {
 		c.consecutiveUnanswerable++
@@ -893,24 +900,28 @@ func (c *RAGCache) Store(question, answer string) {
 	c.entries[question] = ragCacheEntry{answer: answer, gram: gram}
 }
 
-// noteVerdict records the verdict of the last research round.
-func (c *RAGCache) noteVerdict(verdict string) {
+// noteAnswered records whether the last research round ANSWERED (see NoteUnanswerable).
+//
+// It replaces the recorded verdict. The cache must not serve a following re-ask out of an answer
+// of its own that a previous round had already failed to ground, and with no reviewer the fact
+// the round leaves behind is simply whether it wrote an answer at all.
+func (c *RAGCache) noteAnswered(answered bool) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.lastVerdict = verdict
+	c.lastAnswered, c.lastRated = answered, true
 }
 
-// researchStatusTrailer: for every non-SUFFICIENT verdict it returns the trailing sentence
-// folded into the "[Research status]" note. After two consecutive unsatisfying rag() calls
+// researchStatusTrailer: for a round that did NOT answer it returns the trailing sentence folded
+// into the "[Research status]" note. After two consecutive unanswered rag() calls
 // (ConsecutiveUnanswerable >= 2 on the shared *RAGCache) it tells the outer
 // agent to STOP calling rag again; otherwise it invites a focused re-ask. It
-// returns "" when there is nothing to annotate — a SUFFICIENT verdict, an empty
-// answer, or no SCA feedback.
+// returns "" when there is nothing to annotate: the round answered, there is no
+// status note, or there is no answer to annotate.
 func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
-	if resp.Verdict != VerdictInsufficient || resp.SCAFeedback == "" || resp.Answer == "" {
+	if resp.SCAFeedback == "" || resp.Answer == "" {
 		return ""
 	}
 	if cache != nil && cache.ConsecutiveUnanswerable() >= 2 {
@@ -920,13 +931,17 @@ func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
 }
 
 // reuseAllowed reports whether a cached answer may be reused for the next question.
+//
+// lastRated keeps "the last round did not answer" distinguishable from "no round has been rated
+// yet": the old check allowed reuse when no verdict had been recorded at all, and an unheard-of
+// round is not a failure.
 func (c *RAGCache) reuseAllowed() bool {
 	if c == nil {
 		return false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.lastVerdict == "" || c.lastVerdict == "SUFFICIENT"
+	return !c.lastRated || c.lastAnswered
 }
 
 // wrapModelForStats wraps the model's invoker so calls made through it are
@@ -1262,7 +1277,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	// admittedly incomplete one.
 	if cacheable && cache != nil {
 		cache.Store(req.Question, resp.Answer)
-		cache.noteVerdict(resp.Verdict)
+		cache.noteAnswered(strings.TrimSpace(resp.CollectedAnswer) != "")
 	}
 	return resp
 }
@@ -2169,9 +2184,6 @@ func (s *outerReactSession) publish(call *RunResponse, kb *runtime.Kbinfos) {
 	s.calls = append(s.calls, ragCallResult{answer: call.Answer, kb: kb})
 	if s.resp.Answer == "" {
 		s.resp.Answer = call.Answer
-	}
-	if s.resp.Verdict == "" {
-		s.resp.Verdict = call.Verdict
 	}
 	if s.resp.SCAFeedback == "" {
 		s.resp.SCAFeedback = call.SCAFeedback

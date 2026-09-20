@@ -18,145 +18,24 @@ package agentic_rag
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
-	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/rag/agentic-rag/runtime"
 )
 
-// The fan-out stage: decompose the question into first-hop sub-questions, parse what
-// the model wrote, and fetch them programmatically.
+// The opening DECOMPOSITION is gone from this file. It used to be a stage of its own: one chat
+// call asking for 2-5 "fan-out" sub-questions, a shape guard that rejected lines looking like
+// answers rather than queries (fanoutLooksLikeQuery), and a parser that split a prose reply into
+// lines. Its output then became the slot table's `fanout_hint` — while the slot-table call asked
+// the same model, on the same question, for the very queries that stage had just produced.
 //
-// Its parsing is shape-guarded rather than answer-keyed (see fanoutLooksLikeQuery):
-// the model is asked for sub-questions and hands back whatever it produced, so what
-// a line IS decides what the stage does with it.
-// fanoutLooksLikeQuery: reject
-// prose/answer lines before they can enter the retrieval + slot pipeline.
+// Two consequences, both measured on 2026-09-20: the planner phase cost TWO model calls per
+// question (the second-biggest output-token consumer in the run), and the shape guard is the same
+// class of rule the rest of this design removes — a line is not a query because of how it looks.
 //
-// Fan-outs are used verbatim as BM25/hybrid queries and as the slot table's
-// fanout_hint, so an answered fact ("The woman was **X**") must never survive
-// here: it both poisons retrieval and asserts a hallucinated entity as a known
-// aspect.
-func fanoutLooksLikeQuery(line string, loose bool) bool {
-	s := strings.TrimSpace(line)
-	if s == "" {
-		return false
-	}
-	low := strings.ToLower(s)
-	for _, mark := range fanoutAnswerMarks {
-		if strings.Contains(low, mark) {
-			return false
-		}
-	}
-	// The cap counts characters, not bytes; a byte-based cap would reject a legitimate CJK
-	// fan-out well below the 160-character limit.
-	if utf8.RuneCountInString(s) > fanoutMaxChars {
-		return false
-	}
-	words := len(strings.Fields(s))
-	if loose && !strings.HasSuffix(s, "?") && words > fanoutLooseMaxWords {
-		return false
-	}
-	return words <= fanoutMaxWords
-}
-
-// fanoutLineBreak reports whether r is a line boundary.
-// Splitting on "\n" alone misses a lone "\r" and the other Unicode line breaks a model
-// could emit, so the loose path would fuse several fan-out lines into one.
-func fanoutLineBreak(r rune) bool {
-	switch r {
-	case '\n', '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-		return true
-	}
-	return false
-}
-
-// parseFanouts: extract fan-outs from a
-// model reply, validating every entry's shape.
-func parseFanouts(text string) []string {
-	var raw []string
-	loose := false
-	if data, ok := extractJSONObject(text).(map[string]any); ok {
-		for _, f := range asSliceOfAny(data["fanouts"]) {
-			if s := strings.TrimSpace(fmt.Sprint(f)); s != "" {
-				raw = append(raw, s)
-			}
-		}
-	} else {
-		// Loose fallback: the model answered in prose. Only lines that still
-		// look like a search query are kept — answer sentences and source
-		// lists are dropped.
-		loose = true
-		// Split on every line boundary, not just "\n".
-		for _, ln := range strings.FieldsFunc(text, fanoutLineBreak) {
-			if strings.TrimSpace(ln) == "" {
-				continue
-			}
-			// The bullet / numbering cutset is stripped from BOTH ends, then whitespace is
-			// trimmed, so a trailing period/digit never leaks into the retrieval query.
-			raw = append(raw, strings.TrimSpace(strings.Trim(ln, "-•0123456789. ")))
-		}
-	}
-	kept := make([]string, 0, len(raw))
-	for _, q := range raw {
-		if fanoutLooksLikeQuery(q, loose) {
-			kept = append(kept, q)
-		}
-	}
-	if len(raw) > 0 && len(kept) == 0 {
-		_LOG.Printf("[Planner] discarding %d fan-out candidate(s): none look like search queries", len(raw))
-	}
-	kept = dedupe(kept)
-	if len(kept) > MaxFanouts {
-		kept = kept[:MaxFanouts]
-	}
-	return kept
-}
-
-// ExpandFanouts: ONE chat call (no
-// tools) producing 2-5 first-hop fan-outs, plus one strict retry when the
-// reply was not parseable JSON (_expand_fanouts).
-//
-// Falls back to the raw question alone on any failure — a fan-out failure never
-// blocks the pipeline.
-func ExpandFanouts(ctx context.Context, deps RAGTools, question string) []string {
-	if question == "" {
-		return nil
-	}
-	if deps.Model == nil {
-		return []string{question}
-	}
-	reply, err := deps.Model.Complete(ctx, []schema.Message{
-		*schema.SystemMessage(fanoutPrompt),
-		*schema.UserMessage("Question: " + question),
-	}, nil)
-	if err != nil {
-		_LOG.Printf("[Planner] fan-out expansion failed; falling back to raw question: %v", err)
-		return []string{question}
-	}
-	fanouts := parseFanouts(reply.Content)
-	if len(fanouts) == 0 {
-		// The model answered the question instead of decomposing it (no JSON,
-		// or JSON that failed the shape guard). One strict retry, then give up.
-		_LOG.Printf("[Planner] fan-out expansion produced no usable sub-question; retrying with a strict JSON instruction")
-		if retry, rerr := deps.Model.Complete(ctx, []schema.Message{
-			*schema.SystemMessage(fanoutPrompt + fanoutStrictRetry),
-			*schema.UserMessage("Question: " + question),
-		}, nil); rerr != nil {
-			_LOG.Printf("[Planner] strict fan-out retry failed: %v", rerr)
-		} else {
-			fanouts = parseFanouts(retry.Content)
-		}
-	}
-	if len(fanouts) == 0 {
-		fanouts = []string{question}
-	}
-	_LOG.Printf("[Planner] fan-out expansion: %d sub-question(s): %v", len(fanouts), fanouts)
-	return fanouts
-}
+// The paper's opening move is ONE call (`first_move`: decompose → the queries to run), and the
+// slot table's own call already produces those queries (`first_queries`). See plannerNode.
 
 // Phase 2: programmatic fan-out search.
 

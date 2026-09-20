@@ -146,203 +146,126 @@ func (r *countingRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequ
 	return []map[string]any{{"doc_id": "d1", "docnm_kwd": "doc1", "content": "Saint Lawrence River; 14 April 1865; 9 December 2019."}}, nil
 }
 
-// Unit tests for the routing / helpers (no init() required).
+// routeResearch unit tests. This router replaced the SCA verdict as the thing that decides
+// whether a round is taken (see its doc comment); the facts it reads are all RECORDS.
 
-func TestRouteSCAAlwaysCloseoutOnNoProgress(t *testing.T) {
-	// NoProgress is the hard stop: regardless of SCA enablement or verdict, the
-	// loop must close out rather than spin another round.
-	st := &AgenticState{Verdict: VerdictInsufficient, MaxLoops: 3, NoProgress: true}
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("SCA on: expected formalize on no-progress, got %v", n)
-	}
-	if n := routeSCA(st, false, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("SCA off: expected formalize on no-progress, got %v", n)
-	}
-}
-
-func TestRouteSCADisabledSCAClosesOut(t *testing.T) {
-	// With SCA disabled the single research pass' verdict is informational; we
-	// never start a rewrite round.
-	st := &AgenticState{Verdict: VerdictInsufficient, MaxLoops: 3}
-	if n := routeSCA(st, false, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("expected formalize when SCA disabled, got %v", n)
-	}
-}
-
-// TestRouteSCAPoolSizeIsNotTheStop pins the DECOUPLED stop: the pool's size is
-// not what ends the research loop — whether the SCA can READ anything new is, and
-// that fact is the view identity (scaNode sets NoProgress when the view matches
-// the previous review's, and routeSCA honours it on its first check).
+// TestRouteResearchClosesOutWhenTheSessionAnswered pins the paper's stop condition: the loop ends
+// because the AGENT ANSWERED. Work left and fresh evidence are both present here — the two facts
+// that would otherwise ask for another round — and the answer is what ends it.
 //
-// The old guard finalized as soon as the pool reached SCAViewCap on a
-// second-or-later review, which is a different claim: a pool past the view cap
-// whose view CHANGED has new evidence the reviewer can read, and it was being
-// thrown away (measured: a name-probe round ended at 117 chunks with members
-// still arriving).
-func TestRouteSCAPoolSizeIsNotTheStop(t *testing.T) {
-	full := func() *AgenticState {
-		st := &AgenticState{
-			Verdict:      VerdictInsufficient,
-			MaxLoops:     3,
-			SearchRounds: 1,
-			// Work left in the table AND evidence still arriving last round —
-			// the two facts the loop is driven by (see routeSCA).
-			LastRoundNew:    12,
-			UnresolvedSlots: []map[string]any{{"question_clues": []string{"who else"}}},
-			KB:              &runtime.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
-		}
-		st.Deadline = time.Now().Add(120 * time.Second)
-		return st
+// It is the one check that had no equivalent before: the old routing could only stop on a verdict
+// or an empty record, so a run whose session had written an answer could still spend another round
+// looking for something the answer already covered.
+func TestRouteResearchClosesOutWhenTheSessionAnswered(t *testing.T) {
+	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
+	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"关羽 斩将"}}}
+	st.LastRoundNew = 40
+	st.Deadline = time.Now().Add(120 * time.Second)
+
+	if n := routeResearch(st, 3); n != nodeQueryRewrite {
+		t.Fatalf("no answer yet: route = %v, want another round", n)
+	}
+	st.CollectedAnswer = "关羽杀了十二人：华雄、颜良、文丑…"
+	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("answered: route = %v, want formalize_answer", n)
+	}
+}
+
+// TestRouteResearchTakesAnotherRoundWhenWorkRemainsAndEvidenceArrived pins the fallback rule for a
+// round that did NOT answer: the plan still lists unresolved slots AND the round added evidence.
+func TestRouteResearchTakesAnotherRoundWhenWorkRemainsAndEvidenceArrived(t *testing.T) {
+	st := NewAgenticState("When and where was it built?", "", 3, nil)
+	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	st.LastRoundNew = 40
+	st.Deadline = time.Now().Add(120 * time.Second)
+
+	if n := routeResearch(st, 3); n != nodeQueryRewrite {
+		t.Fatalf("work left and still learning: route = %v, want another round", n)
+	}
+}
+
+// TestRouteResearchClosesOutWhenNothingIsOpenOrNothingWasLearned pins both stops that do not need
+// an answer:
+//
+//	work left but STALLED (+0 chunks) — another round would read the same evidence again;
+//	nothing left (a settled plan)  — there is no direction to ask about.
+//
+// The second case is deliberately NOT treated as proof of completeness: it is the case that ended
+// 2026-09-15 with unresolved=0 and an answer six members short. It stops the loop only because
+// there is nothing left to ASK, and routeResearch says so in its log.
+func TestRouteResearchClosesOutWhenNothingIsOpenOrNothingWasLearned(t *testing.T) {
+	stalled := NewAgenticState("When and where was it built?", "", 3, nil)
+	stalled.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	stalled.LastRoundNew = 0
+	stalled.Deadline = time.Now().Add(120 * time.Second)
+	if n := routeResearch(stalled, 3); n != nodeFormalizeAnswer {
+		t.Errorf("work left but nothing learned: route = %v, want formalize_answer", n)
 	}
 
-	// Full pool, view changed (scaNode did NOT set NoProgress) => research on.
-	if n := routeSCA(full(), true, 3); n != nodeQueryRewrite {
-		t.Fatalf("full pool with a changed view: expected rewrite, got %v", n)
+	settled := NewAgenticState("When and where was it built?", "", 3, nil)
+	settled.LastRoundNew = 40
+	settled.Deadline = time.Now().Add(120 * time.Second)
+	if n := routeResearch(settled, 3); n != nodeFormalizeAnswer {
+		t.Errorf("nothing left to ask: route = %v, want formalize_answer", n)
 	}
+}
 
-	// Full pool, view UNCHANGED: scaNode's detector owns this case, and routeSCA
-	// honours it before anything else.
-	stale := full()
-	stale.NoProgress = true
-	if n := routeSCA(stale, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("full pool with an unchanged view: expected formalize, got %v", n)
-	}
-
-	// The loop is still bounded by the round count...
-	atMax := full()
+// TestRouteResearchHonoursTheRoundBudgetAndTheClock pins the two bounds that are neither the
+// answer nor the record: the mode's round count, and the clock's round headroom.
+func TestRouteResearchHonoursTheRoundBudgetAndTheClock(t *testing.T) {
+	atMax := NewAgenticState("When and where was it built?", "", 3, nil)
+	atMax.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	atMax.LastRoundNew = 40
 	atMax.SearchRounds = 3
-	if n := routeSCA(atMax, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("at max rounds with a full pool: expected formalize, got %v", n)
+	atMax.Deadline = time.Now().Add(120 * time.Second)
+	if n := routeResearch(atMax, 3); n != nodeFormalizeAnswer {
+		t.Errorf("round budget spent: route = %v, want formalize_answer", n)
 	}
-	// ...and by the round-headroom guard.
-	tight := full()
+
+	tight := NewAgenticState("When and where was it built?", "", 3, nil)
+	tight.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	tight.LastRoundNew = 40
 	tight.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
-	if n := routeSCA(tight, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("no headroom with a full pool: expected formalize, got %v", n)
+	if n := routeResearch(tight, 3); n != nodeFormalizeAnswer {
+		t.Errorf("no round headroom: route = %v, want formalize_answer", n)
 	}
 }
 
-// TestRouteSCARoundRecordDrivesTheLoop pins the DECOUPLED stop/continue rule: the
-// loop's own record (work left in the table + evidence still arriving) decides,
-// and the reviewer's verdict is one of its inputs rather than the switch.
-//
-// The distinction it encodes: a SUFFICIENT verdict is a judgement about the
-// PASSAGES the reviewer read. It is not a statement that the question is done —
-// measured 2026-09-15, a run ended with unresolved=0 while the answer was six
-// members short — so a table that still lists unresolved slots while the round is
-// still adding evidence keeps its next round, and a settled table closes out
-// however much evidence arrived.
-func TestRouteSCARoundRecordDrivesTheLoop(t *testing.T) {
-	base := func() *AgenticState {
-		st := &AgenticState{MaxLoops: 3, SearchRounds: 1}
-		st.Deadline = time.Now().Add(120 * time.Second)
-		return st
-	}
-	work := []map[string]any{{"question_clues": []string{"who else"}}}
-
-	// Work left + still learning + a SATISFIED reviewer: another round. The
-	// reviewer's view of the passages does not settle the table's own gaps.
-	st := base()
-	st.Verdict = VerdictSufficient
-	st.LastRoundNew = 9
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Errorf("SUFFICIENT with work left and evidence still arriving: expected rewrite, got %v", n)
-	}
-
-	// Nothing left in the table: growth alone is not a reason to keep going.
-	st = base()
-	st.Verdict = VerdictSufficient
-	st.LastRoundNew = 9
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("settled table with nothing against it: expected formalize, got %v", n)
-	}
-
-	// Work left, stalled round, reviewer names a gap: another round.
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Errorf("INSUFFICIENT with a concrete gap: expected rewrite, got %v", n)
-	}
-
-	// Work can ALSO come from the review's own gaps, with an empty unresolved
-	// table — the two records are independent. Ignoring the reviewer's gaps is
-	// what made a run close out with INSUFFICIENT (confidence 1.00) and four
-	// derived gaps while 60s and two rounds went unspent (2026-09-15).
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.SCA = map[string]any{"claims": map[string]any{
-		"c1": map[string]any{"missing_information": []any{
-			map[string]any{"what": "还有谁", "search_hint": "关羽 斩将 名单"},
-		}},
-	}}
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Errorf("INSUFFICIENT with the review's own gaps and no unresolved slots: expected rewrite, got %v", n)
-	}
-
-	// Work left, stalled round, NO judgement (the review could not run): nothing
-	// names a direction and the round learned nothing — close out. This is the
-	// case a fallback INSUFFICIENT used to promise a round to.
-	st = base()
-	st.Verdict = VerdictUnknown
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("UNKNOWN with a stalled round: expected formalize, got %v", n)
-	}
-
-	// Work left, stalled round, satisfied reviewer: close out.
-	st = base()
-	st.Verdict = VerdictSufficient
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("SUFFICIENT with a stalled round: expected formalize, got %v", n)
-	}
-
-	// At max rounds => formalize, whatever the record says.
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.LastRoundNew = 3
-	st.UnresolvedSlots = work
-	st.SearchRounds = 3
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("at max rounds: expected formalize, got %v", n)
-	}
-	// No headroom => formalize.
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.LastRoundNew = 3
-	st.UnresolvedSlots = work
-	st.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("no headroom: expected formalize, got %v", n)
+// TestRouteResearchNoProgressIsAHardStop pins NoProgress as the first stop after the answer: a
+// round that learned nothing (or whose rewrite retrieved nothing new) cannot be followed by
+// another round, whatever its record says.
+func TestRouteResearchNoProgressIsAHardStop(t *testing.T) {
+	st := NewAgenticState("When and where was it built?", "", 3, nil)
+	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built"}}}
+	st.LastRoundNew = 40
+	st.NoProgress = true
+	st.Deadline = time.Now().Add(120 * time.Second)
+	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("NoProgress: route = %v, want formalize_answer", n)
 	}
 }
 
-func TestSelectSCAViewIdentity(t *testing.T) {
-	chunks := make([]map[string]any, 0, 80)
-	for i := 0; i < 80; i++ {
-		chunks = append(chunks, map[string]any{
-			"chunk_id":   fmt.Sprintf("c%d", i),
-			"content":    fmt.Sprintf("the quick brown fox %d", i),
-			"similarity": 1.0 - float64(i)/100.0,
-		})
+// TestResearchStatusNoteReportsTheRecordNotAVerdict pins what the "[Research status]" note says
+// now: a round that ANSWERED has nothing to annotate, and one that did not states what it read and
+// what the plan still lists as unresolved.
+func TestResearchStatusNoteReportsTheRecordNotAVerdict(t *testing.T) {
+	answered := NewAgenticState("q", "", 3, nil)
+	answered.CollectedAnswer = "the answer"
+	if got := researchStatusNote(answered); got != "" {
+		t.Errorf("answered round note = %q, want empty", got)
 	}
-	v1, id1 := SelectSCAView(chunks, []string{"quick", "brown"})
-	if len(v1) != SCAViewCap {
-		t.Fatalf("expected view cap %d, got %d", SCAViewCap, len(v1))
+
+	st := NewAgenticState("q", "", 3, nil)
+	st.KB = &runtime.Kbinfos{Chunks: []map[string]any{{"chunk_id": "c1"}, {"chunk_id": "c2"}}}
+	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"a"}}}
+	got := researchStatusNote(st)
+	if !strings.Contains(got, "2 passages read") || !strings.Contains(got, "1 plan slot(s) still unresolved") {
+		t.Errorf("note = %q, want the round's own record", got)
 	}
-	// Same inputs => same identity (no Process-randomised hash).
-	_, id2 := SelectSCAView(chunks, []string{"quick", "brown"})
-	if id1 != id2 {
-		t.Fatalf("view identity should be deterministic, got %q vs %q", id1, id2)
-	}
-	// An enlarged pool with the SAME selected ids keeps the same identity — this
-	// is exactly the "review view unchanged" early-exit signal.
-	more := append(chunks, map[string]any{"chunk_id": "extra", "content": "unrelated tail", "similarity": 0.0})
-	_, id3 := SelectSCAView(more, []string{"quick", "brown"})
-	if id1 != id3 {
-		t.Fatalf("adding non-selected chunks should NOT change the view identity, got %q vs %q", id1, id3)
+
+	// Nothing read and nothing open: no note at all, because there is nothing to report.
+	if got := researchStatusNote(NewAgenticState("q", "", 3, nil)); got != "" {
+		t.Errorf("empty record note = %q, want empty", got)
 	}
 }
 
@@ -393,179 +316,6 @@ func TestMergeSlotPatchNoChangeReturnsNil(t *testing.T) {
 	}, 1, nil)
 	if m := MergeSlotPatch(base, branch); m != nil {
 		t.Fatalf("identical patch should return nil, got %+v", m)
-	}
-}
-
-func TestExpandFanoutsParsesJSON(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["who discovered it", "when was it discovered"]}`)
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "What was discovered and by whom?")
-	if len(got) != 2 {
-		t.Fatalf("expected 2 fan-outs, got %v", got)
-	}
-	if got[0] != "who discovered it" || got[1] != "when was it discovered" {
-		t.Fatalf("unexpected fan-outs: %v", got)
-	}
-}
-
-func TestExpandFanoutsFallbackOnBadJSON(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("I cannot break this down.")
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "single question")
-	// Bad JSON: the model answered in prose, so the loop line-splits the reply (yielding
-	// the reply itself, not the raw question). The loose path strips the
-	// "-•0123456789. " cutset from both ends, so the trailing period is dropped.
-	if len(got) != 1 || got[0] != "I cannot break this down" {
-		t.Fatalf("expected line-split fallback without the trailing period, got %v", got)
-	}
-}
-
-func TestExpandFanoutsNilModelReturnsQuestion(t *testing.T) {
-	got := ExpandFanouts(context.Background(), RAGTools{}, "single question")
-	if len(got) != 1 || got[0] != "single question" {
-		t.Fatalf("expected raw question when no model, got %v", got)
-	}
-}
-
-// TestExpandFanoutsRetriesWithStrictJSON covers the retry: a prose answer must not be
-// line-split into fan-outs (it poisons the slot table), so the prompt is re-sent with the
-// strict JSON instruction instead.
-func TestExpandFanoutsRetriesWithStrictJSON(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("The woman was **Rocio Restrepo**.\nSupporting sources: https://example.com")
-	mdl.push(`{"fanouts": ["who was she", "when did it happen"]}`)
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "Who was she?")
-	if len(got) != 2 || got[0] != "who was she" || got[1] != "when did it happen" {
-		t.Fatalf("expected the strict-retry fan-outs, got %v", got)
-	}
-	if len(mdl.seen) != 2 {
-		t.Fatalf("model calls = %d, want 2 (original + one strict retry)", len(mdl.seen))
-	}
-}
-
-// TestExpandFanoutsDropsAnswerLikeEntries covers _fanout_looks_like_query: a
-// fan-out is used verbatim as a retrieval query and as the slot hint, so an
-// answered fact must never survive into either.
-func TestExpandFanoutsDropsAnswerLikeEntries(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["who won the medal", "The winner was **Ann** according to the citation", "when was the race"]}`)
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "Who won the medal and when?")
-	if len(got) != 2 || got[0] != "who won the medal" || got[1] != "when was the race" {
-		t.Fatalf("expected the answer-like entry to be dropped, got %v", got)
-	}
-}
-
-func TestFanoutLooksLikeQueryBounds(t *testing.T) {
-	// The loose (non-JSON) path holds a tighter bound than the JSON path.
-	long := "who opened the new library downtown last spring and who paid for the building"
-	if !fanoutLooksLikeQuery(long, false) {
-		t.Errorf("JSON-path fan-out %q should pass the %d-word bound", long, fanoutMaxWords)
-	}
-	if fanoutLooksLikeQuery(long, true) {
-		t.Errorf("loose fan-out %q should exceed the %d-word bound", long, fanoutLooseMaxWords)
-	}
-	// A question keeps its full length even on the loose path.
-	if !fanoutLooksLikeQuery(long+"?", true) {
-		t.Error("a question-shaped line should survive the loose bound")
-	}
-	if fanoutLooksLikeQuery(strings.Repeat("word ", fanoutMaxWords+2), false) {
-		t.Errorf("fan-outs over %d words must be rejected", fanoutMaxWords)
-	}
-	if fanoutLooksLikeQuery(strings.Repeat("a", fanoutMaxChars+1), false) {
-		t.Errorf("fan-outs over %d chars must be rejected", fanoutMaxChars)
-	}
-}
-
-// TestFanoutLooksLikeQueryCountsRunes: the 160-char cap counts code points, so a CJK
-// fan-out at the limit must survive even though it exceeds 160 BYTES, and one over the
-// limit must still be rejected.
-func TestFanoutLooksLikeQueryCountsRunes(t *testing.T) {
-	atLimit := strings.Repeat("中", fanoutMaxChars) // 160 chars / 480 bytes
-	if !fanoutLooksLikeQuery(atLimit, false) {
-		t.Errorf("a %d-character fan-out must pass: the cap counts characters, not bytes", fanoutMaxChars)
-	}
-	if fanoutLooksLikeQuery(atLimit+"中", false) {
-		t.Errorf("a %d-character fan-out must be rejected", fanoutMaxChars+1)
-	}
-}
-
-// TestParseFanoutsLooseStripsBothEnds: the bullet/numbering cutset is stripped from BOTH
-// ends, so a trailing period is not carried into the retrieval query (the leading "1."
-// already was not).
-func TestParseFanoutsLooseStripsBothEnds(t *testing.T) {
-	got := parseFanouts("1. who opened the library.\n- when did it open?")
-	want := []string{"who opened the library", "when did it open?"}
-	if len(got) != len(want) {
-		t.Fatalf("parseFanouts = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("parseFanouts[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-// TestParseFanoutsSplitsOnAllLineBreaks: a carriage-return separated reply yields one
-// fan-out per line, not a single fused blob (splitting on "\n" alone would keep the lone
-// "\r" inline).
-func TestParseFanoutsSplitsOnAllLineBreaks(t *testing.T) {
-	got := parseFanouts("who opened it\rwhen did it open?")
-	want := []string{"who opened it", "when did it open?"}
-	if len(got) != len(want) {
-		t.Fatalf("parseFanouts = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("parseFanouts[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-// TestRenderSlotDraftFormat pins the draft format exactly: the collected answer leads
-// with its evidence metadata, a resolved slot carries strength + terminal + evidence ids +
-// its discovered-clue tail, and an unresolved slot is rendered as
-// "NOT RESOLVED (<question clues>)". This text is the SCA's claim context, so a different
-// shape changes what the reviewer sees.
-func TestRenderSlotDraftFormat(t *testing.T) {
-	strong := 0.9
-	st := runtime.NewState([]runtime.Variable{
-		{
-			ID:                0,
-			Type:              "aspect",
-			Candidate:         strPtr("answer A"),
-			CandidateStrength: &strong,
-			DiscoveredClues:   []string{"clue one", "clue two"},
-		},
-		{ID: 1, Type: "aspect", QuestionClues: []string{"who opened it?"}},
-	}, 0, nil)
-	evidence := map[string]SlotEvidence{
-		"0": {EvidenceIDs: []string{"c1", "c2"}, TerminalType: "state"},
-	}
-
-	draft := RenderSlotDraft(st, "the collected answer", evidence)
-	want := "Candidate answer: the collected answer\n" +
-		"\n" +
-		"- slot 0 [aspect]: answer A (strength=0.90) [terminal=state, evidence_ids=['c1', 'c2']] — clue one; clue two\n" +
-		"- slot 1 [aspect]: NOT RESOLVED (who opened it?)"
-	if draft != want {
-		t.Fatalf("draft = %q\nwant   %q", draft, want)
-	}
-}
-
-// TestSelectSCAViewPrefersScoreWhenSimilarityIsZero: a similarity of 0.0 is FALSY, so the
-// score must be used instead. The presence-based read ranked such a chunk last instead of
-// first.
-func TestSelectSCAViewPrefersScoreWhenSimilarityIsZero(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "zero-sim", "content": "irrelevant", "similarity": 0.0, "score": 0.9},
-		{"chunk_id": "half", "content": "irrelevant", "similarity": 0.5},
-	}
-	view, _ := SelectSCAView(chunks, nil)
-	if len(view) != 2 {
-		t.Fatalf("view size = %d, want 2", len(view))
-	}
-	if got := runtime.ChunkIDOf(view[0]); got != "zero-sim" {
-		t.Errorf("first chunk = %q, want zero-sim (score 0.9 must beat similarity 0.5)", got)
 	}
 }
 
@@ -1103,35 +853,6 @@ func (m *countingModel) Complete(ctx context.Context, msgs []schema.Message, _ [
 	return &runtime.ModelReply{Content: "ok"}, nil
 }
 
-// TestSCAFeedbackIsStatusOnly: the "[Research status]" note is the status hint ALONE.
-// The verdict dict carries only a "status" key, so its missing_claims / hard_violations /
-// agent_confidence / feedback segments are always empty — rendering them (from the
-// separate SCA payload) would invent a "0.00" confidence fallback that is never
-// emitted.
-func TestSCAFeedbackIsStatusOnly(t *testing.T) {
-	rich := map[string]any{
-		"contradictions": []any{"A says 1874, B says 1881"},
-		"confidence":     0.42,
-		"claims": map[string]any{
-			"c1": map[string]any{"grounded": false, "missing_information": []any{
-				map[string]any{"what": "the architect"},
-			}},
-		},
-	}
-	got := scaFeedback(rich, VerdictInsufficient)
-	if got != "evidence is not yet sufficient" {
-		t.Errorf("scaFeedback = %q, want the status hint alone", got)
-	}
-	// Empty (and thus un-appended) for a SUFFICIENT verdict, per :910.
-	if got := scaFeedback(rich, VerdictSufficient); got != "" {
-		t.Errorf("scaFeedback(SUFFICIENT) = %q, want empty", got)
-	}
-	// The unused-status fallback mirrors :915.
-	if got := scaFeedback(rich, "WEIRD"); got != "sufficiency status: WEIRD" {
-		t.Errorf("scaFeedback(WEIRD) = %q, want the :915 fallback", got)
-	}
-}
-
 // TestComposeFallbackDraftMirrorsLanguage pins: a non-English
 // question gets an explicit same-language instruction.
 func TestComposeFallbackDraftMirrorsLanguage(t *testing.T) {
@@ -1147,46 +868,9 @@ func TestComposeFallbackDraftMirrorsLanguage(t *testing.T) {
 	}
 }
 
-func TestSCAGapsToRewriteFromSubQueries(t *testing.T) {
-	sca := map[string]any{
-		"sub_queries": []any{
-			map[string]any{"sub_query": "q1", "satisfied": true, "missing_fact": "", "search_hint": ""},
-			map[string]any{"sub_query": "q2", "satisfied": false, "missing_fact": "the year", "search_hint": "search for dates"},
-		},
-	}
-	gaps := SCAGapsToRewrite(sca)
-	if len(gaps) != 1 {
-		t.Fatalf("expected 1 gap, got %d: %+v", len(gaps), gaps)
-	}
-	if gaps[0].What != "the year" || gaps[0].SearchHint != "search for dates" {
-		t.Fatalf("unexpected gap: %+v", gaps[0])
-	}
-}
-
-func TestSCAGapsToRewriteFallbackToClaims(t *testing.T) {
-	sca := map[string]any{
-		"claims": map[string]any{
-			"c1": map[string]any{
-				"verdict": "unverified",
-				"missing_information": []any{
-					map[string]any{"what": "population", "search_hint": "demographics"},
-				},
-			},
-		},
-	}
-	gaps := SCAGapsToRewrite(sca)
-	if len(gaps) != 1 {
-		t.Fatalf("expected 1 gap from claims fallback, got %d: %+v", len(gaps), gaps)
-	}
-	if gaps[0].What != "population" {
-		t.Fatalf("unexpected gap: %+v", gaps[0])
-	}
-}
-
 func TestRunReturnsNonNilState(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["when built", "where located"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when built","clues":["1865"]},{"id":1,"type":"aspect","question":"where located","clues":["geneva"]}], "first_queries":["when built","where located"]}`)
 	mdl.push("Built in 1865.")
 	mdl.push("In Geneva.")
@@ -1210,8 +894,15 @@ func TestRunReturnsNonNilState(t *testing.T) {
 	if st == nil {
 		t.Fatal("expected a non-nil AgenticState")
 	}
-	if strings.TrimSpace(st.Draft) == "" {
-		t.Fatal("expected a non-empty research draft")
+	// The round's deliverable is what it READ, not a rendered draft: the run has to have put
+	// evidence in the pool (the retrieval legs ran) and its record has to name the slots it is
+	// working on. `RagAnswer` used to be asserted here; it held the SCA-facing draft, which is gone
+	// (see the note where RenderSlotDraft lived).
+	if len(st.KB.Chunks) == 0 {
+		t.Fatal("expected the round to gather evidence into the pool")
+	}
+	if len(st.SlotTable.State) == 0 {
+		t.Fatal("expected the plan's slot table to travel with the round")
 	}
 	if st.NoProgress {
 		t.Fatal("a completed run should not report NoProgress")
@@ -1224,7 +915,6 @@ func TestRunReturnsNonNilState(t *testing.T) {
 func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["when built", "where located"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when built","clues":["1865"]},{"id":1,"type":"aspect","question":"where located","clues":["geneva"]}], "first_queries":["when built","where located"]}`)
 	mdl.push("Built in 1865.")
 	mdl.push("In Geneva.")
@@ -1271,8 +961,6 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 		"up front.",
 		"[Prefetch] Added",
 		"[RAGAgent] Round 1 begins",
-		"[Draft] Drafted an intermediate answer",
-		"[SCA] Evidence check:",
 		"[Finalize] Finalizing",
 	} {
 		if !strings.Contains(joined, want) {
@@ -1326,18 +1014,22 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	}
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{
-		"[QueryRewriter]",
-		"[RAGAgent] Round 2 begins",
+		"[RAGAgent] Round 1 begins",
 		"[Finalize] Finalizing",
 	} {
 		if !strings.Contains(joined, want) {
-			t.Errorf("cycle not driven: missing %q; got:\n%s", want, joined)
+			t.Errorf("graph did not run: missing %q; got:\n%s", want, joined)
 		}
 	}
-	// The second research round must actually run: the SCA is only reached again
-	// through query_rewrite → rag_agent, i.e. the graph's only cycle.
-	if !strings.Contains(joined, "[SCA] Evidence check: INSUFFICIENT") {
-		t.Errorf("expected the first SCA to be insufficient:\n%s", joined)
+	// This run takes ONE round and closes out, which is the correct outcome now: nothing in its
+	// record asks for another one (the scripted model patches no slot and calls no tool, so the
+	// plan's slots stay unresolved but the round learned nothing either — see routeResearch).
+	//
+	// The cycle itself (query_rewrite → rag_agent) is decided by that router, and its tests cover
+	// both answers: TestRouteResearchTakesAnotherRoundWhenWorkRemainsAndEvidenceArrived and
+	// TestRouteResearchClosesOutWhenTheSessionAnswered.
+	if strings.Contains(joined, "[RAGAgent] Round 2 begins") {
+		t.Errorf("a round was taken with no record asking for one:\n%s", joined)
 	}
 }
 
@@ -1671,48 +1363,6 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 	}
 }
 
-// TestSCAUnavailableMarksInsufficient pins: when the SCA
-// produces no usable result (timeout, unparsable reply, no model) the verdict is
-// INSUFFICIENT so unresolved slots can drive another research round — NOT
-// SUFFICIENT, which would ship the unverified draft as if it had passed review.
-func TestSCAUnavailableIsNotAVerdict(t *testing.T) {
-	st := NewAgenticState("When was it built?", "", 3, nil)
-	st.Draft = "Built in 1865."
-	st.KB = &runtime.Kbinfos{Chunks: []map[string]any{
-		{"chunk_id": "c1", "content": "Built 1865, Geneva."},
-	}}
-	// A model that never returns JSON: GenJSON fails, so the SCA has no result.
-	mdl := &scriptedModel{}
-	mdl.push("this is not json at all")
-
-	scaNode(context.Background(), RAGTools{Model: mdl}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.Verdict != VerdictUnknown {
-		t.Errorf("Verdict = %q, want UNKNOWN: a review that could not run is the ABSENCE of a verdict, not a judgement of insufficiency", st.Verdict)
-	}
-	if st.Verdict == VerdictInsufficient {
-		t.Error("an unavailable review must not read as INSUFFICIENT: that is what marked the answer partial on no evidence and promised a research round the budget could not pay for")
-	}
-	if st.SCA == nil {
-		t.Error("SCA payload must stay an (empty) map")
-	}
-	// An un-run review must not make the answer PARTIAL either: with nothing
-	// unresolved and no stalled round, the deliverable is not dressed up as
-	// unverified.
-	st.Deadline = time.Now().Add(60 * time.Second)
-	formalizeAnswerNode(context.Background(), RAGTools{}, st, log.New(&bytes.Buffer{}, "", 0))
-	if st.PartialAnswer {
-		t.Error("PartialAnswer = true on an UNKNOWN verdict with no unresolved slots; partial is a statement about the evidence")
-	}
-	// The FACT still has to reach the answer: nobody checked whether the record is complete.
-	if !st.KB.SufficiencyUnchecked() {
-		t.Error("an un-run review must be recorded on the run (see NoteSufficiencyUnchecked): the record has to say nobody checked, or the count reads as a checked total")
-	}
-	if rec := composedRecord(st.KB); !strings.Contains(rec, "nobody checked whether the members above are complete") {
-		t.Errorf("record = %q, want the unchecked review stated where the answer reads it", rec)
-	}
-}
-
 // TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames pins what the probed list may be READ as: names.
 //
 // Measured (2026-09-17, 三国/关羽) the list handed the answer `杀 斩 武将 名单 亲斩 关羽 太史慈 …
@@ -1784,11 +1434,9 @@ func TestComposedRecordSaysWhenNobodyCheckedCompleteness(t *testing.T) {
 // and no round.
 func TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines(t *testing.T) {
 	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.SCA = map[string]any{"claims": map[string]any{
-		"c1": map[string]any{"verdict": "unverified", "missing_information": []any{
-			map[string]any{"what": "the count", "search_hint": "count the passages"},
-		}},
-	}}
+	st.UnresolvedSlots = []map[string]any{
+		{"question_clues": []string{"关羽 斩 全部名称", "关羽 杀了哪些人"}},
+	}
 	st.KB = &runtime.Kbinfos{}
 	st.KB.RecordProbedAbsent("斩孟坦")
 	st.SlotTable = runtime.NewState([]runtime.Variable{
@@ -1807,8 +1455,8 @@ func TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines(t *testing.T) {
 		t.Fatal("NoProgress = true: the rewriter declined, and the round had already been judged worth its budget")
 	}
 	joined := strings.Join(st.CurrentQueries, "|")
-	if !strings.Contains(joined, "斩孟坦") || !strings.Contains(joined, "关羽") {
-		t.Fatalf("CurrentQueries = %v, want the run's own open terms", st.CurrentQueries)
+	if joined == "" || !strings.Contains(joined, "关羽") {
+		t.Fatalf("CurrentQueries = %v, want the round's own open terms", st.CurrentQueries)
 	}
 }
 
@@ -1817,7 +1465,6 @@ func TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines(t *testing.T) {
 // so the loop keeps going instead of accepting an unresolved draft.
 func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
 	st := NewAgenticState("When and where was it built?", "", 3, nil)
-	st.SCA = map[string]any{} // no sub_queries, no claims -> no gaps
 	st.UnresolvedSlots = []map[string]any{
 		{"question_clues": []string{"when opened", "where located", "ignored third clue"}},
 	}
@@ -1858,76 +1505,6 @@ func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	}
 }
 
-// TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim pins: with no
-// draft and no slot evidence, the SCA still gets one claim carrying EVERY chunk
-// in the view, so it can judge the evidence instead of the node short-circuiting.
-func TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim(t *testing.T) {
-	view := []map[string]any{
-		{"chunk_id": "c1", "content": "Built 1865."},
-		{"chunk_id": "c2", "content": "In Geneva."},
-	}
-	claims, _ := buildSCAClaims("", view, view, nil)
-	if len(claims) != 1 {
-		t.Fatalf("claims = %d, want 1", len(claims))
-	}
-	if claims[0].Draft != "(no draft)" {
-		t.Errorf("draft = %q, want %q", claims[0].Draft, "(no draft)")
-	}
-	// Evidence is addressed by POSITION (renderClaimContext keys by index), so
-	// the fallback claim must carry 0..len(view)-1.
-	if len(claims[0].EvidenceIDs) != 2 || claims[0].EvidenceIDs[0] != "0" || claims[0].EvidenceIDs[1] != "1" {
-		t.Errorf("EvidenceIDs = %v, want [0 1]", claims[0].EvidenceIDs)
-	}
-}
-
-// TestBuildSCAClaimsAppendsMissingSlotEvidence pins: a slot
-// whose evidence chunk is NOT in the view has that chunk appended, and the claim
-// carries its new POSITION. It is appended to the same list and reviewed against, so
-// buildSCAClaims returns the grown view.
-func TestBuildSCAClaimsAppendsMissingSlotEvidence(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "c1", "content": "Built 1865."},
-		{"chunk_id": "c2", "content": "In Geneva."},
-		{"chunk_id": "c3", "content": "Designed by OmiyaSoft."},
-	}
-	view := []map[string]any{chunks[0]}
-	slotEvidence := map[string]SlotEvidence{
-		"0": {EvidenceIDs: []string{"2"}, Candidate: "designer"}, // pool position 2
-	}
-
-	claims, grown := buildSCAClaims("", view, chunks, slotEvidence)
-	if len(claims) != 1 {
-		t.Fatalf("claims = %d, want 1", len(claims))
-	}
-	if len(grown) != 2 {
-		t.Fatalf("grown view = %d, want 2 (the missing chunk must be appended)", len(grown))
-	}
-	if got := claims[0].EvidenceIDs; len(got) != 1 || got[0] != "1" {
-		t.Errorf("EvidenceIDs = %v, want [1] (its position in the grown view)", got)
-	}
-}
-
-// TestResolveEvidenceChunkAcceptsBothIdSpaces covers the heterogeneous ids:
-// retrieval tools emit pool positions, navigation tools emit doc ids.
-func TestResolveEvidenceChunkAcceptsBothIdSpaces(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "c1", "doc_id": "d1", "content": "a"},
-		{"chunk_id": "c2", "doc_id": "d2", "content": "b"},
-	}
-	if got := resolveEvidenceChunk("1", chunks); got["chunk_id"] != "c2" {
-		t.Errorf("position id \"1\" resolved to %v, want chunk c2", got)
-	}
-	if got := resolveEvidenceChunk("c1", chunks); got["chunk_id"] != "c1" {
-		t.Errorf("chunk id \"c1\" resolved to %v, want chunk c1", got)
-	}
-	if got := resolveEvidenceChunk("d2", chunks); got["chunk_id"] != "c2" {
-		t.Errorf("doc id \"d2\" resolved to %v, want chunk c2", got)
-	}
-	if got := resolveEvidenceChunk("nope", chunks); got != nil {
-		t.Errorf("unknown id resolved to %v, want nil", got)
-	}
-}
-
 func TestAgenticNodeNameMapsRoutingToGraphKeys(t *testing.T) {
 	cases := map[agenticNode]string{
 		nodeQueryRewrite:    "query_rewrite",
@@ -1963,7 +1540,6 @@ func TestNewAgenticLoopDrivesHarnessRun(t *testing.T) {
 	}
 
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["when was it opened", "what river"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when opened","clues":["1865"]},{"id":1,"type":"aspect","question":"which river","clues":["river"]}], "first_queries":["when opened","which river"]}`)
 	mdl.push("It opened on 14 April 1865.")
 	mdl.push("The Saint Lawrence River.")
@@ -2031,7 +1607,6 @@ func TestAgenticLoopRankFeaturePolicy(t *testing.T) {
 	// Call order: formalize (single-turn keyword extraction) → planner fan-out → slot
 	// table → draft → SCA.
 	mdl.push(`{"entity": ["it"], "aliases": [], "fact_type": [], "qualifiers": []}`)
-	mdl.push(`{"fanouts": ["when was it opened"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when opened","clues":["1865"]}], "first_queries":["when opened"]}`)
 	mdl.push("It opened in 1865.")
 	mdl.push(`{"is_sufficient": true, "score": 0.9, "contradictions": [], "reasoning": "ok", "claims": {}}`)
@@ -2099,7 +1674,6 @@ func TestNewAgenticLoopRoundsToggleDeactivates(t *testing.T) {
 	SetAgenticLoop(nil)
 
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["x", "y"]}`) // would only be produced by the loop's planner
 	deps := RAGTools{
 		Retriever: &countingRetriever{},
 		Model:     mdl,
@@ -3108,11 +2682,11 @@ func TestGraphRecursionLimitBounds(t *testing.T) {
 	}
 }
 
-func TestAgenticResearchRoundCostsThreeVisits(t *testing.T) {
-	// One research round is rag_agent → draft → sca. If the loop counted iterations
-	// instead of node visits, 20 rounds would cost 20 instead of 60 and the guard would
-	// trip ~3x later.
-	if got, want := agenticRoundVisits, 3; got != want {
+func TestAgenticResearchRoundCostsOneVisit(t *testing.T) {
+	// One research round is ONE node (rag_agent). It used to be three (rag_agent → draft → sca),
+	// so a round now costs a third of what it did — and the guard bounds WORK, so the constant
+	// has to follow the node count or the loop would be allowed 3x the rounds it should have.
+	if got, want := agenticRoundVisits, 1; got != want {
 		t.Fatalf("round cost = %d, want %d", got, want)
 	}
 }
@@ -3189,7 +2763,7 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 	cache := NewRAGCache()
 
 	// First outer rag() call — unsatisfying verdict bumps the counter to 1.
-	cache.NoteUnanswerable(VerdictInsufficient)
+	cache.NoteUnanswerable(false)
 	if cache.ConsecutiveUnanswerable() != 1 {
 		t.Fatalf("after 1st outer rag() call: ConsecutiveUnanswerable = %d, want 1",
 			cache.ConsecutiveUnanswerable())
@@ -3198,14 +2772,14 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 	// Second outer rag() call — still unsatisfying: counter must reach 2 so the
 	// STOP guard can fire (the state the pre-fix code could never reach on the
 	// outer path, because deps.Cache was nil and the increment was skipped).
-	cache.NoteUnanswerable(VerdictInsufficient)
+	cache.NoteUnanswerable(false)
 	if cache.ConsecutiveUnanswerable() != 2 {
 		t.Fatalf("after 2nd outer rag() call: ConsecutiveUnanswerable = %d, want 2",
 			cache.ConsecutiveUnanswerable())
 	}
 
 	// A satisfying verdict resets the streak.
-	cache.NoteUnanswerable(VerdictSufficient)
+	cache.NoteUnanswerable(true)
 	if cache.ConsecutiveUnanswerable() != 0 {
 		t.Fatalf("after a SUFFICIENT verdict: ConsecutiveUnanswerable = %d, want 0",
 			cache.ConsecutiveUnanswerable())
@@ -3218,8 +2792,8 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 // why Rag() now auto-builds a cache before branching into the outer react loop.
 func TestRecordConsecutiveUnanswerableNoCacheIsNoOp(t *testing.T) {
 	// Must not panic with a nil cache.
-	(*RAGCache)(nil).NoteUnanswerable(VerdictInsufficient)
-	(*RAGCache)(nil).NoteUnanswerable(VerdictSufficient)
+	(*RAGCache)(nil).NoteUnanswerable(false)
+	(*RAGCache)(nil).NoteUnanswerable(true)
 }
 
 // TestRewriteContextShowsThePassageBehindAConfirmedMember pins the input side of
@@ -3303,9 +2877,6 @@ func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
 		},
 		{ID: 1, Type: "aspect", QuestionClues: []string{"who opened it?"}},
 	}, 0, nil)
-	evidence := map[string]SlotEvidence{
-		"0": {EvidenceIDs: []string{"c1", "c2"}, TerminalType: "state"},
-	}
 
 	record := RenderSlotRecord(st, "the collected answer")
 	// A table that asks for no SET leads with the session's own answer, exactly as
@@ -3323,13 +2894,10 @@ func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
 			t.Errorf("record %q must not carry the machine field %q", record, banned)
 		}
 	}
-	// The SCA's draft keeps them: the split must not disarm verification.
-	draft := RenderSlotDraft(st, "the collected answer", evidence)
-	for _, want := range []string{"strength=0.90", "terminal=state", "evidence_ids=['c1', 'c2']"} {
-		if !strings.Contains(draft, want) {
-			t.Errorf("draft %q must keep %q for the SCA", draft, want)
-		}
-	}
+	// There is no second rendering for the machine fields to live in: the draft that carried them
+	// existed for the reviewer (RenderSlotDraft), and a reviewer that no longer exists has nothing
+	// to verify. The record above is the round's whole output, and it is machine-field-free by
+	// construction rather than by a split that has to be kept in step.
 }
 
 // TestAnswerPromptLabelsTheRecordAndForbidsQuoting pins the prompt contract: the
@@ -3539,81 +3107,6 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	}
 }
 
-// TestSyncCountSlotsTakesTheEnumeratedSize pins the other half of the same
-// loss: the count slot and the list slots are written by different sessions and
-// nothing kept them in step. The slot takes the DERIVED number, because a count is a
-// claim the table can check.
-//
-// The direction that matters is the one an answer repeats: measured (2026-09-16) a
-// count slot left holding a session's 28 against thirteen enumerated members
-// produced "killed 28 named people" over a list of a handful. An over-claim is kept
-// as an alternate clue, so the record still shows what was claimed.
-//
-// A slot that does not CLAIM a number is left alone — a date, a phrase or a sentence
-// is nobody's count, and reading the slot's declared TYPE to guess otherwise was the
-// rule this replaces (see slots.Value.Number).
-func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 10, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥"),
-	}, 0, nil)
-	raised := syncCountSlots(&table)
-	if len(raised) != 1 || raised[0] != 0 {
-		t.Fatalf("raised = %v, want the count slot reconciled", raised)
-	}
-	if got := *table.ByID(0).Candidate; got != "12" {
-		t.Fatalf("count slot = %q, want 12 (the list's size)", got)
-	}
-
-	// An over-claim does not stand: the members are what the table can check, and
-	// the claim is kept beside them as an alternate.
-	bigger := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 16, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
-	}, 0, nil)
-	if changed := syncCountSlots(&bigger); len(changed) != 1 {
-		t.Fatalf("changed = %v, want the over-claim reconciled to the members", changed)
-	}
-	if got := *bigger.ByID(0).Candidate; got != "6" {
-		t.Fatalf("count slot = %q, want 6 (the members' size)", got)
-	}
-	alts := alternateCandidatesOf(*bigger.ByID(0))
-	if len(alts) != 1 || alts[0] != "16" {
-		t.Fatalf("alternates = %v, want the over-claim kept as the record's alternate", alts)
-	}
-
-	// A count that already agrees is left alone.
-	agreed := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 6, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
-	}, 0, nil)
-	if changed := syncCountSlots(&agreed); len(changed) != 0 {
-		t.Fatalf("changed = %v, want an agreeing count untouched", changed)
-	}
-
-	// A count slot whose text is NOT a number is left alone: the slot made no checkable
-	// claim, so there is nothing here to correct — and the answer's count comes from the
-	// members either way (measured 2026-09-16, 三国/关羽: a session wrote "约 17-19 人"
-	// into the count slot, and the members beside it are what the answer must repeat).
-	unreadable := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
-	}, 0, nil)
-	if changed := syncCountSlots(&unreadable); len(changed) != 0 {
-		t.Fatalf("changed = %v, want an unreadable claim left alone", changed)
-	}
-
-	// The count of a table whose member slot is TEXT is left alone: prose claims no
-	// number and no members, and nothing here guesses at either.
-	textOnly := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
-		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑")},
-	}, 0, nil)
-	if changed := syncCountSlots(&textOnly); len(changed) != 0 {
-		t.Fatalf("changed = %v, want nothing derived from text", changed)
-	}
-}
-
 // TestMemberCountIgnoresProseFragments pins the count's unit: a member is a NAME,
 // not a fragment of the sentence around it.
 //
@@ -3637,36 +3130,16 @@ func TestMemberCountIgnoresProseFragments(t *testing.T) {
 	if got := enumeratedSize(table); got != 11 {
 		t.Fatalf("enumerated size = %d, want 11 (the declared names, not the chapter prose)", got)
 	}
-	// And the count slot takes that number rather than the session's claim.
-	syncCountSlots(&table)
-	if got := *table.ByID(0).Candidate; got != "11" {
-		t.Fatalf("count slot = %q, want 11 (the enumerated members)", got)
+	// The count slot keeps the session's own claim: the machine no longer overwrites it with the
+	// enumerated size (see the note where syncCountSlots used to live), because filling in the
+	// number the answer reports is the model's job — the session read the passages and writes the
+	// answer. What the machine does instead is STATE the disagreement, in the record:
+	rec := RenderSlotRecord(table, "")
+	if !strings.Contains(rec, "says 28 while the slots above enumerate 11") {
+		t.Errorf("record does not state the count/members disagreement:\n%s", rec)
 	}
-}
-
-// TestSyncCountSlotsCountsOnlyMembersWithAPassage pins the count's unit one level further down:
-// a member counts when it carries the passage that states it.
-//
-// The fixture is the measured case (2026-09-17, 三国/关羽): a session's member list merged with the
-// resolve's, and among the names two that no passage in hand quotes — 于禁 (taken at 水淹七军 and
-// released, never killed) and 刘延 (who outlives the actor). The union was 18, the answer stated
-// 18, and sixteen of those names had a passage behind them. A claim is not a member: the number
-// is what the table can point at, and the claim stays visible as the slot's alternate.
-func TestSyncCountSlotsCountsOnlyMembersWithAPassage(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 18, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
-		typedMembersVar(2, "person", "于禁、刘延"),
-	}, 0, nil)
-	raised := syncCountSlots(&table)
-	if len(raised) != 1 || raised[0] != 0 {
-		t.Fatalf("raised = %v, want the count slot reconciled to the members with a passage", raised)
-	}
-	if got := *table.ByID(0).Candidate; got != "2" {
-		t.Fatalf("count slot = %q, want 2 (the members the table can quote)", got)
-	}
-	if alts := alternateCandidatesOf(*table.ByID(0)); len(alts) != 1 || alts[0] != "18" {
-		t.Fatalf("alternates = %v, want the 18 kept as the record's alternate", alts)
+	if got := *table.ByID(0).Candidate; got != "28" {
+		t.Errorf("count slot = %q, want the session's claim left as written", got)
 	}
 }
 
@@ -3779,11 +3252,14 @@ func TestSlotRecordShowsEachItemWithItsPassage(t *testing.T) {
 
 // TestSlotRecordStatesACountSlotThatHoldsWords pins the silent half of the count disagreement.
 //
-// A count slot whose value is TEXT passes in silence: it claims no number, so nothing is derived
-// from it (by contract), and the record used to say nothing either — its words sat beside the
-// enumerated size and the answer took whichever it liked. Measured (2026-09-17, 三国/关羽): a
-// session's "14" answered a table that enumerated 16. The words are not parsed here either; the
-// disagreement is stated.
+// A slot whose value is TEXT claims no number, so nothing is derived from it and the record used to
+// say nothing either: its words sat beside the enumerated size and the answer took whichever it
+// liked. Measured (2026-09-17, 三国/关羽): a session's "14" answered a table that enumerated 16.
+//
+// The statement is made WITHOUT reading the planner's word for the slot (it used to fire only for a
+// slot typed "count"): the fact it reports is about the RECORD — this table enumerates members and
+// records no number anywhere — so a slot whose label is `count` but whose session filled it with the
+// members themselves is not scolded for it.
 func TestSlotRecordStatesACountSlotThatHoldsWords(t *testing.T) {
 	table := runtime.NewState([]runtime.Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("14")},
@@ -3793,8 +3269,17 @@ func TestSlotRecordStatesACountSlotThatHoldsWords(t *testing.T) {
 	if !strings.Contains(rec, "enumerated members across the slots above: 3") {
 		t.Fatalf("record = %q, want the enumerated size stated", rec)
 	}
-	if !strings.Contains(rec, `holds "14" as text, not a number`) {
-		t.Fatalf("record = %q, want a count slot holding words stated as a disagreement", rec)
+	if !strings.Contains(rec, "no slot records a number while the slots above enumerate 3") {
+		t.Fatalf("record = %q, want the missing number stated as a disagreement", rec)
+	}
+
+	// A table that DOES record a number is not told anything: the statement is about the absence.
+	numberedOnly := runtime.NewState([]runtime.Variable{
+		typedCountVar(0, "count", 3, 0),
+		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
+	}, 0, nil)
+	if rec := RenderSlotRecord(numberedOnly, ""); strings.Contains(rec, "no slot records a number") {
+		t.Errorf("record for a table that records a number must not carry the note:\n%s", rec)
 	}
 
 	// The declared-number branch keeps its own wording.
@@ -3804,53 +3289,6 @@ func TestSlotRecordStatesACountSlotThatHoldsWords(t *testing.T) {
 	}, 0, nil)
 	if rec := RenderSlotRecord(numbered, ""); !strings.Contains(rec, "says 14 while the slots above enumerate 3") {
 		t.Fatalf("record = %q, want a declared number's disagreement stated as before", rec)
-	}
-}
-
-// TestSyncCountSlotsReadsTheWholeTable pins the ONE assumption the derivation carries: the size is
-// read ACROSS the table, so a question that enumerates two sets gets one number for both count
-// slots (`斩杀` and `生擒` both read 4 here).
-//
-// It is pinned rather than fixed because the fix is a DECLARATION — the planner saying which count
-// counts which set — and an inference (adjacency, wording) would guess exactly where the record has
-// to be exact. Until that declaration exists, the record's own line is the honest reading: it says
-// "across the slots above", not per slot.
-func TestSyncCountSlotsReadsTheWholeTable(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 9, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
-		typedCountVar(2, "count", 4, 0),
-		typedAnchoredMembersVar(3, "person", "于禁、庞德"),
-	}, 0, nil)
-	syncCountSlots(&table)
-	for _, id := range []int{0, 2} {
-		if got := *table.ByID(id).Candidate; got != "4" {
-			t.Fatalf("slot %d = %q, want the table-wide size: two sets per table are a declaration the planner does not make yet", id, got)
-		}
-	}
-}
-
-// TestSyncCountSlotsLeavesWhatClaimsNoNumber pins the kind-keyed half: the derivation touches the
-// slots that CLAIM a number and nothing else — a text claim is not a number anybody can check, and
-// the floor keeps a barely-filled table from collapsing a claim to one.
-func TestSyncCountSlotsLeavesWhatClaimsNoNumber(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")}, // prose: claims no number
-		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
-	}, 0, nil)
-	if changed := syncCountSlots(&table); len(changed) != 0 {
-		t.Fatalf("changed = %v, want a claim that is not a number left alone", changed)
-	}
-	// One quotable element is below the floor: nothing to derive from, so the claim stands.
-	thin := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 9, 0),
-		typedAnchoredMembersVar(1, "person", "华雄"),
-	}, 0, nil)
-	if changed := syncCountSlots(&thin); len(changed) != 0 {
-		t.Fatalf("changed = %v, want the floor respected (one element is not an enumeration)", changed)
-	}
-	if got := *thin.ByID(0).Candidate; got != "9" {
-		t.Fatalf("count slot = %q, want the claim standing below the floor", got)
 	}
 }
 

@@ -29,7 +29,6 @@ func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 		"action_run",
 		"action_set",
 		"action_initialize_state",
-		"sca_select",
 		"sca_query_rewrite",
 	}
 	for _, name := range names {
@@ -51,29 +50,6 @@ func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 func TestEmbeddedLoaderMissingName(t *testing.T) {
 	if _, err := (EmbeddedPromptLoader{}).Load("no_such_template"); err == nil {
 		t.Fatal("Load(no_such_template) succeeded, want error")
-	}
-}
-
-// TestRenderPromptNilLoaderUsesEmbeddedCanonical locks in that an unset loader
-// now resolves the canonical embedded .md (1:1 with rag/prompts/sca_select.md)
-// rather than the condensed constant — the whole point of the orchestration
-// parity fix.
-func TestRenderPromptNilLoaderUsesEmbeddedCanonical(t *testing.T) {
-	vars := map[string]string{"question": "Q?", "overall_draft": "D", "claims_context": "C"}
-	got := Render(nil, "sca_select", "", vars)
-
-	for _, frag := range []string{
-		`Google-style "Sufficient Context Agent"`, // canonical sca_select.md only
-		"Q?",
-		"D",
-		"C",
-	} {
-		if !strings.Contains(got, frag) {
-			t.Errorf("canonical sca_select render missing %q", frag)
-		}
-	}
-	if strings.Contains(got, "{{") {
-		t.Errorf("render left an unresolved placeholder: %q", got)
 	}
 }
 
@@ -157,11 +133,6 @@ func TestRenderPromptSubstitutesBothPlaceholderSpellings(t *testing.T) {
 type stubLoader struct{ text string }
 
 func (s stubLoader) Load(string) (string, error) { return s.text, nil }
-
-// TestRenderPromptNilLoaderUsesEmbeddedCanonical locks in that an unset loader
-// now resolves the canonical embedded .md (1:1 with rag/prompts/sca_select.md)
-// rather than the condensed constant — the whole point of the orchestration
-// parity fix.
 
 // TestEnumerationProtocolIsNotInTheSystemPrompt pins the split: the enumeration
 // protocol lives in its own template, which the harness appends to the turn of a

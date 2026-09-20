@@ -65,16 +65,7 @@ const (
 	// exactly the trade this design removes: one clock, set by the caller.
 	PrefetchTimeoutS = 90.0 // programmatic fan-out fetch
 	DraftTimeoutS    = 60.0 // fallback draft synthesis
-	SCATimeoutS      = 60.0 // sufficient-context review call
-	// SCARetryHeadroomS is the clock that must be left before a FAILED review is retried once:
-	// the second attempt plus the answer that follows it. Below it the retry is skipped and the
-	// unavailable review is recorded as such (see graph_sca), because a retry that eats the
-	// answer's own clock trades a missing verdict for a missing answer.
-	SCARetryHeadroomS = 120.0
-	RewriteTimeoutS   = 45.0 // gap → query rewrite call
-	// SCAViewCap is the view the SCA is shown: large enough that the passage carrying the
-	// answer is not the one that gets cut.
-	SCAViewCap = 60
+	RewriteTimeoutS  = 45.0 // gap → query rewrite call
 	// FanoutTopN is the per-query result count for the programmatic fetch.
 	FanoutTopN = 8
 	// FanoutTopNRewrite is the reduced count used after a rewrite round.
@@ -94,11 +85,4 @@ const (
 	// single call, which is where it belongs.
 	planMaxFanouts        = 3
 	slotFallbackClueChars = 160
-	// draftCandidateChars caps a claim's draft text handed to the SCA.
-	draftCandidateChars = 400
-	// draftClueTailChars / draftUnresolvedClueChars are the per-clue caps in the
-	// rendered draft (240 for a resolved slot's discovered-clue tail, 80 for an
-	// unresolved slot's question clues).
-	draftClueTailChars       = 240
-	draftUnresolvedClueChars = 80
 )

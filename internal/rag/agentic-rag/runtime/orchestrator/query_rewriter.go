@@ -28,6 +28,16 @@ import (
 // Query rewriter (Phase 4 of the pipeline).
 //
 
+// MissingPiece is one gap: what is missing, and a hint for searching for it.
+//
+// It used to be defined beside the sufficiency review, which produced gaps of its own. With no
+// review the gaps come from the round's own record (the plan slots it could not fill; see
+// unresolvedClueGaps), and the type lives here, with the only code that reads it.
+type MissingPiece struct {
+	What       string
+	SearchHint string
+}
+
 // RewriteDeps are the dependencies of RewriteGapToQuery.
 type RewriteDeps struct {
 	// Model generates the JSON object.

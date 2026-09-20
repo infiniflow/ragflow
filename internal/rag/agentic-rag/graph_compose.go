@@ -237,9 +237,11 @@ const (
 	// graph: the maximum number of node visits before the graph aborts. Go has
 	// no graph runtime, so the loop counts its own node visits against it.
 	AgenticRecursionLimit = 60
-	// agenticRoundVisits is the number of node visits one research round costs:
-	// rag_agent → draft → sca.
-	agenticRoundVisits = 3
+	// agenticRoundVisits is the number of node visits one research round costs: ONE. A round
+	// used to cost three visits (rag_agent → draft → sca), so counting one would have let the
+	// run do roughly 3x the work before the guard tripped — and the guard exists to bound WORK,
+	// which is now a single node.
+	agenticRoundVisits = 1
 	// lowRecursionLimitBase is the floor of `max(25, max_loops * 8)` for the non-agentic
 	// graph.
 	lowRecursionLimitBase = 25

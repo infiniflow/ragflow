@@ -40,7 +40,7 @@ import (
 // (see enumerates). Strategy text that is always in the prompt is paid for by
 // every question, including the ones it cannot help.
 
-//go:embed action_run.md action_set.md action_initialize_state.md sca_select.md sca_query_rewrite.md citation_prompt.md
+//go:embed action_run.md action_set.md action_initialize_state.md sca_query_rewrite.md citation_prompt.md
 var templatesFS embed.FS
 
 // EmbeddedPromptLoader serves the bundled .md templates by name. Load returns
