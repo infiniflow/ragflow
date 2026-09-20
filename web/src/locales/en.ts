@@ -776,6 +776,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
+      checkingEmbedding: 'Checking embedding model compatibility…',
       chunkMethodPlaceholder: 'Please select a chunking method.',
       tableColumnMode: 'Column mode',
       tableColumnModeAuto: 'Auto',

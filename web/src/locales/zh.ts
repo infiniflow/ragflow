@@ -712,6 +712,7 @@ export default {
       english: '英文',
       chinese: '中文',
       embeddingModelPlaceholder: '请选择 Embedding 模型',
+      checkingEmbedding: '正在校验 Embedding 模型兼容性…',
       chunkMethodPlaceholder: '请选择分块方法',
       save: '保存',
       me: '只有我',
