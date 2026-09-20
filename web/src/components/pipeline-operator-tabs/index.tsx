@@ -40,6 +40,25 @@ type PipelineOperatorTabsProps = {
   fixedFileFormats?: boolean;
 };
 
+const BuiltinOperatorLabels: Record<string, string> = {
+  Parser_picture: 'Parser',
+  Indexer_picture: 'Indexer',
+  Parser_audio: 'Parser',
+  Indexer_audio: 'Indexer',
+  Parser_email: 'Parser',
+  Indexer_email: 'Indexer',
+};
+
+function getOperatorTabLabel(node: RAGFlowNodeType, fallback: string) {
+  const name = node.data?.name || '';
+  const chunkerTemplate = name.match(/Chunker_(picture|audio|email)$/);
+  if (chunkerTemplate) {
+    const template = chunkerTemplate[1];
+    return `${template[0].toUpperCase()}${template.slice(1)} Chunker`;
+  }
+  return BuiltinOperatorLabels[name] || name || node.data?.label || fallback;
+}
+
 const PipelineOperatorTabs = ({
   nodes,
   activeTab,
@@ -96,7 +115,7 @@ const PipelineOperatorTabs = ({
           const tabValue = getTabValue(node, index);
           return (
             <TabsTrigger key={tabValue} value={tabValue}>
-              {node.data?.name || node.data?.label || tabValue}
+              {getOperatorTabLabel(node, tabValue)}
             </TabsTrigger>
           );
         })}
