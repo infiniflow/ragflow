@@ -44,7 +44,7 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
