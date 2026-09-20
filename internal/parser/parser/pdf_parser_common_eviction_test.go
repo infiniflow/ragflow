@@ -111,3 +111,77 @@ func TestCropMediaSectionsEvictionContinuesAfterPageOrderBreak(t *testing.T) {
 		t.Errorf("expected bounded cache to hold only the last section's page {301}, got %d: %v", len(pageCache), pageCache)
 	}
 }
+
+// TestSectionRendersFromCache pins the eligibility predicate cropMediaSections
+// and computeFuturePageWindow share: only media sections that actually render
+// from pageCache (no pre-existing Image, a media layout/type, and at least one
+// Position) participate in the eviction window. Skipped sections must not
+// contribute to the window, or a late skipped section with a low merged page
+// would keep the window low and let pageCache grow (the residual of #19938).
+func TestSectionRendersFromCache(t *testing.T) {
+	renderable := []deepdoctype.Section{
+		{LayoutType: deepdoctype.LayoutTypeFigure, Positions: []deepdoctype.Position{{PageNumbers: []int{1}}}},
+		{LayoutType: deepdoctype.LayoutTypeTable, Positions: []deepdoctype.Position{{PageNumbers: []int{2}}}},
+		{LayoutType: deepdoctype.DLALabelFigureCaption, Positions: []deepdoctype.Position{{PageNumbers: []int{3}}}},
+		{LayoutType: "image", Positions: []deepdoctype.Position{{PageNumbers: []int{4}}}},
+		{DocTypeKwd: "image", Positions: []deepdoctype.Position{{PageNumbers: []int{5}}}},
+		{DocTypeKwd: "table", Positions: []deepdoctype.Position{{PageNumbers: []int{6}}}},
+	}
+	for i, sec := range renderable {
+		if !sectionRendersFromCache(sec) {
+			t.Errorf("case %d: expected media section to render from cache", i)
+		}
+	}
+	skipped := []deepdoctype.Section{
+		{LayoutType: deepdoctype.LayoutTypeText, Positions: []deepdoctype.Position{{PageNumbers: []int{1}}}},
+		{LayoutType: deepdoctype.LayoutTypeFigure, Image: "already-cropped", Positions: []deepdoctype.Position{{PageNumbers: []int{1}}}},
+		{LayoutType: deepdoctype.LayoutTypeTable}, // no Positions
+	}
+	for i, sec := range skipped {
+		if sectionRendersFromCache(sec) {
+			t.Errorf("case %d: expected skipped section NOT to render from cache", i)
+		}
+	}
+}
+
+// TestComputeFuturePageWindowIgnoresSkippedSections is the regression for
+// Finding A of the #19938 review: a section that cropMediaSections skips (here
+// a text section) but which carries a low merged page late in the document
+// must NOT pull the future-page window down. With the bug, the window at the
+// first section would equal that low page (5) and early rendered pages could
+// never be evicted; after the fix the window stays at the first renderable
+// section's page (100).
+func TestComputeFuturePageWindowIgnoresSkippedSections(t *testing.T) {
+	sections := []deepdoctype.Section{
+		{LayoutType: deepdoctype.LayoutTypeTable, Positions: []deepdoctype.Position{{PageNumbers: []int{100}}}},
+		{LayoutType: deepdoctype.LayoutTypeText, Positions: []deepdoctype.Position{{PageNumbers: []int{5}}}},
+	}
+	win := computeFuturePageWindow(sections)
+	if win[0] != 100 {
+		t.Errorf("skipped low-page section must not lower the future window; got win[0]=%d, want 100", win[0])
+	}
+	if win[1] != -1 {
+		t.Errorf("skipped section has no renderable future window; got win[1]=%d, want -1", win[1])
+	}
+}
+
+// TestSectionOrderBreaksEvictionSkipsUnknownPages is the regression for the
+// -1 handling in sectionOrderBreaksEviction (Finding C): a section with no
+// page info (sectionMinPage == -1) must not be treated as a page-order break.
+// Before the fix, the -1 section was reported as the offending break; after
+// the fix the break is correctly attributed to the next known lower page (18
+// following 20), so the offending index is 2, not 1.
+func TestSectionOrderBreaksEvictionSkipsUnknownPages(t *testing.T) {
+	sections := []deepdoctype.Section{
+		{LayoutType: deepdoctype.LayoutTypeTable, Positions: []deepdoctype.Position{{PageNumbers: []int{20}}}},
+		{LayoutType: deepdoctype.LayoutTypeFigure}, // no Positions -> minPage -1
+		{LayoutType: deepdoctype.LayoutTypeTable, Positions: []deepdoctype.Position{{PageNumbers: []int{18}}}},
+	}
+	broken, idx := sectionOrderBreaksEviction(sections)
+	if !broken {
+		t.Fatalf("expected a page-order break from 20 -> 18, got none")
+	}
+	if idx != 2 {
+		t.Errorf("expected break at index 2 (the -1 section must be skipped), got %d", idx)
+	}
+}
