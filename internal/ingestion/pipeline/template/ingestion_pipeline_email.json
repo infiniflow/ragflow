@@ -298,7 +298,7 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker"
+                        "name": "Email Chunker"
                     },
                     "id": "TokenChunker:WarmBreadSmells",
                     "measured": {

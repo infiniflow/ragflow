@@ -738,7 +738,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipeline: 'Select or switch the parsing mode',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
@@ -1080,18 +1080,18 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       datasetUnavailable:
-        'The selected knowledge base is unavailable (deleted or has no chunks), please re-select',
+        'The selected dataset is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
-      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
 **Essential Rules:**
   - Your answer must be derived **solely** from this dataset: {knowledge}.
   - **When information is available**: Summarize the content to give a detailed answer.
-  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
   - **Always consider** the entire conversation history.`,
-      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
       **Essential Rules:**
         - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
@@ -1617,7 +1617,7 @@ Example: Virtual Hosted Style`,
       timeStarted: 'Time started',
       log: 'Log',
       rssDescription:
-        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
+        'Connect to a public RSS or Atom feed and sync feed entries into your dataset.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -2461,7 +2461,7 @@ Example: Virtual Hosted Style`,
       jsonPreview: 'JSON preview',
       processFlow: 'Process flow',
       processFlowComingSoon: 'Process flow preview coming soon',
-      compilationTitleSuffix: "' dataset",
+      compilationTitleSuffix: ' dataset',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -3507,7 +3507,7 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryMissing:
         'Cannot save: "{{name}}" has no memories selected. Please choose them first',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} dataset retrieval step(s) without a bound knowledge base. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalTemplateMemoryHint:
         'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
