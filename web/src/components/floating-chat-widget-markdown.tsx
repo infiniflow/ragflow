@@ -268,7 +268,7 @@ const FloatingChatWidgetMarkdown = ({
   const renderReference = useCallback(
     (text: string) => {
       return reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
         const info = getReferenceInfo(chunkIndex);
 
         if (!info) {

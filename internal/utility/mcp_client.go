@@ -40,6 +40,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"sync"
 	"time"
@@ -92,7 +93,7 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 		opts.Timeout = 10 * time.Second
 	}
 
-	hostname, resolvedIP, err := AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := common.AssertURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +415,7 @@ func requestSSE(ctx context.Context, endpoint string, headers map[string]string,
 	// differs from the original SSE host — swap in a fresh pinned
 	// client so the dial-time IP override still applies.
 	postClient := client
-	if postHost, postIP, vErr := AssertURLSafe(postURL); vErr != nil {
+	if postHost, postIP, vErr := common.AssertURLSafe(postURL); vErr != nil {
 		return nil, vErr
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
 		if u.Hostname() != originalHost(endpoint) {
