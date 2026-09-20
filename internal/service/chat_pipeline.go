@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -34,6 +35,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 
@@ -654,8 +656,11 @@ func (s *ChatPipelineService) AsyncChat(
 		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
 		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
 		// agentic). It comes from the request kwargs first, then prompt_config.
+		//
+		// Python rag_agent also refuses the agentic loop when the model cannot
+		// call tools, and routes those requests to async_chat.
 		reasoningLevel := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
-		useReasoning := reasoningLevel > 0
+		useReasoning := s.reasoningNeedsAgenticGraph(ctx, chat, reasoningLevel)
 		common.Info("Phase 9: Retrieval",
 			zap.Bool("has_knowledge_param", hasKnowledgeParam),
 			zap.Int("reasoning_level", reasoningLevel),
@@ -1052,8 +1057,12 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 		}
 		if systemPrompt != "" {
+			// Python logs characters; a Chinese prompt is ~3x longer in bytes, so
+			// report both to keep the two comparable.
 			common.Info("System prompt built",
-				zap.Int("length", len(systemPrompt)))
+				zap.Int("length", len(systemPrompt)),
+				zap.Int("runes", utf8.RuneCountInString(systemPrompt)),
+				zap.Int("knowledgeRunes", utf8.RuneCountInString(knowledge)))
 		}
 
 		// Build citation prompt if quoting is enabled.
@@ -1066,13 +1075,18 @@ func (s *ChatPipelineService) AsyncChat(
 			quote = quote && promptConfigQuote
 		}
 		if len(knowledges) > 0 && quote {
-			prompt4citation = citationPrompt()
+			// Python's citation_prompt() (generator.py:226) renders
+			// citation_prompt.md — the full rules with examples, which the agent
+			// path already reads from the same embedded copy. The standard path
+			// used a ~380-char paraphrase of it.
+			prompt4citation = ragprompts.CitationPrompt("")
 		}
 
 		if prompt4citation != "" {
 			common.Info("Citation prompt built",
 				zap.Bool("quote", quote),
-				zap.Int("length", len(prompt4citation)))
+				zap.Int("length", len(prompt4citation)),
+				zap.Int("runes", utf8.RuneCountInString(prompt4citation)))
 		}
 
 		// Build the message list: system + cleaned user/assistant messages.
@@ -2089,11 +2103,7 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		// Probe the default model's enrolled types so a vision-capable
 		// default dispatches as image2text (same rule as the explicit-LLM
 		// branches below).
-		modelRef := target.ModelID
-		if modelRef == "" {
-			modelRef = fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
-		}
-		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelRef)
+		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelTargetRef(target))
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
@@ -2128,6 +2138,34 @@ func (s *ChatPipelineService) resolveChatModelTarget(ctx context.Context, chat *
 		modelType = entity.ModelTypeImage2Text
 	}
 	return s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
+}
+
+// reasoningNeedsAgenticGraph collapses Python rag_agent's two guards: reasoning on
+// and a tool-calling chat model. The loop exists so the outer model can call the
+// bound rag tool — with a model that never emits a tool_call the whole research
+// budget goes to turns that retrieve nothing, so Python routes those requests to
+// async_chat, the regular RAG branch below.
+func (s *ChatPipelineService) reasoningNeedsAgenticGraph(ctx context.Context, chat *entity.Chat, reasoningLevel int) bool {
+	if reasoningLevel <= 0 {
+		return false
+	}
+	if s.chatModelSupportsTools(ctx, chat) {
+		return true
+	}
+	common.Info("LLM does not support tool calls; falling back to regular RAG chat",
+		zap.Int("reasoning_level", reasoningLevel))
+	return false
+}
+
+// chatModelSupportsTools mirrors Python's `getattr(chat_mdl, "is_tools", False)`:
+// the flag comes from ResolveChatModelToolSupport, which resolves the model the
+// request will actually run on and prefers the tenant model's persisted value over
+// the provider catalog. Unresolvable counts as unsupported, like Python's default.
+func (s *ChatPipelineService) chatModelSupportsTools(ctx context.Context, chat *entity.Chat) bool {
+	if s == nil || s.ModelProviderSvc == nil || chat == nil {
+		return false
+	}
+	return s.ModelProviderSvc.ResolveChatModelToolSupport(ctx, chat.TenantID, chat.LLMID)
 }
 
 // resolveChatModelType probes the enrolled model types for llmRef and
@@ -3517,16 +3555,6 @@ func langfuseExtractTimeElapsed(prompt string) string {
 // extractVisibleAnswer mirrors Python's _extract_visible_answer.
 func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 	return ExtractVisibleAnswer(text)
-}
-
-// citationPrompt returns the citation instruction prompt.
-// Mirrors Python's citation_prompt() in rag/prompts/generator.py.
-func citationPrompt() string {
-	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
-		"after each sentence where the information from that chunk is used, " +
-		"where N is the id printed at the start of the evidence block (" +
-		"the blocks are numbered from 0, so the FIRST block is [ID:0]). " +
-		"Cite each source individually ([ID:0][ID:1]); never merge consecutive citations into a range such as [ID:1-3]."
 }
 
 // -----------------------------------------------------------------------

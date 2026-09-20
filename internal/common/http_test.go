@@ -88,6 +88,7 @@ func TestProviderLoggingRecordsTimingsAndTruncatesVectors(t *testing.T) {
 	}
 	timeIndex := 0
 	transport := &providerLoggingTransport{
+		debug: true,
 		base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -173,8 +174,10 @@ func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	if resp.Body != http.NoBody {
-		t.Fatalf("response body was wrapped while LLM_DEBUG is disabled")
+	// The body is still wrapped so the call can be timed, but nothing is
+	// captured and nothing is logged while LLM_DEBUG is disabled.
+	if wrapped, ok := resp.Body.(*providerResponseBody); ok && wrapped.capture {
+		t.Fatalf("response body was captured while LLM_DEBUG is disabled")
 	}
 	_ = resp.Body.Close()
 
@@ -183,5 +186,80 @@ func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
 	}
 	if count := logs.Len(); count != 0 {
 		t.Fatalf("provider log count = %d, want 0", count)
+	}
+}
+
+// TestProviderSlowStreamReportsTimingsWithoutDebug covers the always-on timing
+// line: a slow streaming call reports took/firstToken even with LLM_DEBUG off,
+// and never carries payloads.
+func TestProviderSlowStreamReportsTimingsWithoutDebug(t *testing.T) {
+	t.Setenv(EnvLLMDebug, "")
+	core, logs := observer.New(zapcore.InfoLevel)
+	previousLogger := Logger
+	Logger = zap.New(core)
+	t.Cleanup(func() {
+		Logger = previousLogger
+	})
+
+	startedAt := time.Unix(100, 0)
+	times := []time.Time{
+		startedAt,
+		startedAt.Add(time.Second),
+		startedAt.Add(7 * time.Second),
+	}
+	timeIndex := 0
+	transport := &providerLoggingTransport{
+		base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			header := make(http.Header)
+			header.Set("Content-Type", "text/event-stream")
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     header,
+				Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[]}\n\n")),
+				Request:    req,
+			}, nil
+		}),
+		now: func() time.Time {
+			current := times[timeIndex]
+			timeIndex++
+			return current
+		},
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://provider.example/v1/chat/completions", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	if _, err = io.ReadAll(resp.Body); err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	_ = resp.Body.Close()
+
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("provider log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	durationField := func(key string) (time.Duration, bool) {
+		switch v := fields[key].(type) {
+		case time.Duration:
+			return v, true
+		case int64:
+			return time.Duration(v), true
+		}
+		return 0, false
+	}
+	if took, ok := durationField("took"); !ok || took != 7*time.Second {
+		t.Errorf("took = %v, want 7s (fields %v)", fields["took"], fields)
+	}
+	if firstToken, ok := durationField("firstToken"); !ok || firstToken != time.Second {
+		t.Errorf("firstToken = %v, want 1s (fields %v)", fields["firstToken"], fields)
+	}
+	if _, ok := fields["payload"]; ok {
+		t.Errorf("timing log must not carry payloads while LLM_DEBUG is disabled: %v", fields)
 	}
 }

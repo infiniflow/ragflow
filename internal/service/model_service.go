@@ -30,6 +30,8 @@ import (
 	"ragflow/internal/utility"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -172,6 +174,11 @@ type ModelProviderService struct {
 	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
 	tenantDAO            *dao.TenantDAO
 	userTenantDAO        *dao.UserTenantDAO
+
+	// Memoizes capability probes (see ResolveChatModelToolSupport); accessed only
+	// through the accessors, so the zero value is a usable empty cache.
+	toolSupportMu    sync.Mutex
+	toolSupportCache map[string]chatModelToolSupportEntry
 }
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
@@ -3587,6 +3594,94 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 	// source left (the instance api_key payload Python reads here is seeded from
 	// the same catalog at enrolment time).
 	return catalogToolSupport(providerName, pureModelName), nil
+}
+
+// ResolveChatModelTarget resolves the chat model a request will run on: the
+// caller's reference when it has one, the tenant default otherwise — a dialog
+// without an llm_id still runs on the default (dialog_service get_models).
+// Shared by the capability probe and the agentic wiring so the two cannot resolve
+// different models for one request.
+func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenantID, modelRef string) (*ModelTarget, error) {
+	if m == nil {
+		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
+	}
+	if strings.TrimSpace(modelRef) == "" {
+		return m.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+	}
+	return m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelRef)
+}
+
+// modelTargetRef renders a resolved model as the lookups' reference: its
+// tenant_model id, or the composite "model@instance@provider" form.
+func modelTargetRef(target *ModelTarget) string {
+	if target == nil {
+		return ""
+	}
+	if target.ModelID != "" {
+		return target.ModelID
+	}
+	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
+}
+
+// ResolveChatModelToolSupport mirrors Python's `getattr(chat_mdl, "is_tools",
+// False)` for the model the request will run on; an unresolvable reference counts
+// as unsupported. The verdict is memoized for chatModelToolSupportTTL — Python
+// reads a field off an already-loaded model, here a probe costs several lookups —
+// and a resolution failure is not cached, so a transient error cannot pin a
+// request family to the wrong path.
+func (m *ModelProviderService) ResolveChatModelToolSupport(ctx context.Context, tenantID, modelRef string) bool {
+	if m == nil {
+		return false
+	}
+	if supported, ok := m.cachedChatModelToolSupport(tenantID, modelRef); ok {
+		return supported
+	}
+	target, err := m.ResolveChatModelTarget(ctx, tenantID, modelRef)
+	if err != nil {
+		return false
+	}
+	ok, err := m.ResolveModelToolSupport(ctx, tenantID, entity.ModelTypeChat, modelTargetRef(target))
+	if err != nil {
+		return false
+	}
+	m.storeChatModelToolSupport(tenantID, modelRef, ok)
+	return ok
+}
+
+// chatModelToolSupportTTL bounds a reuse of the probe verdict: long enough to
+// cover a page of questions, short enough that a model edit takes effect quickly.
+const chatModelToolSupportTTL = 60 * time.Second
+
+type chatModelToolSupportEntry struct {
+	supported bool
+	expiresAt time.Time
+}
+
+// An empty modelRef means "the tenant default" and is its own key.
+func chatModelToolSupportKey(tenantID, modelRef string) string {
+	return tenantID + "\x00" + strings.TrimSpace(modelRef)
+}
+
+func (m *ModelProviderService) cachedChatModelToolSupport(tenantID, modelRef string) (bool, bool) {
+	m.toolSupportMu.Lock()
+	defer m.toolSupportMu.Unlock()
+	entry, ok := m.toolSupportCache[chatModelToolSupportKey(tenantID, modelRef)]
+	if !ok || !time.Now().Before(entry.expiresAt) {
+		return false, false
+	}
+	return entry.supported, true
+}
+
+func (m *ModelProviderService) storeChatModelToolSupport(tenantID, modelRef string, supported bool) {
+	m.toolSupportMu.Lock()
+	defer m.toolSupportMu.Unlock()
+	if m.toolSupportCache == nil {
+		m.toolSupportCache = make(map[string]chatModelToolSupportEntry)
+	}
+	m.toolSupportCache[chatModelToolSupportKey(tenantID, modelRef)] = chatModelToolSupportEntry{
+		supported: supported,
+		expiresAt: time.Now().Add(chatModelToolSupportTTL),
+	}
 }
 
 // toolSupportFromTenantModel returns the is_tools flag persisted on a tenant

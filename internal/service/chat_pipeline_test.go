@@ -24,8 +24,13 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -2159,5 +2164,227 @@ func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
 	}
 	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
 		t.Fatalf("reference doc_aggs = %#v, want d2 (c3)", aggs[0])
+	}
+}
+
+// setupChatPipelineToolSupportTestDB seeds an in-memory scope whose models differ
+// only in their persisted tool-calling flag, so the probe runs without the provider
+// catalog:
+//
+//	model-tools-on        — chat,    extra {"is_tools": true}
+//	model-tools-off       — chat,    extra {"is_tools": false}
+//	model-tools-disabled  — chat,    extra {"is_tools": true}, status inactive
+//	model-embedding-tools — embedding, extra {"is_tools": true}
+func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("failed to migrate model tables: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-tools-on", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-plus", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-tools-off", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
+		&entity.TenantModel{ID: "model-tools-disabled", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-air", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-embedding-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "embedding-3", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+	return db
+}
+
+// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// the no-explicit-LLM branch of the probe resolves.
+func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
+	t.Helper()
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-1",
+		LLMID:  defaultLLMID,
+		Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+}
+
+// TestChatModelSupportsToolsReadsTenantModelFlag pins that the probe reads the
+// flag persisted on the tenant model's extra JSON, in both directions — the
+// tenant's own value beats the catalog.
+func TestChatModelSupportsToolsReadsTenantModelFlag(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name string
+		llm  string
+		want bool
+	}{
+		{"tool-capable model", "model-tools-on", true},
+		{"model without tool support", "model-tools-off", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if got != tc.want {
+				t.Errorf("chatModelSupportsTools(%s) = %v, want %v", tc.llm, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestChatModelSupportsToolsRejectsInvalidReferences pins the fail-closed rule:
+// a disabled model, a model not enrolled as a chat model, and an unenrolled
+// reference all report no tool support rather than a definitive yes — the same
+// outcome as Python's `getattr(chat_mdl, "is_tools", False)` default.
+func TestChatModelSupportsToolsRejectsInvalidReferences(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name string
+		llm  string
+	}{
+		{"disabled model", "model-tools-disabled"},
+		{"not enrolled as chat", "model-embedding-tools"},
+		{"unknown model", "no-such-model"},
+		{"unenrolled composite reference", "ghost@default@ZHIPU-AI"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm}); got {
+				t.Errorf("chatModelSupportsTools(%s) = true, want false", tc.llm)
+			}
+		})
+	}
+}
+
+// TestChatModelSupportsToolsFallsBackToTenantDefault covers the no-explicit-LLM
+// branch: the probe must resolve the tenant default chat model (composite
+// "model@provider" reference) and read its flag.
+func TestChatModelSupportsToolsFallsBackToTenantDefault(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-plus@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	if got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1"}); !got {
+		t.Error("tenant default with is_tools=true reported no tool support, want true")
+	}
+}
+
+// TestChatModelSupportsToolsTenantDefaultWithoutToolSupport is the mirror case:
+// a tenant default that cannot call tools must not be reported as capable.
+func TestChatModelSupportsToolsTenantDefaultWithoutToolSupport(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	if got := svc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1"}); got {
+		t.Error("tenant default with is_tools=false reported tool support, want false")
+	}
+}
+
+// TestChatModelSupportsToolsMissingDependencies is the guard case: an
+// uninitialised service or a nil dialog must not panic and must report no tool
+// support.
+func TestChatModelSupportsToolsMissingDependencies(t *testing.T) {
+	var nilSvc *ChatPipelineService
+	if got := nilSvc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}); got {
+		t.Error("nil service reported tool support, want false")
+	}
+
+	emptySvc := &ChatPipelineService{}
+	if got := emptySvc.chatModelSupportsTools(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}); got {
+		t.Error("service without a model provider reported tool support, want false")
+	}
+
+	svc := NewChatPipelineService()
+	if got := svc.chatModelSupportsTools(t.Context(), nil); got {
+		t.Error("nil dialog reported tool support, want false")
+	}
+}
+
+// TestReasoningNeedsAgenticGraphGatesOnToolSupport pins the gate Python
+// rag_agent applies before building its agentic loop: reasoning level 0 turns it
+// off, and so does a chat model that cannot call tools. Only reasoning enabled
+// together with tool support drives the agentic graph.
+func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	capable := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+	incapable := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-off"}
+
+	for _, tc := range []struct {
+		name           string
+		chat           *entity.Chat
+		reasoningLevel int
+		want           bool
+	}{
+		{"reasoning off", capable, 0, false},
+		{"reasoning on and tool-capable", capable, 2, true},
+		{"reasoning on but no tool support", incapable, 2, false},
+		{"reasoning on, unresolvable model", &entity.Chat{TenantID: "tenant-1", LLMID: "no-such-model"}, 4, false},
+		{"reasoning on, nil dialog", nil, 2, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := svc.reasoningNeedsAgenticGraph(t.Context(), tc.chat, tc.reasoningLevel); got != tc.want {
+				t.Errorf("reasoningNeedsAgenticGraph(level=%d) = %v, want %v", tc.reasoningLevel, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestChatModelSupportsToolsProbeIsCached pins the memoization: a verdict may be
+// reused, but only for chatModelToolSupportTTL.
+func TestChatModelSupportsToolsProbeIsCached(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+
+	if !svc.chatModelSupportsTools(t.Context(), chat) {
+		t.Fatal("tool-capable model reported no support")
+	}
+
+	// Flip the persisted flag: the verdict cached by the first probe must hold
+	// until its TTL lapses, which is what makes repeated reasoning turns cheap.
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-tools-on").
+		Update("extra", `{"is_tools":false}`).Error; err != nil {
+		t.Fatalf("flip is_tools: %v", err)
+	}
+	if !svc.chatModelSupportsTools(t.Context(), chat) {
+		t.Fatal("cached verdict was dropped before its TTL lapsed")
+	}
+
+	// Expire the entry through the same accessors the probe uses: the next call
+	// must read the row again and see the flipped flag.
+	provider := svc.ModelProviderSvc
+	provider.toolSupportMu.Lock()
+	provider.toolSupportCache[chatModelToolSupportKey("tenant-1", "model-tools-on")] = chatModelToolSupportEntry{
+		supported: true,
+		expiresAt: time.Now().Add(-time.Second),
+	}
+	provider.toolSupportMu.Unlock()
+
+	if svc.chatModelSupportsTools(t.Context(), chat) {
+		t.Fatal("expired verdict was reused instead of re-probing")
 	}
 }
