@@ -1633,6 +1633,36 @@ func stubHarness(t *testing.T, answer string) {
 	}
 }
 
+// TestRetrieveViaHarnessForwardsRetrievalTuning pins the fix for a harness that
+// ignored the dialog's retrieval settings: without them it falls back to its
+// package default top_n=12, so a dialog configured with top_n=8 retrieved a
+// different passage set than the standard path — the failure that answered a
+// two-document comparison from one document's chunks because that document's
+// nine chunks filled the widened budget.
+func TestRetrieveViaHarnessForwardsRetrievalTuning(t *testing.T) {
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	var got HarnessRequest
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		got = req
+		return HarnessResult{}, nil
+	}
+
+	s := &ChatPipelineService{}
+	want := HarnessRetrieval{
+		TopN:                   8,
+		SimilarityThreshold:    0.2,
+		VectorSimilarityWeight: 0.3,
+		RerankCandidatesCount:  64,
+	}
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "low", "t", "m", "sess", want, nil, nil, nil, "", nil); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if got.Retrieval != want {
+		t.Errorf("harness retrieval = %+v, want %+v", got.Retrieval, want)
+	}
+}
+
 // collectSink records every delta with its isThink flag.
 func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 	return func(delta string, isThink bool) {
@@ -1668,7 +1698,7 @@ func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
 	var thinks []bool
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	_, _, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
+	_, _, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", HarnessRetrieval{}, nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
@@ -1709,7 +1739,7 @@ func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
 	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", HarnessRetrieval{}, nil, nil, collectThinkSink(&events), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	// Only what the harness reported: the pipeline adds nothing of its own.
@@ -1766,7 +1796,7 @@ func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", HarnessRetrieval{}, nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {

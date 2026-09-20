@@ -185,6 +185,15 @@ type RAGTools struct {
 	// (summarize_document / fetch_full_document)
 	// Nil disables it: the document-level tools report that reading is unavailable.
 	DocChunks runtime.DocChunkLister
+	// MetadataResolver resolves document sets from document metadata. It backs the
+	// metadata_search tool and the pre-search metadata channel
+	// (implemented by internal/service.MetadataService). Nil leaves both unavailable.
+	MetadataResolver runtime.MetadataResolver
+	// DeclaredMetadata reads the metadata fields the datasets DECLARE in their
+	// parser_config, which is what lets the metadata_search catalog describe a field
+	// (its meaning and allowed values) instead of only naming it. Same implementation as
+	// MetadataResolver; nil leaves the catalog with the metadata index alone.
+	DeclaredMetadata runtime.DeclaredMetadataResolver
 	// Outer is the outer-layer chat model that drives the rag_agent react loop
 	// (dialog_service.rag_agent): it binds tools=[rag, summarize_document] with
 	// terminal_tools={"rag"}. When non-nil, Rag runs that outer loop: the model may call
@@ -968,6 +977,8 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req runtime.RunRequest, d
 		DocIDVerifier:     deps.DocIDVerifier,
 		DocChunks:         deps.DocChunks,
 		DocTenantResolver: dbDocTenantResolver{},
+		MetadataResolver:  deps.MetadataResolver,
+		DeclaredMetadata:  deps.DeclaredMetadata,
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
 		// Python retrieve:614-646 — configuration is the middle precedence
@@ -1551,8 +1562,14 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req runtime.RunReques
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "rag",
-				"description": "Run the full agentic research graph over the configured datasets and return a cited answer.",
+				"name": "rag",
+				"description": "Run the full agentic research graph over the configured datasets and return a cited answer. " +
+					"WHEN TO CALL: every question whose answer must come from the knowledge base — a fact, an enumeration, " +
+					"a count, \"which documents ...\", a date or updated-time range, a comparison, a multi-hop relation, " +
+					"or anything that needs citations. " +
+					"DO NOT CALL: only for pure chit-chat or a rewriting task that cannot need the datasets. " +
+					"You MUST call this before answering a knowledge-base question: the dataset names and your own prior " +
+					"knowledge are not evidence, and answering without it is a wrong answer even when it reads well.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -1568,14 +1585,18 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req runtime.RunReques
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "summarize_document",
-				"description": "Read an entire document by id into the evidence set and return a short summary the model can answer from.",
+				"name": "summarize_document",
+				"description": "Read an entire document by id into the evidence set and return a short summary the model can answer from. " +
+					"WHEN TO CALL: only when you ALREADY hold a doc_id — returned by an earlier `rag` call, or given by the user. " +
+					"DO NOT CALL: when you have no doc_id, or the question asks WHICH documents exist, or it needs several " +
+					"documents compared or aggregated — that is the `rag` tool's job. This tool cannot find a document: " +
+					"called without a real doc_id it only returns an error and wastes a round.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"doc_id": map[string]any{
 							"type":        "string",
-							"description": "The document id to read.",
+							"description": "The document id to read — one you already hold from a prior `rag` result or from the user.",
 						},
 					},
 					"required": []string{"doc_id"},
@@ -2401,9 +2422,11 @@ func runSingleSession(ctx context.Context, deps RAGTools, req runtime.RunRequest
 			ThinkingMode: resp.Mode.Label,
 			// Provider gate: without a wired provider the tool is hidden rather than
 			// advertised dead.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields (see NewAgenticLoop).
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		},
 		Model:   deps.Model,
 		Prompts: deps.Prompts,
