@@ -31,7 +31,6 @@ from common.float_utils import format_minimum_should_match_percent, get_float
 ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
-KNN_QUERY_STRING_FILTER_WEIGHT_THRESHOLD = 0.8
 
 # Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
 # removes field at zero for rank_feature compatibility.
@@ -72,15 +71,11 @@ def _remove_query_string_must_clauses(must_clauses):
     return [copy.deepcopy(must_clauses)] if must_clauses else []
 
 
-def _build_knn_filter_query(bool_query, vector_similarity_weight: float):
+def _build_knn_filter_query(bool_query, vector_similarity_weight: float | None = None):
     if bool_query is None:
         return None
 
-    query = bool_query.to_dict()
-    if vector_similarity_weight <= KNN_QUERY_STRING_FILTER_WEIGHT_THRESHOLD:
-        return query
-
-    query = copy.deepcopy(query)
+    query = copy.deepcopy(bool_query.to_dict())
     bool_part = query.get("bool")
     if not isinstance(bool_part, dict):
         return query
@@ -265,7 +260,7 @@ class ESConnection(ESConnectionBase):
                     k,
                     num_candidates,
                     query_vector=list(m.embedding_data),
-                    filter=bool_query.to_dict(),  # filter=_build_knn_filter_query(bool_query, vector_similarity_weight),
+                    filter=_build_knn_filter_query(bool_query, vector_similarity_weight),
                     similarity=similarity,
                 )
 
