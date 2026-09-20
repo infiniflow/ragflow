@@ -57,6 +57,14 @@ function Chunk() {
   const [filterChunkIds, setFilterChunkIds] = useState<string[]>(
     targetChunkId ? [targetChunkId] : [],
   );
+  // The route keeps this page mounted when only the query string changes, so
+  // history navigation on and off a hit has to move the filter with it.
+  useEffect(() => {
+    setFilterChunkIds((previousIds) => {
+      const nextIds = targetChunkId ? [targetChunkId] : [];
+      return previousIds.join() === nextIds.join() ? previousIds : nextIds;
+    });
+  }, [targetChunkId]);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   // The artifact tree publishes its claims / evidence content upward; the page
   // renders it as a resizable column between the tree and the chunk list, and
