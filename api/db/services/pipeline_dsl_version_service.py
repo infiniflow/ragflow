@@ -15,6 +15,7 @@
 #
 
 import json
+import numbers
 import random
 import time
 from datetime import datetime
@@ -24,7 +25,6 @@ from peewee import IntegrityError
 from api.db.db_models import DB, PipelineDSLVersion
 from api.db.gaussdb_error_utils import exception_text, mysql_errno_from_exception, sqlstate_from_exception
 from common.time_utils import current_timestamp, datetime_format
-
 
 MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS = 8
 PIPELINE_DSL_VERSION_RETRY_BASE_DELAY_SECONDS = 0.002
@@ -57,7 +57,7 @@ class PipelineDSLVersionService:
     @staticmethod
     def _normalize_dsl(dsl):
         if not isinstance(dsl, dict):
-            raise ValueError("Pipeline DSL must be a JSON object.")
+            raise TypeError("Pipeline DSL must be a JSON object.")
         try:
             return json.loads(json.dumps(dsl, ensure_ascii=False))
         except (TypeError, ValueError) as exc:
@@ -65,12 +65,20 @@ class PipelineDSLVersionService:
 
     @classmethod
     def _get_latest(cls, dsl_id):
-        return (
-            cls.model.select()
-            .where(cls.model.dsl_id == dsl_id)
-            .order_by(cls.model.version.desc())
-            .first()
-        )
+        return cls.model.select().where(cls.model.dsl_id == dsl_id).order_by(cls.model.version.desc()).first()
+
+    @classmethod
+    def _dsl_equal(cls, left, right):
+        """Compare JSON values without conflating booleans and numbers."""
+        if isinstance(left, bool) or isinstance(right, bool):
+            return isinstance(left, bool) and isinstance(right, bool) and left == right
+        if isinstance(left, numbers.Real) and isinstance(right, numbers.Real):
+            return left == right
+        if isinstance(left, dict) and isinstance(right, dict):
+            return left.keys() == right.keys() and all(cls._dsl_equal(left[key], right[key]) for key in left)
+        if isinstance(left, list) and isinstance(right, list):
+            return len(left) == len(right) and all(cls._dsl_equal(left_item, right_item) for left_item, right_item in zip(left, right, strict=True))
+        return type(left) is type(right) and left == right
 
     @classmethod
     @DB.connection_context()
@@ -82,7 +90,7 @@ class PipelineDSLVersionService:
 
         for attempt in range(MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS):
             latest = cls._get_latest(dsl_id)
-            if latest is not None and latest.dsl == normalized:
+            if latest is not None and cls._dsl_equal(latest.dsl, normalized):
                 return latest
 
             next_version = 1 if latest is None else latest.version + 1
@@ -112,7 +120,4 @@ class PipelineDSLVersionService:
                 if attempt + 1 < MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS:
                     _sleep_before_retry(attempt)
 
-        raise RuntimeError(
-            f"Could not store pipeline DSL version for {dsl_id!r} after "
-            f"{MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS} attempts due to concurrent updates."
-        )
+        raise RuntimeError(f"Could not store pipeline DSL version for {dsl_id!r} after {MAX_PIPELINE_DSL_VERSION_INSERT_ATTEMPTS} attempts due to concurrent updates.")

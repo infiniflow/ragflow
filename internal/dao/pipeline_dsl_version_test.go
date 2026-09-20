@@ -103,6 +103,28 @@ func TestPipelineDSLVersionDAOGetOrCreate(t *testing.T) {
 	}
 }
 
+func TestPipelineDSLVersionDAODistinguishesJSONBooleansFromNumbers(t *testing.T) {
+	db := setupPipelineDSLVersionTestDB(t)
+	versionDAO := NewPipelineDSLVersionDAO()
+
+	booleanVersion, err := versionDAO.GetOrCreate(
+		t.Context(), db, "canvas:typed-json", entity.JSONMap{"enabled": true},
+	)
+	if err != nil {
+		t.Fatalf("create boolean version: %v", err)
+	}
+	numericVersion, err := versionDAO.GetOrCreate(
+		t.Context(), db, "canvas:typed-json", entity.JSONMap{"enabled": 1},
+	)
+	if err != nil {
+		t.Fatalf("create numeric version: %v", err)
+	}
+
+	if booleanVersion.Version != 1 || numericVersion.Version != 2 {
+		t.Fatalf("versions = (%d, %d), want (1, 2)", booleanVersion.Version, numericVersion.Version)
+	}
+}
+
 func TestPipelineDSLVersionDAOConcurrentSameDSL(t *testing.T) {
 	db := setupPipelineDSLVersionTestDB(t)
 	versionDAO := NewPipelineDSLVersionDAO()

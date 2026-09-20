@@ -20,6 +20,7 @@ import types
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -67,8 +68,8 @@ def _load_service(monkeypatch):
 
 
 class FakeVersionModel:
-    rows = []
-    create_hook = None
+    rows: ClassVar[list] = []
+    create_hook: ClassVar[object | None] = None
 
     @classmethod
     def reset(cls):
@@ -117,6 +118,17 @@ def test_get_or_create_reuses_latest_and_appends_changes(version_service):
     assert second.version == 2
     assert reverted.version == 3
     assert len(FakeVersionModel.rows) == 3
+
+
+def test_get_or_create_distinguishes_json_booleans_from_numbers(version_service):
+    _, service, _ = version_service
+
+    boolean_version = service.get_or_create("canvas:pipeline-1", {"enabled": True, "nested": [False]})
+    numeric_version = service.get_or_create("canvas:pipeline-1", {"enabled": 1, "nested": [0]})
+
+    assert boolean_version.version == 1
+    assert numeric_version.version == 2
+    assert len(FakeVersionModel.rows) == 2
 
 
 def test_get_or_create_reloads_after_concurrent_insert(version_service):
@@ -201,8 +213,6 @@ def test_retry_delay_uses_capped_exponential_full_jitter(version_service, monkey
     [
         ("", {}),
         ("   ", {}),
-        ("canvas:pipeline-1", None),
-        ("canvas:pipeline-1", []),
         ("canvas:pipeline-1", {"invalid": object()}),
     ],
 )
@@ -211,3 +221,11 @@ def test_get_or_create_rejects_invalid_input(version_service, dsl_id, dsl):
 
     with pytest.raises(ValueError):
         service.get_or_create(dsl_id, dsl)
+
+
+@pytest.mark.parametrize("dsl", [None, []])
+def test_get_or_create_rejects_non_object_dsl(version_service, dsl):
+    _, service, _ = version_service
+
+    with pytest.raises(TypeError):
+        service.get_or_create("canvas:pipeline-1", dsl)
