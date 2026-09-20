@@ -30,11 +30,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/service/nav"
 )
 
@@ -1446,17 +1448,17 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	}, nil
 }
 
-// Metadata-search caps: the candidate pool one query reads, and the queries one call
-// runs (Python: top_n=20, max_q=2).
-const (
-	metadataSearchTopN       = 20
-	metadataSearchMaxQueries = 2
-	// metadataKeysHintMax caps the available-keys list echoed back on a bad key.
-	metadataKeysHintMax = 30
-)
+// metadataKeysHintMax caps the available-keys list echoed back on a bad key.
+const metadataKeysHintMax = 30
 
-// metadataSearch is the metadata_search tool: a document-metadata pre-filter followed by
-// hybrid retrieval INSIDE the matching documents.
+// metadataSearch is the metadata_search tool: a document-metadata SELECTOR. It resolves the
+// documents a filter matches and returns their doc_ids — it runs NO retrieval of its own.
+//
+// The ids are the whole output on purpose: a document handle can be spent on several
+// follow-up calls (list_chunks, navigate_structure, retrieve's doc_scope, and in ultra
+// mode graph_explore's doc_scope), whereas the passages an in-tool retrieval used to return
+// could only be read once. Keeping the selector free of retrieval is also what keeps its
+// answer "which documents match" independent of what the model meant to search for.
 //
 // The statuses are set explicitly rather than derived (see ReasonStatus): a missing filter
 // or a metadata key the dataset does not carry is MISS/bad_args — the model should change
@@ -1464,9 +1466,6 @@ const (
 // no document is MISS/no_doc, and only a metadata-index read failure is ERROR/infra.
 // (Python folds a keys-query exception into "this dataset has no metadata", which tells the
 // model the wrong thing about the corpus.)
-//
-// Claim prefetch is deliberately NOT run here: this tool's contract is "chunks from ONLY
-// the matching documents", while the claim channel reads the whole evidence pool.
 func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any) (ToolOutcome, error) {
 	// searchLogger falls back to the package logger: Logger is optional on SearchDeps,
 	// and a nil *log.Logger panics on the first Printf.
@@ -1476,15 +1475,8 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 			Payload: []any{map[string]any{"kind": "metadata_search", "note": note}},
 			Status:  StatusMiss,
 			Reason:  ReasonBadArgs,
-			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+			Metrics: map[string]any{"docs": 0},
 		}, nil
-	}
-	queries := toolQueries(args)
-	if len(queries) == 0 {
-		return badArgs("No query given. metadata_search needs 1-2 queries describing what to look for INSIDE the matched documents.")
-	}
-	if len(queries) > metadataSearchMaxQueries {
-		queries = queries[:metadataSearchMaxQueries]
 	}
 	filters := metadataFiltersOf(args)
 	if len(filters) == 0 {
@@ -1498,7 +1490,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 			}},
 			Status:  StatusError,
 			Reason:  ReasonInfra,
-			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
 	targetIDs := metadataTargetIDs(e.deps)
@@ -1507,7 +1499,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 			Payload: []any{},
 			Status:  StatusError,
 			Reason:  ReasonInfra,
-			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
 
@@ -1516,7 +1508,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 	//    Validating against anything else would let the schema offer a key the tool then
 	//    rejects; a dataset without the requested key must degrade to a hint, never to an
 	//    empty retrieval the model retries forever.
-	known, _, _, err := resolveMetadataFields(ctx, e.deps)
+	known, _, declared, err := resolveMetadataFields(ctx, e.deps)
 	if err != nil {
 		logger.Printf("[Metadata search] metadata index read failed: %v", err)
 		return ToolOutcome{
@@ -1526,7 +1518,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 			}},
 			Status:  StatusError,
 			Reason:  ReasonInfra,
-			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
 	knownSet := make(map[string]bool, len(known))
@@ -1565,8 +1557,9 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 		logic = "and"
 	}
 
-	// 3) Resolve the document set ONCE — the filter does not depend on the query — and then
-	//    search inside it.
+	// 3) Resolve the document set. This IS the tool's output: the ids are returned to the
+	//    model so it can spend them on the search tools that take a document handle, and the
+	//    filter itself is query-independent (it never needed a query).
 	docIDs, ok := MetadataDocIDs(ctx, e.deps, normalized, logic)
 	if !ok {
 		logger.Printf("[Metadata search] no documents matched filters=%v logic=%s", normalized, logic)
@@ -1577,70 +1570,159 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 			}},
 			Status:  StatusMiss,
 			Reason:  ReasonNoDoc,
-			Metrics: map[string]any{"hits": 0, "new_evidence": 0},
+			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
 
-	// 4) Hybrid search restricted to exactly those documents.
-	var payload []any
-	var evidenceIDs []string
+	// 4) Context block: the filter that was actually applied plus each matched document's
+	//    own metadata values.
+	//
+	//    WHY the values travel with the ids. The ids alone are a handle, not an answer, and
+	//    the values are exactly what the filter matched ON: a model that must call
+	//    list_chunks on every selected document just to learn its title, file name or
+	//    timestamp spends a whole round re-reading what the selection already knew. Carrying
+	//    them here is what makes the selection readable in one step — "these 3 documents were
+	//    updated on 2026-09-20, and here are their titles and file names" — instead of
+	//    N round-trips that each cost context.
+	//
+	//    WHY it is context and NOT an interface. No other tool consumes these values: the
+	//    machine-readable part of the result stays doc_ids (the argument retrieve's doc_scope,
+	//    list_chunks and navigate_structure take). Keeping the values read-only matters
+	//    because they are free-form text — a title or a file name spliced into a later
+	//    search argument would let a value the model merely READ silently re-scope the
+	//    search, while the document selection is the one thing the filter actually
+	//    guarantees. The values therefore explain the selection; they never become input to
+	//    the next one.
+	//
+	//    The two halves are also reported separately for exactly this reason: `doc_ids` is
+	//    complete (every match), while `documents` is capped (see metadataContextDocsMax) —
+	//    truncating context must never truncate the result the model acts with.
+	item := map[string]any{
+		"kind":    "metadata_search",
+		"doc_ids": docIDs,
+		"filters": normalized,
+	}
+	perDoc, ctxErr := e.deps.MetadataResolver.MetadataForDocIDs(ctx, targetIDs, docIDs)
+	if ctxErr != nil {
+		logger.Printf("[Metadata search] metadata context read degraded: %v", ctxErr)
+	}
+	if docs := metadataContextDocs(docIDs, perDoc, metadataContextKeys(normalized, declared)); len(docs) > 0 {
+		item["documents"] = docs
+	}
+
+	logger.Printf("[Metadata search] %d doc(s) selected via filters=%v logic=%s", len(docIDs), normalized, logic)
+	return ToolOutcome{
+		Payload: []any{item},
+		// No passages are retrieved here, so there is no evidence to admit: the ids reach
+		// the answer only through the tool the model spends them on.
+		EvidenceIDs: nil,
+		Status:      StatusOK,
+		Reason:      ReasonNone,
+		Metrics:     map[string]any{"docs": len(docIDs)},
+	}, nil
+}
+
+// Metadata-search context caps: how many matched documents carry their metadata values in
+// the result, and how long one value may be.
+const (
+	metadataContextDocsMax    = 20
+	metadataContextValueRunes = 200
+)
+
+// metadataContextKeys picks the fields the context block carries per document: first the
+// dataset's DECLARED fields (its curated schema — a title, a file name, a timestamp), then
+// any field the filter itself named, so the model can see WHY each document matched.
+//
+// Observed-only keys are deliberately left out: the metadata index also carries extraction
+// and annotation noise (a judge's rationale, a verdict) that the dataset never declared as
+// metadata, and dumping it into every result would spend context on fields no one can act on.
+func metadataContextKeys(filters []map[string]any, declared map[string]common.MetadataFieldDef) []string {
+	out := make([]string, 0, len(declared)+len(filters))
 	seen := map[string]bool{}
-	newChunks := 0
-	limit := snippetsPerQueryFor(e.req.ThinkingMode)
-	for _, q := range queries {
-		chunks, aggs := HybridSearch(ctx, e.deps, SearchParams{
-			Question: q,
-			DocScope: docIDs,
-			TopN:     metadataSearchTopN,
-			// Compiled expansion would pull in chunks from OUTSIDE the matched documents.
-			UseCompiled: false,
-		})
-		if len(chunks) == 0 {
+	keys := make([]string, 0, len(declared))
+	for k := range declared {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // map iteration is randomised; the payload must not be
+	for _, k := range keys {
+		if k != "" && !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	for _, f := range filters {
+		k := asString(f["key"])
+		if k != "" && !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// metadataContextDocs renders the per-document context block: one {doc_id, metadata} entry
+// per matched document, in the selection's own order, capped at metadataContextDocsMax.
+// Missing and blank values are skipped, so the block never advertises a field as present
+// when the document does not carry it. A nil perDoc (the context read failed or no
+// resolver answered) yields nil — the ids alone are still a complete result.
+func metadataContextDocs(docIDs []string, perDoc map[string]map[string]any, keys []string) []any {
+	if len(perDoc) == 0 || len(keys) == 0 {
+		return nil
+	}
+	out := make([]any, 0, min(len(docIDs), metadataContextDocsMax))
+	for _, docID := range docIDs {
+		if len(out) >= metadataContextDocsMax {
+			break
+		}
+		fields, ok := perDoc[docID]
+		if !ok {
 			continue
 		}
-		if limit > 0 && len(chunks) > limit {
-			chunks = chunks[:limit]
-		}
-		e.deps.KB.Admit(func(p *PoolAdmitter) {
-			for _, c := range chunks {
-				cid := ChunkIDOf(c)
-				if cid != "" && seen[cid] {
-					continue
-				}
-				if cid != "" {
-					seen[cid] = true
-				}
-				evidenceIDs = append(evidenceIDs, cid)
-				payload = append(payload, passageFromChunk(c))
-				if p.Add(c) {
-					newChunks++
-				}
+		values := make(map[string]any, len(keys))
+		for _, k := range keys {
+			if metadataCatalogExcluded(k) {
+				continue
 			}
-		})
-		e.deps.KB.MergeDocAggs(aggs)
+			v, exists := fields[k]
+			if !exists || v == nil {
+				continue
+			}
+			rendered := strings.TrimSpace(metadataValueString(v))
+			if rendered == "" {
+				continue
+			}
+			values[k] = Snippet(rendered, metadataContextValueRunes)
+		}
+		if len(values) == 0 {
+			continue
+		}
+		out = append(out, map[string]any{"doc_id": docID, "metadata": values})
 	}
-	if len(payload) == 0 {
-		return ToolOutcome{
-			Payload:     []any{},
-			EvidenceIDs: nil,
-			Status:      StatusMiss,
-			Reason:      ReasonNoDoc,
-			Metrics:     map[string]any{"hits": 0, "new_evidence": 0},
-			Note:        fmt.Sprintf("The metadata filter matched %d document(s), but the scoped search returned nothing. Try another query or a different filter.", len(docIDs)),
-		}, nil
+	return out
+}
+
+// metadataValueString renders one metadata value as text. The doc-metadata index merges a
+// document's per-chunk values into a list, so a list joins with ", " rather than reaching
+// the model as Go's "[a b]" rendering; a scalar renders as-is.
+func metadataValueString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case []string:
+		return strings.Join(t, ", ")
+	case []any:
+		parts := make([]string, 0, len(t))
+		for _, item := range t {
+			if s := strings.TrimSpace(fmt.Sprint(item)); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, ", ")
+	default:
+		return fmt.Sprint(t)
 	}
-	status := StatusOK
-	if newChunks == 0 {
-		status = StatusRedundant
-	}
-	logger.Printf("[Metadata search] ok — %d doc(s) matched by filters, %d hit(s), %d new evidence", len(docIDs), len(payload), newChunks)
-	return ToolOutcome{
-		Payload:     payload,
-		EvidenceIDs: evidenceIDs,
-		Status:      status,
-		Reason:      ReasonNone,
-		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
-	}, nil
 }
 
 // metadataFiltersOf reads the filters argument: a list of {key, value, op} objects.
@@ -1839,9 +1921,9 @@ func toolQueries(args map[string]any) []string {
 //
 // so ONLY the "doc_scope" key is honoured: there is deliberately NO "doc_ids" alias and
 // NO bare-string coercion (a string would be iterated char-wise; no tool schema advertises
-// either key, so both cases are unreachable). The other tools that used to call this —
-// search_chunks, navigate_tree, navigate_structure — must NOT read a scope: none of them
-// threads args["doc_scope"] into its impl.
+// a doc_ids alias or a bare string, so both cases are unreachable). The other tools that
+// used to call this — search_chunks, navigate_tree, navigate_structure — must NOT read a
+// scope: none of them threads args["doc_scope"] into its impl.
 func toolDocScope(args map[string]any) []string {
 	raw, ok := args["doc_scope"]
 	if !ok {

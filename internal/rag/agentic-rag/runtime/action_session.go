@@ -968,14 +968,34 @@ var (
 		Function: ToolFunction{
 			Name: "retrieve",
 			Description: `WHEN TO CALL: you know or suspect exact surface terms in the corpus (names, titles, codes, phrases) — the first recall pass; cover different facets.` +
-				`HOW IT WORKS: keyword recall FIRST, then the pattern is applied to what came back — ` + "`A.*B`" + ` (A then B, anything between) matches only inside the passages its operands recalled, and the RAREST operand bounds it: put the rare word first. A FULL recall page was truncated.` +
-				`ONE STRING, MANY TERMS: ` + "`A|B|C`" + ` recalls each term in ONE call — synonyms belong in one string, not one call each.` +
-				`ENUMERATING A SET: probe the NAMES themselves, alternated with |, 4-6 per query. Hits are members; guess the next batch yourself rather than stopping at what you hold.` +
+				`HOW IT WORKS: keyword recall FIRST, then the pattern applies to what came back — ` + "`A.*B`" + ` (A then B, anything between) matches only inside the passages its operands recalled, and the RAREST operand bounds it: put the rare word first. A FULL recall page was truncated.` +
+				`ONE STRING, MANY TERMS: ` + "`A|B|C`" + ` recalls each in ONE call — synonyms go in one string.` +
+				`ENUMERATING A SET: probe the NAMES themselves, alternated with |, 4-6 per query; hits are members — guess the next batch yourself.` +
 				`DO NOT CALL: for a whole document (list_chunks); when no surface word matches (search_chunks).` +
-				`ARGUMENTS: query — array of 1-3 strings; only a query's first ~10 snippets survive; doc_scope is NOT declared.` +
+				`ARGUMENTS: query — array of 1-3 strings (only the first ~10 snippets survive); doc_scope — optional doc_ids from an earlier tool result, to search INSIDE them only.` +
 				`OUTPUT: Exact-term snippets with doc_id and chunk id. ok = new evidence; redundant = seen.` +
-				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (record it as not a member, probe the next). redundant = stop and emit a state patch.`,
-			Parameters: arrayParam("", 1, 3),
+				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (probe the next). redundant = stop and emit a state patch.`,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":     "array",
+						"items":    map[string]any{"type": "string"},
+						"minItems": 1,
+						"maxItems": 3,
+					},
+					// Decoding lives in toolDocScope, which retrieve and graph_explore
+					// share: the scope is ceiling-ed by the session's DocScope and
+					// verified against the bound datasets (resolveDocScope), so a
+					// stale or out-of-dataset doc_id cannot widen the search.
+					"doc_scope": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "optional doc_ids from a prior tool result (metadata_search / navigate_tree / list_chunks), to search inside those documents only",
+					},
+				},
+				"required": []string{"query"},
+			},
 		},
 	}
 
@@ -1020,21 +1040,15 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "metadata_search",
-			Description: `WHEN TO CALL: PRE-FILTER the document set by METADATA BEFORE retrieving chunks — the question names something a metadata field would carry (a title, a file name, an author, a date) or needs a named subset. Use ONLY the fields listed under AVAILABLE METADATA, preferring 'contains' with a distinctive substring. ` +
-				`CALL AT MOST ONCE PER DIRECTION: then use search_chunks / retrieve inside those documents. ` +
-				`DO NOT CALL: nothing names a document/subset; you already hold a doc_id (use list_chunks); counting or enumerating. ` +
-				`ARGUMENTS: query — 1-2 strings. filters — [{key, value, op}] over the AVAILABLE METADATA fields; op — see enum; logic 'and'|'or'. For the string ops the value MUST be ONE keyword, never a list — one call per keyword; 'in' takes a list; 'empty' takes no value. Copy a value exactly as the dataset stores it — never re-normalise it. Example: [{key: 'author', op: 'contains', value: 'Alice'}]. ` +
-				`OUTPUT: ranked chunks from ONLY the matching documents. ok = new evidence; redundant = already seen; miss = nothing matched. ` +
-				`IF IT FAILS: 'no documents match' — shorten the substring, or drop the filter and use search_chunks. Do NOT retry the same filter.`,
+			Description: `WHEN TO CALL: SELECT the document set by METADATA before searching — call it when the question names explicit entities (a person, a time, a place) or any concrete name a metadata field would carry (a title, a file name, an author, a date), or needs a named subset. Use ONLY the AVAILABLE METADATA fields; prefer 'contains' with a distinctive substring. ` +
+				`CALL AT MOST ONCE PER DIRECTION, then spend the returned doc_ids: list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[ids]). ` +
+				`DO NOT CALL: nothing names a document/subset; you already hold a doc_id; counting or enumerating. ` +
+				`ARGUMENTS: filters — [{key, value, op}] over the AVAILABLE METADATA fields; op — see enum; logic 'and'|'or'. String ops take ONE keyword, one call per keyword; 'in' takes a list; 'empty' none. Example (one day): [{key: 'update_time', op: 'start with', value: '2026-09-20'}]. ` +
+				`OUTPUT: doc_ids — the handle other tools take — plus each matched document's metadata as CONTEXT ONLY, never an argument to pass on. No passages. ok = selected; miss = nothing matched. ` +
+				`IF IT FAILS: 'no documents match' — shorten the substring or use search_chunks; do not retry.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"query": map[string]any{
-						"type":     "array",
-						"items":    map[string]any{"type": "string"},
-						"minItems": 1,
-						"maxItems": 2,
-					},
 					"filters": map[string]any{
 						"type":     "array",
 						"minItems": 1,
@@ -1049,7 +1063,10 @@ var (
 								"value": map[string]any{
 									"type": []any{"string", "array", "null"},
 									"description": "the keyword/value to match: ONE string keyword for contains / = / start with / " +
-										"end with / not contains (call once per keyword); a list for in / not in; nothing for empty / not empty",
+										"end with / not contains (call once per keyword); a list for in / not in; nothing for empty / not empty. " +
+										"Copy a value exactly as the dataset stores it — never re-normalise it. " +
+										"A 'time' field stores 'YYYY-MM-DD HH:MM:SS', so filter ONE day with op 'start with' and the bare " +
+										"'YYYY-MM-DD' — '=' never matches a stored time.",
 								},
 								"op": paramEnum("the comparison", "=", "contains", "not contains", "start with", "end with", "in", "empty", "not empty"),
 							},
@@ -1058,7 +1075,7 @@ var (
 					},
 					"logic": paramEnum("how several filters combine, default and", "and", "or"),
 				},
-				"required": []string{"query", "filters"},
+				"required": []string{"filters"},
 			},
 		},
 	}
@@ -1898,8 +1915,8 @@ type SessionState struct {
 	SearchQueries []string
 	// SkippedDup counts near-duplicate retrievals suppressed so far.
 	SkippedDup int
-	// MetadataSearchUsed is the metadata_search ONE-SHOT: the tool is a pre-filter, so a
-	// second call within the SAME direction is blocked with a nudge (Python's
+	// MetadataSearchUsed is the metadata_search ONE-SHOT: the tool SELECTS a document
+	// set, so a second call within the SAME direction is blocked with a nudge (Python's
 	// _metadata_search_used). It survives across the session's turns but not across
 	// directions — each direction runs its own session.
 	MetadataSearchUsed bool
@@ -2117,14 +2134,14 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			continue
 		}
 		// metadata_search ONE-SHOT guard: block any 2nd call within this direction.
-		// The tool is a PRE-FILTER — once the document set is narrowed there is nothing
-		// a second call could add, and re-issuing it would burn the direction's turns
+		// The tool SELECTS a document set — once the ids are in hand there is nothing a
+		// second call could add, and re-issuing it would burn the direction's turns
 		// re-applying a filter that is already in force.
 		if c.Name == "metadata_search" && s.MetadataSearchUsed {
-			_LOG.Printf("[Action Session] blocking 2nd metadata_search this direction (one-shot guard)")
+			_LOG.Printf("[Action Session] blocking 2nd metadata_search this direction (one-shot guard): %s", RenderToolArgs(c.Args))
 			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
 				"kind": "metadata_search",
-				"note": "metadata_search is a ONE-SHOT pre-filter and was ALREADY used this direction. Continue with search_chunks / retrieve inside the documents it returned — do NOT call metadata_search again this direction.",
+				"note": "metadata_search is a ONE-SHOT metadata selector and was ALREADY used this direction. Spend the doc_ids it returned — list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[...]) — do NOT call metadata_search again this direction.",
 			}}))
 			continue
 		}

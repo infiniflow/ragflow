@@ -567,6 +567,10 @@ type stubMetadataResolver struct {
 	gotKbIDs      []string
 	gotFilters    []map[string]any
 	gotLogic      string
+	// docMeta is the per-document metadata the context block is built from; docMetaErr lets
+	// a test pin that a failed context read still returns the selected ids.
+	docMeta    map[string]map[string]any
+	docMetaErr error
 }
 
 func (s *stubMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool) {
@@ -580,6 +584,10 @@ func (s *stubMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, kbI
 func (s *stubMetadataResolver) GetFlattedMetaByKBs(context.Context, []string) (common.MetaData, error) {
 	s.flattenCalls++
 	return s.metas, s.flattenErr
+}
+
+func (s *stubMetadataResolver) MetadataForDocIDs(context.Context, []string, []string) (map[string]map[string]any, error) {
+	return s.docMeta, s.docMetaErr
 }
 
 // TestMetadataSearchScopesHybridToMatchedDocuments pins the retrieval leg: the metadata

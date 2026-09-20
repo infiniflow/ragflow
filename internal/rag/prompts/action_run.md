@@ -70,7 +70,7 @@ this playbook covers only how to COMBINE tools and when to STOP.
 
 - **You already hold a `doc_id`** → `navigate_structure(doc_id, query)` to find the right passage, then `list_chunks(doc_id)` to read it. Do NOT call `navigate_tree` first.
 - **No `doc_id` yet, and the corpus is large** → `navigate_tree(query)` to route to candidate documents, take a `doc_id`, then `navigate_structure(doc_id, query)` → `list_chunks(doc_id)`.
-- **You can name the document / need to narrow the search** → `metadata_search(query[1-2], filters)` ONCE per direction to pre-filter by a metadata field (use only the fields listed under `AVAILABLE METADATA`; any other key is rejected), then `search_chunks` / `retrieve` INSIDE the returned documents.
+- **You can name the document / need to narrow the search** → `metadata_search(filters)` ONCE per direction to SELECT the matching documents by a metadata field (use only the fields listed under `AVAILABLE METADATA`; any other key is rejected). It returns `doc_ids` only — no passages — so spend them: `list_chunks(doc_id)` to read a document, `navigate_structure(doc_id, query)` to pinpoint a passage, or `retrieve(query, doc_scope=[ids])` to search INSIDE those documents.
 - **Exact term / short answer** → `retrieve(query[1-3])` first; if snippets are insufficient, `search_chunks(query[1-2])` (semantic, may find passages with NO shared surface words); if you need the full document, `list_chunks(doc_id)`.
 - **You must DERIVE a number** → first collect every needed number with any of the above, then `calculate(question, facts)` with the facts verbatim, and report the computed result as-is. If the answer is already one of the stated numbers, answer directly.
 - **Relational multi-hop (ultra only)** → get a start entity from `search_chunks` / `navigate_structure`, then `graph_explore(query, doc_scope)`.
@@ -97,6 +97,6 @@ Each tool returns a status. Act on it:
 | `error` | Infrastructure / provider failure | Switch tools; do not retry the same call |
 
 Special case — `metadata_search` (at most ONCE per direction):
-- `ok` → continue with `search_chunks` / `retrieve` INSIDE the documents it returned; do NOT call it again this direction.
+- `ok` → it selected documents and returned their `doc_ids` (no passages). Spend them now: `list_chunks(doc_id)` / `navigate_structure(doc_id, query)` / `retrieve(query, doc_scope=[ids])`; do NOT call `metadata_search` again this direction.
 - `miss` / `empty` → nothing matched the filter; drop it (or retry once with a field/value from `AVAILABLE METADATA`) and fall back to `search_chunks` / `navigate_tree`. A call naming no usable field is answered with the dataset's real fields — do not repeat the same key.
 - `poor` → the filter was too narrow; widen it once, or abandon it for plain retrieval.

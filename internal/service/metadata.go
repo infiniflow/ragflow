@@ -158,6 +158,43 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 	}, nil
 }
 
+// MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given documents
+// (the doc-scoped query runtime.MetadataResolver.MetadataForDocIDs needs).
+//
+// Best effort: a dataset whose tenant lookup or index read fails contributes nothing and
+// the failure is returned, but the documents another dataset answered for are still
+// returned. The caller has already resolved the document ids, so a missing context block
+// must not turn a successful selection into an error.
+func (s *MetadataService) MetadataForDocIDs(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(docIDs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]map[string]any, len(docIDs))
+	var firstErr error
+	for _, kbID := range kbIDs {
+		tenantID, err := s.GetTenantIDByKBID(ctx, kbID)
+		if err != nil || tenantID == "" {
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		res, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		for docID, meta := range ConvertSearchResultToDocMeta(res.MetadataRecords) {
+			if _, exists := out[docID]; !exists {
+				out[docID] = meta
+			}
+		}
+	}
+	return out, firstErr
+}
+
 // DeclaredMetadataFields implements runtime.DeclaredMetadataResolver: it reads the metadata
 // fields each dataset DECLARES in its parser_config — the {key, type, description, enum}
 // definitions the metadata config API writes for extraction.

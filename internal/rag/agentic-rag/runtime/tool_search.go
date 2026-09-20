@@ -171,6 +171,15 @@ type MetadataResolver interface {
 	// turns "this dataset has no title" into advice instead of an empty retrieval the
 	// model retries forever.
 	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
+	// MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given
+	// documents. It backs the metadata_search result's context block: the ids stay the
+	// tool's machine-consumable output, while these values let the model answer FROM the
+	// selection (its titles, file names, timestamps) without spending another tool call.
+	//
+	// Best effort by contract: a dataset that cannot be read contributes nothing and the
+	// returned error says why, but the caller has already resolved the document ids and
+	// must not fail a successful selection over a missing context block.
+	MetadataForDocIDs(ctx context.Context, kbIDs []string, docIDs []string) (map[string]map[string]any, error)
 }
 
 // DeclaredMetadataResolver reads the metadata fields a dataset DECLARES in its

@@ -1379,7 +1379,7 @@ func TestMetadataSearchToolBadArgsAndKeyHints(t *testing.T) {
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 	ctx := context.Background()
 
-	out, err := exec.Execute(ctx, "metadata_search", map[string]any{"query": []any{"q"}})
+	out, err := exec.Execute(ctx, "metadata_search", map[string]any{})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -1391,7 +1391,6 @@ func TestMetadataSearchToolBadArgsAndKeyHints(t *testing.T) {
 	}
 
 	out, err = exec.Execute(ctx, "metadata_search", map[string]any{
-		"query":   []any{"q"},
 		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
 	})
 	if err != nil {
@@ -1414,7 +1413,6 @@ func TestMetadataSearchToolInfraWhenIndexUnreadable(t *testing.T) {
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 
 	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
-		"query":   []any{"q"},
 		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
 	})
 	if err != nil {
@@ -1428,23 +1426,42 @@ func TestMetadataSearchToolInfraWhenIndexUnreadable(t *testing.T) {
 	}
 }
 
-// TestMetadataSearchToolScopesResultsToMatchedDocuments pins the success path: the
-// retrieval runs inside the matched documents only, the hit is admitted to the shared
-// pool, and the payload is a model-facing passage.
-func TestMetadataSearchToolScopesResultsToMatchedDocuments(t *testing.T) {
+// TestMetadataSearchToolReturnsMatchedDocIDsOnly pins the selector contract: the tool
+// resolves the matching documents and returns their doc_ids — it runs NO retrieval, admits
+// nothing to the shared pool and returns no passages. The ids are the whole output, because
+// that is what lets the model spend one filter on several follow-up tools.
+//
+// The result also carries the applied filter and each matched document's metadata values —
+// context the model reads, never an argument to hand to another tool (the ids are that
+// argument). Values are drawn from the dataset's DECLARED fields, so annotation noise the
+// dataset never declared cannot leak into every result.
+func TestMetadataSearchToolReturnsMatchedDocIDsOnly(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{
 		{"id": "c1", "doc_id": "d1", "content": "Culdcept was released in 1999 by OmiyaSoft."},
 	}}
 	deps, kb := newTestSearchDeps(r)
 	deps.MetadataResolver = &stubMetadataResolver{
 		pushdownOK:  true,
-		pushdownIDs: []string{"d1"},
-		metas:       common.MetaData{"title": {"Culdcept": {"d1"}}},
+		pushdownIDs: []string{"d1", "d2"},
+		metas:       common.MetaData{"title": {"Culdcept": {"d1", "d2"}}},
+		docMeta: map[string]map[string]any{
+			"d1": {
+				"title":       "Culdcept",
+				"file_name":   "culdcept.pdf",
+				"update_time": "2026-09-20 13:55:03",
+				"verdict":     "incorrect", // observed-only noise: must not be carried
+			},
+			"d2": {"title": []any{"Culdcept", "Culdcept II"}},
+		},
 	}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "title", Type: "string"},
+		{Key: "file_name", Type: "string"},
+		{Key: "update_time", Type: "time"},
+	}}
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 
 	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
-		"query":   []any{"Culdcept"},
 		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
 		"logic":   "and",
 	})
@@ -1454,32 +1471,100 @@ func TestMetadataSearchToolScopesResultsToMatchedDocuments(t *testing.T) {
 	if out.Status != StatusOK {
 		t.Fatalf("status = %s (reason %s), want ok", out.Status, out.Reason)
 	}
-	if len(r.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(r.requests))
+	// A selector retrieves nothing: the retriever must not be called at all.
+	if len(r.requests) != 0 {
+		t.Errorf("retriever calls = %d, want 0 (metadata_search must not search)", len(r.requests))
 	}
-	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
-		t.Errorf("doc_scope = %v, want the matched document", scope)
+	if len(kb.Chunks) != 0 {
+		t.Errorf("pool chunks = %d, want none admitted by a selector", len(kb.Chunks))
 	}
-	if len(kb.Chunks) != 1 {
-		t.Errorf("pool chunks = %d, want the hit admitted to the shared pool", len(kb.Chunks))
+	if len(out.EvidenceIDs) != 0 {
+		t.Errorf("evidence ids = %v, want none", out.EvidenceIDs)
 	}
-	if len(out.EvidenceIDs) != 1 || out.EvidenceIDs[0] != "c1" {
-		t.Errorf("evidence ids = %v, want the hit's chunk id", out.EvidenceIDs)
+	if len(out.Payload) != 1 {
+		t.Fatalf("payload = %v, want one doc_ids object", out.Payload)
 	}
-	if got := fmt.Sprint(out.Payload[0]); !strings.Contains(got, "Culdcept") {
-		t.Errorf("payload = %v, want the passage", out.Payload)
+	m, ok := out.Payload[0].(map[string]any)
+	if !ok {
+		t.Fatalf("payload[0] = %#v, want a map", out.Payload[0])
+	}
+	if m["kind"] != "metadata_search" {
+		t.Errorf("payload kind = %v, want metadata_search", m["kind"])
+	}
+	ids, _ := m["doc_ids"].([]string)
+	if len(ids) != 2 || ids[0] != "d1" || ids[1] != "d2" {
+		t.Errorf("doc_ids = %v, want the matched documents", m["doc_ids"])
+	}
+	if docs, _ := out.Metrics["docs"].(int); docs != 2 {
+		t.Errorf("metrics docs = %v, want 2", out.Metrics["docs"])
+	}
+
+	// The applied filter travels with the result.
+	applied, _ := m["filters"].([]map[string]any)
+	if len(applied) != 1 || applied[0]["key"] != "title" || applied[0]["op"] != "contains" {
+		t.Errorf("payload filters = %v, want the applied condition", m["filters"])
+	}
+
+	// Per-document context: declared fields only, lists joined, noise excluded.
+	docsList, _ := m["documents"].([]any)
+	if len(docsList) != 2 {
+		t.Fatalf("payload documents = %v, want one entry per matched document", m["documents"])
+	}
+	first, _ := docsList[0].(map[string]any)
+	if first["doc_id"] != "d1" {
+		t.Errorf("documents[0].doc_id = %v, want d1", first["doc_id"])
+	}
+	fields, _ := first["metadata"].(map[string]any)
+	if fields["file_name"] != "culdcept.pdf" || fields["update_time"] != "2026-09-20 13:55:03" {
+		t.Errorf("documents[0].metadata = %v, want the document's declared values", fields)
+	}
+	if _, leaked := fields["verdict"]; leaked {
+		t.Errorf("documents[0].metadata carries an undeclared observed key: %v", fields)
+	}
+	second, _ := docsList[1].(map[string]any)
+	fields2, _ := second["metadata"].(map[string]any)
+	if fields2["title"] != "Culdcept, Culdcept II" {
+		t.Errorf("documents[1].metadata[title] = %v, want the list joined with \", \"", fields2["title"])
+	}
+}
+
+// TestMetadataSearchToolContextReadFailureKeepsTheSelection pins the best-effort contract of
+// the context block: the documents were already resolved, so a failed metadata read must
+// still return them (with the filter) rather than turning the call into an error.
+func TestMetadataSearchToolContextReadFailureKeepsTheSelection(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{
+		pushdownOK:  true,
+		pushdownIDs: []string{"d1"},
+		metas:       common.MetaData{"title": {"Culdcept": {"d1"}}},
+		docMetaErr:  errors.New("metadata index down"),
+	}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s), want ok — the ids resolved, only the context is missing", out.Status, out.Reason)
+	}
+	m, _ := out.Payload[0].(map[string]any)
+	if got := payloadDocIDs(out.Payload); len(got) != 1 || got[0] != "d1" {
+		t.Errorf("doc_ids = %v, want the matched document", got)
+	}
+	if _, present := m["documents"]; present {
+		t.Errorf("payload documents = %v, want the block omitted when nothing could be read", m["documents"])
 	}
 }
 
 // TestMetadataSearchToolAcceptsCatalogFieldKey pins the non-title path end to end at the
-// executor: a field the dataset really carries is accepted, the push-down resolves the
-// documents, and the retrieval is scoped to them. Before the catalog the schema never let a
-// model emit this filter, so the executor's field-agnosticism was unreachable in practice.
+// executor: a field the dataset really carries is accepted and the push-down resolves the
+// documents. Before the catalog the schema never let a model emit this filter, so the
+// executor's field-agnosticism was unreachable in practice.
 func TestMetadataSearchToolAcceptsCatalogFieldKey(t *testing.T) {
-	r := &stubRetriever{chunks: []map[string]any{
-		{"id": "c1", "doc_id": "d1", "content": "Written by Alice."},
-	}}
-	deps, kb := newTestSearchDeps(r)
+	deps, _ := newTestSearchDeps(&stubRetriever{})
 	resolver := &stubMetadataResolver{
 		pushdownOK:  true,
 		pushdownIDs: []string{"d1"},
@@ -1489,7 +1574,6 @@ func TestMetadataSearchToolAcceptsCatalogFieldKey(t *testing.T) {
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 
 	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
-		"query":   []any{"who wrote it"},
 		"filters": []any{map[string]any{"key": "author", "op": "contains", "value": "Alice"}},
 		"logic":   "and",
 	})
@@ -1502,14 +1586,8 @@ func TestMetadataSearchToolAcceptsCatalogFieldKey(t *testing.T) {
 	if len(resolver.gotFilters) != 1 || resolver.gotFilters[0]["key"] != "author" {
 		t.Errorf("resolver filters = %v, want the author condition", resolver.gotFilters)
 	}
-	if len(r.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(r.requests))
-	}
-	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
-		t.Errorf("doc_scope = %v, want the author-matched document", scope)
-	}
-	if len(kb.Chunks) != 1 {
-		t.Errorf("pool chunks = %d, want the hit admitted", len(kb.Chunks))
+	if got := payloadDocIDs(out.Payload); len(got) != 1 || got[0] != "d1" {
+		t.Errorf("doc_ids = %v, want the author-matched document", got)
 	}
 }
 
@@ -1523,7 +1601,6 @@ func TestMetadataSearchToolWithoutMetadataIsMissNotError(t *testing.T) {
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 
 	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
-		"query":   []any{"q"},
 		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
 	})
 	if err != nil {
@@ -1560,7 +1637,6 @@ func TestMetadataSearchToolAcceptsDeclaredOnlyField(t *testing.T) {
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 
 	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
-		"query":   []any{"towers"},
 		"filters": []any{map[string]any{"key": "doc_type", "op": "=", "value": "report"}},
 	})
 	if err != nil {
@@ -1569,8 +1645,8 @@ func TestMetadataSearchToolAcceptsDeclaredOnlyField(t *testing.T) {
 	if out.Status != StatusOK {
 		t.Fatalf("status = %s (reason %s); a declared field must be accepted, not answered with bad_args", out.Status, out.Reason)
 	}
-	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
-		t.Errorf("doc_scope = %v, want the declared-field match", scope)
+	if got := payloadDocIDs(out.Payload); len(got) != 1 || got[0] != "d1" {
+		t.Errorf("doc_ids = %v, want the declared-field match", got)
 	}
 }
 
@@ -1586,7 +1662,6 @@ func TestMetadataSearchToolRejectsSystemKey(t *testing.T) {
 	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
 
 	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
-		"query":   []any{"q"},
 		"filters": []any{map[string]any{"key": "question_id", "op": "=", "value": "444"}},
 	})
 	if err != nil {

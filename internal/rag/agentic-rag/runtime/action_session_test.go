@@ -1087,13 +1087,14 @@ var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTP
 // executorSupportedParams lists the params the executor actually consumes per
 // tool (mirrors _EXECUTOR_SUPPORTED). The schema MUST NOT declare any param
 // outside this set — otherwise the model is told to fill an argument the runtime
-// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: doc_scope /
-// keywords are supported by the executor but intentionally NOT declared in the
-// schema (keep the description honest with the implementation).
+// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: keywords are
+// supported by the executor but intentionally NOT declared in the schema (keep
+// the description honest with the implementation); doc_scope IS declared on the
+// two tools that consume it (retrieve, graph_explore).
 var executorSupportedParams = map[string]map[string]bool{
 	"retrieve":           {"query": true, "doc_scope": true},
 	"search_chunks":      {"query": true},
-	"metadata_search":    {"query": true, "filters": true, "logic": true},
+	"metadata_search":    {"filters": true, "logic": true},
 	"list_chunks":        {"doc_id": true},
 	"navigate_tree":      {"query": true, "keywords": true},
 	"navigate_structure": {"doc_id": true, "query": true, "kind": true},

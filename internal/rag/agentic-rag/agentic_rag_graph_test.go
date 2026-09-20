@@ -4546,6 +4546,8 @@ type fanoutMetadataResolver struct {
 	calls   int
 	filters []map[string]any
 	logic   string
+	// docMeta backs the metadata_search context block (doc_id → fields).
+	docMeta map[string]map[string]any
 }
 
 func (m *fanoutMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, _ []string, filters []map[string]any, logic string) ([]string, bool) {
@@ -4557,6 +4559,12 @@ func (m *fanoutMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, _
 
 func (m *fanoutMetadataResolver) GetFlattedMetaByKBs(context.Context, []string) (common.MetaData, error) {
 	return m.metas, nil
+}
+
+// MetadataForDocIDs answers the metadata_search context block. These tests observe the
+// selection, not the context block, so it stays empty unless a case sets docMeta.
+func (m *fanoutMetadataResolver) MetadataForDocIDs(context.Context, []string, []string) (map[string]map[string]any, error) {
+	return m.docMeta, nil
 }
 
 // TestFanoutSearchMetadataChannelUsesCatalogFields pins channel C end to end with the
@@ -4806,7 +4814,7 @@ func TestExtractFanoutFiltersDegradesToNothing(t *testing.T) {
 
 // slotResearchWithMetadataTool builds one action session whose tool executor is the REAL
 // metadata_search executor, so a tool call made by the model is observed end to end: the
-// resolver records the filter, and the retriever records the scoped search.
+// resolver records the filter and answers with the documents the selector returns.
 func slotResearchWithMetadataTool(resolver *fanoutMetadataResolver, retriever *corpusRetriever, cat *runtime.MetadataCatalog, replies []*runtime.ModelReply) (*AgenticState, *runtime.Kbinfos, *fakeModel) {
 	kb := &runtime.Kbinfos{}
 	sd := runtime.SearchDeps{
@@ -4858,7 +4866,6 @@ func TestSlotResearchSessionUsesCatalogFieldForMetadataSearch(t *testing.T) {
 				ID:   "call_0",
 				Name: "metadata_search",
 				Args: map[string]any{
-					"query":   []any{"who wrote it?"},
 					"filters": []any{map[string]any{"key": "author", "op": "contains", "value": "Alice"}},
 				},
 			}},
@@ -4892,7 +4899,6 @@ func TestSlotResearchSessionSurvivesMetadataSearchWithoutMetadata(t *testing.T) 
 				ID:   "call_0",
 				Name: "metadata_search",
 				Args: map[string]any{
-					"query":   []any{"who wrote it?"},
 					"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
 				},
 			}},
