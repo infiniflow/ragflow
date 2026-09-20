@@ -37,6 +37,7 @@ import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
+import { buildDocumentIngestPayload } from '@/services/document-ingest-adapter';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -445,11 +446,9 @@ export const useRunDocument = () => {
           queryKey: DocumentKeys.all(),
         });
       }
-      const ret = await kbService.documentIngest({
-        doc_ids: documentIds,
-        run,
-        ...(option || {}),
-      });
+      const ret = await kbService.documentIngest(
+        buildDocumentIngestPayload({ documentIds, run, option }),
+      );
       const code = get(ret, 'data.code');
       if (code === 0) {
         // For a start request, keep the optimistic running state until the
