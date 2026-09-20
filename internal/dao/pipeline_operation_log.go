@@ -74,7 +74,7 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 // list rather than the whole dataset history.
 func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, operationStatus []string, createDateFrom, createDateTo, keywords, documentID string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
+		Where("kb_id = ? AND document_id = ? AND run_count > 0", kbID, graphRaptorFakeDocID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
