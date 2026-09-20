@@ -14,14 +14,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect } from 'react';
 import {
   ControllerRenderProps,
   FieldValues,
@@ -45,8 +44,8 @@ import {
   useOwnerTenantId,
   useKnowledgeBaseContext,
 } from '../../../contexts/knowledge-base-context';
+import { EmbeddingSelect } from '../../embedding-select';
 import {
-  useHandleKbEmbedding,
   useHasParsedDocument,
   useSelectChunkMethodList,
 } from '../hooks';
@@ -99,62 +98,6 @@ export function ChunkMethodItem(props: IProps) {
     />
   );
 }
-
-export const EmbeddingSelect = ({
-  isEdit,
-  field,
-  name,
-  disabled = false,
-  testId,
-  ownerTenantId,
-}: {
-  isEdit: boolean;
-  field: FieldValues;
-  name?: string;
-  disabled?: boolean;
-  testId?: string;
-  ownerTenantId?: string;
-}) => {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-  const { handleChange } = useHandleKbEmbedding();
-
-  const oldValue = useMemo(() => {
-    const embdStr = form.getValues(name || 'embedding_model');
-    return embdStr || '';
-  }, [form, name]);
-  const [loading, setLoading] = useState(false);
-  return (
-    <Spin
-      spinning={loading}
-      className={cn('rounded-lg after:bg-bg-base', {
-        'opacity-20': loading,
-      })}
-    >
-      <ModelTreeSelect
-        modelTypes={ModelTypeMap.embd_id}
-        onChange={async (value) => {
-          field.onChange(value);
-          if (isEdit && disabled) {
-            setLoading(true);
-            const res = await handleChange({
-              embed_id: value,
-            });
-            if (res.code !== 0) {
-              field.onChange(oldValue);
-            }
-            setLoading(false);
-          }
-        }}
-        ownerTenantId={ownerTenantId}
-        disabled={disabled && !isEdit}
-        value={field.value}
-        placeholder={t('embeddingModelPlaceholder')}
-        testId={testId}
-      />
-    </Spin>
-  );
-};
 
 export function EmbeddingModelItem({
   line = 1,

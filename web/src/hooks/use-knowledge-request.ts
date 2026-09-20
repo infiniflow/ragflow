@@ -119,6 +119,7 @@ export const enum KnowledgeApiAction {
   DeleteDatasetStructure = 'deleteDatasetStructure',
   FetchArtifactAlteration = 'fetchArtifactAlteration',
   RunArtifactIndex = 'runArtifactIndex',
+  CheckKbEmbedding = 'checkKbEmbedding',
 }
 
 export const useKnowledgeBaseId = (): string => {
