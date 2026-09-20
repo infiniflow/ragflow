@@ -76,7 +76,7 @@ export function VersionDialog({
             {t('flow.historyVersion')}
           </DialogTitle>
         </DialogHeader>
-        <section className="flex gap-8 relative">
+        <section className="relative flex w-full min-w-0 gap-8">
           <div className="w-72 max-h-[60vh] overflow-auto min-h-[40vh]">
             {loading ? (
               <Spin className="top-1/2"></Spin>
@@ -94,12 +94,15 @@ export function VersionDialog({
                       <span className="truncate">{x.title}</span>
                       {x.release && <Dot></Dot>}
                     </div>
+                    <p className="pt-1 text-xs text-text-secondary">
+                      {formatDate(x.create_date)}
+                    </p>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="relative flex-1 ">
+          <div className="relative min-w-0 flex-1">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : versionLoadFailed ? (
@@ -109,15 +112,17 @@ export function VersionDialog({
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">
-                  <section className="flex justify-between pb-2">
-                    <div>
-                      <div className="flex">
-                        <span className="pb-1 truncate">{agent?.title}</span>
+                  <section className="flex justify-between gap-2 pb-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0">
+                        <span className="min-w-0 flex-1 truncate pb-1">
+                          {agent?.title}
+                        </span>
                         {agent?.release && (
                           <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>
-                            <Button className="bg-accent-primary-5 ml-3">
+                            <Button className="ml-3 shrink-0 bg-accent-primary-5">
                               <Dot></Dot>
-                              <span className="text-accent-primary pl-2 rounded">
+                              <span className="rounded pl-2 text-accent-primary">
                                 {t('flow.production')}
                               </span>
                             </Button>
@@ -130,7 +135,11 @@ export function VersionDialog({
                       </p>
                     </div>
 
-                    <Button variant={'ghost'} onClick={downloadFile}>
+                    <Button
+                      variant={'ghost'}
+                      onClick={downloadFile}
+                      className="shrink-0"
+                    >
                       <ArrowDownToLine />
                     </Button>
                   </section>

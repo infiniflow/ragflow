@@ -789,7 +789,12 @@ export const useFetchInputForm = (componentId?: string) => {
 export const useFetchVersionList = () => {
   const { id } = useParams();
   const { data, isFetching: loading } = useQuery<
-    Array<{ created_at: string; title: string; id: string; release?: boolean }>
+    Array<{
+      create_date?: string;
+      title: string;
+      id: string;
+      release?: boolean;
+    }>
   >({
     queryKey: AgentKeys.versionList(id),
     initialData: [],
