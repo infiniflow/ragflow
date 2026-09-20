@@ -43,7 +43,7 @@ func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOC
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(false),
+			httpClient:       common.GetSSRFHTTPClient(),
 		},
 	}
 }
