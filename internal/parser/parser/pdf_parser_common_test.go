@@ -101,6 +101,26 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	}
 }
 
+func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{
+				Text:       "小灰灰",
+				LayoutType: deepdoctype.DLALabelFigureCaption,
+				Image:      "aGVsbG8=",
+			},
+		},
+	}
+
+	res := pdfParseResultToJSON("sample.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+}
+
 // TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
 // DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
 // SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
@@ -511,6 +531,36 @@ func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
 	textImg, _ := res.JSON[2]["image"].(string)
 	if textImg != "" {
 		t.Fatalf("Text JSON[2].image should be empty, got %q", textImg)
+	}
+}
+
+func TestPDFParseResultToJSON_CropsFigureCaptionForVisionEnhancement(t *testing.T) {
+	mockEngine := &mockPDFEngineForCommonTest{}
+	parsed := &deepdoctype.ParseResult{
+		Engine:     mockEngine,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{{
+			Text:       "Figure caption",
+			LayoutType: deepdoctype.DLALabelFigureCaption,
+			Positions: []deepdoctype.Position{{
+				PageNumbers: []int{0},
+				Left:        10,
+				Right:       50,
+				Top:         10,
+				Bottom:      50,
+			}},
+		}},
+	}
+
+	res := pdfParseResultToJSON("figure-caption.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+	if image, _ := res.JSON[0]["image"].(string); image == "" {
+		t.Fatal("figure caption image should be cropped before vision enhancement")
 	}
 }
 
