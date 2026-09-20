@@ -31,7 +31,27 @@ def test_tool_call_with_text_preserves_reasoning_and_length_notice(reasoning_fie
     assert len(requests) == 2
 
 
-async def _run_tool_rounds(content, finish_reason, *, max_retries=0, reasoning_field=None, reasoning=None):
+@pytest.mark.parametrize("content", [None, "", "   "])
+def test_empty_final_answer_preserves_accumulated_verbose_tool_output(content):
+    answer, tokens, requests = asyncio.run(
+        _run_tool_rounds(
+            content,
+            "stop",
+            reasoning_field="reasoning_content",
+            reasoning="Reasoning.",
+            verbose_tool_use=True,
+        )
+    )
+
+    assert answer == (
+        '<tool_call>{\n  "name": "search",\n  "args": {},\n  "result": "Synthetic document."\n}'
+        "</tool_call><think>Reasoning.</think>"
+    )
+    assert tokens == 6
+    assert len(requests) == 2
+
+
+async def _run_tool_rounds(content, finish_reason, *, max_retries=0, reasoning_field=None, reasoning=None, verbose_tool_use=False):
     requests = []
 
     def respond(request):
@@ -56,7 +76,8 @@ async def _run_tool_rounds(content, finish_reason, *, max_retries=0, reasoning_f
     model.max_rounds = 5
     model.tools = [{"type": "function", "function": {"name": "search", "parameters": {"type": "object"}}}]
     model.toolcall_session = SimpleNamespace(tool_call_async=search)
-    model._verbose_tool_use = lambda *_args: ""
+    if not verbose_tool_use:
+        model._verbose_tool_use = lambda *_args: ""
     async with AsyncOpenAI(api_key="offline-placeholder", base_url="https://offline.invalid/v1", http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond), trust_env=False)) as client:
         model.async_client = client
         answer, tokens = await model.async_chat_with_tools("Use the supplied document.", [{"role": "user", "content": "Find it."}])
