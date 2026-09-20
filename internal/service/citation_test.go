@@ -516,9 +516,9 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 
 func TestCitationStreamFilter(t *testing.T) {
 	var filter citationStreamFilter
-	want := "Answer[2024][guide](https://example.com) end"
+	want := "Answer\n## Heading\n[2024][guide](https://example.com) end"
 	got := ""
-	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)", "[2024][guide](https://example.com) end"} {
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)#", "#0", "$", "$\n#", "# Heading\n[2024][guide](https://example.com) end"} {
 		got += filter.write(delta)
 		if !strings.HasPrefix(want, got) {
 			t.Fatalf("stream leaked citation text: %q", got)

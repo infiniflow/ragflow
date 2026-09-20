@@ -199,8 +199,8 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 }
 
 // TestDecorateAnswer_LeavesCanonicalMarkers covers P0: the decorator
-// passes canonical [ID:N] markers through unchanged when there are
-// no chunks to cite (so insertCitations is skipped).
+// passes canonical [ID:N] markers through unchanged when quoting is enabled
+// and there are no chunks to cite (so insertCitations is skipped).
 func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
@@ -212,7 +212,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -233,7 +233,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
 		t.Context(),
-		"see (ID: 12) in [2024] for details",
+		"<think>Checking[ID:0]##0$$</think>see (ID: 12)[ID:0]##1$$ in [2024] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
 		[]string{"q"},
@@ -247,7 +247,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 		nil,
 		false,
 	)
-	if result.Answer != "see  in [2024] for details" {
+	if result.Answer != "<think>Checking</think>see  in [2024] for details" {
 		t.Errorf("quote=false citation cleanup = %q", result.Answer)
 	}
 }

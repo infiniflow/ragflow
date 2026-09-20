@@ -479,9 +479,10 @@ func ExpandRangeCitations(answer string, poolSize int) string {
 
 // Keep an unfinished citation until its closing delimiter arrives. Retaining
 // the trailing word also preserves the word boundaries used by refN markers.
-var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
+var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
 
 func stripCitations(text string) string {
+	text = cleanCitationMarkers(text)
 	text = canonicalIDMarkerPattern.ReplaceAllString(text, "")
 	text = slotCitationPattern.ReplaceAllString(text, "")
 	text = rangeCitationPattern.ReplaceAllString(text, "")

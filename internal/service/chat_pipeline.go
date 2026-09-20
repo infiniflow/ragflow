@@ -1227,6 +1227,34 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
+			var answerFilter, reasoningFilter citationStreamFilter
+			emit := func(result AsyncChatResult) {
+				if !result.Final && result.Answer != "" {
+					result.AudioBinary = s.synthesizeTTS(ctx, ttsModel, result.Answer)
+				}
+				out <- result
+			}
+			send := func(result AsyncChatResult) {
+				if !quote {
+					// Flush before a boundary so buffered text stays in its section.
+					if result.StartToThink || result.EndToThink || result.Final {
+						if text := reasoningFilter.flush(); text != "" {
+							emit(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
+						if text := answerFilter.flush(); text != "" {
+							emit(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
+					}
+					if !result.Final && (result.Answer != "" || result.Reasoning != "") {
+						result.Answer = answerFilter.write(result.Answer)
+						result.Reasoning = reasoningFilter.write(result.Reasoning)
+						if result.Answer == "" && result.Reasoning == "" {
+							return
+						}
+					}
+				}
+				emit(result)
+			}
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1245,48 +1273,47 @@ func (s *ChatPipelineService) AsyncChat(
 
 						if text == "<think>" {
 							inThink = true
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
-							}
+							})
 							return nil
 						}
 						if text == "</think>" {
 							inThink = false
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
-							}
+							})
 							return nil
 						}
 						if inThink {
 							// Reasoning text — route to Reasoning field so
 							// the SSE handler maps it to
 							// `delta.reasoning_content`.
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Reasoning:   text,
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
-							}
+							})
 						} else {
 							// Regular answer content
-							out <- AsyncChatResult{
-								Answer:      text,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ctx, ttsModel, text),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}
+							send(AsyncChatResult{
+								Answer:    text,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							})
 						}
 						return nil
 					})
@@ -1296,26 +1323,25 @@ func (s *ChatPipelineService) AsyncChat(
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
-								out <- AsyncChatResult{
+								send(AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
 									AudioBinary:  nil,
 									CreatedAt:    float64(time.Now().Unix()),
 									Final:        false,
 									StartToThink: true,
-								}
+								})
 							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+									send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									})
 								}
 							}
 						}
@@ -1324,35 +1350,33 @@ func (s *ChatPipelineService) AsyncChat(
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
-										out <- AsyncChatResult{
-											Answer:      d.Value,
-											Reference:   map[string]interface{}{},
-											AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-											CreatedAt:   float64(time.Now().Unix()),
-											Final:       false,
-										}
+										send(AsyncChatResult{
+											Answer:    d.Value,
+											Reference: map[string]interface{}{},
+											CreatedAt: float64(time.Now().Unix()),
+											Final:     false,
+										})
 									}
 								}
-								out <- AsyncChatResult{
+								send(AsyncChatResult{
 									Answer:      "",
 									Reference:   map[string]interface{}{},
 									AudioBinary: nil,
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 									EndToThink:  true,
-								}
+								})
 							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+									send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									})
 								}
 							}
 						}
@@ -1361,10 +1385,10 @@ func (s *ChatPipelineService) AsyncChat(
 				)
 			}
 			if driverErr != nil {
-				out <- AsyncChatResult{
+				send(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 
@@ -1375,36 +1399,35 @@ func (s *ChatPipelineService) AsyncChat(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					out <- AsyncChatResult{
+					send(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
-					}
+					})
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					out <- AsyncChatResult{
-						Answer:      d.Value,
-						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-						CreatedAt:   float64(time.Now().Unix()),
-						Final:       false,
-					}
+					send(AsyncChatResult{
+						Answer:    d.Value,
+						Reference: map[string]interface{}{},
+						CreatedAt: float64(time.Now().Unix()),
+						Final:     false,
+					})
 				}
 			}
 			// Close reasoning if the stream ended while still in reasoning mode
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				out <- AsyncChatResult{
+				send(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
-				}
+				})
 			}
 
 			// Decorate and yield the final answer.
@@ -1417,7 +1440,7 @@ func (s *ChatPipelineService) AsyncChat(
 			final.Final = true
 			final.AudioBinary = nil
 			timer.Exit(common.PhaseGenerateAnswer)
-			out <- final
+			send(final)
 		} else {
 			// Non-streaming: get the answer synchronously.
 			var answer string

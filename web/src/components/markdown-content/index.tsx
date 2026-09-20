@@ -41,7 +41,6 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
-  currentReg,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
@@ -66,6 +65,7 @@ import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { SafeImg } from '@/components/safe-img';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
+const ReferenceMarkerReg = /(\[(?:ID:)?[0-9\u0660-\u0669\u06F0-\u06F9]+\])/g;
 
 // Wraps every text node so citation markers can be replaced by React elements.
 // Defined at module scope: react-markdown rebuilds its whole processor whenever
@@ -324,8 +324,11 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
+      const replacedText = reactStringReplace(text, ReferenceMarkerReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
+        if (!reference?.chunks?.[chunkIndex]) {
+          return match;
+        }
 
         return (
           <HoverCard key={i}>
@@ -343,7 +346,7 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent, t],
+    [getPopoverContent, reference?.chunks],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
