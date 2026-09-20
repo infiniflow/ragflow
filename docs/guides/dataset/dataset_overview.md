@@ -16,17 +16,17 @@ A dataset is the workspace in RAGFlow that carries knowledge sources and retriev
 
 In terms of responsibility, a dataset is more than a "folder". It converts raw documents into retrievable chunks, stores the enabled status of documents and chunks, maintains metadata, and provides foundational data for knowledge artifacts and log tracing.
 
-## Basic Workflow
+## Basic Information
 
-The following briefly introduces the basic dataset workflow and helps you quickly understand the overall process from creating a dataset to testing retrieval results. The specific operations, configuration items, and feature descriptions involved in each step are described in detail in later sections.
+The configuration page allows you to manage the core settings of a knowledge base. Basic information includes the name, language, avatar, description, permissions, embedding model, PageRank, and tag sets.
 
-1. Create a dataset and select an embedding model and parsing method.
-2. Complete dataset configuration under **Configuration**.
-3. Upload or add documents under **Document Management**.
-4. Parse documents and generate chunks.
-5. Check and adjust chunks and metadata.
-6. Use **Retrieval Testing** to test retrieval results.
-7. Adjust parsing or retrieval configuration based on the test results.
+- **Name**: The name of the knowledge base. It can be changed after creation and is displayed on knowledge base cards and detail page headers.
+- **Language**: The primary language of the knowledge base. This setting affects the language assumptions used during parsing and model processing.
+- **Avatar**: The avatar of the knowledge base. Image uploads are supported, with a maximum file size of 4 MB.
+- **Description**: A description of the knowledge base, used to explain its data scope, business purpose, or maintenance information.
+- **Permissions**: Controls access to the knowledge base and the scope of allowed operations.
+- **Embedding model**: The model used to vectorize chunks. Changing the embedding model after content has already been parsed usually affects existing indexes and should be done with caution.
+- **PageRank**: Sets the PageRank score for the knowledge base. During retrieval, this score is added to the hybrid similarity score of matching chunks from the knowledge base, increasing their ranking weight. This is useful when searching across multiple knowledge bases and you want to prioritize content from a specific knowledge base.
 
 ## Dataset Page Overview
 
