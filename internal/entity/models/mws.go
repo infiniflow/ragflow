@@ -35,7 +35,7 @@ type MWSModel struct {
 // NewMWSModel creates an MWS model driver.
 func NewMWSModel(baseURL map[string]string, urlSuffix URLSuffix) *MWSModel {
 	driver := NewDummyModel(baseURL, urlSuffix)
-	driver.baseModel.httpClient = NewDriverHTTPClient(true)
+	driver.baseModel.httpClient = common.GetSchemeSafeHTTPClient()
 	return &MWSModel{DummyModel: driver}
 }
 

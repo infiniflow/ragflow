@@ -1981,6 +1981,27 @@ type AnswerResult struct {
 	Failed bool
 }
 
+// providerErrorSummary renders a provider failure as ONE bounded line for the
+// think block: whitespace collapsed (a model client's error can embed newlines
+// and a whole JSON body) and cut at providerErrorSummaryMax. The developer log
+// keeps the error verbatim — this is the sentence a user reads while waiting.
+func providerErrorSummary(err error) string {
+	if err == nil {
+		return ""
+	}
+	return truncateRunes(strings.Join(strings.Fields(err.Error()), " "), providerErrorSummaryMax)
+}
+
+// errorAnswerText renders a provider failure as the ANSWER, in the shape the
+// classic chat path uses for its own failures (`**ERROR**: …`): an agentic run
+// that cannot call the model must read to the user exactly like a naive-mode one
+// — bold ERROR plus the provider's own message — instead of Python's generic
+// "I'm sorry…" sentence, which hid the cause and made an exhausted quota look
+// like a RAG bug.
+func errorAnswerText(err error) string {
+	return "**ERROR**: " + providerErrorSummary(err)
+}
+
 // ComposeAnswer: turn the gathered
 // evidence into a grounded, cited answer.
 //

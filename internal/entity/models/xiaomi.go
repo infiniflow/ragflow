@@ -40,7 +40,7 @@ func NewXiaomiModel(baseURL map[string]string, urlSuffix URLSuffix) *XiaomiModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 			// Xiaomi authenticates with the non-standard "api-key" header
 			// instead of "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {

@@ -26,7 +26,6 @@ import { IReferenceChunk } from '@/interfaces/database/chat';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import { extractNumbersFromMessageContent } from './utils';
 
@@ -37,6 +36,7 @@ type IProps = {
 
 type ImageItem = {
   id: string;
+  documentId: string;
   index: number;
 };
 
@@ -51,14 +51,14 @@ const getButtonVisibilityClass = (imageCount: number) => {
   return map[imageCount] || (imageCount >= 6 ? '@2xl:hidden' : '');
 };
 
-function ImagePhotoView({ id, index }: ImageItem) {
-  const src = useDocumentImageUrl(id);
-  const { t } = useTranslation();
+function ImagePhotoView({ id, documentId, index }: ImageItem) {
+  const src = useDocumentImageUrl(id, documentId);
 
   return (
     <PhotoView src={src}>
       <Image
         id={id}
+        documentId={documentId}
         className="h-40 w-full"
         label={`[${index + 1}]`}
       />
@@ -99,7 +99,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
         }}
       >
         <CarouselContent>
-          {images.map(({ id, index }) => (
+          {images.map(({ id, documentId, index }) => (
             <CarouselItem
               key={index}
               className="
@@ -110,7 +110,11 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               @2xl:basis-1/6
               "
             >
-              <ImagePhotoView id={id} index={index}></ImagePhotoView>
+              <ImagePhotoView
+                id={id}
+                documentId={documentId}
+                index={index}
+              ></ImagePhotoView>
             </CarouselItem>
           ))}
         </CarouselContent>
@@ -129,15 +133,26 @@ export function ReferenceImageList({
   const images = useMemo(() => {
     if (Array.isArray(referenceChunks)) {
       return referenceChunks
-        .map((chunk, idx) => ({ id: chunk.image_id, index: idx }))
-        .filter((item, idx) => allChunkIndexes.includes(idx) && item.id);
+        .map((chunk, idx) => ({
+          id: chunk.image_id,
+          documentId: chunk.document_id,
+          index: idx,
+        }))
+        .filter(
+          (item, idx) =>
+            allChunkIndexes.includes(idx) && item.id && item.documentId,
+        );
     }
 
     if (isPlainObject(referenceChunks)) {
       return Object.entries(referenceChunks || {}).reduce<ImageItem[]>(
         (pre, [idx, chunk]) => {
           if (allChunkIndexes.includes(Number(idx)) && chunk.image_id) {
-            return pre.concat({ id: chunk.image_id, index: Number(idx) });
+            return pre.concat({
+              id: chunk.image_id,
+              documentId: chunk.document_id,
+              index: Number(idx),
+            });
           }
           return pre;
         },
