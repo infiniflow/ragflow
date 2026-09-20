@@ -224,13 +224,13 @@ function Chunk() {
     return 'unknown';
   }, [documentInfo]);
 
-  // Virtual list setup for chunk cards
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: chunkList.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 120, // Estimated card height
-    overscan: 5, // Render 5 extra items above/below viewport
+    estimateSize: () => 120,
+    getItemKey: (index: number) => chunkList[index].chunk_id,
+    overscan: 5,
   });
 
   return (
