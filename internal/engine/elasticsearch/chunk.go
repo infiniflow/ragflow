@@ -589,18 +589,17 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 				"source": fmt.Sprintf("ctx._source.remove(\"%s\");", k),
 			},
 		}
-		body, _ := json.Marshal(scriptBody)
+		body, _ = json.Marshal(scriptBody)
 		req := esapi.UpdateRequest{
 			Index:      indexName,
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
 		}
-		res, err := req.Do(ctx, e.client)
+		res, err = req.Do(ctx, e.client)
 		if err != nil {
 			common.Warn("Failed to remove feas field", zap.String("field", k), zap.Error(err))
-		} else {
-			res.Body.Close()
 		}
+		closeESBody(res)
 	}
 
 	// Remove specific field if removeField is set
@@ -610,18 +609,17 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 				"source": fmt.Sprintf("ctx._source.remove('%s');", removeField),
 			},
 		}
-		body, _ := json.Marshal(scriptBody)
+		body, _ = json.Marshal(scriptBody)
 		req := esapi.UpdateRequest{
 			Index:      indexName,
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
 		}
-		res, err := req.Do(ctx, e.client)
+		res, err = req.Do(ctx, e.client)
 		if err != nil {
 			common.Warn("Failed to remove field", zap.String("field", removeField), zap.Error(err))
-		} else {
-			res.Body.Close()
 		}
+		closeESBody(res)
 	}
 
 	// Remove specific values from array fields (removeDict)
@@ -641,18 +639,17 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 					"params": params,
 				},
 			}
-			body, _ := json.Marshal(scriptBody)
+			body, _ = json.Marshal(scriptBody)
 			req := esapi.UpdateRequest{
 				Index:      indexName,
 				DocumentID: actualID,
 				Body:       bytes.NewReader(body),
 			}
-			res, err := req.Do(ctx, e.client)
+			res, err = req.Do(ctx, e.client)
 			if err != nil {
 				common.Warn("Failed to remove dict fields", zap.Error(err))
-			} else {
-				res.Body.Close()
 			}
+			closeESBody(res)
 		}
 	}
 
@@ -890,6 +887,17 @@ func sanitizeString(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	return strings.TrimSpace(s)
+}
+
+// closeESBody releases an ES response body, tolerating the nil response the
+// client returns alongside a transport error. Callers that check `err` first
+// and close only on the success branch leak the body whenever the client ever
+// hands back a non-nil response with an error, so every Do/Search call site
+// funnels its close through here.
+func closeESBody(res *esapi.Response) {
+	if res != nil && res.Body != nil {
+		_ = res.Body.Close()
+	}
 }
 
 // copyFields creates a shallow copy of a map
@@ -2182,63 +2190,13 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 
 	// Try search by doc_id field (which is stored in the document)
 	for _, datasetID := range datasetIDs {
-		searchReq := map[string]interface{}{
-			"query": map[string]interface{}{
-				"bool": map[string]interface{}{
-					"must": []map[string]interface{}{
-						{"term": map[string]interface{}{"id": chunkID}},
-						{"term": map[string]interface{}{"kb_id": datasetID}},
-					},
-				},
-			},
-		}
-
-		body, err := json.Marshal(searchReq)
+		source, found, err := e.searchChunkInDataset(ctx, baseName, chunkID, datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal search request: %w", err)
+			return nil, err
 		}
-
-		res, err := e.client.Search(
-			e.client.Search.WithContext(ctx),
-			e.client.Search.WithIndex(baseName),
-			e.client.Search.WithBody(bytes.NewReader(body)),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search for chunk: %w", err)
-		}
-
-		if res.IsError() {
-			res.Body.Close()
-			return nil, fmt.Errorf("failed to search for chunk: %s", res.Status())
-		}
-
-		var searchResult map[string]interface{}
-		if err := json.NewDecoder(res.Body).Decode(&searchResult); err != nil {
-			res.Body.Close()
-			return nil, fmt.Errorf("failed to parse search response: %w", err)
-		}
-		res.Body.Close()
-
-		hits, ok := searchResult["hits"].(map[string]interface{})
-		if !ok {
+		if !found {
 			continue
 		}
-
-		hitList, ok := hits["hits"].([]interface{})
-		if !ok || len(hitList) == 0 {
-			continue
-		}
-
-		firstHit, ok := hitList[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		source, ok := firstHit["_source"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
 		common.Info("GetChunk found hit", zap.String("baseName", baseName), zap.String("chunkID", chunkID))
 		source["id"] = chunkID
 		return source, nil
@@ -2246,6 +2204,66 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 
 	common.Info("GetChunk no hits found", zap.String("baseName", baseName), zap.String("chunkID", chunkID))
 	return nil, nil
+}
+
+func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, datasetID string) (map[string]interface{}, bool, error) {
+	searchReq := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"id": chunkID}},
+					{"term": map[string]interface{}{"kb_id": datasetID}},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(searchReq)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal search request: %w", err)
+	}
+
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(baseName),
+		e.client.Search.WithBody(bytes.NewReader(body)),
+	)
+
+	defer closeESBody(res)
+
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to search for chunk: %w", err)
+	}
+
+	if res.IsError() {
+		return nil, false, fmt.Errorf("failed to search for chunk: %s", res.Status())
+	}
+
+	var searchResult map[string]interface{}
+	if err = json.NewDecoder(res.Body).Decode(&searchResult); err != nil {
+		return nil, false, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	hits, ok := searchResult["hits"].(map[string]interface{})
+	if !ok {
+		return nil, false, nil
+	}
+
+	hitList, ok := hits["hits"].([]interface{})
+	if !ok || len(hitList) == 0 {
+		return nil, false, nil
+	}
+
+	firstHit, ok := hitList[0].(map[string]interface{})
+	if !ok {
+		return nil, false, nil
+	}
+
+	source, ok := firstHit["_source"].(map[string]interface{})
+	if !ok {
+		return nil, false, nil
+	}
+	return source, true, nil
 }
 
 func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) (interface{}, error) {
@@ -2270,7 +2288,7 @@ func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) 
 		Found  bool                   `json:"found"`
 		Source map[string]interface{} `json:"_source"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&getResult); err != nil {
+	if err = json.NewDecoder(res.Body).Decode(&getResult); err != nil {
 		return nil, fmt.Errorf("failed to parse memory message get response: %w", err)
 	}
 	if !getResult.Found || getResult.Source == nil {
@@ -2328,23 +2346,23 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				}
 			}
 
-			if _, ok := val.([]interface{}); ok {
+			if _, ok = val.([]interface{}); ok {
 				m[field] = val
 				continue
 			}
 
 			if field == "available_int" {
-				if _, ok := val.(int); ok {
+				if _, ok = val.(int); ok {
 					m[field] = val
 					continue
 				}
-				if _, ok := val.(float64); ok {
+				if _, ok = val.(float64); ok {
 					m[field] = val
 					continue
 				}
 			}
 
-			if _, ok := val.(string); !ok {
+			if _, ok = val.(string); !ok {
 				val = fmt.Sprintf("%v", val)
 			}
 			m[field] = val
@@ -2737,10 +2755,10 @@ func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName
 		Index: []string{indexName},
 	}
 	res, err := req.Do(ctx, e.client)
+	defer closeESBody(res)
 	if err != nil {
 		return false, fmt.Errorf("failed to get memory vector mapping: %w", err)
 	}
-	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusNotFound {
 		return false, nil
@@ -2804,10 +2822,10 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 		Body:  bytes.NewReader(data),
 	}
 	res, err := req.Do(ctx, e.client)
+	defer closeESBody(res)
 	if err != nil {
 		return fmt.Errorf("failed to update memory vector mapping: %w", err)
 	}
-	defer res.Body.Close()
 
 	if res.IsError() {
 		bodyBytes, _ := io.ReadAll(res.Body)
