@@ -18,16 +18,10 @@ _isolated_module_namespaces = ("deepdoc.parser", "rag.llm")
 
 
 def _is_isolated_module(module_name):
-    return any(
-        module_name == namespace or module_name.startswith(f"{namespace}.") for namespace in _isolated_module_namespaces
-    )
+    return any(module_name == namespace or module_name.startswith(f"{namespace}.") for namespace in _isolated_module_namespaces)
 
 
-_isolated_modules = {
-    key: sys.modules[key]
-    for key in sys.modules
-    if _is_isolated_module(key)
-}
+_isolated_modules = {key: sys.modules[key] for key in sys.modules if _is_isolated_module(key)}
 
 
 def _blocked_import_socket_connect(*args, **kwargs):
