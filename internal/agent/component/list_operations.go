@@ -37,6 +37,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -642,6 +643,12 @@ func lessScalar(a, b any) bool {
 	af, aok := toFloat64OK(a)
 	bf, bok := toFloat64OK(b)
 	if aok && bok {
+		// Keep NaN ordering deterministic and aligned with Python: every
+		// finite number sorts before NaN, while two NaNs compare equal.
+		aNaN, bNaN := math.IsNaN(af), math.IsNaN(bf)
+		if aNaN || bNaN {
+			return !aNaN && bNaN
+		}
 		return af < bf
 	}
 	return fmt.Sprintf("%v", a) < fmt.Sprintf("%v", b)

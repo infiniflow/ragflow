@@ -124,7 +124,11 @@ def _scalar_sort_key(v):
     ``fmt.Sprintf(\"%v\", v)``).
     """
     if _scalar_rank(v) == _NUMERIC_RANK:
-        return (0, v)
+        # Comparisons with NaN are false in both directions. Give it an
+        # explicit sub-rank so stable-sort output cannot depend on input order.
+        if isinstance(v, float) and math.isnan(v):
+            return (0, 1, 0)
+        return (0, 0, v)
     return (1, _go_format_scalar(v))
 
 

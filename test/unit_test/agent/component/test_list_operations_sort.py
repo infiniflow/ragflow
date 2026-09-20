@@ -301,6 +301,14 @@ class TestScalarSortKey:
         assert fmt(float("-inf")) == "-Inf"
         assert fmt(float("nan")) == "NaN"
 
+    def test_nan_has_deterministic_numeric_position(self, lo_module):
+        key = lo_module._scalar_sort_key
+        nan = float("nan")
+        for values in ([nan, 2.0, 1.0], [2.0, nan, 1.0], [1.0, 2.0, nan]):
+            result = sorted(values, key=key)
+            assert result[:2] == [1.0, 2.0]
+            assert math.isnan(result[2])
+
     def test_go_format_integral_floats_in_containers(self, lo_module):
         fmt = lo_module._go_format_scalar
         assert fmt([1.0, {"value": 2.0}]) == "[1 map[value:2]]"
