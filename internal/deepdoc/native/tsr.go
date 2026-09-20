@@ -55,6 +55,9 @@ func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error)
 	if err != nil {
 		return TSRResult{}, err
 	}
+	if err := checkOutputLength("tsr", len(out), 11*tsrCandidates); err != nil {
+		return TSRResult{}, err
+	}
 	res := tsrPostprocess(out, sf)
 	res.W, res.H = img.W, img.H
 	return res, nil

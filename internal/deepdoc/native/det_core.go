@@ -107,6 +107,9 @@ func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error)
 	if e != nil {
 		return DetResult{}, e
 	}
+	if e := checkOutputLength("det", len(out), rh*rw); e != nil {
+		return DetResult{}, e
+	}
 	// out is [1,1,rh,rw]; flatten to [rh,rw].
 	p := make([]float32, rh*rw)
 	copy(p, out)

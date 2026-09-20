@@ -106,10 +106,14 @@ func NewSession(modelPath, inName string, inShape []int64, outName string) (*ses
 	if err != nil {
 		return nil, err
 	}
+	// newSessionOptions builds opts; the C session does not take ownership of it
+	// (see newSessionOptions / onnxruntime_go), so release it once the session is
+	// built. Releasing after a successful build is the documented pattern and
+	// avoids leaking the native SessionOptions handle on every session.
+	defer opts.Destroy()
 	sess, err := ort.NewDynamicAdvancedSession(modelPath,
 		[]string{inName}, []string{outName}, opts)
 	if err != nil {
-		opts.Destroy()
 		return nil, err
 	}
 	return &session{
@@ -148,6 +152,20 @@ func newSessionOptions() (*ort.SessionOptions, error) {
 		return nil, err
 	}
 	return opts, nil
+}
+
+// checkOutputLength fails fast when a model emits an unexpectedly sized output
+// tensor. The previous pinned-output design got this check for free: ORT errored
+// when the bound output tensor's shape mismatched the model. The dynamic design
+// allocates the output per Run (nil output, ORT allocates), so ORT no longer
+// validates the shape; without this guard, postprocessing (dlaPostprocess
+// indexes 300*6, tsrPostprocess indexes 11*8400, RunDet fills rh*rw) panics or
+// silently misreads a truncated output instead of returning a clean error.
+func checkOutputLength(model string, got, want int) error {
+	if got != want {
+		return fmt.Errorf("%s model output length %d, expected %d", model, got, want)
+	}
+	return nil
 }
 
 // Run allocates a fresh input tensor, executes with an auto-allocated (dynamic)

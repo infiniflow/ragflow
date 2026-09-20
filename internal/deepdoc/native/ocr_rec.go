@@ -303,29 +303,17 @@ type recSession struct {
 }
 
 func newRecSession(modelPath, inName string, inShape []int64, outName string) (*recSession, error) {
-	opts, err := ort.NewSessionOptions()
+	opts, err := newSessionOptions()
 	if err != nil {
 		return nil, err
 	}
-	// One intra-op thread per session, matching NewSession: see the
-	// intraOpThreads constant in session.go.
-	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
-		opts.Destroy()
-		return nil, err
-	}
-	// Disable the BFC memory arena for this session. See the matching comment in
-	// NewSession (session.go): the arena never shrinks, so pooled rec sessions
-	// (up to recMaxShapePools*recShapePoolCap = 128 idle) each hoard a native
-	// block, which drove most of the ~14 GB of native memory at the ~20 GB OOM
-	// peak. With the arena off, idle rec sessions keep only their weights.
-	if err := opts.SetCpuMemArena(false); err != nil {
-		opts.Destroy()
-		return nil, err
-	}
+	// See NewSession: the C session does not take ownership of opts, so release
+	// it once the session is built. newSessionOptions centralizes the
+	// intra-op-thread and arena settings shared with NewSession.
+	defer opts.Destroy()
 	sess, err := ort.NewDynamicAdvancedSession(modelPath,
 		[]string{inName}, []string{outName}, opts)
 	if err != nil {
-		opts.Destroy()
 		return nil, err
 	}
 	return &recSession{inName: inName, outName: outName, inShape: inShape, sess: sess}, nil

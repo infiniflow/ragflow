@@ -68,6 +68,9 @@ func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error)
 	if err != nil {
 		return DLAResult{}, err
 	}
+	if err := checkOutputLength("dla", len(out), dlaMaxBoxes*6); err != nil {
+		return DLAResult{}, err
+	}
 	res := dlaPostprocess(out, sf)
 	res.W, res.H = img.W, img.H
 	return res, nil
