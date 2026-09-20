@@ -339,28 +339,20 @@ func extractArtifactList(meta map[string]any, key string) []map[string]any {
 	if !ok {
 		return nil
 	}
-	switch arr := raw.(type) {
-	case []map[string]any:
-		// The sandbox providers decode the JSON array into
-		// []map[string]any (see collectArtifacts in local.go,
-		// ssh.go and self_managed.go), so accept that shape
-		// directly. Without this the tool envelope silently
-		// loses every artifact the sandbox collected.
-		return arr
-	case []any:
-		out := make([]map[string]any, 0, len(arr))
-		for i, item := range arr {
-			m, ok := item.(map[string]any)
-			if !ok {
-				fmt.Fprintf(os.Stderr, "code_exec: %s[%d] is %T, expected map[string]any; dropping\n", key, i, item)
-				continue
-			}
-			out = append(out, m)
-		}
-		return out
-	default:
+	arr, ok := raw.([]any)
+	if !ok {
 		return nil
 	}
+	out := make([]map[string]any, 0, len(arr))
+	for i, item := range arr {
+		m, ok := item.(map[string]any)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "code_exec: %s[%d] is %T, expected map[string]any; dropping\n", key, i, item)
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 func codeExecStubResult(msg string) string {
