@@ -47,6 +47,7 @@ import {
 } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  checkEmbedding,
   clearWiki,
   deleteArtifactsStructure,
   deleteKnowledgeGraph,
@@ -126,6 +127,22 @@ export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
 
   return (id as string) || '';
+};
+
+export const useCheckKbEmbedding = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { mutateAsync, isPending } = useMutation({
+    mutationKey: [KnowledgeApiAction.CheckKbEmbedding],
+    mutationFn: async (embedId: string) => {
+      const { data } = await checkEmbedding(knowledgeBaseId || '', {
+        embd_id: embedId,
+      });
+      return data;
+    },
+  });
+
+  return { checkKbEmbedding: mutateAsync, checking: isPending };
 };
 
 export const useTestRetrieval = () => {

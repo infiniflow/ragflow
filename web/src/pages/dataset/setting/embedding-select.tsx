@@ -1,10 +1,10 @@
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
 import { Spin } from '@/components/ui/spin';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useCheckKbEmbedding } from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 import { FieldValues, useFormContext } from 'react-hook-form';
-import { useCheckKbEmbedding } from './hooks';
 
 export const EmbeddingSelect = ({
   isEdit,
