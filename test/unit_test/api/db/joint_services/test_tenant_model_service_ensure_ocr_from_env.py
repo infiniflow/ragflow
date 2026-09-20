@@ -50,7 +50,6 @@ for mod in [
     "rag.utils.redis_conn",
     "rag.utils.s3_conn",
     "rag.utils.oss_conn",
-    "chardet",
     "rag.nlp",
     "rag.nlp.search",
     "memory",
