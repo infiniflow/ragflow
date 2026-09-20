@@ -20,14 +20,14 @@ export function fillParserConfigDefaults(
 ): IParserConfig {
   return Object.entries(defaultParserValues).reduce<Record<string, any>>(
     (pre, [key, value]) => {
-      const stored = parserConfig?.[key as keyof IParserConfig]
+      const stored = parserConfig?.[key as keyof IParserConfig];
       if (stored !== null && stored !== undefined) {
-        pre[key] = stored
+        pre[key] = stored;
       } else {
-        pre[key] = value
+        pre[key] = value;
       }
-      return pre
+      return pre;
     },
     {},
-  ) as IParserConfig
+  ) as IParserConfig;
 }
