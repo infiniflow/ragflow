@@ -274,10 +274,19 @@ func publishSandboxArtifact(ctx context.Context, art map[string]any) map[string]
 	}
 	mime, _ := art["mime_type"].(string)
 	if url, _ := art["url"].(string); url != "" {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(url)), "data:") {
+			fmt.Fprintf(os.Stderr, "code_exec: artifact %q carries an inline data: url; dropping\n", name)
+			return nil
+		}
 		return map[string]any{"name": name, "url": url, "mime_type": mime, "size": art["size"]}
 	}
 	contentB64, _ := art["content_b64"].(string)
 	if contentB64 == "" {
+		return nil
+	}
+	storageExt := sandboxArtifactStorageExt(name, mime)
+	if storageExt == "" {
+		fmt.Fprintf(os.Stderr, "code_exec: artifact %q (mime %q) has no servable file type; dropping\n", name, mime)
 		return nil
 	}
 	blob, err := base64.StdEncoding.DecodeString(contentB64)
@@ -290,7 +299,7 @@ func publishSandboxArtifact(ctx context.Context, art map[string]any) map[string]
 		fmt.Fprintf(os.Stderr, "code_exec: storage not initialized; dropping artifact %q\n", name)
 		return nil
 	}
-	storageName := uuid.NewString() + strings.ToLower(filepath.Ext(name))
+	storageName := uuid.NewString() + storageExt
 	if err := impl.Put(ctx, common.SandboxArtifactBucket(), storageName, blob); err != nil {
 		fmt.Fprintf(os.Stderr, "code_exec: upload artifact %q: %v; dropping\n", name, err)
 		return nil
@@ -301,6 +310,24 @@ func publishSandboxArtifact(ctx context.Context, art map[string]any) map[string]
 		"mime_type": mime,
 		"size":      art["size"],
 	}
+}
+
+// sandboxArtifactStorageExt picks the extension the artifact route
+// serves: the descriptor's own extension when it is servable, else one
+// derived from the MIME type.
+func sandboxArtifactStorageExt(name, mime string) string {
+	if ext := strings.ToLower(filepath.Ext(name)); ext != "" {
+		if _, ok := common.SandboxArtifactContentTypes[ext]; ok {
+			return ext
+		}
+	}
+	m := strings.ToLower(strings.TrimSpace(mime))
+	for ext, contentType := range common.SandboxArtifactContentTypes {
+		if contentType == m {
+			return ext
+		}
+	}
+	return ""
 }
 
 // extractArtifactList pulls a list of dict-shaped entries out of

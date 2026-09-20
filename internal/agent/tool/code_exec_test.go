@@ -311,6 +311,105 @@ func TestCodeExec_UploadsArtifactBlobs(t *testing.T) {
 	}
 }
 
+// TestCodeExec_DropsDataURLArtifacts pins that inline data: urls are
+// dropped instead of passed through as hosted references — a data: url
+// would put its base64 payload back into the model-visible envelope
+// and the rendered chat message.
+func TestCodeExec_DropsDataURLArtifacts(t *testing.T) {
+	t.Parallel()
+
+	resp := &SandboxResponse{
+		Returned: "ok",
+		Metadata: map[string]any{
+			"artifacts": []any{
+				map[string]any{
+					"name":      "inline.png",
+					"url":       "data:image/png;base64,iVBORw0KGgo=",
+					"mime_type": "image/png",
+				},
+				map[string]any{"name": "hosted.png", "url": "minio://b/hosted.png"},
+			},
+		},
+	}
+	out, err := codeExecResultJSON(t.Context(), resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	if strings.Contains(out, "data:") || strings.Contains(out, "iVBORw0KGgo") {
+		t.Fatalf("envelope leaks inline artifact data: %s", out)
+	}
+	var got codeExecResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	}
+	if len(got.Artifacts) != 1 || got.Artifacts[0]["name"] != "hosted.png" {
+		t.Fatalf("Artifacts = %#v, want only the hosted entry", got.Artifacts)
+	}
+}
+
+// TestCodeExec_UploadsArtifactWithDerivedExtension pins that every
+// published URL carries an extension the artifact route serves: names
+// without a servable extension fall back to one derived from the
+// MIME type, and descriptors with neither are dropped.
+func TestCodeExec_UploadsArtifactWithDerivedExtension(t *testing.T) {
+	factory := storage.GetStorageFactory()
+	prev := factory.GetStorage()
+	mem := storage.NewMemoryStorage()
+	factory.SetStorage(mem)
+	t.Cleanup(func() { factory.SetStorage(prev) })
+
+	pdf := []byte("%PDF-fake")
+	encoded := base64.StdEncoding.EncodeToString(pdf)
+	resp := &SandboxResponse{
+		Returned: "ok",
+		Metadata: map[string]any{
+			"artifacts": []any{
+				map[string]any{
+					"name":        "report",
+					"content_b64": encoded,
+					"mime_type":   "application/pdf",
+					"size":        float64(len(pdf)),
+				},
+				map[string]any{
+					"name":        "dump.bin",
+					"content_b64": encoded,
+					"mime_type":   "text/csv",
+				},
+				map[string]any{
+					"name":        "mystery.blob",
+					"content_b64": encoded,
+				},
+			},
+		},
+	}
+	out, err := codeExecResultJSON(t.Context(), resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	var got codeExecResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	}
+	if len(got.Artifacts) != 2 {
+		t.Fatalf("Artifacts len = %d, want 2 (unservable descriptor dropped)", len(got.Artifacts))
+	}
+	url0, _ := got.Artifacts[0]["url"].(string)
+	if !strings.HasPrefix(url0, "/api/v1/documents/artifact/") || !strings.HasSuffix(url0, ".pdf") {
+		t.Errorf("Artifacts[0][url] = %q, want hosted URL ending in .pdf", url0)
+	}
+	url1, _ := got.Artifacts[1]["url"].(string)
+	if !strings.HasSuffix(url1, ".csv") {
+		t.Errorf("Artifacts[1][url] = %q, want extension derived from text/csv", url1)
+	}
+	for _, u := range []string{url0, url1} {
+		objName := strings.TrimPrefix(u, "/api/v1/documents/artifact/")
+		data, gerr := mem.Get(t.Context(), common.SandboxArtifactBucket(), objName)
+		if gerr != nil || !bytes.Equal(data, pdf) {
+			t.Errorf("stored object %q = (%v, %v), want uploaded blob", objName, data, gerr)
+		}
+	}
+}
+
 // TestCodeExec_ResultExtractsAttachments pins the attachments
 // (rendered to downstream Message Markdown) path. Distinct from
 // artifacts so renderers can route them differently.

@@ -44,7 +44,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 	}
 
 	ext := strings.ToLower(filepath.Ext(basename))
-	contentType, ok := artifactContentTypes[ext]
+	contentType, ok := common.SandboxArtifactContentTypes[ext]
 	if !ok {
 		return nil, ErrArtifactInvalidFileType
 	}
