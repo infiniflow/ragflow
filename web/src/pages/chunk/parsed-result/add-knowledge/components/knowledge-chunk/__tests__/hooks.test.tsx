@@ -90,4 +90,29 @@ describe('useHandleChunkCardClick', () => {
 
     expect(result.current.selectedChunkId).toBe('c-3');
   });
+
+  it('follows a new target handed over without a remount', () => {
+    const { result, rerender } = renderHook(
+      ({ target }: { target: string }) => useHandleChunkCardClick(target),
+      { initialProps: { target: 'c-9' } },
+    );
+
+    act(() => {
+      result.current.handleChunkCardClick('c-3');
+    });
+    rerender({ target: 'c-7' });
+
+    expect(result.current.selectedChunkId).toBe('c-7');
+  });
+
+  it('keeps the selection when the target goes away', () => {
+    const { result, rerender } = renderHook(
+      ({ target }: { target: string }) => useHandleChunkCardClick(target),
+      { initialProps: { target: 'c-9' } },
+    );
+
+    rerender({ target: '' });
+
+    expect(result.current.selectedChunkId).toBe('c-9');
+  });
 });

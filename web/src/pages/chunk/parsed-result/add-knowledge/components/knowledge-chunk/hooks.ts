@@ -8,7 +8,7 @@ import {
 } from '@/hooks/use-chunk-request';
 import { IChunk } from '@/interfaces/database/dataset';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useSearchParams } from 'react-router';
 import { ChunkTextMode } from './constant';
@@ -31,9 +31,17 @@ export const useTargetChunkFromQuery = () => {
   return { targetChunkId, clearTargetChunkId };
 };
 
-export const useHandleChunkCardClick = (initialChunkId = '') => {
-  const [selectedChunkId, setSelectedChunkId] =
-    useState<string>(initialChunkId);
+export const useHandleChunkCardClick = (targetChunkId = '') => {
+  const [selectedChunkId, setSelectedChunkId] = useState<string>(targetChunkId);
+
+  // Moving between hits only changes the query string, so the page stays
+  // mounted and a new target has to take over the selection. An absent target
+  // leaves the selection alone, exactly as showing all chunks does.
+  useEffect(() => {
+    if (targetChunkId) {
+      setSelectedChunkId(targetChunkId);
+    }
+  }, [targetChunkId]);
 
   const handleChunkCardClick = useCallback((chunkId: string) => {
     setSelectedChunkId(chunkId);
