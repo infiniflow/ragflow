@@ -170,7 +170,14 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 	for i := 0; i < commandCount; i++ {
 		respBody, respHeader, statusCode, err = c.HttpDo(req)
 		if err == nil {
-			successCount++
+			var result struct {
+				Code int `json:"code"`
+			}
+			if err = json.Unmarshal(respBody, &result); err == nil && result.Code != 0 {
+				failCount++
+			} else {
+				successCount++
+			}
 		} else {
 			failCount++
 		}
@@ -248,7 +255,7 @@ func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Re
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(respBody, &result); err == nil && result.Code != 0 {
+	if err = json.Unmarshal(respBody, &result); err == nil && result.Code != 0 {
 		return fmt.Errorf("upload failed: %s", result.Message)
 	}
 
