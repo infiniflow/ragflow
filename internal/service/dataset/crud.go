@@ -485,14 +485,24 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		for _, accessibleID := range accessibleIDs {
 			accessible[accessibleID] = struct{}{}
 		}
+		filteredIDs := make([]string, 0, len(ids))
 		deniedIDs := make([]string, 0, len(ids))
 		for _, datasetID := range ids {
-			if _, ok := accessible[datasetID]; !ok {
+			if _, ok := accessible[datasetID]; ok {
+				filteredIDs = append(filteredIDs, datasetID)
+			} else {
 				deniedIDs = append(deniedIDs, datasetID)
 			}
 		}
 		if len(deniedIDs) > 0 {
-			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for datasets: '%s'", userID, strings.Join(deniedIDs, ", "))
+			common.Warn("User lacks permission for datasets",
+				zap.String("user_id", userID),
+				zap.Strings("dataset_ids", deniedIDs),
+			)
+		}
+		ids = filteredIDs
+		if len(ids) == 0 {
+			return []map[string]interface{}{}, 0, common.CodeSuccess, nil
 		}
 	}
 
