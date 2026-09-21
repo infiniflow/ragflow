@@ -156,24 +156,24 @@ export const useFetchAllAddedModels = (
 };
 
 /**
- * Model IDs for existence checks, filtered by type when specified.
- * Check `isFetched` and `isError` before trusting `validIds`.
+ * The set of ids under which added models of the given types can be
+ * referenced (both the model_id form and the legacy composite form), for
+ * validating that a persisted form value still points at an existing model.
+ * `isFetched` must be checked before trusting `validIds` — while the model
+ * list is loading it is empty and every value would look missing.
  */
 export const useModelValidIds = (
-  modelTypes?: string[],
+  modelTypes: string[],
   ownerTenantId?: string,
 ) => {
-  const { data, isFetched, isError } = useFetchAllAddedModels(
-    undefined,
-    ownerTenantId,
-  );
+  const { data, isFetched } = useFetchAllAddedModels(undefined, ownerTenantId);
 
   const validIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
 
-  return { validIds, isFetched, isError };
+  return { validIds, isFetched };
 };
 
 export function useFindLlmByUuid() {

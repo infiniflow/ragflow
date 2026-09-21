@@ -5,7 +5,7 @@ import {
   useSetAgent,
 } from '@/hooks/use-agent-request';
 import { useFetchAllCompilationTemplateGroups } from '@/hooks/use-compilation-template-group-request';
-import { useModelValidIds } from '@/hooks/use-llm-request';
+import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import {
   GlobalVariableType,
   RAGFlowNodeType,
@@ -14,6 +14,7 @@ import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
 import { t } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Operator } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form';
@@ -60,6 +61,36 @@ function findInvalidNode(
   return undefined;
 }
 
+export const useValidateNodeForms = () => {
+  const { t } = useTranslation();
+  const nodes = useGraphStore((state) => state.nodes);
+  const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
+
+  const getInvalidNode = useCallback(
+    (currentNodes?: RAGFlowNodeType[]) =>
+      findInvalidNode(currentNodes ?? nodes, editedNodeFormIds),
+    [editedNodeFormIds, nodes],
+  );
+
+  // Only the entry points the user drives explicitly should warn; autosave and
+  // publish stay silent and just skip the write.
+  const notifyIfInvalid = useCallback(
+    (currentNodes?: RAGFlowNodeType[]) => {
+      const invalid = getInvalidNode(currentNodes);
+      if (invalid) {
+        message.warning(
+          t(invalid.messageKey, { name: invalid.node.data?.name }),
+        );
+        return false;
+      }
+      return true;
+    },
+    [getInvalidNode, t],
+  );
+
+  return { getInvalidNode, notifyIfInvalid };
+};
+
 export const useSaveGraph = (
   showMessage: boolean = true,
   skipInvalidation: boolean = false,
@@ -68,18 +99,19 @@ export const useSaveGraph = (
   const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
+  const { getInvalidNode } = useValidateNodeForms();
   const nodes = useGraphStore((state) => state.nodes);
   const {
-    validIds: modelIds,
+    data: models,
     isFetched: modelsFetched,
     isError: modelsError,
-  } = useModelValidIds(undefined, data.user_id);
+  } = useFetchAllAddedModels(undefined, data.user_id);
   const {
     groups,
     isFetched: operatorGroupsFetched,
     isError: operatorGroupsError,
   } = useFetchAllCompilationTemplateGroups(
-    nodes.some((node) => node.data?.label === Operator.Compiler),
+    showMessage && nodes.some((node) => node.data?.label === Operator.Compiler),
   );
 
   const saveGraph = useCallback(
@@ -94,17 +126,17 @@ export const useSaveGraph = (
         return;
       }
 
-      const { nodes, editedNodeFormIds } = useGraphStore.getState();
-      const nextNodes = currentNodes ?? nodes;
-      const invalid =
-        findInvalidNode(nextNodes, editedNodeFormIds) ??
-        findUnavailableCanvasResource(
-          nextNodes,
-          modelsFetched && !modelsError ? modelIds : undefined,
+      if (getInvalidNode(currentNodes)) {
+        return;
+      }
+
+      if (showMessage && !release && otherParam === undefined) {
+        const invalid = findUnavailableCanvasResource(
+          currentNodes ?? useGraphStore.getState().nodes,
+          modelsFetched && !modelsError ? models : undefined,
           operatorGroupsFetched && !operatorGroupsError ? groups : undefined,
         );
-      if (invalid) {
-        if (showMessage && !release) {
+        if (invalid) {
           const name = invalid.node.data?.name;
           const warning = t(invalid.messageKey, { name });
           message.warning(
@@ -112,8 +144,8 @@ export const useSaveGraph = (
               ? `${name}: ${warning}`
               : warning,
           );
+          return;
         }
-        return;
       }
 
       // Warn about Message components with empty content at save time; the
@@ -122,7 +154,9 @@ export const useSaveGraph = (
       // itself proceeds. Autosave/publish (showMessage=false) stay silent to
       // avoid nagging toasts.
       if (showMessage) {
-        const emptyMessageNodeNames = getEmptyMessageNodeNames(nextNodes);
+        const emptyMessageNodeNames = getEmptyMessageNodeNames(
+          currentNodes ?? useGraphStore.getState().nodes,
+        );
         if (emptyMessageNodeNames.length > 0) {
           message.warning(
             `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
@@ -133,7 +167,7 @@ export const useSaveGraph = (
       const params: Record<string, any> = {
         id,
         title: data.title,
-        dsl: buildDslData(nextNodes, otherParam),
+        dsl: buildDslData(currentNodes, otherParam),
       };
 
       if (release) {
@@ -144,7 +178,8 @@ export const useSaveGraph = (
     },
     [
       id,
-      modelIds,
+      getInvalidNode,
+      models,
       modelsFetched,
       modelsError,
       groups,
@@ -163,9 +198,14 @@ export const useSaveGraph = (
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
+  const { notifyIfInvalid } = useValidateNodeForms();
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
+      if (!notifyIfInvalid(nextNodes)) {
+        return;
+      }
+
       const saveRet = await saveGraph(nextNodes);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
@@ -176,7 +216,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     },
-    [saveGraph, resetAgent, show],
+    [notifyIfInvalid, saveGraph, resetAgent, show],
   );
 
   return { handleRun, loading };

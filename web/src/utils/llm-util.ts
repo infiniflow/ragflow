@@ -68,13 +68,11 @@ export function buildModelValue(model: {
  */
 export function buildValidModelIds(
   allModels: IAddedModel[],
-  modelTypes?: string[],
+  modelTypes: string[],
 ): Set<string> {
   const ids = new Set<string>();
   for (const m of allModels) {
-    if (modelTypes && !m.model_type?.some((t) => modelTypes.includes(t))) {
-      continue;
-    }
+    if (!m.model_type?.some((t) => modelTypes.includes(t))) continue;
     const legacyId = buildModelValue({
       model_name: getRealModelName(m.name),
       model_instance: m.instance_name,
