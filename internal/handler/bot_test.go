@@ -523,6 +523,23 @@ func TestAgentbotCompletion_ResumesSession(t *testing.T) {
 	}
 }
 
+func TestAgentbotCompletion_BindsReleaseQuery(t *testing.T) {
+	var capturedReq service.AgentbotCompletionRequest
+	stub := &stubBotService{
+		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+			capturedReq = req
+			ch := make(chan canvas.RunEvent)
+			close(ch)
+			return ch, common.CodeSuccess, nil
+		},
+	}
+	r := botTestEngine(stub)
+	_ = doJSON(r, http.MethodPost, "/api/v1/agentbots/a1/completions?release=true", `{"question":"hi"}`)
+	if capturedReq.Release == nil || !*capturedReq.Release {
+		t.Fatalf("release = %v, want true", capturedReq.Release)
+	}
+}
+
 func TestAgentbotCompletion_BindsFileDescriptors(t *testing.T) {
 	var capturedReq service.AgentbotCompletionRequest
 	stub := &stubBotService{
