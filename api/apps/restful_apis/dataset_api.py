@@ -665,7 +665,7 @@ async def get_wiki_graph(tenant_id, dataset_id):
             try:
                 top_n = int(top_n_arg)
             except (TypeError, ValueError):
-                top_n = None
+                return get_error_data_result(message="top_n must be an integer")
         success, result = await dataset_api_service.get_wiki_graph(
             dataset_id,
             tenant_id,
