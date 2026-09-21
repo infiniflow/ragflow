@@ -324,51 +324,225 @@ const (
 	// running header / footer lives (fractions of the page height).
 	headerZoneRatio = 0.10
 	footerZoneRatio = 0.90
-	// minHeaderFooterPages guards against false positives on short documents.
+	// headerMaxZoneRatio / footerMinZoneRatio define the expanded margin zones
+	// when a clear whitespace gap separates the candidate from body content.
+	headerMaxZoneRatio = 0.14
+	footerMinZoneRatio = 0.86
+	// minWhitespaceGapPt is the minimum vertical whitespace gap required to
+	// justify expanding the header/footer zone beyond the base 10% ratio.
+	minWhitespaceGapPt = 18.0
+	// minHeaderFooterPages guards against cross-page false positives on short
+	// documents. Deterministic page-number patterns still fire on shorter ones.
 	minHeaderFooterPages = 3
 )
 
+var (
+	// strictDecoratedPagePattern matches page numbers with clear formatting:
+	// - Dash/dot/tilde-wrapped: - 1 -, — 1 —, – 1 –, · 1 ·, • 1 •, ~ 1 ~
+	// - Bracket/paren-wrapped: [1], (1)
+	// - "Page X", "Page X of Y", "p. X", "X / Y", "X of Y"
+	// - Chinese: 第 1 页, 第 1 页 共 10 页, 第 1 页/共 10 页, 第一页, 第一页 共十页
+	// - Roman with dashes: - iv -, — iv —, · iv ·
+	strictDecoratedPagePattern = regexp.MustCompile(`(?i)^(\s*[-—–~·•]+\s*[0-9０-９]+\s*[-—–~·•]+|\s*\[\s*[0-9０-９]+\s*\]|\s*\(\s*[0-9０-９]+\s*\)|page\s+[0-9０-９]+(\s*(of|/)\s*[0-9０-９]+)?|p\.\s*[0-9０-９]+|[0-9０-９]+\s*/\s*[0-9０-９]+|[0-9０-９]+\s+of\s+[0-9０-９]+|第\s*[0-9０-９一二三四五六七八九十百]+\s*页(\s*[/,，共]\s*[0-9０-９一二三四五六七八九十百]+\s*页?)?|\s*[-—–~·•]+\s*((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v)\s*[-—–~·•]+)$`)
+
+	// strictBareNumberPattern matches lone Arabic digits or Roman numerals: 1, 23, iv, VII.
+	strictBareNumberPattern = regexp.MustCompile(`(?i)^([0-9０-９]{1,4}|((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v))$`)
+)
+
+// computePageGaps computes for each box index on a page:
+// - gapBelow: distance from b.Bottom to the nearest other box on the page with Top >= b.Bottom - 2.0.
+// - gapAbove: distance from b.Top to the nearest other box on the page with Bottom <= b.Top + 2.0.
+func computePageGaps(boxes []pdf.TextBox, indices []int, pageHeight float64) (map[int]float64, map[int]float64) {
+	gapBelow := make(map[int]float64, len(indices))
+	gapAbove := make(map[int]float64, len(indices))
+
+	for _, i := range indices {
+		bi := boxes[i]
+		minDistBelow := pageHeight - bi.Bottom
+		if minDistBelow < 0 {
+			minDistBelow = 0
+		}
+		maxDistAbove := bi.Top
+		if maxDistAbove < 0 {
+			maxDistAbove = 0
+		}
+
+		for _, j := range indices {
+			if i == j {
+				continue
+			}
+			bj := boxes[j]
+			if bj.Top >= bi.Bottom-2.0 {
+				dist := bj.Top - bi.Bottom
+				if dist < 0 {
+					dist = 0
+				}
+				if dist < minDistBelow {
+					minDistBelow = dist
+				}
+			}
+			if bj.Bottom <= bi.Top+2.0 {
+				dist := bi.Top - bj.Bottom
+				if dist < 0 {
+					dist = 0
+				}
+				if dist < maxDistAbove {
+					maxDistAbove = dist
+				}
+			}
+		}
+		gapBelow[i] = minDistBelow
+		gapAbove[i] = maxDistAbove
+	}
+	return gapBelow, gapAbove
+}
+
+// classifyZone determines whether a box sits in a header or footer zone.
+func classifyZone(b pdf.TextBox, pageHeight float64, gapAbove, gapBelow float64) string {
+	if b.Bottom <= pageHeight*headerZoneRatio {
+		return "header"
+	}
+	if b.Bottom <= pageHeight*headerMaxZoneRatio && gapBelow >= minWhitespaceGapPt {
+		return "header"
+	}
+	if b.Top >= pageHeight*footerZoneRatio {
+		return "footer"
+	}
+	if b.Top >= pageHeight*footerMinZoneRatio && gapAbove >= minWhitespaceGapPt {
+		return "footer"
+	}
+	return ""
+}
+
+// isNonTextLayout reports whether a layout type represents non-text elements
+// like tables or figures that must not be treated as running headers/footers.
+func isNonTextLayout(lt string) bool {
+	lt = strings.TrimSpace(lt)
+	return lt == "table" || lt == "figure" || lt == "equation" || lt == "image"
+}
+
+// isDeterministicPageNumber reports whether text is unambiguously a page number.
+func isDeterministicPageNumber(text string, zone string, gapBelow float64) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return false
+	}
+	if strictDecoratedPagePattern.MatchString(t) {
+		return true
+	}
+	if strictBareNumberPattern.MatchString(t) {
+		if zone == "footer" {
+			return true
+		}
+		if zone == "header" && gapBelow >= minWhitespaceGapPt {
+			return true
+		}
+	}
+	return false
+}
+
+type boxMeta struct {
+	idx  int
+	page int
+	top  float64
+}
+
+type zoneKey struct {
+	zone string
+	text string
+}
+
 // RemoveHeaderFooterBoxes drops boxes that are running headers or footers.
 //
-// A box is a candidate when it sits entirely in the top headerZoneRatio or
-// bottom footerZoneRatio of its page and carries text-like content. Among
-// candidates, a (zone, normalized-text) pair that recurs on at least half of
-// the document's pages — rounded up, so an odd page count raises the bar rather
-// than lowering it — is treated as a running header / footer and removed.
-//
-// Like RemoveTOCBoxes this works on intact box geometry and must run before
-// TextMerge (which can fold a header box into the first body section).
+// It uses a 3D Cascaded Fusion scheme:
+//  1. Tier 1: Deterministic Pattern & Semantic Tagging. Explicit DLA header/footer
+//     tags in margin zones and unambiguously formatted page numbers are removed
+//     immediately (even on 1- or 2-page documents).
+//  2. Tier 2: Dual-Track Recurrence Engine. Evaluates recurrence across:
+//     - Global half-pages threshold ((numPages + 1) / 2).
+//     - Parity partition (even/odd) to eliminate bilateral alternating headers.
+//     - Locality track (consecutive pages with stable Y) to remove chapter-varying headers.
+//  3. Tier 3: Adaptive Whitespace Gap. Automatically extends the candidate zone
+//     from 10% to up to 14% when separated from body content by >= 18pt of blank space.
 func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.TextBox {
-	if len(pageHeights) < minHeaderFooterPages || len(boxes) == 0 {
+	if len(pageHeights) == 0 || len(boxes) == 0 {
 		return boxes
 	}
 
-	type zoneKey struct {
-		zone string
-		text string
+	perPage := make(map[int][]int, len(pageHeights))
+	for i := range boxes {
+		perPage[boxes[i].PageNumber] = append(perPage[boxes[i].PageNumber], i)
 	}
-	keyPages := make(map[zoneKey]map[int]struct{})
-	keyIdx := make(map[zoneKey][]int)
 
+	allGapBelow := make(map[int]float64, len(boxes))
+	allGapAbove := make(map[int]float64, len(boxes))
+	for p, idxs := range perPage {
+		h, ok := pageHeights[p]
+		if !ok || h <= 0 {
+			continue
+		}
+		gb, ga := computePageGaps(boxes, idxs, h)
+		for idx, g := range gb {
+			allGapBelow[idx] = g
+		}
+		for idx, g := range ga {
+			allGapAbove[idx] = g
+		}
+	}
+
+	drop := make(map[int]struct{}, len(boxes))
+
+	// Tier 1: Deterministic page numbers & DLA semantic tags.
 	for i := range boxes {
 		b := boxes[i]
-		// Only plain-text boxes participate; tables / figures in the margin are
-		// not running headers/footers.
-		if lt := strings.TrimSpace(b.LayoutType); lt != "" && lt != "text" {
+		if isNonTextLayout(b.LayoutType) {
 			continue
 		}
 		h, ok := pageHeights[b.PageNumber]
 		if !ok || h <= 0 {
 			continue
 		}
-		top, bottom := b.Top, b.Bottom
-		var zone string
-		switch {
-		case bottom <= h*headerZoneRatio:
-			zone = "header"
-		case top >= h*footerZoneRatio:
-			zone = "footer"
-		default:
+		zone := classifyZone(b, h, allGapAbove[i], allGapBelow[i])
+		if zone == "" {
+			continue
+		}
+
+		lt := strings.TrimSpace(b.LayoutType)
+		if (zone == "header" && lt == "header") || (zone == "footer" && lt == "footer") {
+			drop[i] = struct{}{}
+			continue
+		}
+
+		if isDeterministicPageNumber(b.Text, zone, allGapBelow[i]) {
+			drop[i] = struct{}{}
+			continue
+		}
+	}
+
+	numPages := len(pageHeights)
+	if numPages < minHeaderFooterPages {
+		if len(drop) == 0 {
+			return boxes
+		}
+		return applyDrop(boxes, drop)
+	}
+
+	// Tier 2: Dual-Track Recurrence Engine.
+	keyMetas := make(map[zoneKey][]boxMeta)
+	for i := range boxes {
+		if _, ok := drop[i]; ok {
+			continue
+		}
+		b := boxes[i]
+		if isNonTextLayout(b.LayoutType) {
+			continue
+		}
+		h, ok := pageHeights[b.PageNumber]
+		if !ok || h <= 0 {
+			continue
+		}
+		zone := classifyZone(b, h, allGapAbove[i], allGapBelow[i])
+		if zone == "" {
 			continue
 		}
 		norm := normalizeRunningText(b.Text)
@@ -376,35 +550,132 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 			continue
 		}
 		key := zoneKey{zone: zone, text: norm}
-		if keyPages[key] == nil {
-			keyPages[key] = make(map[int]struct{})
-		}
-		keyPages[key][b.PageNumber] = struct{}{}
-		keyIdx[key] = append(keyIdx[key], i)
+		keyMetas[key] = append(keyMetas[key], boxMeta{idx: i, page: b.PageNumber, top: b.Top})
 	}
 
-	numPages := len(pageHeights)
-	// Half the pages, rounded up: rounding an odd page count down would let two
-	// pages of a five-page document pass as "half", which is the one direction
-	// this guard must not drift in.
-	minPages := (numPages + 1) / 2
-	if minPages < 2 {
-		minPages = 2
+	evenTotal, oddTotal := 0, 0
+	for p := range pageHeights {
+		if p%2 == 0 {
+			evenTotal++
+		} else {
+			oddTotal++
+		}
 	}
 
-	drop := make(map[int]struct{})
-	for key, pages := range keyPages {
-		if len(pages) < minPages {
-			continue
+	minGlobalPages := (numPages + 1) / 2
+	if minGlobalPages < 2 {
+		minGlobalPages = 2
+	}
+
+	for key, metas := range keyMetas {
+		pageSet := make(map[int]bool, len(metas))
+		evenPages, oddPages := 0, 0
+		for _, m := range metas {
+			if !pageSet[m.page] {
+				pageSet[m.page] = true
+				if m.page%2 == 0 {
+					evenPages++
+				} else {
+					oddPages++
+				}
+			}
 		}
-		for _, i := range keyIdx[key] {
-			drop[i] = struct{}{}
+
+		distinctPages := len(pageSet)
+		isHeaderFooter := false
+
+		// 1. Global coverage: at least half the pages (rounded up).
+		if distinctPages >= minGlobalPages {
+			isHeaderFooter = true
+		}
+
+		// 2. Parity partition: at least 40% of even or odd pages, with at least 3 pages.
+		if !isHeaderFooter {
+			if evenTotal >= 3 && evenPages >= 3 && float64(evenPages)/float64(evenTotal) >= 0.40 {
+				isHeaderFooter = true
+			} else if oddTotal >= 3 && oddPages >= 3 && float64(oddPages)/float64(oddTotal) >= 0.40 {
+				isHeaderFooter = true
+			}
+		}
+
+		// 3. Locality track: stable consecutive runs of at least 3 pages with stable Y.
+		if !isHeaderFooter && len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 {
+			if hasStableConsecutiveRun(metas, 3, 4.0) {
+				isHeaderFooter = true
+			}
+		}
+
+		if isHeaderFooter {
+			for _, m := range metas {
+				drop[m.idx] = struct{}{}
+			}
 		}
 	}
+
 	if len(drop) == 0 {
 		return boxes
 	}
+	return applyDrop(boxes, drop)
+}
 
+// hasStableConsecutiveRun reports whether metas contains a run of at least minRun
+// consecutive pages whose top coordinates vary by at most maxDy.
+func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
+	if len(metas) < minRun {
+		return false
+	}
+	sort.Slice(metas, func(i, j int) bool {
+		if metas[i].page != metas[j].page {
+			return metas[i].page < metas[j].page
+		}
+		return metas[i].top < metas[j].top
+	})
+
+	type pageOccurrence struct {
+		page int
+		top  float64
+	}
+	var distinct []pageOccurrence
+	for _, m := range metas {
+		if len(distinct) == 0 || distinct[len(distinct)-1].page != m.page {
+			distinct = append(distinct, pageOccurrence{page: m.page, top: m.top})
+		}
+	}
+
+	if len(distinct) < minRun {
+		return false
+	}
+
+	run := 1
+	minTop := distinct[0].top
+	maxTop := distinct[0].top
+
+	for i := 1; i < len(distinct); i++ {
+		if distinct[i].page == distinct[i-1].page+1 {
+			run++
+			if distinct[i].top < minTop {
+				minTop = distinct[i].top
+			}
+			if distinct[i].top > maxTop {
+				maxTop = distinct[i].top
+			}
+			if run >= minRun && (maxTop-minTop) <= maxDy {
+				return true
+			}
+		} else {
+			run = 1
+			minTop = distinct[i].top
+			maxTop = distinct[i].top
+		}
+	}
+	return false
+}
+
+// applyDrop filters out the dropped boxes and returns the survivors.
+func applyDrop(boxes []pdf.TextBox, drop map[int]struct{}) []pdf.TextBox {
+	if len(drop) == 0 {
+		return boxes
+	}
 	out := make([]pdf.TextBox, 0, len(boxes)-len(drop))
 	for i := range boxes {
 		if _, ok := drop[i]; ok {
@@ -424,6 +695,9 @@ func normalizeRunningText(text string) string {
 	out := make([]rune, 0, len(t))
 	inDigit := false
 	for _, r := range t {
+		if r == '—' || r == '–' || r == '－' {
+			r = '-'
+		}
 		if isMaskableDigit(r) {
 			inDigit = true
 			continue

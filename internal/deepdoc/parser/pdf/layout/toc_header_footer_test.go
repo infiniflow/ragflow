@@ -757,3 +757,224 @@ func TestRemoveHeaderFooterBoxes_DropsPageNumberFooter(t *testing.T) {
 		t.Fatalf("expected only the 3 body boxes, got %d", len(got))
 	}
 }
+
+// TestRemoveHeaderFooterBoxes_AlternatingEvenOdd verifies bilateral alternating
+// headers where even pages have the book title and odd pages have the chapter title.
+func TestRemoveHeaderFooterBoxes_AlternatingEvenOdd(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 8)
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 8; pg++ {
+		heights[pg] = pageHeight
+		if pg%2 == 0 {
+			boxes = append(boxes, tb("DEEP LEARNING BOOK", pg, 72, 250, 30, 45))
+		} else {
+			boxes = append(boxes, tb("CHAPTER THREE: CONVOLUTION", pg, 250, 500, 30, 45))
+		}
+		boxes = append(boxes, tb("Body text on this page that represents substantial content.", pg, 72, 450, 160, 180))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "DEEP LEARNING") || strings.Contains(b.Text, "CHAPTER THREE") {
+			t.Fatalf("alternating header %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 8 {
+		t.Fatalf("expected 8 body boxes remaining, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ChapterVaryingConsecutiveRun verifies that chapter-varying
+// running headers appearing on consecutive pages with stable Y coordinates are removed.
+func TestRemoveHeaderFooterBoxes_ChapterVaryingConsecutiveRun(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 10)
+	for pg := 0; pg < 10; pg++ {
+		heights[pg] = pageHeight
+	}
+
+	var boxes []pdf.TextBox
+	// Pages 2, 3, 4: Chapter 1 (only 3 of 10 pages, 30% < 50%)
+	for pg := 2; pg <= 4; pg++ {
+		boxes = append(boxes, tb("Chapter 1: Overview", pg, 72, 220, 35.0, 48.0))
+		boxes = append(boxes, tb("Body paragraph for chapter 1.", pg, 72, 450, 160, 180))
+	}
+	// Pages 5, 6, 7: Chapter 2 (only 3 of 10 pages, 30% < 50%)
+	for pg := 5; pg <= 7; pg++ {
+		boxes = append(boxes, tb("Chapter 2: Methods", pg, 72, 220, 35.1, 48.1))
+		boxes = append(boxes, tb("Body paragraph for chapter 2.", pg, 72, 450, 160, 180))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "Chapter 1:") || strings.Contains(b.Text, "Chapter 2:") {
+			t.Fatalf("chapter header %q should have been removed by locality run", b.Text)
+		}
+	}
+	if len(got) != 6 {
+		t.Fatalf("expected 6 body boxes remaining, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_WhitespaceGapExpandedZone verifies that a header sitting
+// beyond the base 10% ratio (at 11.3%) is removed when separated from body text by >= 18pt gap.
+func TestRemoveHeaderFooterBoxes_WhitespaceGapExpandedZone(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight}
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		// Bottom at 95.0 on 842.0 is 11.28% (> 10%)
+		boxes = append(boxes, tb("COMPANY CONFIDENTIAL HEADER", pg, 72, 300, 40, 95))
+		// Body starts at 135.0 (Gap = 135 - 95 = 40pt >= 18pt)
+		boxes = append(boxes, tb("First line of body text sitting comfortably below the gap.", pg, 72, 450, 135, 155))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "COMPANY CONFIDENTIAL") {
+			t.Fatalf("expanded zone header %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_WhitespaceGapProtectsTightBody verifies that text at 11%
+// without a whitespace gap to content below is NOT removed as a header.
+func TestRemoveHeaderFooterBoxes_WhitespaceGapProtectsTightBody(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight}
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		// Top at 75, Bottom at 92 (10.9% > 10%)
+		boxes = append(boxes, tb("Section Heading At Top", pg, 72, 250, 75, 92))
+		// Content right below at Top: 98 (Gap = 98 - 92 = 6pt < 18pt)
+		boxes = append(boxes, tb("Tight paragraph line directly following heading.", pg, 72, 450, 98, 115))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var headings int
+	for _, b := range got {
+		if strings.Contains(b.Text, "Section Heading") {
+			headings++
+		}
+	}
+	if headings != 4 {
+		t.Fatalf("tight heading must be preserved by whitespace gap protection, got %d of 4", headings)
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ShortDocumentPageNumbers verifies that formatted page
+// numbers are removed even on 1- or 2-page documents.
+func TestRemoveHeaderFooterBoxes_ShortDocumentPageNumbers(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Invoice Body Page 1", 0, 72, 400, 160, 180),
+		tb("Page 1 of 2", 0, 250, 350, 810, 825),
+		tb("Invoice Body Page 2", 1, 72, 400, 160, 180),
+		tb("Page 2 of 2", 1, 250, 350, 810, 825),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "of 2") {
+			t.Fatalf("page number %q must be removed on 2-page doc", b.Text)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected only the 2 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_DLASemanticTagDirectDrop verifies that boxes explicitly
+// tagged as LayoutType header/footer in margin zones are dropped immediately.
+func TestRemoveHeaderFooterBoxes_DLASemanticTagDirectDrop(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		{Text: "Header Tagged By DLA", PageNumber: 0, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "header"},
+		tb("Body text here.", 0, 72, 400, 160, 180),
+		{Text: "Footer Tagged By DLA", PageNumber: 0, X0: 72, X1: 300, Top: 820, Bottom: 835, LayoutType: "footer"},
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != 1 || got[0].Text != "Body text here." {
+		t.Fatalf("DLA tagged header and footer must be dropped, got %v", got)
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_LayoutTypeTitleAllowed verifies that a running header
+// misclassified by DLA as LayoutTypeTitle is still processed and removed.
+func TestRemoveHeaderFooterBoxes_LayoutTypeTitleAllowed(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		{Text: "PROCEEDINGS OF ACM", PageNumber: 0, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "title"},
+		tb("Body on page 0.", 0, 72, 400, 160, 180),
+		{Text: "PROCEEDINGS OF ACM", PageNumber: 1, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "title"},
+		tb("Body on page 1.", 1, 72, 400, 160, 180),
+		{Text: "PROCEEDINGS OF ACM", PageNumber: 2, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "title"},
+		tb("Body on page 2.", 2, 72, 400, 160, 180),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "PROCEEDINGS") {
+			t.Fatalf("header %q with LayoutType 'title' should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_RomanNumerals verifies roman numeral page numbers.
+func TestRemoveHeaderFooterBoxes_RomanNumerals(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Preface body zero.", 0, 72, 400, 160, 180),
+		tb("- iv -", 0, 280, 320, 820, 835),
+		tb("Preface body one.", 1, 72, 400, 160, 180),
+		tb("- v -", 1, 280, 320, 820, 835),
+		tb("Preface body two.", 2, 72, 400, 160, 180),
+		tb("- vi -", 2, 280, 320, 820, 835),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "- ") {
+			t.Fatalf("roman numeral footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected only 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ChineseNumerals verifies Chinese page numbers.
+func TestRemoveHeaderFooterBoxes_ChineseNumerals(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("正文第一页。", 0, 72, 400, 160, 180),
+		tb("第 一 页", 0, 280, 350, 820, 835),
+		tb("正文第二页。", 1, 72, 400, 160, 180),
+		tb("第 二 页", 1, 280, 350, 820, 835),
+		tb("正文第三页。", 2, 72, 400, 160, 180),
+		tb("第 三 页", 2, 280, 350, 820, 835),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.HasPrefix(b.Text, "第 ") {
+			t.Fatalf("Chinese page number footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected only 3 body boxes, got %d", len(got))
+	}
+}
