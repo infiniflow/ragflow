@@ -231,3 +231,45 @@ func assertLatestEventMap(t *testing.T, log map[string]interface{}, wantID int, 
 		t.Fatalf("latest event message = %q, want %q", event.Message, wantMessage)
 	}
 }
+
+// TestListIngestionLogsRejectsUnknownLogType checks that only the two
+// selectors the Python service accepts reach a log query. Every other value,
+// including an explicitly empty one, is a data error rather than a dataset
+// listing.
+func TestListIngestionLogsRejectsUnknownLogType(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+
+	const wantMessage = `Invalid "log_type", expected "dataset" or "file"`
+	for _, tc := range []struct {
+		name     string
+		logType  string
+		wantCode common.ErrorCode
+	}{
+		{name: "dataset", logType: "dataset", wantCode: common.CodeSuccess},
+		{name: "file", logType: "file", wantCode: common.CodeSuccess},
+		{name: "bogus", logType: "bogus", wantCode: common.CodeDataError},
+		{name: "empty", logType: "", wantCode: common.CodeDataError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", tc.logType, "", "")
+			if tc.wantCode == common.CodeSuccess {
+				if err != nil || code != common.CodeSuccess {
+					t.Fatalf("ListIngestionLogs(%q) = (%+v, %v, %v), want success", tc.logType, result, code, err)
+				}
+				return
+			}
+			if result != nil || err == nil || code != tc.wantCode {
+				t.Fatalf("ListIngestionLogs(%q) = (%+v, %v, %v), want code %v and an error", tc.logType, result, code, err, tc.wantCode)
+			}
+			if err.Error() != wantMessage {
+				t.Fatalf("ListIngestionLogs(%q) error = %q, want %q", tc.logType, err.Error(), wantMessage)
+			}
+		})
+	}
+}
