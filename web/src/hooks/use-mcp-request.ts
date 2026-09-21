@@ -52,28 +52,35 @@ export const enum McpApiAction {
   TestMcpServer = 'testMcpServer',
 }
 
-export const useListMcpServer = () => {
+const McpKeys = {
+  list: (keywords: string, page: number, pageSize: number, mcpIds: string[]) =>
+    [McpApiAction.ListMcpServer, keywords, page, pageSize, mcpIds] as const,
+};
+
+export const useListMcpServer = (mcpIds: string[] = []) => {
   const { searchString, setSearchString, handleInputChange } =
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const { data, isFetching: loading } = useQuery<IMcpServerListResponse>({
-    queryKey: [
-      McpApiAction.ListMcpServer,
-      {
-        debouncedSearchString,
-        ...pagination,
-      },
-    ],
+    queryKey: McpKeys.list(
+      debouncedSearchString,
+      pagination.current,
+      pagination.pageSize,
+      mcpIds,
+    ),
     initialData: { total: 0, mcp_servers: [] },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await listMcpServers({
-        keywords: debouncedSearchString,
-        page_size: pagination.pageSize,
-        page: pagination.current,
-      });
+      const { data } = await listMcpServers(
+        {
+          keywords: debouncedSearchString,
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        },
+        mcpIds.length > 0 ? { mcp_ids: mcpIds.join(',') } : undefined,
+      );
       return data?.data;
     },
   });
