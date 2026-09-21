@@ -32,7 +32,7 @@ import (
 	"ragflow/internal/agent/dsl"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 )
 
@@ -177,7 +177,7 @@ func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messag
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	payload, err := redis.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
+	payload, err := kvrocks.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("failed to read agent logs")
 	}

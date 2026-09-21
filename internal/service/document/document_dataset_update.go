@@ -80,7 +80,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err = s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
+			err = s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 			if err != nil {
 				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()

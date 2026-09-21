@@ -1507,7 +1507,8 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 }
 
 // extractorContextFitBudget returns 97% of the model's context window as the
-// fitting budget, mirroring the agent component's contextFitBudget. The
+// fitting budget, mirroring agent/chat's ContextFitBudget (the canonical
+// helper) plus the clamp below. The
 // margin leaves headroom for the difference between the cl100k tokenizer used
 // for counting and the model's own tokenizer, plus per-message formatting
 // overhead, so a fitted prompt stays inside the provider's real context limit
@@ -1653,53 +1654,10 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 }
 
 // parseMetadataFieldDefs converts an any value (typically []any of maps)
-// to a typed []common.MetadataFieldDef slice.
+// to a typed []common.MetadataFieldDef slice. The parsing lives in common so the
+// ingestion extractor and the agentic metadata catalog share one field contract.
 func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
-	if v == nil {
-		return nil
-	}
-	if defs, ok := v.([]common.MetadataFieldDef); ok {
-		return defs
-	}
-	var arr []any
-	switch typed := v.(type) {
-	case []any:
-		arr = typed
-	case []map[string]any:
-		arr = make([]any, 0, len(typed))
-		for _, item := range typed {
-			arr = append(arr, item)
-		}
-	default:
-		return nil
-	}
-	fields := make([]common.MetadataFieldDef, 0, len(arr))
-	for _, f := range arr {
-		m, ok := f.(map[string]any)
-		if !ok {
-			continue
-		}
-		key, _ := m["key"].(string)
-		if key = strings.TrimSpace(key); key == "" {
-			continue
-		}
-		def := common.MetadataFieldDef{Key: key}
-		if t, ok := m["type"].(string); ok {
-			def.Type = t
-		}
-		if d, ok := m["description"].(string); ok {
-			def.Description = d
-		}
-		if e, ok := m["enum"].([]any); ok {
-			for _, ev := range e {
-				if s, ok := ev.(string); ok {
-					def.Enum = append(def.Enum, s)
-				}
-			}
-		}
-		fields = append(fields, def)
-	}
-	return fields
+	return common.MetadataFieldDefsFromRaw(v)
 }
 
 // mapInt converts a JSON-compatible value to int.

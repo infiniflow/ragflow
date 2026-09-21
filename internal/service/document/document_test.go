@@ -73,6 +73,7 @@ func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.T
 type fakeUploadStorage struct {
 	objects  map[string][]byte
 	afterPut func()
+	getCalls int
 }
 
 func newFakeUploadStorage() *fakeUploadStorage {
@@ -90,11 +91,23 @@ func (f *fakeUploadStorage) Put(ctx context.Context, bucket, fnm string, binary 
 	return nil
 }
 func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
+	f.getCalls++
 	v, ok := f.objects[f.key(bucket, fnm)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
+}
+
+type imageOwnershipEngine struct {
+	fakeChatDocEngine
+	result  *types.SearchResult
+	request *types.SearchRequest
+}
+
+func (e *imageOwnershipEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.request = req
+	return e.result, nil
 }
 func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
@@ -295,18 +308,25 @@ func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interf
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	updateValues     []map[string]interface{}
 }
 
 func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "tree-1", "compile_kwd": "tree"},
+		// structure stamps its inferred kind verbatim; both are final products.
+		{"id": "struct-1", "compile_kwd": "hypergraph"},
+		{"id": "pageindex-1", "compile_kwd": "page_index"},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
 		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
-	}, Total: 3}, nil
+		{"id": "nav-1", "compile_kwd": "dataset_nav"},
+	}, Total: 7}, nil
 }
 
-func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, _ map[string]interface{}, _, _ string) error {
+func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, _, _ string) error {
 	e.updateConditions = append(e.updateConditions, condition)
+	e.updateValues = append(e.updateValues, newValue)
 	return nil
 }
 
@@ -2542,20 +2562,27 @@ func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T
 	}
 }
 
-func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
+// TestUpdateDocumentChunkAvailabilityTogglesFinalProducts pins the disable/enable
+// contract: source chunks and final compiled products (tree/structure/mindmap)
+// follow the document status; wiki staging and unknown-kwd rows stay hidden.
+func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	docEngine := &sourceAvailabilityDocEngine{}
 	svc := testDocumentService(t)
 	svc.docEngine = docEngine
 
-	if err := svc.updateSourceChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
-		t.Fatalf("updateSourceChunkAvailability failed: %v", err)
+	if err := svc.updateDocumentChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 0); err != nil {
+		t.Fatalf("updateDocumentChunkAvailability failed: %v", err)
 	}
 	if len(docEngine.updateConditions) != 1 {
 		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
 	}
 	ids, ok := docEngine.updateConditions[0]["id"].([]string)
-	if !ok || len(ids) != 1 || ids[0] != "source-1" {
-		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
+	want := []string{"source-1", "tree-1", "struct-1", "pageindex-1"}
+	if !ok || !reflect.DeepEqual(ids, want) {
+		t.Fatalf("updated ids = %#v, want %v (wiki/unknown-kwd rows excluded)", docEngine.updateConditions[0]["id"], want)
+	}
+	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
+		t.Fatalf("available_int = %#v, want 0", got)
 	}
 }
 
@@ -3582,7 +3609,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 
 	mockStorage := useFakeStorage(t)
 	data := []byte("artifact content")
-	if err := mockStorage.Put(ctx, sandboxArtifactBucket(), "result.png", data); err != nil {
+	if err := mockStorage.Put(ctx, common.SandboxArtifactBucket(), "result.png", data); err != nil {
 		t.Fatalf("seed artifact: %v", err)
 	}
 
@@ -3700,7 +3727,7 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
 
-	if got["doc-file"] != "/api/v1/documents/images/kb-1-thumb.png" {
+	if got["doc-file"] != "/api/v1/documents/doc-file/thumbnail" {
 		t.Fatalf("unexpected file thumbnail: %q", got["doc-file"])
 	}
 	if got["doc-base64"] != base64Thumb {
@@ -3711,6 +3738,102 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}
 	if _, ok := got["doc-other"]; ok {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
+	}
+}
+
+func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("a", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	engine := &imageOwnershipEngine{result: &types.SearchResult{}}
+	store := useFakeStorage(t)
+	if err := store.Put(ctx, kbID, "raw.pdf", []byte("%PDF-1.7")); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	if _, err := svc.GetDocumentImage(ctx, "user-1", kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("GetDocumentImage() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after ownership denial", store.getCalls)
+	}
+}
+
+func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("b", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	imageID := "imagetemps-page-1.png"
+	engine := &imageOwnershipEngine{result: &types.SearchResult{Total: 1, Chunks: []map[string]any{{"doc_id": "doc-1", "img_id": imageID}}}}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "imagetemps", "page-1.png", image); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	got, err := svc.GetDocumentImageForDocument(ctx, "user-1", "doc-1", imageID)
+	if err != nil {
+		t.Fatalf("GetDocumentImageForDocument() error = %v", err)
+	}
+	if !bytes.Equal(got, image) {
+		t.Fatalf("GetDocumentImageForDocument() = %q", got)
+	}
+	if engine.request == nil || engine.request.Filter["doc_id"] != "doc-1" || engine.request.Filter["img_id"] != imageID {
+		t.Fatalf("ownership search = %#v", engine.request)
+	}
+}
+
+func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-thumb", "owner-1", 0, 0, 0)
+	thumbnail := "thumbnail.png"
+	if err := db.Create(&entity.Document{
+		ID: "doc-thumb", KbID: "kb-thumb", Thumbnail: &thumbnail,
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "owner-1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "kb-thumb", thumbnail, image); err != nil {
+		t.Fatal(err)
+	}
+	svc := testDocumentService(t)
+
+	if _, err := svc.GetDocumentThumbnail(ctx, "other-user", "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("unauthorized GetDocumentThumbnail() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
+	}
+	got, err := svc.GetDocumentThumbnail(ctx, "owner-1", "doc-thumb")
+	if err != nil || !bytes.Equal(got, image) {
+		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}
 }
 

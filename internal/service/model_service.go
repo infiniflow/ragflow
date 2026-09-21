@@ -3546,7 +3546,7 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 		if !allowed {
 			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
 		}
-		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}
@@ -3577,7 +3577,7 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 		if modelObj.Status != "active" {
 			return false, fmt.Errorf("model %q is disabled", modelRef)
 		}
-		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
@@ -3589,15 +3589,62 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 	return catalogToolSupport(providerName, pureModelName), nil
 }
 
-// toolSupportFromTenantModel returns the is_tools flag persisted on a tenant
-// model's extra JSON when present, otherwise the provider catalog's declaration
-// for that model. Mirrors Python's model_extra.get("is_tools", is_tool).
-func toolSupportFromTenantModel(extra, providerName, modelName string) bool {
+// ResolveChatModelTarget resolves the chat model a request will run on: the
+// caller's reference when it has one, the tenant default otherwise — a dialog
+// without an llm_id still runs on the default (dialog_service get_models).
+// Shared by the capability probe and the agentic wiring so the two cannot resolve
+// different models for one request.
+func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenantID, modelRef string) (*ModelTarget, error) {
+	if m == nil {
+		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
+	}
+	solver := m.modelSolver()
+	if strings.TrimSpace(modelRef) == "" {
+		return solver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+	}
+	// Resolve the enrolled type first: a reference enrolled only as image-to-text
+	// is a valid chat-pipeline input (its driver answers chat requests), and
+	// resolving it as chat would fail the type check outright.
+	return solver.ResolveModelConfig(ctx, tenantID, solver.ResolveChatModelType(ctx, tenantID, modelRef), modelRef)
+}
+
+// modelTargetRef renders a resolved model as the lookups' reference: its
+// tenant_model id, or the composite "model@instance@provider" form.
+func modelTargetRef(target *ModelTarget) string {
+	if target == nil {
+		return ""
+	}
+	if target.ModelID != "" {
+		return target.ModelID
+	}
+	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
+}
+
+// toolSupportFromEnrollment applies the capability precedence the rest of the
+// service uses: the is_tools flag persisted on the enrolled model, then the flag
+// carried by the instance credential payload, then the provider catalog's
+// declaration for the model.
+//
+// Python's precedence has the same shape — model_extra.get("is_tools", is_tool),
+// where is_tool comes out of the instance api_key payload — with the catalog as
+// our last resort, because a tenant may enrol a model the catalog does not
+// describe at all.
+func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
 	if ts, ok := extraToolSupport(extra); ok {
+		return ts
+	}
+	// The instance credential can be a JSON object carrying the key together with
+	// capability flags; extraToolSupport reads is_tools out of either blob and
+	// reports "absent" for a plain credential string.
+	if ts, ok := extraToolSupport(instanceAPIKey); ok {
 		return ts
 	}
 	return catalogToolSupport(providerName, modelName)
 }
+
+// The tool-calling verdict is no longer memoized: it is computed while the model
+// is resolved (see resolvedModel.supportsTools) and travels with the resolution,
+// so there is no second lookup to amortize.
 
 // tenantCanReachProviderTenant reports whether userID owns the provider's tenant
 // or is a joined member of it. Mirrors Python's tenant_model_service
@@ -3824,4 +3871,65 @@ func (m *ModelProviderService) isImage2TextLLM(ctx context.Context, tenantID, ll
 		}
 	}
 	return false
+}
+
+// ChatModelRef identifies one chat-capable tenant model together with its
+// human-readable coordinates (provider instance), so callers can log and
+// reason about failover chains. Ref is the tenant_model.id that
+// ResolveModelConfig / GetChatModelConfig accepts verbatim.
+type ChatModelRef struct {
+	Ref          string
+	ModelName    string
+	InstanceName string
+	ProviderName string
+}
+
+// ListTenantChatModelRefs enumerates every ACTIVE chat-capable model the
+// tenant owns across all provider instances. Resolution of each ref is the
+// caller's business — a single broken entry here is not an error for the
+// whole enumeration.
+func (m *ModelProviderService) ListTenantChatModelRefs(ctx context.Context, tenantID string) ([]ChatModelRef, error) {
+	providers, err := m.modelProviderDAO.GetByTenantID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return nil, nil
+	}
+	providerIDs := make([]string, 0, len(providers))
+	providerInfoByID := make(map[string]*entity.TenantModelProvider, len(providers))
+	for _, p := range providers {
+		providerIDs = append(providerIDs, p.ID)
+		providerInfoByID[p.ID] = p
+	}
+	instances, err := m.modelInstanceDAO.GetByProviderIDs(ctx, dao.DB, providerIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(instances) == 0 {
+		return nil, nil
+	}
+	instanceIDs := make([]string, 0, len(instances))
+	instanceInfoByID := make(map[string]*entity.TenantModelInstance, len(instances))
+	for _, inst := range instances {
+		instanceIDs = append(instanceIDs, inst.ID)
+		instanceInfoByID[inst.ID] = inst
+	}
+	models, err := m.modelDAO.GetActiveModelsByProviderAndInstanceIDsAndType(
+		ctx, dao.DB, providerIDs, instanceIDs, int(entity.ModelTypeChat))
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]ChatModelRef, 0, len(models))
+	for _, rec := range models {
+		ref := ChatModelRef{Ref: rec.ID, ModelName: rec.ModelName}
+		if inst := instanceInfoByID[rec.InstanceID]; inst != nil {
+			ref.InstanceName = inst.InstanceName
+		}
+		if prov := providerInfoByID[rec.ProviderID]; prov != nil {
+			ref.ProviderName = prov.ProviderName
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }

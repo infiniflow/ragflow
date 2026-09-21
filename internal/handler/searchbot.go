@@ -157,7 +157,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -283,7 +283,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
-	disableWriteDeadlineForSSE(c)
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -387,7 +387,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	})
 	if err != nil {
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		jsonInternalError(c, err)
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")

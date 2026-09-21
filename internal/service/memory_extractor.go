@@ -71,6 +71,18 @@ var (
 
 var errPermanentMemoryTask = errors.New("memory: permanent task failure")
 
+// errMemoryChatCall marks a failed chat model call, for example an exhausted
+// quota. Python's chat models answer such failures in band ("**ERROR**: ..."),
+// which leaves the extraction empty and completes the task with
+// "No memory extracted from raw message." instead of failing it, so Go reports
+// the same outcome instead of retrying or failing the task. Embedding failures
+// are not marked: Python raises there and fails the task.
+var errMemoryChatCall = errors.New("memory: chat model call failed")
+
+// memoryNoExtractionProgress is the task progress message Python reports when
+// the extraction produced nothing, including after a failed model call.
+const memoryNoExtractionProgress = "No memory extracted from raw message."
+
 // classifyMemoryTaskDependencyError marks confirmed missing or unusable
 // dependencies as permanent while preserving transient lookup failures.
 func classifyMemoryTaskDependencyError(err error) error {
@@ -358,6 +370,9 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 			if err := loadInput(); err != nil {
 				return err
 			}
+			// Python raises when the extraction cannot be embedded, so the
+			// task fails (and retries while attempts remain) instead of
+			// completing with an empty memory.
 			if err := s.storeMemoryTaskExtraction(ctx, task, msg); err != nil {
 				return err
 			}
@@ -373,7 +388,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 		case entity.MemoryTaskStateStored:
 			progressMsg := "Message saved successfully."
 			if len(task.Extraction) == 0 {
-				progressMsg = "No memory extracted from raw message."
+				progressMsg = memoryNoExtractionProgress
 			}
 			completed, completeErr := s.memoryTaskDAO.Complete(ctx, dao.DB, task.TaskID, leaseOwner, progressMsg, memoryNow())
 			if completeErr != nil {
@@ -412,7 +427,14 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 
 	extracted, err := s.extractByLLM(ctx, mem, extractTypes, msg, task.TaskID)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, errMemoryChatCall) {
+			return nil, err
+		}
+		// A failed chat model call leaves nothing to extract, and Python
+		// reports it as "No memory extracted from raw message." instead of a
+		// task failure.
+		common.Warn(fmt.Sprintf("memory: chat model call failed while extracting task %s: %v", task.TaskID, err))
+		return []extractedMemory{}, nil
 	}
 	materialized := materializeMemoryExtraction(ctx, extracted, memoryNow())
 	return materialized, nil
@@ -484,13 +506,38 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	temperature := mem.Temperature
 	resp, err := chatModel.ModelDriver.ChatWithMessages(ctx, target.ModelName, messages, target.APIConfig, &models.ChatConfig{Temperature: &temperature}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("chat model: %w", err)
+		return nil, fmt.Errorf("%w: chat model: %w", errMemoryChatCall, err)
 	}
 	if resp == nil || resp.Answer == nil {
-		return nil, errors.New("empty response from chat model")
+		return nil, fmt.Errorf("%w: empty response from chat model", errMemoryChatCall)
+	}
+	if llmErr := memoryLLMError(*resp.Answer); llmErr != "" {
+		// The driver reports the failure as answer text, so the extraction is
+		// unusable: log it and report an empty extraction, the same outcome
+		// Python produces for the same payload.
+		common.Warn(fmt.Sprintf("memory: chat model failed for task %s: %s", taskID, llmErr))
+		return nil, nil
 	}
 
 	return parseMemoryExtraction(*resp.Answer, extractTypes), nil
+}
+
+// memoryLLMError returns the failure a chat driver reports as answer text
+// instead of a Go error. Drivers mirror the Python convention of answering
+// with a "**ERROR**: <detail>" payload, which leaves no JSON to parse, so the
+// caller reports an empty extraction. An empty return means the answer carries
+// no error marker.
+func memoryLLMError(answer string) string {
+	const marker = "**ERROR**"
+	idx := strings.Index(answer, marker)
+	if idx < 0 {
+		return ""
+	}
+	detail := strings.TrimPrefix(strings.TrimSpace(answer[idx+len(marker):]), ":")
+	if strings.TrimSpace(detail) == "" {
+		return "chat model returned an error without detail"
+	}
+	return strings.TrimSpace(detail)
 }
 
 // materializeMemoryExtraction assigns stable message ids and timestamp

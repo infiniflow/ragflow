@@ -73,7 +73,6 @@ type PipelineExecutor struct {
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
-	requireResume   bool // when true, the pipeline run passes WithRequireResume
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -97,6 +96,32 @@ func validateTaskContext(taskCtx *TaskContext) error {
 	return nil
 }
 
+// noRefreshChunkInserter is the narrower inserter the ingestion path prefers:
+// an engine that implements it can write chunks without waiting for an index
+// refresh.
+type noRefreshChunkInserter interface {
+	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+}
+
+// insertChunksForIngestion writes chunks through the engine's no-refresh path
+// when it offers one, falling back to the plain inserter otherwise.
+//
+// Waiting for a refresh costs ~0.5s per write (median; p90 1.0s, max 5.0s) with
+// the KB index's refresh_interval=1000ms, and it buys nothing during ingestion:
+// the index publishes the chunks on its own refresh cycle a moment later, so the
+// only difference is up to a second before they are searchable. It is also what
+// Python's ingestion does - it inserts with refresh=False
+// (rag/svr/task_executor_refactor/chunk_service.py:386 and :423) while its API
+// default stays "wait_for" - so this keeps the two ingestion paths in step.
+func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
+	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+		if bulk, ok := eng.(noRefreshChunkInserter); ok {
+			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
+		}
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+	}
+}
+
 func NewPipelineExecutor(
 	taskCtx *TaskContext,
 	canvasID string,
@@ -112,14 +137,7 @@ func NewPipelineExecutor(
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
-		indexWriter: newChunkIndexWriter(
-			func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-				return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
-			},
-			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
-			taskCtx.Doc.KbID,
-			docBulkSize,
-		),
+		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
@@ -146,14 +164,6 @@ func (s *PipelineExecutor) WithRunPipelineFunc(f func(ctx context.Context, dsl s
 // unset, the pipeline runs DB-independent (progress events are dropped).
 func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *PipelineExecutor {
 	s.progressSink = sink
-	return s
-}
-
-// WithRequireResume makes the pipeline refuse to start when no checkpoint
-// store is resolvable (Redis down or not configured). Production ingestion
-// sets this; tests skip it so they can exercise runPlain without Redis.
-func (s *PipelineExecutor) WithRequireResume() *PipelineExecutor {
-	s.requireResume = true
 	return s
 }
 
@@ -192,7 +202,18 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" && s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil && *s.taskCtx.IngestionTask.PipelineLogID != "" {
-		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone))
+		var terminalDuration *float64
+		if result != nil {
+			terminalDuration = &result.Duration
+		} else {
+			// A successful run with no chunks never wrote a terminal duration
+			// to the document, so recompute from the same process_begin_at
+			// anchor here instead of letting the log copy the stale mid-run
+			// value.
+			d := s.terminalDuration(start)
+			terminalDuration = &d
+		}
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
 	}
 
 	return result, nil
@@ -335,11 +356,28 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		Metadata:              metadata,
 		ChunkCount:            chunkCount,
 		TokenConsumption:      embeddingTokenConsumption,
-		Duration:              time.Since(start).Seconds(),
+		Duration:              s.terminalDuration(start),
 		DocName:               docNameValue(s.taskCtx.Doc.Name),
 		BuiltInMetadataConfig: builtInMetadata,
 		AutoMetadataEnabled:   autoMetaEnabled,
 	}, nil
+}
+
+// terminalDuration measures the run from the document's process_begin_at —
+// the anchor PrepareValidatedRun stamped before the run and the one every
+// mid-run progress-sink duration write uses — so the terminal value applied
+// to document.process_duration and the value recorded in the pipeline
+// operation log are the same number. Runs whose document carries no begin
+// time fall back to the executor start.
+func (s *PipelineExecutor) terminalDuration(start time.Time) float64 {
+	if begin := s.taskCtx.Doc.ProcessBeginAt; begin != nil {
+		duration := time.Since(*begin).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		return duration
+	}
+	return time.Since(start).Seconds()
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config
@@ -347,57 +385,21 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 // component-scoped Extractor node's modular metadata config. Legacy flat
 // fields (enable_metadata / metadata_config / built_in_metadata at either the
 // top level or on the node) are intentionally not supported.
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
+//
+// The config lookup and the field-list normalisation live in common (see
+// ExtractorMetadataConfig / MetadataRawFieldList) so the ingestion pipeline and the agentic
+// metadata catalog read the very same shape.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
-	var extractorKeys []string
-	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
-			extractorKeys = append(extractorKeys, k)
-		}
+	metaObj, ok := common.ExtractorMetadataConfig(parserConfig)
+	if !ok {
+		return nil, false
 	}
-	sort.Strings(extractorKeys)
-
-	for _, k := range extractorKeys {
-		nodeRaw := parserConfig[k]
-		if node, ok := nodeRaw.(map[string]any); ok {
-			if metaObj, ok := node["metadata"].(map[string]any); ok {
-				arr := metadataFieldSlice(metaObj["built_in_metadata"])
-				return arr, parserConfigBool(metaObj["enabled"])
-			}
-		}
-	}
-	return nil, false
-}
-
-// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
-// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
-// construction) into a []any.
-func metadataFieldSlice(value any) []any {
-	if list, ok := value.([]any); ok {
-		return list
-	}
-	if list, ok := value.([]map[string]any); ok {
-		out := make([]any, 0, len(list))
-		for _, item := range list {
-			out = append(out, item)
-		}
-		return out
-	}
-	return nil
-}
-
-// parserConfigBool coerces a parser_config boolean-like value (bool / number)
-// to bool, mirroring the frontend's enable_metadata handling.
-func parserConfigBool(v any) bool {
-	switch typed := v.(type) {
-	case bool:
-		return typed
-	case float64:
-		return typed > 0
-	case int:
-		return typed > 0
-	}
-	return false
+	return common.MetadataRawFieldList(metaObj["built_in_metadata"]), common.ParserConfigBool(metaObj["enabled"])
 }
 
 func docNameValue(name *string) string {
@@ -766,6 +768,14 @@ type PipelineLogInput struct {
 	// exactly that row, never creating a second one — so a superseded run whose
 	// row was deleted cannot adopt the replacement run's row.
 	PipelineLogID string
+	// TerminalDuration, when set, is this run's final duration in seconds,
+	// measured from the document's process_begin_at. updateOpenLogRow records
+	// it instead of the reloaded document's last mid-run value, so
+	// pipeline_operation_log and document.process_duration hold one number.
+	// Writers without it (failure/cancel, or a run that produced no chunks)
+	// copy the document's stored value — still the last thing any writer put
+	// there, so the tables stay aligned on those paths too.
+	TerminalDuration *float64
 }
 
 // ErrMissingRunIdentity reports an attempt to persist an ingestion terminal
@@ -898,6 +908,9 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 	if doc.Name != nil {
 		updates["document_name"] = *doc.Name
 	}
+	if input.TerminalDuration != nil {
+		updates["process_duration"] = *input.TerminalDuration
+	}
 	// The open row was created with a timestamp. Keep it when the reloaded
 	// document carries none (a run that never reached the progress sink), so
 	// the queued entry does not lose its start time.
@@ -920,7 +933,7 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 	return nil
 }
 
-func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string, terminalDuration *float64) {
 	pipelineID := ""
 	if s.taskCtx.PipelineID != "" {
 		pipelineID = s.canvasID
@@ -930,14 +943,15 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		pipelineLogID = *s.taskCtx.IngestionTask.PipelineLogID
 	}
 	if err := recordPipelineLog(ctx, db, PipelineLogInput{
-		TenantID:      s.Tenant().ID,
-		KbID:          s.KB().ID,
-		DocumentID:    docID,
-		PipelineID:    pipelineID,
-		DSL:           dsl,
-		Status:        status,
-		Document:      s.taskCtx.Doc,
-		PipelineLogID: pipelineLogID,
+		TenantID:         s.Tenant().ID,
+		KbID:             s.KB().ID,
+		DocumentID:       docID,
+		PipelineID:       pipelineID,
+		DSL:              dsl,
+		Status:           status,
+		Document:         s.taskCtx.Doc,
+		PipelineLogID:    pipelineLogID,
+		TerminalDuration: terminalDuration,
 	}); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}

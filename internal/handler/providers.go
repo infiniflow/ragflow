@@ -34,6 +34,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// unsupportedProviders lists catalog providers that the server cannot serve
+// yet. They are hidden from the "available" provider listing so the UI never
+// offers them for configuration.
+var unsupportedProviders = map[string]struct{}{
+	"MinerU.Net": {},
+}
+
+// filterUnsupportedProviders drops providers that the server cannot serve yet.
+func filterUnsupportedProviders(providers []map[string]interface{}) []map[string]interface{} {
+	filtered := make([]map[string]interface{}, 0, len(providers))
+	for _, provider := range providers {
+		if name, ok := provider["name"].(string); ok {
+			if _, unsupported := unsupportedProviders[name]; unsupported {
+				continue
+			}
+		}
+		filtered = append(filtered, provider)
+	}
+	return filtered
+}
+
 // ProviderHandler provider handler
 type ProviderHandler struct {
 	userService          *service.UserService
@@ -67,6 +88,7 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 			return
 		}
 
+		providers = filterUnsupportedProviders(providers)
 		for _, provider := range providers {
 			delete(provider, "url_suffix")
 			delete(provider, "tags")
@@ -986,7 +1008,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1270,7 +1292,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1378,7 +1400,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")

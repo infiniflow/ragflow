@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"time"
 )
@@ -43,10 +43,10 @@ type OAuthCallbackResult struct {
 	IsNewUser bool
 }
 
-func (s *UserService) OAuthLoginInitiate(channel string, redis *redis.Client) (*OAuthLoginInit, common.ErrorCode, error) {
+func (s *UserService) OAuthLoginInitiate(channel string, redis *kvrocks.Client) (*OAuthLoginInit, common.ErrorCode, error) {
 	return nil, common.CodeServerError, fmt.Errorf("oauth login initiate not implemented")
 }
 
-func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callbackState, expectedState string, redis *redis.Client) (*OAuthCallbackResult, common.ErrorCode, error) {
+func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callbackState, expectedState string, redis *kvrocks.Client) (*OAuthCallbackResult, common.ErrorCode, error) {
 	return nil, common.CodeDataError, fmt.Errorf("oauth callback not implemented")
 }

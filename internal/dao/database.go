@@ -107,9 +107,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	}
 
 	// Set connection pool
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetMaxIdleConns(databaseConfig.MaxConnections)
+	sqlDB.SetMaxOpenConns(databaseConfig.MaxConnections)
+	sqlDB.SetConnMaxLifetime(time.Duration(databaseConfig.StaleTimeout) * time.Second)
 
 	// Auto migrate all dataModels
 	dataModels := []interface{}{

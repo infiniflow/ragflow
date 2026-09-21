@@ -14,14 +14,13 @@
 #  limitations under the License.
 #
 
-from docx import Document
-import re
-import pandas as pd
-from collections import Counter
-from rag.nlp import rag_tokenizer
-from io import BytesIO
 import logging
-from common.constants import MAXIMUM_PAGE_NUMBER
+import re
+from collections import Counter
+from io import BytesIO
+
+import pandas as pd
+from docx import Document
 from docx.image.exceptions import (
     InvalidImageStreamError,
     UnexpectedEndOfFileError,
@@ -29,6 +28,9 @@ from docx.image.exceptions import (
 )
 from docx.oxml.ns import qn
 from docx.text.run import Run
+
+from common.constants import MAXIMUM_PAGE_NUMBER
+from rag.nlp import rag_tokenizer
 from rag.utils.lazy_image import LazyImage
 
 # Markup Compatibility namespace. Word stores every text box twice inside an

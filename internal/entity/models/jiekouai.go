@@ -36,7 +36,7 @@ func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIM
 	// JieKouAI's methods issue requests without a per-call context deadline, so
 	// keep an explicit 120s client-level timeout to bound them. Built on the
 	// shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient(false)
+	client := common.GetSSRFHTTPClient()
 	client.Timeout = 120 * time.Second
 	return &JieKouAIModel{
 		baseModel: BaseModel{
@@ -129,7 +129,7 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {

@@ -16,7 +16,13 @@ import (
 
 // posTagPattern matches the full @@...## tag including coordinates.
 // Format: @@{page_range}\t{left}\t{right}\t{top}\t{bottom}##
-var posTagPattern = regexp.MustCompile(`@@[0-9-]+\t[0-9.\t]+##`)
+//
+// The coordinate class allows '-' so that negative coordinates (a content
+// box extending above/left of the page origin, e.g. top=-3.0) are parsed
+// instead of being dropped. The page-range segment still owns the only '-'
+// that denotes a range (e.g. "0-2"); coordinates are tab-separated, so a '-'
+// there can never be confused with a range delimiter.
+var posTagPattern = regexp.MustCompile(`@@[0-9-]+\t[-0-9.\t]+##`)
 
 // ExtractPositions parses @@ position tags from a text string.
 //

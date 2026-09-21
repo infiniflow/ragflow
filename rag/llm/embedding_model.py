@@ -275,6 +275,8 @@ class OpenAIEmbed(Base):
         # is active. Local servers that reject unknown fields (LocalAI,
         # LM Studio, Xinference) use their own embed classes and omit it.
         kwargs = {"input": batch, "model": self.model_name, "encoding_format": "float", **openai_user_kwargs()}
+        if urlparse(str(self.client.base_url)).hostname == "oai.endpoints.kepler.ai.cloud.ovh.net":
+            kwargs.pop("user", None)
         extra_body = self._extra_body()
         if extra_body is not None:
             kwargs["extra_body"] = extra_body

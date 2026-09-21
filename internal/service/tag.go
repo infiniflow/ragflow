@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"sort"
 	"strings"
 	"time"
@@ -60,7 +60,7 @@ func GetTagsFromCache(ctx context.Context, kbIDs []string) (map[string]float64, 
 		return nil, nil
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache lookup")
 		return nil, nil
@@ -88,7 +88,7 @@ func SetTagsToCache(ctx context.Context, kbIDs []string, tags map[string]float64
 		return nil
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache store")
 		return nil

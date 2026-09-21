@@ -1075,6 +1075,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 2048
@@ -1084,6 +1085,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 1024,
       "context_length": 512,
       "max_output": 512,
@@ -1105,6 +1107,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "context_length": 8192,
       "max_output": 8192,
       "max_batch_size": 2048
@@ -1117,6 +1120,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "max_dimension": 1024,
       "dimensions": [],
       "context_length": 8192,
@@ -1132,6 +1136,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "context_length": 8192,
       "max_output": 8192,
       "max_batch_size": 2048
@@ -2098,6 +2103,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_batch_size": 2048
     },
     {
@@ -11940,6 +11946,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 2048
@@ -11953,6 +11960,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 2048
@@ -11966,6 +11974,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 2048
@@ -11980,6 +11989,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 2048
@@ -13468,6 +13478,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "max_dimension": 1024,
       "dimensions": [
         32,
@@ -13490,6 +13501,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "max_dimension": 1024,
       "dimensions": [
         32,
@@ -13512,6 +13524,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "xlmr-spm",
       "max_dimension": 1024,
       "dimensions": [
         32,
@@ -13639,6 +13652,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 768,
       "dimensions": [
         768
@@ -13655,6 +13669,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 768,
       "dimensions": [
         768
@@ -13671,6 +13686,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 768,
       "dimensions": [
         768
@@ -13687,6 +13703,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 768,
       "dimensions": [
         768
@@ -13703,6 +13720,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 768,
       "dimensions": [
         768
@@ -13719,6 +13737,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_dimension": 512,
       "dimensions": [
         512
@@ -22553,7 +22572,77 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-sol",
+      "alias": [
+        "gpt-5.6-sol"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-cyber",
+      "alias": [
+        "gpt-5.6-cyber"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-luna",
+      "alias": [
+        "gpt-5.6-luna"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
+    },
+    {
+      "name": "openai/gpt-5.6-terra",
+      "alias": [
+        "gpt-5.6-terra"
+      ],
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "context_length": 1050000,
+      "max_output": 128000
     },
     {
       "name": "openai/gpt-5.5-2026-04-23",
@@ -24130,6 +24219,8 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "cl100k_base",
+      "context_length": 8191,
       "max_dimension": 3072,
       "dimensions": [],
       "max_batch_size": 2048
@@ -24140,6 +24231,8 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "cl100k_base",
+      "context_length": 8191,
       "max_dimension": 1536,
       "dimensions": [],
       "max_batch_size": 2048
@@ -24150,6 +24243,8 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "cl100k_base",
+      "context_length": 8191,
       "max_dimension": 1536,
       "dimensions": [],
       "max_batch_size": 2048
@@ -25486,6 +25581,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 32768,
       "max_output": 32768,
       "max_batch_size": 2048
@@ -25499,6 +25595,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 32768,
       "max_output": 32768,
       "max_batch_size": 2048
@@ -25512,6 +25609,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 32768,
       "max_output": 32768,
       "max_batch_size": 2048
@@ -27953,6 +28051,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "max_dimension": 1024,
       "dimensions": [],
       "context_length": 32768,
@@ -27967,6 +28066,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "max_dimension": 1024,
       "dimensions": [],
       "context_length": 32768,
@@ -27981,6 +28081,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "max_dimension": 2560,
       "dimensions": [],
       "context_length": 32768,
@@ -27995,6 +28096,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "max_dimension": 2560,
       "dimensions": [],
       "context_length": 32768,
@@ -28009,6 +28111,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "max_dimension": 4096,
       "dimensions": [],
       "context_length": 32768,
@@ -28023,6 +28126,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "qwen-bpe",
       "max_dimension": 4096,
       "dimensions": [],
       "context_length": 32768,
@@ -36864,6 +36968,8 @@
         "embedding",
         "chat"
       ],
+      "tokenizer": "cl100k_base",
+      "context_length": 8191,
       "alias": [],
       "max_batch_size": 2048
     },
@@ -36873,6 +36979,8 @@
         "embedding",
         "chat"
       ],
+      "tokenizer": "cl100k_base",
+      "context_length": 8191,
       "alias": [],
       "max_batch_size": 2048
     },
@@ -36882,6 +36990,8 @@
         "embedding",
         "chat"
       ],
+      "tokenizer": "cl100k_base",
+      "context_length": 8191,
       "alias": [],
       "max_batch_size": 2048
     },
@@ -36936,6 +37046,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 1
@@ -36949,6 +37060,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "context_length": 512,
       "max_output": 512,
       "max_batch_size": 1

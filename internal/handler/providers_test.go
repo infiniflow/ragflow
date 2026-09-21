@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -109,6 +110,29 @@ func decodeProviderHandlerResponse(t *testing.T, recorder *httptest.ResponseReco
 		t.Fatalf("decode response %q: %v", recorder.Body.String(), err)
 	}
 	return body
+}
+
+func TestFilterUnsupportedProviders(t *testing.T) {
+	providers := []map[string]interface{}{
+		{"name": "OpenAI"},
+		{"name": "MinerU.Net"},
+		{"name": "MinerU"},
+	}
+
+	got := filterUnsupportedProviders(providers)
+
+	names := make([]string, 0, len(got))
+	for _, provider := range got {
+		name, ok := provider["name"].(string)
+		if !ok {
+			t.Fatalf("provider without name: %v", provider)
+		}
+		names = append(names, name)
+	}
+	want := []string{"OpenAI", "MinerU"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
 }
 
 func TestValidateInstanceName(t *testing.T) {
