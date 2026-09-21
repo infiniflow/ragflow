@@ -95,6 +95,30 @@ func TestUploadCodeExecArtifacts(t *testing.T) {
 	if !st.ObjExist(context.Background(), "sandbox-artifacts", storageName) {
 		t.Errorf("object %q not found in bucket sandbox-artifacts", storageName)
 	}
+
+	// Entries that already carry a hosted url (published by the
+	// CodeExec tool) are reused verbatim — no re-upload happens, the
+	// markdown points at the tool's canonical URL.
+	published, pubMarkdown, pubContent := uploadCodeExecArtifacts(context.Background(), []any{
+		map[string]any{
+			"name":      "already_hosted.png",
+			"url":       "/api/v1/documents/artifact/abc.png",
+			"mime_type": "image/png",
+			"size":      float64(7),
+		},
+	}, "sess-1", st)
+	if len(published) != 1 {
+		t.Fatalf("published len = %d, want 1", len(published))
+	}
+	if got := published[0]["url"].(string); got != "/api/v1/documents/artifact/abc.png" {
+		t.Errorf("published url = %q, want tool URL reused verbatim", got)
+	}
+	if len(pubMarkdown) != 1 || pubMarkdown[0] != "!["+"already_hosted.png](/api/v1/documents/artifact/abc.png)" {
+		t.Errorf("pubMarkdown = %#v, want image markdown from tool URL", pubMarkdown)
+	}
+	if !strings.Contains(pubContent, "attachment_count: 1") {
+		t.Errorf("pubContent = %q, want attachment_count: 1", pubContent)
+	}
 }
 
 // fakeSandboxClient adapts a function literal to the CodeExec
@@ -154,8 +178,11 @@ func TestCodeExecComponentInvokeAttachesArtifacts(t *testing.T) {
 	}
 	entry := artifacts[0]
 	url, _ := entry["url"].(string)
-	if !strings.HasSuffix(url, ".png?session_id=sess-test") {
-		t.Errorf("artifact url = %q, want session_id=sess-test suffix", url)
+	// The CodeExec tool hosts the blob and publishes the canonical
+	// /api/v1/documents/artifact/<name> URL (no session_id suffix);
+	// the component must consume it as-is.
+	if !strings.HasPrefix(url, "/api/v1/documents/artifact/") || !strings.HasSuffix(url, ".png") || strings.Contains(url, "?") {
+		t.Errorf("artifact url = %q, want hosted /api/v1/documents/artifact/<name>.png URL", url)
 	}
 
 	attachments, ok := decoded["attachments"].([]string)
