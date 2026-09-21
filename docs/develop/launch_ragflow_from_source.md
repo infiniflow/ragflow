@@ -65,7 +65,7 @@ On macOS, some Python dependencies link against native libraries that are not in
    brew install unixodbc jemalloc pkg-config
    ```
 
-- `unixodbc` provides `libodbc.2.dylib`, which the `pyodbc` package links against. Without it, `import pyodbc` fails with `Library not loaded: /opt/homebrew/opt/unixodbc/lib/libodbc.2.dylib`, and the ExeSQL agent tool fails to load (look for `Warning: Failed to import module exesql` at startup).
+- `unixodbc` provides `libodbc.2.dylib`, which the `pyodbc` package links against. Without it, `import pyodbc` fails with `Library not loaded: .../libodbc.2.dylib` (the full path is `$(brew --prefix unixodbc)/lib/libodbc.2.dylib`; `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel), and the ExeSQL agent tool fails to load (look for `Warning: Failed to import module exesql` at startup).
 - `jemalloc` and `pkg-config` are required by the preload commands used to launch the task executor; see step 5 of [Launch the RAGFlow Backend Service](#launch-the-ragflow-backend-service).
 :::
 
