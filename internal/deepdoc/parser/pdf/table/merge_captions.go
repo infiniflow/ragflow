@@ -316,11 +316,23 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 // preserved.
 func injectCaption(table *pdf.Section, captions []string) {
 	var b strings.Builder
+	var seen []string
 	for _, c := range captions {
 		t := strings.TrimSpace(c)
 		if t == "" {
 			continue
 		}
+		dup := false
+		for _, s := range seen {
+			if s == t || strings.Contains(s, t) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		seen = append(seen, t)
 		if b.Len() > 0 {
 			b.WriteString(captionSep(c))
 		}
@@ -329,16 +341,33 @@ func injectCaption(table *pdf.Section, captions []string) {
 	if b.Len() == 0 {
 		return
 	}
-	escaped := "<caption>" + b.String() + "</caption>"
+	escaped := b.String()
+	const openCap = "<caption>"
+	const closeCap = "</caption>"
+	if startIdx := strings.Index(table.Text, openCap); startIdx >= 0 {
+		if endIdx := strings.Index(table.Text[startIdx:], closeCap); endIdx >= 0 {
+			existingCap := table.Text[startIdx+len(openCap) : startIdx+endIdx]
+			if strings.Contains(existingCap, escaped) {
+				return
+			}
+			if strings.Contains(escaped, existingCap) {
+				table.Text = table.Text[:startIdx+len(openCap)] + escaped + table.Text[startIdx+endIdx:]
+				return
+			}
+			combined := existingCap + captionSep(escaped) + escaped
+			table.Text = table.Text[:startIdx+len(openCap)] + combined + table.Text[startIdx+endIdx:]
+			return
+		}
+	}
 	if table.Text == "" {
-		table.Text = escaped
+		table.Text = "<caption>" + escaped + "</caption>"
 		return
 	}
 	const open = "<table>"
 	if idx := strings.Index(table.Text, open); idx >= 0 {
 		at := idx + len(open)
-		table.Text = table.Text[:at] + escaped + table.Text[at:]
+		table.Text = table.Text[:at] + "<caption>" + escaped + "</caption>" + table.Text[at:]
 		return
 	}
-	table.Text = escaped + table.Text
+	table.Text = "<caption>" + escaped + "</caption>" + table.Text
 }

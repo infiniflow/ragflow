@@ -2,6 +2,7 @@ package table
 
 import (
 	"math"
+	"slices"
 	"sort"
 
 	"go.uber.org/zap"

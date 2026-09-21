@@ -633,3 +633,24 @@ func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	MarkNoMergeTables(nil, nil)
 	MarkNoMergeTables([]pdf.TextBox{}, []pdf.TableItem{})
 }
+
+func TestMatchTableRegions_DeduplicatesOverlappingRegions(t *testing.T) {
+	regions := []pdf.DLARegion{
+		// Large table covering [0, 0, 1000, 1000] with high confidence
+		{X0: 0, Y0: 0, X1: 1000, Y1: 1000, Label: "table", Confidence: 0.9},
+		// Small nested table covering [0, 800, 1000, 1000] with low confidence
+		{X0: 0, Y0: 800, X1: 1000, Y1: 1000, Label: "table", Confidence: 0.2},
+		// Independent table elsewhere
+		{X0: 0, Y0: 1200, X1: 1000, Y1: 1500, Label: "table", Confidence: 0.85},
+	}
+	matches := MatchTableRegions(nil, regions, 1.0)
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 matches after deduplicating overlapping sub-table, got %d", len(matches))
+	}
+	if matches[0].Region.Confidence != 0.9 {
+		t.Errorf("expected primary table kept with conf 0.9, got %.2f", matches[0].Region.Confidence)
+	}
+	if matches[1].Region.Confidence != 0.85 {
+		t.Errorf("expected second independent table kept with conf 0.85, got %.2f", matches[1].Region.Confidence)
+	}
+}

@@ -95,3 +95,35 @@ func TestMergeCaptions_FigureCaptionNoTargetKept(t *testing.T) {
 		t.Errorf("caption text must be preserved, got %q", result[0].Text)
 	}
 }
+
+// TestMergeCaptions_DeduplicateRepeatedCaptions verifies that running/repeated
+// captions from multi-page tables do not get duplicated in the <caption> element.
+func TestMergeCaptions_DeduplicateRepeatedCaptions(t *testing.T) {
+	sections := []pdf.Section{
+		{
+			Text:       "<table><tr><td>1</td></tr></table>",
+			LayoutType: "table",
+			Positions:  []pdf.Position{{PageNumbers: []int{0, 1}, Left: 40, Right: 500, Top: 50, Bottom: 800}},
+		},
+		{
+			Text:       "全省各设区市价格信息",
+			LayoutType: "table caption",
+			Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 40, Right: 300, Top: 30, Bottom: 45}},
+		},
+		{
+			Text:       "全省各设区市价格信息",
+			LayoutType: "table caption",
+			Positions:  []pdf.Position{{PageNumbers: []int{1}, Left: 40, Right: 300, Top: 30, Bottom: 45}},
+		},
+	}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section after merge, got %d", len(result))
+	}
+	expected := "<table><caption>全省各设区市价格信息</caption><tr><td>1</td></tr></table>"
+	if result[0].Text != expected {
+		t.Errorf("expected %q, got %q", expected, result[0].Text)
+	}
+}

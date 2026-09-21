@@ -618,3 +618,69 @@ func TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights(t 
 		t.Errorf("merged table should record both pages, got %d positions", len(merged[0].Positions))
 	}
 }
+
+// TestStackGrids_StripsRepeatedHeaderRow verifies that continuation pages
+// repeating the header row have that duplicate header row stripped.
+func TestStackGrids_StripsRepeatedHeaderRow(t *testing.T) {
+	grid1 := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称"},
+			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号"},
+		},
+		{
+			{X0: 0, Y0: 20, X1: 50, Y1: 40, Text: "1"},
+			{X0: 50, Y0: 20, X1: 100, Y1: 40, Text: "钢筋"},
+			{X0: 100, Y0: 20, X1: 150, Y1: 40, Text: "HRB400"},
+		},
+	}
+	grid2 := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称"},
+			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号"},
+		},
+		{
+			{X0: 0, Y0: 20, X1: 50, Y1: 40, Text: "2"},
+			{X0: 50, Y0: 20, X1: 100, Y1: 40, Text: "水泥"},
+			{X0: 100, Y0: 20, X1: 150, Y1: 40, Text: "P.O 42.5"},
+		},
+	}
+
+	stacked := stackGrids(grid1, grid2)
+	// Expect 3 rows: header, row 1, row 2 (not 4 rows).
+	if len(stacked) != 3 {
+		t.Fatalf("expected 3 rows after stripping repeated header, got %d", len(stacked))
+	}
+	if stacked[1][0].Text != "1" {
+		t.Errorf("row 1 expected '1', got %q", stacked[1][0].Text)
+	}
+	if stacked[2][0].Text != "2" {
+		t.Errorf("row 2 expected '2', got %q", stacked[2][0].Text)
+	}
+}
+
+// TestMergeTablesAcrossPages_DeduplicateCaption verifies that identical or
+// overlapping captions are deduplicated during cross-page merge.
+func TestMergeTablesAcrossPages_DeduplicateCaption(t *testing.T) {
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell1"}},
+		Caption:   "江西省材料价格参考信息",
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell2"}},
+		Caption:   "江西省材料价格参考信息",
+	}
+	pageHeights := map[int]float64{0: 842, 1: 842}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, pageHeights)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	if merged[0].Caption != "江西省材料价格参考信息" {
+		t.Errorf("expected clean deduplicated caption, got %q", merged[0].Caption)
+	}
+}

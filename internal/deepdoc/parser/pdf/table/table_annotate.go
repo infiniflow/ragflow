@@ -33,16 +33,22 @@ func regionOverlapsBox(region pdf.DLARegion, box pdf.TextBox, scale float64) boo
 	return inter/boxArea >= 0.4 // matches Python thr=0.4
 }
 
-// matchTableRegions pairs DLA table regions with boxes that overlap them.
+// MatchTableRegions pairs DLA table regions with boxes that overlap them.
 // Each table region is matched if at least one box overlaps it (>40% of box
 // area) or if there are no boxes at all (image-only PDF), matching Python's
-// _table_transformer_job which processes every table DLA region.
+// _table_transformer_job which processes every table DLA region. Overlapping
+// table detections on the same page are de-duplicated beforehand.
 func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64) []TableMatch {
-	var matches []TableMatch
+	var tableRegs []pdf.DLARegion
 	for _, r := range regions {
-		if r.Label != pdf.LayoutTypeTable {
-			continue
+		if r.Label == pdf.LayoutTypeTable {
+			tableRegs = append(tableRegs, r)
 		}
+	}
+	tableRegs = cleanupOverlappingTableRegions(tableRegs)
+
+	var matches []TableMatch
+	for _, r := range tableRegs {
 		var matched []int
 		for i, b := range boxes {
 			if regionOverlapsBox(r, b, scale) {
@@ -54,6 +60,62 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 		}
 	}
 	return matches
+}
+
+// cleanupOverlappingTableRegions removes spurious sub-table DLA detections
+// that heavily overlap (>50% area) a higher-confidence or larger table region
+// on the same page.
+func cleanupOverlappingTableRegions(regs []pdf.DLARegion) []pdf.DLARegion {
+	if len(regs) <= 1 {
+		return regs
+	}
+	dropped := make([]bool, len(regs))
+	for i := 0; i < len(regs); i++ {
+		if dropped[i] {
+			continue
+		}
+		for j := i + 1; j < len(regs); j++ {
+			if dropped[j] {
+				continue
+			}
+			a, b := regs[i], regs[j]
+			ix0 := math.Max(a.X0, b.X0)
+			iy0 := math.Max(a.Y0, b.Y0)
+			ix1 := math.Min(a.X1, b.X1)
+			iy1 := math.Min(a.Y1, b.Y1)
+			if ix0 >= ix1 || iy0 >= iy1 {
+				continue
+			}
+			interArea := (ix1 - ix0) * (iy1 - iy0)
+			areaA := (a.X1 - a.X0) * (a.Y1 - a.Y0)
+			areaB := (b.X1 - b.X0) * (b.Y1 - b.Y0)
+			if areaA <= 0 || areaB <= 0 {
+				continue
+			}
+			ratioA := interArea / areaA
+			ratioB := interArea / areaB
+			if ratioA >= 0.5 || ratioB >= 0.5 {
+				if a.Confidence > b.Confidence {
+					dropped[j] = true
+				} else if b.Confidence > a.Confidence {
+					dropped[i] = true
+					break
+				} else if areaA >= areaB {
+					dropped[j] = true
+				} else {
+					dropped[i] = true
+					break
+				}
+			}
+		}
+	}
+	out := make([]pdf.DLARegion, 0, len(regs))
+	for i, r := range regs {
+		if !dropped[i] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // ── layout annotation ──────────────────────────────────────────────────
@@ -507,6 +569,9 @@ func WriteTableAnnotations(boxes []pdf.TextBox, boxIdx []int, cells []pdf.TSRCel
 		}
 	}
 	annotGrid := tb.GroupCells(tableCells)
+	if len(annotGrid) == 0 {
+		return
+	}
 	AnnotateTableBoxes(tblBoxes, annotGrid)
 	for k, idx := range boxIdx {
 		bp := &tblBoxes[k]

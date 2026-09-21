@@ -3,6 +3,7 @@ package table
 import (
 	"math"
 	"sort"
+	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -143,10 +144,15 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
 			contGrids = append(contGrids, tables[jt.idx].Grid)
 			if tables[jt.idx].Caption != "" {
-				if anchor.Caption != "" {
-					anchor.Caption += " "
+				if anchor.Caption == "" {
+					anchor.Caption = tables[jt.idx].Caption
+				} else if !strings.Contains(anchor.Caption, tables[jt.idx].Caption) {
+					if strings.Contains(tables[jt.idx].Caption, anchor.Caption) {
+						anchor.Caption = tables[jt.idx].Caption
+					} else {
+						anchor.Caption += captionSep(tables[jt.idx].Caption) + tables[jt.idx].Caption
+					}
 				}
-				anchor.Caption += tables[jt.idx].Caption
 			}
 			merged[jt.idx] = true
 			anchorPg = bpg
@@ -268,6 +274,9 @@ func stackGrids(grids ...[][]pdf.TSRCell) [][]pdf.TSRCell {
 		if len(g) == 0 {
 			continue
 		}
+		if len(out) > 0 && len(g) > 1 && isRepeatedHeader(out[0], g[0]) {
+			g = g[1:]
+		}
 		minY, maxY := gridYExtent(g)
 		if prevMaxY > 0 {
 			// Place this page's rows below everything stacked so far, with a
@@ -280,6 +289,47 @@ func stackGrids(grids ...[][]pdf.TSRCell) [][]pdf.TSRCell {
 		prevMaxY = maxY
 	}
 	return out
+}
+
+// isRepeatedHeader checks if a continuation page's top row is a repeated header row
+// that matches the anchor table's header row.
+func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool {
+	if len(headerRow) == 0 || len(candidateRow) == 0 {
+		return false
+	}
+	headerTexts := make(map[string]bool)
+	for _, c := range headerRow {
+		t := strings.TrimSpace(c.Text)
+		if t != "" {
+			headerTexts[t] = true
+		}
+	}
+	if len(headerTexts) == 0 {
+		return false
+	}
+	matches := 0
+	candidateNonEmpty := 0
+	for _, c := range candidateRow {
+		t := strings.TrimSpace(c.Text)
+		if t == "" {
+			continue
+		}
+		candidateNonEmpty++
+		if headerTexts[t] {
+			matches++
+		} else {
+			for ht := range headerTexts {
+				if len(ht) > 1 && strings.Contains(t, ht) {
+					matches++
+					break
+				}
+			}
+		}
+	}
+	if candidateNonEmpty == 0 {
+		return false
+	}
+	return matches >= 2 && float64(matches)/float64(candidateNonEmpty) >= 0.5
 }
 
 // gridYExtent returns the min/max Y0/Y1 across all cells of a grid.

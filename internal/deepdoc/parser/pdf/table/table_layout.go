@@ -174,6 +174,23 @@ func findHorizontallyTightestFit(box pdf.TextBox, clmns []pdf.TSRCell) int {
 	return best
 }
 
+// findHorizontallyNearestColumn finds the closest column by horizontal distance alone.
+func findHorizontallyNearestColumn(box pdf.TextBox, clmns []pdf.TSRCell) int {
+	best := 0
+	bestDist := math.MaxFloat64
+	for i, c := range clmns {
+		dl := math.Abs(box.X0 - c.X0)
+		dr := math.Abs(box.X1 - c.X1)
+		dc := math.Abs(box.X0+box.X1-c.X1-c.X0) / 2
+		d := math.Min(math.Min(dl, dr), dc)
+		if d < bestDist {
+			bestDist = d
+			best = i
+		}
+	}
+	return best
+}
+
 // AnnotateBoxesWithGrid derives per-box R/C/H/SP annotations in the SAME
 // coordinate frame as grid (e.g. a table's crop space), using Python's
 // _table_transformer_job semantics. It is the production entry point for
@@ -187,6 +204,9 @@ func AnnotateBoxesWithGrid(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 //
 // Python: pdf_parser.py:518-554
 func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
+	if len(grid) == 0 {
+		return
+	}
 	// grid[0] is the header row.  Spans are computed by calSpans later.
 	var headers, spans []pdf.TSRCell
 	var clmns []pdf.TSRCell
@@ -234,6 +254,8 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 		if boxes[i].LayoutType != pdf.LayoutTypeTable && boxes[i].LayoutType != "" {
 			continue
 		}
+		boxes[i].R = -1
+		boxes[i].C = -1
 		// R: Python find_overlapped_with_threshold(box, rows, 0.3) over the
 		// WHOLE row line — the grid row's bbox spans the table width (the row
 		// line's own X range), not individual grid cells.
@@ -264,6 +286,11 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 		// C: Python find_horizontally_tightest_fit(box, clmns).
 		if len(clmns) > 1 {
 			if idx := findHorizontallyTightestFit(boxes[i], clmns); idx >= 0 {
+				boxes[i].C = idx
+				boxes[i].CLeft = clmns[idx].X0
+				boxes[i].CRight = clmns[idx].X1
+			} else {
+				idx = findHorizontallyNearestColumn(boxes[i], clmns)
 				boxes[i].C = idx
 				boxes[i].CLeft = clmns[idx].X0
 				boxes[i].CRight = clmns[idx].X1
