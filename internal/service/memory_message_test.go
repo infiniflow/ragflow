@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -241,6 +242,70 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 		t.Fatalf("storage type filter = %+v, want %+v", got, want)
 	}
 
+	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters refresh: %v", err)
+	}
+	if !reflect.DeepEqual(refreshed, filters) {
+		t.Fatalf("refreshed filters = %+v, want %+v", refreshed, filters)
+	}
+}
+
+func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&[]*entity.User{
+		{ID: "user-1", Nickname: "Owner"},
+		{ID: "user-2", Nickname: "Zeta"},
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	status := "1"
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "ut-1", UserID: "user-1", TenantID: "user-2", Role: "normal", InvitedBy: "user-2", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("seed user tenant: %v", err)
+	}
+	oldest, middle, newest := int64(100), int64(200), int64(300)
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-episodic", Name: "episodic oldest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeEpisodic, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &oldest}},
+		{ID: "mem-procedural", Name: "procedural middle", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeProcedural, StorageType: "alpha", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &middle}},
+		{ID: "mem-semantic", Name: "semantic newest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
+		{ID: "mem-shared", Name: "shared noncanonical storage", TenantID: "user-2", MemoryType: dao.MemoryTypeSemantic, StorageType: "zeta", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	if got, want := filters.Filter.Owner, []MemoryFilterOption{
+		{ID: "user-1", Label: "Owner", Count: 3},
+		{ID: "user-2", Label: "Zeta", Count: 1},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("owner filter = %+v, want %+v", got, want)
+	}
+	gotTypes := make([]string, 0, len(filters.Filter.MemoryType))
+	for _, option := range filters.Filter.MemoryType {
+		gotTypes = append(gotTypes, option.ID)
+	}
+	if want := []string{"raw", "semantic", "episodic", "procedural"}; !slices.Equal(gotTypes, want) {
+		t.Fatalf("memory type facet order = %v, want %v", gotTypes, want)
+	}
+	gotStorage := make([]string, 0, len(filters.Filter.StorageType))
+	for _, option := range filters.Filter.StorageType {
+		gotStorage = append(gotStorage, option.ID)
+	}
+	if want := []string{"table", "graph", "alpha", "zeta"}; !slices.Equal(gotStorage, want) {
+		t.Fatalf("storage type facet order = %v, want %v", gotStorage, want)
+	}
+
+	bumped := int64(400)
+	if err := dao.DB.Model(&entity.Memory{ID: "mem-semantic"}).Update("update_time", bumped).Error; err != nil {
+		t.Fatalf("bump update_time: %v", err)
+	}
 	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
 	if err != nil {
 		t.Fatalf("ListMemoryFilters refresh: %v", err)

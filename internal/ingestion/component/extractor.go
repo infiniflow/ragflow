@@ -304,7 +304,7 @@ func (c *ExtractorComponent) Inputs() map[string]string {
 //
 //	chunks         []map[string]any — input chunks, each augmented with
 //	                                 extracted modular fields (important_kwd,
-//	                                 question_kwd, tag_kwd, summary, metadata).
+//	                                 question_kwd, tag_feas, summary, metadata).
 //	output_format  string          — always "chunks". Parity with
 //	                                 python set_output contract.
 //	_ERROR         string          — populated on a short-circuit
@@ -312,7 +312,7 @@ func (c *ExtractorComponent) Inputs() map[string]string {
 //	                                 set_output("_ERROR", ...)).
 func (c *ExtractorComponent) Outputs() map[string]string {
 	return map[string]string{
-		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_kwd, summary, metadata).",
+		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_feas, summary, metadata).",
 		"output_format": "Always \"chunks\". Parity marker for downstream consumers.",
 		"_ERROR":        "Optional short-circuit error message (reserved for the future TOC branch and other error paths).",
 	}
