@@ -1204,6 +1204,76 @@ func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
 	requireJSONText(t, out, "Cloud MinerU Title")
 }
 
+// TestDispatch_PDFMinerU_LanguageChain pins the lang_list chain
+// (mineru_lang → setup lang → "English"), mirroring Python's
+// mineru_parser.py:1181. The pdf setup's default lang ("Chinese") keeps the
+// unconfigured form value on Python's ch code.
+func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
+	tests := []struct {
+		name      string
+		overrides map[string]any
+		wantLang  string
+	}{
+		{name: "default setup lang maps to ch", overrides: nil, wantLang: "ch"},
+		{name: "mineru_lang wins over setup lang", overrides: map[string]any{"mineru_lang": "English"}, wantLang: "en"},
+		{name: "setup lang used when mineru_lang unset", overrides: map[string]any{"lang": "Japanese"}, wantLang: "japan"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			withSSRFBypass(t)
+			var gotLang string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+					http.NotFound(w, r)
+					return
+				}
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Errorf("parse form: %v", err)
+					return
+				}
+				gotLang = r.FormValue("lang_list")
+				buf := new(bytes.Buffer)
+				zw := zip.NewWriter(buf)
+				f, _ := zw.Create("content_list.json")
+				_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody.\n"}]`))
+				_ = zw.Close()
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(buf.Bytes())
+			}))
+			defer server.Close()
+
+			origResolve := resolveMinerUModelForDispatch
+			defer func() { resolveMinerUModelForDispatch = origResolve }()
+			baseURL := server.URL
+			apiKey := "mineru-secret"
+			resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+				return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+			}
+
+			setups := defaultSetups()
+			setups["pdf"]["parse_method"] = "mineru"
+			setups["pdf"]["output_format"] = "markdown"
+			for k, v := range tc.overrides {
+				setups["pdf"][k] = v
+			}
+			c := &ParserComponent{setups: setups}
+
+			if _, err := c.Invoke(t.Context(), nil, map[string]any{
+				"binary":    []byte("%PDF-1.4"),
+				"file_type": "pdf",
+				"name":      "scansmpl.pdf",
+				"tenant_id": "test-tenant",
+			}); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if gotLang != tc.wantLang {
+				t.Errorf("lang_list = %q, want %q", gotLang, tc.wantLang)
+			}
+		})
+	}
+}
+
 // TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer pins the same
 // bare-UUID routing when the model id lands in layout_recognizer while
 // parse_method stays a named method: the layout selector drives the probe and

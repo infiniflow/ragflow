@@ -287,6 +287,43 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 	return result
 }
 
+// ApplyParentChildChunkerConfig derives runtime children_delimiters from the
+// top-level parent_child setting. parent_child is the sole public source of
+// truth; chunker fields are generated runtime parameters and must not be
+// accepted as an independent dataset setting.
+func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
+	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	componentConfig["parent_child"] = parentChild
+	useParentChild, _ := parentChild["use_parent_child"].(bool)
+	childrenDelimiters := []string{}
+	if useParentChild {
+		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+		}
+	}
+
+	for componentID, value := range componentConfig {
+		if !IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		params["children_delimiters"] = childrenDelimiters
+	}
+}
+
+// IsChunkerComponent reports whether a pipeline component can split parent
+// chunks into children.
+func IsChunkerComponent(componentID string) bool {
+	lowerID := strings.ToLower(componentID)
+	return strings.HasPrefix(lowerID, "generalchunker:") || strings.HasPrefix(lowerID, "tokenchunker:")
+}
+
 // ResolveComponentParamsDefaults takes DSL JSON bytes and returns the
 // component params defaults as an entity.JSONMap {cpnID: {param: value}}.
 // This is a pure function — callers must load the DSL themselves.

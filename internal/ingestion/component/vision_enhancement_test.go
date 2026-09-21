@@ -171,6 +171,68 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 	}
 }
 
+// TestVisionEnhancement_LanguagePriority pins the prompt-language chain:
+// run-level dataset language (inputs) > family setup lang > English. The
+// setup fallback is what makes the DSL's pdf.lang effective, mirroring
+// Python's conf.get("lang") in parser.py:778.
+func TestVisionEnhancement_LanguagePriority(t *testing.T) {
+	tests := []struct {
+		name   string
+		inputs map[string]any
+		setups map[string]schema.ParserSetup
+		want   string
+	}{
+		{
+			name:   "dataset language wins over setup lang",
+			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			want:   "Japanese",
+		},
+		{
+			name:   "setup lang used when inputs carry no lang",
+			inputs: map[string]any{"tenant_id": "t1"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			want:   "Chinese",
+		},
+		{
+			name:   "english when neither is set",
+			inputs: map[string]any{"tenant_id": "t1"},
+			setups: nil,
+			want:   "English",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedLanguage string
+			swapVisionGlobals(t, fakeResolver, (&visionEnhanceCaptureInvoker{}).invoke,
+				func(language string) (string, error) {
+					capturedLanguage = language
+					return "describe the figure in " + language, nil
+				})
+
+			dispatched := parser.ParseResult{
+				OutputFormat: "json",
+				JSON: []map[string]any{
+					{"text": "", "image": "aGVsbG8taW1hZ2U=", "doc_type_kwd": "image"},
+				},
+			}
+
+			_, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs, tc.setups)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want true")
+			}
+			if capturedLanguage != tc.want {
+				t.Errorf("figure prompt language = %q, want %q", capturedLanguage, tc.want)
+			}
+		})
+	}
+}
+
 func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 	called := false
 	swapVisionGlobals(t,

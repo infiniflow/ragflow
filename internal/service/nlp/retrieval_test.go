@@ -2,6 +2,7 @@ package nlp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -240,6 +241,76 @@ func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string,
 }
 func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
+}
+
+type parentChunkMissingEngine struct{ engine.DocEngine }
+
+func (parentChunkMissingEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return nil, errors.New("parent chunk missing")
+}
+
+type parentChunkScopeEngine struct {
+	engine.DocEngine
+	parentSearch *types.SearchRequest
+}
+
+func (e *parentChunkScopeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.parentSearch = req
+	return &types.SearchResult{}, nil
+}
+
+func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
+	engine := &parentChunkScopeEngine{}
+	child := map[string]interface{}{
+		"chunk_id":            "child-a",
+		"mom_id":              "legacy-shared-parent-id",
+		"doc_id":              "doc-a",
+		"kb_id":               "kb-1",
+		"content_with_weight": "matching child text",
+		"similarity":          0.8,
+	}
+
+	got := RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1"}, engine, t.Context())
+
+	if len(got) != 1 || got[0]["chunk_id"] != "child-a" {
+		t.Fatalf("retrieval result = %#v, want fallback child", got)
+	}
+	if engine.parentSearch == nil {
+		t.Fatal("parent lookup did not use a document-scoped search")
+	}
+	if engine.parentSearch.Filter["doc_id"] != "doc-a" {
+		t.Fatalf("parent lookup filter = %#v, want doc_id doc-a", engine.parentSearch.Filter)
+	}
+	if !engine.parentSearch.IncludeUnavailable {
+		t.Fatal("parent lookup must include hidden parent chunks")
+	}
+}
+
+// TestRetrievalByChildrenKeepsChildWhenParentIsMissing verifies a partial
+// parent-child write never turns a relevant child hit into an empty result.
+// Removing the fallback is a retrieval data-loss bug.
+func TestRetrievalByChildrenKeepsChildWhenParentIsMissing(t *testing.T) {
+	child := map[string]interface{}{
+		"chunk_id":            "child-1",
+		"mom_id":              "parent-1",
+		"doc_id":              "doc-1",
+		"kb_id":               "kb-1",
+		"content_with_weight": "matching child text",
+		"similarity":          0.8,
+	}
+
+	got := RetrievalByChildren(
+		[]map[string]interface{}{child},
+		[]string{"tenant-1"},
+		parentChunkMissingEngine{},
+		t.Context(),
+	)
+	if len(got) != 1 {
+		t.Fatalf("retrieval result count = %d, want fallback child", len(got))
+	}
+	if got[0]["chunk_id"] != "child-1" {
+		t.Fatalf("fallback chunk_id = %#v, want child-1", got[0]["chunk_id"])
+	}
 }
 
 func TestBuildInfinityFusionExprUsesVectorSimilarityWeight(t *testing.T) {
