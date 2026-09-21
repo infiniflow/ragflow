@@ -212,11 +212,38 @@ func runDirectFallback(ctx context.Context, deps RAGTools, req runtime.RunReques
 // (kb_prompt / citation_prompt) live in internal/rag/prompts; the system-prompt texts live
 // in the runtime package (report_prompt.go).
 
+// THE EVIDENCE NUMBERS ARE ONE SET, and they are constants the way a fixed pipeline's are.
+//
+//	opening width     fanoutBM25TopN 200 / fanoutHybridTopN 60 / fanoutSemanticQuota 8 / rawSnippetQuota 400
+//	planner queries   8-12 first_queries (action_initialize_state.md)      ← coupled to the opening width
+//	scan delivery     scanOutTotalChars 40000 (runtime/scan_match_any.go)  ← the session's page
+//	answer evidence   answerEvidenceBlocks 30 × answerEvidenceChunkRunes 600, inside evidenceBudgetTokens
+//
+// Why the answer's evidence is a COUNT and not a budget: measured 2026-09-21 (三国/关羽, same question, three
+// runs of one build) rendered_blocks went 10 → 176 → 299 and the answer's citation markers went 8 → 0 → 5
+// with it — the model's citation discipline is a function of how much evidence it is handed, and the pool's
+// size decided that. Same measurement, same day: the enumerated members had no block to cite at all in two
+// of the three runs (the material the session was SHOWN — the scan's delivered windows — was not part of
+// the answer's evidence; see evidenceOrder).
 const (
-	// evidenceBudgetTokens is the token ceiling of the evidence block.
-	// The compose path still fits the whole prompt to the model window
-	// (AnswerDeps.MaxLength / chat.FitMessages), so this is an upper bound.
-	evidenceBudgetTokens = 80000
+	// evidenceBudgetTokens is the token ceiling of the evidence block, sized so the answerEvidenceBlocks
+	// below RENDER WHOLE (30 × 600 CJK runes ≈ 18k tokens plus block headers). The compose path still fits
+	// the whole prompt to the model window (AnswerDeps.MaxLength / chat.FitMessages), so this is an upper
+	// bound — but it is now a bound the SELECTION respects, not one the pool decides.
+	//
+	// It is deliberately NOT 80000: at that ceiling the evidence block carried the whole pool (176-299
+	// blocks) and citation compliance collapsed (see above). The evidence is a hand-picked, deduped list
+	// now, so a generous ceiling only re-opens the hole it was raised for.
+	evidenceBudgetTokens = 24000
+	// answerEvidenceBlocks is how many passages the answer's evidence carries. It is a CONSTANT count: the
+	// answer prompt must not grow with the pool, because everything downstream (prompt fit, marker
+	// resolution, the reader's reference list) is sized from it.
+	answerEvidenceBlocks = 30
+	// answerEvidenceChunkRunes caps ONE evidence block. 600 rather than a 240-rune snapshot, because the
+	// complaint a fragment earns is real: measured 2026-09-21, the answer read "the materials are only
+	// scattered fragments" while 166 windows were in hand — the windows were 240-rune cuts. 600 is the
+	// size band a same-kind pipeline merges its contexts to (350-850).
+	answerEvidenceChunkRunes = 600
 	// evidencePoolQuota: claim pseudo-chunk
 	// cap across the whole first prefetch.
 	evidencePoolQuota = 24
@@ -235,8 +262,9 @@ const (
 	// a2110c7af spec — 0.900). The budget is the ceiling on how DEEP one query's recall can reach;
 	// changing the query count without it starves every query in the plan.
 	rawSnippetQuota = 400
-	// citeChunkCap caps chunks rendered as citation reference.
-	citeChunkCap = 6
+	// citeChunkCap used to cap the chunks rendered as the citation reference; the answer's evidence is now
+	// one selectable list with one bound (answerEvidenceBlocks), so the reference and the blocks cannot
+	// disagree about which passages exist (see evidenceOrder).
 	// answerTimeoutS bounds the answer-composition call.
 	answerTimeoutS = 150.0
 	// naiveEvidenceChunkCap caps evidence chunks in the naive path.

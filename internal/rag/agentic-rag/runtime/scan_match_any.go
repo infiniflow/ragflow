@@ -56,12 +56,16 @@ const (
 	// that are only matched and windowed afterwards, not a delivery bound: what the model pays for is
 	// bounded by the budget below.
 	scanRecallTopN = 600
-	// scanOutTotalChars is the delivery budget of ONE scan: the whole point of the channel is that the
-	// cut is here and not in a ranking, and it is spent on windows of matching text. 72000 rather than
-	// 24000 because the material for "what did X do" is every window naming X — measured 2026-09-21
-	// against 三国演义.txt: 266 of its 1718 chunks name 关羽, and a budget below that silently became the
-	// thing that decided which members existed (133 delivered, 29 left over, the answer listing 11).
-	scanOutTotalChars = 72000
+	// scanOutTotalChars is THE delivery budget of ONE scan, and it is the same number the seed renders
+	// (see renderScanWindows): one budget, so the coverage line's "delivered" is what the model was shown.
+	//
+	// 40000, because that is the page that was measured. It used to be 72000 here while the seed rendered
+	// 40000 of it, so the line reported a cut the model never saw and "…and N more in the evidence pool"
+	// described material that was, by construction, in the pool and readable. The enumeration's material
+	// for "what did X do" is every window naming X — measured 2026-09-21 against 三国演义.txt: 266 of its
+	// 1718 chunks name 关羽 — so what the page cannot carry is REPORTED (Matched/Delivered/Remaining)
+	// rather than silently dropped, and the documents it came from stay reachable through list_chunks.
+	scanOutTotalChars = 40000
 	// scanPerChunkChars bounds ONE delivered window: the sentence around the match plus its neighbour
 	// lines (see NarrowByTerms' line-context expansion).
 	scanPerChunkChars = 400
@@ -104,10 +108,14 @@ type ScanResult struct {
 	ActOnly   bool
 	Terms     []string
 	Windows   []ScanWindow
-	Matched   int      // windows that carry one of the terms, in the recalled candidate set
-	Delivered int      // of those, the ones this call delivers
-	Remaining int      // Matched - Delivered: still in the corpus, not in the answer's hands
-	Docs      []string // documents with the most hits first: the reading order (D)
+	Matched   int // DISTINCT windows that carry one of the terms, in the recalled candidate set
+	Delivered int // of those, the ones this call delivers
+	Remaining int // Matched - Delivered: still in the corpus, not in the answer's hands
+	// Duplicates is how many matching passages restated one already counted (see collapseNearDuplicates):
+	// overlapping retrieval windows of adjacent chunks carry the same sentence, and a repeat is not a
+	// second member — counting it as one spends the delivery budget twice on one fact.
+	Duplicates int
+	Docs       []string // documents with the most hits first: the reading order (D)
 }
 
 // Line renders the scan's coverage as ONE line, for the log and for the tool result.
@@ -141,6 +149,9 @@ func (r ScanResult) Line() string {
 	b.WriteString(CountOf(len(r.Docs), "document"))
 	b.WriteString("; delivered ")
 	b.WriteString(CountOf(r.Delivered, "window"))
+	if r.Duplicates > 0 {
+		fmt.Fprintf(&b, " (%s restating one already counted, collapsed)", CountOf(r.Duplicates, "window"))
+	}
 	if r.ProbesUnasked > 0 {
 		fmt.Fprintf(&b, " (the scan's %.0fs probe clock cut %s)", scanProbeBudgetS,
 			CountOf(r.ProbesUnasked, "probe"))
@@ -330,6 +341,10 @@ func ScanMatchAny(ctx context.Context, deps SearchDeps, terms []string, acts []s
 			}
 		}
 	}
+	// NEAR-DUPLICATE COLLAPSE before anything is counted or delivered: overlapping windows of adjacent
+	// chunks restate the same sentence, and the delivery budget spent on a repeat is a window not
+	// delivered (see collapseNearDuplicates).
+	hits, res.Duplicates = collapseNearDuplicates(hits)
 	res.Matched = len(hits)
 	if res.Matched == 0 {
 		return res
@@ -367,6 +382,45 @@ func ScanMatchAny(ctx context.Context, deps SearchDeps, terms []string, acts []s
 	}
 	res.Docs = docOrderByHits(hits, scanDocOrderMax)
 	return res
+}
+
+// nearDuplicateWindow bounds how many previously-kept passages ONE passage is compared against. The
+// comparison is O(window) per passage instead of O(n), which is what keeps a 600-candidate scan cheap;
+// overlapping windows cluster in the union (they come from adjacent chunks of one document), so the
+// window sees the ones that matter.
+const nearDuplicateWindow = 48
+
+// collapseNearDuplicates drops matching passages that RESTATE one already kept, and returns how many it
+// dropped (see NearDuplicate). It is the "same passage twice" half of coverage: two windows of the same
+// sentence are one member, two evidence blocks are one fact, and a delivery budget that carries repeats
+// is a budget that misses tail.
+func collapseNearDuplicates(hits []map[string]any) ([]map[string]any, int) {
+	if len(hits) < 2 {
+		return hits, 0
+	}
+	kept := make([]map[string]any, 0, len(hits))
+	recent := make([]string, 0, nearDuplicateWindow)
+	dropped := 0
+	for _, c := range hits {
+		text := ChunkTextOf(c)
+		dup := false
+		for _, prev := range recent {
+			if NearDuplicate(prev, text) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			dropped++
+			continue
+		}
+		kept = append(kept, c)
+		recent = append(recent, text)
+		if len(recent) > nearDuplicateWindow {
+			recent = recent[1:]
+		}
+	}
+	return kept, dropped
 }
 
 // spaceLess drops the whitespace: a name the corpus spells with spaces (or decoration the probe

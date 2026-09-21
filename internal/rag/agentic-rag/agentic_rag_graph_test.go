@@ -4298,3 +4298,64 @@ func TestSlotResearchSessionSurvivesMetadataSearchWithoutMetadata(t *testing.T) 
 		t.Errorf("push-down calls = %d, want none: an unknown key is rejected before the index is touched", resolver.calls)
 	}
 }
+
+// TestTheAnswerEvidenceIsWhatTheSessionWasShown pins the answer stage's evidence rule: the passages the run
+// SHOWED come first (the scan's delivered windows are material whether or not a tool call was spent on
+// them), the list has a CONSTANT size, and two passages that say the same thing take one slot.
+//
+// Measured 2026-09-21 (三国/关羽, one build, three runs): the answer enumerated members from the scan's
+// windows while its own evidence carried 10 / 176 / 299 blocks and cited 8 / 0 / 5 markers — the members'
+// windows were not in the list at all, so a member had no block behind it to cite.
+func TestTheAnswerEvidenceIsWhatTheSessionWasShown(t *testing.T) {
+	kb := &runtime.Kbinfos{}
+	var chunks []map[string]any
+	for i := 0; i <= answerEvidenceBlocks+10; i++ {
+		chunks = append(chunks, map[string]any{
+			"chunk_id": fmt.Sprintf("c%02d", i),
+			"doc_id":   "d1",
+			"content":  fmt.Sprintf("第%d段：手起一刀，斩将于马下。", i),
+		})
+	}
+	kb.Admit(func(p *runtime.PoolAdmitter) {
+		for _, c := range chunks {
+			p.Add(c)
+		}
+	})
+	// The scan's delivered windows: two passages of the pool, SHOWN to the session as numbered material.
+	kb.NoteScanWindows([]runtime.ScanWindow{{ChunkID: "c40"}, {ChunkID: "c39"}})
+	// The ranked order is the pool's own, so only the "shown" rule can put c40 first.
+	ranked := append([]map[string]any(nil), chunks...)
+
+	got := evidenceOrder(ranked, kb, answerEvidenceBlocks)
+	if len(got) != answerEvidenceBlocks {
+		t.Fatalf("evidence blocks = %d, want the constant %d", len(got), answerEvidenceBlocks)
+	}
+	if id := runtime.ChunkIDOf(got[0]); id != "c40" {
+		t.Errorf("first evidence block = %q, want the window the session was SHOWN (c40)", id)
+	}
+	if id := runtime.ChunkIDOf(got[1]); id != "c39" {
+		t.Errorf("second evidence block = %q, want the second shown window (c39)", id)
+	}
+	if blocks, _, candidates := kb.EvidenceSelection(); blocks != len(got) || candidates == 0 {
+		t.Errorf("recorded selection = %d block(s) of %d candidate(s), want the returned list",
+			blocks, candidates)
+	}
+
+	// The same passage twice is one slot; a passage that differs by a NAME is another member.
+	const same = "云长手起刀落，斩颜良于马下，众皆骇然。"
+	const other = "云长手起刀落，斩文丑于马下，众皆骇然。"
+	dup := &runtime.Kbinfos{}
+	dup.Admit(func(p *runtime.PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "a", "content": same})
+		p.Add(map[string]any{"chunk_id": "b", "content": same})
+		p.Add(map[string]any{"chunk_id": "c", "content": other})
+	})
+	kept := evidenceOrder([]map[string]any{
+		{"chunk_id": "a", "content": same},
+		{"chunk_id": "b", "content": same},
+		{"chunk_id": "c", "content": other},
+	}, dup, answerEvidenceBlocks)
+	if len(kept) != 2 {
+		t.Errorf("kept = %d passage(s), want 2 (the repeat collapsed, the other member kept)", len(kept))
+	}
+}

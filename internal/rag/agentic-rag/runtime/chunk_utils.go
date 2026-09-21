@@ -55,6 +55,76 @@ func DocIDOf(c map[string]any) string {
 	return ChunkAttr(c, "doc_id", "docid", "document_id")
 }
 
+// shingleRunes is the shingle size of the near-duplicate test below. Four characters is short enough to
+// survive a re-cut boundary (a passage the windowing sliced at a different place) and long enough that
+// unrelated Chinese prose does not collide on its own.
+const shingleRunes = 4
+
+// duplicateOverlap is where two passages count as saying the SAME thing. It is 0.98, NOT the 0.85 a
+// same-kind pipeline uses for its partial-overlap pass, and the difference is the whole point: this
+// runtime's questions are enumerations, whose member passages differ by a NAME and agree in everything
+// else — "关羽手起一刀，斩颜良于马下" against "…斩文丑于马下" is two members by any reader, and a 0.85
+// containment test would call them one passage and drop a member (measured on this repo's own fixtures:
+// forty passages differing in one digit collapsed to ten at 0.85). What this test is FOR is the same
+// passage delivered twice — overlapping windows of adjacent chunks, and parent/child duplicates the
+// retrieval layer already produces (see RetrievalByChildren) — and those agree to within a cut boundary.
+const duplicateOverlap = 0.98
+
+// shingles is the 4-rune shingle set of a normalized text (case- and whitespace-insensitive), or nil.
+func shingles(s string) map[string]struct{} {
+	r := []rune(spaceLess(strings.ToLower(s)))
+	switch {
+	case len(r) == 0:
+		return nil
+	case len(r) < shingleRunes:
+		return map[string]struct{}{string(r): {}}
+	}
+	out := make(map[string]struct{}, len(r)-shingleRunes+1)
+	for i := 0; i+shingleRunes <= len(r); i++ {
+		out[string(r[i:i+shingleRunes])] = struct{}{}
+	}
+	return out
+}
+
+// TextOverlap is the share of the SHORTER text's shingles that also appear in the longer one: 1.0 when
+// one passage contains the other, 0 when they share nothing.
+//
+// It is a containment-flavoured measure on purpose. The passages this runtime compares are windows cut
+// out of adjacent chunks of the SAME document (overlapping retrieval windows), so a long passage and the
+// short window inside it are the same evidence — and a symmetric measure would call them different.
+func TextOverlap(a, b string) float64 {
+	sa, sb := shingles(a), shingles(b)
+	if len(sa) == 0 || len(sb) == 0 {
+		return 0
+	}
+	small, large := sa, sb
+	if len(sb) < len(sa) {
+		small, large = sb, sa
+	}
+	hit := 0
+	for g := range small {
+		if _, ok := large[g]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(small))
+}
+
+// NearDuplicate reports whether two passages say the same thing (see duplicateOverlap).
+//
+// A cheap length guard runs first: a passage five times the length of another cannot be 85% contained in
+// it, and the guard keeps the O(n·m) comparison off the long tail of a scan's hit set.
+func NearDuplicate(a, b string) bool {
+	la, lb := len([]rune(a)), len([]rune(b))
+	if la == 0 || lb == 0 {
+		return false
+	}
+	if la > lb*5 || lb > la*5 {
+		return false
+	}
+	return TextOverlap(a, b) >= duplicateOverlap
+}
+
 // DatasetIDOf: dataset_id / kb_id / knowledgebase_id.
 func DatasetIDOf(c map[string]any) string {
 	return ChunkAttr(c, "dataset_id", "kb_id", "knowledgebase_id")
