@@ -111,6 +111,9 @@ export default function Agent() {
   // canvas on the golang backend — an agent canvas runs the agent, not an
   // ingestion debug preview, so it must never show this tooltip.
   const runTooltipKey = debugRunLimitsTooltipKey(isGoBackend, isPipeline);
+  // The golang backend's ingestion (dataflow) canvas hides the Run/test-run
+  // entry entirely; the agent canvas keeps its Run button on both backends.
+  const showRunButton = !(isGoBackend && isPipeline);
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
@@ -306,11 +309,12 @@ export default function Agent() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          {runTooltipKey ? (
-            <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-          ) : (
-            runButton
-          )}
+          {showRunButton &&
+            (runTooltipKey ? (
+              <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+            ) : (
+              runButton
+            ))}
           {isConversationMode && (
             <Button
               variant={'secondary'}
