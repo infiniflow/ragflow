@@ -476,7 +476,8 @@ func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
 }
 
 // TestVisionEnhancement_PlainTextResponseNotTruncated verifies that a plain-text
-// (no fences) VLM response is returned verbatim — cleanMarkdownBlock must not truncate it.
+// (no fences) VLM response is returned verbatim — common.CleanMarkdownBlock
+// must not truncate it.
 func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
 	plain := "A pipeline diagram showing three stages."
 	swapVisionGlobals(t, fakeResolver,
@@ -709,7 +710,10 @@ func TestExtractVisionAnswer_CleansMarkdownBlock(t *testing.T) {
 	}
 }
 
-func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
+// TestExtractVisionAnswer_EdgeCases drives the shared
+// common.CleanMarkdownBlock through the vision-answer path; the cleanup
+// function itself is pinned in common.TestCleanMarkdownBlock.
+func TestExtractVisionAnswer_EdgeCases(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
@@ -794,10 +798,6 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := cleanMarkdownBlock(tc.input)
-			if got != tc.want {
-				t.Errorf("cleanMarkdownBlock(%q) = %q, want %q", tc.input, got, tc.want)
-			}
 			resp := &modelModule.ChatResponse{Answer: &tc.input}
 			if got := extractVisionAnswer(resp); got != tc.want {
 				t.Errorf("extractVisionAnswer(%q) = %q, want %q", tc.input, got, tc.want)

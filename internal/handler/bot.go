@@ -18,6 +18,7 @@ package handler
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -152,6 +153,17 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 				"Invalid request: "+err.Error())
 			return
+		}
+	}
+	if body.Release == nil {
+		if rawRelease, ok := c.GetQuery("release"); ok {
+			release, err := strconv.ParseBool(rawRelease)
+			if err != nil {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+					"Invalid release value: "+err.Error())
+				return
+			}
+			body.Release = &release
 		}
 	}
 	events, ec, err := h.botService.AgentbotCompletion(

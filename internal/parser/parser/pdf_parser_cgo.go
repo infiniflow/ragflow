@@ -37,6 +37,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 	cfg.Pages = p.Pages
 	cfg.RemoveTOC = p.RemoveTOC
 	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
+	cfg.OnPageDone = p.OnPageDone
 	parser := deepdocpdf.NewParser(cfg)
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
 		outputFormat:       p.OutputFormat,
