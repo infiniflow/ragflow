@@ -84,7 +84,7 @@ export function buildSecondaryOutputOptions(
   }));
 }
 
-function getNodeOutputs(x: BaseNode) {
+export function getNodeOutputs(x: BaseNode) {
   const outputs = x.data.form?.outputs ?? {};
   if (x.data.label !== Operator.Code) {
     return outputs;

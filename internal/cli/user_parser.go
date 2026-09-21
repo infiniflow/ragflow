@@ -264,7 +264,7 @@ func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
 		p.nextToken() // move past the dataset id
 	}
 
-	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+	if err := p.parseSyncLogsWithOptions(1, cmd); err != nil {
 		return nil, err
 	}
 
@@ -282,7 +282,7 @@ func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, erro
 	cmd := NewCommand("api_list_sync_logs")
 	cmd.Params["dataset_name"] = datasetName
 
-	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+	if err := p.parseSyncLogsWithOptions(1, cmd); err != nil {
 		return nil, err
 	}
 
@@ -296,7 +296,7 @@ func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, erro
 // parseSyncLogsWithOptions parses the optional WITH clause of the sync logs
 // listing commands. Only PAGE and PAGE_SIZE are accepted, both as integers,
 // mirroring the search command's space-separated WITH syntax.
-func (p *Parser) parseSyncLogsWithOptions(cmd *Command) error {
+func (p *Parser) parseSyncLogsWithOptions(commandCount int, cmd *Command) error {
 	if p.curToken.Type != TokenWith && !(p.curToken.Type == TokenIdentifier && strings.EqualFold(p.curToken.Value, "with")) {
 		return nil
 	}
@@ -631,6 +631,8 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowAPI()
 	case TokenLog:
 		return p.parseAPIShowLogCommands()
+	case TokenHardware:
+		return p.parseAPIShowHardware()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -883,6 +885,19 @@ func (p *Parser) parseShowLogLevel() (*Command, error) {
 	p.nextToken() // consume LEVEL
 
 	cmd := NewCommand("api_show_log_level")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW HARDWARE
+func (p *Parser) parseAPIShowHardware() (*Command, error) {
+	p.nextToken() // consume HARDWARE
+	cmd := NewCommand("api_show_hardware")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -3653,8 +3668,6 @@ func (p *Parser) parseAPIRemove() (*Command, error) {
 		return p.parseAPIRemoveTask()
 
 	// Dev commands
-	case TokenTag:
-		return p.parseDevRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseDevRemoveChunk()
 	default:

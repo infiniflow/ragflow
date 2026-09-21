@@ -26,9 +26,6 @@ func TestAudioParser_ValidExtension(t *testing.T) {
 	p := NewAudioParser()
 	p.ConfigureFromSetup(map[string]any{
 		"output_format": "text",
-		"vlm": map[string]any{
-			"llm_id": "whisper-1",
-		},
 	})
 
 	result := p.ParseWithResult(ctx, "test.mp3", []byte{1, 2, 3, 4})
@@ -63,18 +60,6 @@ func TestAudioParser_InvalidExtension(t *testing.T) {
 	}
 	if !strings.Contains(result.Err.Error(), "unsupported extension") {
 		t.Errorf("error message should mention unsupported extension: %v", result.Err)
-	}
-}
-
-func TestAudioParser_ConfigureVLM(t *testing.T) {
-	p := NewAudioParser()
-	p.ConfigureFromSetup(map[string]any{
-		"vlm": map[string]any{
-			"llm_id": "openai-whisper",
-		},
-	})
-	if p.VLMModelID != "openai-whisper" {
-		t.Errorf("VLMModelID = %q, want openai-whisper", p.VLMModelID)
 	}
 }
 

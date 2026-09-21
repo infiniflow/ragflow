@@ -170,7 +170,6 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenDocuments
-	TokenTag
 	TokenRegion
 	TokenURL
 	TokenTask
@@ -199,6 +198,7 @@ const (
 	TokenDays
 	TokenWindow
 	TokenActivity
+	TokenHardware
 	TokenData
 	TokenPurge
 	TokenPlan

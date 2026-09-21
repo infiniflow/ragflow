@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"ragflow/internal/common"
 	"strings"
@@ -98,7 +99,7 @@ func parseWithTCADP(
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
 	}
-	if auth := bearer(apiKey); auth != "" {
+	if auth := authHeaderForDownload(baseURL, payload.DocumentRecognizeResultURL, apiKey); auth != "" {
 		downloadReq.Header.Set("Authorization", auth)
 	}
 	downloadResp, err := common.GetSSRFHTTPClient().Do(downloadReq)
@@ -118,4 +119,40 @@ func parseWithTCADP(
 		return ParseResult{Err: err}
 	}
 	return pdfItemsToResult(filename, items, outputFormat, pageCount)
+}
+
+// authHeaderForDownload returns the bearer Authorization header value to
+// send with a TCADP result-download request — but only when the download
+// URL's scheme and host (case-insensitive) both match the configured API
+// server's, and neither is empty.
+//
+// TCADP result URLs are typically presigned object-storage links
+// (S3/CDN) that don't require auth; sending the key to a non-matching
+// host (or downgrading from https to http) would leak the credential
+// outside our trust boundary if the URL is ever attacker-influenced.
+// Returns "" when either URL fails to parse, either Host is empty,
+// the schemes differ, or the hosts differ case-insensitively — so a
+// parse failure defaults to the safer behaviour.
+func authHeaderForDownload(apiBaseURL, downloadURL, apiKey string) string {
+	du, err := url.Parse(downloadURL)
+	if err != nil {
+		return ""
+	}
+	au, err := url.Parse(apiBaseURL)
+	if err != nil {
+		return ""
+	}
+	if du.Scheme == "" || au.Scheme == "" {
+		return ""
+	}
+	if !strings.EqualFold(du.Scheme, au.Scheme) {
+		return ""
+	}
+	if du.Host == "" || au.Host == "" {
+		return ""
+	}
+	if !strings.EqualFold(du.Host, au.Host) {
+		return ""
+	}
+	return bearer(apiKey)
 }

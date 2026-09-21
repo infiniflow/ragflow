@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
@@ -211,9 +212,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// graph releases its output stream, so agent.Stream does not return
 	// until the model finishes. GetMessageStreams blocks on the future's
 	// started signal (closed by the graph onStart callback), so starting
-	// the collector first lets thinking deltas stream out in real time
+	// the collector first lets non-citation deltas stream out in real time
 	// while the checker runs, instead of buffering the entire round.
-	emitDone := emitAgentModelStreams(ctx, future)
+	emitDone := emitAgentModelStreams(ctx, future, p.Cite)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
 		// Drain the collector so its goroutine exits before we return.
@@ -345,7 +346,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 	return input
 }
 
-func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool) <-chan error {
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
@@ -384,6 +385,11 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 					continue
 				}
 				if msg.Content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				// Retrieval tools can add chunks during this call. Hold the first
+				// answer until we know whether citation grounding will run.
+				if cite {
 					continue
 				}
 				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
@@ -446,9 +452,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // the model to insert [ID:N] tags into the assistant's final
 // content.
 //
-// Returns the grounded content on success, the original content
-// unchanged when no chunks are available or the call fails. Mirrors
-// Python's `cite_letter` / `generate_with_citation` flow.
+// Streams grounded deltas when the invoker supports streaming. Returns the
+// original content when no chunks are available or the call fails before
+// emitting anything.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -461,7 +467,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	}
 	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -471,18 +477,46 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 			{Role: schema.User, Content: content},
 		},
 		TopP: p.TopP,
-	})
+	}
+	var resp *ChatInvokeResponse
+	var err error
+	if streamer, ok := inv.(chat.StreamingInvoker); ok {
+		var leadingWhitespace strings.Builder
+		emitting := false
+		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if isThink || delta == "" {
+				return nil
+			}
+			if !emitting {
+				leadingWhitespace.WriteString(delta)
+				if strings.TrimSpace(leadingWhitespace.String()) == "" {
+					return nil
+				}
+				delta = leadingWhitespace.String()
+				emitting = true
+			}
+			runtime.EmitAgentMessage(ctx, delta, "")
+			return nil
+		})
+	} else {
+		resp, err = inv.Invoke(ctx, db, req)
+	}
 	if err != nil {
 		// Grounding is best-effort. Return the original content
 		// so the message still flows; the caller can decide
 		// whether to surface the error.
 		return content, err
 	}
-	grounded := strings.TrimSpace(resp.Content)
-	if grounded == "" {
+	if resp == nil {
+		return content, fmt.Errorf("citation grounding returned no response")
+	}
+	if strings.TrimSpace(resp.Content) == "" {
 		return content, nil
 	}
-	return grounded, nil
+	return resp.Content, nil
 }
 
 // chunksFromState extracts the recorded retrieval chunks from
@@ -963,9 +997,8 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// the canvas state has recorded retrieval chunks (populated
 	// by the Retrieval tool during the ReAct loop), make a second
 	// LLM call to insert [ID:N] tags into the final content. The
-	// grounding call is best-effort — on failure the original
-	// content is kept and the error is surfaced under
-	// outputs["grounding_error"].
+	// grounding call is best-effort until it emits a visible delta. An
+	// interrupted citation stream must not be followed by the first answer.
 	// Diagnostic sentinel (temporary — see plan): log the post-
 	// agentRunner state right before the `msg.Content` deref so a
 	// subsequent panic shows whether the agent returned (nil, nil).
@@ -995,6 +1028,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 				content = grounded
 				groundingStatus = "applied"
 			} else if gErr != nil {
+				if ctx.Err() != nil || runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx) {
+					return nil, fmt.Errorf("component: Agent citation grounding stream: %w", gErr)
+				}
 				groundingStatus = "error: " + gErr.Error()
 			}
 		}
@@ -1011,8 +1047,17 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		out["grounding_status"] = groundingStatus
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
-	if !streamed {
+	switch {
+	case !streamed:
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case artifactMD != "":
+		// Python's stream_output_with_tools_async yields the tool-artifact
+		// markdown as a trailing delta after the LLM stream, so the live SSE
+		// stream (and hence the chat) includes the artifact references even
+		// when the model did not embed them itself. The Go port previously
+		// appended them only to the recorded output and skipped live emission
+		// once the stream had run, so artifact images never appeared in chat.
+		runtime.EmitAgentMessage(ctx, artifactMD, "")
 	}
 	return out, nil
 }
