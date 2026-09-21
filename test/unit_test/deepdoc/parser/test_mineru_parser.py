@@ -1823,3 +1823,188 @@ def test_select_configured_pages_keeps_a_table_that_reaches_out_of_a_range(monke
     kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
 
     assert [o["text"] for o in kept] == ["table 9-10"]
+
+
+class _HttpResponse:
+    def __init__(self, status_code=200, text="", json_body=None, chunks=None):
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 300
+        self.text = text
+        self._json_body = json_body
+        self._chunks = chunks or []
+
+    def json(self):
+        if self._json_body is None:
+            raise ValueError("not json")
+        return self._json_body
+
+    def iter_content(self, chunk_size=1024):
+        return iter(self._chunks)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def test_check_installation_official_cloud_does_not_probe_openapi(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net", mineru_server_url="https://mineru.net/api/v4/extract/task")
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.append(url)
+        return _HttpResponse(json_body={"code": -10002, "msg": "invalid task_id"}, text='{"code":-10002}')
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+    ok, reason = parser.check_installation(backend="vlm-http-client", server_url="https://mineru.net/api/v4/extract/task")
+
+    assert ok, reason
+    assert seen == ["https://mineru.net/api/v1/agent/parse/ragflow-connectivity-probe"]
+
+
+def test_check_installation_official_token_uses_precise_api(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net", mineru_api_token="secret-token")
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.append((url, (headers or {}).get("Authorization")))
+        return _HttpResponse(status_code=404, text="task not found")
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+    ok, reason = parser.check_installation(backend="vlm-http-client")
+
+    assert ok, reason
+    assert seen == [("https://mineru.net/api/v4/extract/task/ragflow-connectivity-probe", "Bearer secret-token")]
+
+
+def test_check_installation_official_token_rejects_unauthorized(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net", mineru_api_token="bad")
+
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: _HttpResponse(status_code=401, text="login required"))
+    ok, reason = parser.check_installation()
+
+    assert not ok
+    assert "authentication failed" in reason
+    assert "openapi.json" not in reason
+
+
+def test_check_installation_local_still_requires_openapi(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+
+    monkeypatch.setattr(module.requests, "head", lambda *a, **k: _HttpResponse(status_code=404, text="missing"))
+    ok, reason = parser.check_installation()
+
+    assert not ok
+    assert "http://mineru.local/openapi.json" in reason
+
+
+def test_official_page_ranges_and_model_version(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net")
+
+    assert parser._official_page_ranges(0, module.MAXIMUM_PAGE_NUMBER) is None
+    assert parser._official_page_ranges(0, 13) == "1-13"
+    assert parser._official_page_ranges(5, 20) == "6-20"
+    assert parser._official_model_version("vlm-http-client") == "vlm"
+    assert parser._official_model_version("pipeline") == "pipeline"
+
+
+def test_run_mineru_official_precise_uploads_and_extracts_zip(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net", mineru_api_token="tok")
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+    extracted = {}
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(("post", url, json, headers.get("Authorization")))
+        return _HttpResponse(json_body={"code": 0, "data": {"batch_id": "batch-1", "file_urls": ["https://upload.example/file"]}})
+
+    def fake_put(url, data=None, timeout=None):
+        calls.append(("put", url, data.read()))
+        return _HttpResponse(status_code=200, text="ok")
+
+    def fake_get(url, headers=None, timeout=None, stream=False):
+        calls.append(("get", url, stream))
+        if url.endswith("/batch/batch-1"):
+            return _HttpResponse(json_body={"code": 0, "data": {"extract_result": [{"state": "done", "full_zip_url": "https://cdn.example/out.zip"}]}})
+        return _HttpResponse(chunks=[b"PK"])
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(module.requests, "put", fake_put)
+    monkeypatch.setattr(module.requests, "get", fake_get)
+    monkeypatch.setattr(module.MinerUParser, "_extract_zip_no_root", lambda self, zip_path, dest, root: extracted.update(zip=str(zip_path), dest=str(dest)))
+    monkeypatch.setattr(module.time, "sleep", lambda _s: None)
+
+    out = parser._run_mineru_api(pdf_path, tmp_path, module.MinerUParseOptions(backend=module.MinerUBackend.VLM_HTTP_CLIENT), page_from=0, page_to=13)
+
+    assert Path(out).is_dir()
+    assert calls[0][0] == "post"
+    assert calls[0][1] == "https://mineru.net/api/v4/file-urls/batch"
+    assert calls[0][2]["model_version"] == "vlm"
+    assert calls[0][2]["files"][0]["page_ranges"] == "1-13"
+    assert calls[0][3] == "Bearer tok"
+    assert calls[1] == ("put", "https://upload.example/file", b"%PDF-1.4")
+    assert extracted["dest"] == str(out)
+
+
+def test_run_mineru_official_agent_writes_markdown_as_content_list(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net")
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        assert url == "https://mineru.net/api/v1/agent/parse/file"
+        assert "Authorization" not in (headers or {})
+        return _HttpResponse(json_body={"code": 0, "data": {"task_id": "task-1", "file_url": "https://upload.example/agent"}})
+
+    def fake_put(url, data=None, timeout=None):
+        data.read()
+        return _HttpResponse(status_code=200)
+
+    def fake_get(url, headers=None, timeout=None, stream=False):
+        if "/parse/task-1" in url:
+            return _HttpResponse(json_body={"code": 0, "data": {"state": "done", "markdown_url": "https://cdn.example/full.md"}})
+        return _HttpResponse(text="# hello")
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(module.requests, "put", fake_put)
+    monkeypatch.setattr(module.requests, "get", fake_get)
+    monkeypatch.setattr(module.time, "sleep", lambda _s: None)
+
+    out = parser._run_mineru_api(pdf_path, tmp_path, module.MinerUParseOptions())
+    content = json.loads((Path(out) / "sample_content_list.json").read_text(encoding="utf-8"))
+
+    assert content == [{"type": "text", "text": "# hello", "page_idx": 0}]
+
+
+def test_read_output_accepts_official_uuid_named_content_list(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net")
+    parser.page_images = [_FakePageImage(200, 400)]
+
+    content_list = [{"type": "text", "text": "hello from official zip", "page_idx": 0, "bbox": [0, 0, 10, 10]}]
+    (tmp_path / "00eba68c-7e53-4295-a305-a6475453483d_content_list.json").write_text(json.dumps(content_list), encoding="utf-8")
+    (tmp_path / "layout.json").write_text(json.dumps({"pdf_info": []}), encoding="utf-8")
+
+    outputs = parser._read_output(tmp_path, "电厂服务平台AI智能化应用技术方案(11)", method="auto", backend="vlm-engine")
+
+    assert outputs[0]["text"] == "hello from official zip"
+
+
+def test_read_output_rejects_multiple_unrelated_content_lists(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    (tmp_path / "aaa_content_list.json").write_text(json.dumps([{"type": "text", "text": "a", "page_idx": 0}]), encoding="utf-8")
+    (tmp_path / "bbb_content_list.json").write_text(json.dumps([{"type": "text", "text": "b", "page_idx": 0}]), encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="Missing output file"):
+        parser._read_output(tmp_path, "expected-stem", method="auto", backend="pipeline")
