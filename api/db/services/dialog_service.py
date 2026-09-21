@@ -939,7 +939,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             )
             langfuse_generation.end()
 
-        return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        return {
+            "answer": think + answer,
+            "reference": refs,
+            "prompt": re.sub(r"\n", "  \n", prompt),
+            "created_at": time.time(),
+            "usage": dict(getattr(getattr(chat_mdl, "mdl", None), "last_usage", None) or {}),
+        }
 
     if langfuse_tracer:
         try:
