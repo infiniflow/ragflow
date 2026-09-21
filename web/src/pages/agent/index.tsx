@@ -121,7 +121,9 @@ export default function Agent() {
     saveGraph();
   }, [saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const { issues, getLatestIssues } = useCanvasChecklist();
+  const { issues, getLatestIssues } = useCanvasChecklist({
+    ownerTenantId: agentDetail?.user_id,
+  });
   const hasBlockingIssues = useCallback(() => {
     if (getLatestIssues().length > 0) {
       message.warning(t('flow.checklistResolveBefore'));

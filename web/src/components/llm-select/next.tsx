@@ -65,13 +65,14 @@ const NextInnerLLMSelect = forwardRef<
       }
     }, [filter]);
 
-    // Validity is checked against the current user's own models — runs
-    // resolve llm_id against the runner's tenant, so a model only the
-    // canvas owner has added is unusable. Gated on isFetched so a slow
-    // list never flashes a false missing state. The filter-derived
-    // modelTypes only narrow the dropdown display, not validity.
+    // Validity is checked against the canvas owner's models: a shared canvas
+    // runs with the owner's models, while an imported dsl.json makes the
+    // importer the owner. Gated on isFetched so a slow list never flashes a
+    // false missing state. The filter-derived modelTypes only narrow the
+    // dropdown display, not validity.
     const { validIds, isFetched: ownModelsFetched } = useModelValidIds(
       ModelTypeMap.llm_id,
+      ownerTenantId,
     );
     const isModelMissing = !!value && ownModelsFetched && !validIds.has(value);
 

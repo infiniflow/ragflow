@@ -25,15 +25,18 @@ import { SelectWithSearch } from './originui/select-with-search';
 type CompilationTemplateFormFieldProps = {
   horizontal?: boolean;
   name?: string;
+  ownerTenantId?: string;
 };
 
 export function CompilationTemplateFormField({
   horizontal,
   name = 'parser_config.compilation_template_group_id',
+  ownerTenantId,
 }: CompilationTemplateFormFieldProps) {
   const { t } = useTranslation();
   const { navigateToAgents } = useNavigatePage();
-  const { options, isFetched, isError } = useCompilationTemplateGroupOptions();
+  const { options, isFetched, isError } =
+    useCompilationTemplateGroupOptions(ownerTenantId);
 
   // No owner-scoped name lookup exists for template groups (strictly
   // owner-tenant, no sharing mechanism) — the raw id is all the missing

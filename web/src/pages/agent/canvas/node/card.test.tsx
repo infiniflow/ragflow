@@ -37,16 +37,16 @@ const mockOwnerModels = [
 ];
 
 jest.mock('@/hooks/use-llm-request', () => ({
-  useModelValidIds: () => mockUseModelValidIds(),
+  useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
   // The display name resolves through the owner's list; validity does not.
   useFetchAllAddedModels: () => ({ data: mockOwnerModels }),
 }));
 
 jest.mock('@/hooks/use-compilation-template-group-request', () => ({
-  useCompilationTemplateGroupOptions: () =>
-    mockUseCompilationTemplateGroupOptions(),
-  useCompilationTemplateGroupValidIds: () =>
-    mockUseCompilationTemplateGroupValidIds(),
+  useCompilationTemplateGroupOptions: (...args: unknown[]) =>
+    mockUseCompilationTemplateGroupOptions(...args),
+  useCompilationTemplateGroupValidIds: (...args: unknown[]) =>
+    mockUseCompilationTemplateGroupValidIds(...args),
 }));
 
 // LlmIcon relies on theme hooks that jsdom cannot satisfy.
@@ -63,7 +63,11 @@ function renderCard(llmId?: string) {
 }
 
 function renderGroupCard(groupId?: string) {
-  return render(<CompilationTemplateLabelCard groupId={groupId} />);
+  return render(
+    <OwnerTenantIdContext.Provider value="owner-tenant">
+      <CompilationTemplateLabelCard groupId={groupId} />
+    </OwnerTenantIdContext.Provider>,
+  );
 }
 
 describe('LLMLabelCard', () => {
@@ -117,6 +121,20 @@ describe('LLMLabelCard', () => {
     expect(container.querySelector('.border-state-error')).not.toBeNull();
     expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();
     expect(container.querySelector('svg.text-state-error')).toBeNull();
+  });
+
+  it('validates against the canvas owner tenant', () => {
+    mockUseModelValidIds.mockReturnValue({
+      validIds: new Set(['m1']),
+      isFetched: true,
+    });
+
+    renderCard('m1');
+
+    expect(mockUseModelValidIds).toHaveBeenCalledWith(
+      ['chat', 'vision'],
+      'owner-tenant',
+    );
   });
 });
 
@@ -196,5 +214,21 @@ describe('CompilationTemplateLabelCard', () => {
       ),
     ).toBeNull();
     expect(container.querySelector('svg.text-state-error')).toBeNull();
+  });
+
+  it('resolves names and validity against the canvas owner tenant', () => {
+    mockUseCompilationTemplateGroupValidIds.mockReturnValue({
+      validIds: new Set(['g1']),
+      isFetched: true,
+    });
+
+    renderGroupCard('g1');
+
+    expect(mockUseCompilationTemplateGroupOptions).toHaveBeenCalledWith(
+      'owner-tenant',
+    );
+    expect(mockUseCompilationTemplateGroupValidIds).toHaveBeenCalledWith(
+      'owner-tenant',
+    );
   });
 });

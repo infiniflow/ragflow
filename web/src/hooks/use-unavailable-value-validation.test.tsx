@@ -26,12 +26,12 @@ const mockUseModelValidIds = jest.fn();
 const mockUseCompilationTemplateGroupValidIds = jest.fn();
 
 jest.mock('@/hooks/use-llm-request', () => ({
-  useModelValidIds: () => mockUseModelValidIds(),
+  useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
 }));
 
 jest.mock('@/hooks/use-compilation-template-group-request', () => ({
-  useCompilationTemplateGroupValidIds: () =>
-    mockUseCompilationTemplateGroupValidIds(),
+  useCompilationTemplateGroupValidIds: (...args: unknown[]) =>
+    mockUseCompilationTemplateGroupValidIds(...args),
 }));
 
 const Schema = z.object({ llm_id: z.string() });
@@ -124,6 +124,21 @@ describe('useUnavailableModelFormSchema', () => {
       result.current.formSchema.safeParse({ llm_id: 'gone' }).success,
     ).toBe(true);
   });
+
+  it('validates against the given owner tenant', () => {
+    mockUseModelValidIds.mockReturnValue({
+      validIds: new Set(['m1']),
+      isFetched: true,
+    });
+    renderHook(() =>
+      useUnavailableModelFormSchema(Schema, { ownerTenantId: 'owner-1' }),
+    );
+
+    expect(mockUseModelValidIds).toHaveBeenCalledWith(
+      ['chat', 'vision'],
+      'owner-1',
+    );
+  });
 });
 
 describe('useUnavailableCompilationTemplateGroupFormSchema', () => {
@@ -181,5 +196,21 @@ describe('useUnavailableCompilationTemplateGroupFormSchema', () => {
         compilation_template_group_id: 'gone',
       }).success,
     ).toBe(true);
+  });
+
+  it('validates against the given owner tenant', () => {
+    mockUseCompilationTemplateGroupValidIds.mockReturnValue({
+      validIds: new Set(['g1']),
+      isFetched: true,
+    });
+    renderHook(() =>
+      useUnavailableCompilationTemplateGroupFormSchema(TemplateSchema, {
+        ownerTenantId: 'owner-1',
+      }),
+    );
+
+    expect(mockUseCompilationTemplateGroupValidIds).toHaveBeenCalledWith(
+      'owner-1',
+    );
   });
 });

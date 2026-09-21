@@ -90,12 +90,15 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
 export function LLMLabelCard({ llmId }: { llmId?: string }) {
   const ownerTenantId = useOwnerTenantId();
   const { t } = useTranslation();
-  // Validity is checked against the current user's own models — runs
-  // resolve llm_id against the runner's tenant, so a model only the
-  // canvas owner has added is unusable. Gated on isFetched so a slow
-  // list never flashes a false error state. The display name still
+  // Validity is checked against the canvas owner's models: a shared canvas
+  // runs with the owner's models, while an imported dsl.json makes the
+  // importer the owner — anything else is flagged. Gated on isFetched so a
+  // slow list never flashes a false error state. The display name likewise
   // resolves through the owner's list.
-  const { validIds, isFetched } = useModelValidIds(ModelTypeMap.llm_id);
+  const { validIds, isFetched } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    ownerTenantId,
+  );
 
   const isUnavailable = !!llmId && isFetched && !validIds.has(llmId);
   // An empty model keeps the historical red state; a loading list shows nothing.
@@ -122,12 +125,14 @@ export function CompilationTemplateLabelCard({
   groupId?: string;
 }) {
   const { t } = useTranslation();
-  const { options } = useCompilationTemplateGroupOptions();
-  // Validity is checked against the current user's own groups — runs resolve
-  // the group under the runner's tenant, so a group only the canvas owner can
-  // see silently no-ops for anyone else. Gated on isFetched so a slow list
-  // never flashes a false error state.
-  const { validIds, isFetched } = useCompilationTemplateGroupValidIds();
+  const ownerTenantId = useOwnerTenantId();
+  const { options } = useCompilationTemplateGroupOptions(ownerTenantId);
+  // Validity is checked against the canvas owner's groups: a shared canvas
+  // runs with the owner's groups, while an imported dsl.json makes the
+  // importer the owner — anything else is flagged. Gated on isFetched so a
+  // slow list never flashes a false error state.
+  const { validIds, isFetched } =
+    useCompilationTemplateGroupValidIds(ownerTenantId);
 
   const isUnavailable = !!groupId && isFetched && !validIds.has(groupId);
   const groupName =

@@ -8,6 +8,7 @@ import { Form } from '@/components/ui/form';
 import {
   useRevalidateUnavailableValue,
   useUnavailableCompilationTemplateGroupFormSchema,
+  useUnavailableModelFormSchema,
 } from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { TFunction } from 'i18next';
@@ -54,8 +55,14 @@ const CompilationForm = ({
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
   const FormSchema = useFormSchema();
-  const { formSchema, templateGroupsFetched } =
-    useUnavailableCompilationTemplateGroupFormSchema(FormSchema);
+  const { formSchema: groupFormSchema, templateGroupsFetched } =
+    useUnavailableCompilationTemplateGroupFormSchema(FormSchema, {
+      ownerTenantId,
+    });
+  const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
+    groupFormSchema,
+    { ownerTenantId },
+  );
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
@@ -68,18 +75,22 @@ const CompilationForm = ({
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
-  // A persisted group from a shared pipeline may be unusable to the current
-  // user — surface the error once the group list has loaded.
+  // Persisted model/group references from an imported dsl.json do not exist
+  // under the importer's tenant — surface the errors once the lists load.
   useRevalidateUnavailableValue(
     form,
     templateGroupsFetched,
     'compilation_template_group_id',
   );
+  useRevalidateUnavailableValue(form, modelsFetched, 'llm_id');
 
   return (
     <Form {...form}>
       <FormWrapper>
-        <CompilationTemplateFormField name="compilation_template_group_id"></CompilationTemplateFormField>
+        <CompilationTemplateFormField
+          name="compilation_template_group_id"
+          ownerTenantId={ownerTenantId}
+        ></CompilationTemplateFormField>
         <LlmSettingFieldItems
           ownerTenantId={ownerTenantId}
         ></LlmSettingFieldItems>

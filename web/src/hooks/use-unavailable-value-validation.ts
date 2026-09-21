@@ -58,18 +58,25 @@ export function useUnavailableValueFormSchema<T extends z.ZodTypeAny>(
 }
 
 /**
- * Availability check for a model field (default `llm_id`). Only the current
- * user's own added models count: runs resolve llm_id against the runner's
- * tenant, so a persisted value from a shared canvas may reference a model
- * the user cannot use.
+ * Availability check for a model field (default `llm_id`), validated against
+ * the models visible under `ownerTenantId` (the current user's own when
+ * omitted): a shared canvas runs with the owner's models, while an imported
+ * dsl.json makes the importer the owner — references pointing anywhere else
+ * get flagged.
  */
 export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
   schema: T,
-  fieldName = 'llm_id',
-  modelTypes: string[] = ModelTypeMap.llm_id,
+  {
+    fieldName = 'llm_id',
+    modelTypes = ModelTypeMap.llm_id,
+    ownerTenantId,
+  }: { fieldName?: string; modelTypes?: string[]; ownerTenantId?: string } = {},
 ) {
   const { t } = useTranslation();
-  const { validIds, isFetched: modelsFetched } = useModelValidIds(modelTypes);
+  const { validIds, isFetched: modelsFetched } = useModelValidIds(
+    modelTypes,
+    ownerTenantId,
+  );
 
   const { formSchema } = useUnavailableValueFormSchema(schema, {
     fieldName,
@@ -83,15 +90,23 @@ export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
 
 /**
  * Availability check for a compilation template group field (default
- * `compilation_template_group_id`). Groups resolve per tenant at run time,
- * so a group referenced by a shared pipeline may not exist for the runner.
+ * `compilation_template_group_id`), validated against the groups visible
+ * under `ownerTenantId`. Groups resolve per tenant at run time, so a group
+ * referenced by an imported dsl.json only exists under its original author's
+ * tenant and gets flagged.
  */
 export function useUnavailableCompilationTemplateGroupFormSchema<
   T extends z.ZodTypeAny,
->(schema: T, fieldName = 'compilation_template_group_id') {
+>(
+  schema: T,
+  {
+    fieldName = 'compilation_template_group_id',
+    ownerTenantId,
+  }: { fieldName?: string; ownerTenantId?: string } = {},
+) {
   const { t } = useTranslation();
   const { validIds, isFetched: templateGroupsFetched } =
-    useCompilationTemplateGroupValidIds();
+    useCompilationTemplateGroupValidIds(ownerTenantId);
 
   const { formSchema } = useUnavailableValueFormSchema(schema, {
     fieldName,

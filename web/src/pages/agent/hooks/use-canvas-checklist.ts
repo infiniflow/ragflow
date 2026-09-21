@@ -64,7 +64,9 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
  * a user who fixes the last issue and immediately clicks Run must not be
  * blocked by a stale debounced value.
  */
-export function useCanvasChecklist() {
+export function useCanvasChecklist({
+  ownerTenantId,
+}: { ownerTenantId?: string } = {}) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
   const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
@@ -74,20 +76,23 @@ export function useCanvasChecklist() {
     data: memoryList,
     isLoading: memoryLoading,
     isError: memoryError,
-  } = useFetchAllMemoryList();
-  // Validate against the current user's own models: runs resolve llm_id
-  // against the runner's tenant, so a model only the canvas owner has added
-  // is unusable to anyone the canvas is shared with.
+  } = useFetchAllMemoryList(ownerTenantId);
+  // Validate against the canvas owner's resources: a shared canvas runs with
+  // the owner's models/groups/memories, while an imported dsl.json makes the
+  // importer the owner — so references pointing anywhere else surface as
+  // issues.
   const { validIds: modelValidIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.llm_id);
+    useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
     isError: templateGroupsError,
-  } = useFetchAllCompilationTemplateGroups();
+  } = useFetchAllCompilationTemplateGroups(ownerTenantId);
   const datasetIds = useMemo(() => collectAllDatasetIds(nodes), [nodes]);
-  const { staleDatasetIds, settled: datasetsSettled } =
-    useStaleDatasetIds(datasetIds);
+  const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
+    datasetIds,
+    ownerTenantId,
+  );
 
   const inputs: CanvasChecklistInputs = useMemo(
     () => ({

@@ -40,15 +40,21 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/hooks/use-compilation-template-group-request', () => ({
-  useCompilationTemplateGroupOptions: () =>
-    mockUseCompilationTemplateGroupOptions(),
+  useCompilationTemplateGroupOptions: (...args: unknown[]) =>
+    mockUseCompilationTemplateGroupOptions(...args),
 }));
 
 jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
   useNavigatePage: () => ({ navigateToAgents: jest.fn() }),
 }));
 
-function Harness({ groupId }: { groupId: string }) {
+function Harness({
+  groupId,
+  ownerTenantId,
+}: {
+  groupId: string;
+  ownerTenantId?: string;
+}) {
   const form = useForm({
     defaultValues: { compilation_template_group_id: groupId },
   });
@@ -56,7 +62,10 @@ function Harness({ groupId }: { groupId: string }) {
   return (
     <TooltipProvider>
       <Form {...form}>
-        <CompilationTemplateFormField name="compilation_template_group_id" />
+        <CompilationTemplateFormField
+          name="compilation_template_group_id"
+          ownerTenantId={ownerTenantId}
+        />
       </Form>
     </TooltipProvider>
   );
@@ -103,5 +112,19 @@ describe('CompilationTemplateFormField', () => {
     const trigger = screen.getByRole('combobox');
     expect(within(trigger).getByText('Group A')).toBeInTheDocument();
     expect(trigger.querySelector('svg.size-4')).toBeNull();
+  });
+
+  it('requests the options of the canvas owner tenant', () => {
+    mockUseCompilationTemplateGroupOptions.mockReturnValue({
+      options: [],
+      isFetched: true,
+      isError: false,
+    });
+
+    render(<Harness groupId="g1" ownerTenantId="owner-1" />);
+
+    expect(mockUseCompilationTemplateGroupOptions).toHaveBeenCalledWith(
+      'owner-1',
+    );
   });
 });
