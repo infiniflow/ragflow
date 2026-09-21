@@ -357,16 +357,16 @@ func newMCPDiscoveryTestServer(t *testing.T) (*httptest.Server, func() []http.He
 
 func withMCPDiscoveryOverrides(t *testing.T, server *httptest.Server) {
 	t.Helper()
-	originalAssert := utility.AssertURLSafe
+	originalAssert := common.AssertURLSafe
 	originalPinned := utility.PinnedHTTPClient
-	utility.AssertURLSafe = func(string) (string, string, error) {
+	common.AssertURLSafe = func(string) (string, string, error) {
 		return "mcp.test", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(string, string, time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		utility.AssertURLSafe = originalAssert
+		common.AssertURLSafe = originalAssert
 		utility.PinnedHTTPClient = originalPinned
 	})
 }

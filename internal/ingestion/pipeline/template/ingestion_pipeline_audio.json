@@ -261,7 +261,7 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker"
+                        "name": "Audio Chunker"
                     },
                     "id": "OneChunker:BlueSkiesLaugh",
                     "measured": {

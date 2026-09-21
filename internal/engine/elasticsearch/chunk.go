@@ -1257,6 +1257,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				// knn leg's w; a text-only query has no such pairing, so the
 				// boolean filter wrapper must not apply the constant boost —
 				// otherwise every BM25 score is silently multiplied by 0.5.
+				//
+				// Logged because it is the boost that orders the first-stage
+				// result set, and so decides which candidates survive the
+				// caller's size cap.
 				if hasVectorMatch {
 					boolMap["boost"] = 1.0 - vectorSimilarityWeight
 				}
@@ -1419,6 +1423,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		return nil, fmt.Errorf("error encoding query: %w", err)
 	}
 
+	// Two legs (text + knn) decide the result set; when the window comes back short
+	// the body is logged below, to tell "the index has less" from "the request
+	// asked for less".
+	hybrid := hasTextMatch && hasVectorMatch
+
 	// Execute search. When useSearchAfter is true we must NOT send
 	// from/size (we dropped them above) and instead walk the result set
 	// page-by-page with the search_after cursor — ES otherwise returns
@@ -1447,6 +1456,20 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(esErr))
 				continue
 			}
+			if hybrid {
+				// A window the backend could not fill is a candidate shortfall
+				// upstream; only then is the request body worth its size.
+				common.InfoCtx(ctx, "Elasticsearch hybrid response",
+					zap.String("index", indexName),
+					zap.Int64("total", indexTotal),
+					zap.Int("returned", len(searchChunks)),
+					zap.Int("window", limit))
+				if limit > 0 && len(searchChunks) < limit {
+					common.InfoCtx(ctx, "Elasticsearch hybrid body (window not filled)",
+						zap.Strings("indexes", req.IndexNames),
+						zap.String("body", elideQueryVector(payload)))
+				}
+			}
 			totalHits += indexTotal
 			allResults = append(allResults, searchChunks...)
 		}
@@ -1458,10 +1481,9 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Post-processing: Sort results by score
 	if len(allResults) > 0 && (matchText != nil || hasVectorMatch) {
+		// "_score" is the ES hit score. "SCORE" is Infinity's column and reads
+		// back empty here, which flattened every hybrid chunk's score to 0.
 		scoreColumn := "_score"
-		if matchText != nil && hasVectorMatch {
-			scoreColumn = "SCORE"
-		}
 
 		pagerankField := common.PAGERANK_FLD
 		if isSkillIndex {
@@ -2121,7 +2143,7 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, isSkillIndex, isMemor
 		"query_string": map[string]interface{}{
 			"fields":               fields,
 			"type":                 "best_fields",
-			"query":                strings.ToLower(matchText.MatchingText),
+			"query":                lowerCaseQueryText(matchText.MatchingText),
 			"minimum_should_match": minimumShouldMatch,
 			"boost":                boost,
 		},
@@ -3075,6 +3097,75 @@ func getDefaultSkillMapping() map[string]interface{} {
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format
+// queryStringOperators holds the tokens Lucene's query_string parser only
+// recognises as operators in upper case.
+var queryStringOperators = map[string]bool{"AND": true, "OR": true, "NOT": true}
+
+// lowerCaseQueryText folds the terms of a query_string expression but keeps its
+// upper-case boolean operators. The *_tks/*_ltks fields are whitespace-analyzed
+// and so case-sensitive, while Lucene only reads AND/OR/NOT in upper case:
+//
+//	"病毒 OR 勒索" -> content_ltks:病毒 content_ltks:勒索
+//	"病毒 or 勒索" -> content_ltks:病毒 content_ltks:or content_ltks:勒索
+//
+// That folded "or" is an extra clause every minimum_should_match percentage is
+// re-based on — a 94-hit search came back with 32. Quoted text is a phrase, never
+// an operator, so it is folded too.
+func lowerCaseQueryText(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	inQuote := false
+	escaped := false
+	for i := 0; i < len(text); {
+		c := text[i]
+		if escaped {
+			b.WriteByte(c)
+			escaped = false
+			i++
+			continue
+		}
+		switch {
+		case c == '\\':
+			b.WriteByte(c)
+			escaped = true
+			i++
+		case c == '"':
+			inQuote = !inQuote
+			b.WriteByte(c)
+			i++
+		case isASCIILetter(c):
+			j := i
+			for j < len(text) && isASCIILetter(text[j]) {
+				j++
+			}
+			word := text[i:j]
+			if !inQuote && queryStringOperators[word] {
+				b.WriteString(word)
+			} else {
+				b.WriteString(strings.ToLower(word))
+			}
+			i = j
+		default:
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return b.String()
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// queryVectorField matches the serialized query vector: 1024 floats that say
+// nothing about why a search came back short, so they never reach the log.
+var queryVectorField = regexp.MustCompile(`"query_vector":\s*\[[^\]]*\]`)
+
+// elideQueryVector drops that vector from a body before it is logged.
+func elideQueryVector(body []byte) string {
+	return queryVectorField.ReplaceAllString(string(body), `"query_vector":"<elided>"`)
+}
+
 func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[string]interface{} {
 	if esResp == nil || esResp.Hits.Hits == nil {
 		return []map[string]interface{}{}
@@ -3193,8 +3284,9 @@ func sortByScore(chunks []map[string]interface{}, limit int) []map[string]interf
 		return chunks
 	}
 
-	// Sort by _score descending
-	sort.Slice(chunks, func(i, j int) bool {
+	// Stable: the reference does not re-sort at all, so ties keep the order ES
+	// returned them in.
+	sort.SliceStable(chunks, func(i, j int) bool {
 		scoreI := getChunkScore(chunks[i])
 		scoreJ := getChunkScore(chunks[j])
 		return scoreI > scoreJ

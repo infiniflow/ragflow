@@ -418,7 +418,10 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
 	// The legs report one level deeper: they are what this prefetch runs, not
 	// sibling steps of it.
-	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, capacity)
+	// The FIRST prefetch round is the one that runs the metadata channel: the rewrites
+	// that follow are already targeted at a gap, while these sub-questions are the
+	// planner's raw wording and more likely to NAME a document.
+	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, capacity, true)
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": 0, "new": added})
 	}
@@ -695,7 +698,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	// round got room <= 0 and admitted nothing, so the round reported "retrieval
 	// saturated" and discarded itself while the pool still had room to take the
 	// evidence it had just asked for.
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, runtime.EvidencePoolCap())
+	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, runtime.EvidencePoolCap(), false)
 	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
 	// snippets means further full research passes just burn latency.
 	if added == 0 && st.SearchRounds >= 1 {
@@ -1718,9 +1721,13 @@ func NewAgenticLoop() AgenticLoop {
 			// web_search is visible only when the mode exposes it AND a provider is actually
 			// wired. Advertising it without a provider leaves the model calling a tool that can
 			// only return an infra error.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields, read once here and rendered into the
+			// metadata_search schema and the session seed. Nil (no metadata / unreadable
+			// index / no resolver) keeps the shipped title-only schema.
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		}
 
 		st, runErr := BuildAgenticGraph(ctx, RAGTools{
