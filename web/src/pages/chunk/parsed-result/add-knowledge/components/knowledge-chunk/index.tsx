@@ -2,11 +2,13 @@ import {
   useFetchNextChunkList,
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
+import type { IChunk } from '@/interfaces/database/dataset';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
+import { ChunkTextMode } from './constant';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -66,7 +68,6 @@ function Chunk() {
     handleInputChange,
     available,
     handleSetAvailable,
-    dataUpdatedAt,
   } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
 
@@ -74,6 +75,9 @@ function Chunk() {
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
   const { switchChunk } = useSwitchChunk();
   const [chunkList, setChunkList] = useState(data);
+  useEffect(() => {
+    setChunkList(data);
+  }, [data]);
   const {
     chunkUpdatingLoading,
     onChunkUpdatingOk,
@@ -85,9 +89,6 @@ function Chunk() {
   } = useUpdateChunk();
   const { navigateToDataFile, getQueryString } = useNavigatePage();
   const fileUrl = useGetDocumentUrl(false);
-  useEffect(() => {
-    setChunkList(data);
-  }, [data]);
 
   const clearSelectedChunkIds = useCallback(() => {
     setSelectedChunkIds([]);
@@ -224,14 +225,14 @@ function Chunk() {
     return 'unknown';
   }, [documentInfo]);
 
-  // Virtual list setup for chunk cards
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: chunkList.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 120, // Estimated card height
-    overscan: 5, // Render 5 extra items above/below viewport
-  });
+  // Remount the virtual list exactly when the rendered set changes. Keying on
+  // the id sequence (instead of dataUpdatedAt) means a background refetch that
+  // returns the same chunks does not reset scroll, while search / page /
+  // filter results get a fresh virtualizer with no stale heights.
+  const listKey = useMemo(
+    () => chunkList.map((x) => x.chunk_id).join(','),
+    [chunkList],
+  );
 
   return (
     <main className="h-dvh flex flex-col">
@@ -357,51 +358,17 @@ function Chunk() {
                       />
                     </div>
 
-                    <div
-                      ref={scrollContainerRef}
-                      className="flex-1 overflow-y-auto min-h-0"
-                    >
-                      <div
-                        style={{
-                          height: `${virtualizer.getTotalSize()}px`,
-                          width: '100%',
-                          position: 'relative',
-                        }}
-                      >
-                        {virtualizer.getVirtualItems().map((virtualItem) => {
-                          const item = chunkList[virtualItem.index];
-                          return (
-                            <div
-                              key={item.chunk_id}
-                              data-index={virtualItem.index}
-                              ref={virtualizer.measureElement}
-                              style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                transform: `translateY(${virtualItem.start}px)`,
-                              }}
-                              className="pb-4"
-                            >
-                              <ChunkCard
-                                item={item}
-                                editChunk={showChunkUpdatingModal}
-                                checked={selectedChunkIds.some(
-                                  (x) => x === item.chunk_id,
-                                )}
-                                handleCheckboxClick={handleSingleCheckboxClick}
-                                switchChunk={handleSwitchChunk}
-                                clickChunkCard={handleChunkCardClick}
-                                selected={item.chunk_id === selectedChunkId}
-                                textMode={textMode}
-                                t={dataUpdatedAt}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <ChunkVirtualList
+                      key={listKey}
+                      items={chunkList}
+                      selectedChunkId={selectedChunkId}
+                      selectedChunkIds={selectedChunkIds}
+                      textMode={textMode}
+                      editChunk={showChunkUpdatingModal}
+                      handleCheckboxClick={handleSingleCheckboxClick}
+                      switchChunk={handleSwitchChunk}
+                      clickChunkCard={handleChunkCardClick}
+                    />
 
                     <footer className="mt-5">
                       <RAGFlowPagination
@@ -431,6 +398,86 @@ function Chunk() {
         />
       )}
     </main>
+  );
+}
+
+interface ChunkVirtualListProps {
+  items: IChunk[];
+  selectedChunkId?: string;
+  selectedChunkIds: string[];
+  textMode: ChunkTextMode;
+  editChunk: (chunkId: string) => void;
+  handleCheckboxClick: (chunkId: string, checked: boolean) => void;
+  switchChunk: (available?: number, chunkIds?: string[]) => void;
+  clickChunkCard: (chunkId: string) => void;
+}
+
+// Owned by a separate component so each result set can remount it (key from
+// the parent): the virtualizer and its scroll element are born together, so
+// a fresh search starts from estimates instead of the previous set's stale
+// per-index measured heights that made cards overlap.
+function ChunkVirtualList({
+  items,
+  selectedChunkId,
+  selectedChunkIds,
+  textMode,
+  editChunk,
+  handleCheckboxClick,
+  switchChunk,
+  clickChunkCard,
+}: ChunkVirtualListProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 180,
+    overscan: 5,
+    getItemKey: (index) => items[index]?.chunk_id ?? index,
+  });
+
+  return (
+    <div
+      ref={scrollContainerRef}
+      className="flex-1 overflow-y-auto min-h-0"
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const item = items[virtualItem.index];
+          return (
+            <div
+              key={virtualItem.key}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+              className="pb-4"
+            >
+              <ChunkCard
+                item={item}
+                editChunk={editChunk}
+                checked={selectedChunkIds.some((x) => x === item.chunk_id)}
+                handleCheckboxClick={handleCheckboxClick}
+                switchChunk={switchChunk}
+                clickChunkCard={clickChunkCard}
+                selected={item.chunk_id === selectedChunkId}
+                textMode={textMode}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

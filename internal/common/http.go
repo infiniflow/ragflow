@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 const (
@@ -88,49 +89,102 @@ func GetSchemeSafeHTTPClient() *http.Client {
 	return schemeSafeHttpClient
 }
 
+// providerStreamLogThreshold / providerCallLogThreshold are the durations past
+// which a provider call's timings are reported without LLM_DEBUG. A streaming
+// answer is reported earlier because it is the one the user waits on.
+const (
+	providerStreamLogThreshold = 5 * time.Second
+	providerCallLogThreshold   = 30 * time.Second
+)
+
 func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	if !IsLLMDebugEnabled() {
-		return base
-	}
-	return &providerLoggingTransport{base: base, now: time.Now}
+	// Always installed: LLM_DEBUG decides whether payloads are logged, not whether
+	// timings are collected — first-token only exists while the call is in flight.
+	return &providerLoggingTransport{base: base, now: time.Now, debug: IsLLMDebugEnabled()}
 }
 
 type providerLoggingTransport struct {
-	base http.RoundTripper
-	now  func() time.Time
+	base  http.RoundTripper
+	now   func() time.Time
+	debug bool
 }
 
 func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	payload, err := readAndRestoreRequestBody(req)
-	if err != nil {
-		return nil, err
-	}
 	providerURL := redactProviderURL(req.URL)
-	logPayload := redactProviderBody(payload)
+	logPayload := ""
+	if t.debug {
+		payload, err := readAndRestoreRequestBody(req)
+		if err != nil {
+			return nil, err
+		}
+		logPayload = redactProviderBody(payload)
+	}
 
 	startedAt := t.now()
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
-		logProviderCall(providerURL, logPayload, 0, "", t.now().Sub(startedAt), 0, err)
+		if t.debug {
+			logProviderCall(providerURL, logPayload, 0, "", t.now().Sub(startedAt), 0, err)
+		}
 		return nil, err
 	}
 	if resp.Body == nil {
-		logProviderCall(providerURL, logPayload, resp.StatusCode, "", t.now().Sub(startedAt), 0, nil)
+		if t.debug {
+			logProviderCall(providerURL, logPayload, resp.StatusCode, "", t.now().Sub(startedAt), 0, nil)
+		}
 		return resp, nil
 	}
 
+	summary := providerCallTiming{
+		url:       providerURL,
+		status:    resp.StatusCode,
+		streaming: strings.Contains(resp.Header.Get("Content-Type"), "event-stream"),
+	}
 	resp.Body = &providerResponseBody{
 		ReadCloser: resp.Body,
 		startedAt:  startedAt,
 		now:        t.now,
+		capture:    t.debug,
 		log: func(body []byte, took, firstToken time.Duration) {
-			logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), took, firstToken, nil)
+			if t.debug {
+				logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), took, firstToken, nil)
+				return
+			}
+			summary.report(took, firstToken)
 		},
 	}
 	return resp, nil
+}
+
+// providerCallTiming describes one provider call worth reporting.
+type providerCallTiming struct {
+	url       string
+	status    int
+	streaming bool
+}
+
+// report logs the call once it is slow enough to be worth explaining. firstToken
+// is queueing, connection setup and prefill; the rest is generation — or a
+// consumer stalling the stream, which shows as a large took next to a small
+// firstToken.
+func (p providerCallTiming) report(took, firstToken time.Duration) {
+	limit := providerCallLogThreshold
+	if p.streaming {
+		limit = providerStreamLogThreshold
+	}
+	if took < limit {
+		return
+	}
+	Info("Provider call",
+		zap.String("url", p.url),
+		zap.Int("status", p.status),
+		zap.Bool("streaming", p.streaming),
+		zap.Duration("took", took),
+		zap.Duration("firstToken", firstToken),
+		zap.Duration("afterFirstToken", took-firstToken))
 }
 
 // providerResponseBody captures bytes while callers consume them, preserving
@@ -143,6 +197,7 @@ type providerResponseBody struct {
 	firstToken time.Duration
 	firstOnce  sync.Once
 	logOnce    sync.Once
+	capture    bool
 	log        func([]byte, time.Duration, time.Duration)
 }
 
@@ -152,7 +207,9 @@ func (b *providerResponseBody) Read(p []byte) (int, error) {
 		b.firstOnce.Do(func() {
 			b.firstToken = b.now().Sub(b.startedAt)
 		})
-		_, _ = b.body.Write(p[:n])
+		if b.capture {
+			_, _ = b.body.Write(p[:n])
+		}
 	}
 	if err == io.EOF {
 		b.writeLogOnce()

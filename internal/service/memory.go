@@ -17,6 +17,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -410,12 +412,19 @@ func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*
 	for id, count := range ownerCounts {
 		resp.Filter.Owner = append(resp.Filter.Owner, MemoryFilterOption{ID: id, Label: ownerLabels[id], Count: count})
 	}
-	for id, count := range typeCounts {
-		resp.Filter.MemoryType = append(resp.Filter.MemoryType, MemoryFilterOption{ID: id, Label: id, Count: count})
+	for _, id := range []string{"raw", "semantic", "episodic", "procedural"} {
+		if count := typeCounts[id]; count > 0 {
+			resp.Filter.MemoryType = append(resp.Filter.MemoryType, MemoryFilterOption{ID: id, Label: id, Count: count})
+		}
 	}
-	for id, count := range storageCounts {
-		resp.Filter.StorageType = append(resp.Filter.StorageType, MemoryFilterOption{ID: id, Label: id, Count: count})
+	for _, id := range []string{"table", "graph"} {
+		if count := storageCounts[id]; count > 0 {
+			resp.Filter.StorageType = append(resp.Filter.StorageType, MemoryFilterOption{ID: id, Label: id, Count: count})
+		}
 	}
+	slices.SortFunc(resp.Filter.Owner, func(a, b MemoryFilterOption) int {
+		return cmp.Or(cmp.Compare(strings.ToLower(a.Label), strings.ToLower(b.Label)), cmp.Compare(a.ID, b.ID))
+	})
 	resp.Total = int64(len(memories))
 	return resp, nil
 }

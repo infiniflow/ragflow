@@ -283,7 +283,7 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker"
+                        "name": "Picture Chunker"
                     },
                     "id": "OneChunker:BrightColorsGlow",
                     "measured": {

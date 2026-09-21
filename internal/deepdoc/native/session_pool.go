@@ -10,9 +10,11 @@ package native
 // model. This pool caches one session per (model signature) tuple and hands it
 // back between calls.
 //
-// Sessions are pooled, not shared concurrently: session.Run copies the caller's
-// input into the session's fixed-shape input tensor and then executes, so a
-// single session must never be touched by two goroutines at once. Get returns a
+// Sessions are pooled, not shared concurrently: a session's underlying ONNX
+// handle is not safe for concurrent use, so a single session must never be
+// touched by two goroutines at once. (Each Run allocates its own input/output
+// tensors and frees them before returning; the constraint is about the handle,
+// not any pinned buffer.) Get returns a
 // session owned by the caller until release is called; release returns it to
 // the pool for reuse. This keeps the Get/Run/Release window single-owner, which
 // is what makes reuse safe under the page/region worker pools.
@@ -201,16 +203,15 @@ func (p *sessionPool[K, V]) evictLRU() {
 // per modelDir in practice.
 type sessKey struct {
 	modelPath, inName, outName string
-	inShape, outShape          string
+	inShape                    string
 }
 
-func sessKeyOf(modelPath, inName string, inShape []int64, outName string, outShape []int64) sessKey {
+func sessKeyOf(modelPath, inName string, inShape []int64, outName string) sessKey {
 	return sessKey{
 		modelPath: modelPath,
 		inName:    inName,
 		outName:   outName,
 		inShape:   shapeKey(inShape),
-		outShape:  shapeKey(outShape),
 	}
 }
 
@@ -228,10 +229,10 @@ var modelSessions = newSessionPool[sessKey, *session](0, 0)
 
 // getModelSession returns a reusable session for the given model signature plus
 // a release func. The caller must call release exactly once.
-func getModelSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string, outShape []int64) (*session, func(), error) {
-	key := sessKeyOf(modelPath, inName, inShape, outName, outShape)
+func getModelSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*session, func(), error) {
+	key := sessKeyOf(modelPath, inName, inShape, outName)
 	return modelSessions.Get(ctx, key, func() (*session, error) {
-		return NewSession(modelPath, inName, inShape, outName, outShape)
+		return NewSession(modelPath, inName, inShape, outName)
 	})
 }
 
