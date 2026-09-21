@@ -212,8 +212,8 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// until the model finishes. GetMessageStreams blocks on the future's
 	// started signal (closed by the graph onStart callback), so starting
 	// the collector first lets thinking deltas stream out in real time
-	// while the checker runs, instead of buffering the entire round.
-	emitDone := emitAgentModelStreams(ctx, future)
+	// while the checker runs when citation grounding is disabled.
+	emitDone := emitAgentModelStreams(ctx, future, p.Cite)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
 		// Drain the collector so its goroutine exits before we return.
@@ -345,7 +345,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 	return input
 }
 
-func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool) <-chan error {
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
@@ -381,6 +381,10 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 					continue
 				}
 				if msg.Role != "" && msg.Role != schema.Assistant {
+					continue
+				}
+				if cite {
+					// Grounding may replace the draft, so emit the completed answer below.
 					continue
 				}
 				if msg.Content == "" && msg.ReasoningContent == "" {
@@ -1012,7 +1016,10 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
 	switch {
-	case !streamed:
+	case p.Cite || !streamed:
+		if streamed {
+			thinking = ""
+		}
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	case artifactMD != "":
 		// Python's stream_output_with_tools_async yields the tool-artifact
