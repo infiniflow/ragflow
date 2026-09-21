@@ -43,7 +43,6 @@ def file_peer():
 
         def log_message(self, *args):
             """Suppress the HTTP server's default stderr logging."""
-            pass
 
         def do_HEAD(self):
             """Record the decoded file path and return its configured HTTP status."""
