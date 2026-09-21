@@ -4130,3 +4130,170 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 		streamed: true,
 	}, nil
 }
+
+func (c *CLI) APISetCoresCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	cores, ok := cmd.Params["cores"].(int)
+	if !ok {
+		return nil, fmt.Errorf("cores not provided")
+	}
+
+	payload := map[string]interface{}{
+		"cores": cores,
+	}
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/cores", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set CPU cores: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set CPU cores: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set CPU cores failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APISetMemoryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	memorySize, ok := cmd.Params["memory_size"].(int)
+	if !ok {
+		return nil, fmt.Errorf("memory_size not provided")
+	}
+
+	payload := map[string]interface{}{
+		"memory_size": memorySize,
+	}
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/memory", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set memory: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set memory: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set memory failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APISetConcurrencyCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	concurrency, ok := cmd.Params["concurrency"].(int)
+	if !ok {
+		return nil, fmt.Errorf("concurrency not provided")
+	}
+
+	payload := map[string]interface{}{
+		"concurrency": concurrency,
+	}
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/concurrency", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set concurrency: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set concurrency: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set concurrency failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) APIShowCoresCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/cores", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CPU cores: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get CPU cores")
+}
+
+func (c *CLI) APIShowMemoryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/memory", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get memory")
+}
+
+func (c *CLI) APIShowConcurrencyCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/concurrency", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get concurrency: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get concurrency")
+}
