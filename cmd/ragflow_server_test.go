@@ -289,6 +289,47 @@ func TestParseArgsMigrateIsStandalone(t *testing.T) {
 	}
 }
 
+func TestParseArgsLogLevel(t *testing.T) {
+	for _, level := range []string{"debug", "info", "warn", "error"} {
+		for _, argv := range [][]string{{"--api", "--log-level", level}, {"--migrate", "--log-level=" + level}} {
+			args, err := parseArgsForTest(t, argv...)
+			if err != nil {
+				t.Fatalf("parseArgs(%v) error = %v", argv, err)
+			}
+			if got := selectedLogLevel(args, "info"); got != level {
+				t.Errorf("selectedLogLevel(%v) = %q, want %q", argv, got, level)
+			}
+		}
+	}
+
+	for _, argv := range [][]string{{"--api", "--log-level"}, {"--api", "--log-level=trace"}, {"--api", "--log-level", "fatal"}} {
+		if _, err := parseArgsForTest(t, argv...); err == nil {
+			t.Errorf("parseArgs(%v) error = nil, want error", argv)
+		}
+	}
+}
+
+func TestSelectedLogLevelPrecedence(t *testing.T) {
+	args, err := parseArgsForTest(t, "--api")
+	if err != nil {
+		t.Fatalf("parseArgs(--api) error = %v", err)
+	}
+	if got := selectedLogLevel(args, ""); got != "warn" {
+		t.Errorf("default log level = %q, want warn", got)
+	}
+	if got := selectedLogLevel(args, "info"); got != "info" {
+		t.Errorf("configured log level = %q, want info", got)
+	}
+
+	args, err = parseArgsForTest(t, "--api", "--log-level", "error", "--debug")
+	if err != nil {
+		t.Fatalf("parseArgs with --debug error = %v", err)
+	}
+	if got := selectedLogLevel(args, "info"); got != "debug" {
+		t.Errorf("--debug log level = %q, want debug", got)
+	}
+}
+
 func TestParseArgsMigrateRejectsMode(t *testing.T) {
 	for _, mode := range []string{"--api", "--admin", "--ingestor", "--syncer"} {
 		if _, err := parseArgsForTest(t, mode, "--migrate"); err == nil {

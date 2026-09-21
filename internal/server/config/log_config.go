@@ -40,7 +40,7 @@ import (
 // defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
 // reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level      string `mapstructure:"level"`       // debug, info, warn, error; default "info"
+	Level      string `mapstructure:"level"`       // debug, info, warn, error; default "warn"
 	Format     string `mapstructure:"format"`      // json, text (reserved for future use); default "json"
 	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
 	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
@@ -52,7 +52,7 @@ type LogConfig struct {
 func (c *Config) ParseLogConfig(v *viper.Viper) error {
 	// Default Log config. Rotation defaults come from common so they stay
 	// in sync with the logger's own fallback values.
-	c.log.Level = "info"
+	c.log.Level = "warn"
 	c.log.Format = "json"
 	c.log.Path = "logs"
 	c.log.MaxSize = common.DefaultLogMaxSizeMB
