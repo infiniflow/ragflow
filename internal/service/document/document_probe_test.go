@@ -22,7 +22,6 @@ import (
 	"errors"
 	"io"
 	"reflect"
-	"strings"
 	"testing"
 
 	"ragflow/internal/parser/parser"
@@ -30,68 +29,88 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-func TestProbeTable_CSV(t *testing.T) {
+// A probe is only useful while a name it reports is the name ingestion creates,
+// so it reads through the parser's own header rules. These cases pin the shapes
+// the dispatch has to carry over from each reader: a header that does not start
+// the file, a repeated or blank name, the bookkeeping columns the renderer
+// deletes, a BOM, and the delimiter each suffix selects.
+func TestProbeTable_ColumnNames(t *testing.T) {
+	workbook := func(rows [][]string) []byte {
+		f := excelize.NewFile()
+		defer f.Close()
+		for i, row := range rows {
+			for j, cell := range row {
+				name, err := excelize.CoordinatesToCellName(j+1, i+1)
+				if err != nil {
+					t.Fatalf("coordinate: %v", err)
+				}
+				if err := f.SetCellValue("Sheet1", name, cell); err != nil {
+					t.Fatalf("set cell: %v", err)
+				}
+			}
+		}
+		var buf bytes.Buffer
+		if err := f.Write(&buf); err != nil {
+			t.Fatalf("write xlsx: %v", err)
+		}
+		return buf.Bytes()
+	}
+
+	cases := []struct {
+		name     string
+		filename string
+		content  []byte
+		want     []string
+	}{
+		{
+			name:     "a repeated name is suffixed once the rows above the header are skipped",
+			filename: "test.csv",
+			content:  []byte("\n\n  \nName,City,Name\nAlice,Paris,Bob\n"),
+			want:     []string{"Name", "City", "Name_2"},
+		},
+		{
+			name:     "bookkeeping columns never reach a chunk, so the probe must not offer them",
+			filename: "test.csv",
+			content:  []byte("id,name,index,amount\n1,Alice,2,10\n"),
+			want:     []string{"name", "amount"},
+		},
+		{
+			name:     "a BOM is not part of the first name",
+			filename: "bom.csv",
+			content:  []byte("\ufeffName,City\nAlice,Paris\n"),
+			want:     []string{"Name", "City"},
+		},
+		{
+			name:     "a blank delimited cell keeps its empty name",
+			filename: "data.tsv",
+			content:  []byte("col1\t\tcol3\nval1\tval2\tval3\n"),
+			want:     []string{"col1", "", "col3"},
+		},
+		{
+			name:     "a txt table is tab-separated, so a comma does not split its header",
+			filename: "data.txt",
+			content:  []byte("name,full\tamount\nAlice,Ann\t10\n"),
+			want:     []string{"name,full", "amount"},
+		},
+		{
+			name:     "a sheet whose first row is empty is read from its next row",
+			filename: "catalog.xlsx",
+			content:  workbook([][]string{{""}, {"Product", "Price", "Product"}}),
+			want:     []string{"Product", "Price", "Product_2"},
+		},
+	}
+
 	svc := &DocumentService{}
-
-	csvData := "\n\n  \nName,City,Name\nAlice,Paris,Bob\n"
-	cols, err := svc.ProbeTable(strings.NewReader(csvData), "test.csv")
-	if err != nil {
-		t.Fatalf("ProbeTable: %v", err)
-	}
-
-	want := []string{"Name", "City", "Name_2"}
-	if !reflect.DeepEqual(cols, want) {
-		t.Fatalf("got %#v, want %#v", cols, want)
-	}
-}
-
-// The parser deletes the spreadsheet bookkeeping columns before rendering, so
-// the probe must not offer a role for a column that never reaches a chunk.
-func TestProbeTable_DropsBookkeepingColumns(t *testing.T) {
-	svc := &DocumentService{}
-
-	cols, err := svc.ProbeTable(strings.NewReader("id,name,index,amount\n1,Alice,2,10\n"), "test.csv")
-	if err != nil {
-		t.Fatalf("ProbeTable: %v", err)
-	}
-
-	want := []string{"name", "amount"}
-	if !reflect.DeepEqual(cols, want) {
-		t.Fatalf("got %#v, want %#v", cols, want)
-	}
-}
-
-func TestProbeTable_CSVStripsBOM(t *testing.T) {
-	svc := &DocumentService{}
-
-	cols, err := svc.ProbeTable(strings.NewReader("\ufeffName,City\nAlice,Paris\n"), "bom.csv")
-	if err != nil {
-		t.Fatalf("ProbeTable: %v", err)
-	}
-
-	// The parser strips the BOM too (csv_parser.go), so the probe must report
-	// the same names; a leading U+FEFF would never match a column role.
-	want := []string{"Name", "City"}
-	if !reflect.DeepEqual(cols, want) {
-		t.Fatalf("got %#v, want %#v", cols, want)
-	}
-}
-
-func TestProbeTable_TSV(t *testing.T) {
-	svc := &DocumentService{}
-
-	tsvData := "col1\t\tcol3\nval1\tval2\tval3\n"
-	cols, err := svc.ProbeTable(strings.NewReader(tsvData), "data.tsv")
-	if err != nil {
-		t.Fatalf("ProbeTable: %v", err)
-	}
-
-	// A delimited header is indexed as read, so the blank cell keeps its empty
-	// name; inventing Column_2 here would offer a role for a column that never
-	// exists in the index.
-	want := []string{"col1", "", "col3"}
-	if !reflect.DeepEqual(cols, want) {
-		t.Fatalf("got %#v, want %#v", cols, want)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cols, err := svc.ProbeTable(bytes.NewReader(tc.content), tc.filename)
+			if err != nil {
+				t.Fatalf("ProbeTable: %v", err)
+			}
+			if !reflect.DeepEqual(cols, tc.want) {
+				t.Fatalf("got %#v, want %#v", cols, tc.want)
+			}
+		})
 	}
 }
 
@@ -111,7 +130,7 @@ func TestProbeTable_MatchesIngestionColumnNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := &DocumentService{}
-			probed, err := svc.ProbeTable(strings.NewReader(tt.content), tt.filename)
+			probed, err := svc.ProbeTable(bytes.NewReader([]byte(tt.content)), tt.filename)
 			if err != nil {
 				t.Fatalf("ProbeTable: %v", err)
 			}
@@ -198,22 +217,6 @@ func TestProbeTable_XLSXMatchesIngestionColumnNames(t *testing.T) {
 	}
 }
 
-// A .txt table is tab-separated, like a .tsv (rag/app/table.py splits it on
-// "\t"), so a comma must not split its header into extra columns.
-func TestProbeTable_TXTUsesTabDelimiter(t *testing.T) {
-	svc := &DocumentService{}
-
-	cols, err := svc.ProbeTable(strings.NewReader("name,full\tamount\nAlice,Ann\t10\n"), "data.txt")
-	if err != nil {
-		t.Fatalf("ProbeTable: %v", err)
-	}
-
-	want := []string{"name,full", "amount"}
-	if !reflect.DeepEqual(cols, want) {
-		t.Fatalf("got %#v, want %#v", cols, want)
-	}
-}
-
 // countingReader records how many bytes a probe pulls from the stream.
 type countingReader struct {
 	r io.Reader
@@ -254,50 +257,19 @@ func TestProbeTable_XLSXStopsAtProbeLimit(t *testing.T) {
 	}
 }
 
-func TestProbeTable_XLSX(t *testing.T) {
+// Binary xls and any other suffix are declined with the sentinel the client
+// reads as "extract the header locally", not as a server failure.
+func TestProbeTable_UnsupportedFormats(t *testing.T) {
 	svc := &DocumentService{}
-
-	f := excelize.NewFile()
-	sheet := "Sheet1"
-	_ = f.SetCellValue(sheet, "A1", "")
-	_ = f.SetCellValue(sheet, "A2", "Product")
-	_ = f.SetCellValue(sheet, "B2", "Price")
-	_ = f.SetCellValue(sheet, "C2", "Product")
-
-	var buf bytes.Buffer
-	if err := f.Write(&buf); err != nil {
-		t.Fatalf("write xlsx: %v", err)
-	}
-
-	cols, err := svc.ProbeTable(&buf, "catalog.xlsx")
-	if err != nil {
-		t.Fatalf("ProbeTable: %v", err)
-	}
-
-	want := []string{"Product", "Price", "Product_2"}
-	if !reflect.DeepEqual(cols, want) {
-		t.Fatalf("got %#v, want %#v", cols, want)
-	}
-}
-
-func TestProbeTable_XLS_Fallback(t *testing.T) {
-	svc := &DocumentService{}
-	cols, err := svc.ProbeTable(strings.NewReader("fake xls binary"), "data.xls")
-	if err == nil {
-		t.Fatalf("expected error for binary xls probe, got cols: %v", cols)
-	}
-	if !errors.Is(err, ErrUnsupportedTableFormat) {
-		t.Fatalf("binary xls must report the unsupported-format sentinel, got %v", err)
-	}
-}
-
-func TestProbeTable_UnsupportedFormat(t *testing.T) {
-	svc := &DocumentService{}
-	cols, err := svc.ProbeTable(strings.NewReader("pdf content"), "doc.pdf")
-	if err == nil {
-		t.Fatalf("expected error for pdf probe, got cols: %v", cols)
-	}
-	if !errors.Is(err, ErrUnsupportedTableFormat) {
-		t.Fatalf("unexpected error: %v", err)
+	for _, filename := range []string{"data.xls", "doc.pdf"} {
+		t.Run(filename, func(t *testing.T) {
+			cols, err := svc.ProbeTable(bytes.NewReader([]byte("not a table")), filename)
+			if err == nil {
+				t.Fatalf("expected an error, got cols: %v", cols)
+			}
+			if !errors.Is(err, ErrUnsupportedTableFormat) {
+				t.Fatalf("must report the unsupported-format sentinel, got %v", err)
+			}
+		})
 	}
 }
