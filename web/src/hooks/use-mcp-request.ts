@@ -52,31 +52,75 @@ export const enum McpApiAction {
   TestMcpServer = 'testMcpServer',
 }
 
-export const useListMcpServer = (tenantId?: string, enabled = true) => {
+const McpKeys = {
+  list: (
+    keywords: string,
+    page: number,
+    pageSize: number,
+    tenantId?: string,
+    mcpIds?: string[],
+  ) =>
+    [
+      McpApiAction.ListMcpServer,
+      keywords,
+      page,
+      pageSize,
+      tenantId,
+      mcpIds,
+    ] as const,
+};
+
+export const useListMcpServer = (
+  tenantIdOrMcpIds?: string | string[],
+  enabledOrMcpIds?: boolean | string[],
+  enabled = true,
+) => {
+  const tenantId =
+    typeof tenantIdOrMcpIds === 'string' ? tenantIdOrMcpIds : undefined;
+  const mcpIds = Array.isArray(tenantIdOrMcpIds)
+    ? tenantIdOrMcpIds
+    : Array.isArray(enabledOrMcpIds)
+      ? enabledOrMcpIds
+      : [];
+  const queryEnabled =
+    typeof enabledOrMcpIds === 'boolean' ? enabledOrMcpIds : enabled;
+
   const { searchString, setSearchString, handleInputChange } =
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
+  const isSelectedMcpLookup = mcpIds.length > 0;
+  const requestKeywords = isSelectedMcpLookup ? '' : debouncedSearchString;
+  const requestPage = isSelectedMcpLookup ? 1 : pagination.current;
+  const requestPageSize = isSelectedMcpLookup
+    ? mcpIds.length
+    : pagination.pageSize;
+
   const { data, isFetching: loading } = useQuery<IMcpServerListResponse>({
-    queryKey: [
-      McpApiAction.ListMcpServer,
-      {
-        debouncedSearchString,
-        tenantId,
-        ...pagination,
-      },
-    ],
+    queryKey: McpKeys.list(
+      requestKeywords,
+      requestPage,
+      requestPageSize,
+      tenantId,
+      mcpIds,
+    ),
     initialData: { total: 0, mcp_servers: [] },
     gcTime: 0,
-    enabled,
+    enabled: queryEnabled,
     queryFn: async () => {
-      const { data } = await listMcpServers({
-        keywords: debouncedSearchString,
-        page_size: pagination.pageSize,
-        page: pagination.current,
-        ...(tenantId ? { tenant_id: tenantId } : {}),
-      });
+      const params: IMcpServerListRequestBody = {
+        keywords: requestKeywords,
+        page_size: requestPageSize,
+        page: requestPage,
+      };
+      if (tenantId) {
+        params.tenant_id = tenantId;
+      }
+      if (mcpIds.length > 0) {
+        params.mcp_ids = mcpIds.join(',');
+      }
+      const { data } = await listMcpServers(params);
       return data?.data;
     },
   });

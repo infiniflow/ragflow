@@ -18,7 +18,6 @@ function InnerToolNode({
   const { edges, getNode } = useGraphStore();
   const upstreamAgentNodeId = edges.find((x) => x.target === id)?.source;
   const upstreamAgentNode = getNode(upstreamAgentNodeId);
-  const { findMcpById } = useFindMcpById();
 
   const tools: IAgentForm['tools'] = get(
     upstreamAgentNode,
@@ -31,6 +30,7 @@ function InnerToolNode({
     'data.form.mcp',
     [],
   );
+  const { findMcpById } = useFindMcpById(mcpList.map((mcp) => mcp.mcp_id));
 
   return (
     <NodeWrapper selected={selected} id={id}>
@@ -55,7 +55,7 @@ function InnerToolNode({
                 className="cursor-pointer"
                 data-tool={mcp.mcp_id}
               >
-                {findMcpById(mcp.mcp_id)?.name}
+                {findMcpById(mcp.mcp_id)?.name ?? 'MCP'}
               </ToolCard>
             );
           }
