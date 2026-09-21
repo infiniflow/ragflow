@@ -124,12 +124,9 @@ func IsOceanBaseFamily(engineName string) bool {
 // path treats field_map keys as real fields and would generate queries against
 // columns that do not exist.
 func StoresTableChunkData(engineName string) bool {
-	switch EngineType(engineName) {
-	case EngineInfinity, EngineOceanBase, EngineSeekDB, EngineSereneDB:
-		return true
-	default:
-		return false
-	}
+	return IsOceanBaseFamily(engineName) ||
+		EngineType(engineName) == EngineInfinity ||
+		EngineType(engineName) == EngineSereneDB
 }
 
 type MessageQueue interface {

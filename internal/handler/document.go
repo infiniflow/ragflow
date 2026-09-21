@@ -2033,9 +2033,9 @@ func pythonJSONKindName(typeErr *json.UnmarshalTypeError) string {
 	return "value"
 }
 
-// ProbeTable handles POST /documents/probe_table (and POST /document/probe_table).
-// It inspects an uploaded table file (CSV/TSV/XLSX) and extracts the column headers
-// without persisting or running ingestion.
+// ProbeTable handles POST /documents/probe_table. It inspects an uploaded table
+// file — a delimited .csv/.tsv/.txt or a ZIP-based workbook — and extracts the
+// column headers without persisting or running ingestion.
 func (h *DocumentHandler) ProbeTable(c *gin.Context) {
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
