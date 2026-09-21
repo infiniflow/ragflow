@@ -217,15 +217,24 @@ const (
 
 // Fanout search tuning .
 //
-// The OPENING's depth lives here, and it is the same order of magnitude as the grep leg's recall
-// bound (see patternRecallTopN = 200 in runtime/tool_search.go): the opening is a programmatic
-// fan-out, so it does not go through the session's retrieve leg and used to be the narrowest
-// retrieval in the run — 60 candidates per clue, narrowed, then cut to eight. Three clues therefore
-// put ~24 passages in front of a question that needs seventeen members (measured 2026-09-20,
-// 三国/关羽: `named-term seats: 10 named, 8 unreached`, six members in the answer).
+// The OPENING's depth lives here, and these four numbers move TOGETHER WITH the query count the
+// planner is asked for (see action_initialize_state.md, which asks for 8-12 first_queries).
 //
-// Depth here costs retrieval, not prompt: the legs are parallel and only the RANKED top of the
-// union is ever delivered (see rankOpening / OpeningPreview); the pool has no ceiling.
+// Measured over the FRAMES set on the same machine:
+//
+//	                              queries  bm25/hybrid/quota/budget   accuracy
+//	a2110c7af (opening spec)      1-4      60 / 30 /  4 /  30          0.900
+//	4dac9a06a → 2026-09-21 14:17  8-12     200 / 60 /  8 / 400         0.850
+//	revert WIDTHS ONLY            8-12     60 / 30 /  4 /  30          0.700   ← 8-12 queries sharing a
+//	revert WIDTHS + QUERIES       1-4      60 / 30 /  4 /  30          0.684     30-passage admission
+//
+// The middle two rows are why this is a single decision: 8-12 queries against a 30-passage budget is
+// about three passages per query, so a question whose evidence is one table (758's mayor list, 25's
+// tale-of-the-tape, 692's second waterfall) loses it — the admission is the ceiling on how DEEP any
+// one query's recall can reach. The wide values are back; the coupling is the lesson, not the width.
+//
+// Depth here costs retrieval, not prompt: the legs are parallel and only the RANKED top of the union
+// is ever delivered (see rankOpening / OpeningPreview); the pool has no ceiling.
 const (
 	// fanoutBM25TopN is the keyword-leg candidate pool.
 	fanoutBM25TopN = 200

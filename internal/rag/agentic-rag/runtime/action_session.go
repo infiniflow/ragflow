@@ -4273,9 +4273,8 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		if line := deps.KB.ScanLine(); line != "" {
 			seedUser += "\n\n" + line
 		}
-		// The whole delivered material, not a sample of it: completeness is a property of what the model
-		// was SHOWN (see renderScanWindows and scanSeedChars).
-		if block := renderScanWindows(deps.KB, 0); block != "" {
+		// The delivered material, when the channel's seed block is on (see scanSeedBlock).
+		if block := scanSeedBlock(deps.KB); block != "" {
 			seedUser += "\n\n" + block
 		}
 	}
@@ -4765,6 +4764,26 @@ func deadlineToDuration(seconds float64) time.Duration {
 // search with. The actor channel's coverage lives in the pool (every window it reached is citable), and
 // the page shows the head of the act-word ranking, which is where the deed's sentences are.
 const scanSeedChars = 40000
+
+// scanSeedBlockEnabled gates the SCAN WINDOWS block in the session's seed.
+//
+// ON, and that is a MEASURED decision, not a default: switching it OFF for one FRAMES run
+// (2026-09-21 15:31, everything else at the 14:17 configuration) took the session from 19 retrieval
+// calls to 32 and from turn ≤ 7 to turn 13 — the hypothesis was right — and the score from 0.850 to
+// 0.725: the sessions searched more and found less, because the block is the only place the run hands
+// over the material it ALREADY retrieved. More searching is not the goal; the goal is that the material
+// reaches the answer. The measured cost of the block on a single-answer question (692 — the answer
+// read "the corpus does not hold the continental-US tallest waterfall") is real but is a GATING
+// problem: gate it on the plan's declaration (a member-set slot), do not switch it off wholesale.
+const scanSeedBlockEnabled = true
+
+// scanSeedBlock returns the SCAN WINDOWS block for the seed, or "" while the block is switched off.
+func scanSeedBlock(kb *Kbinfos) string {
+	if !scanSeedBlockEnabled {
+		return ""
+	}
+	return renderScanWindows(kb, 0)
+}
 
 // scanWindowRunes bounds one rendered scan window: the sentence around the match.
 const scanWindowRunes = 240

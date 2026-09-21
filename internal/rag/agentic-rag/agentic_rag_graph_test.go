@@ -3609,35 +3609,26 @@ func TestTheOpeningRankingFusesTheChannelsByReciprocalRank(t *testing.T) {
 	}
 }
 
-// TestTheOpeningRecallsAtTheGrepLegsDepth pins the opening's WIDTH as policy.
+// TestTheOpeningDepthMatchesTheQueryCountItAsksFor pins the ONE coupling that two A/Bs failed on.
 //
-// The opening is the one retrieval the run controls completely — no model call, parallel legs, and
-// its product is a ranked list — and it used to be the narrowest retrieval in the run: 60 candidates
-// per clue, narrowed, cut to eight, then a 30-passage admission budget. Three clues therefore put
-// ~24 passages in front of a question whose answer needs seventeen members (measured 2026-09-20,
-// 三国/关羽: six members in the answer, `named-term seats: 10 named, 8 unreached`). The session's own
-// grep leg already recalled 200 per operand (runtime patternRecallTopN) and the pool has no ceiling,
-// so there was nothing to protect by keeping the opening narrow.
+// The opening's depth and the number of queries the planner writes are one decision. Measured over the
+// FRAMES set on this machine:
 //
-// The numbers are pinned here so a later edit cannot quietly narrow it again.
-func TestTheOpeningRecallsAtTheGrepLegsDepth(t *testing.T) {
-	if fanoutBM25TopN < 200 {
-		t.Errorf("fanoutBM25TopN = %d, want the grep leg's recall width (200) or more", fanoutBM25TopN)
-	}
-	if fanoutHybridTopN < 60 {
-		t.Errorf("fanoutHybridTopN = %d, want a semantic leg wide enough to complement it", fanoutHybridTopN)
-	}
-	if fanoutSemanticQuota < 8 {
-		t.Errorf("fanoutSemanticQuota = %d, want at least 8 semantic-only hits per clue", fanoutSemanticQuota)
-	}
-	// The pool admits what the opening ranked, so the admission budget has to be at least one clue's
-	// full depth — a budget below it drops the tail of every clue's recall before the session can look.
-	if rawSnippetQuota < fanoutBM25TopN {
-		t.Errorf("rawSnippetQuota = %d < fanoutBM25TopN = %d: the admission budget is the ceiling on the opening's recall",
-			rawSnippetQuota, fanoutBM25TopN)
-	}
-	if OpeningPreview < 5 {
-		t.Errorf("OpeningPreview = %d, want at least 5 ranked previews handed to the session", OpeningPreview)
+//	                              queries  bm25/hybrid/quota/budget   accuracy
+//	a2110c7af (opening spec)      1-4      60 / 30 /  4 /  30          0.900
+//	4dac9a06a → 2026-09-21 14:17  8-12     200 / 60 /  8 / 400         0.850
+//	revert WIDTHS ONLY            8-12     60 / 30 /  4 /  30          0.700
+//	revert WIDTHS + QUERIES       1-4      60 / 30 /  4 /  30          0.684
+//
+// The third row is the trap: 8-12 queries against a 30-passage admission is ~3 passages per query, so a
+// question whose evidence is one table (758's mayor list, 25's tale-of-the-tape, 692's second waterfall)
+// loses it while the plan still looks complete. Pinned EQUAL, both sides, so a later edit that changes
+// one without the other fails here instead of in a benchmark.
+func TestTheOpeningDepthMatchesTheQueryCountItAsksFor(t *testing.T) {
+	if fanoutBM25TopN != 200 || fanoutHybridTopN != 60 || fanoutSemanticQuota != 8 || rawSnippetQuota != 400 {
+		t.Errorf("opening depth = bm25 %d / hybrid %d / semantic-only %d / raw budget %d, want 200/60/8/400 "+
+			"(the 8-12 first_queries the planner asks for — see action_initialize_state.md)",
+			fanoutBM25TopN, fanoutHybridTopN, fanoutSemanticQuota, rawSnippetQuota)
 	}
 }
 

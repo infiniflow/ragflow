@@ -226,11 +226,12 @@ const (
 	// decided how much of the opening's recall reached the pool, and the pool is what the session can
 	// still reach once its own calls are spent.
 	//
-	// 400, because the opening's product is its RANKED UNION and this budget may not be the smaller of
-	// the two: measured 2026-09-20 (三国/关羽) 11 clues produced a union of 542 passages and a pool of 120,
-	// so the session could reach a fifth of what the opening had already found — at 30 (the number
-	// before this) it admitted the first thirty passages its legs returned and dropped the rest, which is
-	// exactly where an enumeration's late members live.
+	// 400, and it is coupled to the query count: the planner is asked for 8-12 first_queries (see
+	// action_initialize_state.md), so a 30-passage budget is ~3 passages per query and a question whose
+	// evidence is one table loses it. Measured 2026-09-21 on FRAMES: 8-12 queries with a 30-passage
+	// budget scored 0.700, the same queries with 400 scored 0.850 (and 1-4 queries with 30 — the
+	// a2110c7af spec — 0.900). The budget is the ceiling on how DEEP one query's recall can reach;
+	// changing the query count without it starves every query in the plan.
 	rawSnippetQuota = 400
 	// citeChunkCap caps chunks rendered as citation reference.
 	citeChunkCap = 6
