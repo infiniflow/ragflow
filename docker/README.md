@@ -29,7 +29,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `DB_TYPE`
   The business metadata database type. Defaults to `mysql`. Supported values include `mysql`, `postgres`, `gaussdb`, and `oceanbase`.
 - `COMPOSE_PROFILES`
-  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}`.
+  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE},${CACHE_ENGINE}`.
 - `METADATA_DB_PROFILE`
   Defaults to `mysql`, preserving the in-cluster MySQL service. Set it to `gaussdb` together with `DB_TYPE=gaussdb` to use an external GaussDB metadata database without starting MySQL.
 - `GAUSSDB_METADATA_HOST`, `GAUSSDB_METADATA_PORT`, `GAUSSDB_METADATA_USER`, `GAUSSDB_METADATA_PASSWORD`, `GAUSSDB_METADATA_DBNAME`, `GAUSSDB_METADATA_SCHEMA`
@@ -78,12 +78,23 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_PASSWORD`
   The password for MinIO.
 
+### Cache engine
+
+- `CACHE_ENGINE`
+  The cache/queue backend Docker Compose starts, in the same way `DOC_ENGINE` selects the doc engine. Defaults to `redis`. Supported values include `redis` and `kvrocks`:
+  - `redis`: starts the Valkey `redis` service used by the Python services.
+  - `kvrocks`: starts the [Apache Kvrocks](https://github.com/apache/kvrocks) service, a RocksDB-backed, Redis-protocol-compatible store. Required when deploying with **docker-compose-go.yml**: the Go services cache on Kvrocks alone, and that file declares `kvrocks` as a required dependency, so starting them with `CACHE_ENGINE=redis` aborts with `service "ragflow-cpu" depends on undefined service "kvrocks"`.
+
+  Whichever value you pick, only the matching service starts: `redis` leaves Kvrocks down and `kvrocks` leaves the Valkey/Redis service down.
+
 ### Redis
 
 - `REDIS_PORT`
   The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
 - `REDIS_PASSWORD`
   The password for Redis.
+- `KVROCKS_PORT`
+  The port used to expose Kvrocks to the host machine, allowing **external** access to the Kvrocks service running inside the Docker container. Defaults to `6379`. Used only when `CACHE_ENGINE=kvrocks`.
 
 ### RAGFlow
 

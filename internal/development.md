@@ -198,12 +198,13 @@ missing from the model directory.
 
 - Start dependencies
 ```bash
-docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
+CACHE_ENGINE=kvrocks docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile kvrocks --profile infinity up -d
 ```
 
 - Point the host-run Go binaries at Kvrocks. Kvrocks is published on
-  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; the Go
-  deployment disables the Valkey/Redis service so there is no clash). Export these
+  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; `CACHE_ENGINE=kvrocks`
+  keeps the Valkey/Redis service disabled so there is no clash). `--profile`
+  replaces `COMPOSE_PROFILES`, so pass `kvrocks` explicitly here. Export these
   before running `./bin/ragflow_server ...` on the host, or load them from
   `docker/.env-go`:
 ```bash

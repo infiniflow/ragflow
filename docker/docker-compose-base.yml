@@ -296,14 +296,16 @@ services:
       retries: 120
 
   redis:
-    # Valkey 8 is the cache/queue backend for the Python services. The Go
-    # services use a separate `kvrocks` service (defined below) so the Python
-    # path is left unchanged by the Valkey -> apache/kvrocks migration.
+    # Valkey 8 is the cache/queue backend for the Python services. CACHE_ENGINE
+    # selects which backend Compose starts: this service runs when CACHE_ENGINE
+    # is `redis` (the default), otherwise the `kvrocks` service below runs.
     image: valkey/valkey:8
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "1gb", "--maxmemory-policy", "volatile-lru"]
     env_file: .env
     ports:
       - ${REDIS_PORT}:6379
+    profiles:
+      - redis
     volumes:
       - redis_data:/data
     networks:
@@ -316,10 +318,12 @@ services:
       retries: 120
 
   kvrocks:
-    # Apache Kvrocks: a RocksDB-backed, Redis-protocol-compatible store used
-    # ONLY by the Go services (ragflow-cpu / ragflow-gpu), which override
-    # REDIS_HOST=kvrocks in docker-compose-go.yml. The Python services keep
-    # using the `redis` (Valkey) service above, so this is a dual-backend setup.
+    # Apache Kvrocks: a RocksDB-backed, Redis-protocol-compatible store used by
+    # the Go services, which point KVROCKS_HOST at this service in
+    # docker-compose-go.yml. CACHE_ENGINE=kvrocks starts it here instead of the
+    # Valkey `redis` service above, and is mandatory for the Go deployment: the
+    # Go services cache on Kvrocks alone, so docker-compose-go.yml depends on
+    # this service and Compose refuses to start them without it.
     # Pinned to 2.16.0+ on purpose (see docker/kvrocks-entrypoint.sh): older
     # tags such as kvrocks/kvrocks:latest (== 2.0.6) carry a TTL contract bug
     # that breaks the RunTracker CAS lease, and they reject the Redis-style
@@ -336,15 +340,14 @@ services:
     # --ingestor) can reach it. The host-facing port uses KVROCKS_PORT (default 6379
     # locally, so a local host binary connects to localhost:6379). In CI the port is
     # offset per job (KVROCKS_PORT = 6381 + PORT_OFFSET, reserved alongside the other
-    # CI ports) so concurrent test runs on a shared runner do not clash, and it stays
-    # distinct from REDIS_PORT (used by the Valkey `redis` service that the Python
-    # deployment still runs next to Kvrocks). The container port (right side) stays
-    # 6379, and the Go services reach `kvrocks:6379` inside the docker network
-    # regardless of the host mapping (KVROCKS_PORT stays 6379, set by the Go overlay).
+    # CI ports) so concurrent test runs on a shared runner do not clash. The
+    # container port (right side) stays 6379, and the Go services reach
+    # `kvrocks:6379` inside the docker network regardless of the host mapping
+    # (KVROCKS_PORT stays 6379, set by the Go overlay).
     ports:
       - "${KVROCKS_PORT:-6379}:6379"
     profiles:
-      - ragflow-go
+      - kvrocks
     volumes:
       - kvrocks_data:/var/lib/kvrocks
       - ./kvrocks-entrypoint.sh:/etc/kvrocks/entrypoint.sh:ro

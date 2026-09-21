@@ -805,9 +805,9 @@ jobs:
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
                  if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse,kvrocks"
                  else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,redis"
                  fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
@@ -823,9 +823,9 @@ jobs:
                {
                  echo ""
                  if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse,kvrocks"
                  else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,redis"
                  fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
@@ -1541,9 +1541,9 @@ jobs:
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
                  if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse,kvrocks"
                  else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,redis"
                  fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
@@ -1559,9 +1559,9 @@ jobs:
                {
                  echo ""
                  if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse,kvrocks"
                  else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,redis"
                  fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
@@ -2215,12 +2215,13 @@ jobs:
                 # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
                 # because this job runs the Go tests on the runner host against
                 # the dependency services directly — no server container needed.
-                # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
+                # `kvrocks` brings up the Kvrocks service the Go server talks
+                # to and `ragflow-go` the NATS relay; `tei-cpu` the embedding
                 # service; `metadata-mysql` the mysql metadata store.
                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse,kvrocks"
                 else
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,kvrocks"
                 fi
                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -2234,9 +2235,9 @@ jobs:
                {
                  echo ""
                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse,kvrocks"
                 else
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
+                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,kvrocks"
                 fi
                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
               } >> .env-go
@@ -2260,7 +2261,7 @@ jobs:
       - name: Start ragflow CI service stack (infinity)
         # COMPOSE_PROFILES (set in .env by the prepare step) drops `cpu`, so the
         # heavy ragflow-cpu image is NOT started — only the dependency services
-        # (mysql/minio/kvrocks/redis/nats/infinity/tei/clickhouse) come up.
+        # (mysql/minio/kvrocks/nats/infinity/tei/clickhouse) come up.
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose-go.yml

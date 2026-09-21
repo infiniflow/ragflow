@@ -370,7 +370,7 @@ def test_docker_compose_metadata_profile_does_not_force_mysql_for_gaussdb():
     cn_compose = load_yaml("docker/docker-compose-CN-oc9.yml")
 
     assert "METADATA_DB_PROFILE=${METADATA_DB_PROFILE:-mysql}" in env_text
-    assert "COMPOSE_PROFILES=${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}" in env_text
+    assert "COMPOSE_PROFILES=${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE},${CACHE_ENGINE}" in env_text
     assert "metadata-mysql" in base["services"]["mysql"]["profiles"]
     assert "metadata-gaussdb" not in base["services"]["mysql"]["profiles"]
 
