@@ -54,6 +54,8 @@ type ElasticsearchConfig struct {
 	Hosts    string `mapstructure:"hosts"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+	// APIKey, when set, is used instead of Username/Password for authentication.
+	APIKey string `mapstructure:"api_key"`
 }
 
 // InfinityConfig Infinity configuration
@@ -288,6 +290,10 @@ func (c *Config) parseElasticsearchConfig(v *viper.Viper) {
 	if sub.IsSet("password") {
 		c.docEngine.ES.Password = sub.GetString("password")
 	}
+
+	if sub.IsSet("api_key") {
+		c.docEngine.ES.APIKey = sub.GetString("api_key")
+	}
 }
 
 func (c *Config) GetElasticsearchConfig() ElasticsearchConfig {
@@ -300,6 +306,7 @@ func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
 	esConfigs["hosts"] = e.Hosts
 	esConfigs["username"] = e.Username
 	esConfigs["password"] = e.Password
+	esConfigs["api_key"] = e.APIKey
 	return esConfigs
 }
 
