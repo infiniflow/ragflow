@@ -35,14 +35,14 @@ import (
 )
 
 const (
-	zoteroAPIBaseURL         = "https://api.zotero.org"
-	defaultZoteroBatchSize   = 4
-	zoteroRequestTimeout     = 120 * time.Second
-	zoteroDefaultPageSize    = 100
-	zoteroMaxAttachmentBytes = 100 * 1024 * 1024
-	zoteroStorageModeZotero  = "zotero_storage"
-	zoteroStorageModeWebDAV  = "webdav"
-	zoteroMaxFileRedirects              = 10
+	zoteroAPIBaseURL                       = "https://api.zotero.org"
+	defaultZoteroBatchSize                 = 4
+	zoteroRequestTimeout                   = 120 * time.Second
+	zoteroDefaultPageSize                  = 100
+	zoteroMaxAttachmentBytes               = 100 * 1024 * 1024
+	zoteroStorageModeZotero                = "zotero_storage"
+	zoteroStorageModeWebDAV                = "webdav"
+	zoteroMaxFileRedirects                 = 10
 	zoteroMaxDownloadAttemptsPerAttachment = 3
 )
 

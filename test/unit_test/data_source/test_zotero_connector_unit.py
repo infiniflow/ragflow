@@ -124,9 +124,7 @@ def test_zotero_rejects_blocked_webdav_url(monkeypatch):
         storage_mode="webdav",
         webdav_url="https://example.com/dav",
     )
-    connector.load_credentials(
-        {"zotero_api_key": "secret", "webdav_username": "dav", "webdav_password": "pw"}
-    )
+    connector.load_credentials({"zotero_api_key": "secret", "webdav_username": "dav", "webdav_password": "pw"})
     with pytest.raises(Exception, match="not allowed"):
         connector.validate_local_settings()
 
@@ -137,9 +135,7 @@ def test_zotero_rejects_http_webdav_url():
         storage_mode="webdav",
         webdav_url="http://example.com",
     )
-    connector.load_credentials(
-        {"zotero_api_key": "secret", "webdav_username": "dav", "webdav_password": "pw"}
-    )
+    connector.load_credentials({"zotero_api_key": "secret", "webdav_username": "dav", "webdav_password": "pw"})
     with pytest.raises(Exception, match="HTTPS"):
         connector.validate_local_settings()
 
@@ -204,4 +200,3 @@ def test_zotero_yields_batches_incrementally(monkeypatch):
     assert len(batches) == 2
     assert batches[0][0].id.endswith(":A1")
     assert batches[1][0].id.endswith(":A2")
-
