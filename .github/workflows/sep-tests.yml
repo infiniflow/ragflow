@@ -248,6 +248,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           allow-unsafe-pr-checkout: true
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
