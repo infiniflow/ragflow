@@ -64,6 +64,55 @@ func TestListIngestionMessagesRejectsUnnumberedRun(t *testing.T) {
 	}
 }
 
+func TestDatasetIngestionLogUsesEventStream(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "dataset-run",
+		DocumentID:      entity.DatasetLogDocumentID,
+		TenantID:        "user-1",
+		KbID:            "kb-1",
+		ParserID:        "knowledge_compile",
+		DocumentName:    "Wiki",
+		DocumentType:    "dataset",
+		SourceFrom:      "knowledgebase",
+		TaskType:        "Wiki",
+		OperationStatus: "DONE",
+	}).Error; err != nil {
+		t.Fatalf("insert dataset run: %v", err)
+	}
+	insertMessageRun(t, "numbered-sentinel-run", "kb-1", entity.DatasetLogDocumentID, entity.TaskStatusDone, 1)
+	insertMessageEvent(t, db, "dataset-run", "dataset-run", dao.EventTypeTerminal, "Knowledge compilation completed")
+
+	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", "dataset", "", "")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	logs, ok := result["logs"].([]map[string]interface{})
+	if !ok || len(logs) != 1 || logs[0]["id"] != "dataset-run" {
+		t.Fatalf("dataset logs = %#v, want only unnumbered dataset run", result["logs"])
+	}
+	assertLatestEventMap(t, logs[0], 1, "Knowledge compilation completed")
+
+	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "dataset-run", 200, nil, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", messages, code, err)
+	}
+	if messages.RunCount != 0 || !messages.Terminal || len(messages.Items) != 1 || messages.Items[0].Message != "Knowledge compilation completed" {
+		t.Fatalf("dataset messages = %+v, want terminal event stream", messages)
+	}
+
+	log, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "dataset-run")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", log, code, err)
+	}
+	assertLatestEventMap(t, log, 1, "Knowledge compilation completed")
+}
+
 func TestListIngestionLogsExcludesUnnumberedRuns(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
