@@ -36,6 +36,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"strconv"
 	"strings"
 
@@ -226,7 +227,7 @@ func normalizeLegacyGroup(group map[string]any) (string, []any) {
 		operator, _ := item["operator"].(string)
 		clause := map[string]any{
 			"left": left,
-			"op":   normalizeLegacySwitchOperator(operator),
+			"op":   operator,
 		}
 		if v, ok := item["value"]; ok {
 			clause["right"] = v
@@ -254,12 +255,16 @@ func legacySwitchLeft(item map[string]any) string {
 	return cpnRef
 }
 
-func normalizeLegacySwitchOperator(op string) string {
+func normalizeSwitchOperator(op string) string {
 	switch op {
-	case "", "=":
+	case "", "=", "==":
 		return "=="
-	case "<>":
+	case "<>", "≠", "!=":
 		return "!="
+	case "≥":
+		return ">="
+	case "≤":
+		return "<="
 	default:
 		return op
 	}
@@ -347,9 +352,7 @@ func legacySwitchDefaultTarget(merged map[string]any) string {
 func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, error) {
 	left, _ := clause["left"].(string)
 	op, _ := clause["op"].(string)
-	if op == "" {
-		op = "=="
-	}
+	op = normalizeSwitchOperator(op)
 
 	// "empty" / "not empty" don't read `right`.
 	if op == "empty" {
@@ -508,24 +511,26 @@ func indexOf(s, sub string) int {
 // is a string that doesn't parse as a number (e.g. an LLM response);
 // numeric operators will then error out with a clear message.
 func numericize(v any) (float64, bool) {
+	var n float64
 	switch x := v.(type) {
 	case int:
-		return float64(x), true
+		n = float64(x)
 	case int64:
-		return float64(x), true
+		n = float64(x)
 	case float64:
-		return x, true
+		n = x
 	case float32:
-		return float64(x), true
+		n = float64(x)
 	case string:
 		f, err := strconv.ParseFloat(x, 64)
 		if err != nil {
 			return 0, false
 		}
-		return f, true
+		n = f
 	default:
 		return 0, false
 	}
+	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
 }
 
 // isEmptyValue reports whether a value is "empty" by the canvas DSL
