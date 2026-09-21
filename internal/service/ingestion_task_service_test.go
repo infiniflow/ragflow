@@ -1695,6 +1695,41 @@ func TestIngestionTaskServiceReloadAndValidateRunIdentityRejectsInvalidBindings(
 	}
 }
 
+func TestIngestionTaskServiceReloadAndValidateRunIdentityDoesNotResolveDSL(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	runCount := 1
+	dslID := "pipeline-1"
+	dslVersion := int64(99)
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		KbID:            "kb-1",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+		RunCount:        &runCount,
+		DSLID:           &dslID,
+		DSLVersion:      &dslVersion,
+	}).Error; err != nil {
+		t.Fatalf("create pipeline operation log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
+		t.Fatalf("bind pipeline operation log: %v", err)
+	}
+
+	task, err := NewIngestionTaskService().ReloadAndValidateRunIdentity(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("ReloadAndValidateRunIdentity: %v", err)
+	}
+	if task.ID != "task-1" {
+		t.Fatalf("task ID = %q, want task-1", task.ID)
+	}
+}
+
 // TestIngestionTaskServiceOpensPreTerminalLogBeforePublish locks the ordering that
 // closes the orphan window: the run's row must exist before its message is
 // published, so a worker that claims and finishes the task immediately still

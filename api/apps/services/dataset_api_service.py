@@ -899,20 +899,11 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 
-    # Return the full record (including `dsl`) so the front-end dataflow-result
-    # page can render the pipeline timeline and chunks. The file-level field set
-    # is a superset of the dataset-level fields, so it is valid for both
-    # dataset-level (graph/raptor/mindmap) and per-file logs.
-    fields = PipelineOperationLogService.get_file_logs_fields()
-    log = PipelineOperationLogService.model.select(*fields).where((PipelineOperationLogService.model.id == log_id) & (PipelineOperationLogService.model.kb_id == dataset_id)).first()
-    if not log:
+    # The service resolves a version reference back to the immutable DSL while
+    # retaining the same API payload shape used by the dataflow-result page.
+    result = PipelineOperationLogService.get_by_id_and_kb_id(log_id, dataset_id)
+    if result is None:
         return False, "Log not found"
-
-    result = log.to_dict()
-    # Be explicit here: the dataflow-result page needs the full DSL payload to
-    # rebuild the timeline and right-side parser view. Some serialization paths
-    # can omit JSON fields from Peewee model dicts, so keep it attached here.
-    result["dsl"] = log.dsl or {}
     return True, result
 
 

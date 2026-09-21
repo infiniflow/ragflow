@@ -22,8 +22,9 @@ _get_output_type, _embed_chunks, _load_dsl, etc.) are exercised implicitly; no t
 reaches directly into those internals.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from rag.svr.task_executor_refactor.dataflow_service import DataflowService
 
@@ -51,6 +52,21 @@ class TestDataflowServiceRunDataflow:
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
+    @patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService")
+    async def test_run_dataflow_rerun_rejects_unresolved_dsl(self, mock_pipeline_log, mock_pipeline_class, task_context):
+        task_context._task["task_type"] = "raptor"
+        task_context._task["dataflow_id"] = "pipeline_log_id"
+        task_context._task["kb_id"] = "kb_test"
+        mock_pipeline_log.get_by_id_and_kb_id.side_effect = ValueError("Pipeline operation log 'pipeline_log_id' references a missing DSL version.")
+
+        service = DataflowService(ctx=task_context)
+        with pytest.raises(ValueError, match="missing DSL version"):
+            await service.run_dataflow()
+
+        mock_pipeline_class.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
     @patch("rag.svr.task_executor_refactor.dataflow_service.UserCanvasService")
     async def test_run_dataflow_empty_chunks(self, mock_canvas, mock_pipeline_class, task_context):
         """Test run_dataflow handles empty pipeline output."""
@@ -61,9 +77,10 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value={})
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, "_record_pipeline_log"):
+        with patch.object(DataflowService, "_record_pipeline_log") as record_pipeline_log:
             service = DataflowService(ctx=task_context)
             await service.run_dataflow()
+            record_pipeline_log.assert_called_once_with("doc_test", "dataflow_test", '{"id": "test"}')
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("output_key", ["chunks", "json"])
@@ -368,13 +385,14 @@ class TestDataflowServiceLoadDsl:
         """When task_type != 'dataflow', dataflow_id comes from pipeline_log.pipeline_id."""
         ctx = MagicMock()
         ctx.task_type = "raptor"
+        ctx.kb_id = "kb_test"
         dataflow_id = "pipeline_log_id"
 
         with patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService") as mock_log:
-            mock_log_instance = MagicMock()
-            mock_log_instance.dsl = '{"id": "test_pipeline"}'
-            mock_log_instance.pipeline_id = "corrected_pipeline_id"
-            mock_log.get_by_id.return_value = (True, mock_log_instance)
+            mock_log.get_by_id_and_kb_id.return_value = {
+                "dsl": '{"id": "test_pipeline"}',
+                "pipeline_id": "corrected_pipeline_id",
+            }
 
             service = DataflowService(ctx=ctx)
 
@@ -382,4 +400,4 @@ class TestDataflowServiceLoadDsl:
 
             assert dsl == '{"id": "test_pipeline"}'
             assert corrected_id == "corrected_pipeline_id"
-            mock_log.get_by_id.assert_called_once_with(dataflow_id)
+            mock_log.get_by_id_and_kb_id.assert_called_once_with(dataflow_id, "kb_test")

@@ -195,7 +195,7 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
-	log, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
+	log, err := d.pipelineLogDAO.GetByIDAndKBIDWithDSL(ctx, dao.DB, logID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("log not found")
@@ -241,11 +241,14 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *ser
 	if log.Status != nil {
 		m["status"] = *log.Status
 	}
+	if log.DSLResolutionError != "" {
+		m["dsl_resolution_error"] = log.DSLResolutionError
+	}
 	return m
 }
 
 func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *service.IngestionEventItem) map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":                     log.ID,
 		"document_id":            log.DocumentID,
 		"tenant_id":              log.TenantID,
@@ -271,6 +274,10 @@ func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *servic
 		"update_date":            timePointerValue(log.UpdateDate),
 		"latest_ingestion_event": latestEvent,
 	}
+	if log.DSLResolutionError != "" {
+		m["dsl_resolution_error"] = log.DSLResolutionError
+	}
+	return m
 }
 
 func ingestionEventItem(event *entity.IngestionTaskLog) *service.IngestionEventItem {

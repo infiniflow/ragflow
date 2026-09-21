@@ -127,7 +127,7 @@ class DataflowService:
             if not chunks:
                 ctx.recording_context.record("pipeline_output_count", 0)
                 ctx.recording_context.record("pipeline_output_type", "empty")
-                self._record_pipeline_log(doc_id, dataflow_id, pipeline)
+                self._record_pipeline_log(doc_id, dataflow_id, dsl)
                 return
 
             embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
@@ -138,7 +138,7 @@ class DataflowService:
             ctx.recording_context.record("pipeline_output_count", len(chunks))
 
             if not chunks:
-                self._record_pipeline_log(doc_id, dataflow_id, pipeline)
+                self._record_pipeline_log(doc_id, dataflow_id, dsl)
                 return
 
             # Embed chunks if needed
@@ -146,7 +146,7 @@ class DataflowService:
             if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
                 chunks, embedding_token_consumption = await self._embed_chunks(chunks, embedding_token_consumption)
                 if chunks is None:
-                    self._record_pipeline_log(doc_id, dataflow_id, pipeline)
+                    self._record_pipeline_log(doc_id, dataflow_id, dsl)
                     return
 
             # Process chunks
@@ -161,7 +161,7 @@ class DataflowService:
             self._progress(prog=0.82, msg="[DOC Engine]:\nStart to index...")
             e = await self._insert_chunks(task_id, ctx.tenant_id, ctx.kb_id, chunks)
             if not e:
-                self._record_pipeline_log(doc_id, dataflow_id, pipeline)
+                self._record_pipeline_log(doc_id, dataflow_id, dsl)
                 return
 
             time_cost = timer() - start_ts
@@ -184,7 +184,7 @@ class DataflowService:
 
             logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
             ctx.recording_context.record("dataflow_chunks", chunks)
-            self._record_pipeline_log(doc_id, dataflow_id, pipeline)
+            self._record_pipeline_log(doc_id, dataflow_id, dsl)
 
             # Billing hook: pipeline succeeded
             if self._billing_hook:
@@ -207,10 +207,10 @@ class DataflowService:
             e, cvs = UserCanvasService.get_by_id(dataflow_id)
             assert e, "User pipeline not found."
             return cvs.dsl, dataflow_id
-        else:
-            e, pipeline_log = PipelineOperationLogService.get_by_id(dataflow_id)
-            assert e, "Pipeline log not found."
-            return pipeline_log.dsl, pipeline_log.pipeline_id
+
+        pipeline_log = PipelineOperationLogService.get_by_id_and_kb_id(dataflow_id, ctx.kb_id)
+        assert pipeline_log is not None, "Pipeline log not found."
+        return pipeline_log["dsl"], pipeline_log["pipeline_id"]
 
     @staticmethod
     def _get_output_type(chunks: Dict) -> str:
@@ -364,12 +364,12 @@ class DataflowService:
         chunk_service = ChunkService(self._task_context)
         return await chunk_service.insert_chunks(task_id, tenant_id, kb_id, chunks)
 
-    def _record_pipeline_log(self, doc_id: str, dataflow_id: str, pipeline) -> None:
+    def _record_pipeline_log(self, doc_id: str, dataflow_id: str, dsl) -> None:
         """Record pipeline operation log."""
         if self._task_context.write_interceptor:
             self._task_context.write_interceptor.intercept("PipelineOperationLogService.create")
         else:
-            PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+            PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=dsl)
 
     @classmethod
     def _get_kb_by_id(cls, kb_id: str):

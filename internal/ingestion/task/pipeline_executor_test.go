@@ -143,11 +143,20 @@ func makeTaskCtx() *TaskContext {
 
 func setupPipelineExecutorTestDB(t *testing.T) func() {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		Logger:         logger.Default.LogMode(logger.Silent),
+		TranslateError: true,
+	})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
+	if err := db.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.PipelineDSLVersion{},
+		&entity.PipelineOperationLog{},
+		&entity.Document{},
+		&entity.IngestionTask{},
+	); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -319,6 +328,283 @@ func TestInsertChunks_BaseNameAndDatasetID(t *testing.T) {
 	}
 	if capturedDatasetID != "kb-1" {
 		t.Errorf("datasetID = %q, want \"kb-1\"", capturedDatasetID)
+	}
+}
+
+func TestPipelineDSLID(t *testing.T) {
+	tests := []struct {
+		name       string
+		pipelineID string
+		parserID   string
+		want       string
+	}{
+		{
+			name:       "custom pipeline",
+			pipelineID: "pipeline-1",
+			parserID:   "general",
+			want:       "pipeline-1",
+		},
+		{
+			name:     "builtin pipeline",
+			parserID: "general",
+			want:     "builtin:general",
+		},
+		{
+			name: "missing identity",
+			want: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := pipelineDSLID(test.pipelineID, test.parserID); got != test.want {
+				t.Fatalf(
+					"pipelineDSLID(%q, %q) = %q, want %q",
+					test.pipelineID,
+					test.parserID,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestSanitizePipelineDSLRemovesRuntimeState(t *testing.T) {
+	dsl := entity.JSONMap{
+		"task_id": "run-1",
+		"components": map[string]any{
+			"parser": map[string]any{
+				"obj": map[string]any{
+					"params": map[string]any{
+						"mode":    "static",
+						"q_vec":   []float64{0.5},
+						"q_3_vec": []float64{0.1},
+						"outputs": map[string]any{
+							"chunks": []any{"runtime"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	sanitizePipelineDSL(dsl)
+
+	if _, exists := dsl["task_id"]; exists {
+		t.Fatalf("runtime task_id was not removed: %v", dsl)
+	}
+	components := dsl["components"].(map[string]any)
+	parser := components["parser"].(map[string]any)
+	obj := parser["obj"].(map[string]any)
+	params := obj["params"].(map[string]any)
+
+	if _, exists := params["outputs"]; exists {
+		t.Fatalf("runtime outputs were not removed: %v", params)
+	}
+	if _, exists := params["q_3_vec"]; exists {
+		t.Fatalf("indexed embedding vector was not removed: %v", params)
+	}
+	if _, exists := params["q_vec"]; !exists {
+		t.Fatalf("non-index field q_vec should be preserved: %v", params)
+	}
+	if params["mode"] != "static" {
+		t.Fatalf("static params were not preserved: %v", params)
+	}
+}
+
+func TestSanitizePipelineDSLRemovesTaskIDFromWrappedDSL(t *testing.T) {
+	dsl := entity.JSONMap{
+		"task_id": "outer-run",
+		"dsl": map[string]any{
+			"task_id":    "inner-run",
+			"components": map[string]any{},
+		},
+	}
+
+	sanitizePipelineDSL(dsl)
+
+	if _, exists := dsl["task_id"]; exists {
+		t.Fatalf("outer runtime task_id was not removed: %v", dsl)
+	}
+
+	nested := dsl["dsl"].(map[string]any)
+	if _, exists := nested["task_id"]; exists {
+		t.Fatalf("nested runtime task_id was not removed: %v", nested)
+	}
+}
+
+func TestRecordPipelineLogStoresVersionedDSLReferences(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	documents := []struct {
+		id  string
+		dsl string
+	}{
+		{
+			id:  "doc-1",
+			dsl: `{"task_id":"run-1","components":{"parser":{"revision":1,"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"text":"first","q_3_vec":[0.1]}]}}}}}}}`,
+		},
+		{
+			id:  "doc-2",
+			dsl: `{"task_id":"run-2","components":{"parser":{"revision":1,"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"text":"second","q_3_vec":[0.2]}]}}}}}}}`,
+		},
+		{
+			id:  "doc-3",
+			dsl: `{"task_id":"run-3","components":{"parser":{"revision":2,"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"text":"third","q_3_vec":[0.3]}]}}}}}}}`,
+		},
+	}
+
+	for _, item := range documents {
+		logID := "log-" + item.id
+
+		if err := dao.DB.Create(&entity.PipelineOperationLog{
+			ID:              logID,
+			DocumentID:      item.id,
+			TenantID:        "tenant-1",
+			KbID:            "kb-1",
+			OperationStatus: "5",
+		}).Error; err != nil {
+			t.Fatalf("seed pipeline log for %s: %v", item.id, err)
+		}
+
+		name := item.id + ".pdf"
+		if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+			TenantID:      "tenant-1",
+			KbID:          "kb-1",
+			DocumentID:    item.id,
+			DSL:           item.dsl,
+			Status:        "3",
+			PipelineLogID: logID,
+			Document: entity.Document{
+				ID:         item.id,
+				KbID:       "kb-1",
+				ParserID:   "general",
+				SourceType: "local",
+				Type:       "pdf",
+				Name:       &name,
+				Suffix:     ".pdf",
+			},
+		}); err != nil {
+			t.Fatalf("RecordPipelineLog(%s): %v", item.id, err)
+		}
+	}
+
+	wantVersions := map[string]int64{
+		"doc-1": 1,
+		"doc-2": 1,
+		"doc-3": 2,
+	}
+
+	for documentID, wantVersion := range wantVersions {
+		var log entity.PipelineOperationLog
+		if err := dao.DB.
+			Where("document_id = ?", documentID).
+			First(&log).Error; err != nil {
+			t.Fatalf("load pipeline log for %s: %v", documentID, err)
+		}
+
+		if log.DSLID == nil || *log.DSLID != "builtin:general" {
+			t.Fatalf("%s DSLID = %v, want builtin:general", documentID, log.DSLID)
+		}
+		if log.DSLVersion == nil || *log.DSLVersion != wantVersion {
+			t.Fatalf("%s DSLVersion = %v, want %d", documentID, log.DSLVersion, wantVersion)
+		}
+		if len(log.DSL) != 0 {
+			t.Fatalf("%s embedded DSL = %v, want empty", documentID, log.DSL)
+		}
+	}
+
+	var versions []entity.PipelineDSLVersion
+	if err := dao.DB.
+		Where("dsl_id = ?", "builtin:general").
+		Order("version").
+		Find(&versions).Error; err != nil {
+		t.Fatalf("load pipeline DSL versions: %v", err)
+	}
+
+	if len(versions) != 2 {
+		t.Fatalf("pipeline DSL version count = %d, want 2", len(versions))
+	}
+
+	for _, version := range versions {
+		if _, exists := version.DSL["task_id"]; exists {
+			t.Fatalf("version %d stores runtime task_id: %v", version.Version, version.DSL)
+		}
+
+		components, _ := version.DSL["components"].(map[string]any)
+		parser, _ := components["parser"].(map[string]any)
+		obj, _ := parser["obj"].(map[string]any)
+		params, _ := obj["params"].(map[string]any)
+
+		if _, exists := params["outputs"]; exists {
+			t.Fatalf("version %d stores runtime outputs: %v", version.Version, version.DSL)
+		}
+		if params["mode"] != "static" {
+			t.Fatalf("version %d dropped static params: %v", version.Version, version.DSL)
+		}
+	}
+}
+
+func TestRecordPipelineLogFallsBackToInlineDSLWhenVersionStoreFails(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Migrator().DropTable(&entity.PipelineDSLVersion{}); err != nil {
+		t.Fatalf("drop pipeline DSL version table: %v", err)
+	}
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "log-doc-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		OperationStatus: "5",
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	docName := "doc-1.pdf"
+	dsl := `{"task_id":"run-1","components":{"parser":{"obj":{"params":{"mode":"static","outputs":{"chunks":{"value":[{"q_3_vec":[0.1]}]}}}}}}}`
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		DSL:           dsl,
+		Status:        "3",
+		PipelineLogID: "log-doc-1",
+		Document: entity.Document{
+			ID:         "doc-1",
+			KbID:       "kb-1",
+			ParserID:   "general",
+			SourceType: "local",
+			Type:       "pdf",
+			Name:       &docName,
+			Suffix:     ".pdf",
+		},
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "log-doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.DSLID != nil || log.DSLVersion != nil {
+		t.Fatalf("DSL reference = %v@%v, want inline fallback", log.DSLID, log.DSLVersion)
+	}
+	if log.DSL["task_id"] != nil {
+		t.Fatalf("inline fallback retained task_id: %v", log.DSL)
+	}
+	components, _ := log.DSL["components"].(map[string]any)
+	parser, _ := components["parser"].(map[string]any)
+	obj, _ := parser["obj"].(map[string]any)
+	params, _ := obj["params"].(map[string]any)
+	if params["mode"] != "static" {
+		t.Fatalf("inline fallback lost static definition: %v", log.DSL)
+	}
+	if _, exists := params["outputs"]; exists {
+		t.Fatalf("inline fallback retained runtime outputs: %v", log.DSL)
 	}
 }
 
@@ -511,6 +797,7 @@ func TestRecordPipelineLog_ReusesOpenPreTerminalRow(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the bound queued row)", count)
 	}
+
 	var log entity.PipelineOperationLog
 	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
 		t.Fatalf("load open log: %v", err)
@@ -587,8 +874,12 @@ func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) 
 		t.Fatalf("ProcessBeginAt = %v, want the queued row's %v", log.ProcessBeginAt, openedAt)
 	}
 	if log.SourceFrom != "local" || log.DocumentSuffix != ".pdf" || log.DocumentType != "pdf" {
-		t.Fatalf("terminal write did not refresh document metadata: source_from=%q suffix=%q type=%q",
-			log.SourceFrom, log.DocumentSuffix, log.DocumentType)
+		t.Fatalf(
+			"terminal write did not refresh document metadata: source_from=%q suffix=%q type=%q",
+			log.SourceFrom,
+			log.DocumentSuffix,
+			log.DocumentType,
+		)
 	}
 }
 
@@ -733,6 +1024,7 @@ func TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow(t *testing.T) {
 	if reloaded.OperationStatus != "5" {
 		t.Fatalf("other run's row OperationStatus = %q, want %q (must not be touched)", reloaded.OperationStatus, "5")
 	}
+
 	var count int64
 	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
 		t.Fatalf("count pipeline logs: %v", err)
@@ -887,6 +1179,7 @@ func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
 func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 	type ctxKey string
 	const key ctxKey = "trace"
+
 	taskCtx := makeTaskCtx()
 	ctx := t.Context()
 	taskCtx.Ctx = context.WithValue(ctx, key, "task-ctx")
@@ -899,7 +1192,11 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 			if got := runCtx.Value(key); got != "task-ctx" {
 				t.Fatalf("runCtx value = %v, want task-ctx", got)
 			}
-			return map[string]any{"chunks": []map[string]any{{"text": "hello world"}}}, dsl, nil
+			return map[string]any{
+				"chunks": []map[string]any{
+					{"text": "hello world"},
+				},
+			}, dsl, nil
 		}).
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
@@ -919,7 +1216,11 @@ func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
 			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
 		}).
 		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
-			return map[string]any{"chunks": []map[string]any{{"text": "hello world"}}}, dsl, nil
+			return map[string]any{
+				"chunks": []map[string]any{
+					{"text": "hello world"},
+				},
+			}, dsl, nil
 		}).
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
@@ -1034,9 +1335,14 @@ func (sinkPassthroughStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[str
 // which reports the component total and lifecycle events back to the sink.
 func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 	const nameA = "task.SinkPassthroughA"
-	runtime.MustRegister(nameA, runtime.CategoryIngestion,
-		func(_ string, _ map[string]any) (runtime.Component, error) { return sinkPassthroughStage{}, nil },
-		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(
+		nameA,
+		runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) {
+			return sinkPassthroughStage{}, nil
+		},
+		runtime.Metadata{Version: "1.0.0"},
+	)
 
 	sink := &recordingProgressSink{}
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
@@ -1051,6 +1357,7 @@ func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
+
 	if !sink.totalSet || sink.total != 2 {
 		t.Fatalf("OnComponentTotal = (%d, set=%v), want 2", sink.total, sink.totalSet)
 	}
@@ -1122,7 +1429,10 @@ func TestMergeCompiledVariants(t *testing.T) {
 		t.Fatalf("empty variants = %v, want nil", got)
 	}
 
-	got := mergeCompiledVariants([]string{"wiki", "structure"}, []string{"wiki", "tree"})
+	got := mergeCompiledVariants(
+		[]string{"wiki", "structure"},
+		[]string{"wiki", "tree"},
+	)
 	want := []string{"structure", "tree", "wiki"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("merged variants = %v, want %v", got, want)
@@ -1149,12 +1459,23 @@ func TestRunPipelineWithDSL_LogDSLStripsOutputs(t *testing.T) {
 		compC = "logdsl.RealStubChunks"
 		compD = "logdsl.RealStubD"
 	)
-	runtime.MustRegister(compC, runtime.CategoryIngestion,
-		func(_ string, _ map[string]any) (runtime.Component, error) { return traceChunkComponent{}, nil },
-		runtime.Metadata{Version: "1.0.0"})
-	runtime.MustRegister(compD, runtime.CategoryIngestion,
-		func(_ string, _ map[string]any) (runtime.Component, error) { return traceStubComponent{}, nil },
-		runtime.Metadata{Version: "1.0.0"})
+
+	runtime.MustRegister(
+		compC,
+		runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) {
+			return traceChunkComponent{}, nil
+		},
+		runtime.Metadata{Version: "1.0.0"},
+	)
+	runtime.MustRegister(
+		compD,
+		runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) {
+			return traceStubComponent{}, nil
+		},
+		runtime.Metadata{Version: "1.0.0"},
+	)
 
 	dsl := `{"dsl":{"components":{
 		"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["c"]},
@@ -1172,6 +1493,7 @@ func TestRunPipelineWithDSL_LogDSLStripsOutputs(t *testing.T) {
 	if err := json.Unmarshal([]byte(logDSL), &doc); err != nil {
 		t.Fatalf("log DSL is not valid JSON: %v body=%s", err, logDSL)
 	}
+
 	// The enveloped canvas DSL must come back unwrapped: the front-end reads
 	// dsl.components at the top level.
 	components, ok := doc["components"].(map[string]any)
@@ -1190,12 +1512,16 @@ func TestRunPipelineWithDSL_LogDSLStripsOutputs(t *testing.T) {
 		t.Fatalf("log DSL components.c.obj.params missing: %s", logDSL)
 	}
 	if _, ok := cParams["outputs"]; ok {
-		t.Errorf("REGRESSION: persisted log DSL must NOT carry business data (obj.params.outputs) "+
-			"for chunk component c, got %#v", cParams["outputs"])
+		t.Errorf(
+			"REGRESSION: persisted log DSL must NOT carry business data (obj.params.outputs) "+
+				"for chunk component c, got %#v",
+			cParams["outputs"],
+		)
 	}
 	if _, ok := cParams["setups"]; !ok {
 		t.Errorf("persisted log DSL must keep static params.setups for c, got %#v", cParams)
 	}
+
 	// Non-components top-level keys are carried verbatim; this fixture's DSL
 	// declares "path" — the round-tripped log must keep it for rerun-flow
 	// consumers.
@@ -1223,7 +1549,11 @@ func TestBuildLogDSL_FallbackToStaticDSL(t *testing.T) {
 	// run-result DSL at all. The static dsl is returned unchanged.
 	badDSL := `{"dsl":{"path":["a"]}}`
 	if got := svc.buildLogDSL(badDSL, nil); got != badDSL {
-		t.Errorf("build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, badDSL)
+		t.Errorf(
+			"build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s",
+			got,
+			badDSL,
+		)
 	}
 }
 
@@ -1245,6 +1575,7 @@ type capturingSink struct {
 
 func (c *capturingSink) OnComponentTotal(context.Context, string, int)                  {}
 func (c *capturingSink) OnComponentProgress(context.Context, pipelinepkg.ProgressEvent) {}
+
 func (c *capturingSink) SetResult(dsl map[string]any, output map[string]any) {
 	c.got = dsl
 	c.gotOut = output
@@ -1257,8 +1588,12 @@ func (c *capturingSink) SetResult(dsl map[string]any, output map[string]any) {
 // persists to pipeline_operation_log.
 func TestBuildLogDSL_PersistStripsOutputs(t *testing.T) {
 	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {"setups": {"pdf": {"parse_method": "general"}}}}, "downstream": ["b"]}}, "graph": {"nodes": [{"id": "a"}]}, "path": ["a"]}`
+
 	output := map[string]any{
-		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
+		"a": map[string]any{
+			"chunks":        []any{map[string]any{"text": "hello"}},
+			"_elapsed_time": 0.35,
+		},
 	}
 
 	exec := &PipelineExecutor{progressSink: persistOnlySink{}}
@@ -1268,13 +1603,19 @@ func TestBuildLogDSL_PersistStripsOutputs(t *testing.T) {
 	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
 		t.Fatalf("persisted log DSL must be valid JSON: %v (raw=%s)", err, logDSL)
 	}
+
 	comps, _ := parsed["components"].(map[string]any)
 	a, _ := comps["a"].(map[string]any)
 	aObj, _ := a["obj"].(map[string]any)
 	aParams, _ := aObj["params"].(map[string]any)
+
 	if _, ok := aParams["outputs"]; ok {
-		t.Errorf("persisted log DSL must NOT carry business data (obj.params.outputs), got %#v", aParams["outputs"])
+		t.Errorf(
+			"persisted log DSL must NOT carry business data (obj.params.outputs), got %#v",
+			aParams["outputs"],
+		)
 	}
+
 	// DSL definition preserved.
 	if _, ok := aParams["setups"]; !ok {
 		t.Error("persisted log DSL must keep static params.setups")
@@ -1294,8 +1635,12 @@ func TestBuildLogDSL_PersistStripsOutputs(t *testing.T) {
 // so the outputs only travel to Redis via SetResult.
 func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
 	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {}}, "downstream": ["b"]}}}`
+
 	output := map[string]any{
-		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
+		"a": map[string]any{
+			"chunks":        []any{map[string]any{"text": "hello"}},
+			"_elapsed_time": 0.35,
+		},
 	}
 
 	cap := &capturingSink{}
@@ -1306,10 +1651,12 @@ func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
 	if cap.got == nil {
 		t.Fatal("buildLogDSL must call ResultSink.SetResult for a dry-run (ResultSink) sink")
 	}
+
 	caps, _ := cap.got["components"].(map[string]any)
 	ca, _ := caps["a"].(map[string]any)
 	caObj, _ := ca["obj"].(map[string]any)
 	caParams, _ := caObj["params"].(map[string]any)
+
 	if _, ok := caParams["outputs"]; !ok {
 		t.Error("dry-run preview DSL must carry obj.params.outputs (business data)")
 	}
@@ -1319,10 +1666,12 @@ func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
 	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
 		t.Fatalf("persisted log DSL must be valid JSON: %v", err)
 	}
+
 	pc, _ := parsed["components"].(map[string]any)
 	pa, _ := pc["a"].(map[string]any)
 	paObj, _ := pa["obj"].(map[string]any)
 	paParams, _ := paObj["params"].(map[string]any)
+
 	if _, ok := paParams["outputs"]; ok {
 		t.Error("persisted log DSL must NOT carry business data even when a ResultSink preview exists")
 	}

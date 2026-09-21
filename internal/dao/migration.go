@@ -288,6 +288,45 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migratePipelineOperationLogDSLReference adds the versioned-DSL reference
+// without running AutoMigrate over the rest of the shared operation-log table.
+func migratePipelineOperationLogDSLReference(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&entity.PipelineOperationLog{}) {
+		return nil
+	}
+
+	fields := []struct {
+		name   string
+		column string
+	}{
+		{name: "DSLID", column: "dsl_id"},
+		{name: "DSLVersion", column: "dsl_version"},
+	}
+	for _, field := range fields {
+		if migrator.HasColumn(&entity.PipelineOperationLog{}, field.name) {
+			continue
+		}
+		if err := migrator.AddColumn(&entity.PipelineOperationLog{}, field.name); err != nil {
+			if isDuplicateColumnError(err) {
+				continue
+			}
+			return fmt.Errorf("failed to add pipeline_operation_log.%s: %w", field.column, err)
+		}
+	}
+
+	const indexName = "idx_pipeline_operation_log_dsl"
+	if !migrator.HasIndex(&entity.PipelineOperationLog{}, indexName) {
+		if err := migrator.CreateIndex(&entity.PipelineOperationLog{}, indexName); err != nil {
+			if isDuplicateIndexErr(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to create %s: %w", indexName, err)
+		}
+	}
+	return nil
+}
+
 // migrateIngestionLogRunIdentity adds the columns and indexes that make each
 // ingestion event belong to one immutable pipeline-operation-log run. It is
 // deliberately explicit: the runtime startup path auto-migrates ingestion
