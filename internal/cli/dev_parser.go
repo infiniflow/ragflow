@@ -224,6 +224,70 @@ func (p *Parser) parseDevSetMeta() (*Command, error) {
 	return cmd, nil
 }
 
+// SET CPU 4;
+func (p *Parser) parseAPISetCPU() (*Command, error) {
+	p.nextToken() // consume CPU
+
+	cmd := NewCommand("api_set_cpu")
+
+	// Parse CPU cores
+	cpuCores, err := p.parseNumber()
+	if err != nil {
+		return nil, fmt.Errorf("expected CPU cores: %w", err)
+	}
+	cmd.Params["cpu_cores"] = cpuCores
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SET MEMORY 4;
+func (p *Parser) parseAPISetMemory() (*Command, error) {
+	p.nextToken() // consume MEMORY
+
+	cmd := NewCommand("api_set_memory")
+	// Parse memory size
+	memorySize, err := p.parseNumber()
+	if err != nil {
+		return nil, fmt.Errorf("expected memory size: %w", err)
+	}
+	cmd.Params["memory_size"] = memorySize
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SET CONCURRENCY 4;
+func (p *Parser) parseAPISetConcurrency() (*Command, error) {
+	p.nextToken() // consume CONCURRENCY
+
+	cmd := NewCommand("api_set_concurrency")
+	// Parse concurrency
+	concurrency, err := p.parseNumber()
+	if err != nil {
+		return nil, fmt.Errorf("expected concurrency: %w", err)
+	}
+	cmd.Params["concurrency"] = concurrency
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
 // parseDevDeleteMeta parses: DELETE METADATA OF DOCUMENT 'doc_id' [KEYS '["key1", "key2"]']
 // If KEYS is not provided, deletes entire document metadata
 func (p *Parser) parseDevDeleteMeta() (*Command, error) {

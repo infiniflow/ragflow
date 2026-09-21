@@ -329,6 +329,12 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.PingServerByCommand(commandCount, cmd)
 	case "api_set_log_level":
 		return c.APISetLogLevelCommand(commandCount, cmd)
+	case "api_set_cpu":
+		return c.APISetCPUCommand(commandCount, cmd)
+	case "api_set_memory":
+		return c.APISetMemoryCommand(commandCount, cmd)
+	case "api_set_concurrency":
+		return c.APISetConcurrencyCommand(commandCount, cmd)
 	case "benchmark":
 		return c.RunBenchmark(commandCount, cmd)
 	case "api_list_datasets":
@@ -500,6 +506,12 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIShowLogLevelCommand(commandCount, cmd)
 	case "api_show_hardware":
 		return c.CommonShowHardwareCommand(commandCount, cmd)
+	case "api_show_cpu":
+		return c.APIShowCPUCommand(commandCount, cmd)
+	case "api_show_memory":
+		return c.APIShowMemoryCommand(commandCount, cmd)
+	case "api_show_concurrency":
+		return c.APIShowConcurrencyCommand(commandCount, cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":

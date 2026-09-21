@@ -106,6 +106,8 @@ const (
 	TokenAgent
 	TokenMemories
 	TokenMemory
+	TokenCPU
+	TokenConcurrency
 	TokenRetrieve
 	TokenCurrent
 	TokenSoft
