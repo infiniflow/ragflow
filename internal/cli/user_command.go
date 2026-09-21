@@ -3120,63 +3120,6 @@ func (c *CLI) DevDeleteMetaCommand(commandCount int, cmd *Command) (ResponseIf, 
 	return &result, nil
 }
 
-// DevRmTagsCommand removes tags from chunks in a dataset
-func (c *CLI) DevRmTagsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-
-	datasetName, ok := cmd.Params["dataset_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("dataset_name not provided")
-	}
-
-	kbID, err := c.getDatasetID(datasetName)
-	if err != nil {
-		return nil, err
-	}
-
-	tags, ok := cmd.Params["tags"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("tags not provided")
-	}
-
-	payload := map[string]interface{}{
-		"tags": tags,
-	}
-
-	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets/"+kbID+"/tags", "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove tags: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove tags: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: code is not a number")
-	}
-
-	var result SimpleResponse
-	result.Code = int(code)
-	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to remove tags from dataset: %s", kbID)
-	} else {
-		result.Message = fmt.Sprintf("Failed to remove tags: %v", resJSON)
-	}
-	result.Duration = 0
-	return &result, nil
-}
-
 // DevRemoveChunksCommand removes chunks from a document
 func (c *CLI) DevRemoveChunksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
