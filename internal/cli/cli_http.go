@@ -293,6 +293,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.CommonShowAPIServerCommand(commandCount, cmd)
 	case "admin_show_log_level":
 		return c.AdminShowLogLevelCommand(commandCount, cmd)
+	case "admin_show_hardware":
+		return c.CommonShowHardwareCommand(commandCount, cmd)
 	case "admin_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_add_api_server":
@@ -496,6 +498,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.CommonShowAPIServerCommand(commandCount, cmd)
 	case "api_show_log_level":
 		return c.APIShowLogLevelCommand(commandCount, cmd)
+	case "api_show_hardware":
+		return c.CommonShowHardwareCommand(commandCount, cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":

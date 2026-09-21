@@ -631,6 +631,8 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowAPI()
 	case TokenLog:
 		return p.parseAPIShowLogCommands()
+	case TokenHardware:
+		return p.parseAPIShowHardware()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -883,6 +885,19 @@ func (p *Parser) parseShowLogLevel() (*Command, error) {
 	p.nextToken() // consume LEVEL
 
 	cmd := NewCommand("api_show_log_level")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW HARDWARE
+func (p *Parser) parseAPIShowHardware() (*Command, error) {
+	p.nextToken() // consume HARDWARE
+	cmd := NewCommand("api_show_hardware")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

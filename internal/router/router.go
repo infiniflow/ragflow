@@ -692,6 +692,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 					// delete key /api/v1/system/keys/:key DELETE
 					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
+
+				system.GET("/hardware", r.systemHandler.GetHardwareInfo)
 			}
 
 			// Document routes

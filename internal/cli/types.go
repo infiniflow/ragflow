@@ -199,6 +199,7 @@ const (
 	TokenDays
 	TokenWindow
 	TokenActivity
+	TokenHardware
 	TokenData
 	TokenPurge
 	TokenPlan
