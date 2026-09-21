@@ -83,7 +83,12 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, model.APIConfig, nil, nil)
+	// Embed inside the model's window: the provider does not truncate, it answers
+	// 400/20015, and a nav summary is not a short string - without a tree product it
+	// is every entity line of the page-index graph joined into one. The model makes
+	// the cut (and retries with a smaller budget when a calibrated count
+	// undershoots), which is what Python gets from BaseEmbedding.encode.
+	embeds, err := model.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, nil, nil)
 	if err != nil {
 		return nil, err
 	}

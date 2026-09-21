@@ -531,6 +531,117 @@ func trimByBytes(text string, limit int) string {
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
 // ---------------------------------------------------------------------------
+// Over-limit handling: the marker set, the shrink ladder, and the refusal every
+// embedder shares. The embedding side of this - the loop that trims, calls the
+// driver, and walks the ladder - is EmbeddingModel.EmbedWithinLimit in
+// internal/entity/models, next to the RerankModel cut it mirrors.
+// ---------------------------------------------------------------------------
+
+// OverLimitFloorTokens is the smallest budget worth trying before calling an input
+// genuinely broken rather than merely long.
+const OverLimitFloorTokens = 64
+
+// OverLimitMarkers are the provider wordings that mean "this input is longer than
+// the model accepts". 20015 is SiliconFlow's code for exactly that (it answers a
+// generic "The parameter is invalid" message); the rest are the usual phrasings
+// elsewhere.
+var OverLimitMarkers = []string{
+	"20015",
+	"too long",
+	"too many tokens",
+	"maximum context",
+	"context length",
+	"context_length",
+	"input length",
+	"token limit",
+	"reduce the length",
+	"maximum allowed",
+}
+
+// IsOverLimitError reports whether err is an over-limit rejection rather than a
+// rate limit or a genuine failure. Only 4xx rejections qualify: a 5xx is the
+// provider's problem and a shorter input would not fix it.
+func IsOverLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "400") && !strings.Contains(msg, "413") && !strings.Contains(msg, "422") {
+		return false
+	}
+	for _, marker := range OverLimitMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// OverLimitLadder returns the budgets to try, in order, after a provider rejects
+// an input as over its window: the caller's budget first, then progressively
+// smaller fractions of it, never below OverLimitFloorTokens. Strictly decreasing,
+// so the loop always makes progress.
+func OverLimitLadder(budget int) []int {
+	if budget <= 0 {
+		return []int{0}
+	}
+	limits := []int{budget}
+	for _, factor := range []float64{0.75, 0.5, 0.25, 0.125} {
+		next := int(float64(budget) * factor)
+		if next < OverLimitFloorTokens {
+			next = OverLimitFloorTokens
+		}
+		if next < limits[len(limits)-1] {
+			limits = append(limits, next)
+		}
+	}
+	return limits
+}
+
+// OverLimitLadderToFloor is OverLimitLadder plus the last-resort floor, for the
+// per-input isolation path: an input that no proportional step fits may still fit
+// at the floor, and trying it there is what turns "this document cannot be
+// embedded" into an embedded (truncated) chunk.
+//
+// A batch loop deliberately stops above the floor: reaching it there would trim
+// EVERY input of the batch to 64 tokens just because one input is pathological,
+// while isolating lets each healthy input keep its own budget.
+func OverLimitLadderToFloor(budget int) []int {
+	limits := OverLimitLadder(budget)
+	if limits[len(limits)-1] > OverLimitFloorTokens {
+		limits = append(limits, OverLimitFloorTokens)
+	}
+	return limits
+}
+
+// RefuseUnavailableCounter is the refusal every embedder shares: a model that
+// DECLARES a tokenizer whose asset is not on disk must not be counted with the
+// calibrated cl100k estimate, because that count belongs to a different tokenizer
+// and an under-count is what makes a provider answer 400. Silently substituting it
+// would trade away the exactness these counters exist for.
+func RefuseUnavailableCounter(tokenizerID, calibrationKey string) error {
+	if tokenizerID == "" || CounterExact(tokenizerID) {
+		return nil
+	}
+	return fmt.Errorf(
+		"embedding tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_go_deps.py`): refusing to count with the calibrated estimate",
+		tokenizerID, calibrationKey)
+}
+
+// OwnTokenMax is the largest single input's cost in our own counter. The
+// provider's window bounds each input individually, so this - not the batch total
+// - is what an over-limit rejection tells us about.
+func OwnTokenMax(texts []string, counter Counter) int {
+	max := 0
+	for _, t := range texts {
+		if n := counter.Count(t); n > max {
+			max = n
+		}
+	}
+	return max
+}
+
+// ---------------------------------------------------------------------------
 // Counters we can build without extra assets
 // ---------------------------------------------------------------------------
 

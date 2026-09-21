@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -329,6 +330,36 @@ func (m *EmbeddingModel) ResolveTokenizerID() string {
 		name = *m.ModelName
 	}
 	return GetEmbeddingTokenizer(name)
+}
+
+// QuotaKey names the deployment this embedding model counts against: endpoint,
+// region, model name and an API-key prefix. The tokenizer belongs to the model, but
+// what a provider accepts is per deployment - the same model behind two endpoints
+// can have different windows - so everything that learns a real/own token ratio
+// (the ingest embedder, the dataset-nav embedder, the knowledge-compiler embedder)
+// has to key that ratio the same way; otherwise each path re-learns the same
+// rejection and none of them tightens for the others.
+func (m *EmbeddingModel) QuotaKey() string {
+	if m == nil {
+		return ""
+	}
+	var baseURL, region, apiKey, modelName string
+	if cfg := m.APIConfig; cfg != nil {
+		if cfg.BaseURL != nil {
+			baseURL = *cfg.BaseURL
+		}
+		if cfg.Region != nil {
+			region = *cfg.Region
+		}
+		if cfg.ApiKey != nil {
+			apiKey = *cfg.ApiKey
+		}
+	}
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	return fmt.Sprintf("%s|%s|%s|%x", baseURL, region, modelName, sum[:8])
 }
 
 // RerankModel wraps a ModelDriver with rerank-specific configuration
