@@ -143,7 +143,22 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
 	}
-	common.DebugCtx(ctx, "Retrieval rerank candidate params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("rerankCandidatesCount", rerankCandidatesCount))
+	// Request-scoped pool size (chat settings / tool arguments): without it a
+	// shortfall is indistinguishable from a search that simply matched less.
+	engineType := ""
+	if s.docEngine != nil {
+		engineType = s.docEngine.GetType()
+	}
+	common.InfoCtx(ctx, "Retrieval candidates",
+		zap.Int("page", req.Page),
+		zap.Int("pageSize", pageSize),
+		zap.Int("rerankCandidatesCount", rerankCandidatesCount),
+		zap.Int("knnTopK", *req.KNNTopK),
+		zap.Int("knnNumCandidates", *req.KNNNumCandidates),
+		zap.Float64("similarityThreshold", *req.SimilarityThreshold),
+		zap.Float64("vectorSimilarityWeight", *req.VectorSimilarityWeight),
+		zap.String("engine", engineType),
+		zap.Bool("vectorOnly", req.VectorOnly))
 
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
@@ -157,6 +172,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		KNNNumCandidates:       *req.KNNNumCandidates,
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,
+		SimilarityThreshold:    *req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		Highlight:              req.Highlight,
 		AllowDenseFallback:     req.AllowDenseFallback,
@@ -607,24 +623,34 @@ func buildRetrievalFusionExpr(docEngineType string, topn int, vectorSimilarityWe
 		return buildInfinityFusionExpr(topn, vectorSimilarityWeight)
 	}
 
-	// The caller weight MUST reach the engine: the previous hardcoded
-	// "0.05,0.95" silently discarded it, so every hybrid search on the ES
-	// backend ran at 95% vector / 5% keyword regardless of what the tool or
-	// the model asked for - and chunk.go derives the BM25 boost from this
-	// same value, so the lexical leg was effectively switched off.
-	vectorWeight := 0.3
-	if vectorSimilarityWeight != nil {
-		vectorWeight = *vectorSimilarityWeight
-	}
-	termWeight := math.Round((1.0-vectorWeight)*10000) / 10000
-
+	// Matches rag/nlp/search.py:331 — every backend but Infinity takes this fixed
+	// pair, so the first search is a vector recall pass and the caller's
+	// vector_similarity_weight is applied afterwards, by RerankWithKNN
+	// (tkWeight = 1-vw, vtWeight = vw). Feeding it in here instead ranks the
+	// window by BM25 and cuts a different top-N than the reference does.
 	return &types.FusionExpr{
 		Method: "weighted_sum",
 		TopN:   topn,
 		FusionParams: map[string]interface{}{
-			"weights": fmt.Sprintf("%g,%g", termWeight, vectorWeight),
+			"weights": esFusionWeights,
 		},
 	}
+}
+
+// esFusionWeights is the pair the reference gives every non-Infinity backend
+// (rag/nlp/search.py:331). 0.001 rather than 0 keeps a lexical leg for engines
+// that reject a zero weight.
+const esFusionWeights = "0.001,1"
+
+// minMatch mirrors Python's `min_match = vector_similarity_weight < 0.8`
+// (rag/nlp/search.py:773): a search that is almost entirely vector-weighted asks
+// the text leg for nothing in particular, so its keyword query matches on any term
+// instead of a share of them (0.3 first, 0.1 on the looser retry).
+func minMatch(vectorSimilarityWeight *float64, withMatch float64) float64 {
+	if vectorSimilarityWeight != nil && *vectorSimilarityWeight >= 0.8 {
+		return 0.0
+	}
+	return withMatch
 }
 
 type RetrievalSearchResult struct {
@@ -718,7 +744,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// Non-empty question
 
 		// Compute keywords via QueryBuilder
-		matchText, keywords := GetQueryBuilder().Question(req.Question, "", 0.3)
+		matchText, keywords := GetQueryBuilder().Question(req.Question, "", minMatch(req.VectorSimilarityWeight, 0.3))
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 		}
@@ -821,7 +847,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 					// and lower vector similarity threshold (0.17 vs default 0.1-0.2).
 					// This provides a second chance for queries that were too strict
 					// on the first attempt.
-					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", 0.1)
+					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1))
 					matchDense = cloneDenseExpr(denseTemplate)
 					matchDense.ExtraOptions["similarity"] = 0.17
 					if req.VectorOnly || matchText == nil {
@@ -869,6 +895,37 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	}
 
 	searchResult := engineResult
+	// The window the engine was asked for vs what it returned, together with what
+	// it was asked FOR: a shortfall is indistinguishable from a narrower query
+	// without both, and it is what a caller sees as a thin candidate pool (the ES
+	// backend is asked for rerankCandidatesCount candidates, see "Retrieval
+	// candidates"). The query is read off MatchExprs — the expressions that
+	// actually went to the engine — so the retries that re-ask with a lower
+	// minimum_should_match are reported as issued.
+	if searchResult != nil {
+		engineQuery := ""
+		if len(searchRequest.MatchExprs) > 0 {
+			if mt, ok := searchRequest.MatchExprs[0].(*types.MatchTextExpr); ok && mt != nil {
+				engineQuery = mt.MatchingText
+			}
+		}
+		knnTopN, knnExtra := 0, map[string]interface{}(nil)
+		if len(searchRequest.MatchExprs) > 1 {
+			if de, ok := searchRequest.MatchExprs[1].(*types.MatchDenseExpr); ok && de != nil {
+				knnTopN, knnExtra = de.TopN, de.ExtraOptions
+			}
+		}
+		common.InfoCtx(ctx, "Search window",
+			zap.Int("limit", limit), zap.Int("offset", pg*pageSize),
+			zap.Int("engineChunks", len(searchResult.Chunks)), zap.Int64("engineTotal", searchResult.Total),
+			zap.Strings("indexNames", searchRequest.IndexNames),
+			zap.Int("matchExprs", len(searchRequest.MatchExprs)),
+			zap.String("query", engineQuery),
+			zap.Any("searchFilters", filters),
+			zap.Any("requestFilter", req.Filter),
+			zap.Strings("docIDs", req.DocIDs),
+			zap.Int("knnTopN", knnTopN), zap.Any("knnExtra", knnExtra))
+	}
 	ids := s.docEngine.GetChunkIDs(searchResult.Chunks)
 	common.Info("GetChunkIDs result", zap.Int("count", len(ids)), zap.Strings("ids", ids))
 

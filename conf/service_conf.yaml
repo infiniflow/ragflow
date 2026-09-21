@@ -56,6 +56,11 @@ redis:
   username: ''
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+kvrocks:
+  db: 1
+  username: ''
+  password: 'infini_rag_flow'
+  host: 'localhost:6379'
 nats:
   host: "localhost"
   port: 4222

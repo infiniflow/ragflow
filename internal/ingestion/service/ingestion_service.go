@@ -1195,7 +1195,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if ingestionTask.PipelineLogID != nil {
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
-	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)).Execute(docTaskCtx.Ctx)
+	result, err := executor.WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}

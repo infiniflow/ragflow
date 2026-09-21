@@ -167,33 +167,42 @@ export const useDocumentImageUrl = (
   return imageUrl;
 };
 
+export type AuthenticatedImageUrlStatus = 'loading' | 'ready' | 'error';
+
 /**
  * Hook to convert any authenticated URL to a blob URL for use in <img> tags.
  * Use this for thumbnail URLs or any other API URLs that require authentication.
+ * The status distinguishes an in-flight fetch from a failed one, which the
+ * empty src alone cannot express.
  */
-export const useAuthenticatedImageUrl = (url: string | undefined | null) => {
-  const [imageUrl, setImageUrl] = useState<string>('');
+export const useAuthenticatedImageUrl = (
+  url: string | undefined | null,
+): { src: string; status: AuthenticatedImageUrlStatus } => {
+  const [state, setState] = useState<{
+    src: string;
+    status: AuthenticatedImageUrlStatus;
+  }>({ src: '', status: 'loading' });
 
   useEffect(() => {
     if (!url || !isAuthRequiredUrl(url)) {
-      setImageUrl(url || '');
+      setState({ src: url || '', status: 'ready' });
       return;
     }
 
     const authorization = getAuthorization();
     let cancelled = false;
-    setImageUrl('');
+    setState({ src: '', status: 'loading' });
 
     const { promise, release } = fetchDocumentImage(url, authorization);
     promise
       .then((blobUrl) => {
         if (!cancelled) {
-          setImageUrl(blobUrl);
+          setState({ src: blobUrl, status: 'ready' });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setImageUrl('');
+          setState({ src: '', status: 'error' });
         }
       });
 
@@ -203,7 +212,7 @@ export const useAuthenticatedImageUrl = (url: string | undefined | null) => {
     };
   }, [url]);
 
-  return imageUrl;
+  return state;
 };
 
 /**
@@ -219,7 +228,7 @@ export const AuthenticatedImg = ({
 }: React.ImgHTMLAttributes<HTMLImageElement> & {
   fallback?: React.ReactNode;
 }) => {
-  const authenticatedSrc = useAuthenticatedImageUrl(src);
+  const { src: authenticatedSrc } = useAuthenticatedImageUrl(src);
 
   if (!authenticatedSrc) return fallback ?? null;
 
