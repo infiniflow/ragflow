@@ -40,6 +40,7 @@ import { useDropdownManager } from './context';
 
 import { AgentBackground } from '@/components/canvas/background';
 import Spotlight from '@/components/spotlight';
+import { useNodeFocusRequest } from '../hooks/use-node-focus-request';
 import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
@@ -156,6 +157,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunOrChatDrawer,
     showChatModal,
     showFormDrawer,
+    showFormDrawerById,
     logSheetVisible,
     showLogSheet,
     hideLogSheet,
@@ -207,6 +209,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   };
 
   useHideFormSheetOnNodeDeletion({ hideFormDrawer });
+
+  // Focus requests posted through the store (e.g. by the canvas checklist in
+  // the page header): select + center the node, and open its form sheet unless
+  // the caller only wants the highlight (orphan-step issues).
+  useNodeFocusRequest({ reactFlowInstance, showFormDrawerById });
 
   const { visible, hideModal, showModal } = useSetModalState();
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });

@@ -15,13 +15,15 @@
  */
 
 import { LlmModelType } from '@/constants/knowledge';
+import { useModelValidIds } from '@/hooks/use-llm-request';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { forwardRef, memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LlmSettingFieldItems } from '../llm-setting-items/next';
+import { ModelTypeMap } from '../model-tree-select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
-import LLMLabel from './llm-label';
+import LLMLabel, { MissingModelLabel } from './llm-label';
 
 export interface NextInnerLLMSelectProps {
   id?: string;
@@ -63,6 +65,16 @@ const NextInnerLLMSelect = forwardRef<
       }
     }, [filter]);
 
+    // Validity is checked against the current user's own models — runs
+    // resolve llm_id against the runner's tenant, so a model only the
+    // canvas owner has added is unusable. Gated on isFetched so a slow
+    // list never flashes a false missing state. The filter-derived
+    // modelTypes only narrow the dropdown display, not validity.
+    const { validIds, isFetched: ownModelsFetched } = useModelValidIds(
+      ModelTypeMap.llm_id,
+    );
+    const isModelMissing = !!value && ownModelsFetched && !validIds.has(value);
+
     return (
       <Select disabled={disabled} value={value}>
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
@@ -76,7 +88,14 @@ const NextInnerLLMSelect = forwardRef<
               data-testid={triggerTestId}
             >
               <SelectValue placeholder={t('common.pleaseSelect')}>
-                <LLMLabel value={value} ownerTenantId={ownerTenantId} />
+                {isModelMissing ? (
+                  <MissingModelLabel
+                    value={value}
+                    ownerTenantId={ownerTenantId}
+                  />
+                ) : (
+                  <LLMLabel value={value} ownerTenantId={ownerTenantId} />
+                )}
               </SelectValue>
             </SelectTrigger>
           </PopoverTrigger>

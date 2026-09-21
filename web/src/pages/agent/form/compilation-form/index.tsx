@@ -5,6 +5,10 @@ import {
 } from '@/components/llm-setting-items/next';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { Form } from '@/components/ui/form';
+import {
+  useRevalidateUnavailableValue,
+  useUnavailableCompilationTemplateGroupFormSchema,
+} from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { TFunction } from 'i18next';
 import { memo } from 'react';
@@ -50,10 +54,12 @@ const CompilationForm = ({
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
   const FormSchema = useFormSchema();
+  const { formSchema, templateGroupsFetched } =
+    useUnavailableCompilationTemplateGroupFormSchema(FormSchema);
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
     mode: 'onChange',
   });
 
@@ -61,6 +67,14 @@ const CompilationForm = ({
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
+
+  // A persisted group from a shared pipeline may be unusable to the current
+  // user — surface the error once the group list has loaded.
+  useRevalidateUnavailableValue(
+    form,
+    templateGroupsFetched,
+    'compilation_template_group_id',
+  );
 
   return (
     <Form {...form}>

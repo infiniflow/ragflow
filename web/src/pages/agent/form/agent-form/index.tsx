@@ -22,6 +22,10 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import NumberInputStepper from '@/components/originui/number-input';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateUnavailableValue,
+  useUnavailableModelFormSchema,
+} from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
@@ -96,6 +100,9 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, modelsFetched } =
+    useUnavailableModelFormSchema(FormSchema);
+
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
@@ -111,7 +118,7 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const form = useForm<AgentFormSchemaType>({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
   });
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
@@ -158,6 +165,10 @@ function AgentForm({ node }: INextOperatorForm) {
   }, [deleteEdgesBySourceAndSourceHandle, exceptionMethod, node?.id]);
 
   useWatchFormChange(node?.id, form);
+
+  // A persisted model from a shared canvas may be unusable to the current
+  // user — surface the error once the model list has loaded.
+  useRevalidateUnavailableValue(form, modelsFetched, 'llm_id');
 
   return (
     <>

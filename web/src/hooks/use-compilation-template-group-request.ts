@@ -207,7 +207,12 @@ export const useDeleteCompilationTemplateGroup = () => {
 };
 
 export const useFetchAllCompilationTemplateGroups = () => {
-  const { data, isFetching: loading } = useQuery<ICompilationTemplateGroup[]>({
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+  } = useQuery<ICompilationTemplateGroup[]>({
     queryKey: CompilationTemplateGroupKeys.all(),
     initialData: [],
     gcTime: 0,
@@ -222,14 +227,36 @@ export const useFetchAllCompilationTemplateGroups = () => {
     },
   });
 
-  return { groups: data ?? [], loading };
+  // `initialData: []` keeps `isLoading` from ever firing and can't tell a real
+  // empty result apart from "fetch hasn't completed yet" — gate on `isFetched`.
+  return { groups: data ?? [], loading, isFetched, isError };
 };
 
 export const useCompilationTemplateGroupOptions = () => {
-  const { groups } = useFetchAllCompilationTemplateGroups();
+  const { groups, isFetched, isError } = useFetchAllCompilationTemplateGroups();
 
-  return useMemo(
+  const options = useMemo(
     () => groups.map((group) => ({ label: group.name, value: group.id })),
     [groups],
   );
+
+  return { options, isFetched, isError };
+};
+
+/**
+ * Ids of template groups usable by the current user. Groups resolve per
+ * tenant at run time, so a group referenced by a shared pipeline may not
+ * exist for the runner. `isFetched` must be checked before trusting
+ * `validIds` — the query seeds `initialData: []`, so every id looks missing
+ * while loading.
+ */
+export const useCompilationTemplateGroupValidIds = () => {
+  const { groups, isFetched } = useFetchAllCompilationTemplateGroups();
+
+  const validIds = useMemo(
+    () => new Set(groups.map((group) => group.id)),
+    [groups],
+  );
+
+  return { validIds, isFetched };
 };

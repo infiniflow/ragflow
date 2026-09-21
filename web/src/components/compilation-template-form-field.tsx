@@ -17,6 +17,8 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { useCompilationTemplateGroupOptions } from '@/hooks/use-compilation-template-group-request';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { TriangleAlert } from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SelectWithSearch } from './originui/select-with-search';
 
@@ -31,7 +33,20 @@ export function CompilationTemplateFormField({
 }: CompilationTemplateFormFieldProps) {
   const { t } = useTranslation();
   const { navigateToAgents } = useNavigatePage();
-  const options = useCompilationTemplateGroupOptions();
+  const { options, isFetched, isError } = useCompilationTemplateGroupOptions();
+
+  // No owner-scoped name lookup exists for template groups (strictly
+  // owner-tenant, no sharing mechanism) — the raw id is all the missing
+  // display can show. Styled like MissingModelLabel.
+  const renderMissingGroup = useCallback(
+    (missingValue: string) => (
+      <span className="flex items-center gap-1.5 text-text-disabled">
+        <TriangleAlert className="size-4 flex-shrink-0" />
+        <span className="truncate">{missingValue}</span>
+      </span>
+    ),
+    [],
+  );
 
   return (
     <RAGFlowFormItem
@@ -50,6 +65,8 @@ export function CompilationTemplateFormField({
           value={field.value}
           onChange={field.onChange}
           options={options}
+          loading={!isFetched || isError}
+          renderMissingValue={renderMissingGroup}
         />
       )}
     </RAGFlowFormItem>
