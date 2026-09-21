@@ -253,6 +253,71 @@ func TestUpdateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 	if result["pipeline_id"] != strings.ToLower(pipelineID) {
 		t.Fatalf("expected pipeline_id %q, got %#v", strings.ToLower(pipelineID), result["pipeline_id"])
 	}
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if _, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{}); !ok {
+		t.Fatalf("expected pipeline defaults in parser_config, got %#v", persisted.ParserConfig)
+	}
+}
+
+func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	pipelineID := "abcdef0123456789abcdef0123456789"
+	parseType := 2
+	dslJSON, err := json.Marshal(map[string]any{
+		"components": map[string]any{
+			"Parser:CustomP": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"pdf": map[string]any{"remove_toc": false},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal canvas DSL: %v", err)
+	}
+	seedDatasetUpdateCanvas(t, pipelineID, "tenant-1", dslJSON)
+
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		PipelineID: &pipelineID,
+		ParseType:  &parseType,
+		ParserConfig: map[string]interface{}{
+			"Parser:CustomP": map[string]interface{}{
+				"pdf": map[string]interface{}{"remove_toc": true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	parserParams, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Parser:CustomP in parser_config, got %#v", persisted.ParserConfig)
+	}
+	pdfParams, ok := parserParams["pdf"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected pdf parser config, got %#v", parserParams)
+	}
+	if removeTOC, ok := pdfParams["remove_toc"].(bool); !ok || !removeTOC {
+		t.Fatalf("remove_toc = %#v, want true", pdfParams["remove_toc"])
+	}
 }
 
 // TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas verifies that
