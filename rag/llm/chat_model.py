@@ -66,6 +66,12 @@ class ReActMode(StrEnum):
 
 
 ERROR_PREFIX = "**ERROR**"
+TOOL_ROUND_LIMIT_PROMPT = (
+    "Tool execution limit reached for this answer. Do not call any more tools. "
+    "Using only the tool results already present in the conversation, provide a final answer now. "
+    "If the evidence is insufficient, say so explicitly and suggest one concrete clarification. "
+    "Do not describe this as a conversation or session limit."
+)
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
@@ -516,7 +522,7 @@ class Base(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2, default=str) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -702,7 +708,7 @@ class Base(ABC):
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
                 response, token_count = await self._async_chat(history, gen_conf)
                 ans += response
                 # _async_chat set self.last_usage to its own call; fold it into the aggregate.
@@ -880,13 +886,12 @@ class Base(ABC):
                         yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
 
                 response = await self.async_client.chat.completions.create(
                     model=self.model_name,
                     messages=history,
                     stream=True,
-                    **self._tool_request_kwargs(tools),
                     **gen_conf,
                     **extra_request_kwargs,
                 )
@@ -2660,7 +2665,7 @@ class LiteLLMBase(ABC):
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
 
                 response, token_count = await self.async_chat("", history, gen_conf)
                 ans += response
@@ -2866,9 +2871,9 @@ class LiteLLMBase(ABC):
                         yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
 
-                completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
                 completion_args.setdefault("stream_options", {})["include_usage"] = True
                 response = await litellm.acompletion(
                     **completion_args,
