@@ -955,3 +955,122 @@ func TestGeneralChunkerPDFAttachesOutlineOnce(t *testing.T) {
 		t.Errorf("outline entry = %#v", entry)
 	}
 }
+
+func TestGeneralChunkerPDFSplitsLargeTableWithHeaders(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<table><caption>Financial Summary</caption>")
+	b.WriteString("<tr><th>Year</th><th>Revenue</th><th>Profit</th></tr>")
+	for i := 2000; i < 2010; i++ {
+		fmt.Fprintf(&b, "<tr><td>%d</td><td>%d Million USD</td><td>%d Thousand USD</td></tr>", i, i*10, i*2)
+	}
+	b.WriteString("</table>")
+	tableHTML := b.String()
+
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 60})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "Before intro", "doc_type_kwd": "text"},
+			{"text": tableHTML, "doc_type_kwd": "table", "ck_type": "table"},
+			{"text": "After summary", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) < 4 {
+		t.Fatalf("expected at least 4 chunks (intro + >=2 table chunks + summary), got %d chunks: %#v", len(chunks), chunks)
+	}
+
+	if chunks[0]["doc_type_kwd"] != "text" || chunks[0]["text"] != "Before intro" {
+		t.Errorf("first chunk = %+v", chunks[0])
+	}
+	last := chunks[len(chunks)-1]
+	if last["doc_type_kwd"] != "text" || last["text"] != "After summary" {
+		t.Errorf("last chunk = %+v", last)
+	}
+
+	tableChunks := chunks[1 : len(chunks)-1]
+	allDataRowsFound := make(map[int]bool)
+	for i, tc := range tableChunks {
+		if tc["doc_type_kwd"] != "table" || tc["ck_type"] != "table" {
+			t.Errorf("table chunk %d has doc_type_kwd=%v, ck_type=%v, want table", i, tc["doc_type_kwd"], tc["ck_type"])
+		}
+		text, _ := tc["text"].(string)
+		if !strings.HasPrefix(text, "<table>") || !strings.HasSuffix(text, "</table>") {
+			t.Errorf("table chunk %d text is not valid table HTML: %q", i, text)
+		}
+		if !strings.Contains(text, "<caption>Financial Summary</caption>") {
+			t.Errorf("table chunk %d missing caption: %q", i, text)
+		}
+		if !strings.Contains(text, "<tr><th>Year</th><th>Revenue</th><th>Profit</th></tr>") {
+			t.Errorf("table chunk %d missing table headers: %q", i, text)
+		}
+		for year := 2000; year < 2010; year++ {
+			if strings.Contains(text, fmt.Sprintf("<td>%d</td>", year)) {
+				allDataRowsFound[year] = true
+			}
+		}
+	}
+	for year := 2000; year < 2010; year++ {
+		if !allDataRowsFound[year] {
+			t.Errorf("year %d row was lost in chunking", year)
+		}
+	}
+}
+
+func TestGeneralChunkerPDFKeepsSmallTableIntact(t *testing.T) {
+	tableHTML := "<table><tr><th>Col1</th><th>Col2</th></tr><tr><td>Val1</td><td>Val2</td></tr></table>"
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": tableHTML, "doc_type_kwd": "table", "ck_type": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want 1", len(chunks))
+	}
+	if chunks[0]["text"] != tableHTML {
+		t.Errorf("chunk text = %q, want %q", chunks[0]["text"], tableHTML)
+	}
+}
+
+func TestSplitLargeHTMLTable_NoTH_TreatsFirstRowAsHeader(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<table>")
+	b.WriteString("<tr><td>Header A</td><td>Header B</td></tr>")
+	for i := 1; i <= 8; i++ {
+		fmt.Fprintf(&b, "<tr><td>Row %d col A long text</td><td>Row %d col B long text</td></tr>", i, i)
+	}
+	b.WriteString("</table>")
+
+	parts := splitLargeHTMLTable(b.String(), 40)
+	if len(parts) < 2 {
+		t.Fatalf("expected at least 2 parts, got %d", len(parts))
+	}
+	for i, part := range parts {
+		if !strings.HasPrefix(part, "<table><tr><td>Header A</td><td>Header B</td></tr>") {
+			t.Errorf("part %d missing replicated row-0 header: %q", i, part)
+		}
+		if !strings.HasSuffix(part, "</table>") {
+			t.Errorf("part %d missing closing table tag: %q", i, part)
+		}
+	}
+}
+

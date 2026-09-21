@@ -7,6 +7,7 @@ import (
 	"image"
 	"math"
 	"sort"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -318,6 +319,9 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 		if hasCleanChars {
 			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg, zoom)
 			ocrUsed = ocrBoxes != nil
+			if ocrUsed {
+				ocrBoxes = rescueUnmatchedChars(ocrBoxes, chars, pg)
+			}
 		} else {
 			label := "scan page"
 			if len(chars) > 0 && !isScanNoise {
@@ -356,6 +360,55 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	}
 
 	return ocrBoxes, chars, ocrUsed
+}
+
+// rescueUnmatchedChars recovers visible embedded characters that were missed
+// by OCR detection (e.g. isolated table digits, minus signs, percentages) and
+// packages them into text boxes so they are not lost from table and text extraction.
+func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []pdf.TextBox {
+	if len(chars) == 0 {
+		return boxes
+	}
+	var unmatched []pdf.TextChar
+	for _, c := range chars {
+		if strings.TrimSpace(c.Text) == "" {
+			continue
+		}
+		covered := false
+		for _, b := range boxes {
+			if charBoxOverlapRatio(c, b.X0, b.X1, b.Top, b.Bottom) > 0.3 {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			unmatched = append(unmatched, c)
+		}
+	}
+	if len(unmatched) == 0 {
+		return boxes
+	}
+	rescued := lyt.CharsToBoxes(unmatched, pg, false)
+	for _, rb := range rescued {
+		if strings.TrimSpace(rb.Text) == "" {
+			continue
+		}
+		dup := false
+		rbArea := (rb.X1 - rb.X0) * (rb.Bottom - rb.Top)
+		for _, b := range boxes {
+			bArea := (b.X1 - b.X0) * (b.Bottom - b.Top)
+			inter := util.RectOverlapInter(rb.X0, rb.Top, rb.X1, rb.Bottom, b.X0, b.Top, b.X1, b.Bottom)
+			minA := math.Min(rbArea, bArea)
+			if minA > 0 && inter/minA > 0.5 {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			boxes = append(boxes, rb)
+		}
+	}
+	return boxes
 }
 
 // runPageWorkers executes pages through the single process-wide worker

@@ -939,3 +939,41 @@ func TestRemoveColumn(t *testing.T) {
 		t.Errorf("unexpected column content after removal")
 	}
 }
+
+func TestCleanupOrphanColumns_PreservesSparseColumnsWithNormalGaps(t *testing.T) {
+	// A 4-row table with 3 columns where column 1 has a single note in row 2.
+	// The gap between column 0 and column 1 is 50pt (> maxOrphanMergeGap = 25pt).
+	// It must be preserved rather than merged and deleted.
+	rows := [][]pdf.TSRCell{
+		{{Text: "H0", X0: 0, X1: 40}, {Text: "", X0: 90, X1: 150}, {Text: "H2", X0: 200, X1: 250}},
+		{{Text: "A0", X0: 0, X1: 40}, {Text: "", X0: 90, X1: 150}, {Text: "A2", X0: 200, X1: 250}},
+		{{Text: "B0", X0: 0, X1: 40}, {Text: "Note", X0: 90, X1: 150}, {Text: "B2", X0: 200, X1: 250}},
+		{{Text: "C0", X0: 0, X1: 40}, {Text: "", X0: 90, X1: 150}, {Text: "C2", X0: 200, X1: 250}},
+	}
+	result := CleanupOrphanColumns(rows)
+	if len(result[0]) != 3 {
+		t.Fatalf("expected 3 columns preserved, got %d", len(result[0]))
+	}
+	if result[2][1].Text != "Note" {
+		t.Errorf("expected 'Note' preserved in col 1, got %q", result[2][1].Text)
+	}
+}
+
+func TestCleanupOrphanRows_PreservesSparseRowsWithNormalGaps(t *testing.T) {
+	// A 4-column table where row 2 is a category title spanning row with 1 cell.
+	// The vertical gap between row 1 and row 2 is 40pt (> maxOrphanMergeGap = 25pt).
+	// It must be preserved rather than merged into row 1.
+	rows := [][]pdf.TSRCell{
+		{{Text: "H0", Y0: 0, Y1: 15}, {Text: "H1", Y0: 0, Y1: 15}, {Text: "H2", Y0: 0, Y1: 15}, {Text: "H3", Y0: 0, Y1: 15}},
+		{{Text: "A0", Y0: 20, Y1: 35}, {Text: "A1", Y0: 20, Y1: 35}, {Text: "A2", Y0: 20, Y1: 35}, {Text: "A3", Y0: 20, Y1: 35}},
+		{{Text: "Subtotal", Y0: 80, Y1: 95}, {Text: "", Y0: 80, Y1: 95}, {Text: "", Y0: 80, Y1: 95}, {Text: "", Y0: 80, Y1: 95}},
+		{{Text: "B0", Y0: 140, Y1: 155}, {Text: "B1", Y0: 140, Y1: 155}, {Text: "B2", Y0: 140, Y1: 155}, {Text: "B3", Y0: 140, Y1: 155}},
+	}
+	result := CleanupOrphanRows(rows)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 rows preserved, got %d", len(result))
+	}
+	if result[2][0].Text != "Subtotal" {
+		t.Errorf("expected 'Subtotal' in row 2, got %q", result[2][0].Text)
+	}
+}

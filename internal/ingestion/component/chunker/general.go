@@ -251,7 +251,11 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 			body = append(body, unit)
 		} else {
 			flushBody()
-			chunks = append(chunks, cloneChunkDoc(unit))
+			if itemDocType(unit) == "table" {
+				chunks = append(chunks, splitTableUnit(unit, c.param.ChunkTokenSize)...)
+			} else {
+				chunks = append(chunks, cloneChunkDoc(unit))
+			}
 		}
 	}
 	flushBody()
@@ -408,10 +412,14 @@ func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool, j
 	previousText := -1
 	for _, unit := range units {
 		if itemDocType(unit) != "text" {
-			media := cloneChunkDoc(unit)
-			media.DocType = itemDocType(media)
-			media.CKType = media.DocType
-			merged = append(merged, media)
+			if itemDocType(unit) == "table" {
+				merged = append(merged, splitTableUnit(unit, target)...)
+			} else {
+				media := cloneChunkDoc(unit)
+				media.DocType = itemDocType(media)
+				media.CKType = media.DocType
+				merged = append(merged, media)
+			}
 			continue
 		}
 
@@ -618,7 +626,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 			if current >= 0 && isShortMarkdownHeading(merged[current]) {
 				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
 				if !imagesOK {
-					merged = append(merged, cloneChunkDoc(unit))
+					merged = append(merged, splitTableUnit(unit, target)...)
 					current = -1
 					currentTokens = 0
 					continue
@@ -637,12 +645,18 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				table.Image = mergedImage
 				table.DocType = "table"
 				table.CKType = "table"
-				merged[current] = table
+				split := splitTableUnit(table, target)
+				if len(split) > 0 {
+					merged[current] = split[0]
+					if len(split) > 1 {
+						merged = append(merged, split[1:]...)
+					}
+				}
 				current = -1
 				currentTokens = 0
 				continue
 			}
-			merged = append(merged, cloneChunkDoc(unit))
+			merged = append(merged, splitTableUnit(unit, target)...)
 			current = -1
 			currentTokens = 0
 			continue
@@ -904,7 +918,11 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 
 	for _, unit := range units {
 		if itemDocType(unit) != "text" {
-			merged = append(merged, cloneChunkDoc(unit))
+			if itemDocType(unit) == "table" {
+				merged = append(merged, splitTableUnit(unit, target)...)
+			} else {
+				merged = append(merged, cloneChunkDoc(unit))
+			}
 			current = -1
 			continue
 		}
@@ -1011,6 +1029,125 @@ func generalUnitTokens(unit schema.ChunkDoc) int {
 		return *unit.TKNums
 	}
 	return tokenizeStr(unit.Text)
+}
+
+var trRegex = regexp.MustCompile(`(?is)<tr\b[^>]*>.*?</tr>`)
+
+// splitTableUnit splits an oversized HTML table ChunkDoc into multiple smaller
+// table ChunkDocs if its token count exceeds maxTokens. Each resulting chunk
+// preserves the table wrapper, caption (if present), and table header rows,
+// preventing downstream embedding truncation and data loss.
+func splitTableUnit(unit schema.ChunkDoc, maxTokens int) []schema.ChunkDoc {
+	if maxTokens <= 0 || generalUnitTokens(unit) <= maxTokens {
+		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+	}
+	parts := splitLargeHTMLTable(unit.Text, maxTokens)
+	if len(parts) <= 1 {
+		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+	}
+	res := make([]schema.ChunkDoc, 0, len(parts))
+	for _, part := range parts {
+		doc := cloneChunkDoc(unit)
+		doc.DocType = "table"
+		doc.CKType = "table"
+		setChunkText(&doc, part)
+		res = append(res, doc)
+	}
+	return res
+}
+
+// splitLargeHTMLTable splits an HTML table into sub-tables that fit within maxTokens,
+// replicating the caption and header row(s) in each sub-table.
+func splitLargeHTMLTable(text string, maxTokens int) []string {
+	lower := strings.ToLower(text)
+	startIdx := strings.Index(lower, "<table")
+	endIdx := strings.LastIndex(lower, "</table>")
+	if startIdx < 0 || endIdx < 0 || endIdx <= startIdx {
+		return []string{text}
+	}
+
+	prefix := text[:startIdx]
+	afterOpen := text[startIdx:]
+	tagEnd := strings.Index(afterOpen, ">")
+	if tagEnd < 0 {
+		return []string{text}
+	}
+	tableOpenTag := afterOpen[:tagEnd+1]
+	inner := text[startIdx+tagEnd+1 : endIdx]
+	suffix := text[endIdx+len("</table>"):]
+
+	// Extract caption if present.
+	lowerInner := strings.ToLower(inner)
+	capStart := strings.Index(lowerInner, "<caption")
+	var captionHTML string
+	if capStart >= 0 {
+		capEndRel := strings.Index(lowerInner[capStart:], "</caption>")
+		if capEndRel >= 0 {
+			capEnd := capStart + capEndRel + len("</caption>")
+			captionHTML = inner[capStart:capEnd]
+		}
+	}
+
+	// Extract all rows.
+	rows := trRegex.FindAllString(inner, -1)
+	if len(rows) <= 1 {
+		return []string{text}
+	}
+
+	// Determine header rows vs data rows.
+	headerEnd := 0
+	for i, r := range rows {
+		if strings.Contains(strings.ToLower(r), "<th") {
+			headerEnd = i + 1
+		} else {
+			break
+		}
+	}
+	if headerEnd == 0 || headerEnd >= len(rows) {
+		headerEnd = 1
+	}
+	headerRows := rows[:headerEnd]
+	dataRows := rows[headerEnd:]
+
+	baseHeader := prefix + tableOpenTag + captionHTML + strings.Join(headerRows, "")
+	baseTokens := tokenizeStr(baseHeader + "</table>")
+
+	var chunks []string
+	var currentDataRows []string
+	currentTokens := baseTokens
+
+	flush := func() {
+		if len(currentDataRows) == 0 {
+			return
+		}
+		var b strings.Builder
+		b.WriteString(baseHeader)
+		for _, dr := range currentDataRows {
+			b.WriteString(dr)
+		}
+		b.WriteString("</table>")
+		chunks = append(chunks, b.String())
+		currentDataRows = nil
+		currentTokens = baseTokens
+	}
+
+	for _, row := range dataRows {
+		rowTokens := tokenizeStr(row)
+		if len(currentDataRows) > 0 && currentTokens+rowTokens > maxTokens {
+			flush()
+		}
+		currentDataRows = append(currentDataRows, row)
+		currentTokens += rowTokens
+	}
+	flush()
+
+	if len(chunks) <= 1 {
+		return []string{text}
+	}
+	if suffix != "" {
+		chunks[len(chunks)-1] += suffix
+	}
+	return chunks
 }
 
 func mergeGeneralChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep string) {
