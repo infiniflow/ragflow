@@ -51,6 +51,7 @@ jobs:
     outputs:
       http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
+      has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
       has_native_deepdoc_changes: ${{ steps.detect_changes.outputs.has_native_deepdoc_changes }}
     steps:
       - name: Ensure workspace ownership
@@ -183,9 +184,10 @@ jobs:
 
             while IFS= read -r file; do
               case "$file" in
-                # Docker, test, SDK, and workflow changes can alter the server path.
+                # Docker images, compose files, go dep downloads, test, SDK, and
+                # workflow changes can alter the server path or its image build.
                 # build.sh also controls the C++/native build, so it must trigger native backend.
-                Dockerfile|docker/**|.github/workflows/**|sdk/**|build.sh)
+                Dockerfile*|docker/**|.github/workflows/**|sdk/**|ragflow_deps/**|build.sh)
                   has_go=true
                   has_native_deepdoc=true
                   ;;
@@ -217,6 +219,7 @@ jobs:
           fi
 
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
+          echo "has_web_changes=${has_web}"      >> $GITHUB_OUTPUT
           echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
           echo "Go: ${has_go}, Python (CI-ignored): ${has_python}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}"
 
@@ -224,6 +227,42 @@ jobs:
 
 
 
+
+  ragflow_web_build:
+    name: ragflow_web_build
+    needs: ragflow_preflight
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_web_changes == 'true' }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    steps:
+      - name: Ensure workspace ownership
+        if: always()
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      - name: Check out code
+        if: always()
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          allow-unsafe-pr-checkout: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Type-check and production-build web
+        working-directory: web
+        run: |
+          npm run type-check
+          NODE_OPTIONS="--max-old-space-size=8192" npm run build
 
   ragflow_tests_infinity:
     needs: ragflow_preflight
@@ -233,6 +272,7 @@ jobs:
       DOC_ENGINE: infinity
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
+      API_PROXY_SCHEME: go
     steps:
       - name: Ensure workspace ownership
         if: always()
@@ -761,6 +801,7 @@ jobs:
       DOC_ENGINE: elasticsearch
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch
       HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
+      API_PROXY_SCHEME: go
     steps:
       - name: Ensure workspace ownership
         if: always()
@@ -1280,7 +1321,7 @@ jobs:
     # redundant second -race pass and the concurrent -race OOM risk. Running it
     # last also keeps a flaky -race OOM from ever obscuring the functional
     # verdict produced by the go jobs.
-    needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch]
+    needs: [ragflow_preflight, ragflow_tests_infinity, ragflow_tests_elasticsearch]
     # Skip unless DeepDoc native backend code/build/testdata actually changed.
     if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
