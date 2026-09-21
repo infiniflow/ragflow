@@ -335,6 +335,16 @@ const (
 	// minHeaderFooterPages guards against cross-page false positives on short
 	// documents. Deterministic page-number patterns still fire on shorter ones.
 	minHeaderFooterPages = 3
+	// minParityCoverageRatio is the minimum fraction of even or odd pages that
+	// a running header/footer text must appear on to qualify under the parity track.
+	//
+	// In formal book typography (LaTeX book documentclass, InDesign book templates),
+	// running headers are standardly suppressed on chapter opening pages (\thispagestyle{plain}),
+	// blank verso pages before new chapters, and full-page illustrations/tables.
+	// As a result, a running header in a real book often covers only 40%-48% of the
+	// even or odd pages. A 0.40 threshold captures alternating bilateral book headers
+	// while the evenPages >= 3 / oddPages >= 3 count guards against accidental matches.
+	minParityCoverageRatio = 0.40
 )
 
 var (
@@ -350,15 +360,22 @@ var (
 	strictBareNumberPattern = regexp.MustCompile(`(?i)^([0-9０-９]{1,4}|((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v))$`)
 )
 
-// computePageGaps computes for each box index on a page:
+// computePageGaps computes for candidate margin boxes on a page:
 // - gapBelow: distance from b.Bottom to the nearest other box on the page with Top >= b.Bottom - 2.0.
 // - gapAbove: distance from b.Top to the nearest other box on the page with Bottom <= b.Top + 2.0.
+//
+// Performance optimization: only boxes falling into the outer margin zones (top 14% or bottom 14%)
+// ever query whitespace gaps. Skipping body-interior boxes reduces the outer loop from M to K (K <= 5),
+// lowering complexity from O(M^2) to O(K*M) on dense multi-column pages.
 func computePageGaps(boxes []pdf.TextBox, indices []int, pageHeight float64) (map[int]float64, map[int]float64) {
 	gapBelow := make(map[int]float64, len(indices))
 	gapAbove := make(map[int]float64, len(indices))
 
 	for _, i := range indices {
 		bi := boxes[i]
+		if bi.Bottom > pageHeight*headerMaxZoneRatio && bi.Top < pageHeight*footerMinZoneRatio {
+			continue
+		}
 		minDistBelow := pageHeight - bi.Bottom
 		if minDistBelow < 0 {
 			minDistBelow = 0
@@ -423,7 +440,7 @@ func isNonTextLayout(lt string) bool {
 }
 
 // isDeterministicPageNumber reports whether text is unambiguously a page number.
-func isDeterministicPageNumber(text string, zone string, gapBelow float64) bool {
+func isDeterministicPageNumber(text string, zone string, gapAbove, gapBelow float64, numPages int) bool {
 	t := strings.TrimSpace(text)
 	if t == "" {
 		return false
@@ -432,12 +449,39 @@ func isDeterministicPageNumber(text string, zone string, gapBelow float64) bool 
 		return true
 	}
 	if strictBareNumberPattern.MatchString(t) {
-		if zone == "footer" {
-			return true
+		// Bare numbers must have clear vertical whitespace separation:
+		// - in header: gapBelow >= 18pt to avoid dropping section headings/chapter numbers.
+		// - in footer: gapAbove >= 18pt to avoid dropping footnote numbers, table cells, or trailing text.
+		if zone == "header" && gapBelow < minWhitespaceGapPt {
+			return false
 		}
-		if zone == "header" && gapBelow >= minWhitespaceGapPt {
-			return true
+		if zone == "footer" && gapAbove < minWhitespaceGapPt {
+			return false
 		}
+		// For bare numeric digits, verify the value is within a reasonable range of the document page count.
+		// Protects isolated years (e.g. "2024"), IDs, or footnote indexes on short/medium documents.
+		var val int
+		isDigits := true
+		for _, r := range t {
+			if r >= '0' && r <= '9' {
+				val = val*10 + int(r-'0')
+			} else if r >= '０' && r <= '９' {
+				val = val*10 + int(r-'０')
+			} else {
+				isDigits = false
+				break
+			}
+		}
+		if isDigits && len(t) > 0 {
+			maxAllowed := numPages + 5
+			if maxAllowed < 20 {
+				maxAllowed = 20
+			}
+			if val > maxAllowed {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
@@ -491,6 +535,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
+	numPages := len(pageHeights)
 	drop := make(map[int]struct{}, len(boxes))
 
 	// Tier 1: Deterministic page numbers & DLA semantic tags.
@@ -515,14 +560,13 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 			continue
 		}
 
-		if isDeterministicPageNumber(b.Text, zone, allGapBelow[i]) {
+		if isDeterministicPageNumber(b.Text, zone, allGapAbove[i], allGapBelow[i], numPages) {
 			slog.Debug("header_footer: dropped by page-number pattern", "page", b.PageNumber, "zone", zone, "textLen", utf8.RuneCountInString(b.Text))
 			drop[i] = struct{}{}
 			continue
 		}
 	}
 
-	numPages := len(pageHeights)
 	if numPages < minHeaderFooterPages {
 		if len(drop) == 0 {
 			return boxes
@@ -591,11 +635,11 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		// 1. Global coverage: at least half the pages (rounded up).
 		if distinctPages >= minGlobalPages {
 			reason = "global_frequency"
-		} else if evenTotal >= 3 && evenPages >= 3 && float64(evenPages)/float64(evenTotal) >= 0.40 {
-			// 2. Parity partition: at least 40% of even pages.
+		} else if evenTotal >= 3 && evenPages >= 3 && float64(evenPages)/float64(evenTotal) >= minParityCoverageRatio {
+			// 2. Parity partition: at least minParityCoverageRatio of even pages.
 			reason = "parity_even"
-		} else if oddTotal >= 3 && oddPages >= 3 && float64(oddPages)/float64(oddTotal) >= 0.40 {
-			// 2. Parity partition: at least 40% of odd pages.
+		} else if oddTotal >= 3 && oddPages >= 3 && float64(oddPages)/float64(oddTotal) >= minParityCoverageRatio {
+			// 2. Parity partition: at least minParityCoverageRatio of odd pages.
 			reason = "parity_odd"
 		}
 

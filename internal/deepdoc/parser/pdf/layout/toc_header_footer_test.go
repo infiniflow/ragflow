@@ -1134,3 +1134,80 @@ func TestRemoveHeaderFooterBoxes_LocalRunPreservesDistantIsolatedBox(t *testing.
 		t.Errorf("distant isolated box on page 10 should be preserved, but was dropped!")
 	}
 }
+
+// TestRemoveHeaderFooterBoxes_BareFooterPageNumberWithGapDropped verifies that a bare
+// Arabic page number in the footer zone with clear whitespace above is cleanly removed.
+func TestRemoveHeaderFooterBoxes_BareFooterPageNumberWithGapDropped(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Page 0 body content.", 0, 72, 400, 160, 200),
+		tb("1", 0, 290, 310, 810, 825), // gapAbove = 810 - 200 = 610pt >> 18pt
+		tb("Page 1 body content.", 1, 72, 400, 160, 200),
+		tb("2", 1, 290, 310, 810, 825),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if b.Text == "1" || b.Text == "2" {
+			t.Fatalf("bare page number %q with clear whitespace above must be dropped", b.Text)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 body boxes remaining, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_FootnoteTightNumberPreserved verifies that a tight bare
+// number in the bottom 10% (e.g. footnote index with gapAbove < 18pt) is protected.
+func TestRemoveHeaderFooterBoxes_FootnoteTightNumberPreserved(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Main body paragraph here.", 0, 72, 400, 100, 200),
+		tb("Footnote explanation text at bottom.", 0, 72, 400, 790, 804), // bottom = 804
+		tb("1", 0, 72, 85, 810, 822),                                    // top = 810, gapAbove = 6pt < 18pt!
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	foundFootnoteNum := false
+	for _, b := range got {
+		if b.Text == "1" {
+			foundFootnoteNum = true
+			break
+		}
+	}
+	if !foundFootnoteNum {
+		t.Fatalf("tight footnote number '1' (gapAbove < 18pt) must be preserved, but was dropped!")
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected all 3 boxes to be kept, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_FooterYearPreservedOnShortDocument verifies that a 4-digit
+// year (e.g. "2024") in the footer margin on a 2-page document is NOT misidentified as a page number.
+func TestRemoveHeaderFooterBoxes_FooterYearPreservedOnShortDocument(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Legal Agreement Page 1", 0, 72, 400, 160, 200),
+		tb("2024", 0, 280, 320, 810, 825), // gapAbove >> 18pt, but value 2024 > 20
+		tb("Legal Agreement Page 2", 1, 72, 400, 160, 200),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	foundYear := false
+	for _, b := range got {
+		if b.Text == "2024" {
+			foundYear = true
+			break
+		}
+	}
+	if !foundYear {
+		t.Fatalf("footer year '2024' (value > maxAllowed) must be preserved, but was dropped!")
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected all 3 boxes to be kept, got %d", len(got))
+	}
+}
