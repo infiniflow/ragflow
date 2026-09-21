@@ -421,6 +421,9 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 			zap.Int("page", r.PageNumber),
 			zap.Int("done", i+1),
 			zap.Int("total", submitted))
+		if p.Config.OnPageDone != nil {
+			p.Config.OnPageDone(i+1, submitted)
+		}
 	}
 
 	results := make([]*pageResult, 0, len(pages))

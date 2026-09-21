@@ -254,6 +254,12 @@ type ParserConfig struct {
 	// cross-page text repetition) before TextMerge can fold a header box into
 	// a body section.
 	RemoveHeaderFooter bool
+	// OnPageDone, when set, is called from the page-worker collection loop
+	// each time a page finishes (done counts collected pages, total is the
+	// number of pages submitted for processing). It lets callers surface
+	// parse progress without the parser knowing about any progress sink;
+	// nil disables the callback at zero cost.
+	OnPageDone func(done, total int)
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
