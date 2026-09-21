@@ -56,7 +56,6 @@ var (
 )
 
 const (
-	graphRaptorQueueDocID    = "graph_raptor_x"
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
