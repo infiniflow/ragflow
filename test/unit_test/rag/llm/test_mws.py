@@ -313,10 +313,7 @@ def test_mws_chat_request_flattens_openai_tool_history():
         }
     ]
     expected_tool_calls = f"<tool_calls>{json.dumps(tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>"
-    expected_tool_result = (
-        '<tool_result>{"tool_call_id":"call_123",'
-        '"content":"Makise Kurisu is a fictional character."}</tool_result>'
-    )
+    expected_tool_result = '<tool_result>{"tool_call_id":"call_123","content":"Makise Kurisu is a fictional character."}</tool_result>'
 
     body = chat._request_body(
         [
@@ -387,6 +384,119 @@ async def test_mws_bound_tool_request_normalizes_existing_tool_history():
         },
         {"role": "user", "content": '<tool_result>{"tool_call_id":"call_123","content":"result"}</tool_result>'},
     ]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_bound_tool_stream_normalizes_existing_tool_history():
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+    chat.tools = [{"type": "function", "function": {"name": "lookup", "parameters": {}}}]
+    chat.is_tools = True
+    chat.max_rounds = 1
+    chat.max_retries = 0
+    chat.toolcall_session = SimpleNamespace(tool_call_async=AsyncMock(side_effect=["new result 1", "new result 2"]))
+
+    initial_tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]
+
+    def tool_call_chunk(call_id):
+        tool_call = SimpleNamespace(
+            index=0,
+            id=call_id,
+            function=SimpleNamespace(name="lookup", arguments="{}"),
+        )
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, reasoning_content=None, reasoning=None, tool_calls=[tool_call]),
+                    finish_reason="tool_calls",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=0, total_tokens=1),
+        )
+
+    def content_chunk(content):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content, reasoning_content=None, reasoning=None, tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=0, total_tokens=1),
+        )
+
+    async def stream(chunk):
+        yield chunk
+
+    chat.async_client.chat.completions.create = AsyncMock(
+        side_effect=[
+            stream(tool_call_chunk("call_456")),
+            stream(tool_call_chunk("call_789")),
+            stream(content_chunk("Done")),
+        ]
+    )
+
+    chunks = [
+        chunk
+        async for chunk in chat.async_chat_streamly_with_tools(
+            "",
+            [
+                {"role": "assistant", "content": None, "tool_calls": initial_tool_calls},
+                {"role": "tool", "tool_call_id": "call_123", "content": "existing result"},
+            ],
+            {},
+        )
+    ]
+
+    assert "Done" in chunks
+    calls = chat.async_client.chat.completions.create.await_args_list
+    assert len(calls) == 3
+
+    expected_initial_messages = [
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(initial_tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_123","content":"existing result"}</tool_result>'},
+    ]
+    assert calls[0].kwargs["messages"] == expected_initial_messages
+
+    first_new_tool_call = [
+        {
+            "index": 0,
+            "id": "call_456",
+            "function": {"name": "lookup", "arguments": "{}"},
+            "type": "function",
+        }
+    ]
+    expected_second_messages = [
+        *expected_initial_messages,
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(first_new_tool_call, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_456","content":"new result 1"}</tool_result>'},
+    ]
+    assert calls[1].kwargs["messages"] == expected_second_messages
+
+    second_new_tool_call = [
+        {
+            "index": 0,
+            "id": "call_789",
+            "function": {"name": "lookup", "arguments": "{}"},
+            "type": "function",
+        }
+    ]
+    assert calls[2].kwargs["messages"] == [
+        *expected_second_messages,
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(second_new_tool_call, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_789","content":"new result 2"}</tool_result>'},
+        {"role": "user", "content": "Exceed max rounds: 1"},
+    ]
+    assert all(message["role"] in {"system", "user", "assistant"} and isinstance(message["content"], str) for request in calls for message in request.kwargs["messages"])
 
 
 @pytest.mark.p1

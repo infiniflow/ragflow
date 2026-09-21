@@ -786,7 +786,12 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        stream=True,
+                        **self._tool_request_kwargs(tools),
+                        **gen_conf,
+                        **extra_request_kwargs,
                     )
 
                     final_tool_calls = {}
@@ -909,7 +914,7 @@ class Base(ABC):
 
                 response = await self.async_client.chat.completions.create(
                     model=self.model_name,
-                    messages=history,
+                    messages=self._tool_request_messages(history),
                     stream=True,
                     **self._tool_request_kwargs(tools),
                     **gen_conf,
