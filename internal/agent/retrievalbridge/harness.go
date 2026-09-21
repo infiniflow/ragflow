@@ -82,12 +82,16 @@ func NewHarnessRetriever(modelProviderService *service.ModelProviderService, met
 		// derive rank features. The Go tag extractor (extractor_tag.go) writes
 		// both tag_kwd (the list of tag names) and tag_feas (per-tag weights)
 		// onto each chunk at parse time; the labeler aggregates tag_kwd to build
-		// the tag vocabulary and the retriever ranks with tag_feas. Best-effort:
-		// a load failure leaves KBs empty and the adapter resolves them itself.
+		// the tag vocabulary and the retriever ranks with tag_feas.
 		var kbs []*entity.Knowledgebase
 		if len(req.DatasetIDs) > 0 {
-			if loaded, lErr := dao.NewKnowledgebaseDAO().GetByIDs(ctx, dao.DB, req.DatasetIDs); lErr == nil {
-				kbs = loaded
+			var err error
+			kbs, err = dao.NewKnowledgebaseDAO().GetByIDs(ctx, dao.DB, req.DatasetIDs)
+			if err != nil {
+				return service.HarnessResult{}, err
+			}
+			if err := validateLoadedDatasets(req.DatasetIDs, kbs); err != nil {
+				return service.HarnessResult{}, err
 			}
 		}
 		// validate_dataset_embedding_models runs FIRST upstream
@@ -367,6 +371,21 @@ func embedderForDatasets(kbs []*entity.Knowledgebase, modelSvc *service.ModelPro
 		return nil
 	}
 	return service.NewNavEmbedder(modelSvc, kbs[0].EmbdID)
+}
+
+func validateLoadedDatasets(datasetIDs []string, kbs []*entity.Knowledgebase) error {
+	loaded := make(map[string]struct{}, len(kbs))
+	for _, kb := range kbs {
+		if kb != nil {
+			loaded[kb.ID] = struct{}{}
+		}
+	}
+	for _, id := range datasetIDs {
+		if _, ok := loaded[id]; !ok {
+			return fmt.Errorf("dataset %q was not found", id)
+		}
+	}
+	return nil
 }
 
 // validateDatasetEmbeddingModels mirrors Python validate_dataset_embedding_models
