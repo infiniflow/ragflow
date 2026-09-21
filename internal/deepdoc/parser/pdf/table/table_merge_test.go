@@ -684,3 +684,56 @@ func TestMergeTablesAcrossPages_DeduplicateCaption(t *testing.T) {
 		t.Errorf("expected clean deduplicated caption, got %q", merged[0].Caption)
 	}
 }
+
+// TestMergeTablesAcrossPages_MisalignedColumnsAlignByX reproduces the 江西
+// 材料价格表 cross-page case: the anchor page detects all 16 columns while
+// continuation pages miss the 序号|材料名称 separator, so their first cell
+// spans the 序号 column position with merged text ("21 切换模块") and every
+// later cell is one grid position to the left of its logical column.
+// Index-based padding would place the 规格 value under 材料名称 (and every
+// price under the wrong city header); the merged grid must instead be
+// re-aligned by X so each value lands under the anchor column it overlaps.
+func TestMergeTablesAcrossPages_MisalignedColumnsAlignByX(t *testing.T) {
+	cell := func(x0, y0, x1, y1 float64, text string) pdf.TSRCell {
+		return pdf.TSRCell{X0: x0, Y0: y0, X1: x1, Y1: y1, Text: text}
+	}
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 400, Top: 0, Bottom: 90}},
+		Scale:     1.0,
+		Grid: [][]pdf.TSRCell{
+			{cell(0, 0, 100, 30, "序号"), cell(100, 0, 250, 30, "材料名称"), cell(250, 0, 400, 30, "规格")},
+			{cell(0, 30, 100, 60, "1"), cell(100, 30, 250, 60, "闸阀"), cell(250, 30, 400, 60, "Z15")},
+		},
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 400, Top: 0, Bottom: 60}},
+		Scale:     1.0,
+		Grid: [][]pdf.TSRCell{
+			// 序号+材料名称 merged into the 序号-position cell; 规格 keeps the
+			// anchor's X range but sits at grid index 1.
+			{cell(0, 0, 100, 30, "21 切换模块"), cell(250, 0, 400, 30, "K-30")},
+		},
+	}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, map[int]float64{0: 100})
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	g := merged[0].Grid
+	if len(g) != 3 {
+		t.Fatalf("expected 3 rows (2 anchor + 1 continuation), got %d", len(g))
+	}
+	for r, row := range g {
+		if len(row) != 3 {
+			t.Fatalf("row %d: width must be 3, got %d", r, len(row))
+		}
+	}
+	if g[2][0].Text != "21 切换模块" {
+		t.Errorf("continuation merged 序号/名称 cell must stay in column 0, got %q", g[2][0].Text)
+	}
+	if g[2][1].Text != "" {
+		t.Errorf("column 1 (材料名称) must stay empty on the misaligned page, got %q", g[2][1].Text)
+	}
+	if g[2][2].Text != "K-30" {
+		t.Errorf("规格 value must align to anchor column 2 by X, got %q at cols [%q %q]", g[2][2].Text, g[2][0].Text, g[2][1].Text)
+	}
+}

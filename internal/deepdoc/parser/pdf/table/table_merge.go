@@ -171,15 +171,19 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		// continuation rows to be dropped — doing so silently deletes an
 		// entire continuation page from the output.
 		//
-		// We stack the unpadded per-page grids first, so the zero-coordinate
+		// Stack the unpadded per-page grids first, so the zero-coordinate
 		// padding cells never enter the Y-shift math in stackGrids /
-		// gridYExtent, then align the rebuilt grid to a shared column model:
-		// the maximum column count seen across all rows of all grids, padding
-		// shorter rows by index. Column i of a continuation page maps to
-		// column i of the anchor because they are the same logical column of
-		// one cross-page table, so padding keeps the grid uniform
-		// (CalSpans / CleanupOrphanColumns / RowsToHTML never see a jagged
-		// grid) while preserving every row.
+		// gridYExtent, then align the rebuilt grid to a shared column model.
+		// When every page's grid detected the same number of columns, index
+		// i is the same logical column on every page and short rows are
+		// padded by index. When TSR missed a separator on some pages only
+		// (e.g. 江西材料价格表: 16 columns on pages 5/11, 15 elsewhere because
+		// the 序号|材料名称 line went undetected), index padding shifts every
+		// cell after the missed column one position left and prices land
+		// under the wrong headers; there the cells are re-mapped onto the
+		// widest grid's columns by X overlap instead. Both paths keep the
+		// grid uniform (CalSpans / CleanupOrphanColumns / RowsToHTML never
+		// see a jagged grid) while preserving every row.
 		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
 			allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)
 			uniCols := 0
@@ -204,7 +208,13 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 				// cells stay out of the Y-shift calculation, then align the
 				// rebuilt grid to the shared column model.
 				if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
-					anchor.Grid = padGridCols(rebuilt, uniCols)
+					if gridsHaveUniformWidth(allGrids) {
+						anchor.Grid = padGridCols(rebuilt, uniCols)
+					} else if cols := canonicalColumns(widestGrid(allGrids)); len(cols) >= 2 {
+						anchor.Grid = alignGridColsByX(rebuilt, cols)
+					} else {
+						anchor.Grid = padGridCols(rebuilt, uniCols)
+					}
 				}
 			}
 			// Re-run the post-GroupCells cleanup that processOneTable would
@@ -355,10 +365,10 @@ func gridYExtent(g [][]pdf.TSRCell) (minY, maxY float64) {
 
 // padGridCols returns a copy of grid with every row extended to width uniCols
 // by appending zero-valued cells. Grids shorter than uniCols keep their
-// existing cells at the same column indices; column i of a continuation page
-// maps to column i of the anchor because they are the same logical column of
-// one cross-page table. Rows are never added or removed, so no content is
-// lost when per-page (or per-row) column counts differ.
+// existing cells at the same column indices — valid only when every page's
+// grid detected the same columns (see MergeTablesAcrossPages for the
+// mismatched-column path). Rows are never added or removed, so no content is
+// lost when per-row column counts differ.
 func padGridCols(grid [][]pdf.TSRCell, uniCols int) [][]pdf.TSRCell {
 	if uniCols <= 0 {
 		return grid
@@ -390,4 +400,170 @@ func shiftGridY(g [][]pdf.TSRCell, dy float64) [][]pdf.TSRCell {
 		out[i] = nr
 	}
 	return out
+}
+
+// gridsHaveUniformWidth reports whether every grid detected the same maximum
+// number of columns, the case where index-based column alignment is correct.
+func gridsHaveUniformWidth(grids [][][]pdf.TSRCell) bool {
+	w := -1
+	for _, g := range grids {
+		cur := 0
+		for _, row := range g {
+			if len(row) > cur {
+				cur = len(row)
+			}
+		}
+		if w < 0 {
+			w = cur
+		} else if cur != w {
+			return false
+		}
+	}
+	return true
+}
+
+// widestGrid returns the grid with the longest row — its columns are the best
+// candidate for the shared column model (TSR can only miss separators, so the
+// page with the most columns detected the most structure).
+func widestGrid(grids [][][]pdf.TSRCell) [][]pdf.TSRCell {
+	var best [][]pdf.TSRCell
+	bestW := 0
+	for _, g := range grids {
+		if w := gridMaxWidth(g); w > bestW {
+			best, bestW = g, w
+		}
+	}
+	return best
+}
+
+func gridMaxWidth(g [][]pdf.TSRCell) int {
+	w := 0
+	for _, row := range g {
+		if len(row) > w {
+			w = len(row)
+		}
+	}
+	return w
+}
+
+// canonicalColumns derives the column X intervals of a grid by clustering its
+// cell X intervals. Spanning cells are excluded because their bbox is widened
+// across the region they cover, not a single column. Returns nil when fewer
+// than two columns can be derived.
+func canonicalColumns(g [][]pdf.TSRCell) [][2]float64 {
+	var ivs [][2]float64
+	for _, row := range g {
+		for _, c := range row {
+			if c.X1 <= c.X0 || strings.Contains(c.Label, "spanning") {
+				continue
+			}
+			ivs = append(ivs, [2]float64{c.X0, c.X1})
+		}
+	}
+	if len(ivs) == 0 {
+		return nil
+	}
+	sort.Slice(ivs, func(i, j int) bool {
+		if ivs[i][0] != ivs[j][0] {
+			return ivs[i][0] < ivs[j][0]
+		}
+		return ivs[i][1] < ivs[j][1]
+	})
+	cols := [][2]float64{ivs[0]}
+	for _, iv := range ivs[1:] {
+		last := &cols[len(cols)-1]
+		inter := math.Min(last[1], iv[1]) - math.Max(last[0], iv[0])
+		minW := math.Min(last[1]-last[0], iv[1]-iv[0])
+		if inter >= minW/2 {
+			// Same column (grid cross-product rows repeat each column's
+			// interval with sub-pixel differences): union them.
+			if iv[0] < last[0] {
+				last[0] = iv[0]
+			}
+			if iv[1] > last[1] {
+				last[1] = iv[1]
+			}
+			continue
+		}
+		cols = append(cols, iv)
+	}
+	if len(cols) < 2 {
+		return nil
+	}
+	return cols
+}
+
+// alignGridColsByX re-assigns every cell of the stacked grid to the canonical
+// column with the largest X overlap (nearest column center when there is no
+// overlap), so continuation pages whose TSR missed a separator still land
+// their values under the anchor's correct headers. Rows are never added or
+// dropped; cells colliding in one (row, column) are merged instead of lost.
+// Degenerate cells (zero-coordinate padding / covered placeholders) are
+// dropped — coverage is recomputed downstream by CalSpans/MarkCoveredCells.
+func alignGridColsByX(grid [][]pdf.TSRCell, cols [][2]float64) [][]pdf.TSRCell {
+	out := make([][]pdf.TSRCell, 0, len(grid))
+	for _, row := range grid {
+		nr := make([]pdf.TSRCell, len(cols))
+		used := make([]bool, len(cols))
+		for _, c := range row {
+			if c.X1 <= c.X0 {
+				continue
+			}
+			ci := bestOverlapColumn(cols, c.X0, c.X1)
+			if !used[ci] {
+				used[ci] = true
+				nr[ci] = c
+				continue
+			}
+			p := &nr[ci]
+			if c.Text != "" && !strings.Contains(p.Text, c.Text) {
+				if p.Text == "" {
+					p.Text = c.Text
+				} else {
+					p.Text += " " + c.Text
+				}
+			}
+			if c.Label != "" && !strings.Contains(p.Label, c.Label) {
+				p.Label += " " + c.Label
+			}
+			if c.X0 < p.X0 {
+				p.X0 = c.X0
+			}
+			if c.X1 > p.X1 {
+				p.X1 = c.X1
+			}
+			if c.Y0 < p.Y0 {
+				p.Y0 = c.Y0
+			}
+			if c.Y1 > p.Y1 {
+				p.Y1 = c.Y1
+			}
+			if c.Score > p.Score {
+				p.Score = c.Score
+			}
+		}
+		out = append(out, nr)
+	}
+	return out
+}
+
+func bestOverlapColumn(cols [][2]float64, x0, x1 float64) int {
+	best, bestInter := 0, 0.0
+	for i, col := range cols {
+		inter := math.Min(col[1], x1) - math.Max(col[0], x0)
+		if inter > bestInter {
+			best, bestInter = i, inter
+		}
+	}
+	if bestInter > 0 {
+		return best
+	}
+	ctr := (x0 + x1) / 2
+	bestD := math.Inf(1)
+	for i, col := range cols {
+		if d := math.Abs((col[0]+col[1])/2 - ctr); d < bestD {
+			best, bestD = i, d
+		}
+	}
+	return best
 }
