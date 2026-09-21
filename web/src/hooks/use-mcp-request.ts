@@ -89,6 +89,12 @@ export const useListMcpServer = (
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const isSelectedMcpLookup = mcpIds.length > 0;
+  const requestKeywords = isSelectedMcpLookup ? '' : debouncedSearchString;
+  const requestPage = isSelectedMcpLookup ? 1 : pagination.current;
+  const requestPageSize = isSelectedMcpLookup
+    ? mcpIds.length
+    : pagination.pageSize;
 
   const isSelectedMcpLookup = mcpIds.length > 0;
   const requestKeywords = isSelectedMcpLookup ? '' : debouncedSearchString;
@@ -103,24 +109,6 @@ export const useListMcpServer = (
       requestPage,
       requestPageSize,
       tenantId,
-      mcpIds,
-    ),
-    initialData: { total: 0, mcp_servers: [] },
-    gcTime: 0,
-    enabled: queryEnabled,
-    queryFn: async () => {
-      const params: IMcpServerListRequestBody = {
-        keywords: requestKeywords,
-        page_size: requestPageSize,
-        page: requestPage,
-      };
-      if (tenantId) {
-        params.tenant_id = tenantId;
-      }
-      if (mcpIds.length > 0) {
-        params.mcp_ids = mcpIds.join(',');
-      }
-      const { data } = await listMcpServers(params);
       return data?.data;
     },
   });
