@@ -3085,6 +3085,9 @@ func (s *ChatPipelineService) decorateAnswer(
 	if hasKnowledges && quote {
 		chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 		if ok && len(chunksRaw) > 0 {
+			think = RepairBadCitationFormats(think)
+			ans = RepairBadCitationFormats(ans)
+			normalizedOutput := normalizeArabicDigits(think + ans)
 			// P7 — _hydrate_chunk_vectors. Mirrors
 			// dialog_service.py:794. Fetch the chunk embeddings insertCitations
 			// scores against, in one batched engine call. The agentic evidence
@@ -3092,7 +3095,7 @@ func (s *ChatPipelineService) decorateAnswer(
 			// ships zero placeholders, so the dimension comes from the embedding
 			// model whenever no chunk carries one. Only needed when we'll
 			// actually call insertCitations (the LLM didn't emit markers).
-			if embModel != nil && !HasCitationMarkers(ans) {
+			if embModel != nil && !HasCitationMarkers(normalizedOutput) {
 				dim := firstChunkVectorDim(chunksRaw)
 				if dim <= 0 {
 					// One short probe encode buys the q_{dim}_vec field name.
@@ -3133,27 +3136,13 @@ func (s *ChatPipelineService) decorateAnswer(
 						}
 					}
 				}
-			} else {
+			} else if HasCitationMarkers(normalizedOutput) {
 				// P0.11 pre-check matched: collect indices from existing
-				// markers instead of calling insertCitations.
-				for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-					if citationIdx == nil {
-						citationIdx = make(map[int]struct{})
-					}
+				// markers in both the thinking block and final answer.
+				citationIdx = make(map[int]struct{})
+				for _, ci := range ExtractCitationMarkers(normalizedOutput, len(chunksRaw)) {
 					citationIdx[ci] = struct{}{}
 				}
-			}
-		}
-
-		// repair_bad_citation_formats — runs even when chunks are empty.
-		// Mirrors dialog_service.py:818.
-		if ok {
-			ans = RepairBadCitationFormats(ans)
-			for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-				if citationIdx == nil {
-					citationIdx = make(map[int]struct{})
-				}
-				citationIdx[ci] = struct{}{}
 			}
 		}
 
@@ -3172,7 +3161,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 			}
 			if len(citedDocIDs) > 0 {
-				if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok && len(docAggsRaw) > 0 {
+				if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok {
 					var filtered []interface{}
 					for _, da := range docAggsRaw {
 						if dam, ok := da.(map[string]interface{}); ok {
@@ -3183,18 +3172,16 @@ func (s *ChatPipelineService) decorateAnswer(
 							}
 						}
 					}
-					if len(filtered) > 0 {
-						kbinfos["doc_aggs"] = filtered
-					}
+					kbinfos["doc_aggs"] = filtered
 				}
 			}
 		}
 	}
 
-	// Build refs: deepcopy kbinfos and strip vectors — done whenever
-	// hasKnowledges is true, regardless of quote flag.
-	// Mirrors dialog_service.py:826-829.
-	if hasKnowledges {
+	// Build refs only when the answer contains a citation that resolves to a
+	// chunk. Retrieved evidence without a citation must not be exposed as a
+	// document reference.
+	if hasKnowledges && len(citationIdx) > 0 {
 		refs = make(map[string]interface{})
 		for k, v := range kbinfos {
 			refs[k] = v
@@ -3327,7 +3314,7 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 	chunksRaw, _ := kbinfos["chunks"].([]map[string]interface{})
 	// The markers exactly as the model wrote them (before any repair), for the
 	// citation observability log below.
-	rawMarkers := rawCitationMarkers(ans, 8)
+	rawMarkers := rawCitationMarkers(think+ans, 8)
 
 	// The evidence list the model was shown, as pool positions: citeIdx[i] is the
 	// pool chunk behind the i-th rendered block. Empty ids fall back to pool
@@ -3354,8 +3341,11 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 	// markers: each is the 0-based index of the rendered block it cites.
 	// Canonical markers that name no block are dropped; the resolved pool
 	// positions drive doc_aggs filtering.
+	think = RepairBadCitationFormats(think)
 	ans = RepairBadCitationFormats(ans)
-	ans, citedIdx := ResolveCitationMarkers(ans, citeIdx)
+	think, thinkCitedIdx := ResolveCitationMarkers(think, citeIdx)
+	ans, answerCitedIdx := ResolveCitationMarkers(ans, citeIdx)
+	citedIdx := append(thinkCitedIdx, answerCitedIdx...)
 
 	// Citation observability: the markers the model wrote against the blocks it was
 	// shown, so a numbering mismatch is visible in the log (`raw_markers` is what
@@ -3384,10 +3374,10 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		}
 	}
 
-	// recall_docs = cited docs, or all when nothing cited (dialog_service.py:
-	// 2124-2127). Only rewrite doc_aggs when we actually found cited docs.
+	// Keep only documents referenced by a citation. An uncited evidence pool is
+	// not a document reference and must not be returned to the client.
 	if len(citedDocIDs) > 0 {
-		if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok && len(docAggsRaw) > 0 {
+		if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok {
 			filtered := make([]interface{}, 0, len(docAggsRaw))
 			for _, da := range docAggsRaw {
 				if dam, ok := da.(map[string]interface{}); ok {
@@ -3398,22 +3388,15 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 					}
 				}
 			}
-			if len(filtered) > 0 {
-				kbinfos["doc_aggs"] = filtered
-			}
+			kbinfos["doc_aggs"] = filtered
 		}
 	}
 
-	// refs = deepcopy(kbinfos), each chunk stripped of its vector
-	// (dialog_service.py:2129-2132). Python gates this on `doc_ids` — the answer
-	// cited at least one chunk — but an agentic answer the model composed without
-	// markers then came back with no reference at all, while the naive path
-	// returns the passages unconditionally (dialog_service.py:826-829). Build it
-	// whenever the harness left a citation pool, so the user always gets the
-	// sources the answer was composed from; doc_aggs stays filtered to the cited
-	// documents when something was cited.
+	// Build a reference only when at least one citation resolves to a document.
+	// The harness may have collected evidence without the final answer citing it;
+	// that evidence must remain internal.
 	var refs map[string]interface{}
-	if len(chunksRaw) > 0 {
+	if len(citedDocIDs) > 0 {
 		ref := make(map[string]interface{}, len(kbinfos))
 		for k, v := range kbinfos {
 			ref[k] = v
