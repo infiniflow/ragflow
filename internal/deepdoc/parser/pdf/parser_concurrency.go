@@ -3,6 +3,7 @@ package pdf
 import (
 	"context"
 	"image"
+	"log/slog"
 	"runtime"
 	"sync"
 
@@ -167,6 +168,19 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 		return nil, nil
 	}
 	return doc.DLA(ctx, pageImg)
+}
+
+// reportPageInferenceFailure logs one page-local inference failure (DLA, TSR or
+// OCR). A failure raised while the parse context is cancelled is the stop path,
+// not a fault: cancelling terminates every in-flight ONNX Run, and the native
+// session answers with the runtime's terminate-flag error (or ctx.Err()), which
+// carries no context.Canceled to match on. Those pages stay quiet instead of
+// warning once per page; any other failure keeps its per-page warning.
+func reportPageInferenceFailure(ctx context.Context, msg string, page int, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	slog.Warn(msg, "page", page, "err", err)
 }
 
 // inferTSR invokes TSR for a single cropped table region.

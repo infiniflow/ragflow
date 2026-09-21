@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"image"
 	"image/png"
+	"log/slog"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -310,6 +313,33 @@ func TestParser_RunPageWorkers_CancellationHonored(t *testing.T) {
 		mock, NewTableBuilderFor(mock))
 	if err == nil {
 		t.Error("expected non-nil error from cancelled context")
+	}
+}
+
+// TestReportPageInferenceFailure_CancelledContextIsQuiet verifies the per-page
+// inference logger distinguishes a stop from a fault. Cancelling a run
+// terminates every in-flight ONNX Run, whose error (the runtime's terminate-flag
+// text, or ctx.Err()) must not produce one warning per page; a failure raised on
+// a live context still warns.
+func TestReportPageInferenceFailure_CancelledContextIsQuiet(t *testing.T) {
+	prev := slog.Default()
+	defer slog.SetDefault(prev)
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reportPageInferenceFailure(ctx, "DLA failed", 7,
+		errors.New("Error running network: Exiting due to terminate flag being set to true."))
+	if got := buf.String(); got != "" {
+		t.Fatalf("cancelled page inference failure was logged: %q", got)
+	}
+
+	reportPageInferenceFailure(context.Background(), "DLA failed", 7, errors.New("output shape mismatch"))
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "msg=\"DLA failed\"") ||
+		!strings.Contains(out, "page=7") {
+		t.Fatalf("live page inference failure was not warned: %q", out)
 	}
 }
 
