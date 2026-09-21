@@ -597,15 +597,26 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		} else if oddTotal >= 3 && oddPages >= 3 && float64(oddPages)/float64(oddTotal) >= 0.40 {
 			// 2. Parity partition: at least 40% of odd pages.
 			reason = "parity_odd"
-		} else if len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 && hasStableConsecutiveRun(metas, 3, 4.0) {
-			// 3. Locality track: stable consecutive runs of at least 3 pages with stable Y.
-			reason = "local_consecutive_run"
 		}
 
 		if reason != "" {
 			slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "text", key.text, "reason", reason, "pages", distinctPages)
 			for _, m := range metas {
 				drop[m.idx] = struct{}{}
+			}
+			continue
+		}
+
+		// 3. Locality track: stable consecutive runs of at least 3 pages with stable Y.
+		// Only drop occurrences that actually belong to qualifying consecutive runs,
+		// preventing distant isolated occurrences of the same text from being deleted.
+		if len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 {
+			runIndices := findStableConsecutiveRunIndices(metas, 3, 4.0)
+			if len(runIndices) > 0 {
+				slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "text", key.text, "reason", "local_consecutive_run", "boxes", len(runIndices))
+				for _, idx := range runIndices {
+					drop[idx] = struct{}{}
+				}
 			}
 		}
 	}
@@ -620,8 +631,16 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 // hasStableConsecutiveRun checks if metas has a run of at least minRun
 // consecutive pages where the top variation is within maxDy.
 func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
+	return len(findStableConsecutiveRunIndices(metas, minRun, maxDy)) > 0
+}
+
+// findStableConsecutiveRunIndices finds all box indices that belong to any qualifying
+// consecutive run of at least minRun pages where the top variation is within maxDy.
+// Restricting removal to these specific indices ensures isolated occurrences outside
+// the run (e.g. on later pages) are not accidentally dropped.
+func findStableConsecutiveRunIndices(metas []boxMeta, minRun int, maxDy float64) []int {
 	if len(metas) < minRun {
-		return false
+		return nil
 	}
 	sort.Slice(metas, func(i, j int) bool {
 		if metas[i].page != metas[j].page {
@@ -631,19 +650,24 @@ func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
 	})
 
 	type pageOccurrence struct {
-		page int
-		top  float64
+		page    int
+		top     float64
+		indices []int
 	}
 	var distinct []pageOccurrence
 	for _, m := range metas {
 		if len(distinct) == 0 || distinct[len(distinct)-1].page != m.page {
-			distinct = append(distinct, pageOccurrence{page: m.page, top: m.top})
+			distinct = append(distinct, pageOccurrence{page: m.page, top: m.top, indices: []int{m.idx}})
+		} else {
+			distinct[len(distinct)-1].indices = append(distinct[len(distinct)-1].indices, m.idx)
 		}
 	}
 
 	if len(distinct) < minRun {
-		return false
+		return nil
 	}
+
+	qualifyingPages := make(map[int]bool)
 
 	left := 0
 	for right := 0; right < len(distinct); right++ {
@@ -651,7 +675,7 @@ func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
 		if right > 0 && distinct[right].page != distinct[right-1].page+1 {
 			left = right
 		}
-		// Advance left whenever maxTop - minTop exceeds maxDy for the window
+		// Check all qualifying consecutive windows ending at right
 		for (right - left + 1) >= minRun {
 			curMin := distinct[left].top
 			curMax := distinct[left].top
@@ -664,12 +688,26 @@ func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
 				}
 			}
 			if (curMax - curMin) <= maxDy {
-				return true
+				for k := left; k <= right; k++ {
+					qualifyingPages[distinct[k].page] = true
+				}
+				break
 			}
 			left++
 		}
 	}
-	return false
+
+	if len(qualifyingPages) == 0 {
+		return nil
+	}
+
+	var result []int
+	for _, p := range distinct {
+		if qualifyingPages[p.page] {
+			result = append(result, p.indices...)
+		}
+	}
+	return result
 }
 
 // applyDrop filters out the dropped boxes and returns the survivors.

@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1083,5 +1084,53 @@ func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
 	}
 	if !hasStableConsecutiveRun(metas5, 3, 4.0) {
 		t.Errorf("expected true for pages 4..6 run after page gap")
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_LocalRunPreservesDistantIsolatedBox verifies that a local
+// consecutive run (pages 1, 2, 3) removes those running headers while preserving a distant,
+// isolated occurrence of the exact same text on page 10.
+func TestRemoveHeaderFooterBoxes_LocalRunPreservesDistantIsolatedBox(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 12)
+	for pg := 0; pg < 12; pg++ {
+		heights[pg] = pageHeight
+	}
+
+	var boxes []pdf.TextBox
+	// Running chapter header on consecutive pages 1, 2, 3 (top = 35)
+	for pg := 1; pg <= 3; pg++ {
+		boxes = append(boxes, tb("Chapter 1: Foundations", pg, 72, 250, 35, 48))
+		boxes = append(boxes, tb(fmt.Sprintf("Body text on page %d.", pg), pg, 72, 450, 160, 180))
+	}
+	// Pages 4..9 have other body text
+	for pg := 4; pg <= 9; pg++ {
+		boxes = append(boxes, tb(fmt.Sprintf("Regular body on page %d.", pg), pg, 72, 450, 160, 180))
+	}
+	// Page 10 has an isolated text box in the margin with the SAME text "Chapter 1: Foundations",
+	// but it is NOT part of a consecutive run (isolated single occurrence).
+	isolatedBox := tb("Chapter 1: Foundations", 10, 72, 250, 35, 48)
+	boxes = append(boxes, isolatedBox)
+	boxes = append(boxes, tb("Body text on page 10 referencing chapter 1.", 10, 72, 450, 160, 180))
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+
+	// Pages 1, 2, 3 headers must be removed:
+	for _, b := range got {
+		if (b.PageNumber >= 1 && b.PageNumber <= 3) && strings.Contains(b.Text, "Chapter 1: Foundations") {
+			t.Errorf("running header on page %d should have been removed", b.PageNumber)
+		}
+	}
+
+	// Page 10 isolated box must be PRESERVED:
+	foundIsolated := false
+	for _, b := range got {
+		if b.PageNumber == 10 && b.Text == "Chapter 1: Foundations" {
+			foundIsolated = true
+			break
+		}
+	}
+	if !foundIsolated {
+		t.Errorf("distant isolated box on page 10 should be preserved, but was dropped!")
 	}
 }
