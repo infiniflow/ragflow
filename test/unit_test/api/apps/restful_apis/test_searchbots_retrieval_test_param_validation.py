@@ -33,11 +33,14 @@ import pytest
 
 
 class _PassthroughManager:
+    """Stand-in for the blueprint manager: route decorators become no-ops."""
+
     def route(self, *_args, **_kwargs):
         return lambda func: func
 
 
 def _stub(monkeypatch, name, **attrs):
+    """Register a stub module under `name` for the duration of the test."""
     mod = ModuleType(name)
     for key, value in attrs.items():
         setattr(mod, key, value)
@@ -46,6 +49,7 @@ def _stub(monkeypatch, name, **attrs):
 
 
 async def _passthrough_thread_pool_exec(fn, *args, **kwargs):
+    """Run `fn` inline so awaited service calls stay synchronous in tests."""
     return fn(*args, **kwargs)
 
 
@@ -137,6 +141,7 @@ def _load_bot_api(monkeypatch, request_json):
 
 
 def _run(monkeypatch, req, tenant_id="tenant-1"):
+    """Load bot_api with `req` as the request body and run retrieval_test."""
     module = _load_bot_api(monkeypatch, req)
     return asyncio.run(module.retrieval_test_embedded(tenant_id=tenant_id))
 
@@ -160,6 +165,7 @@ class TestSearchbotsRetrievalTestParamValidation:
         ],
     )
     def test_non_numeric_param_returns_data_error(self, monkeypatch, field, value, expected):
+        """Each numeric field answers with a data error naming the field."""
         req = {"kb_id": ["kb-1"], "question": "hello", field: value}
         result = _run(monkeypatch, req)
         assert result == {"code": 102, "message": expected, "data": None}
