@@ -26,6 +26,14 @@ import (
 // configured with `cache_engine: kvrocks`, GetAllConfigs must export the Kvrocks
 // connection settings instead of failing with "not supported cache engine".
 func TestGetAllConfigsKvrocksCacheEngine(t *testing.T) {
+	// This is a unit test: nothing here may depend on the deployment env.
+	// server.Init enables Viper's AutomaticEnv with the RAGFLOW prefix, so an
+	// ambient RAGFLOW_KVROCKS_HOST (the CI integration jobs export it to reach
+	// the compose stack) would win over the temp config below. Viper skips empty
+	// env vars unless AllowEmptyEnv is set, so an empty value keeps the file in
+	// charge.
+	t.Setenv("RAGFLOW_KVROCKS_HOST", "")
+
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "service_conf.yaml")
 	// Only cache_engine is overridden; the remaining engine types keep the

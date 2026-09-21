@@ -42,6 +42,11 @@ import (
 // kvrocks.Init's connection path.
 func loadConfigForTest(t *testing.T, kvrocksAddr string) {
 	t.Helper()
+	// server.Init reads the config with AutomaticEnv + prefix RAGFLOW, so an
+	// ambient RAGFLOW_KVROCKS_HOST (the CI integration job exports it to reach
+	// the compose stack) would silently redirect this test away from the address
+	// we just wrote. Neutralize it; viper ignores empty env vars.
+	t.Setenv("RAGFLOW_KVROCKS_HOST", "")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "service_conf.yaml")
 	content := fmt.Sprintf(`general:
