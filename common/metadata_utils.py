@@ -195,9 +195,11 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when a filter yields no result in the caller
-        scope (manual always; auto/semi_auto when ``base_doc_ids`` was set), or
-        None when auto/semi_auto filters return empty without a base scope.
+        list of doc_ids, ["-999"] when a filter with real conditions yields no
+        result in the caller scope (manual always; auto/semi_auto when
+        ``base_doc_ids`` was set), or None when auto/semi_auto filters return
+        empty without a base scope. Empty generated ``conditions`` skip
+        filtering and keep the base scope (or None when there is no base).
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
@@ -253,7 +255,10 @@ async def apply_meta_data_filter(
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+        conditions = filters["conditions"]
+        if not conditions:
+            return doc_ids or None
+        doc_ids = _constrain(_run_metadata_filter(conditions, filters.get("logic", "and")))
         if not doc_ids:
             return _empty_filter_result(base_doc_ids)
     elif method == "semi_auto":
@@ -275,7 +280,10 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+                conditions = filters["conditions"]
+                if not conditions:
+                    return doc_ids or None
+                doc_ids = _constrain(_run_metadata_filter(conditions, filters.get("logic", "and")))
                 if not doc_ids:
                     return _empty_filter_result(base_doc_ids)
     elif method == "manual":

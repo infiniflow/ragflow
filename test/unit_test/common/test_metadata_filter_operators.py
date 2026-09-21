@@ -283,3 +283,20 @@ class TestApplyMetaDataFilterBaseScope:
         metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
         conditions = [{"key": "color", "op": "=", "value": "red"}]
         assert self._run_generated("semi_auto", conditions, metas, ["docA"], semi_auto=["color"]) == ["-999"]
+
+    def test_auto_empty_conditions_with_base_scope_keeps_base(self):
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        assert self._run_generated("auto", [], metas, ["docA"]) == ["docA"]
+
+    def test_semi_auto_empty_conditions_with_base_scope_keeps_base(self):
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        assert self._run_generated("semi_auto", [], metas, ["docA"], semi_auto=["color"]) == ["docA"]
+
+    def test_auto_empty_conditions_without_base_scope_returns_none(self):
+        metas = {"color": {"blue": ["docA"]}}
+        assert self._run_generated("auto", [], metas, None) is None
+
+    def test_auto_matching_conditions_with_base_scope_unchanged(self):
+        metas = {"color": {"red": ["docA", "docB"]}}
+        conditions = [{"key": "color", "op": "=", "value": "red"}]
+        assert self._run_generated("auto", conditions, metas, ["docA"]) == ["docA"]
