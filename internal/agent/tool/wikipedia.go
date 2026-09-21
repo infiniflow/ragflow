@@ -264,9 +264,7 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 		if content == "" {
 			continue
 		}
-		if len(content) > 10000 {
-			content = content[:10000]
-		}
+		content = truncateWikipediaRunes(content, 10000)
 		fullURL := p.FullURL
 		if fullURL == "" {
 			fullURL = fmt.Sprintf("https://%s.wikipedia.org/wiki/%s", lang, url.PathEscape(p.Title))
