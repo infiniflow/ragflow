@@ -29,11 +29,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -88,23 +88,6 @@ func (s *promptDirState) resolve(requestedRoot string) (string, error) {
 		return "", errors.New("prompts base dir not initialized")
 	}
 	return s.root, nil
-}
-
-// cleanMarkdownBlock mirrors Python common/string_utils.py:clean_markdown_block
-// and removes a closing fence only after recognizing an opening markdown wrapper.
-//
-// Matches Python without re.MULTILINE so ^/$ anchor only the whole text.
-var (
-	reMarkdownOpen  = regexp.MustCompile(`^\s*` + "```" + `markdown\s*\n?`)
-	reMarkdownClose = regexp.MustCompile(`\n?\s*` + "```" + `\s*$`)
-)
-
-func cleanMarkdownBlock(s string) string {
-	if reMarkdownOpen.MatchString(s) {
-		s = reMarkdownOpen.ReplaceAllString(s, "")
-		s = reMarkdownClose.ReplaceAllString(s, "")
-	}
-	return strings.TrimSpace(s)
 }
 
 // isUsableVisionImage reports whether raw carries a valid image data URI or a
@@ -356,7 +339,7 @@ func extractVisionAnswer(resp *modelModule.ChatResponse) string {
 	if resp == nil || resp.Answer == nil {
 		return ""
 	}
-	return cleanMarkdownBlock(*resp.Answer)
+	return common.CleanMarkdownBlock(*resp.Answer)
 }
 
 func defaultVisionChatInvoker(

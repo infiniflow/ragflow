@@ -924,35 +924,6 @@ func TestShouldUseWebSearch_RequiresTavilyAndTruthyInternet(t *testing.T) {
 
 // --- P5 SQL retrieval parity helpers (Python use_sql alignment) ---
 
-// TestRemoveRedundantSpaces mirrors common.string_utils.remove_redundant_spaces.
-func TestRemoveRedundantSpaces(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		// Both passes run sequentially — pass 1 strips space after `(`,
-		// pass 2 strips space before `)`, so both go.
-		{"pass1+pass2 on ( world )", "hello ( world )", "hello (world)"},
-		// Pass 2 strips space before `!`.
-		{"pass2: space before !", "world !", "world!"},
-		// Comma is not a boundary in pass 2 (it's in the negated set
-		// along with `<` and `(`), so no change.
-		{"comma not a boundary", "a , b", "a , b"},
-		{"no match", "foo bar", "foo bar"},
-		{"empty", "", ""},
-		{"digit not a boundary", "abc 123", "abc 123"},
-		{"left paren kept (no following space)", "(abc)", "(abc)"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := removeRedundantSpaces(tc.in); got != tc.want {
-				t.Errorf("removeRedundantSpaces(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
 // TestStripISOTimestamps verifies the dialog_service.py:1309 cleanup.
 // The pattern `T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|` strips the
 // timestamp + trailing pipe; the leading pipe/space is preserved (the
