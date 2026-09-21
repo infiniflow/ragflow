@@ -65,6 +65,9 @@ func (r *runProgress) MarkDone(component string) {
 // SetFrac records an in-flight component's 0..1 completion fraction. Reports
 // for already-completed components are ignored: a late fraction (e.g. a
 // trailing page callback racing the exit event) must not pull percent down.
+// A fraction below the one already stored for the component is dropped for
+// the same reason: per-job reports settle out of order (extractor futures,
+// tag fan-out), so a trailing lower value must not overwrite the higher one.
 func (r *runProgress) SetFrac(component string, frac float64) {
 	// NaN passes both clamps below and would then poison the sticky
 	// high-water mark forever; drop it instead of storing it.
@@ -80,6 +83,9 @@ func (r *runProgress) SetFrac(component string, frac float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.done[component]; ok {
+		return
+	}
+	if cur, ok := r.frac[component]; ok && frac < cur {
 		return
 	}
 	r.frac[component] = frac

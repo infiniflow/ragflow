@@ -562,6 +562,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		contentResults = append(contentResults, batchResults...)
 		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
 	}
+	if len(texts) == 0 && embedTotal > 0 {
+		// With no cache misses the batch loop never runs, so the phase would
+		// otherwise report nothing at all; every content embedding is already
+		// resolved, which is the loop's completion value.
+		runtime.ReportComponentFraction(ctx, 1)
+	}
 
 	titleWeight := c.param.FilenameEmbdWeight
 	// Wire freshly embedded content into the resolved slice; cache hits already

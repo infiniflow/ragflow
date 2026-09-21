@@ -81,6 +81,25 @@ func TestRunProgressMonotonicOnFracRegression(t *testing.T) {
 	}
 }
 
+// TestRunProgressKeepsHighestFracPerComponent pins the per-component max:
+// per-job reports settle out of order, so a stale lower fraction must not
+// replace the higher one stored for the same component. The second
+// component's report lifts the sum above the high-water mark, which would
+// otherwise hide the overwrite.
+func TestRunProgressKeepsHighestFracPerComponent(t *testing.T) {
+	r := newRunProgress()
+	r.SetTotal(4)
+	r.SetFrac("Extractor:abc", 0.9)
+	if got := r.Percent(); !almostEqual(got, 0.225) {
+		t.Fatalf("Percent = %v, want 0.225", got)
+	}
+	r.SetFrac("Extractor:abc", 0.2)
+	r.SetFrac("Extractor:def", 0.1)
+	if got := r.Percent(); !almostEqual(got, 0.25) {
+		t.Fatalf("Percent = %v, want 0.25 (0.9 + 0.1; the stale 0.2 must not overwrite 0.9)", got)
+	}
+}
+
 func TestRunProgressClampsFracAndPercent(t *testing.T) {
 	r := newRunProgress()
 	r.SetTotal(2)

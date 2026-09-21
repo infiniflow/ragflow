@@ -207,3 +207,31 @@ func TestEmbedChunks_CountsCacheHitsAsDone(t *testing.T) {
 		}
 	}
 }
+
+// TestEmbedChunks_AllCacheHitsReportsCompletion covers the run where every
+// content embedding is a cache hit: the batch loop never executes, so the
+// phase has to report its completion separately or it stays silent.
+func TestEmbedChunks_AllCacheHitsReportsCompletion(t *testing.T) {
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "1")
+
+	comp, _ := withStubEmbedder(t, 4)
+	comp.param.Fields = []string{"text"}
+
+	store := newMemCacheStore()
+	chunks := []schema.ChunkDoc{chunkWithID("c1", "alpha"), chunkWithID("c2", "beta")}
+	if _, _, err := comp.embedChunks(t.Context(), "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("warm embedChunks: %v", err)
+	}
+
+	rec := &fractionRecorder{}
+	ctx := rec.context(t, "Tokenizer:abc")
+	if _, _, err := comp.embedChunks(ctx, "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("embedChunks: %v", err)
+	}
+
+	got := rec.fractions()
+	want := []float64{1}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("fractions = %v, want %v (all-cached work must report completion)", got, want)
+	}
+}

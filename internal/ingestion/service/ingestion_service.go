@@ -1196,12 +1196,13 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
 	sink := newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)
-	// Deferred rather than called inline: the defer still runs before this
-	// function returns, so the final flush lands before the caller writes the
-	// terminal progress state (-1), and it also stops the flusher when a panic
-	// escapes Execute instead of leaking the goroutine.
+	// Close is idempotent and intentionally called twice: the defer is the
+	// panic backstop (an unwind out of Execute must still stop the flusher),
+	// and the explicit call pins the final flush ahead of docState.apply,
+	// whose terminal process_duration the flush would otherwise overwrite.
 	defer sink.Close()
 	result, err := executor.WithProgressSink(sink).Execute(docTaskCtx.Ctx)
+	sink.Close()
 	if err != nil {
 		return err
 	}
