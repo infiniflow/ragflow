@@ -101,7 +101,7 @@ func TestChatDAOListByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range chatOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "")
+			rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "", "", "")
 			if err != nil {
 				t.Fatalf("ListByTenantIDs with orderby %q: %v", orderby, err)
 			}
@@ -121,7 +121,7 @@ func TestChatDAOListByOwnerIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range chatOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", []OrderTerm{{Column: orderby}}, "")
+			rows, _, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", []OrderTerm{{Column: orderby}}, "", "", "")
 			if err != nil {
 				t.Fatalf("ListByOwnerIDs with orderby %q: %v", orderby, err)
 			}
@@ -139,15 +139,82 @@ func TestChatDAOListOrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewChatDAO()
 
-	rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "")
+	rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "", "", "")
 	if err != nil {
 		t.Fatalf("ListByTenantIDs ascending by name: %v", err)
 	}
 	assertChatOrder(t, rows, []string{"c-3", "c-2", "c-1"}, "name")
 
-	rows, _, err = d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "")
+	rows, _, err = d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "", "", "")
 	if err != nil {
 		t.Fatalf("ListByTenantIDs descending by name: %v", err)
 	}
 	assertChatOrder(t, rows, []string{"c-1", "c-2", "c-3"}, "name")
+}
+
+func assertChatRows(t *testing.T, rows []*entity.ChatListItem, total int64, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		got = append(got, row.ID)
+	}
+	if len(got) != len(want) || total != int64(len(want)) {
+		t.Fatalf("rows %v total %d, want rows %v total %d", got, total, want, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("rows %v, want %v", got, want)
+		}
+	}
+}
+
+// TestChatDAOListExactIDAndNameFilters checks that the exact id and name
+// predicates narrow both list branches and that the reported total follows
+// the filtered rows.
+func TestChatDAOListExactIDAndNameFilters(t *testing.T) {
+	db := setupChatTestDB(t)
+	pushDB(t, db)
+	seedOrderableChats(t, db)
+	// A fourth chat whose name contains "alpha", so the name case only passes
+	// with an exact predicate and not with a substring match.
+	alphaTwo := entity.Chat{ID: "c-4", TenantID: "t1", Name: stringPtr("alpha two"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(400)}}
+	alphaTwo.LLMID = "llm-1"
+	alphaTwo.LLMSetting = entity.JSONMap{}
+	alphaTwo.PromptType = "simple"
+	alphaTwo.PromptConfig = entity.JSONMap{}
+	alphaTwo.DoRefer = "1"
+	alphaTwo.KBIDs = entity.JSONSlice{}
+	alphaTwo.Status = stringPtr("1")
+	if err := db.Create(&alphaTwo).Error; err != nil {
+		t.Fatalf("failed to create chat c-4: %v", err)
+	}
+	ctx := t.Context()
+	d := NewChatDAO()
+	terms := []OrderTerm{{Column: "create_time"}}
+
+	for _, tc := range []struct {
+		label string
+		id    string
+		name  string
+		want  []string
+	}{
+		{label: "id", id: "c-2", want: []string{"c-2"}},
+		{label: "name", name: "alpha", want: []string{"c-3"}},
+		{label: "unknown id", id: "unknown", want: []string{}},
+	} {
+		t.Run("tenant "+tc.label, func(t *testing.T) {
+			rows, total, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, terms, "", tc.id, tc.name)
+			if err != nil {
+				t.Fatalf("ListByTenantIDs: %v", err)
+			}
+			assertChatRows(t, rows, total, tc.want)
+		})
+		t.Run("owner "+tc.label, func(t *testing.T) {
+			rows, total, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", terms, "", tc.id, tc.name)
+			if err != nil {
+				t.Fatalf("ListByOwnerIDs: %v", err)
+			}
+			assertChatRows(t, rows, total, tc.want)
+		})
+	}
 }

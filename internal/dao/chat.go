@@ -55,7 +55,7 @@ func (dao *ChatDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tenantID st
 }
 
 // ListByTenantIDs list chats by tenant IDs with pagination and filtering
-func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.ChatListItem, int64, error) {
+func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords, id, name string) ([]*entity.ChatListItem, int64, error) {
 	var chats []*entity.ChatListItem
 	var total int64
 
@@ -77,6 +77,14 @@ func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs 
 	// Apply keyword filter
 	if keywords != "" {
 		query = query.Where("LOWER(dialog.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	// Apply the exact filters. An empty value means absent, like keywords.
+	if id != "" {
+		query = query.Where("dialog.id = ?", id)
+	}
+	if name != "" {
+		query = query.Where("dialog.name = ?", name)
 	}
 
 	// Apply ordering. Route the requested terms through chatOrderClause so a user-supplied
@@ -107,7 +115,7 @@ func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs 
 }
 
 // ListByOwnerIDs list chats by owner IDs with filtering (manual pagination)
-func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, terms []OrderTerm, keywords string) ([]*entity.ChatListItem, int64, error) {
+func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, terms []OrderTerm, keywords, id, name string) ([]*entity.ChatListItem, int64, error) {
 	var chats []*entity.ChatListItem
 
 	// Build query with join to user table
@@ -123,6 +131,14 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 	// Apply keyword filter
 	if keywords != "" {
 		query = query.Where("LOWER(dialog.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	// Apply the exact filters. An empty value means absent, like keywords.
+	if id != "" {
+		query = query.Where("dialog.id = ?", id)
+	}
+	if name != "" {
+		query = query.Where("dialog.name = ?", name)
 	}
 
 	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
