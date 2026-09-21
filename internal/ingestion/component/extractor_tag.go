@@ -1,13 +1,10 @@
 package component
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/rand/v2"
 	"path/filepath"
@@ -20,14 +17,11 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	eschema "github.com/cloudwego/eino/schema"
-	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
@@ -46,9 +40,6 @@ const (
 
 	// defaultTopK is the maximum number of matched example candidates to aggregate in Phase 1.
 	defaultTopK = 5
-
-	// bgSmoothing is the Dirichlet smoothing constant for background prior tag probabilities.
-	bgSmoothing = 10.0
 
 	// rankDecayTierDropRelativeThreshold is the relative drop threshold to descend an effective rank tier.
 	rankDecayTierDropRelativeThreshold = 0.05
@@ -105,128 +96,6 @@ Output:
 %s
 
 `
-
-// MemoryTagIndex is an in-memory inverted index of tag examples (immutable after construction, safe for concurrent use).
-type MemoryTagIndex struct {
-	examples     []schema.TagLabel
-	postings     map[string][]int   // word -> doc_ids (compact slice without per-doc map overhead)
-	idfs         map[string]float64 // word -> idf
-	exTotalIDF   []float64          // doc_id -> sum(IDF(w))
-	exTokenCount []int              // doc_id -> number of unique tokens
-	allTags      map[string]float64 // tag -> background prob (S=10)
-}
-
-func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer) *MemoryTagIndex {
-	if len(rawExamples) == 0 {
-		return nil
-	}
-
-	cleanExamples := make([]schema.TagLabel, 0, len(rawExamples))
-	exWordSets := make([]map[string]struct{}, 0, len(rawExamples))
-	allTagCounts := make(map[string]int)
-	totalTagCount := 0
-
-	// 1. Filter empty contents, deduplicate tags per sample, and normalize dots with deep copies.
-	for _, ex := range rawExamples {
-		content := strings.TrimSpace(ex.Content)
-		if content == "" {
-			continue // Skip empty content.
-		}
-		tks, err := tok.Tokenize(content)
-		if err != nil {
-			common.Warn(fmt.Sprintf("extractor tags: tokenize example failed: %v", err))
-			continue
-		}
-		fields := strings.Fields(tks)
-		if len(fields) == 0 {
-			continue // Skip samples with no tokens.
-		}
-		wordSet := make(map[string]struct{}, len(fields))
-		for _, w := range fields {
-			if w = strings.TrimSpace(w); w != "" {
-				wordSet[w] = struct{}{}
-			}
-		}
-		if len(wordSet) == 0 {
-			continue
-		}
-
-		tagSet := make(map[string]struct{}, len(ex.Tags))
-		cleanTags := make([]string, 0, len(ex.Tags))
-		for _, t := range ex.Tags {
-			t = strings.TrimSpace(strings.ReplaceAll(t, ".", "_"))
-			if t != "" {
-				if _, exists := tagSet[t]; !exists {
-					tagSet[t] = struct{}{}
-					cleanTags = append(cleanTags, t)
-				}
-			}
-		}
-		if len(cleanTags) == 0 {
-			continue // Skip examples with no usable tags.
-		}
-		for _, t := range cleanTags {
-			allTagCounts[t]++
-			totalTagCount++
-		}
-
-		cleanExamples = append(cleanExamples, schema.TagLabel{
-			Content: content,
-			Tags:    cleanTags,
-		})
-		exWordSets = append(exWordSets, wordSet)
-	}
-
-	N := float64(len(cleanExamples))
-	if N == 0 || totalTagCount == 0 {
-		return nil // Guard against all samples having empty tags.
-	}
-
-	docFreq := make(map[string]int)
-	postings := make(map[string][]int)
-
-	for i, wordSet := range exWordSets {
-		// Invariant: each docID is added to postings[w] at most once.
-		for w := range wordSet {
-			postings[w] = append(postings[w], i)
-			docFreq[w]++ // Each document contributes at most 1 to document frequency.
-		}
-	}
-
-	// 2. Standard smoothed IDF (terms covering all documents smoothly approach 0).
-	idfs := make(map[string]float64, len(docFreq))
-	for w, df := range docFreq {
-		idfs[w] = math.Log(1.0 + (N-float64(df)+0.5)/(float64(df)+0.5))
-	}
-
-	// 3. Precompute total IDF and token count per valid example (short-text TF=1, avoiding per-example TF maps).
-	exTotalIDF := make([]float64, len(cleanExamples))
-	exTokenCount := make([]int, len(cleanExamples))
-	for i, wordSet := range exWordSets {
-		var sum float64
-		for w := range wordSet {
-			sum += idfs[w]
-		}
-		exTotalIDF[i] = sum
-		exTokenCount[i] = len(wordSet)
-	}
-
-	// 4. Background prior probability distribution (smoothed Dirichlet prior).
-	alpha := bgSmoothing / float64(len(allTagCounts))
-	bgProportions := make(map[string]float64, len(allTagCounts))
-	for t, count := range allTagCounts {
-		bgProportions[t] = (float64(count) + alpha) / (float64(totalTagCount) + bgSmoothing)
-	}
-
-	return &MemoryTagIndex{
-		examples:     cleanExamples,
-		postings:     postings,
-		idfs:         idfs,
-		exTotalIDF:   exTotalIDF,
-		exTokenCount: exTokenCount,
-		allTags:      bgProportions,
-	}
-}
 
 // OrderedTagWeights represents a tag-to-weight mapping that preserves
 // score-descending order when marshaled to JSON for Elasticsearch storage.
@@ -477,7 +346,6 @@ func matchAndTagChunk(
 	}
 
 	chunk[common.TAG_FLD] = tagWeights
-	chunk["tag_kwd"] = matchedTags
 
 	return &schema.TaggedChunk{
 		Content:    text,
@@ -485,65 +353,6 @@ func matchAndTagChunk(
 		TagWeights: tagWeights,
 	}
 }
-
-// ----------------------------------------------------------------------
-// Cache & scheduling pipeline with language passthrough and few-shot fallback.
-// ----------------------------------------------------------------------
-
-const tagSourceCacheMax = 128
-
-type boundedTagCache struct {
-	mu     sync.Mutex
-	cap    int
-	items  map[string]*MemoryTagIndex
-	recent []string
-}
-
-func newBoundedTagCache(cap int) *boundedTagCache {
-	return &boundedTagCache{
-		cap:   cap,
-		items: make(map[string]*MemoryTagIndex, cap),
-	}
-}
-
-func (c *boundedTagCache) load(key string) (*MemoryTagIndex, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	v, ok := c.items[key]
-	if !ok {
-		return nil, false
-	}
-	c.markRecentLocked(key)
-	return v, true
-}
-
-func (c *boundedTagCache) store(key string, val *MemoryTagIndex) *MemoryTagIndex {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if existing, ok := c.items[key]; ok {
-		return existing
-	}
-	c.items[key] = val
-	c.recent = append(c.recent, key)
-	for len(c.items) > c.cap {
-		oldest := c.recent[0]
-		c.recent = c.recent[1:]
-		delete(c.items, oldest)
-	}
-	return val
-}
-
-func (c *boundedTagCache) markRecentLocked(key string) {
-	for i, k := range c.recent {
-		if k == key {
-			c.recent = append(c.recent[:i], c.recent[i+1:]...)
-			c.recent = append(c.recent, k)
-			break
-		}
-	}
-}
-
-var tagSourceFileIndexCache = newBoundedTagCache(tagSourceCacheMax)
 
 func isHighConfidenceMatch(matched *schema.TaggedChunk) bool {
 	if matched == nil {
@@ -656,374 +465,34 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context, lang string
 	// user-controlled through parser_config, so it must resolve inside the
 	// caller's tenant before the bytes are read.
 	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
-	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, c.Param.Tags.TagFileID, tenantID)
-	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
+	f, err := resolveTagSourceFile(ctx, c.Param.Tags.TagFileID, tenantID)
+	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.Tags.TagFileID, err))
 		return nil, false
 	}
-	cacheKey := tagSourceFileCacheKey(f, lang)
-	if cached, ok := tagSourceFileIndexCache.load(cacheKey); ok {
+	indexed, reused, err := loadOrBuildTagFileIndex(ctx, f, tenantID, lang)
+	if err != nil {
+		common.Warn(fmt.Sprintf("extractor tags: load tag source %q: %v", c.Param.Tags.TagFileID, err))
+		return nil, false
+	}
+	if indexed == nil {
+		return nil, false
+	}
+	if reused {
 		common.Info("extractor tags: reused tag source file index",
 			zap.String("file_id", c.Param.Tags.TagFileID),
 			zap.String("bucket", f.ParentID),
 			zap.String("key", *f.Location),
 		)
-		return cached, true
+		return indexed, true
 	}
-	stg := resolveStorage()
-	if stg == nil {
-		common.Warn("extractor tags: no storage backend registered")
-		return nil, false
-	}
-	data, err := stg.Get(ctx, f.ParentID, *f.Location, tenantID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("extractor tags: load tag source %q/%q: %v", f.ParentID, *f.Location, err))
-		return nil, false
-	}
-	indexed, ok := buildIndexedTagSourceFromBytes(data, f.Name, lang)
-	if !ok || indexed == nil {
-		return nil, false // Guard against caching nil index in LRU.
-	}
-	indexed = tagSourceFileIndexCache.store(cacheKey, indexed)
 	common.Info("extractor tags: loaded tag source file",
 		zap.String("file_id", c.Param.Tags.TagFileID),
 		zap.String("bucket", f.ParentID),
 		zap.String("key", *f.Location),
 		zap.Int64("size", f.Size),
-		zap.Int("bytes", len(data)),
 	)
 	return indexed, true
-}
-
-func buildIndexedTagSourceFromBytes(data []byte, filename, lang string) (*MemoryTagIndex, bool) {
-	rawExamples, err := parseTagSourceByFilename(data, filename)
-	if err != nil || len(rawExamples) == 0 {
-		if err != nil {
-			common.Warn(fmt.Sprintf("extractor tags: %v", err))
-		}
-		return nil, false
-	}
-	tok := tokenizer.New(lang)
-	indexed := buildMemoryTagIndex(rawExamples, tok)
-	if indexed == nil {
-		return nil, false
-	}
-	return indexed, true
-}
-
-func tagSourceFileCacheKey(f *entity.File, lang string) string {
-	location := ""
-	if f.Location != nil {
-		location = *f.Location
-	}
-	updateTime := int64(0)
-	if f.UpdateTime != nil {
-		updateTime = *f.UpdateTime
-	}
-	return fmt.Sprintf("tag-file:%s:%s:%s:%d:%d:%s", f.ID, f.ParentID, location, f.Size, updateTime, lang)
-}
-
-// parseTagSourceByFilename mirrors rag/app/tag.py chunk(): the format is chosen
-// by the file extension, and only .xlsx/.xls, .txt and .csv are supported. Any
-// other extension (including no extension) is rejected, matching Python's
-// NotImplementedError for unsupported formats. xlsx is parsed per-sheet (2
-// columns, no header, multiple sheets); .csv uses a quote-aware reader; .txt
-// uses the delimiter-detecting reader.
-func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, error) {
-	switch strings.ToLower(filepath.Ext(filename)) {
-	case ".xlsx", ".xls":
-		return parseXLSXTagSource(data), nil
-	case ".csv":
-		return parseCSVQuoteAwareReader(bytes.NewReader(data)), nil
-	case ".txt":
-		delimiter := detectCSVDelimiterBytes(data)
-		return parseCSVTagSourceReader(bytes.NewReader(data), delimiter), nil
-	default:
-		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .txt and .csv are supported", filepath.Ext(filename))
-	}
-}
-
-// TagVocabularyFromBytes is the storage/DAO-free core of
-// TagVocabularyFromTagFileID. It parses a tag source file's raw bytes (mirroring
-// rag/app/tag.py's chunk format) and returns the vocabulary as tag -> number of
-// source examples that mention the tag; a tag repeated within one source example
-// counts once, matching buildMemoryTagIndex's per-sample deduplication. Note: the
-// Go tag extractor
-// (matchAndTagChunk) DOES write tag_kwd onto chunks at parse time, but this
-// vocabulary is the authoritative selectable-tag list for the Go backend (the
-// tag-options/aggregation API sources the list from the tag source file, not
-// from chunk usage).
-func TagVocabularyFromBytes(data []byte, filename string) (map[string]int, error) {
-	labels, err := parseTagSourceByFilename(data, filename)
-	if err != nil {
-		return nil, err
-	}
-	counts := make(map[string]int)
-	for _, lbl := range labels {
-		seen := make(map[string]struct{}, len(lbl.Tags))
-		for _, t := range lbl.Tags {
-			t = strings.TrimSpace(strings.ReplaceAll(t, ".", "_"))
-			if t != "" {
-				if _, exists := seen[t]; exists {
-					continue
-				}
-				seen[t] = struct{}{}
-				counts[t]++
-			}
-		}
-	}
-	return counts, nil
-}
-
-// TagVocabularyFromTagFileID loads a tag source file (parser_config.tags.tag_file_id)
-// and returns the tag vocabulary it defines. It is the Go-native source of the
-// selectable-tag list surfaced by the tag-options API. Although the Go tag
-// extractor (matchAndTagChunk) writes tag_kwd onto chunks during parsing, the
-// selectable-tag list is taken from this vocabulary (the tag source file), not
-// from chunk usage.
-//
-// It returns (nil, nil) when tagFileID is empty.
-//
-// ownerTenantID is the tenant of the dataset that configured the file and is
-// required: tag_file_id is user-writable through parser_config, so the file must
-// be proven to belong to that tenant before its bytes are read (IDOR, CWE-639).
-// An empty ownerTenantID fails closed. Note that storage.Get's tenant argument
-// does not establish file ownership by itself.
-func TagVocabularyFromTagFileID(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
-	if tagFileID == "" {
-		return nil, nil
-	}
-	common.Info(fmt.Sprintf("tag_vocab: loading tag source file_id=%q", tagFileID))
-	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, tagFileID, ownerTenantID)
-	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
-		return nil, fmt.Errorf("tag source file %q not found: %w", tagFileID, err)
-	}
-	common.Info(fmt.Sprintf("tag_vocab: file_id=%q name=%q parent_id=%q location=%q",
-		tagFileID, f.Name, f.ParentID, *f.Location))
-	stg := resolveStorage()
-	if stg == nil {
-		return nil, fmt.Errorf("tag source file %q: no storage backend registered", tagFileID)
-	}
-	data, err := stg.Get(ctx, f.ParentID, *f.Location, ownerTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("load tag source file %q/%q: %w", f.ParentID, *f.Location, err)
-	}
-	common.Info(fmt.Sprintf("tag_vocab: file_id=%q loaded %d bytes", tagFileID, len(data)))
-	return TagVocabularyFromBytes(data, f.Name)
-}
-
-func parseCSVTagSource(text string) []schema.TagLabel {
-	return parseCSVTagSourceBytes([]byte(text))
-}
-
-func parseCSVTagSourceBytes(data []byte) []schema.TagLabel {
-	return parseCSVTagSourceReader(bytes.NewReader(data), detectCSVDelimiterBytes(data))
-}
-
-// parseCSVTagSourceReader mirrors rag/app/tag.py's txt parsing: lines that do
-// not split into exactly two columns are accumulated as body text and prepended
-// to the next tagged line. The second column holds comma-separated tags.
-func parseCSVTagSourceReader(r io.Reader, delimiter string) []schema.TagLabel {
-	scanner := newTagSourceScannerFromReader(r, scanBufferMax)
-	result := make([]schema.TagLabel, 0)
-	content := ""
-	appendLine := func(s string) {
-		if content == "" {
-			content = s
-		} else {
-			content += "\n" + s
-		}
-	}
-	for scanner.Scan() {
-		line := scanner.Text()
-		arr := strings.Split(line, delimiter)
-		if len(arr) != 2 {
-			appendLine(line)
-			continue
-		}
-		appendLine(arr[0])
-		tags := splitAndTrim(arr[1], ",")
-		result = append(result, schema.TagLabel{Content: content, Tags: tags})
-		content = ""
-	}
-	if scanner.Err() != nil {
-		common.Warn(fmt.Sprintf("extractor tags: parse tag source: %v", scanner.Err()))
-	}
-	return result
-}
-
-// parseCSVQuoteAwareReader mirrors rag/app/tag.py's .csv path: each line is
-// parsed with encoding/csv (so quoted fields containing the delimiter are
-// handled), lines that do not yield exactly two non-empty columns are
-// accumulated as body text and prepended to the next tagged line, and the
-// second column holds comma-separated tags.
-func parseCSVQuoteAwareReader(r io.Reader) []schema.TagLabel {
-	scanner := newTagSourceScannerFromReader(r, scanBufferMax)
-	result := make([]schema.TagLabel, 0)
-	content := ""
-	appendLine := func(s string) {
-		if content == "" {
-			content = s
-		} else {
-			content += "\n" + s
-		}
-	}
-	for scanner.Scan() {
-		line := scanner.Text()
-		rec, err := csv.NewReader(strings.NewReader(line)).Read()
-		if err != nil {
-			appendLine(line)
-			continue
-		}
-		row := stripEmptyFields(rec)
-		if len(row) != 2 {
-			appendLine(line)
-			continue
-		}
-		appendLine(row[0])
-		tags := splitAndTrim(row[1], ",")
-		result = append(result, schema.TagLabel{Content: content, Tags: tags})
-		content = ""
-	}
-	if scanner.Err() != nil {
-		common.Warn(fmt.Sprintf("extractor tags: parse csv tag source: %v", scanner.Err()))
-	}
-	return result
-}
-
-// parseXLSXTagSource mirrors rag/app/tag.py's .xlsx path: every sheet is read
-// with no header, and each row contributes a (content, tags) pair from its
-// first and second non-empty cells. Single-cell rows are accumulated as body text
-// and prepended to the next tagged row, matching CSV parsing behavior.
-// The second cell holds comma-separated tags.
-func parseXLSXTagSource(data []byte) []schema.TagLabel {
-	f, err := excelize.OpenReader(bytes.NewReader(data))
-	if err != nil {
-		common.Warn(fmt.Sprintf("extractor tags: open xlsx tag source: %v", err))
-		return nil
-	}
-	defer f.Close()
-
-	result := make([]schema.TagLabel, 0)
-	for _, sheet := range f.GetSheetList() {
-		rows, err := f.GetRows(sheet)
-		if err != nil {
-			common.Warn(fmt.Sprintf("extractor tags: read xlsx sheet %q: %v", sheet, err))
-			continue
-		}
-		content := ""
-		appendLine := func(s string) {
-			if content == "" {
-				content = s
-			} else {
-				content += "\n" + s
-			}
-		}
-		for _, row := range rows {
-			var cells []string
-			for _, c := range row {
-				if c = strings.TrimSpace(c); c != "" {
-					cells = append(cells, c)
-				}
-			}
-			if len(cells) == 0 {
-				continue
-			}
-			if len(cells) == 1 {
-				appendLine(cells[0])
-				continue
-			}
-			appendLine(cells[0])
-			tags := splitAndTrim(cells[1], ",")
-			result = append(result, schema.TagLabel{Content: content, Tags: tags})
-			content = ""
-		}
-	}
-	return result
-}
-
-func stripEmptyFields(fields []string) []string {
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		if f = strings.TrimSpace(f); f != "" {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-const scanBufferMax = 1 << 20
-
-func detectCSVDelimiterBytes(data []byte) string {
-	comma, tab := 0, 0
-	scanner := newTagSourceScanner(bytes.NewReader(data), len(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		// Try quote-aware parse for comma
-		rComma := csv.NewReader(strings.NewReader(line))
-		rComma.Comma = ','
-		if rec, err := rComma.Read(); err == nil {
-			if len(rec) == 2 {
-				comma++
-			}
-		} else if len(strings.Split(line, ",")) == 2 {
-			comma++
-		}
-
-		// Try quote-aware parse for tab
-		rTab := csv.NewReader(strings.NewReader(line))
-		rTab.Comma = '\t'
-		if rec, err := rTab.Read(); err == nil {
-			if len(rec) == 2 {
-				tab++
-			}
-		} else if len(strings.Split(line, "\t")) == 2 {
-			tab++
-		}
-	}
-	if scanner.Err() != nil {
-		common.Warn(fmt.Sprintf("extractor tags: delimiter scan: %v", scanner.Err()))
-	}
-	if tab > 0 && tab >= comma {
-		return "\t"
-	}
-	return ","
-}
-
-func newTagSourceScanner(r io.Reader, dataLen int) *bufio.Scanner {
-	maxToken := dataLen + 1
-	if maxToken < 64*1024 {
-		maxToken = 64 * 1024
-	}
-	if maxToken > scanBufferMax {
-		maxToken = scanBufferMax
-	}
-	return newTagSourceScannerFromReader(r, maxToken)
-}
-
-func newTagSourceScannerFromReader(r io.Reader, maxTokens ...int) *bufio.Scanner {
-	maxToken := 64 * 1024
-	if len(maxTokens) > 0 && maxTokens[0] > maxToken {
-		maxToken = maxTokens[0]
-	}
-	initBuf := min(64*1024, maxToken)
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, initBuf), maxToken)
-	return scanner
-}
-
-func splitAndTrim(s, sep string) []string {
-	parts := strings.Split(s, sep)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 func isAlphaExt(ext string) bool {
@@ -1162,20 +631,11 @@ func detectTextLanguage(chunks []map[string]any) string {
 	return "English"
 }
 
-func containsCJK(s string) bool {
-	for _, r := range s {
-		if (r >= 0x4e00 && r <= 0x9fff) || (r >= 0x3400 && r <= 0x4dbf) {
-			return true
-		}
-	}
-	return false
-}
-
+// roundInt mirrors Python's round() on a float, which is round-half-to-even
+// (banker's rounding): round(2.5) == 2 and round(3.5) == 4. The previous
+// int(f+0.5) form rounded halves away from zero and returned 3 for 2.5.
 func roundInt(f float64) int {
-	if f < 0 {
-		return int(f - 0.5)
-	}
-	return int(f + 0.5)
+	return int(math.RoundToEven(f))
 }
 
 // ----------------------------------------------------------------------
@@ -1233,7 +693,6 @@ func llmTagChunk(
 
 	if cached := getTaggerLLMCache(ctx, cache, modelID, chunkID, text, allTags, picked, topN); cached != nil {
 		chunk[common.TAG_FLD] = cached
-		chunk["tag_kwd"] = sortedTagWeightsKeys(cached)
 		return
 	}
 
@@ -1281,7 +740,6 @@ func llmTagChunk(
 
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
-		chunk["tag_kwd"] = sortedTagWeightsKeys(result)
 		setTaggerLLMCache(ctx, cache, modelID, chunkID, text, allTags, picked, topN, result)
 	}
 }
@@ -1414,31 +872,6 @@ func sortedTagNames(allTags map[string]float64) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func sortedTagWeightsKeys(m map[string]int) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	type kv struct {
-		k string
-		v int
-	}
-	kvs := make([]kv, 0, len(m))
-	for k, v := range m {
-		kvs = append(kvs, kv{k, v})
-	}
-	sort.Slice(kvs, func(i, j int) bool {
-		if kvs[i].v != kvs[j].v {
-			return kvs[i].v > kvs[j].v
-		}
-		return kvs[i].k < kvs[j].k
-	})
-	keys := make([]string, len(kvs))
-	for i, item := range kvs {
-		keys[i] = item.k
-	}
-	return keys
 }
 
 func sampleWithoutReplacement(slice []schema.TaggedChunk, k int, seed int64) []schema.TaggedChunk {

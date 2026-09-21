@@ -170,7 +170,6 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenDocuments
-	TokenTag
 	TokenRegion
 	TokenURL
 	TokenTask

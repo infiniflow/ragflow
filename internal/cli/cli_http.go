@@ -536,8 +536,6 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.DevSetMetaCommand(commandCount, cmd)
 	case "dev_delete_meta":
 		return c.DevDeleteMetaCommand(commandCount, cmd)
-	case "dev_rm_tags":
-		return c.DevRmTagsCommand(commandCount, cmd)
 	case "dev_remove_chunks":
 		return c.DevRemoveChunksCommand(commandCount, cmd)
 	case "dev_get_metadata":

@@ -3653,8 +3653,6 @@ func (p *Parser) parseAPIRemove() (*Command, error) {
 		return p.parseAPIRemoveTask()
 
 	// Dev commands
-	case TokenTag:
-		return p.parseDevRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseDevRemoveChunk()
 	default:

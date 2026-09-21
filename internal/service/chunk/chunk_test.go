@@ -565,7 +565,6 @@ func TestAddChunkSuccess(t *testing.T) {
 		Content:           "chunk body",
 		ImportantKeywords: []string{"k1"},
 		Questions:         []string{" q1 ", ""},
-		TagKwd:            []string{"tag1"},
 		TagFeas:           map[string]interface{}{"tag1": float64(0.5)},
 	}, userID)
 	if err != nil {
