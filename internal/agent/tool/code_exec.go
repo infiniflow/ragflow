@@ -49,7 +49,12 @@ const codeExecToolName = "execute_code"
 const codeExecToolDescription = "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. " +
 	"It receives a piece of code and returns a JSON string. " +
 	"The code must define a main function (Python) or export main (JavaScript); " +
-	"the return value of main is returned as the tool result."
+	"the return value of main is returned as the tool result. " +
+	"To generate charts or files (images, PDFs, CSVs, etc.), save them to the `artifacts/` " +
+	"directory (relative to the working directory); the sandbox automatically collects those " +
+	"files and returns them as artifacts. " +
+	"Example: `plt.savefig('artifacts/chart.png', dpi=150, bbox_inches='tight')`. " +
+	"Supported artifact file types: .png, .jpg, .jpeg, .svg, .pdf, .csv, .json, .html."
 
 // codeExecArgs is the JSON shape the model sends in. The Python
 // tool accepts "lang" + "script"; we also accept "code" as a
