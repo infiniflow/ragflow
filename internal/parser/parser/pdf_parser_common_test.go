@@ -474,6 +474,130 @@ func TestPDFParser_ValidateParseMethod(t *testing.T) {
 	}
 }
 
+// TestNormalizePDFParseMethod_PlainTextSpellings pins the plain-text
+// spellings the dataset configuration UI can persist. The UI option is
+// labelled "Naive" and stores "Plain Text", so both the spaced and
+// spaceless spellings must land on the canonical "plain_text" method
+// instead of being rejected as unsupported (or, upstream, mistaken for a
+// vision model name).
+func TestNormalizePDFParseMethod_PlainTextSpellings(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain_text", "plain_text"},
+		{"Plain_Text", "plain_text"},
+		{"plaintext", "plain_text"},
+		{"PlainText", "plain_text"},
+		{"plain text", "plain_text"},
+		{"Plain Text", "plain_text"},
+		{"  Plain Text  ", "plain_text"},
+	}
+	for _, c := range cases {
+		if got := normalizePDFParseMethod(c.in); got != c.want {
+			t.Errorf("normalizePDFParseMethod(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestIsPDFParseMethod pins the vocabulary shared by the construction-time
+// check and the runtime vision dispatcher. "plain text"/"plaintext" are the
+// spellings the dataset configuration UI writes for its plain-text option;
+// treating them as model names breaks PDF parsing with "provider name
+// missing in model name".
+func TestIsPDFParseMethod(t *testing.T) {
+	named := []string{
+		"deepdoc", "plain_text", "plaintext", "plain text", "mineru",
+		"monkeyocrv2", "docling", "opendataloader", "tcadp parser",
+		"paddleocr", "somark",
+		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
+		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
+		"Plain Text", "PlainText", "PLAIN TEXT",
+	}
+	for _, v := range named {
+		if !IsPDFParseMethod(v) {
+			t.Errorf("IsPDFParseMethod(%q) = false, want true", v)
+		}
+	}
+
+	// Anything else is a VLM model name: the UI never writes the bare
+	// "tcadp" abbreviation, and empty values are rejected separately.
+	notNamed := []string{
+		"tcadp",
+		"CustomVLM", "some_vlm", "gpt-4o",
+		"", "  ",
+	}
+	for _, v := range notNamed {
+		if IsPDFParseMethod(v) {
+			t.Errorf("IsPDFParseMethod(%q) = true, want false", v)
+		}
+	}
+}
+
+// TestIsPDFParseMethodLayoutSuffixes pins that "@"-suffixed
+// layout_recognizer selectors are not parse methods; they are resolved from
+// the layout_recognizer field separately.
+func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
+	suffixed := []string{
+		"foo@mineru", "@mineru",
+		"foo@monkeyocrv2", "@monkeyocrv2",
+		"foo@paddleocr", "@paddleocr",
+		"foo@somark", "@somark",
+		"foo@opendataloader", "@opendataloader",
+		"foo@unknown",
+	}
+	for _, v := range suffixed {
+		if IsPDFParseMethod(v) {
+			t.Errorf("IsPDFParseMethod(%q) = true, want false (layout_recognizer selector, not a parse_method)", v)
+		}
+	}
+}
+
+// TestPDFParseMethodTablesAgree pins the relationship between the two
+// vocabulary tables in pdf_parser_common.go: every canonical token a
+// spelling maps to must be executable by PDFParser, and every executable
+// token must be reachable from some spelling. The only intended divergences
+// are:
+//
+//   - "" (the unset sentinel) is accepted by the parser as the default
+//     method but has no spelling, so IsPDFParseMethod("") stays false;
+//   - "monkeyocrv2" is dispatched by the ingestion vision dispatcher
+//     before PDFParser runs, so it is a recognized method without being
+//     executable by the parser switch itself.
+//
+// Any other difference means one table was updated without the other: a
+// spelling whose canonical token is not executable dies in
+// validateParseMethod, and an executable token without a spelling is
+// misclassified as a VLM model name by Check and the dispatcher (the
+// "Plain Text" bug class).
+func TestPDFParseMethodTablesAgree(t *testing.T) {
+	const (
+		unsetSentinel     = ""
+		dispatcherHandled = "monkeyocrv2"
+	)
+	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
+	for spelling, canonical := range pdfParseMethodSpellings {
+		if canonical == unsetSentinel {
+			t.Errorf("spelling %q maps to the unset sentinel %q; no spelling may mean \"unset\"", spelling, unsetSentinel)
+			continue
+		}
+		reachable[canonical] = true
+		if canonical == dispatcherHandled {
+			continue
+		}
+		if _, ok := supportedPDFParseMethods[canonical]; !ok {
+			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like %q",
+				spelling, canonical, canonical, dispatcherHandled)
+		}
+	}
+	for supported := range supportedPDFParseMethods {
+		if supported == unsetSentinel || reachable[supported] {
+			continue
+		}
+		t.Errorf("supportedPDFParseMethods contains %q that no spelling maps to; without a spelling, Check() and the vision dispatcher route it to the VLM path", supported)
+	}
+	if !IsPDFParseMethod(dispatcherHandled) {
+		t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", dispatcherHandled)
+	}
+}
+
 type mockPDFEngineForCommonTest struct {
 	closed bool
 }

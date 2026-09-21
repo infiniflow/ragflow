@@ -221,14 +221,10 @@ func (c *ParserComponent) Check() error {
 		if pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
-		pmLower := strings.ToLower(pm)
-		pdfWhitelist := []string{
-			"deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling",
-			"opendataloader", "tcadp parser", "paddleocr", "somark",
-		}
-		if !containsString(pdfWhitelist, pmLower) {
-			// Non-whitelist parse_method is treated as a VLM method,
-			// which requires lang (Python parser.py:257-258).
+		if !parser.IsPDFParseMethod(pm) {
+			// A parse_method outside the known vocabulary is treated as a
+			// VLM model reference, which requires lang (Python
+			// parser.py:257-258).
 			if lang, _ := pdf["lang"].(string); lang == "" {
 				return errors.New("PDF VLM language does not support empty value")
 			}
@@ -245,18 +241,6 @@ func (c *ParserComponent) Check() error {
 		}
 	}
 	return nil
-}
-
-// containsString reports whether s is in list. Used by Check() for
-// whitelist membership tests; kept unexported and local to this file
-// to avoid polluting the package namespace.
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
