@@ -165,6 +165,7 @@ Propose questions about a given piece of text content.
 
 	autoMetadataPrompt = `## Role: Metadata extraction expert.
 ## Rules:
+ - Fixed Key Set: Output ONLY the keys that appear in the Schema. Never add, rename, translate, pluralize or re-case a key, and never invent an extra key even if the Content clearly carries that information. Any key that is not in the Schema MUST be omitted.
  - Strict Evidence Only: Extract a value ONLY if it is explicitly mentioned in the Content.
  - Enum Filter: For any field with an 'enum' list, the list acts as a strict filter. If no element from the list (or its direct synonym) is found in the Content, you MUST NOT extract that field.
  - No Meta-Inference: Do not infer values based on the document's nature, format, or category. If the text does not literally state the information, treat it as missing.
@@ -1001,6 +1002,11 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			// Non-JSON or empty response — nothing to extract, not an error.
 			return nil
 		}
+		parsed = filterMetadataToDeclaredKeys(parsed, c.Param.Metadata.Metadata)
+		if len(parsed) == 0 {
+			// Every key fell outside the declared field set — nothing to keep.
+			return nil
+		}
 		setMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
@@ -1021,6 +1027,33 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	ck["metadata"] = meta
 	return nil
+}
+
+// filterMetadataToDeclaredKeys drops every key that is not part of the
+// declared metadata field set.
+//
+// The rendered schema carries additionalProperties:false, but that is only a
+// hint to the model: a model that renames, pluralizes or invents a field still
+// returns a parseable object, and such a key would otherwise widen the
+// dataset's metadata schema through mergeChunkMetadata. The declared set is
+// therefore enforced here, in code.
+func filterMetadataToDeclaredKeys(parsed map[string]any, fields []common.MetadataFieldDef) map[string]any {
+	allowed := make(map[string]struct{}, len(fields))
+	for _, f := range fields {
+		allowed[f.Key] = struct{}{}
+	}
+	kept := make(map[string]any, len(parsed))
+	for k, v := range parsed {
+		if _, ok := allowed[k]; !ok {
+			common.Debug("extractor stage",
+				zap.String("component", componentNameExtractor),
+				zap.String("dropped_metadata_key", k),
+			)
+			continue
+		}
+		kept[k] = v
+	}
+	return kept
 }
 
 // extractorChunkText resolves the body an extraction is run against.
