@@ -68,7 +68,12 @@ type PDFParser struct {
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
 	// the filetype setup map and forwarded to the deepdoc ParserConfig.
-	Pages                             [][]int
+	Pages [][]int
+	// OnPageDone, when set, is forwarded to the deepdoc ParserConfig so the
+	// caller observes per-page parse progress (done/total). Only the deepdoc
+	// backend invokes it; remote engines poll opaque HTTP jobs and never call
+	// it, so the fraction simply stays where it was.
+	OnPageDone                        func(done, total int)
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string

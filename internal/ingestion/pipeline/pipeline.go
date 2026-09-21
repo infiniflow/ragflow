@@ -239,6 +239,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// observability concern, not a data dependency.
 	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
 	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
+	runCtx = runtime.WithProgressFractionCallback(runCtx, p.componentFractionCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -390,6 +391,28 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 
 type detailedProgressSink interface {
 	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+// fractionProgressSink is the optional interface through which the pipeline
+// forwards in-flight component fractions (pages parsed, chunks embedded) to
+// the sink's progress tracker. Mirrors detailedProgressSink: a sink that does
+// not implement it simply receives no fraction channel.
+type fractionProgressSink interface {
+	OnComponentFraction(ctx context.Context, component string, fraction float64)
+}
+
+// componentFractionCallback forwards fraction reports to the sink. The sink
+// only mutates in-memory state here (its flusher owns persistence), so the
+// run context is passed through without the WithoutCancel fallback that the
+// I/O-bound callbacks need.
+func (p *Pipeline) componentFractionCallback(ctx context.Context) runtime.ProgressFractionCallback {
+	sink, ok := p.sink.(fractionProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component string, fraction float64) {
+		sink.OnComponentFraction(ctx, component, fraction)
+	}
 }
 
 func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime.ProgressMessageCallback {

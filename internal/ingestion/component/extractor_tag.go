@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -556,7 +557,10 @@ func isHighConfidenceMatch(matched *schema.TaggedChunk) bool {
 	return false
 }
 
-func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in extractorInputs) ([]map[string]any, error) {
+func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) ([]map[string]any, error) {
+	// Hand the whole window to the next phase on every exit path, including the
+	// skip paths below that do no measurable work.
+	defer w.report(ctx, 1)
 	lang := in.lang
 	if lang == "" {
 		lang = detectTextLanguage(in.chunks)
@@ -600,11 +604,14 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 			inv := getExtractorChatInvoker()
 			sem := make(chan struct{}, taggerLLMConcurrency)
 			var wg sync.WaitGroup
+			var tagged atomic.Int64
+			total := int64(len(docsToTag))
 
 			for i := range docsToTag {
 				wg.Add(1)
 				go func(idx int) {
 					defer wg.Done()
+					defer func() { w.report(ctx, float64(tagged.Add(1))/float64(total)) }()
 					select {
 					case sem <- struct{}{}:
 						defer func() { <-sem }()
