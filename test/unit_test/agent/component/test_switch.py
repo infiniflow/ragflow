@@ -97,3 +97,45 @@ def test_switch_none_value_contains_does_not_raise():
 
     assert cpn.output("_next") == ["case_target"]
     assert cpn.output("next") == ["case_target"]
+
+
+@pytest.mark.p1
+def test_switch_numeric_variable_with_unparseable_value_falls_through_to_else():
+    """A numeric variable compared against an unparseable value is a non-match,
+    not a ValueError that kills the canvas run (#19416)."""
+    param = SwitchParam()
+    param.conditions = [
+        {
+            "logical_operator": "and",
+            "items": [{"cpn_id": "score", "operator": "=", "value": ""}],
+            "to": ["case_target"],
+        }
+    ]
+    param.end_cpn_ids = ["else_target"]
+
+    cpn = _switch(param, {"score": 5})
+    cpn._invoke()
+
+    assert cpn.output("_next") == ["else_target"]
+    assert cpn.output("next") == ["else_target"]
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("operator", [">", "<", "≥", "≤"])
+def test_switch_ordering_operator_with_incomparable_value_is_non_match(operator):
+    """An ordering operator on an incomparable pair is a non-match instead of a
+    TypeError from the numeric fallback (#19416)."""
+    cpn = _switch(SwitchParam())
+
+    assert cpn.process_operator(5, operator, "abc") is False
+    assert cpn.process_operator(None, operator, None) is False
+
+
+@pytest.mark.p1
+def test_switch_ordering_operator_still_compares_numerically_and_textually():
+    """Parseable pairs keep comparing numerically; text pairs keep their own ordering."""
+    cpn = _switch(SwitchParam())
+
+    assert cpn.process_operator(5, ">", "3") is True
+    assert cpn.process_operator("5", "<", 9) is True
+    assert cpn.process_operator("abc", ">", "abd") is False
