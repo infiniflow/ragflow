@@ -1195,7 +1195,12 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if ingestionTask.PipelineLogID != nil {
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
-	result, err := executor.WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)).Execute(docTaskCtx.Ctx)
+	sink := newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)
+	result, err := executor.WithProgressSink(sink).Execute(docTaskCtx.Ctx)
+	// Close before returning on either path: the final flush must land before
+	// the caller writes the terminal progress state (-1), and it must not be
+	// skipped when the pipeline failed mid-run.
+	sink.Close()
 	if err != nil {
 		return err
 	}

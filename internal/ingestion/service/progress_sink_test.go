@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/ingestion/pipeline"
@@ -49,8 +50,8 @@ func TestProgressSink_CanConstructDocumentServiceWithoutServerConfig(t *testing.
 // TestProgressSink_EagerlyConstructsDocumentService ensures the sink builds its
 // DocumentService at construction time rather than lazily on the first progress
 // event. Lazy construction is a data race under eino's parallel-branch progress
-// callbacks (see TestProgressSink_OnComponentProgress_NoDataRace); eager
-// construction makes docSvc immutable after newProgressSink returns.
+// callbacks (see TestProgressSink_DocService_NoDataRace); eager construction
+// makes docSvc immutable after newProgressSink returns.
 func TestProgressSink_EagerlyConstructsDocumentService(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -58,6 +59,7 @@ func TestProgressSink_EagerlyConstructsDocumentService(t *testing.T) {
 
 	ctx := t.Context()
 	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
+	defer sink.Close()
 	if sink.docSvc == nil {
 		t.Fatal("expected sink to eagerly construct its DocumentService, got nil (lazy)")
 	}
@@ -82,6 +84,7 @@ func TestProgressSink_DocService_NoDataRace(t *testing.T) {
 	// must already be constructed (not lazily built mid-call) when the
 	// goroutines below race into docSvc.
 	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
+	defer sink.Close()
 
 	const n = 30
 	var wg sync.WaitGroup
@@ -98,12 +101,10 @@ func TestProgressSink_DocService_NoDataRace(t *testing.T) {
 	wg.Wait()
 }
 
-// TestProgressSink_Total_NoDataRace guards the total denominator against being
-// a non-atomic shared field. OnComponentTotal (writer, Run goroutine) and
-// OnComponentProgress (reader, concurrent eino branches) share total; a plain
-// int is a data race per the Go memory model. The read is hit directly on the
-// field rather than through OnComponentProgress because the latter serializes
-// on the single test-DB connection before reaching the read, masking the race.
+// TestProgressSink_Total_NoDataRace guards the shared run-progress state
+// against unsynchronized access. OnComponentTotal (writer, Run goroutine) and
+// the flusher/Percent readers (concurrent eino branches, flusher goroutine)
+// share the tracker; its mutex must make concurrent SetTotal/Percent safe.
 func TestProgressSink_Total_NoDataRace(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -112,6 +113,7 @@ func TestProgressSink_Total_NoDataRace(t *testing.T) {
 
 	ctx := t.Context()
 	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
+	defer sink.Close()
 
 	const n = 30
 	var wg sync.WaitGroup
@@ -121,7 +123,7 @@ func TestProgressSink_Total_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			sink.OnComponentTotal(ctx, taskID, 5) // writes s.total
+			sink.OnComponentTotal(ctx, taskID, 5) // writes tracker total
 		}()
 	}
 	for i := 0; i < n; i++ {
@@ -129,7 +131,7 @@ func TestProgressSink_Total_NoDataRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			v := sink.total.Load() // reads s.total atomically
+			v := sink.progress.Percent() // reads tracker under mutex
 			runtime.KeepAlive(v)
 		}()
 	}
@@ -138,16 +140,39 @@ func TestProgressSink_Total_NoDataRace(t *testing.T) {
 }
 
 type stubDocProgressSvc struct {
+	mu            sync.Mutex
 	stateCalls    int
 	stateDocID    string
 	stateProgress float64
 }
 
 func (s *stubDocProgressSvc) UpdateRunState(_ context.Context, docID string, progress float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.stateCalls++
 	s.stateDocID = docID
 	s.stateProgress = progress
 	return nil
+}
+
+func (s *stubDocProgressSvc) snapshot() (calls int, docID string, progress float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stateCalls, s.stateDocID, s.stateProgress
+}
+
+// ctxAwareStubDocProgressSvc fails like a real DB call when the flush context
+// is cancelled, so tests can distinguish wake flushes (run context) from the
+// Close final flush (detached context).
+type ctxAwareStubDocProgressSvc struct {
+	stubDocProgressSvc
+}
+
+func (s *ctxAwareStubDocProgressSvc) UpdateRunState(ctx context.Context, docID string, progress float64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.stubDocProgressSvc.UpdateRunState(ctx, docID, progress)
 }
 
 // TestProgressSinkPersistsViaService verifies the sink is the single writer of
@@ -180,6 +205,9 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		Phase:      1,
 		Message:    "Parser Done",
 	})
+	// Close joins the flusher and performs the final forced flush, making the
+	// mirrored state deterministic regardless of wake timing.
+	sink.Close()
 
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
 	if err != nil {
@@ -192,10 +220,12 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		t.Fatalf("unexpected log row: %+v", logs[0])
 	}
 
-	// 1 of 2 components done -> RUNNING (run "1"), progress 0.5. The
-	// event stream owns text, so this must not write document.progress_msg.
-	if stub.stateCalls != 1 || stub.stateDocID != docID || stub.stateProgress != 0.5 {
-		t.Fatalf("UpdateRunState = calls:%d doc:%q progress:%v, want 1/%q/0.5", stub.stateCalls, stub.stateDocID, stub.stateProgress, docID)
+	// 1 of 2 components done -> progress 0.5 mirrored from the in-memory
+	// tracker. The event stream owns text, so this must not write
+	// document.progress_msg (UpdateRunState only touches progress/duration).
+	calls, gotDocID, gotProgress := stub.snapshot()
+	if calls < 1 || gotDocID != docID || gotProgress != 0.5 {
+		t.Fatalf("UpdateRunState = calls:%d doc:%q progress:%v, want >=1/%q/0.5", calls, gotDocID, gotProgress, docID)
 	}
 }
 
@@ -206,6 +236,7 @@ func TestProgressSinkWritesLifecycleEventForCapturedRun(t *testing.T) {
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	sink := newProgressSink(t.Context(), servicepkg.NewIngestionTaskService(), "run-1")
+	defer sink.Close()
 	sink.OnComponentProgress(t.Context(), pipeline.ProgressEvent{
 		TaskID:    taskID,
 		Component: "Parser",
@@ -230,7 +261,8 @@ func TestProgressSinkWritesLifecycleEventForCapturedRun(t *testing.T) {
 }
 
 // TestProgressSinkEmptyDocumentIDSkipsMirror verifies the log row is still
-// recorded when no owning document is bound, but the document mirror is skipped.
+// recorded when no owning document is bound, but the document mirror is
+// skipped - including the Close final flush.
 func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -248,6 +280,7 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 		Phase:     1,
 		Message:   "Chunker Done",
 	})
+	sink.Close()
 
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
 	if err != nil {
@@ -256,71 +289,120 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	if len(logs) != 1 {
 		t.Fatalf("expected 1 component-progress row, got %d", len(logs))
 	}
-	if stub.stateCalls != 0 {
-		t.Fatalf("UpdateRunState calls = %d, want 0 (no document bound)", stub.stateCalls)
+	if calls, _, _ := stub.snapshot(); calls != 0 {
+		t.Fatalf("UpdateRunState calls = %d, want 0 (no document bound)", calls)
 	}
 }
 
-// TestDeriveDocumentProgress exercises every branch of the run-label derivation
-// logic. The function is called from OnComponentProgress with a non-nil agg
-// (guarded by the caller), so the nil case is documented as a known panic.
-func TestDeriveDocumentProgress(t *testing.T) {
-	tests := []struct {
-		name     string
-		agg      *dao.TaskProgress
-		total    int
-		wantProg float64
-	}{
-		{
-			name:     "failed component progress",
-			agg:      &dao.TaskProgress{Failed: 1, Done: 0, Running: 0, Percent: 0},
-			total:    5,
-			wantProg: 0.0,
-		},
-		{
-			name:     "all done",
-			agg:      &dao.TaskProgress{Failed: 0, Done: 5, Running: 0, Percent: 100},
-			total:    5,
-			wantProg: 1.0,
-		},
-		{
-			name:     "partial done",
-			agg:      &dao.TaskProgress{Failed: 0, Done: 3, Running: 0, Percent: 60},
-			total:    5,
-			wantProg: 0.6,
-		},
-		{
-			name:     "running only",
-			agg:      &dao.TaskProgress{Failed: 0, Done: 0, Running: 2, Percent: 0},
-			total:    5,
-			wantProg: 0.0,
-		},
-		{
-			name:     "nothing started",
-			agg:      &dao.TaskProgress{Failed: 0, Done: 0, Running: 0, Percent: 0},
-			total:    5,
-			wantProg: 0.0,
-		},
-		{
-			name:     "total zero, nothing done",
-			agg:      &dao.TaskProgress{Failed: 0, Done: 0, Running: 0, Percent: 0},
-			total:    0,
-			wantProg: 0.0,
-		},
-		{
-			name:     "failed with 100 percent",
-			agg:      &dao.TaskProgress{Failed: 1, Done: 5, Running: 0, Percent: 100},
-			total:    5,
-			wantProg: 1.0,
-		},
-	}
+// TestProgressSinkFractionsCoalesceIntoCloseFlush verifies high-frequency
+// fraction reports never write per event: they only mutate the tracker, and a
+// single forced flush on Close persists the accumulated percent.
+func TestProgressSinkFractionsCoalesceIntoCloseFlush(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			prog := deriveDocumentProgress(tt.agg, tt.total)
-			if prog != tt.wantProg {
-				t.Errorf("progress = %v, want %v", prog, tt.wantProg)
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
+	stub := &stubDocProgressSvc{}
+	sink.docSvc = stub
+
+	sink.OnComponentTotal(ctx, taskID, 2)
+	// Bind the document without a lifecycle exit (enter phase, no MarkDone).
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID:     taskID,
+		DocumentID: docID,
+		Component:  "Parser",
+		Phase:      0,
+		Message:    "Parser Started",
+	})
+	for i := 1; i <= 100; i++ {
+		sink.OnComponentFraction(ctx, "Parser", float64(i)/100)
+	}
+	sink.Close()
+
+	// Enter wake (1) + Close final (1) = at most 2 writes for 100 fractions.
+	calls, gotDocID, gotProgress := stub.snapshot()
+	if calls > 2 {
+		t.Fatalf("UpdateRunState calls = %d, want <= 2 (fractions must coalesce)", calls)
+	}
+	if gotDocID != docID {
+		t.Fatalf("docID = %q, want %q", gotDocID, docID)
+	}
+	if gotProgress != 0.5 {
+		t.Fatalf("progress = %v, want 0.5 (frac 1.0 of 2 components)", gotProgress)
+	}
+}
+
+// TestProgressSinkLifecycleWakeFlushesWithoutClose verifies a lifecycle event
+// pushes the mirrored percent out promptly (well before any Close), so the
+// progress bar advances at component boundaries even mid-run.
+func TestProgressSinkLifecycleWakeFlushesWithoutClose(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
+	defer sink.Close()
+	stub := &stubDocProgressSvc{}
+	sink.docSvc = stub
+
+	sink.OnComponentTotal(ctx, taskID, 4)
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID:     taskID,
+		DocumentID: docID,
+		Component:  "File",
+		Phase:      1,
+		Message:    "File Done",
+	})
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if calls, gotDocID, gotProgress := stub.snapshot(); calls >= 1 {
+			if gotDocID != docID || gotProgress != 0.25 {
+				t.Fatalf("wake flush = doc:%q progress:%v, want %q/0.25", gotDocID, gotProgress, docID)
 			}
-		})
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("lifecycle wake did not flush within 3s")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestProgressSinkCloseFlushSurvivesCancelledRunContext verifies the final
+// flush detaches from the run context: a stopped/cancelled run still mirrors
+// its last in-memory percent instead of losing it to ctx.Err().
+func TestProgressSinkCloseFlushSurvivesCancelledRunContext(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	baseCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	sink := newProgressSink(baseCtx, servicepkg.NewIngestionTaskService(), "run-1")
+	stub := &ctxAwareStubDocProgressSvc{}
+	sink.docSvc = stub
+
+	// Events run on a live context (the pipeline wraps sink calls with
+	// progressSinkContext), but the flusher's base context is dead.
+	sink.OnComponentTotal(t.Context(), taskID, 2)
+	sink.OnComponentProgress(t.Context(), pipeline.ProgressEvent{
+		TaskID:     taskID,
+		DocumentID: docID,
+		Component:  "Parser",
+		Phase:      1,
+		Message:    "Parser Done",
+	})
+	sink.Close()
+
+	calls, gotDocID, gotProgress := stub.snapshot()
+	if calls != 1 || gotDocID != docID || gotProgress != 0.5 {
+		t.Fatalf("final flush = calls:%d doc:%q progress:%v, want 1/%q/0.5 (wake flush must fail on cancelled ctx, Close flush must succeed)", calls, gotDocID, gotProgress, docID)
 	}
 }
