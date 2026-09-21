@@ -1166,7 +1166,7 @@ func TestRemoveHeaderFooterBoxes_FootnoteTightNumberPreserved(t *testing.T) {
 	boxes := []pdf.TextBox{
 		tb("Main body paragraph here.", 0, 72, 400, 100, 200),
 		tb("Footnote explanation text at bottom.", 0, 72, 400, 790, 804), // bottom = 804
-		tb("1", 0, 72, 85, 810, 822),                                    // top = 810, gapAbove = 6pt < 18pt!
+		tb("1", 0, 72, 85, 810, 822),                                     // top = 810, gapAbove = 6pt < 18pt!
 	}
 
 	got := RemoveHeaderFooterBoxes(boxes, heights)
