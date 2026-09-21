@@ -1,7 +1,11 @@
 package pdf
 
 import (
+	"image"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -77,5 +81,49 @@ func TestParseRaw_OnPageDone_NilIsNoop(t *testing.T) {
 	}
 	if len(result.PageHeight) != 4 {
 		t.Errorf("expected 4 parsed pages, got %d", len(result.PageHeight))
+	}
+}
+
+// TestParseRaw_OnPageDone_FiresBeforeSubmissionDrains is the reporting-lag
+// regression guard. It parses more pages than the worker pool can ever hold
+// (max 12 workers + 4x queue = 60), so a callback driven by the collection
+// loop could not run until the whole document had been submitted — every
+// non-first page here blocks its worker until the first page has been
+// reported, which a collector-side callback only reaches after they give up.
+func TestParseRaw_OnPageDone_FiresBeforeSubmissionDrains(t *testing.T) {
+	const numPages = 256
+
+	firstDone := make(chan struct{})
+	giveUp := make(chan struct{})
+	var firstOnce, timeoutOnce sync.Once
+	var late atomic.Bool
+
+	eng := makePageTaggedEngine(numPages)
+	eng.RenderPageImageFunc = func(pg int, _ float64) (image.Image, error) {
+		if pg != 0 {
+			select {
+			case <-firstDone:
+			case <-giveUp:
+			case <-time.After(5 * time.Second):
+				late.Store(true)
+				timeoutOnce.Do(func() { close(giveUp) })
+			}
+		}
+		return image.NewRGBA(image.Rect(0, 0, eng.RenderW, eng.RenderH)), nil
+	}
+
+	cfg := pdf.DefaultParserConfig()
+	cfg.OnPageDone = func(done, _ int) {
+		if done == 1 {
+			firstOnce.Do(func() { close(firstDone) })
+		}
+	}
+	p := NewParser(cfg)
+
+	if _, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true}); err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if late.Load() {
+		t.Error("first page completion was reported only after other pages gave up waiting: OnPageDone is not firing when the page finishes")
 	}
 }
