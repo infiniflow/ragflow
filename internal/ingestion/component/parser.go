@@ -67,10 +67,10 @@
 //   - The Python _param.check() business validation
 //     (parse_method whitelist, conditional lang checks) is mirrored
 //     by (*ParserComponent).Check() below, which NewParserComponent
-//     runs at construction time. The Python flow check() also
-//     validates audio/video vlm.llm_id, but Go media_dispatch uses
-//     tenant default models (resolveTenantModelByType) rather than
-//     setup["vlm"]["llm_id"], so that check is intentionally omitted.
+//     runs at construction time. Neither backend validates
+//     audio/video vlm.llm_id: Python's check() has no such branch,
+//     and the audio model is resolved at dispatch time with a
+//     tenant-default fallback.
 //
 //   - NO PERSISTENCE: structured parser items live only in the per-run
 //     output map.
@@ -210,11 +210,10 @@ func cloneParserSetupValue(value any) any {
 // (Python raises ValueError on the first failure).
 //
 // NOT covered here (intentional):
-//   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
-//     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
-//     The Python flow check() for vlm.llm_id does not apply — Go
-//     never reads that field, and validating it would block every
-//     valid audio/video pipeline (see ingestion_pipeline_audio.json).
+//   - audio/video vlm.llm_id: Python's check() does not validate it
+//     either, and audio dispatch resolves a missing/empty model to
+//     the tenant default, so validating it here would only block
+//     otherwise valid pipelines (see ingestion_pipeline_audio.json).
 func (c *ParserComponent) Check() error {
 	// PDF family (parser.py:252-261).
 	if pdf, ok := c.setups["pdf"]; ok {
