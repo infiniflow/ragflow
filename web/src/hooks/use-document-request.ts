@@ -198,7 +198,11 @@ export const useFetchDocumentList = (loop = true) => {
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
 
-  const { data, isFetching: loading } = useQuery<{
+  const {
+    data,
+    isFetching: loading,
+    dataUpdatedAt,
+  } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
     has_active_tasks?: boolean;
@@ -282,6 +286,9 @@ export const useFetchDocumentList = (loop = true) => {
   // Stop-loss: observe the documents on every poll. This starts the window
   // for cancels first seen here, prunes trackers for observed ids that left
   // the stopping state, and re-sends one cancel request for the overdue ones.
+  // The effect is keyed on dataUpdatedAt too: structural sharing keeps
+  // data.docs reference-identical while a stopped document's fields no longer
+  // change, which is exactly the stuck case this has to fire in.
   useEffect(() => {
     if (!isGo) {
       return;
@@ -306,7 +313,7 @@ export const useFetchDocumentList = (loop = true) => {
       },
       () => {},
     );
-  }, [data.docs, isGo, queryClient]);
+  }, [data.docs, dataUpdatedAt, isGo, queryClient]);
 
   return {
     loading,
