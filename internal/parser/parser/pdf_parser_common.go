@@ -366,7 +366,13 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	}
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
-	cropMediaSections(&processed)
+	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under
+	// cgo. The parser no longer inlines base64 images — that is what bounded
+	// the parser-phase memory peak. Image/table sections keep only their PDF
+	// positions; the chunker re-acquires the source PDF and crops on demand at
+	// index time, and the VLM path crops on demand when it needs to describe a
+	// figure/table. The Markdown path below still inlines, because markdown
+	// output embeds images directly and has no downstream on-demand consumer.
 
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
@@ -788,14 +794,16 @@ func normalizePDFDocType(item map[string]any) {
 		return
 	}
 	layoutType, _ := item["layout_type"].(string)
+	// A figure caption is a media section even when the parser no longer
+	// inlines its cropped image (cgo): it still carries PDF positions, so the
+	// downstream VLM/chunker crop it on demand. Classify it as image whenever
+	// it has positions (the inlined image was only a side effect of cropping).
+	hasMedia := itemHasPositions(item)
 	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
-		// A figure caption can carry the cropped figure image after PDF media
-		// sections are rendered. Keep it aligned with Python's media-section
-		// contract so the downstream VLM enhancement can process it.
-		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption {
-			if img, _ := item["image"].(string); img != "" {
-				item["doc_type_kwd"] = "image"
-			}
+		// A figure caption keeps its media classification so the downstream
+		// VLM enhancement and on-demand chunker crop it.
+		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption && hasMedia {
+			item["doc_type_kwd"] = "image"
 		}
 		return
 	}
@@ -804,6 +812,12 @@ func normalizePDFDocType(item map[string]any) {
 		item["doc_type_kwd"] = "table"
 	case "figure", "image":
 		item["doc_type_kwd"] = "image"
+	case deepdoctype.DLALabelFigureCaption:
+		if hasMedia {
+			item["doc_type_kwd"] = "image"
+		} else {
+			item["doc_type_kwd"] = "text"
+		}
 	default:
 		if img, _ := item["image"].(string); img != "" {
 			item["doc_type_kwd"] = "image"
@@ -811,6 +825,18 @@ func normalizePDFDocType(item map[string]any) {
 		}
 		item["doc_type_kwd"] = "text"
 	}
+}
+
+// itemHasPositions reports whether a JSON item carries a usable positions
+// matrix (the on-demand crop source), either under the canonical
+// _pdf_positions key or the legacy positions key.
+func itemHasPositions(item map[string]any) bool {
+	for _, k := range []string{"_pdf_positions", "positions"} {
+		if v, ok := item[k]; ok && v != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {

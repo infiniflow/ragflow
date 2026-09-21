@@ -155,6 +155,35 @@ func isVisionEnhancementAllowed(fileType utility.FileType) bool {
 	}
 }
 
+// visionImageCropper yields a vision-usable base64 image for a parsed item.
+// Under cgo it crops on demand from the source PDF when the item carries
+// positions but no inlined image; under !cgo it returns the inlined image
+// (the only form available without a native renderer). Close releases any
+// re-acquired engine so native handles are not leaked.
+type visionImageCropper interface {
+	Crop(item map[string]any) (string, error)
+	Close() error
+}
+
+// hasPositions reports whether a parsed item carries a non-empty positions
+// matrix (either the canonical _pdf_positions or the legacy positions key),
+// which the on-demand cropper can use to re-acquire and crop the source PDF.
+func hasPositions(item map[string]any) bool {
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		switch v := item[key].(type) {
+		case [][]any:
+			if len(v) > 0 {
+				return true
+			}
+		case []any:
+			if len(v) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
 // descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
 // with non-empty image field).
@@ -182,7 +211,11 @@ func maybeDispatchVisionEnhancement(
 	}
 	language := resolveVisionLanguage(inputs, "")
 
-	// 1. Collect target items (images/tables with non-empty image data).
+	// 1. Collect target items (images/tables that can be described). A target
+	// may carry an inlined image (docx/markdown, or any pre-inlined source) or,
+	// under cgo for PDF, only PDF positions — in which case the cropper
+	// re-acquires the source PDF and crops on demand (the parser no longer
+	// inlines PDF media). The cropper transparently handles both forms.
 	type target struct {
 		idx int
 	}
@@ -192,15 +225,26 @@ func maybeDispatchVisionEnhancement(
 		if kd != "image" && kd != "table" {
 			continue
 		}
-		img, _ := item["image"].(string)
-		if img == "" {
+		if img, _ := item["image"].(string); img != "" {
+			targets = append(targets, target{idx: i})
 			continue
 		}
-		targets = append(targets, target{idx: i})
+		if hasPositions(item) {
+			targets = append(targets, target{idx: i})
+		}
 	}
 	if len(targets) == 0 {
 		return dispatched, false, nil
 	}
+
+	// Acquire the on-demand cropper (cgo: crops from storage; !cgo: returns
+	// the inlined image). Best-effort: a failure here means no vision
+	// enhancement, matching Python's try/except pass.
+	cropper, cerr := newVisionImageCropper(ctx, db, inputs)
+	if cerr != nil {
+		return dispatched, false, nil
+	}
+	defer cropper.Close()
 
 	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
 	// default. Mirror Python's vlm_conf["llm_id"] preference.
@@ -257,7 +301,10 @@ dispatch:
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			img, _ := dispatched.JSON[itemIdx]["image"].(string)
+			img, ierr := cropper.Crop(dispatched.JSON[itemIdx])
+			if ierr != nil || img == "" {
+				return
+			}
 			if !isUsableVisionImage(img) {
 				slog.Warn("vision enhancement: invalid image data skipped",
 					"item", itemIdx)

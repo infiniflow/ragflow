@@ -465,7 +465,12 @@ func (m *mockPDFEngineForCommonTest) Close() error {
 	return nil
 }
 
-func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
+// TestPDFParseResultToJSON_NoInlineRetainsPositions pins the new cgo contract:
+// the parser no longer inlines base64 media into the JSON items (that bounded
+// the parser-phase memory peak). Figure/table sections keep their PDF
+// positions so the chunker and VLM can crop on demand. The crop logic itself
+// is still exercised by the Markdown inline tests.
+func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 	mockEngine := &mockPDFEngineForCommonTest{}
 	parsed := &deepdoctype.ParseResult{
 		Engine:     mockEngine,
@@ -509,32 +514,34 @@ func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
 	}
 
-	// Figure should have cropped image populated
-	figImg, ok := res.JSON[0]["image"].(string)
-	if !ok || figImg == "" {
-		t.Fatalf("Figure JSON[0].image should be non-empty base64 data url, got %v", res.JSON[0]["image"])
+	// Figure must retain positions but NOT inline an image.
+	figPos, ok := res.JSON[0]["_pdf_positions"].([][]any)
+	if !ok || len(figPos) == 0 {
+		t.Fatalf("Figure should retain _pdf_positions, got %v", res.JSON[0]["_pdf_positions"])
 	}
-	if !strings.HasPrefix(figImg, "data:image/png;base64,") {
-		t.Fatalf("Figure JSON[0].image prefix mismatch, got %q", figImg)
-	}
-
-	// Table should have cropped image populated
-	tblImg, ok := res.JSON[1]["image"].(string)
-	if !ok || tblImg == "" {
-		t.Fatalf("Table JSON[1].image should be non-empty base64 data url, got %v", res.JSON[1]["image"])
-	}
-	if !strings.HasPrefix(tblImg, "data:image/png;base64,") {
-		t.Fatalf("Table JSON[1].image prefix mismatch, got %q", tblImg)
+	if img, _ := res.JSON[0]["image"].(string); img != "" {
+		t.Fatalf("Figure should not inline image under cgo, got %q", img)
 	}
 
-	// Plain text should NOT have cropped image
-	textImg, _ := res.JSON[2]["image"].(string)
-	if textImg != "" {
-		t.Fatalf("Text JSON[2].image should be empty, got %q", textImg)
+	// Table likewise retains positions, no inline image.
+	tblPos, ok := res.JSON[1]["_pdf_positions"].([][]any)
+	if !ok || len(tblPos) == 0 {
+		t.Fatalf("Table should retain _pdf_positions, got %v", res.JSON[1]["_pdf_positions"])
+	}
+	if img, _ := res.JSON[1]["image"].(string); img != "" {
+		t.Fatalf("Table should not inline image under cgo, got %q", img)
+	}
+
+	// Plain text: no image, positions retained.
+	if img, _ := res.JSON[2]["image"].(string); img != "" {
+		t.Fatalf("Text should not inline image, got %q", img)
 	}
 }
 
-func TestPDFParseResultToJSON_CropsFigureCaptionForVisionEnhancement(t *testing.T) {
+// TestPDFParseResultToJSON_FigureCaptionNoInline pins that a figure caption is
+// still classified as doc_type_kwd "image" (so the chunker/VLM crop it on
+// demand) but the parser does not inline the cropped image for it.
+func TestPDFParseResultToJSON_FigureCaptionNoInline(t *testing.T) {
 	mockEngine := &mockPDFEngineForCommonTest{}
 	parsed := &deepdoctype.ParseResult{
 		Engine:     mockEngine,
@@ -559,8 +566,11 @@ func TestPDFParseResultToJSON_CropsFigureCaptionForVisionEnhancement(t *testing.
 	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
 		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
 	}
-	if image, _ := res.JSON[0]["image"].(string); image == "" {
-		t.Fatal("figure caption image should be cropped before vision enhancement")
+	if pos, ok := res.JSON[0]["_pdf_positions"].([][]any); !ok || len(pos) == 0 {
+		t.Fatal("figure caption should retain _pdf_positions for on-demand crop")
+	}
+	if image, _ := res.JSON[0]["image"].(string); image != "" {
+		t.Fatalf("figure caption should not be inlined by the parser, got %q", image)
 	}
 }
 
