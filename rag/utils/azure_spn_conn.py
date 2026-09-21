@@ -104,6 +104,7 @@ class RAGFlowAzureSpnBlob:
         return None
 
     def obj_exist(self, bucket, fnm, tenant_id=None):
+        """Check the bucket-prefixed file, logging lookup errors as False."""
         blob = f"{bucket}/{fnm}"
         try:
             client = self.conn.get_file_client(f"{blob}")
