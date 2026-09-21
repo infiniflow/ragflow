@@ -94,15 +94,6 @@ export function findMessageFromList(eventList: IEventList) {
   const workflowFinished = eventList.find(
     (x) => x.event === MessageEventType.WorkflowFinished,
   ) as IMessageEvent;
-  // Citation grounding finishes after the draft stream, so use its final text.
-  const finalContent = workflowFinished?.data?.content;
-  if (typeof finalContent === 'string' && finalContent) {
-    const thinkingEnd = nextContent.lastIndexOf('</think>');
-    nextContent =
-      thinkingEnd >= 0 && !finalContent.includes('<think>')
-        ? nextContent.slice(0, thinkingEnd + '</think>'.length) + finalContent
-        : finalContent;
-  }
   const messageEndEvent = [...eventList]
     .reverse()
     .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
