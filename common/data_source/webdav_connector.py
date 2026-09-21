@@ -243,9 +243,9 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     else:
                         modified = datetime.now(timezone.utc)
 
-                    logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
+                    logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start <= modified <= end}")
                     if filter_by_mtime:
-                        if start < modified <= end:
+                        if start <= modified <= end:
                             files.append((item_path, item))
                         else:
                             logging.debug(f"File {item_path} filtered out by time range")
