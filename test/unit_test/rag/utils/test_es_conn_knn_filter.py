@@ -58,5 +58,5 @@ def test_build_knn_filter_query_keeps_query_string_below_threshold():
     res = _build_knn_filter_query(bool_q, vector_similarity_weight=0.5)
     assert res is not None
     bool_dict = res.get("bool", {})
-    assert len(bool_dict.get("must"), []) == 1
+    assert len(bool_dict.get("must", [])) == 1
     assert "query_string" in bool_dict["must"][0]
