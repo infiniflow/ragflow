@@ -978,3 +978,110 @@ func TestRemoveHeaderFooterBoxes_ChineseNumerals(t *testing.T) {
 		t.Fatalf("expected only 3 body boxes, got %d", len(got))
 	}
 }
+
+// TestStrictDecoratedPagePattern_ChineseSlashGong tests Chinese page-number formats
+// with "/共", "共", and comma separators.
+func TestStrictDecoratedPagePattern_ChineseSlashGong(t *testing.T) {
+	cases := []string{
+		"第1页/共10页",
+		"第 1 页 / 共 10 页",
+		"第1页/共10",
+		"第1页 共10页",
+		"第1页/10页",
+		"第1页,共10页",
+		"第1页，共10页",
+		"第一页/共十页",
+		"第一页 共十页",
+		"第 1 页",
+		"第一页",
+	}
+	for _, c := range cases {
+		if !strictDecoratedPagePattern.MatchString(c) {
+			t.Errorf("expected %q to match strictDecoratedPagePattern, but did not", c)
+		}
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ChineseSlashGong verifies that "第1页/共10页" is removed.
+func TestRemoveHeaderFooterBoxes_ChineseSlashGong(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("正文第一页内容。", 0, 72, 400, 160, 180),
+		tb("第1页/共10页", 0, 280, 380, 820, 835),
+		tb("正文第二页内容。", 1, 72, 400, 160, 180),
+		tb("第2页/共10页", 1, 280, 380, 820, 835),
+		tb("正文第三页内容。", 2, 72, 400, 160, 180),
+		tb("第3页/共10页", 2, 280, 380, 820, 835),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "共10页") {
+			t.Fatalf("Chinese page footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestHasStableConsecutiveRun_SlidingWindow tests sliding window behavior in hasStableConsecutiveRun,
+// specifically verifying that initial outliers do not block subsequent qualifying runs.
+func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
+	// Case 1: Outlier at page 1 (top 30), stable run at pages 2, 3, 4 (top 40)
+	metas1 := []boxMeta{
+		{page: 1, top: 30},
+		{page: 2, top: 40},
+		{page: 3, top: 40},
+		{page: 4, top: 40},
+	}
+	if !hasStableConsecutiveRun(metas1, 3, 4.0) {
+		t.Errorf("expected true for pages 2..4 stable run despite page 1 outlier")
+	}
+
+	// Case 2: Stable run at pages 1, 2, 3 (top 40), outlier at page 4 (top 30)
+	metas2 := []boxMeta{
+		{page: 1, top: 40},
+		{page: 2, top: 40},
+		{page: 3, top: 40},
+		{page: 4, top: 30},
+	}
+	if !hasStableConsecutiveRun(metas2, 3, 4.0) {
+		t.Errorf("expected true for pages 1..3 stable run")
+	}
+
+	// Case 3: Divergent tops across all pages (no 3 consecutive pages within 4.0)
+	metas3 := []boxMeta{
+		{page: 1, top: 10},
+		{page: 2, top: 30},
+		{page: 3, top: 50},
+		{page: 4, top: 70},
+	}
+	if hasStableConsecutiveRun(metas3, 3, 4.0) {
+		t.Errorf("expected false for divergent tops")
+	}
+
+	// Case 4: Page gap breaks consecutive run
+	metas4 := []boxMeta{
+		{page: 1, top: 40},
+		{page: 2, top: 40},
+		{page: 4, top: 40},
+		{page: 5, top: 40},
+	}
+	if hasStableConsecutiveRun(metas4, 3, 4.0) {
+		t.Errorf("expected false when no consecutive run reaches minRun=3")
+	}
+
+	// Case 5: Run after a page gap meets minRun=3
+	metas5 := []boxMeta{
+		{page: 1, top: 40},
+		{page: 2, top: 40},
+		{page: 4, top: 40},
+		{page: 5, top: 40},
+		{page: 6, top: 40},
+	}
+	if !hasStableConsecutiveRun(metas5, 3, 4.0) {
+		t.Errorf("expected true for pages 4..6 run after page gap")
+	}
+}

@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -343,7 +344,7 @@ var (
 	// - "Page X", "Page X of Y", "p. X", "X / Y", "X of Y"
 	// - Chinese: 第 1 页, 第 1 页 共 10 页, 第 1 页/共 10 页, 第一页, 第一页 共十页
 	// - Roman with dashes: - iv -, — iv —, · iv ·
-	strictDecoratedPagePattern = regexp.MustCompile(`(?i)^(\s*[-—–~·•]+\s*[0-9０-９]+\s*[-—–~·•]+|\s*\[\s*[0-9０-９]+\s*\]|\s*\(\s*[0-9０-９]+\s*\)|page\s+[0-9０-９]+(\s*(of|/)\s*[0-9０-９]+)?|p\.\s*[0-9０-９]+|[0-9０-９]+\s*/\s*[0-9０-９]+|[0-9０-９]+\s+of\s+[0-9０-９]+|第\s*[0-9０-９一二三四五六七八九十百]+\s*页(\s*[/,，共]\s*[0-9０-９一二三四五六七八九十百]+\s*页?)?|\s*[-—–~·•]+\s*((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v)\s*[-—–~·•]+)$`)
+	strictDecoratedPagePattern = regexp.MustCompile(`(?i)^(\s*[-—–~·•]+\s*[0-9０-９]+\s*[-—–~·•]+|\s*\[\s*[0-9０-９]+\s*\]|\s*\(\s*[0-9０-９]+\s*\)|page\s+[0-9０-９]+(\s*(of|/)\s*[0-9０-９]+)?|p\.\s*[0-9０-９]+|[0-9０-９]+\s*/\s*[0-9０-９]+|[0-9０-９]+\s+of\s+[0-9０-９]+|第\s*[0-9０-９一二三四五六七八九十百]+\s*页(\s*(/\s*共|[,，]\s*共?|[/共])\s*[0-9０-９一二三四五六七八九十百]+\s*页?)?|\s*[-—–~·•]+\s*((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v)\s*[-—–~·•]+)$`)
 
 	// strictBareNumberPattern matches lone Arabic digits or Roman numerals: 1, 23, iv, VII.
 	strictBareNumberPattern = regexp.MustCompile(`(?i)^([0-9０-９]{1,4}|((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v))$`)
@@ -509,11 +510,13 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 
 		lt := strings.TrimSpace(b.LayoutType)
 		if (zone == "header" && lt == "header") || (zone == "footer" && lt == "footer") {
+			slog.Debug("header_footer: dropped by DLA label", "page", b.PageNumber, "zone", zone, "layoutType", lt, "text", b.Text)
 			drop[i] = struct{}{}
 			continue
 		}
 
 		if isDeterministicPageNumber(b.Text, zone, allGapBelow[i]) {
+			slog.Debug("header_footer: dropped by page-number pattern", "page", b.PageNumber, "zone", zone, "text", b.Text)
 			drop[i] = struct{}{}
 			continue
 		}
@@ -524,6 +527,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if len(drop) == 0 {
 			return boxes
 		}
+		slog.Debug("header_footer: removal completed (short document)", "total_boxes", len(boxes), "dropped_boxes", len(drop))
 		return applyDrop(boxes, drop)
 	}
 
@@ -582,30 +586,24 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 
 		distinctPages := len(pageSet)
-		isHeaderFooter := false
+		var reason string
 
 		// 1. Global coverage: at least half the pages (rounded up).
 		if distinctPages >= minGlobalPages {
-			isHeaderFooter = true
+			reason = "global_frequency"
+		} else if evenTotal >= 3 && evenPages >= 3 && float64(evenPages)/float64(evenTotal) >= 0.40 {
+			// 2. Parity partition: at least 40% of even pages.
+			reason = "parity_even"
+		} else if oddTotal >= 3 && oddPages >= 3 && float64(oddPages)/float64(oddTotal) >= 0.40 {
+			// 2. Parity partition: at least 40% of odd pages.
+			reason = "parity_odd"
+		} else if len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 && hasStableConsecutiveRun(metas, 3, 4.0) {
+			// 3. Locality track: stable consecutive runs of at least 3 pages with stable Y.
+			reason = "local_consecutive_run"
 		}
 
-		// 2. Parity partition: at least 40% of even or odd pages, with at least 3 pages.
-		if !isHeaderFooter {
-			if evenTotal >= 3 && evenPages >= 3 && float64(evenPages)/float64(evenTotal) >= 0.40 {
-				isHeaderFooter = true
-			} else if oddTotal >= 3 && oddPages >= 3 && float64(oddPages)/float64(oddTotal) >= 0.40 {
-				isHeaderFooter = true
-			}
-		}
-
-		// 3. Locality track: stable consecutive runs of at least 3 pages with stable Y.
-		if !isHeaderFooter && len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 {
-			if hasStableConsecutiveRun(metas, 3, 4.0) {
-				isHeaderFooter = true
-			}
-		}
-
-		if isHeaderFooter {
+		if reason != "" {
+			slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "text", key.text, "reason", reason, "pages", distinctPages)
 			for _, m := range metas {
 				drop[m.idx] = struct{}{}
 			}
@@ -615,11 +613,12 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 	if len(drop) == 0 {
 		return boxes
 	}
+	slog.Debug("header_footer: removal completed", "total_boxes", len(boxes), "dropped_boxes", len(drop))
 	return applyDrop(boxes, drop)
 }
 
-// hasStableConsecutiveRun reports whether metas contains a run of at least minRun
-// consecutive pages whose top coordinates vary by at most maxDy.
+// hasStableConsecutiveRun checks if metas has a run of at least minRun
+// consecutive pages where the top variation is within maxDy.
 func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
 	if len(metas) < minRun {
 		return false
@@ -646,26 +645,28 @@ func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
 		return false
 	}
 
-	run := 1
-	minTop := distinct[0].top
-	maxTop := distinct[0].top
-
-	for i := 1; i < len(distinct); i++ {
-		if distinct[i].page == distinct[i-1].page+1 {
-			run++
-			if distinct[i].top < minTop {
-				minTop = distinct[i].top
+	left := 0
+	for right := 0; right < len(distinct); right++ {
+		// Reset window if consecutive page sequence is broken
+		if right > 0 && distinct[right].page != distinct[right-1].page+1 {
+			left = right
+		}
+		// Advance left whenever maxTop - minTop exceeds maxDy for the window
+		for (right - left + 1) >= minRun {
+			curMin := distinct[left].top
+			curMax := distinct[left].top
+			for k := left + 1; k <= right; k++ {
+				if distinct[k].top < curMin {
+					curMin = distinct[k].top
+				}
+				if distinct[k].top > curMax {
+					curMax = distinct[k].top
+				}
 			}
-			if distinct[i].top > maxTop {
-				maxTop = distinct[i].top
-			}
-			if run >= minRun && (maxTop-minTop) <= maxDy {
+			if (curMax - curMin) <= maxDy {
 				return true
 			}
-		} else {
-			run = 1
-			minTop = distinct[i].top
-			maxTop = distinct[i].top
+			left++
 		}
 	}
 	return false
