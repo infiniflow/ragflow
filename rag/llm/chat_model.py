@@ -613,6 +613,9 @@ class Base(ABC):
             return {}
         return {"tools": tools, "tool_choice": "auto"}
 
+    def _tool_request_messages(self, history: list) -> list:
+        return history
+
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         if not self.tools:
             return await self.async_chat(system, history, gen_conf)
@@ -650,7 +653,13 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **self._tool_request_kwargs(), **gen_conf, **extra_request_kwargs)
+                    response = await self.async_client.chat.completions.create(
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        **self._tool_request_kwargs(),
+                        **gen_conf,
+                        **extra_request_kwargs,
+                    )
                     _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -777,7 +786,12 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        stream=True,
+                        **self._tool_request_kwargs(tools),
+                        **gen_conf,
+                        **extra_request_kwargs,
                     )
 
                     final_tool_calls = {}
@@ -900,7 +914,7 @@ class Base(ABC):
 
                 response = await self.async_client.chat.completions.create(
                     model=self.model_name,
-                    messages=history,
+                    messages=self._tool_request_messages(history),
                     stream=True,
                     **self._tool_request_kwargs(tools),
                     **gen_conf,
@@ -1385,6 +1399,9 @@ class MWSChat(Base):
             body["stream"] = True
             body["stream_options"] = {"include_usage": True}
         return body
+
+    def _tool_request_messages(self, history: list) -> list:
+        return self._request_body(history, {}, stream=False)["messages"]
 
     async def _post_json(self, body):
         """Send a non-streaming MWS chat request and decode its JSON response."""

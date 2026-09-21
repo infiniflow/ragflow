@@ -474,12 +474,7 @@ class LLMBundle(LLM4Tenant):
 
     async def async_chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         has_bound_tools = bool(getattr(self.mdl, "tools", None))
-        if (
-            self.is_tools
-            and getattr(self.mdl, "is_tools", False)
-            and has_bound_tools
-            and hasattr(self.mdl, "async_chat_with_tools")
-        ):
+        if self.is_tools and getattr(self.mdl, "is_tools", False) and has_bound_tools and hasattr(self.mdl, "async_chat_with_tools"):
             base_fn = self.mdl.async_chat_with_tools
         elif hasattr(self.mdl, "async_chat"):
             base_fn = self.mdl.async_chat
@@ -586,12 +581,7 @@ class LLMBundle(LLM4Tenant):
         total_tokens = 0
         ans = ""
         has_bound_tools = bool(getattr(self.mdl, "tools", None))
-        if (
-            self.is_tools
-            and getattr(self.mdl, "is_tools", False)
-            and has_bound_tools
-            and hasattr(self.mdl, "async_chat_streamly_with_tools")
-        ):
+        if self.is_tools and getattr(self.mdl, "is_tools", False) and has_bound_tools and hasattr(self.mdl, "async_chat_streamly_with_tools"):
             stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
         elif hasattr(self.mdl, "async_chat_streamly"):
             stream_fn = getattr(self.mdl, "async_chat_streamly", None)
