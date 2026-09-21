@@ -12,6 +12,8 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // artifactTool is an invokable tool that returns a JSON envelope with _ARTIFACTS.
@@ -270,4 +272,89 @@ func (t *passthroughTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 func (t *passthroughTool) InvokableRun(_ context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
 	t.calls.Add(1)
 	return argumentsInJSON, nil
+}
+
+// TestAgent_StreamedArtifactMarkdownIsEmittedLive verifies Python parity for
+// the streaming path: when the LLM already streamed its answer (so
+// AgentMessageEventsEmitted is true), the tool-artifact markdown appended to
+// the recorded content must ALSO be emitted as a trailing live delta.
+// Python's stream_output_with_tools_async yields "\n\n" + artifact_md after
+// the LLM stream; without this the chat shows the model text but never the
+// artifact image (the frontend only ever receives what is emitted live).
+func TestAgent_StreamedArtifactMarkdownIsEmittedLive(t *testing.T) {
+	var emitted strings.Builder
+	ctx := runtime.WithAgentMessageEmitter(t.Context(), func(content, _ string) {
+		emitted.WriteString(content)
+	})
+
+	const artifactURL = "/api/v1/documents/artifact/8e6a1d70-f69c-4e78-b188-c04df906e34e.png"
+	const wantMD = "![sales_axes.png](" + artifactURL + ")"
+
+	withAgentRunner(t, func(runCtx context.Context, _ AgentParam) (*schema.Message, error) {
+		// Seed the artifact collector (invokeNow prepares it before the runner).
+		if collector, ok := runCtx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+			collector.artifacts = []artifactEntry{{
+				Name:     "sales_axes.png",
+				URL:      artifactURL,
+				MIMEType: "image/png",
+			}}
+		}
+		// Simulate the LLM having streamed its answer without embedding the
+		// artifact URL, then return the final assistant message.
+		runtime.EmitAgentMessage(runCtx, "The chart is ready.", "")
+		return &schema.Message{Role: schema.Assistant, Content: "The chart is ready."}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "draw a chart"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	if got := emitted.String(); !strings.Contains(got, wantMD) {
+		t.Errorf("live-emitted content = %q, want it to contain %q", got, wantMD)
+	}
+	if content, ok := out["content"].(string); !ok || !strings.Contains(content, wantMD) {
+		t.Errorf("recorded content = %v, want it to contain %q", out["content"], wantMD)
+	}
+}
+
+// TestAgent_UnstreamedArtifactMarkdownNotDoubleEmitted guards the non-streamed
+// path: when no delta was emitted live, the whole content+artifactMD is emitted
+// once and the recorded content matches, with no duplicate artifact link.
+func TestAgent_UnstreamedArtifactMarkdownRecorded(t *testing.T) {
+	var emitted strings.Builder
+	ctx := runtime.WithAgentMessageEmitter(t.Context(), func(content, _ string) {
+		emitted.WriteString(content)
+	})
+
+	const artifactURL = "/api/v1/documents/artifact/9946035d-975d-450a-82e5-ff028ede857d.png"
+	const wantMD = "![simple_plot.png](" + artifactURL + ")"
+
+	withAgentRunner(t, func(runCtx context.Context, _ AgentParam) (*schema.Message, error) {
+		if collector, ok := runCtx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+			collector.artifacts = []artifactEntry{{
+				Name:     "simple_plot.png",
+				URL:      artifactURL,
+				MIMEType: "image/png",
+			}}
+		}
+		// No EmitAgentMessage here: nothing was streamed, so the whole answer
+		// is emitted at once by invokeNow.
+		return &schema.Message{Role: schema.Assistant, Content: "done"}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "run"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	got := emitted.String()
+	if got != "done\n\n"+wantMD {
+		t.Errorf("live-emitted content = %q, want %q", got, "done\n\n"+wantMD)
+	}
+	if content, ok := out["content"].(string); !ok || content != "done\n\n"+wantMD {
+		t.Errorf("recorded content = %v, want %q", out["content"], "done\n\n"+wantMD)
+	}
 }
