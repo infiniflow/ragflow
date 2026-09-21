@@ -83,11 +83,8 @@ def test_encrypted_obj_exist_preserves_backend_result(storage, tenant_id, exists
         adapter.conn.get_blob_client.return_value.exists.return_value = exists
     else:
         adapter.conn.get_file_client.return_value.exists.return_value = exists
-    # The separate SPN get_blob_client defect remains out of scope: the real
-    # FileSystemClient spec rejects it, and the adapter currently returns False.
-    expected = adapter.obj_exist("kb", "file.txt")
     wrapper = EncryptedStorageWrapper(adapter, key="test-key")
-    assert wrapper.obj_exist("kb", "file.txt", tenant_id) is expected
+    assert wrapper.obj_exist("kb", "file.txt", tenant_id) is exists
 
 
 def test_direct_get_and_rm_remain_callable_without_tenant(storage):
