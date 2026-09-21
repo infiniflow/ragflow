@@ -68,6 +68,7 @@ func NewFileHandler(fileService *file.FileService, userService *service.UserServ
 // @Param page query int false "page number (default: 1, min: 1)"
 // @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
 // @Param orderby query string false "order by field (default: create_time)"
+// @Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "descending order (default: true)"
 // @Success 200 {object} file.ListFilesResponse
 // @Router /api/v1/files [get]
@@ -114,9 +115,10 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = descStr != "false"
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	ctx := c.Request.Context()
-	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, orderby, desc, keywords)
+	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
 		jsonInternalError(c, err)
 		return

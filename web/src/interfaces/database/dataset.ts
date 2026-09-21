@@ -1,8 +1,9 @@
 // for the dataset list
 // The data structures returned by the `datasets` interface and `/api/v1/datasets/{id}` are inconsistent.
 
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
+import { IngestionEventItem } from './ingestion';
 
 export interface IConnector {
   id: string;
@@ -133,7 +134,11 @@ export interface IKnowledgeFile {
   process_duration: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
-  run: RunningStatus; // parsing status
+  latest_ingestion_event?: IngestionEventItem | null;
+  // Python backend only. The Go backend removed this field and reports
+  // parsing state exclusively through ingestion_status.
+  run?: RunningStatus; // parsing status
+  ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
   status: string; // enabled
@@ -300,3 +305,7 @@ export interface IArtifactGraph {
   total_entities?: number;
   returned_entities?: number;
 }
+
+// Permission types for dataset configuration
+export type DatasetTestingPermission = 'me' | 'team';
+export type DatasetParsingPermission = 'me' | 'team';

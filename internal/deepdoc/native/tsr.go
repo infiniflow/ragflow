@@ -44,11 +44,8 @@ type TSRResult struct {
 // RunTSR runs table-structure recognition on a cropped table image.
 func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error) {
 	blob, sf := tsrPreprocess(img)
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the TSR Run path).
-	sess, release, err := getModelSession(filepath.Join(modelDir, "tsr.ort"), "images",
-		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0",
-		[]int64{1, 11, tsrCandidates}, 0)
+	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, "tsr.ort"), "images",
+		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0")
 	if err != nil {
 		return TSRResult{}, err
 	}
@@ -56,6 +53,9 @@ func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error)
 
 	out, err := sess.Run(ctx, blob)
 	if err != nil {
+		return TSRResult{}, err
+	}
+	if err := checkOutputLength("tsr", len(out), 11*tsrCandidates); err != nil {
 		return TSRResult{}, err
 	}
 	res := tsrPostprocess(out, sf)

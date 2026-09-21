@@ -3,6 +3,12 @@ general:
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
+  # Proxies whose X-Forwarded-For / X-Real-IP headers the Go API server trusts
+  # when resolving the client address (agent webhook ip_whitelist, login audit).
+  # Defaults to loopback, i.e. the nginx bundled in this image. An explicit list
+  # replaces that default, so keep the loopback entries when adding the address
+  # or CIDR of a further proxy in front of nginx; an empty list trusts none.
+  # trusted_proxies: ['127.0.0.0/8', '::1/128']
 admin:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9381
@@ -76,6 +82,15 @@ redis:
   username: '${REDIS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
+# Kvrocks is the RocksDB-backed, Redis-protocol store used ONLY by the Go
+# services. It has no in-memory maxmemory cap, so it does not OOM the way
+# Valkey/Redis does. The Go services read this section; the Python services
+# keep using the `redis:` section above.
+kvrocks:
+  db: 1
+  username: '${KVROCKS_USERNAME:-}'
+  password: '${REDIS_PASSWORD:-infini_rag_flow}'
+  host: '${KVROCKS_HOST:-kvrocks}:${KVROCKS_PORT:-6379}'
 nats:
   host: ${NATS_HOST:-0.0.0.0}
   port: ${NATS_PORT:-4222}

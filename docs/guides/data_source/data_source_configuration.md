@@ -67,6 +67,35 @@ The Google Drive data source is used to synchronize files or folders in Google D
 
 ![Google Drive](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Google_Drive.jpg)
 
+## Feishu Wiki
+
+The Feishu Wiki data source is available with the Python backend. It recursively scans a configured Wiki subtree and imports matching downloadable `file` nodes. Native Feishu Docs, Sheets, Slides, and Bitable records are not imported directly, although the connector traverses non-file nodes to discover downloadable files below them.
+
+The Feishu custom app needs read-only Wiki and Drive permissions. Add the app to the target Wiki with permission to list nodes and download files.
+
+The connector supports this file subset: `csv`, `doc`, `docx`, `eml`, `gif`, `html`, `jpeg`, `jpg`, `json`, `md`, `mdx`, `pdf`, `png`, `ppt`, `pptx`, `tif`, `txt`, `xls`, and `xlsx`.
+
+Configure the following fields:
+
+- **Name**: A descriptive name for the connection in RAGFlow.
+- **Feishu app ID** and **Feishu app secret**: Credentials for the Feishu custom app. The secret is masked in the form.
+- **Wiki space ID**: The ID of the target Wiki space.
+- **Wiki root node token**: The node whose descendants are scanned recursively.
+- **Allowed file extensions**: An optional allow-list from the supported subset above. Leave it empty to allow the complete subset.
+- **Required filename keywords**: An optional list. A filename must contain at least one configured keyword.
+- **Excluded filename keywords**: An optional list. A matching filename is excluded.
+- **Maximum file size (bytes)**: The largest file body the connector will accept. The default is `52428800` bytes (50 MiB). Both the declared content length and the streamed byte count are enforced.
+- **Batch size**: The number of files sent to the ingestion pipeline per batch. The default is `2`; valid values are `1` through `10`.
+- **Refresh interval**: The interval between periodic scans.
+
+Extension and filename filters are applied before a file body is downloaded. Every periodic sync scans node metadata in the subtree, but downloads only matching files whose edit time falls within the completed sync window. An empty completed scan advances that window, so the same time interval is not treated as pending again.
+
+File downloads retry HTTP 429 responses up to three times. The connector honors the relative delay in seconds from Feishu's `x-ogw-ratelimit-reset` response header, with a minimum wait of one second. If the header is missing or invalid, retries wait one, two, then four seconds. A requested delay above 60 seconds stops the download instead of retrying before the server's reset. See [Feishu's rate-limit guide](https://open.feishu.cn/document/server-docs/api-call-guide/frequency-control).
+
+Unsuccessful downloads raise a connector validation error with the HTTP status and, when available, Feishu's error code, message, and request log ID. Error-body parsing is limited to 8 KiB; diagnostic fields are length-limited and credentials are redacted. Successful file bodies, including JSON files, are imported unchanged. After retries are exhausted, the sync fails without advancing its successful window.
+
+Normal periodic sync does not propagate source deletions: deleting a file in Feishu does not immediately delete the imported RAGFlow document. A manual rebuild follows the existing delete-then-import behavior, so previously imported files that are no longer present or no longer match the filters can be removed during the rebuild.
+
 ## OneDrive
 
 The OneDrive data source is used to synchronize files in OneDrive or OneDrive for Business to a RAGFlow knowledge base. After configuration, personal or department cloud files can be queried in a unified way.
@@ -722,3 +751,123 @@ The Sitemap data source is used to synchronize the web pages listed in a public 
 Every request goes through the SSRF guard with the resolved address pinned for the duration of the request, response bodies are capped at 64 MB, and at most 1000 sitemap documents are fetched per sync (each sitemap URL once). HTML pages are converted to Markdown with the same boilerplate removal as the other web connectors (`WEB_CONNECTOR_IGNORED_ELEMENTS`: navigation, footer, aside, scripts and styles by default) and stored as `.md` documents. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
 
 Incremental syncs rely on the `<lastmod>` element: only pages whose `lastmod` falls inside the sync window are fetched again, and pages without `lastmod` are only fetched by a full sync. Every document also carries a content fingerprint, so a page that is fetched again but has not changed is skipped instead of being re-indexed.
+
+## Feishu Wiki
+
+The Feishu Wiki data source is used to synchronize downloadable file nodes from a specified Feishu Wiki space to a RAGFlow knowledge base. After configuration, RAGFlow can retrieve files under the specified root node and filter the files to be synchronized according to the configured conditions.
+
+**Permission requirements**: The Feishu application must have permission to access the target Wiki space and read or download the files to be synchronized.
+
+**Account version requirements**: A Feishu application with access to the target Wiki space is required. The accessible scope depends on the permissions granted to the application and the target Wiki space.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Feishu Wiki connection.
+- **Feishu App ID**: Fill in the App ID of the Feishu application.
+- **Feishu App Secret**: Fill in the App Secret of the Feishu application.
+- **Knowledge base Space ID**: Fill in the Space ID of the Feishu Wiki space to synchronize.
+- **Wiki root node Token**: Fill in the token of the root Wiki node from which synchronization starts.
+- **Allowed file extensions**: Specify the file extensions that are allowed to be synchronized.
+- **File name must contain keywords**: Specify keywords that must appear in the file name. Only matching files are synchronized.
+- **File name exclusion keywords**: Specify keywords used to exclude files from synchronization.
+- **Maximum file size (bytes)**: Set the maximum size of a single file that can be synchronized. The default value is **52428800** bytes.
+- **Batch size**: Set the number of files processed in each batch. The default value is **2**.
+
+
+## Azure DevOps
+
+The Azure DevOps data source is used to synchronize source code and pull request content from Azure DevOps organizations, projects, or repositories to a RAGFlow knowledge base. The synchronization scope and content type can be configured as needed.
+
+**Permission requirements**: The Azure DevOps personal access token must have read access to the target organization, project, or repository. Read access to pull requests is also required when pull request content is synchronized.
+
+**Account version requirements**: An Azure DevOps account and a valid Personal Access Token (PAT) are required.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
+- **Azure DevOps personal access token**: Fill in the Personal Access Token used to access Azure DevOps.
+- **Base URL**: Fill in the Azure DevOps service URL. The default value is `https://dev.azure.com`.
+- **Azure DevOps organization**: Fill in the Azure DevOps organization to access.
+- **Index mode**: Select the synchronization scope. The options are **Organization**, **Project**, and **Repository**.
+- **Organization**: Index all repositories visible to the token in the specified organization.
+- **Project**: Index content in a specified project. When selected, fill in the **Project** field.
+- **Repository**: Index a specified repository. When selected, fill in the **Repository** field.
+- **Project**: Fill this in when the index mode is **Project**.
+- **Repository**: Fill this in when the index mode is **Repository**.
+- **Content type**: Select the content to synchronize. The options are **Code**, **Pull requests**, and **Both**.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+
+
+## Xquik
+
+The Xquik data source is used to search posts on X through Xquik and synchronize matching posts to a RAGFlow knowledge base. Search conditions, result ordering, and pagination settings can be configured to control the synchronized content.
+
+**Permission requirements**: A valid Xquik API key with permission to access the corresponding search API is required.
+
+**Account version requirements**: An account with access to the Xquik API is required. Available data and API usage limits depend on the Xquik service and account configuration.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Xquik connection.
+- **Xquik API key**: Fill in the API key used to access Xquik.
+- **X search query**: Fill in the query used to search posts on X, for example, `ragflow lang:en`.
+- **Result order**: Select the order in which search results are returned, such as **Latest**.
+- **Posts per page**: Set the number of posts retrieved per page. The default value is **100**.
+- **Maximum pages**: Set the maximum number of result pages retrieved during synchronization. The default value is **10**.
+- **Batch size**: Set the number of posts processed in each batch. The default value is **32**.
+
+
+## WebDAV
+
+The WebDAV data source is used to connect to a WebDAV server and synchronize files from a specified remote path to a RAGFlow knowledge base.
+
+**Permission requirements**: The configured WebDAV account must have read permission for the target remote path.
+
+**Account version requirements**: A file service that supports the WebDAV protocol is required, together with a valid server URL, username, and password.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this WebDAV connection.
+- **WebDAV server URL**: Fill in the WebDAV server URL, for example, `https://webdav.example.com`.
+- **Username**: Fill in the username used to access the WebDAV server.
+- **Password**: Fill in the password for the WebDAV account.
+- **Remote path**: Specify the remote directory to synchronize. The default value is `/`.
+- **Custom CA Certificate Path**: Optional. Fill in the path to a custom CA certificate when required, for example, `/etc/ssl/certs/webdav-ca.pem`.
+- **Sync deleted files**: After this is enabled, files deleted from the external system are removed from the knowledge base index.
+
+
+## Airtable
+
+The Airtable data source is used to synchronize records from a specified table in an Airtable base to a RAGFlow knowledge base.
+
+**Permission requirements**: The access token must have read permission for the target Airtable base and table.
+
+**Account version requirements**: An Airtable account with access to the target base and a valid access token is required.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Airtable connection.
+- **Access token**: Fill in the access token used to access the Airtable API.
+- **Base ID**: Fill in the ID of the target Airtable base.
+- **Table name or ID**: Fill in the name or ID of the table to synchronize.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+
+
+## Salesforce
+
+The Salesforce data source is used to connect to Salesforce and synchronize records from specified Salesforce objects to a RAGFlow knowledge base. Supported objects can include accounts, contacts, opportunities, cases, and knowledge content.
+
+**Permission requirements**: The Salesforce application and account must have API access and read permission for the specified Salesforce objects.
+
+**Account version requirements**: A Salesforce environment with API access and valid client credentials is required.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Salesforce connection.
+- **Instance URL**: Fill in the Salesforce instance URL, for example, `https://your-domain.my.salesforce.com`.
+- **Client ID**: Fill in the client ID used to connect to Salesforce.
+- **Client secret**: Fill in the corresponding client secret.
+- **Objects**: Specify the Salesforce objects to synchronize. Multiple objects can be specified, for example, `Account,Contact,Opportunity,Case,Knowledge__kav`.
+- **API version**: Set the Salesforce API version to use. The default value in the current UI is `v59.0`.
+- **Batch size**: Set the number of records processed in each batch. The default value is **2**.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.

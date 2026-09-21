@@ -348,3 +348,110 @@ class TestEpubParserEdgeCases:
         sections = parser(None, binary=buf.getvalue(), chunk_token_num=512)
         combined = " ".join(sections)
         assert "Has Content" in combined
+
+
+def _set_encrypted_flag(payload: bytes, member: bytes) -> bytes:
+    """Set general purpose bit 0 on `member` in both of its ZIP headers.
+
+    `zipfile` reads an encrypted archive but cannot write one, so the flag is set
+    on the raw bytes: offset 6 in the local file header and offset 8 in the
+    central directory header.
+    """
+    import struct
+
+    data = bytearray(payload)
+    for signature, name_len_offset, flag_offset, header_len in (
+        (b"PK\x03\x04", 26, 6, 30),
+        (b"PK\x01\x02", 28, 8, 46),
+    ):
+        position = 0
+        while True:
+            position = data.find(signature, position)
+            if position < 0:
+                break
+            name_len = struct.unpack_from("<H", data, position + name_len_offset)[0]
+            name = bytes(data[position + header_len : position + header_len + name_len])
+            if name == member:
+                flags = struct.unpack_from("<H", data, position + flag_offset)[0]
+                struct.pack_into("<H", data, position + flag_offset, flags | 0x1)
+            position += 4
+    return bytes(data)
+
+
+class TestEpubParserUnreadableChapter:
+    """One chapter the parser cannot read must not cost the whole book."""
+
+    _CHAPTERS = [
+        ("ch1.xhtml", _simple_html("ALPHA chapter")),
+        ("ch2.xhtml", _simple_html("BRAVO chapter")),
+        ("ch3.xhtml", _simple_html("CHARLIE chapter")),
+    ]
+
+    def _parse(self, epub_bytes):
+        return " ".join(RAGFlowEpubParser()(None, binary=epub_bytes, chunk_token_num=512))
+
+    def test_all_three_chapters_when_the_book_is_intact(self):
+        combined = self._parse(_make_epub(self._CHAPTERS))
+
+        assert "ALPHA" in combined
+        assert "BRAVO" in combined
+        assert "CHARLIE" in combined
+
+    def test_a_damaged_chapter_is_skipped(self):
+        """`zipfile.read` raises BadZipFile for a member whose CRC does not match."""
+        # ZIP_STORED so the payload is findable in the archive bytes.
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("mimetype", "application/epub+zip")
+            zf.writestr(
+                "META-INF/container.xml",
+                '<?xml version="1.0"?>'
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">'
+                '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+                'media-type="application/oebps-package+xml"/></rootfiles></container>',
+            )
+            zf.writestr(
+                "OEBPS/content.opf",
+                '<?xml version="1.0"?>'
+                '<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>'
+                '<item id="ch0" href="ch1.xhtml" media-type="application/xhtml+xml"/>'
+                '<item id="ch1" href="ch2.xhtml" media-type="application/xhtml+xml"/>'
+                '<item id="ch2" href="ch3.xhtml" media-type="application/xhtml+xml"/>'
+                "</manifest><spine>"
+                '<itemref idref="ch0"/><itemref idref="ch1"/><itemref idref="ch2"/>'
+                "</spine></package>",
+            )
+            for name, html in self._CHAPTERS:
+                zf.writestr(f"OEBPS/{name}", html)
+
+        payload = bytearray(buf.getvalue())
+        index = payload.index(b"BRAVO")
+        payload[index] ^= 0xFF
+
+        combined = self._parse(bytes(payload))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    def test_an_encrypted_chapter_is_skipped(self):
+        """`zipfile.read` raises RuntimeError for an entry with the encrypted flag."""
+        epub_bytes = _set_encrypted_flag(_make_epub(self._CHAPTERS), b"OEBPS/ch2.xhtml")
+
+        combined = self._parse(epub_bytes)
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+
+    def test_an_undecodable_chapter_is_skipped(self):
+        """`decode_text` refuses a weak codec guess rather than mangling the text."""
+        chapters = [
+            ("ch1.xhtml", _simple_html("ALPHA chapter")),
+            ("ch2.xhtml", bytes(range(256)) * 8),
+            ("ch3.xhtml", _simple_html("CHARLIE chapter")),
+        ]
+
+        combined = self._parse(_make_epub(chapters))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined

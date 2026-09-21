@@ -2,23 +2,54 @@ package document
 
 import (
 	"context"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
 
-// GetDocumentImage retrieves an image object from storage.
-func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
-	parts := strings.SplitN(imageID, "-", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return nil, fmt.Errorf("image not found")
+var ErrDocumentImageNotFound = errors.New("document image not found")
+
+// GetDocumentImage serves legacy KB-scoped image IDs only when an indexed
+// chunk proves which accessible document owns the exact image ID.
+func (s *DocumentService) GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error) {
+	bucket, _, ok := strings.Cut(imageID, "-")
+	if !ok || len(bucket) != 32 {
+		return nil, ErrDocumentImageNotFound
+	}
+	if decoded, err := hex.DecodeString(bucket); err != nil || len(decoded) != 16 {
+		return nil, ErrDocumentImageNotFound
+	}
+	docID, err := s.imageDocumentID(ctx, bucket, imageID, "")
+	if err != nil || docID == "" {
+		return nil, ErrDocumentImageNotFound
+	}
+	return s.GetDocumentImageForDocument(ctx, userID, docID, imageID)
+}
+
+// GetDocumentImageForDocument retrieves an image after proving that the exact
+// composite image ID belongs to an indexed chunk of an accessible document.
+func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil || doc == nil || !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+		return nil, ErrDocumentImageNotFound
+	}
+	bucket, objectKey, ok := strings.Cut(imageID, "-")
+	if !ok || bucket == "" || objectKey == "" {
+		return nil, ErrDocumentImageNotFound
+	}
+	ownerID, err := s.imageDocumentID(ctx, doc.KbID, imageID, doc.ID)
+	if err != nil || ownerID != doc.ID {
+		return nil, ErrDocumentImageNotFound
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -26,7 +57,61 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	return storageImpl.Get(ctx, parts[0], parts[1])
+	data, err := storageImpl.Get(ctx, bucket, objectKey)
+	if err != nil || len(data) == 0 {
+		return nil, ErrDocumentImageNotFound
+	}
+	return data, nil
+}
+
+// GetDocumentThumbnail resolves the storage key exclusively from authorized
+// document metadata.
+func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil || doc == nil || !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
+		return nil, ErrDocumentImageNotFound
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+	data, err := storageImpl.Get(ctx, doc.KbID, *doc.Thumbnail)
+	if err != nil || len(data) == 0 {
+		return nil, ErrDocumentImageNotFound
+	}
+	return data, nil
+}
+
+func (s *DocumentService) imageDocumentID(ctx context.Context, kbID, imageID, docID string) (string, error) {
+	if s.docEngine == nil {
+		return "", ErrDocumentImageNotFound
+	}
+	tenantID, err := dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
+	if err != nil {
+		return "", ErrDocumentImageNotFound
+	}
+	filter := map[string]any{"img_id": imageID}
+	if docID != "" {
+		filter["doc_id"] = docID
+	}
+	result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		IndexNames:   []string{service.IndexName(tenantID)},
+		KbIDs:        []string{kbID},
+		Limit:        1,
+		SelectFields: []string{"doc_id", "img_id"},
+		Filter:       filter,
+	})
+	if err != nil || result == nil {
+		return "", ErrDocumentImageNotFound
+	}
+	for _, chunk := range result.Chunks {
+		foundDocID, _ := chunk["doc_id"].(string)
+		foundImageID, _ := chunk["img_id"].(string)
+		if foundDocID != "" && foundImageID == imageID && (docID == "" || foundDocID == docID) {
+			return foundDocID, nil
+		}
+	}
+	return "", ErrDocumentImageNotFound
 }
 
 // GetDocumentArtifact retrieves a sandbox artifact from object storage.
@@ -45,7 +130,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 	}
 
 	ext := strings.ToLower(filepath.Ext(basename))
-	contentType, ok := artifactContentTypes[ext]
+	contentType, ok := common.SandboxArtifactContentTypes[ext]
 	if !ok {
 		return nil, ErrArtifactInvalidFileType
 	}
@@ -61,7 +146,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	bucket := sandboxArtifactBucket()
+	bucket := common.SandboxArtifactBucket()
 	if !storageImpl.ObjExist(ctx, bucket, basename) {
 		return nil, ErrArtifactNotFound
 	}
@@ -115,12 +200,13 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, f
 	filenamePattern := "%" + filenameSafe + "%"
 	artifactRefPattern := "%" + artifactRefSafe + "%"
 	dialogIDs := make(map[string]struct{})
-	rows, err := dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).
-		Select("dialog_id").
-		Where("user_id = ? OR exp_user_id = ?", userID, userID).
-		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
+	rows, err := dao.DB.WithContext(ctx).Table("api_4_conversation AS c").
+		Select("c.dialog_id").
+		Joins("JOIN api_4_conversation_message AS cm ON cm.conversation_id = c.id").
+		Where("c.user_id = ? OR c.exp_user_id = ?", userID, userID).
+		Where(`cm.content LIKE ? ESCAPE '!' OR cm.content LIKE ? ESCAPE '!'`,
 			filenamePattern, artifactRefPattern).
-		Distinct("dialog_id").
+		Distinct("c.dialog_id").
 		Rows()
 	if err != nil {
 		return nil
@@ -168,13 +254,6 @@ func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filenam
 	return false
 }
 
-func sandboxArtifactBucket() string {
-	if bucket := common.GetEnv(common.EnvSandboxArtifactBucket); bucket != "" {
-		return bucket
-	}
-	return "sandbox-artifacts"
-}
-
 // sanitizeArtifactFilename scrubs characters that are unsafe inside a storage
 // object key for sandbox artifacts. It intentionally only replaces the
 // artifact-specific unsafe set (artifactUnsafeFilenameChars) and does NOT strip
@@ -194,15 +273,25 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil {
-		return nil, err
+	if err != nil || doc == nil {
+		return nil, ErrPreviewDocumentNotFound
+	}
+
+	// Reuse KnowledgebaseDAO.Accessible — the exact rule the chunk list on
+	// the same page uses — so the two panels can never disagree: the owning
+	// tenant always, and tenant members only when the dataset's permission
+	// is TEAM. A denial stays indistinguishable from a missing document so
+	// an unauthorized caller cannot probe document IDs (mirrors Python
+	// DocumentService.accessible in the preview path).
+	if !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+		return nil, ErrPreviewDocumentNotFound
 	}
 
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve storage address for document %s: %w", docID, err)
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -212,10 +301,10 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 
 	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read document object %s/%s: %w", bucket, name, err)
 	}
 	if len(data) == 0 {
-		return nil, ErrArtifactNotFound
+		return nil, ErrPreviewFileEmpty
 	}
 
 	fileName := ""

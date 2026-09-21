@@ -9,11 +9,6 @@ import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import {
-  buildOwnersFilter,
-  groupListByArray,
-  groupListByType,
-} from '@/utils/list-filter-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
@@ -30,10 +25,17 @@ import {
   IMemoryAppDetailProps,
   MemoryDetailResponse,
   MemoryListResponse,
+  MemoryFiltersResponse,
 } from './interface';
+
+export const MemoryKeys = {
+  list: () => ['memoryList'] as const,
+  filters: () => ['memoryFilters'] as const,
+};
 
 export const useCreateMemory = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   const createMemory = useCallback(
     async (props: ICreateMemoryProps): Promise<CreateMemoryResponse> => {
@@ -43,10 +45,11 @@ export const useCreateMemory = () => {
       }
       if (response.code === 0) {
         message.success(t('message.created'));
+        queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       }
       return response.data;
     },
-    [t],
+    [queryClient, t],
   );
 
   return { createMemory };
@@ -87,7 +90,7 @@ export const useFetchMemoryList = () => {
     Error
   >({
     queryKey: [
-      'memoryList',
+      ...MemoryKeys.list(),
       {
         debouncedSearchString,
         ...pagination,
@@ -105,7 +108,6 @@ export const useFetchMemoryList = () => {
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch memory list');
       }
-      console.log(response);
       return response;
     },
   });
@@ -131,6 +133,32 @@ export const useFetchMemoryList = () => {
     setFilterValue,
     handleFilterSubmit,
   };
+};
+
+export const useFetchMemoryFilters = () => {
+  const {
+    data,
+    isFetching: isLoading,
+    isError,
+  } = useQuery<MemoryFiltersResponse, Error>({
+    queryKey: MemoryKeys.filters(),
+    initialData: {
+      filter: { owner: [], memory_type: [], storage_type: [] },
+      total: 0,
+    },
+    queryFn: async () => {
+      const { data: response } = await memoryService.getMemoryFilters(
+        { params: { type: 'filter' } },
+        true,
+      );
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch memory filters');
+      }
+      return response.data;
+    },
+  });
+
+  return { data, isLoading, isError };
 };
 
 export const useFetchMemoryDetail = (tenantId?: string) => {
@@ -184,7 +212,8 @@ export const useDeleteMemory = () => {
         throw new Error(response.message || 'Failed to delete memory');
       }
 
-      queryClient.invalidateQueries({ queryKey: ['memoryList'] });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       markListItemsDeleted(ListDeletionKey.MemoryList);
       return response;
     },
@@ -232,6 +261,7 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: [MemoryApiAction.FetchMemoryDetail],
       });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
     },
   });
 
@@ -314,35 +344,38 @@ export const useRenameMemory = () => {
   };
 };
 
-export function useSelectFilters() {
+/**
+ * Build the filter facet collections from the server-side aggregation query.
+ *
+ * @param filterData - Server-side filter aggregations for visible memories.
+ * @returns The filter collections consumed by ListFilterBar.
+ *
+ * @example
+ * const { data: list } = useFetchMemoryList();
+ * const { filters } = useSelectFilters(list?.data?.memory_list ?? []);
+ */
+export function useSelectFilters(filterData: MemoryFiltersResponse) {
   const { t } = useTranslation();
-  const { data: res } = useFetchMemoryList();
-  const data = res?.data;
 
-  const memoryType = useMemo(() => {
-    return groupListByArray(data?.memory_list ?? [], 'memory_type');
-  }, [data?.memory_list]);
-  const storageType = useMemo(() => {
-    return groupListByType(
-      data?.memory_list ?? [],
-      'storage_type',
-      'storage_type',
-    );
-  }, [data?.memory_list]);
-
-  const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.memory_list ?? [], 'owner_name', t('common.owner')),
-    {
-      field: 'memoryType',
-      list: memoryType,
-      label: t('memories.memoryType'),
-    },
-    {
-      field: 'storageType',
-      list: storageType,
-      label: t('memory.config.storageType'),
-    },
-  ];
+  const filters: FilterCollection[] = useMemo(() => {
+    return [
+      {
+        field: 'owner',
+        list: filterData.filter.owner,
+        label: t('common.owner'),
+      },
+      {
+        field: 'memoryType',
+        list: filterData.filter.memory_type,
+        label: t('memories.memoryType'),
+      },
+      {
+        field: 'storageType',
+        list: filterData.filter.storage_type,
+        label: t('memory.config.storageType'),
+      },
+    ];
+  }, [filterData, t]);
 
   return { filters };
 }

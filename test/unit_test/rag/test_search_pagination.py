@@ -17,6 +17,7 @@
 
 import sys
 import types
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -36,6 +37,7 @@ sys.modules.setdefault("rag.nlp.rag_tokenizer", _fake_tokenizer)
 sys.modules.setdefault("common.settings", types.ModuleType("common.settings"))
 
 from rag.nlp.search import Dealer, settings  # noqa: E402
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr  # noqa: E402
 
 
 def _search_result(total):
@@ -52,6 +54,42 @@ def _search_result(total):
         for chunk_id in ids
     }
     return Dealer.SearchResult(total=total, ids=ids, query_vector=[0.1], field=fields, highlight={})
+
+
+def test_elasticsearch_dense_only_filter_keeps_scope_without_lexical_predicate():
+    from rag.utils import es_conn
+
+    factory = es_conn.ESConnection
+    cls = next(cell.cell_contents for cell in factory.__closure__ or () if isinstance(cell.cell_contents, type))
+    conn = cls.__new__(cls)
+    conn.logger = MagicMock()
+    captured = {}
+
+    def search_once(_index_names, query, **_kwargs):
+        captured["query"] = query
+        return {"timed_out": False, "hits": {"total": {"value": 0}, "hits": []}}
+
+    conn._es_search_once = search_once
+    dense = MatchDenseExpr("q_2_vec", [0.1, 0.2], "float", "cosine", 7, {"similarity": 0.17, "num_candidates": 19})
+    conn.search(
+        ["id"],
+        [],
+        {"doc_id": ["doc-1"], "available_int": 1, "category_kwd": "allowed"},
+        [dense],
+        OrderByExpr(),
+        0,
+        5,
+        "ragflow_tenant",
+        ["kb-1"],
+    )
+
+    knn = captured["query"]["knn"]
+    knn = knn[0] if isinstance(knn, list) else knn
+    assert knn["k"] == 7
+    assert knn["num_candidates"] == 19
+    assert "query_string" not in str(knn["filter"])
+    for scope in ("kb-1", "doc-1", "available_int", "category_kwd", "allowed"):
+        assert scope in str(knn["filter"])
 
 
 @pytest.mark.asyncio

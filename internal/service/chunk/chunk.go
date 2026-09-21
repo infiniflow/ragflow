@@ -74,13 +74,14 @@ func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
 
 // ChunkService chunk service
 type ChunkService struct {
-	docEngine      engine.DocEngine
-	embeddingCache *utility.EmbeddingLRU
-	kbDAO          *dao.KnowledgebaseDAO
-	userTenantDAO  *dao.UserTenantDAO
-	documentDAO    *dao.DocumentDAO
-	taskDAO        *dao.TaskDAO
-	searchService  *service.SearchService
+	docEngine        engine.DocEngine
+	embeddingCache   *utility.EmbeddingLRU
+	kbDAO            *dao.KnowledgebaseDAO
+	userTenantDAO    *dao.UserTenantDAO
+	documentDAO      *dao.DocumentDAO
+	taskDAO          *dao.TaskDAO
+	ingestionTaskDAO *dao.IngestionTaskDAO
+	searchService    *service.SearchService
 
 	accessibleFunc           func(string, string) bool
 	getKnowledgebaseByIDFunc func(string) (*entity.Knowledgebase, error)
@@ -105,13 +106,14 @@ type ChunkService struct {
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
 	return &ChunkService{
-		docEngine:      engine.Get(),
-		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
-		kbDAO:          dao.NewKnowledgebaseDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
-		documentDAO:    dao.NewDocumentDAO(),
-		taskDAO:        dao.NewTaskDAO(),
-		searchService:  service.NewSearchService(),
+		docEngine:        engine.Get(),
+		embeddingCache:   utility.NewEmbeddingLRU(1000), // default capacity
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		documentDAO:      dao.NewDocumentDAO(),
+		taskDAO:          dao.NewTaskDAO(),
+		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		searchService:    service.NewSearchService(),
 	}
 }
 
@@ -160,6 +162,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if len(req.Datasets) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
 	}
+	modelSolver := service.NewModelSolver()
 
 	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -241,14 +244,13 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if filter != nil {
 		method, _ := filter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			modelProviderSvc := service.NewModelProviderService()
 			if chatID != "" {
 				// Use chat_id from search_config (it's actually the model name)
-				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
+				target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
 				if getErr != nil {
 					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
 				} else {
-					chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
+					chatModelForFilter = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 					common.Info("Fetched chat model (from search_config) for metadata filter",
 						zap.String("chatID", chatID),
 						zap.String("tenantID", tenantIDs[0]))
@@ -263,11 +265,11 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 				if err != nil || modelName == "" {
 					common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
 				} else {
-					driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, modelName)
+					target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, modelName)
 					if getErr != nil {
 						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
 					} else {
-						chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
+						chatModelForFilter = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 						common.Info("Fetched chat model (tenant default) for metadata filter",
 							zap.String("tenantID", tenantIDs[0]),
 							zap.String("modelName", modelName))
@@ -303,17 +305,16 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var llmModelName string
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
 		tenantSvc := service.NewTenantService()
-		modelProviderSvc := service.NewModelProviderService()
 		var err error
 		llmModelName, err = tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil || llmModelName == "" {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
-			driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, llmModelName)
+			target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, llmModelName)
 			if getErr != nil {
 				common.Warn("Failed to get chat model for LLM transformations", zap.Error(getErr))
 			} else {
-				chatModel = models.NewChatModel(driver, &mdlName, apiConfig)
+				chatModel = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 				common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
 					zap.String("tenantID", tenantIDs[0]),
 					zap.String("modelName", llmModelName))
@@ -349,43 +350,41 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			zap.Bool("keywordExtraction", req.Keyword != nil && *req.Keyword))
 	}
 
-	// Get tag-based rank features via LabelQuestion
+	// Get tag-based rank features via LabelQuestion. The result is logged inside
+	// LabelQuestion (info on match, debug when skipped), so no log here.
 	metadataSvc := service.NewMetadataService()
 	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
-	common.Debug("LabelQuestion result", zap.Any("labels", labels))
 
 	// Determine embedding model.
-	modelProviderSvc := service.NewModelProviderService()
 	var embeddingModel *models.EmbeddingModel
 	var embdID string
+	var target *service.ModelTarget
+	var getErr error
 	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigByID(ctx, tenantIDs[0], entity.ModelTypeEmbedding, *kbRecords[0].TenantEmbdID)
+		target, getErr = modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, *kbRecords[0].TenantEmbdID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", getErr)
 		}
-		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 	} else if kbRecords[0].EmbdID != "" {
 		embdID = kbRecords[0].EmbdID
-		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+		target, getErr = modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, embdID)
 		if getErr != nil {
-			_, embdID, err = dao.LookupTenantLLMByName(ctx, dao.DB, dao.NewTenantLLMDAO(), tenantIDs[0], kbRecords[0].EmbdID, entity.ModelTypeEmbedding)
+			_, embdID, err = dao.LookupTenantLLMByName(ctx, dao.DB, dao.NewTenantLLMDAO(), tenantIDs[0], embdID, entity.ModelTypeEmbedding)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
+				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 			}
-			driver, modelName, apiConfig, maxTokens, getErr = modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, embdID)
+			target, getErr = modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, embdID)
 			if getErr != nil {
 				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
 			}
 		}
-		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 	} else {
-		driver, modelName, apiConfig, maxTokens, getErr := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeEmbedding)
+		target, getErr = modelSolver.ResolveDefaultModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", getErr)
 		}
-		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-		embdID = fmt.Sprintf("%s@default", modelName)
 	}
+	embeddingModel = models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	if embeddingModel == nil {
 		return nil, fmt.Errorf("no embedding model found for tenant %s", tenantIDs[0])
@@ -393,23 +392,23 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	common.Info("Fetched embedding model for retrieval",
 		zap.String("tenantID", tenantIDs[0]),
-		zap.String("embdID", embdID))
+		zap.String("modelName", target.ModelName))
 
 	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
 	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
-		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigByID(ctx, tenantIDs[0], entity.ModelTypeRerank, *req.TenantRerankID)
+		target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, *req.TenantRerankID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", getErr)
 		}
-		rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
+		rerankModel = models.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	} else if req.RerankID != nil && *req.RerankID != "" {
 		rerankCompositeName := *req.RerankID
-		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
+		target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
 		if getErr != nil {
 			rerankModel = nil
 		} else {
-			rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
+			rerankModel = models.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 		}
 	}
 
@@ -658,9 +657,8 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeServerError, err
 		}
 		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
-		// RequestStop (STOPPING) and updates doc.run=CANCEL. Defer
-		// destruction (chunk deletion, counter reset) until the worker
-		// detects STOPPING and reaches a terminal state.
+		// RequestStop (STOPPING). Defer destruction (chunk deletion, counter
+		// reset) until the worker detects STOPPING and reaches a terminal state.
 
 		successCount++
 	}
@@ -751,12 +749,6 @@ func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req 
 	}
 	if len(notFound) > 0 {
 		return nil, common.CodeDataError, fmt.Errorf("documents not found: %v", notFound)
-	}
-	for _, docID := range docIDs {
-		doc := docByID[docID]
-		if doc.Run != nil && *doc.Run == string(entity.TaskStatusRunning) {
-			return nil, common.CodeDataError, fmt.Errorf("can't parse document that is currently being processed")
-		}
 	}
 
 	// Batch pre-check: refuse the whole request if any document's ingestion
@@ -860,20 +852,24 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			Asc("top_int").
 			Desc("create_timestamp_flt")
 	} else {
-		matchExprs = append(matchExprs, &types.MatchTextExpr{
-			MatchingText: keywords,
-			TopN:         size,
-		})
+		queryBuilder := nlp.GetQueryBuilder()
+		if queryBuilder == nil {
+			queryBuilder = nlp.NewQueryBuilder()
+		}
+		if matchText, _ := queryBuilder.Question(keywords, "", 0.3); matchText != nil {
+			matchExprs = append(matchExprs, matchText)
+		}
 	}
 
 	// Build search request - same as retrieval test but filtered by doc_id
 	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		MatchExprs: matchExprs,
-		KbIDs:      kbIDs,
-		Offset:     (page - 1) * size,
-		Limit:      size,
-		OrderBy:    orderBy,
+		IndexNames:         []string{indexName},
+		MatchExprs:         matchExprs,
+		KbIDs:              kbIDs,
+		Offset:             (page - 1) * size,
+		Limit:              size,
+		OrderBy:            orderBy,
+		IncludeUnavailable: req.AvailableInt == nil,
 		SelectFields: []string{
 			"id",
 			"content_with_weight",
@@ -982,9 +978,22 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		chunks = append(chunks, result)
 	}
 
+	ingestionStatus := "UNSTART"
+	taskDAO := s.ingestionTaskDAO
+	if taskDAO == nil {
+		taskDAO = dao.NewIngestionTaskDAO()
+	}
+	task, err := taskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+	}
+	if task != nil && task.Status != "" {
+		ingestionStatus = task.Status
+	}
+
 	// Build document info, mirroring Python's _map_doc key renames:
 	// kb_id→dataset_id, parser_id→chunk_method, token_num→token_count,
-	// chunk_num→chunk_count, run→text status.
+	// chunk_num→chunk_count.
 	timeFormat := "2006-01-02T15:04:05"
 	docInfo := map[string]interface{}{
 		"id":               doc.ID,
@@ -1007,7 +1016,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              service.ChunkDocRunText(doc.Run),
+		"ingestion_status": ingestionStatus,
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -1136,6 +1145,10 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if !ok {
 		return fmt.Errorf("invalid chunk format")
 	}
+	existingDocumentID, ok := existing["doc_id"].(string)
+	if !ok || existingDocumentID != req.DocumentID {
+		return fmt.Errorf("chunk not found")
+	}
 
 	// Build update dict
 	d := make(map[string]interface{})
@@ -1194,11 +1207,6 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		d["position_int"] = req.Positions
 	}
 
-	// Tag keywords
-	if req.TagKwd != nil {
-		d["tag_kwd"] = req.TagKwd
-	}
-
 	// Tag features
 	if req.TagFeas != nil {
 		tagFeas, err := validateTagFeatures(req.TagFeas)
@@ -1213,7 +1221,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	// Call update
 	condition := map[string]interface{}{
-		"id": req.ChunkID,
+		"id":     req.ChunkID,
+		"doc_id": req.DocumentID,
 	}
 
 	err = s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID)
@@ -1380,9 +1389,6 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"docnm_kwd":            docName,
 		"doc_id":               req.DocumentID,
 	}
-	if req.TagKwd != nil {
-		chunkData["tag_kwd"] = req.TagKwd
-	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
 	}
@@ -1408,7 +1414,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{docName, embeddingText}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	// Embed inside the model's window: Content arrives from the API and can be
+	// arbitrarily long, and the provider answers 400/20015 instead of truncating it.
+	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: []string{docName, embeddingText}}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
@@ -1443,9 +1451,6 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"dataset_id":         req.DatasetID,
 		"create_timestamp":   chunkData["create_timestamp_flt"],
 		"create_time":        chunkData["create_time"],
-	}
-	if req.TagKwd != nil {
-		renamedChunk["tag_kwd"] = req.TagKwd
 	}
 	if imgID, ok := chunkData["img_id"]; ok {
 		renamedChunk["image_id"] = imgID

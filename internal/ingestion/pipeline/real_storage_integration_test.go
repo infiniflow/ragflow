@@ -121,12 +121,11 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	// The TokenChunker merges the two short paragraphs into one chunk under
+	// The GeneralChunker merges the two short paragraphs into one chunk under
 	// the global token-size budget (chunk_token_size=512, no backtick
 	// delimiter): this matches Python's _merge_text_chunks_by_token_size and
-	// is the intended behaviour. The parser still emits two json items
-	// (see the Parser state assertion below); only the downstream chunker
-	// collapses them.
+	// is the intended behaviour. TextParser emits one normalized json item;
+	// GeneralChunker owns the delimiter split and collapses the atoms.
 	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
@@ -169,21 +168,19 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		t.Fatalf("parser output_format = %v, want json", got)
 	}
 	jsonItems, ok := parserState["json"].([]map[string]any)
-	if !ok || len(jsonItems) != 2 {
-		t.Fatalf("parser json = %T/%v, want 2 items", parserState["json"], parserState["json"])
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	// The parser emits one json item per paragraph (two items), which the
-	// downstream TokenChunker later merges into a single chunk.
-	wantParserTexts := []string{"Alpha paragraph.", "Beta paragraph."}
+	wantParserTexts := []string{"Alpha paragraph.\n\nBeta paragraph."}
 	for i, wantText := range wantParserTexts {
 		if got := jsonItems[i]["text"]; got != wantText {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
 
-	chunkerState, ok := state["TokenChunker:SixApplesFall"]
+	chunkerState, ok := state["GeneralChunker:SixApplesFall"]
 	if !ok {
-		t.Fatal("missing TokenChunker:SixApplesFall state")
+		t.Fatal("missing GeneralChunker:SixApplesFall state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)

@@ -24,12 +24,11 @@ import (
 )
 
 // TestParserComponent_Check covers the construction-time business
-// validation that mirrors the applicable subset of Python
-// ParserParam.check() (rag/flow/parser/parser.py:251-321).
+// validation for parser methods that require language configuration.
 //
-// Go does NOT validate audio/video vlm.llm_id because media_dispatch
-// resolves tenant default models via resolveTenantModelByType, not
-// setup["vlm"]["llm_id"]. See plan: quantum-forging-curie-sZ_7zRZb.
+// audio/video vlm.llm_id is not validated: Python's check() has no
+// such branch, and audio resolves its model at dispatch time with a
+// tenant-default fallback.
 func TestParserComponent_Check(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -54,6 +53,14 @@ func TestParserComponent_Check(t *testing.T) {
 		{
 			name:   "pdf: plain_text (whitelist, case-insensitive) without lang → pass",
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "PLAIN_TEXT"}},
+		},
+		{
+			name:   "pdf: Plain Text (UI spelling of the plain-text option) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "Plain Text"}},
+		},
+		{
+			name:   "pdf: plaintext (UI spelling, no space) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "plaintext"}},
 		},
 		{
 			name:   "pdf: tcadp parser (whitelist with space) without lang → pass",
@@ -100,17 +107,17 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"image": {"lang": "English"}},
 		},
 
-		// --- audio/video: vlm.llm_id NOT validated in Go ---
+		// --- audio/video: vlm.llm_id not validated (matches Python check()) ---
 		{
-			name:   "audio: no vlm field → pass (Go uses tenant default ASR)",
+			name:   "audio: no vlm field → pass (model falls back to tenant default)",
 			setups: map[string]schema.ParserSetup{"audio": {"output_format": "text"}},
 		},
 		{
-			name:   "video: no vlm field → pass (Go uses tenant default VISION)",
+			name:   "video: no vlm field → pass",
 			setups: map[string]schema.ParserSetup{"video": {"output_format": "text"}},
 		},
 		{
-			name:   "audio: vlm.llm_id empty → pass (Go ignores vlm.llm_id)",
+			name:   "audio: vlm.llm_id empty → pass (empty falls back to tenant default)",
 			setups: map[string]schema.ParserSetup{"audio": {"vlm": map[string]any{"llm_id": ""}}},
 		},
 
@@ -131,7 +138,7 @@ func TestParserComponent_Check(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &ParserComponent{Setups: tc.setups, Param: schema.ParserParam{}.Defaults()}
+			c := &ParserComponent{setups: tc.setups}
 			err := c.Check()
 			if tc.wantErr != "" {
 				if err == nil {

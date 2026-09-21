@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 
@@ -34,7 +35,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
-	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+	// A built-in parser_id is valid without parse_type. parse_type is only
+	// required when selecting a pipeline or explicitly supplied.
+	if req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if err != nil {
 			return nil, common.CodeDataError, err
@@ -99,12 +102,45 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserConfig, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, pipelineID)
-	if cpErr != nil {
-		common.Warn("failed to resolve component params defaults for dataset",
-			zap.String("parserID", parserID), zap.Error(cpErr))
-		parserConfig = entity.JSONMap{}
+	if req.ParserConfig != nil {
+		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 	}
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
+	parserConfig := entity.JSONMap{}
+	if dslErr != nil {
+		common.Warn("failed to load pipeline DSL for building parser_config",
+			zap.String("parserID", parserID), zap.Error(dslErr))
+	} else {
+		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+	}
+
+	// Preserve the public default shape when parser_config is empty. The
+	// parent_child block remains the single source of truth; chunker
+	// children_delimiters are derived below only when it is configured.
+	var parentChild map[string]interface{}
+	if req.ParserConfig != nil {
+		if pc, ok := req.ParserConfig["parent_child"].(map[string]interface{}); ok {
+			parentChild = pc
+		}
+	}
+	if parentChild == nil {
+		parentChild = map[string]interface{}{
+			"use_parent_child":   false,
+			"children_delimiter": "\n",
+		}
+	}
+	parserConfig["parent_child"] = parentChild
+
+	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, map[string]interface{}(parserConfig))
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
@@ -119,9 +155,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+		target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
-			tenantEmbdID = resolvedID
+			tenantEmbdID = target.ModelID
 		} else {
 			return nil, common.CodeDataError, err
 		}
@@ -346,7 +382,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 	})
 }
 
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" && len(ids) > 0 {
 		return nil, 0, common.CodeDataError, fmt.Errorf("should not provide both 'id':%s and 'ids':%s", id, pythonStringListRepr(ids))
@@ -385,10 +421,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		pageSize = 30
 	}
 
-	orderby = strings.TrimSpace(orderby)
-	if _, ok := datasetAllowedOrderByFields[orderby]; !ok {
-		orderby = "create_time"
-	}
+	terms = keepDatasetOrderTerms(terms)
 
 	keywords = strings.TrimSpace(keywords)
 	parserID = strings.TrimSpace(parserID)
@@ -463,7 +496,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name, ids)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, terms, keywords, parserID, id, name, ids)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
 	}

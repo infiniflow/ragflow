@@ -45,7 +45,10 @@ func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engin
 	esCfg := elasticsearch.Config{
 		Addresses: []string{esConfig.Hosts},
 		Transport: &http.Transport{
-			MaxIdleConnsPerHost:   10,
+			MaxIdleConns:          1000,
+			MaxIdleConnsPerHost:   300,
+			MaxConnsPerHost:       500,
+			IdleConnTimeout:       60 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
 		},
 	}

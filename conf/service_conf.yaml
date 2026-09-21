@@ -3,6 +3,12 @@ general:
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+  # Proxies whose X-Forwarded-For / X-Real-IP headers the Go API server trusts
+  # when resolving the client address (agent webhook ip_whitelist, login audit).
+  # Defaults to loopback, i.e. the nginx bundled in this image. An explicit list
+  # replaces that default, so keep the loopback entries when adding the address
+  # or CIDR of a further proxy in front of nginx; an empty list trusts none.
+  # trusted_proxies: ['127.0.0.0/8', '::1/128']
 admin:
   host: 0.0.0.0
   http_port: 9381
@@ -46,6 +52,11 @@ oceanbase:
     host: 'localhost'
     port: 2881
 redis:
+  db: 1
+  username: ''
+  password: 'infini_rag_flow'
+  host: 'localhost:6379'
+kvrocks:
   db: 1
   username: ''
   password: 'infini_rag_flow'

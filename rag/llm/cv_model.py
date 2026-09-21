@@ -32,6 +32,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.key_utils import _resolve_bedrock_credentials
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -688,6 +689,17 @@ class SILICONFLOWCV(GptV4):
         super().__init__(key, model_name, lang, base_url, **kwargs)
 
 
+class AnonRouterCV(GptV4):
+    """AnonRouter vision adapter bound to the hosted compatibility endpoint."""
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
+        super().__init__(key, model_name, lang, self._BASE_URL, **kwargs)
+
+
 class OpenRouterCV(GptV4):
     _FACTORY_NAME = "OpenRouter"
 
@@ -831,6 +843,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=prompt[0]["content"],
                 images=[image],
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -844,6 +857,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=vision_prompt[0]["content"],
                 images=[image],
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -1342,7 +1356,7 @@ class RAGconCV(GptV4):
     RAGcon CV Provider - routes through LiteLLM proxy
 
     Supports vision models through LiteLLM.
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"
@@ -1374,7 +1388,7 @@ class BedrockCV(Base):
     def _parse_credentials(self, key):
         from botocore.utils import validate_region_name
 
-        bedrock_key = json.loads(key)
+        bedrock_key = _resolve_bedrock_credentials(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
         self.aws_region = bedrock_key.get("bedrock_region")
         if not self.aws_region:
@@ -1439,6 +1453,29 @@ class NewAPICv(GptV4):
             raise ValueError("url cannot be None")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)
+
+
+class CheaperInferenceCV(GptV4):
+    """Cheaper Inference vision adapter.
+
+    The gateway takes image input on the same OpenAI-compatible
+    ``chat/completions`` route it uses for text, so the standard OpenAI client
+    path covers ``describe`` and ``describe_with_prompt`` with nothing
+    overridden. The base URL stays tenant-configurable because the gateway is
+    also reachable through per-account domains.
+    """
+
+    _FACTORY_NAME = "Cheaper Inference"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)

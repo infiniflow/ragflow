@@ -17,7 +17,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 
 import message from '@/components/ui/message';
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
@@ -25,7 +25,10 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
-import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
+import {
+  IClaimsResponse,
+  IStructureGraphResponse,
+} from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
@@ -34,6 +37,7 @@ import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
+import { buildDocumentIngestPayload } from '@/services/document-ingest-adapter';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -45,6 +49,7 @@ import kbService, {
   uploadDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { buildChunkHighlights } from '@/utils/document-util';
 import {
   keepPreviousData,
@@ -99,6 +104,20 @@ export const DocumentStructureKeys = {
       datasetId,
       documentId,
       keywords,
+    ] as const,
+  claims: (
+    datasetId: string,
+    documentId: string,
+    templateId: string | undefined,
+    chunkIds: string[] | undefined,
+  ) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+      'claims',
+      templateId,
+      ...(chunkIds ?? []),
     ] as const,
 };
 
@@ -371,6 +390,7 @@ export const useSetDocumentStatus = () => {
 // This hook is used to run a document by its IDs
 export const useRunDocument = () => {
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
 
   const {
     data,
@@ -387,6 +407,12 @@ export const useRunDocument = () => {
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
     }) => {
+      // Optimistically move started documents into an active state so the
+      // 5s list polling starts immediately and the row leaves its idle
+      // action. Python drives the worker through the legacy run field
+      // (RUNNING); Go has no run field and reports the task lifecycle via
+      // ingestion_status, so CREATED renders as QUEUED until the next poll
+      // observes the real status (SCHEDULED/RUNNING/COMPLETED/...).
       if (run === 1) {
         const documentIdSet = new Set(documentIds);
         queryClient.setQueriesData<{
@@ -402,7 +428,9 @@ export const useRunDocument = () => {
               documentIdSet.has(doc.id)
                 ? {
                     ...doc,
-                    run: RunningStatus.RUNNING,
+                    ...(isGo
+                      ? { ingestion_status: IngestionTaskStatus.CREATED }
+                      : { run: RunningStatus.RUNNING }),
                     progress: 0,
                     process_duration: 0,
                     process_begin_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -418,11 +446,9 @@ export const useRunDocument = () => {
           queryKey: DocumentKeys.all(),
         });
       }
-      const ret = await kbService.documentIngest({
-        doc_ids: documentIds,
-        run,
-        ...(option || {}),
-      });
+      const ret = await kbService.documentIngest(
+        buildDocumentIngestPayload({ documentIds, run, option }),
+      );
       const code = get(ret, 'data.code');
       if (code === 0) {
         // For a start request, keep the optimistic running state until the
@@ -820,6 +846,43 @@ export function useFetchDocumentStructureGraph(keywords?: string) {
     documentId,
     keywords,
   );
+
+  return { data, loading };
+}
+
+// Claims are fetched per leaf cluster on demand: the tree shows only a count
+// badge, so the payload (statement + verbatim evidence) loads when the user
+// opens that cluster. chunkIds scopes the query server-side.
+export function useFetchDocumentClaims(
+  chunkIds: string[] | undefined,
+  templateId: string | undefined,
+) {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId && !!chunkIds?.length;
+
+  const { data, isFetching: loading } = useQuery<IClaimsResponse | null>({
+    queryKey: DocumentStructureKeys.claims(
+      datasetId,
+      documentId,
+      templateId,
+      chunkIds,
+    ),
+    enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } =
+        await documentStructureService.getDocumentStructureClaims(
+          datasetId,
+          documentId,
+          {
+            chunk_ids: chunkIds?.join(','),
+            template_id: templateId,
+            limit: 100,
+          },
+        );
+      return data?.data ?? null;
+    },
+  });
 
   return { data, loading };
 }

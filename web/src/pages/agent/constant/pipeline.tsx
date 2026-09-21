@@ -1,23 +1,9 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
 import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
-
-export enum FileType {
-  PDF = 'pdf',
-  Spreadsheet = 'spreadsheet',
-  Image = 'image',
-  Email = 'email',
-  TextMarkdown = 'markdown',
-  Code = 'text&code',
-  Html = 'html',
-  Doc = 'doc',
-  Docx = 'docx',
-  PowerPoint = 'slides',
-  Video = 'video',
-  Audio = 'audio',
-}
 
 export enum PdfOutputFormat {
   Json = 'json',
@@ -195,7 +181,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Spreadsheet,
-      output_format: SpreadsheetOutputFormat.Html,
+      output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
@@ -281,6 +267,28 @@ export const initialTokenChunkerValues = {
     { value: '？' },
   ],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
+};
+
+export const initialGeneralChunkerValues = {
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
+  table_context_size: 0,
+  image_context_size: 0,
   enable_children: false,
   children_delimiters: [],
 };
@@ -416,6 +424,7 @@ export function getInitialExtractorValues() {
 }
 
 export const initialCompilationValues = {
+  ...initialLlmBaseValues,
   compilation_template_group_id: '',
   llm_id: '',
   outputs: {
@@ -425,54 +434,13 @@ export const initialCompilationValues = {
 
 export const NoDebugOperatorsList = [Operator.File];
 
-export const FileTypeSuffixMap = {
-  [FileType.PDF]: ['pdf'],
-  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
-  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
-  [FileType.Email]: ['eml', 'msg'],
-  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
-  [FileType.Code]: [
-    'txt',
-    'py',
-    'js',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'php',
-    'go',
-    'ts',
-    'sh',
-    'cs',
-    'kt',
-    'sql',
-  ],
-  [FileType.Html]: ['htm', 'html'],
-  [FileType.Doc]: ['doc'],
-  [FileType.Docx]: ['docx'],
-  [FileType.PowerPoint]: ['pptx', 'ppt'],
-  [FileType.Video]: ['mp4', 'avi', 'mkv'],
-  [FileType.Audio]: [
-    'da',
-    'wave',
-    'wav',
-    'mp3',
-    'aac',
-    'flac',
-    'ogg',
-    'aiff',
-    'au',
-    'midi',
-    'wma',
-    'realaudio',
-    'vqf',
-    'oggvorbis',
-    'ape',
-  ],
-};
+// Chunker operators available on the Go pipeline canvas. GeneralChunker is a
+// legacy Python operator and is deliberately excluded.
+export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Parser,

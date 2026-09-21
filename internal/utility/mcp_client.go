@@ -40,6 +40,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"sync"
 	"time"
@@ -92,7 +93,7 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 		opts.Timeout = 10 * time.Second
 	}
 
-	hostname, resolvedIP, err := AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := common.AssertURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +121,8 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	}
 }
 
-// renderHeaders applies ${name} substitution to header keys and values using
-// the supplied variables map, mirroring the Template.safe_substitute pass in
-// common/mcp_tool_call_conn.py. Empty keys (after substitution) are dropped.
+// renderHeaders applies Python string.Template.safe_substitute semantics to
+// header keys and values. Empty keys (after substitution) are dropped.
 func renderHeaders(raw map[string]string, vars map[string]string) (map[string]string, error) {
 	rendered := map[string]string{}
 	for k, v := range raw {
@@ -136,40 +136,80 @@ func renderHeaders(raw map[string]string, vars map[string]string) (map[string]st
 	return rendered, nil
 }
 
-// substituteTemplate replaces ${name} occurrences (Python string.Template
-// safe-substitute semantics) with values from vars. Unknown keys are left
-// in place, matching safe_substitute's behavior.
+// substituteTemplate mirrors Python's string.Template.safe_substitute for the
+// identifier forms used by MCP configurations: $name, ${name}, and $$. Values
+// are written directly into the result, so a placeholder in a value is not
+// expanded recursively. Unknown or malformed placeholders are preserved.
 func substituteTemplate(s string, vars map[string]string) string {
-	if vars == nil || !strings.Contains(s, "${") {
+	if !strings.Contains(s, "$") {
 		return s
 	}
 	var b strings.Builder
-	i := 0
-	for i < len(s) {
-		idx := strings.Index(s[i:], "${")
-		if idx == -1 {
-			b.WriteString(s[i:])
-			break
+	for i := 0; i < len(s); {
+		if s[i] != '$' {
+			b.WriteByte(s[i])
+			i++
+			continue
 		}
-		b.WriteString(s[i : i+idx])
-		i += idx + 2
-		end := strings.Index(s[i:], "}")
-		if end == -1 {
-			b.WriteString("${")
-			b.WriteString(s[i:])
-			break
+
+		// A trailing dollar and a dollar followed by a non-template token are
+		// literal dollars under safe_substitute.
+		if i+1 >= len(s) {
+			b.WriteByte('$')
+			i++
+			continue
 		}
-		key := s[i : i+end]
-		i += end + 1
+		if s[i+1] == '$' {
+			b.WriteByte('$')
+			i += 2
+			continue
+		}
+
+		start := i
+		nameStart := i + 1
+		if s[nameStart] == '{' {
+			nameStart++
+		}
+		if nameStart >= len(s) || !templateIdentifierStart(s[nameStart]) {
+			b.WriteByte('$')
+			i++
+			continue
+		}
+
+		nameEnd := nameStart + 1
+		for nameEnd < len(s) && templateIdentifierContinue(s[nameEnd]) {
+			nameEnd++
+		}
+		end := nameEnd
+		if s[i+1] == '{' {
+			if nameEnd >= len(s) || s[nameEnd] != '}' {
+				// Invalid braced placeholders are emitted literally. Advance
+				// only past the dollar; any later dollar tokens still follow
+				// the normal safe_substitute scan.
+				b.WriteByte('$')
+				i++
+				continue
+			}
+			end++
+		}
+
+		key := s[nameStart:nameEnd]
 		if val, ok := vars[key]; ok {
 			b.WriteString(val)
 		} else {
-			b.WriteString("${")
-			b.WriteString(key)
-			b.WriteString("}")
+			b.WriteString(s[start:end])
 		}
+		i = end
 	}
 	return b.String()
+}
+
+func templateIdentifierStart(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func templateIdentifierContinue(c byte) bool {
+	return templateIdentifierStart(c) || (c >= '0' && c <= '9')
 }
 
 // jsonRPCRequest is a JSON-RPC 2.0 request envelope.
@@ -367,6 +407,15 @@ func streamableSend(ctx context.Context, client *http.Client, endpoint, sessionI
 // ---------- SSE transport ----------
 
 func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client) ([]Tool, error) {
+	result, err := requestSSE(ctx, endpoint, headers, client, "tools/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseToolsResult(result)
+}
+
+// requestSSE initializes a session and performs one JSON-RPC request.
+func requestSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, method string, params any) (json.RawMessage, error) {
 	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build SSE request: %w", err)
@@ -405,7 +454,7 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	// differs from the original SSE host — swap in a fresh pinned
 	// client so the dial-time IP override still applies.
 	postClient := client
-	if postHost, postIP, vErr := AssertURLSafe(postURL); vErr != nil {
+	if postHost, postIP, vErr := common.AssertURLSafe(postURL); vErr != nil {
 		return nil, vErr
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
 		if u.Hostname() != originalHost(endpoint) {
@@ -420,7 +469,10 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	}()
 
 	postOnce := func(payload jsonRPCRequest) error {
-		body, _ := json.Marshal(payload)
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("encode MCP SSE request: %w", err)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("build SSE POST: %w", err)
@@ -465,7 +517,7 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		return nil, err
 	}
 	listWaiter := pending.register(1)
-	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 1, Method: "tools/list"}); err != nil {
+	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 1, Method: method, Params: params}); err != nil {
 		pending.cancel(1)
 		return nil, err
 	}
@@ -474,9 +526,9 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		return nil, err
 	}
 	if listRes.Error != nil {
-		return nil, formatMCPError("tools/list", listRes.Error)
+		return nil, formatMCPError(method, listRes.Error)
 	}
-	return parseToolsResult(listRes.Result)
+	return listRes.Result, nil
 }
 
 // waitForEndpoint reads SSE events until an "endpoint" event arrives and

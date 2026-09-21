@@ -27,13 +27,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
 
 	"ragflow/internal/utility"
 
-	md "github.com/JohannesKaufmann/html-to-markdown"
 	"golang.org/x/net/html"
 )
 
@@ -51,7 +51,7 @@ const (
 type sitemapFetchFunc func(ctx context.Context, rawURL string) ([]byte, string, error)
 
 // sitemapAssertURLSafe is the SSRF guard, indirected so tests can stub DNS resolution.
-var sitemapAssertURLSafe = utility.AssertURLSafe
+var sitemapAssertURLSafe = common.AssertURLSafe
 
 // SitemapConnector ingests the web pages listed in a sitemap.xml.
 //
@@ -726,7 +726,7 @@ func hostOf(rawURL string) string {
 
 // sitemapHTMLToMarkdown converts a page to Markdown, dropping navigation chrome.
 func sitemapHTMLToMarkdown(body []byte) (string, error) {
-	converter := md.NewConverter("", true, &md.Options{EmDelimiter: "*"})
+	converter := newMarkdownConverter()
 	converter.Remove("script", "style", "noscript", "nav", "header", "footer", "aside", "form", "iframe", "svg")
 	out, err := converter.ConvertString(string(body))
 	if err != nil {

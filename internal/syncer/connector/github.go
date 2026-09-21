@@ -29,8 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -385,20 +383,22 @@ func (c *GitHubConnector) getJSON(ctx context.Context, apiURL string, out any) (
 	if c.doJSON != nil {
 		return c.doJSON(ctx, apiURL, out)
 	}
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
+		Headers: map[string]string{
+			"Accept":               "application/vnd.github+json",
+			"X-GitHub-Api-Version": "2022-11-28",
+			"Authorization":        "Bearer " + c.token,
+		},
+		Timeout: githubRequestTimeout,
+	})
 	if err != nil {
-		return nil, err
-	}
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, githubRequestTimeout)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := client.Do(req)
-	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, unsafe.Err
+		}
 		return nil, fmt.Errorf("failed to fetch GitHub API: %w", err)
 	}
 	defer resp.Body.Close()

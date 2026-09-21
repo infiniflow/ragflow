@@ -256,7 +256,10 @@ func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.Emb
 		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, modelModule.EmbedRequest{Texts: cleaned}, embeddingModel.APIConfig, embeddingConfig, nil)
+	// Embed inside the model's window: this path takes whatever text the API handed
+	// it, and the provider rejects an over-window input with 400/20015 instead of
+	// truncating it.
+	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: cleaned}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

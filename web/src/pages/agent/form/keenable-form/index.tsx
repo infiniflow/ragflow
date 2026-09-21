@@ -9,7 +9,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -60,7 +60,7 @@ export function KeenableWidgets() {
           <FormItem>
             <FormLabel>{t('keenableMode')}</FormLabel>
             <FormControl>
-              <RAGFlowSelect {...field} options={modeOptions} />
+              <SelectWithSearch {...field} options={modeOptions} />
             </FormControl>
             <FormMessage />
           </FormItem>

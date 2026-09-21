@@ -34,9 +34,11 @@ import (
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
-	Question string             `json:"question" binding:"required"`
-	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
-	SearchID string             `json:"search_id,omitempty"`
+	Query    string                   `json:"query,omitempty"`
+	Messages []map[string]interface{} `json:"messages,omitempty"`
+	Question string                   `json:"question"`
+	KbIDs    common.StringSlice       `json:"kb_ids" binding:"required"`
+	SearchID string                   `json:"search_id,omitempty"`
 }
 
 // SearchBotMindMapRequest is the request body for POST /api/v1/searchbots/mindmap.
@@ -155,7 +157,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -208,7 +210,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
 	if err != nil {
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "retrieval test failed")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -236,6 +238,13 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.Question = question
 
 	// Filter empty kb_ids.
 	filtered := make(common.StringSlice, 0, len(req.KbIDs))
@@ -274,7 +283,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
-	disableWriteDeadlineForSSE(c)
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -378,7 +387,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	})
 	if err != nil {
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		jsonInternalError(c, err)
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")
