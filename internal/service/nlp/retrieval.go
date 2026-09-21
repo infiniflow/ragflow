@@ -774,7 +774,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 
 	searchResult := engineResult
 	ids := s.docEngine.GetChunkIDs(searchResult.Chunks)
-	common.Info("GetChunkIDs result", zap.Int("count", len(ids)), zap.Strings("ids", ids))
+	common.Debug("GetChunkIDs result", zap.Int("count", len(ids)), zap.Strings("ids", ids))
 
 	// Build Keywords list from kwds set
 	keywordsList := make([]string, 0, len(kwds))
@@ -783,7 +783,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	}
 
 	fieldMap := s.docEngine.GetFields(searchResult.Chunks, src)
-	common.Info("GetFields result", zap.Int("count", len(fieldMap)), zap.Strings("keys", func() []string {
+	common.Debug("GetFields result", zap.Int("count", len(fieldMap)), zap.Strings("keys", func() []string {
 		keys := make([]string, 0, len(fieldMap))
 		for k := range fieldMap {
 			keys = append(keys, k)
