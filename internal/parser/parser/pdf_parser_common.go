@@ -366,7 +366,13 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	}
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
-	cropMediaSections(&processed)
+	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under
+	// cgo. The parser no longer inlines base64 images — that is what bounded
+	// the parser-phase memory peak. Image/table sections keep only their PDF
+	// positions; the chunker re-acquires the source PDF and crops on demand at
+	// index time, and the VLM path crops on demand when it needs to describe a
+	// figure/table. The Markdown path below still inlines, because markdown
+	// output embeds images directly and has no downstream on-demand consumer.
 
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
@@ -788,14 +794,16 @@ func normalizePDFDocType(item map[string]any) {
 		return
 	}
 	layoutType, _ := item["layout_type"].(string)
+	// A figure caption is a media section even when the parser no longer
+	// inlines its cropped image (cgo): it still carries PDF positions, so the
+	// downstream VLM/chunker crop it on demand. Classify it as image whenever
+	// it has positions (the inlined image was only a side effect of cropping).
+	_, hasMedia := ExtractPDFPositions(item)
 	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
-		// A figure caption can carry the cropped figure image after PDF media
-		// sections are rendered. Keep it aligned with Python's media-section
-		// contract so the downstream VLM enhancement can process it.
-		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption {
-			if img, _ := item["image"].(string); img != "" {
-				item["doc_type_kwd"] = "image"
-			}
+		// A figure caption keeps its media classification so the downstream
+		// VLM enhancement and on-demand chunker crop it.
+		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption && hasMedia {
+			item["doc_type_kwd"] = "image"
 		}
 		return
 	}
@@ -804,6 +812,12 @@ func normalizePDFDocType(item map[string]any) {
 		item["doc_type_kwd"] = "table"
 	case "figure", "image":
 		item["doc_type_kwd"] = "image"
+	case deepdoctype.DLALabelFigureCaption:
+		if hasMedia {
+			item["doc_type_kwd"] = "image"
+		} else {
+			item["doc_type_kwd"] = "text"
+		}
 	default:
 		if img, _ := item["image"].(string); img != "" {
 			item["doc_type_kwd"] = "image"
@@ -811,6 +825,45 @@ func normalizePDFDocType(item map[string]any) {
 		}
 		item["doc_type_kwd"] = "text"
 	}
+}
+
+// ExtractPDFPositions is the single source of truth for "does this parsed item
+// carry a usable PDF crop region". It returns the non-empty positions matrix
+// (under the canonical _pdf_positions key or the legacy positions key),
+// accepting either the typed [][]any form produced in-process or the
+// JSON-decoded []any form whose elements are themselves []any rows. The bool
+// reports whether a usable matrix was present.
+//
+// The parser (doc-type classification in normalizePDFDocType) and the on-demand
+// croppers (VLM vision_enhancement and the chunker) MUST agree on this
+// contract, so all call sites delegate here instead of re-implementing the
+// check. A loose "non-nil" test previously misclassified items whose positions
+// were empty or not actually a matrix (e.g. an empty []any or a stray scalar),
+// which escaped the figure-caption → image normalization and the crop path.
+func ExtractPDFPositions(item map[string]any) ([][]any, bool) {
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		switch v := item[key].(type) {
+		case [][]any:
+			if len(v) > 0 {
+				return v, true
+			}
+		case []any:
+			out := make([][]any, 0, len(v))
+			ok := true
+			for _, row := range v {
+				r, rOK := row.([]any)
+				if !rOK {
+					ok = false
+					break
+				}
+				out = append(out, r)
+			}
+			if ok && len(out) > 0 {
+				return out, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
