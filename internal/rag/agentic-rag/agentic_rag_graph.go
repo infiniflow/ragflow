@@ -845,6 +845,7 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	// made the flag unreliable in BOTH directions — a review that could not run (VerdictUnknown)
 	// shipped "partial answer, some gaps remain" on no evidence at all (2026-09-15: the SCA had
 	// timed out), while a satisfied reviewer said nothing about whether the record was finished.
+
 	//
 	// The slot table is deliberately NOT read here: it is the session's own scratchpad, and a
 	// scratchpad is not a verdict (see the note on routeResearch).
@@ -1921,8 +1922,8 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// budget admits only the first few whole chunks, so a member past them holds no block
 	// number the model could write — and a member with no position is a member the answer
 	// cannot cite and the user cannot open. Appending keeps the rendered prefix intact
-	// (block n is still position n) and gives the completion its target
-	// (runtime.CiteAnchoredMembers).
+	// (block n is still position n) and gives the completion its target: the ids appended here
+	// are what the answer's markers resolve against.
 	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
 	if kb != nil {
 		// The published list is the rendered blocks plus the passages the run READ that did not render a

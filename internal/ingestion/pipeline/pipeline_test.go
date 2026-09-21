@@ -446,3 +446,95 @@ func TestValidatePipeline_DisallowMultipleExtractors(t *testing.T) {
 		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
 	}
 }
+
+// fractionStage reports a fixed in-flight fraction from Invoke, the way a
+// parser reports pages or a tokenizer reports embedded chunks.
+type fractionStage struct {
+	fraction float64
+}
+
+func (f *fractionStage) Invoke(ctx context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	runtime.ReportComponentFraction(ctx, f.fraction)
+	return cloneMapOrEmpty(inputs), nil
+}
+func (f *fractionStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
+func (f *fractionStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
+
+// fractionRecordingSink records fraction reports alongside the base
+// ProgressSink methods, exercising the optional-interface assertion.
+type fractionRecordingSink struct {
+	recordingSink
+	muFractions sync.Mutex
+	fractions   map[string]float64
+}
+
+func (r *fractionRecordingSink) OnComponentFraction(_ context.Context, component string, fraction float64) {
+	r.muFractions.Lock()
+	defer r.muFractions.Unlock()
+	if r.fractions == nil {
+		r.fractions = map[string]float64{}
+	}
+	r.fractions[component] = fraction
+}
+
+// TestPipelineRunForwardsFractionsToSink verifies the pipeline assembles the
+// fraction channel end to end: a component's bare ReportComponentFraction
+// reaches the sink's optional OnComponentFraction under the node's cpnID.
+func TestPipelineRunForwardsFractionsToSink(t *testing.T) {
+	stage := &fractionStage{fraction: 0.42}
+	const name = "p.FractionStage"
+	runtime.MustRegister(name, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	sink := &fractionRecordingSink{}
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "a"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-frac", WithProgressSink(sink), WithDocumentID("doc-frac"))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "doc-frac"}, nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	sink.muFractions.Lock()
+	defer sink.muFractions.Unlock()
+	if got := sink.fractions["a"]; got != 0.42 {
+		t.Fatalf("fraction for node a = %v, want 0.42 (fractions=%v)", got, sink.fractions)
+	}
+}
+
+// TestPipelineRunWithoutFractionSink verifies a sink that does not implement
+// the optional fraction interface still runs: the channel is simply absent.
+func TestPipelineRunWithoutFractionSink(t *testing.T) {
+	stage := &fractionStage{fraction: 0.9}
+	const name = "p.FractionStageNoSink"
+	runtime.MustRegister(name, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "a"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-nofrac", WithProgressSink(&recordingSink{}))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "x"}, nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}

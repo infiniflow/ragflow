@@ -3447,6 +3447,15 @@ func typedAnchoredMembersVar(id int, typ string, lists ...string) runtime.Variab
 	return runtime.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
 }
 
+// anchoredItemsVar builds a slot holding items with the anchors and quotes a session chose, which is
+// what typedAnchoredMembersVar's synthetic "c-<name>" anchors cannot express — a metadata selection's
+// anchors are doc ids and its quotes are the metadata lines it was shown.
+func anchoredItemsVar(id int, typ string, items ...slots.Item) runtime.Variable {
+	v := slots.Items(items...)
+	rendered := slots.Render(v)
+	return runtime.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
+}
+
 func typedCountVar(id int, typ string, n int, strength float64) runtime.Variable {
 	v := slots.Number(n)
 	rendered := slots.Render(v)

@@ -1422,6 +1422,13 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 			resp.CiteChunkIDs = kb.CiteChunkIDs
 		}
 	}()
+	// Stamp each pool chunk with its document's declared metadata, so the evidence
+	// blocks carry the passage's document attributes (file name, update time, ...)
+	// beside its text: a two-hop question — which documents, and what is in them —
+	// is then answerable from the evidence alone, instead of from the slot record
+	// the answer is told not to quote.
+	attachDocMetadata(ctx, deps, kb, logger)
+
 	adeps := AnswerDeps{
 		Model:         deps.Model,
 		CiteRules:     deps.CiteRules,

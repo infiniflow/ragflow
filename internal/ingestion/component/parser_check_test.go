@@ -55,6 +55,14 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "PLAIN_TEXT"}},
 		},
 		{
+			name:   "pdf: Plain Text (UI spelling of the plain-text option) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "Plain Text"}},
+		},
+		{
+			name:   "pdf: plaintext (UI spelling, no space) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "plaintext"}},
+		},
+		{
 			name:   "pdf: tcadp parser (whitelist with space) without lang → pass",
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "tcadp parser"}},
 		},

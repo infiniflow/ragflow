@@ -1195,7 +1195,14 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if ingestionTask.PipelineLogID != nil {
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
-	result, err := executor.WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)).Execute(docTaskCtx.Ctx)
+	sink := newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)
+	// Close is idempotent and intentionally called twice: the defer is the
+	// panic backstop (an unwind out of Execute must still stop the flusher),
+	// and the explicit call pins the final flush ahead of docState.apply,
+	// whose terminal process_duration the flush would otherwise overwrite.
+	defer sink.Close()
+	result, err := executor.WithProgressSink(sink).Execute(docTaskCtx.Ctx)
+	sink.Close()
 	if err != nil {
 		return err
 	}

@@ -57,6 +57,39 @@ type pageTask struct {
 	pageNumber  int
 	docAnalyzer pdf.DocAnalyzer
 	tb          pdf.TableBuilder
+	// progress reports this run's page completions; the worker fires the
+	// caller's callback as soon as its page finishes.
+	progress *pageProgress
+}
+
+// pageProgress serialises page-completion reporting for one runPageWorkers
+// run. The counter and the callback share one lock so completions are reported
+// in order and never concurrently — the contract ParserConfig.OnPageDone
+// documents — even though the pages themselves run on parallel workers.
+//
+// Reporting from the worker is what ties the callback to the page that just
+// finished. The collection loop cannot run until every page has been
+// submitted, and SubmitTo blocks once the worker queue is full, so on a
+// document larger than the pool's worker+queue capacity a collector-side
+// callback stays silent while the pool drains the overflow and then reports
+// every completion behind it in one burst.
+type pageProgress struct {
+	mu     sync.Mutex
+	done   int
+	total  int
+	onDone func(done, total int)
+}
+
+// finish records one completed page and reports it. It is a no-op when no
+// callback is configured (the default), so an unwatched parse pays nothing.
+func (p *pageProgress) finish() {
+	if p.onDone == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.done++
+	p.onDone(p.done, p.total)
 }
 
 const pageWorkerQueueFactor = 4
@@ -81,6 +114,7 @@ func parserPageWorkerPool() *utility.WorkerPool[pageTask, pageResult] {
 		}
 		pagePool = utility.NewWorkerPool(workers, workers*pageWorkerQueueFactor,
 			func(ctx context.Context, task pageTask) (pageResult, error) {
+				defer task.progress.finish()
 				return task.parser.processPage(ctx, task.engine, task.pageNumber,
 					task.docAnalyzer, task.tb), nil
 			})

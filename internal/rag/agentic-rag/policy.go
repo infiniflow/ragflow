@@ -43,8 +43,10 @@ package agentic_rag
 // floor is not worth starting at all, and a node that is the only chance to gather a
 // candidate pool is worth its floor even on an overrun budget. A caller that needs the room
 // protected therefore passes a smaller floor, or a roomS that already has the reserve
-// subtracted; a step that must not run at all on a spent budget says so at its own call
-// site (see RunCoverageResolve).
+// subtracted. A step that must not run at all on a spent budget says so at its own call
+// site; in this branch no step does (the coverage resolve that needed that rule is gone),
+// and the prefetch deliberately runs on its floor instead: it is the run's only chance to
+// gather a pool from the plan's own queries.
 func nodeClock(budgetS, floorS, roomS float64) float64 {
 	return min(budgetS, max(floorS, roomS))
 }

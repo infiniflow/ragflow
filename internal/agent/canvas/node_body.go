@@ -257,6 +257,10 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 		// model deadlines remain enforced at the model driver.
 		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
+		// Bind the node id into the fraction reporter so the component's
+		// runtime.ReportComponentFraction calls are attributed to this node
+		// without the component knowing its own cpnID.
+		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {

@@ -91,7 +91,7 @@ func maybeDispatchPDFVision(
 		strings.HasPrefix(layoutLower, "monkeyocrv2") ||
 		strings.Contains(layoutLower, "@monkeyocrv2")
 	isMonkeyByUUID := false
-	if !isMonkeyMatch && tenantID != "" && strings.TrimSpace(monkeySelector) != "" && !isNamedPDFParseMethod(monkeySelector) {
+	if !isMonkeyMatch && tenantID != "" && strings.TrimSpace(monkeySelector) != "" && !parser.IsPDFParseMethod(monkeySelector) {
 		isMonkeyByUUID = isMonkeyOCRv2LayoutModelID(ctx, db, tenantID, monkeySelector)
 	}
 	if isMonkeyMatch || isMonkeyByUUID {
@@ -120,7 +120,7 @@ func maybeDispatchPDFVision(
 	}
 	isMinerUByUUID := false
 	if !isMinerUMatch && strings.TrimSpace(minerUSelector) != "" &&
-		!isNamedPDFParseMethod(minerUSelector) {
+		!parser.IsPDFParseMethod(minerUSelector) {
 		isMinerUByUUID = isMinerULayoutModelID(ctx, db, tenantID, minerUSelector)
 	}
 	if isMinerUMatch || isMinerUByUUID {
@@ -165,7 +165,7 @@ func maybeDispatchPDFVision(
 	}
 	isPaddleOCRByUUID := false
 	if !isPaddleOCRMatch && strings.TrimSpace(paddleOCRSelector) != "" &&
-		!isNamedPDFParseMethod(paddleOCRSelector) {
+		!parser.IsPDFParseMethod(paddleOCRSelector) {
 		isPaddleOCRByUUID = isPaddleOCRLayoutModelID(ctx, db, tenantID, paddleOCRSelector)
 	}
 	if isPaddleOCRMatch || isPaddleOCRByUUID {
@@ -848,46 +848,17 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 	}
 	if raw, ok := setup["parse_method"].(string); ok {
 		method := strings.TrimSpace(raw)
-		if method != "" && !isNamedPDFParseMethod(method) {
+		if method != "" && !parser.IsPDFParseMethod(method) {
 			return method, true
 		}
 	}
 	if raw, ok := setup["layout_recognizer"].(string); ok {
 		method := strings.TrimSpace(raw)
-		if method == "" || strings.EqualFold(method, "plain text") || strings.EqualFold(method, "plaintext") {
-			return "", false
-		}
-		if !isNamedPDFParseMethod(method) {
+		if method != "" && !parser.IsPDFParseMethod(method) {
 			return method, true
 		}
 	}
 	return "", false
-}
-
-// isNamedPDFParseMethod reports whether raw is a recognized named PDF
-// parse method (as opposed to a CustomVLM model name). Its membership set
-// MUST stay aligned with the PDF whitelist enforced by
-// (*ParserComponent).Check() (parser.go:200-203):
-//
-//	deepdoc, plain_text, mineru, docling,
-//	opendataloader, tcadp parser, paddleocr, somark
-//
-// A parse_method that Check() rejects must not be treated as a named method
-// here, otherwise it silently falls through to the CustomVLM vision path
-// instead of failing fast at construction.
-//
-// Note: "@"-suffixed spellings such as "foo@mineru" are layout_recognizer
-// selectors, not parse_method values. Check() rejects them as parse_method,
-// and the MinerU layout branch is resolved from the layout_recognizer field
-// separately (pdf_vision_dispatch.go:62-68), so they must NOT be recognized
-// here.
-func isNamedPDFParseMethod(raw string) bool {
-	method := strings.ToLower(strings.TrimSpace(raw))
-	switch method {
-	case "deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
-		return true
-	}
-	return false
 }
 
 func dispatchPDFVision(
