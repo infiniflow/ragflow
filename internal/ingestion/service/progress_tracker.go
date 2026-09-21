@@ -16,7 +16,10 @@
 
 package service
 
-import "sync"
+import (
+	"math"
+	"sync"
+)
 
 // runProgress accumulates one pipeline run's component progress in memory.
 // Percent is (completed components + sum of in-flight fractions) / total,
@@ -63,6 +66,11 @@ func (r *runProgress) MarkDone(component string) {
 // for already-completed components are ignored: a late fraction (e.g. a
 // trailing page callback racing the exit event) must not pull percent down.
 func (r *runProgress) SetFrac(component string, frac float64) {
+	// NaN passes both clamps below and would then poison the sticky
+	// high-water mark forever; drop it instead of storing it.
+	if math.IsNaN(frac) {
+		return
+	}
 	if frac < 0 {
 		frac = 0
 	}

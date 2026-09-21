@@ -97,6 +97,20 @@ func TestRunProgressClampsFracAndPercent(t *testing.T) {
 	}
 }
 
+func TestRunProgressIgnoresNaN(t *testing.T) {
+	r := newRunProgress()
+	r.SetTotal(5)
+	r.SetFrac("Parser:abc", 0.4)
+	if got := r.Percent(); !almostEqual(got, 0.08) {
+		t.Fatalf("Percent = %v, want 0.08", got)
+	}
+
+	r.SetFrac("Parser:abc", math.NaN())
+	if got := r.Percent(); !almostEqual(got, 0.08) {
+		t.Fatalf("Percent after NaN report = %v, want 0.08 (NaN must not poison the high-water mark)", got)
+	}
+}
+
 func TestRunProgressIdempotentRepeatedReports(t *testing.T) {
 	r := newRunProgress()
 	r.SetTotal(5)
