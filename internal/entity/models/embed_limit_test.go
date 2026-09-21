@@ -34,17 +34,34 @@ func overWindowError() error {
 }
 
 // recordingEmbedDriver implements only the Embed half of ModelDriver: it records the
-// texts it was handed and rejects the first rejectFor attempts the way an
-// over-window provider does.
+// texts it was handed and can reject them the way an over-window provider does.
 type recordingEmbedDriver struct {
 	ModelDriver
-	attempts  [][]string
+	attempts [][]string
+	// rejectFor rejects the first N attempts.
 	rejectFor int
-	failWith  error
+	// rejectBatch rejects any request carrying more than one text, which is how a
+	// pathological input behaves: the batch ladder cannot fit the batch, while each
+	// input on its own can be embedded.
+	rejectBatch bool
+	// rejectLongerThan rejects any request holding a text longer than that many
+	// bytes, so a small text passes while a large one fails even after the trim.
+	rejectLongerThan int
+	failWith         error
 }
 
 func (d *recordingEmbedDriver) Embed(_ context.Context, _ *string, request EmbedRequest, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
 	d.attempts = append(d.attempts, request.Texts)
+	if d.rejectBatch && len(request.Texts) > 1 {
+		return nil, overWindowError()
+	}
+	if d.rejectLongerThan > 0 {
+		for _, text := range request.Texts {
+			if len(text) > d.rejectLongerThan {
+				return nil, overWindowError()
+			}
+		}
+	}
 	if len(d.attempts) <= d.rejectFor {
 		return nil, overWindowError()
 	}
@@ -54,13 +71,18 @@ func (d *recordingEmbedDriver) Embed(_ context.Context, _ *string, request Embed
 	return make([]EmbeddingData, len(request.Texts)), nil
 }
 
-// newEmbedModel pins the two inputs that decide the window and the counter - the
-// env overrides - so a test never depends on the machine's catalog or environment.
+// newEmbedModel pins the inputs that decide the window and the counter, so a test
+// never depends on the machine's catalog or environment: the tokenizer id and the
+// window come from the env overrides, and the api key (the test's own name) gives the
+// model its own quota/calibration key. That last part matters because the default
+// Calibration is process-global and only ever ratchets up - one test's over-limit
+// observation must not shrink another test's window.
 func newEmbedModel(t *testing.T, driver ModelDriver, tokenizerID string, maxTokens int) *EmbeddingModel {
 	t.Helper()
 	t.Setenv("TOKENIZER_EMBEDDING_TOKENIZER", tokenizerID)
 	t.Setenv("TOKENIZER_EMBEDDING_MAX_TOKENS", strconv.Itoa(maxTokens))
-	return NewEmbeddingModel(driver, nil, nil, maxTokens)
+	apiKey := t.Name()
+	return NewEmbeddingModel(driver, nil, &APIConfig{ApiKey: &apiKey}, maxTokens)
 }
 
 // embedBudget is the budget a single cut would use, computed the same way
@@ -160,6 +182,85 @@ func TestEmbedWithinLimitRefusesAnUnavailableDeclaredTokenizer(t *testing.T) {
 	}
 	if len(driver.attempts) != 0 {
 		t.Errorf("the driver was called %d times despite the refusal", len(driver.attempts))
+	}
+}
+
+// TestEmbedWithinLimitIsolatesAPathologicalInput is the property that keeps one bad
+// input from failing the whole batch: when no batch budget fits, every input is
+// embedded on its own, in order, and the healthy ones keep their content.
+func TestEmbedWithinLimitIsolatesAPathologicalInput(t *testing.T) {
+	driver := &recordingEmbedDriver{rejectBatch: true}
+	model := newEmbedModel(t, driver, "", 8192)
+	// Read the ladder length before the call: the call's own rejections ratchet the
+	// calibration, which would shrink the budget this number is derived from.
+	budget, _ := embedBudget(t, model)
+	batchRungs := len(tokenizer.OverLimitLadder(budget))
+	texts := []string{strings.Repeat("a", 40), "second"}
+	embeds, err := model.EmbedWithinLimit(t.Context(), EmbedRequest{Texts: texts}, nil, nil)
+	if err != nil {
+		t.Fatalf("EmbedWithinLimit: %v", err)
+	}
+	if len(embeds) != 2 {
+		t.Fatalf("got %d embeddings, want 2", len(embeds))
+	}
+	if len(driver.attempts) != batchRungs+2 {
+		t.Fatalf("attempts = %d, want %d batch rungs plus 2 isolated calls", len(driver.attempts), batchRungs+2)
+	}
+	isolated := driver.attempts[batchRungs:]
+	for i, attempt := range isolated {
+		if len(attempt) != 1 {
+			t.Fatalf("isolated call %d carried %d texts, want 1", i, len(attempt))
+		}
+		// Both inputs fit the first budget, so isolation must not have modified them.
+		if attempt[0] != texts[i] {
+			t.Errorf("isolated call %d got %q, want %q", i, attempt[0], texts[i])
+		}
+	}
+}
+
+// TestEmbedWithinLimitFailsWhenNoBudgetFits keeps the floor honest: the ladder ends
+// above OverLimitFloorTokens and only isolation reaches it, so the error may only be
+// raised after the floor was actually tried - and never with a partial result.
+func TestEmbedWithinLimitFailsWhenNoBudgetFits(t *testing.T) {
+	driver := &recordingEmbedDriver{rejectLongerThan: 8}
+	model := newEmbedModel(t, driver, "", 8192)
+	budget, _ := embedBudget(t, model)
+	embeds, err := model.EmbedWithinLimit(t.Context(), EmbedRequest{Texts: []string{strings.Repeat("中", 500)}}, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error when not even the floor fits")
+	}
+	if embeds != nil {
+		t.Fatalf("partial results returned: %d embeddings", len(embeds))
+	}
+	if !strings.Contains(err.Error(), "even at 64 tokens") {
+		t.Errorf("error %q does not say the floor was tried", err)
+	}
+	want := len(tokenizer.OverLimitLadder(budget)) + len(tokenizer.OverLimitLadderToFloor(budget))
+	if len(driver.attempts) != want {
+		t.Errorf("attempts = %d, want %d (batch ladder then isolation down to the floor)", len(driver.attempts), want)
+	}
+}
+
+// TestEmbedWithinLimitRecordsTheDeclaredLimitInTheCalibration pins the third argument
+// of ObserveOverLimit: it is the provider's declared window, not the local budget
+// derived from it. Passing the (smaller) budget would understate the inferred ratio
+// and leave the calibration effectively unchanged, so the next call would repeat the
+// same rejection.
+func TestEmbedWithinLimitRecordsTheDeclaredLimitInTheCalibration(t *testing.T) {
+	driver := &recordingEmbedDriver{rejectFor: 1}
+	const declared = 8192
+	model := newEmbedModel(t, driver, "", declared)
+	if _, err := model.EmbedWithinLimit(t.Context(), EmbedRequest{Texts: []string{strings.Repeat("a", 40000)}}, nil, nil); err != nil {
+		t.Fatalf("EmbedWithinLimit: %v", err)
+	}
+	if len(driver.attempts) == 0 {
+		t.Fatal("no attempt recorded")
+	}
+	_, counter := embedBudget(t, model)
+	own := tokenizer.OwnTokenMax(driver.attempts[0], counter)
+	want := float64(declared) / float64(own) * 1.01
+	if got := tokenizer.DefaultCalibration().RatioUpper(model.QuotaKey()); got < want-1e-9 {
+		t.Fatalf("calibration ratio = %v, want at least %v (inferred from the declared limit)", got, want)
 	}
 }
 

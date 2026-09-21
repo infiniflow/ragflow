@@ -36,6 +36,7 @@ package tokenizer
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -542,11 +543,9 @@ func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 const OverLimitFloorTokens = 64
 
 // OverLimitMarkers are the provider wordings that mean "this input is longer than
-// the model accepts". 20015 is SiliconFlow's code for exactly that (it answers a
-// generic "The parameter is invalid" message); the rest are the usual phrasings
-// elsewhere.
+// the model accepts". They are phrases, not codes, so a plain substring test is the
+// right one for them.
 var OverLimitMarkers = []string{
-	"20015",
 	"too long",
 	"too many tokens",
 	"maximum context",
@@ -558,15 +557,29 @@ var OverLimitMarkers = []string{
 	"maximum allowed",
 }
 
+// OverLimitCodes are the provider error codes that mean the same thing. 20015 is
+// SiliconFlow's: it is returned with a generic "The parameter is invalid" message, so
+// the code is the only usable signal.
+var OverLimitCodes = []string{"20015"}
+
+// overLimitStatus matches an HTTP 4xx status as a delimited number: "400 Bad
+// Request" matches, "1400" and "4000" do not.
+var overLimitStatus = regexp.MustCompile(`\b(?:400|413|422)\b`)
+
 // IsOverLimitError reports whether err is an over-limit rejection rather than a
 // rate limit or a genuine failure. Only 4xx rejections qualify: a 5xx is the
 // provider's problem and a shorter input would not fix it.
+//
+// Status codes and provider codes are matched as DELIMITED numbers. A substring test
+// would read provider code 120015 as SiliconFlow's 20015 (and 1400 as 400), and the
+// caller would answer an unrelated failure by re-embedding a silently truncated
+// input — or replace the real error with a window-limit one.
 func IsOverLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	if !strings.Contains(msg, "400") && !strings.Contains(msg, "413") && !strings.Contains(msg, "422") {
+	if !overLimitStatus.MatchString(msg) {
 		return false
 	}
 	for _, marker := range OverLimitMarkers {
@@ -574,8 +587,34 @@ func IsOverLimitError(err error) bool {
 			return true
 		}
 	}
+	for _, code := range OverLimitCodes {
+		if hasDelimitedNumber(msg, code) {
+			return true
+		}
+	}
 	return false
 }
+
+// hasDelimitedNumber reports whether s contains num as a whole number: neither
+// neighbour may be a digit, so `"code":20015,` matches while 120015 and 200150 do
+// not.
+func hasDelimitedNumber(s, num string) bool {
+	for from := 0; from+len(num) <= len(s); {
+		at := strings.Index(s[from:], num)
+		if at < 0 {
+			return false
+		}
+		at += from
+		end := at + len(num)
+		if (at == 0 || !isASCIIDigit(s[at-1])) && (end == len(s) || !isASCIIDigit(s[end])) {
+			return true
+		}
+		from = at + 1
+	}
+	return false
+}
+
+func isASCIIDigit(b byte) bool { return b >= '0' && b <= '9' }
 
 // OverLimitLadder returns the budgets to try, in order, after a provider rejects
 // an input as over its window: the caller's budget first, then progressively
