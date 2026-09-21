@@ -830,6 +830,15 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	// everything downstream: the count, the record the answer reads, and the answer itself.
 	RunCoverageResolve(ctx, deps, st, logger)
 
+	// Publish what the table already holds, before the answer reads it. The record lists the
+	// members, and a list of names with no passage behind it is what the answer states as facts
+	// its evidence does not carry (see publishAnchoredMembers). The enumeration's own write-back
+	// runs above and publishes its members; this adds the ones no enumeration reached — every
+	// member a metadata selection defined.
+	if derived, resolved := publishAnchoredMembers(st.KB, &st.SlotTable); derived > 0 {
+		logger.Printf("[Finalize][members] derived=%d resolved=%d", derived, resolved)
+	}
+
 	// "Partial" is a statement about the EVIDENCE, so it is decided by facts rather
 	// than by a verdict that may not exist: unresolved slots are the table's own
 	// list of what it could not fill, NoProgress means the last round learned
@@ -2160,6 +2169,119 @@ func anchoredPoolEntries(kb *runtime.Kbinfos) []map[string]any {
 			"content":             quote,
 			"content_with_weight": quote,
 		})
+	}
+	return out
+}
+
+// publishAnchoredMembers publishes the slot table's anchored members into the answer's evidence
+// ledger: the citation list the compose puts IN FRONT of the answer (see withCitedChunks) and the
+// member→passage table its markers are written from (see CiteAnchoredMembers).
+//
+// It exists because the enumeration is not the only writer of members. Both publish sites sit in the
+// enumeration's write-back (coverage_step.go), so a member set a METADATA selection defined never
+// reached the answer's evidence at all: measured (2026-09-21) the record listed 6 documents with
+// their update times, the answer stated all 6 — and the evidence it read carried six blocks about
+// OTHER documents with zero markers resolved. The data was in the table the whole time; nobody
+// published it.
+//
+// The anchors such a session records are not pool chunk ids. metadata_search runs no retrieval and
+// admits no passage (tool_executor.go), so it hands the session DOC ids and the session writes those
+// in: measured, 12 anchors, all 32-hex doc ids, none resolvable by ChunkByID. Resolution is
+// therefore part of publishing rather than a refinement of it (see resolveMemberAnchor).
+//
+// derived is what the table claims, resolved what the pool could point at. A member that resolves to
+// nothing is NOT published — it stays a name in the record, but gets no block and no marker rather
+// than a block that opens somebody else's passage.
+func publishAnchoredMembers(kb *runtime.Kbinfos, table *runtime.State) (derived, resolved int) {
+	if kb == nil || table == nil {
+		return 0, 0
+	}
+	refs := runtime.AnchoredItemRefs(table)
+	if derived = len(refs); derived == 0 {
+		return 0, 0
+	}
+	published := make([]runtime.AnchoredRef, 0, len(refs))
+	cited := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		id, quote := resolveMemberAnchor(kb, ref)
+		if id == "" {
+			continue
+		}
+		ref.ChunkID, ref.Quote = id, quote
+		published = append(published, ref)
+		cited = append(cited, id)
+	}
+	if resolved = len(cited); resolved == 0 {
+		return derived, 0
+	}
+	// UNION, not replace: NoteCitedChunks replaces, and the enumeration's own list may hold
+	// passages this derivation does not — a member whose anchor no longer resolves must not cost
+	// the answer a passage that still does.
+	kb.NoteCitedChunks(appendMissingIDs(kb.CitedChunks(), cited))
+	kb.NoteAnchoredRefs(mergeAnchoredRefs(kb.AnchoredRefs(), published))
+	return derived, resolved
+}
+
+// resolveMemberAnchor maps one member's recorded anchor to a passage the pool holds, and returns the
+// quote that block may be rendered from ("" = render the whole passage).
+//
+//  1. the anchor is a pool chunk id — the enumeration's own case;
+//  2. the anchor is a doc id the pool holds chunks for — a metadata selection's case: the member IS
+//     the document, so it takes that document's passage, preferring the one that carries the quote.
+//     Which passage stands for a document is otherwise arbitrary, and an arbitrary passage is one
+//     the answer's own quotation will not match (see CitedAnchoredMembers);
+//  3. neither — no passage, and the caller publishes nothing for it.
+//
+// The quote is KEPT only when the resolved passage carries it. compactAnchored renders a published
+// member's block from the quote INSTEAD of the passage, so a quote the passage does not contain —
+// measured: "file_name: …; update_time: 2026-09-21 13:35:46", the metadata line the session was
+// shown — would replace the passage with something that is not in it.
+func resolveMemberAnchor(kb *runtime.Kbinfos, ref runtime.AnchoredRef) (string, string) {
+	anchor := strings.TrimSpace(ref.ChunkID)
+	if anchor == "" {
+		return "", ""
+	}
+	if chunk := kb.ChunkByID(anchor); chunk != nil {
+		if runtime.QuoteHeldBy(runtime.ChunkTextOf(chunk), ref.Quote) {
+			return anchor, ref.Quote
+		}
+		return anchor, ""
+	}
+	bestID := ""
+	bestScore := 0.0
+	for _, chunk := range kb.Chunks {
+		if runtime.DocIDOf(chunk) != anchor {
+			continue
+		}
+		id := runtime.ChunkIDOf(chunk)
+		if id == "" {
+			continue
+		}
+		if runtime.QuoteHeldBy(runtime.ChunkTextOf(chunk), ref.Quote) {
+			return id, ref.Quote
+		}
+		if score := similarityOrScore(chunk); bestID == "" || score > bestScore {
+			bestID, bestScore = id, score
+		}
+	}
+	return bestID, ""
+}
+
+// mergeAnchoredRefs unions the refs already recorded with the ones just published, first occurrence
+// winning: a member the enumeration already matched to a passage keeps that passage, and this step
+// only adds the members it did not have.
+func mergeAnchoredRefs(existing, added []runtime.AnchoredRef) []runtime.AnchoredRef {
+	out := make([]runtime.AnchoredRef, 0, len(existing)+len(added))
+	seen := make(map[string]bool, len(existing)+len(added))
+	for _, group := range [][]runtime.AnchoredRef{existing, added} {
+		for _, ref := range group {
+			name := strings.ToLower(strings.TrimSpace(ref.Name))
+			if name == "" || strings.TrimSpace(ref.ChunkID) == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, ref)
+		}
 	}
 	return out
 }

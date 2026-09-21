@@ -3924,6 +3924,99 @@ func TestCiteChunksPutTheItemsPassagesFirst(t *testing.T) {
 	}
 }
 
+// TestPublishAnchoredMembersResolvesDocIDs pins the metadata case. A session that selected documents
+// by metadata records DOC ids as its members' anchors — metadata_search returns doc ids and admits no
+// passage, so not one of them resolves in the pool — and publishing has to resolve them to that
+// document's own passage. Without resolution the members the record lists reach the answer as no
+// evidence at all: measured (2026-09-21) the answer stated 6 documents, the evidence it read carried
+// six blocks about OTHER documents, and zero markers resolved.
+func TestPublishAnchoredMembersResolvesDocIDs(t *testing.T) {
+	kb := &runtime.Kbinfos{Chunks: []map[string]any{
+		{"chunk_id": "docA-1", "doc_id": "docA", "content": "无关段落", "similarity": 0.3},
+		{"chunk_id": "docA-2", "doc_id": "docA", "content": "勒索病毒事件按 P1/P2/P3 分级", "similarity": 0.9},
+		{"chunk_id": "docB-1", "doc_id": "docB", "content": "端点隔离时限 10 分钟", "similarity": 0.4},
+		{"chunk_id": "other", "doc_id": "docC", "content": "别的文档", "similarity": 0.99},
+	}}
+	table := runtime.NewState([]runtime.Variable{
+		anchoredItemsVar(0, "list",
+			slots.Item{Value: "勒索病毒事件上报与分级管理规范", ChunkID: "docA",
+				Quote: "file_name: a.docx; update_time: 2026-09-21 13:35:42"},
+			slots.Item{Value: "端点隔离标准", ChunkID: "docB", Quote: "端点隔离时限 10 分钟"},
+		),
+	}, 0, nil)
+
+	derived, resolved := publishAnchoredMembers(kb, &table)
+	if derived != 2 || resolved != 2 {
+		t.Fatalf("derived/resolved = %d/%d, want 2/2", derived, resolved)
+	}
+	if got := kb.CitedChunks(); len(got) != 2 || got[0] != "docA-2" || got[1] != "docB-1" {
+		t.Fatalf("CitedChunks = %v, want each member on its own document's passage", got)
+	}
+	refs := kb.AnchoredRefs()
+	if len(refs) != 2 || refs[0].ChunkID != "docA-2" || refs[1].ChunkID != "docB-1" {
+		t.Fatalf("AnchoredRefs = %+v, want the anchors resolved to pool chunk ids", refs)
+	}
+	// The first member's quote is the METADATA line the session was shown, which its passage does
+	// not contain. Kept, compactAnchored would render that block FROM the metadata line instead of
+	// the passage — the block would show what the tool printed, not the document.
+	if refs[0].Quote != "" {
+		t.Errorf("ref[0].Quote = %q, want it DROPPED (its passage does not carry it)", refs[0].Quote)
+	}
+	// The second member's quote is in its passage: it stands, and the block renders from it.
+	if refs[1].Quote != "端点隔离时限 10 分钟" {
+		t.Errorf("ref[1].Quote = %q, want it kept", refs[1].Quote)
+	}
+}
+
+// TestPublishAnchoredMembersUnionsAndSkipsUnresolvable pins the two guards around the ledger. Its
+// writer REPLACES (NoteCitedChunks), so publishing must union: the enumeration's passages are already
+// recorded, and a member that no longer resolves must not cost the answer a passage that still does.
+// An anchor the pool cannot point at publishes nothing — the member stays a name in the record
+// rather than becoming a block that opens somebody else's passage.
+func TestPublishAnchoredMembersUnionsAndSkipsUnresolvable(t *testing.T) {
+	kb := &runtime.Kbinfos{Chunks: []map[string]any{
+		{"chunk_id": "enumerated", "doc_id": "docD", "content": "枚举来的段落", "similarity": 0.5},
+		{"chunk_id": "docE-1", "doc_id": "docE", "content": "元数据选出的段落", "similarity": 0.2},
+	}}
+	kb.NoteCitedChunks([]string{"enumerated"})
+	kb.NoteAnchoredRefs([]runtime.AnchoredRef{{Name: "枚举成员", ChunkID: "enumerated", Quote: "枚举来的"}})
+
+	table := runtime.NewState([]runtime.Variable{
+		anchoredItemsVar(0, "list",
+			slots.Item{Value: "元数据成员", ChunkID: "docE"},
+			slots.Item{Value: "无迹可循的成员", ChunkID: "docZ"},
+		),
+	}, 0, nil)
+
+	derived, resolved := publishAnchoredMembers(kb, &table)
+	if derived != 2 || resolved != 1 {
+		t.Fatalf("derived/resolved = %d/%d, want 2/1 (one anchor is in no document the pool holds)", derived, resolved)
+	}
+	if got := kb.CitedChunks(); len(got) != 2 || got[0] != "enumerated" || got[1] != "docE-1" {
+		t.Fatalf("CitedChunks = %v, want the enumeration's passage KEPT and the resolved one added", got)
+	}
+	if refs := kb.AnchoredRefs(); len(refs) != 2 || refs[0].Name != "枚举成员" || refs[1].Name != "元数据成员" {
+		t.Fatalf("AnchoredRefs = %+v, want the enumerated ref kept and the resolved one added", refs)
+	}
+}
+
+// TestPublishAnchoredMembersIsANoOpWithoutAnchors pins the regression guard: a table holding no
+// ANCHORED member publishes nothing, so an ordinary question's evidence selection stays exactly what
+// it is today — min(citeChunkCap, pool size).
+func TestPublishAnchoredMembersIsANoOpWithoutAnchors(t *testing.T) {
+	kb := &runtime.Kbinfos{Chunks: []map[string]any{{"chunk_id": "c1", "content": "x"}}}
+	table := runtime.NewState([]runtime.Variable{
+		typedMembersVar(0, "list", "于禁"),
+	}, 0, nil)
+
+	if derived, resolved := publishAnchoredMembers(kb, &table); derived != 0 || resolved != 0 {
+		t.Fatalf("derived/resolved = %d/%d, want 0/0 for a table whose members carry no passage", derived, resolved)
+	}
+	if got := kb.CitedChunks(); len(got) != 0 {
+		t.Fatalf("CitedChunks = %v, want nothing published", got)
+	}
+}
+
 // TestSlotRecordShowsEachItemWithItsPassage pins the citation half of the record: an item's chunk id
 // is in the value, and the record used to print names only — so the instruction to cite each member
 // ("every member you list carries the words behind it") had nothing to cite.
@@ -4229,6 +4322,15 @@ func typedAnchoredMembersVar(id int, typ string, lists ...string) runtime.Variab
 			}
 		}
 	}
+	v := slots.Items(items...)
+	rendered := slots.Render(v)
+	return runtime.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
+}
+
+// anchoredItemsVar builds a slot holding items with the anchors and quotes a session chose, which is
+// what typedAnchoredMembersVar's synthetic "c-<name>" anchors cannot express — a metadata selection's
+// anchors are doc ids and its quotes are the metadata lines it was shown.
+func anchoredItemsVar(id int, typ string, items ...slots.Item) runtime.Variable {
 	v := slots.Items(items...)
 	rendered := slots.Render(v)
 	return runtime.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
