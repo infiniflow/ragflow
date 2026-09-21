@@ -1110,28 +1110,29 @@ func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
 	if len(inputs) == 0 {
 		return nil
 	}
-	if len(inputs) == 1 {
-		for _, raw := range inputs {
-			if field, ok := raw.(map[string]interface{}); ok {
-				if v, ok := field["value"]; ok {
-					return v
-				}
-			}
-			return raw
-		}
-	}
 
 	out := make(map[string]any, len(inputs))
 	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if v, ok := field["value"]; ok {
-				out[name] = v
-				continue
-			}
-		}
-		out[name] = raw
+		out[name] = unwrapFormInput(raw)
 	}
 	return out
+}
+
+func unwrapFormInput(raw any) any {
+	field, ok := raw.(map[string]interface{})
+	if !ok {
+		return raw
+	}
+	if value, exists := field["value"]; exists {
+		return value
+	}
+	// Frontend form state can omit an untouched optional value. A field
+	// descriptor without a submitted value represents nil, not the
+	// descriptor itself (which would make Switch's `empty` fail).
+	if _, descriptor := field["type"]; descriptor {
+		return nil
+	}
+	return raw
 }
 
 func countInputValues(inputs map[string]interface{}) int {
@@ -1470,13 +1471,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 func extractUserInputWithQuery(inputs map[string]interface{}, query string) map[string]any {
 	values := make(map[string]any, len(inputs)+1)
 	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if value, exists := field["value"]; exists {
-				values[name] = value
-				continue
-			}
-		}
-		values[name] = raw
+		values[name] = unwrapFormInput(raw)
 	}
 	values["query"] = query
 	return values
