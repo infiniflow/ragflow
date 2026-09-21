@@ -524,7 +524,14 @@ func dispatchMinerUPDF(
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
-	lang := getStringOr(setup, "mineru_lang", "English")
+	// Language chain mirrors Python's mineru_parser.py:1181
+	// (mineru_lang → lang → "English"): the dedicated MinerU option wins,
+	// then the setup language, then English. The pdf setup's lang default
+	// ("Chinese") makes the unconfigured lang_list match Python's ch.
+	lang := getStringOr(setup, "mineru_lang", "")
+	if lang == "" {
+		lang = getStringOr(setup, "lang", "English")
+	}
 	mineruLang := mineruLangCode(lang)
 	backend := getStringOr(setup, "mineru_backend", "pipeline")
 
