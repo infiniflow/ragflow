@@ -254,6 +254,7 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 			// which advances the counter only for finished batches; workers
 			// finish out of order, so the figure jumps by batch size).
 			completed += len(batch)
+			runtime.ReportComponentFraction(ctx, float64(completed)/float64(total))
 			if reporter.shouldReport(completed) {
 				runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
 			}
