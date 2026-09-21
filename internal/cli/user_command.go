@@ -4131,7 +4131,7 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 	}, nil
 }
 
-func (c *CLI) APISetCPUCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+func (c *CLI) APISetCoresCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -4142,26 +4142,26 @@ func (c *CLI) APISetCPUCommand(commandCount int, cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
-	cpuCores, ok := cmd.Params["cpu_cores"].(int)
+	cores, ok := cmd.Params["cores"].(int)
 	if !ok {
-		return nil, fmt.Errorf("cpu_cores not provided")
+		return nil, fmt.Errorf("cores not provided")
 	}
 
 	payload := map[string]interface{}{
-		"cpu_cores": cpuCores,
+		"cores": cores,
 	}
-	resp, err := httpClient.Request(commandCount, "PUT", "/system/cpu", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/cores", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set CPU: %w", err)
+		return nil, fmt.Errorf("failed to set CPU cores: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to set CPU: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to set CPU cores: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result MessageResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("set CPU failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("set CPU cores failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -4253,19 +4253,19 @@ func (c *CLI) APISetConcurrencyCommand(commandCount int, cmd *Command) (Response
 	return &result, nil
 }
 
-func (c *CLI) APIShowCPUCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIShowCoresCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/cpu", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/cores", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get CPU: %w", err)
+		return nil, fmt.Errorf("failed to get CPU cores: %w", err)
 	}
 
-	return HandleCommonDataResponse(resp, "get CPU")
+	return HandleCommonDataResponse(resp, "get CPU cores")
 }
 
 func (c *CLI) APIShowMemoryCommand(commandCount int, cmd *Command) (ResponseIf, error) {

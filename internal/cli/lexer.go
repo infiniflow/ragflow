@@ -369,8 +369,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenSearch, Value: ident}
 	case "AGENT":
 		return Token{Type: TokenAgent, Value: ident}
-	case "CPU":
-		return Token{Type: TokenCPU, Value: ident}
+	case "CORES":
+		return Token{Type: TokenCores, Value: ident}
 	case "CONCURRENCY":
 		return Token{Type: TokenConcurrency, Value: ident}
 	case "MEMORY":
