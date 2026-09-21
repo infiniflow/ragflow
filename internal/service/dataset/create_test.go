@@ -87,9 +87,6 @@ func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 	if parentChild["use_parent_child"] != false || parentChild["children_delimiter"] != "\n" {
 		t.Fatalf("parent_child = %#v, want disabled defaults", parentChild)
 	}
-	if config["children_delimiter"] != "" {
-		t.Fatalf("children_delimiter = %#v, want empty legacy field", config["children_delimiter"])
-	}
 }
 
 func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
