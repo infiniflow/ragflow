@@ -162,8 +162,9 @@ func (s *stubDocProgressSvc) snapshot() (calls int, docID string, progress float
 }
 
 // ctxAwareStubDocProgressSvc fails like a real DB call when the flush context
-// is cancelled, so tests can distinguish wake flushes (run context) from the
-// Close final flush (detached context).
+// is cancelled, so tests can prove the Close final flush (detached context)
+// still succeeds after the run context is cancelled, while ticker flushes
+// bound to the run context would fail.
 type ctxAwareStubDocProgressSvc struct {
 	stubDocProgressSvc
 }
@@ -206,7 +207,7 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		Message:    "Parser Done",
 	})
 	// Close joins the flusher and performs the final forced flush, making the
-	// mirrored state deterministic regardless of wake timing.
+	// mirrored state deterministic regardless of ticker timing.
 	sink.Close()
 
 	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
@@ -295,8 +296,8 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 }
 
 // TestProgressSinkFractionsCoalesceIntoCloseFlush verifies high-frequency
-// fraction reports never write per event: they only mutate the tracker, and a
-// single forced flush on Close persists the accumulated percent.
+// fraction reports never write per event: they only mutate the tracker, and
+// the ticker plus the final flush on Close are the only writers.
 func TestProgressSinkFractionsCoalesceIntoCloseFlush(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -322,7 +323,8 @@ func TestProgressSinkFractionsCoalesceIntoCloseFlush(t *testing.T) {
 	}
 	sink.Close()
 
-	// Enter wake (1) + Close final (1) = at most 2 writes for 100 fractions.
+	// Ticker (at most one write, since a single value change is what the
+	// ticker would see) + Close final (1) = at most 2 writes for 100 reports.
 	calls, gotDocID, gotProgress := stub.snapshot()
 	if calls > 2 {
 		t.Fatalf("UpdateRunState calls = %d, want <= 2 (fractions must coalesce)", calls)
@@ -335,10 +337,10 @@ func TestProgressSinkFractionsCoalesceIntoCloseFlush(t *testing.T) {
 	}
 }
 
-// TestProgressSinkLifecycleWakeFlushesWithoutClose verifies a lifecycle event
-// pushes the mirrored percent out promptly (well before any Close), so the
-// progress bar advances at component boundaries even mid-run.
-func TestProgressSinkLifecycleWakeFlushesWithoutClose(t *testing.T) {
+// TestProgressSinkTickerFlushesLifecycleProgressWithoutClose verifies lifecycle
+// progress reaches the document row during the run instead of waiting for
+// Close: the flusher's ticker mirrors a changed percent within one interval.
+func TestProgressSinkTickerFlushesLifecycleProgressWithoutClose(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -363,12 +365,12 @@ func TestProgressSinkLifecycleWakeFlushesWithoutClose(t *testing.T) {
 	for {
 		if calls, gotDocID, gotProgress := stub.snapshot(); calls >= 1 {
 			if gotDocID != docID || gotProgress != 0.25 {
-				t.Fatalf("wake flush = doc:%q progress:%v, want %q/0.25", gotDocID, gotProgress, docID)
+				t.Fatalf("ticker flush = doc:%q progress:%v, want %q/0.25", gotDocID, gotProgress, docID)
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("lifecycle wake did not flush within 3s")
+			t.Fatal("ticker did not flush within 3s")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -403,6 +405,6 @@ func TestProgressSinkCloseFlushSurvivesCancelledRunContext(t *testing.T) {
 
 	calls, gotDocID, gotProgress := stub.snapshot()
 	if calls != 1 || gotDocID != docID || gotProgress != 0.5 {
-		t.Fatalf("final flush = calls:%d doc:%q progress:%v, want 1/%q/0.5 (wake flush must fail on cancelled ctx, Close flush must succeed)", calls, gotDocID, gotProgress, docID)
+		t.Fatalf("final flush = calls:%d doc:%q progress:%v, want 1/%q/0.5 (ticker flushes must fail on cancelled ctx, Close flush must succeed)", calls, gotDocID, gotProgress, docID)
 	}
 }

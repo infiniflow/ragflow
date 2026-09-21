@@ -30,9 +30,10 @@ import (
 )
 
 // progressFlushInterval bounds how often the flusher persists the in-memory
-// runProgress to the document row. Fraction reports (per parsed page, per
-// embedded chunk) only mutate memory; the ticker coalesces them into at most
-// one UPDATE per interval regardless of event rate.
+// runProgress to the document row. Lifecycle events and fraction reports only
+// mutate memory; the ticker coalesces them into at most one UPDATE per
+// interval regardless of event rate, so this is the worst-case lag between a
+// component boundary and its mirrored percent.
 const progressFlushInterval = time.Second
 
 // progressSink implements pipeline.ProgressSink. It records a run's component
@@ -53,7 +54,6 @@ type progressSink struct {
 	mu    sync.Mutex
 	docID string
 
-	wake      chan struct{}
 	closed    chan struct{}
 	closeOnce sync.Once
 	wg        sync.WaitGroup
@@ -84,7 +84,6 @@ func newProgressSink(ctx context.Context, taskSvc *servicepkg.IngestionTaskServi
 		pipelineLogID: pipelineLogID,
 		baseCtx:       ctx,
 		progress:      newRunProgress(),
-		wake:          make(chan struct{}, 1),
 		closed:        make(chan struct{}),
 	}
 	s.wg.Add(1)
@@ -115,18 +114,15 @@ func (s *progressSink) runFlusher(ctx context.Context) {
 		select {
 		case <-s.closed:
 			return
-		case <-s.wake:
-			s.flush(ctx, true)
 		case <-ticker.C:
 			s.flush(ctx, false)
 		}
 	}
 }
 
-// flush persists the current percent to the bound document. Forced flushes
-// (lifecycle wake, Close) always write so component boundaries stay sharp;
-// ticker flushes skip when percent is unchanged since the last successful
-// write.
+// flush persists the current percent to the bound document. Ticker flushes
+// skip when percent is unchanged since the last successful write; the final
+// flush on Close is forced.
 func (s *progressSink) flush(ctx context.Context, force bool) {
 	s.mu.Lock()
 	docID := s.docID
@@ -153,13 +149,6 @@ func (s *progressSink) bindDocument(docID string) {
 	s.mu.Unlock()
 }
 
-func (s *progressSink) wakeFlusher() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
-
 func (s *progressSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	s.progress.SetTotal(total)
 	if err := s.taskSvc.UpdateComponentTotal(ctx, taskID, total); err != nil {
@@ -177,12 +166,11 @@ func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.Prog
 	if ev.DocumentID != "" {
 		s.bindDocument(ev.DocumentID)
 	}
-	s.wakeFlusher()
 }
 
 // OnComponentFraction records an in-flight component's 0..1 completion
-// fraction (pages parsed, chunks embedded). It deliberately does not wake the
-// flusher: fraction reports are high-frequency and the ticker coalesces them.
+// fraction (pages parsed, chunks embedded). It deliberately does not flush
+// directly: fraction reports are high-frequency and the ticker coalesces them.
 // The pipeline reaches this method through an optional-interface assertion,
 // mirroring detailedProgressSink.
 func (s *progressSink) OnComponentFraction(_ context.Context, component string, frac float64) {
