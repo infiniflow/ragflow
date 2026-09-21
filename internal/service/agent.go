@@ -1865,6 +1865,17 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	return out, nil
 }
 
+// runReleasedAgent runs the most recently published version of a canvas.
+// Public agent runs keep using RunAgent's editable/latest-version behavior;
+// this path is reserved for the agentbot release=true contract.
+func (s *AgentService) runReleasedAgent(ctx context.Context, userID, canvasID, sessionID string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	version, err := s.versionDAO.GetLatestReleased(ctx, dao.DB, canvasID)
+	if err != nil {
+		return nil, fmt.Errorf("load latest released version for canvas %q: %w", canvasID, err)
+	}
+	return s.RunAgent(ctx, userID, canvasID, sessionID, version.ID, userInput, files)
+}
+
 // validateAgentChatModels rejects stale Agent model references before saving or
 // execution. Agent components always invoke a chat model; model-free canvases
 // contain no Agent component and pass through.
