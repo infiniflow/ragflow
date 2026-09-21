@@ -1074,3 +1074,51 @@ func TestSplitLargeHTMLTable_NoTH_TreatsFirstRowAsHeader(t *testing.T) {
 	}
 }
 
+// TestSplitTableUnitNormalizesTableTypes verifies every return path —
+// including the small/unsplittable early exits — carries DocType/CKType
+// "table", matching the pre-splitting DOCX branch normalization.
+func TestSplitTableUnitNormalizesTableTypes(t *testing.T) {
+	small := schema.ChunkDoc{Text: "<table><tr><td>1</td></tr></table>", DocType: "table"}
+	out := splitTableUnit(small, 1000)
+	if len(out) != 1 || out[0].DocType != "table" || out[0].CKType != "table" {
+		t.Fatalf("small table early return lost normalization: %#v", out[0])
+	}
+	unsplittable := schema.ChunkDoc{Text: "<table><tr><td>" + strings.Repeat("word ", 300) + "</td></tr></table>", DocType: "table"}
+	out = splitTableUnit(unsplittable, 40)
+	for i, doc := range out {
+		if doc.DocType != "table" || doc.CKType != "table" {
+			t.Fatalf("chunk %d not normalized: DocType=%q CKType=%q", i, doc.DocType, doc.CKType)
+		}
+	}
+}
+
+// TestSplitLargeHTMLTablePrefixOnlyInFirstChunk verifies the text preceding
+// the <table> tag (e.g. a short Markdown heading) is emitted once, not
+// repeated in every split chunk, while header rows still replicate.
+func TestSplitLargeHTMLTablePrefixOnlyInFirstChunk(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("Heading text")
+	b.WriteString("<table><tr><th>h</th></tr>")
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&b, "<tr><td>row %d word word</td></tr>", i)
+	}
+	b.WriteString("</table>")
+	parts := splitLargeHTMLTable(b.String(), 80)
+	if len(parts) < 2 {
+		t.Fatalf("expected multiple chunks, got %d", len(parts))
+	}
+	if !strings.HasPrefix(parts[0], "Heading text<table") {
+		t.Errorf("first chunk lost its prefix: %q", parts[0][:min(len(parts[0]), 40)])
+	}
+	for i, p := range parts[1:] {
+		if strings.Contains(p, "Heading text") {
+			t.Errorf("chunk %d repeats the pre-table prefix", i+1)
+		}
+		if !strings.HasPrefix(p, "<table") {
+			t.Errorf("chunk %d must open with the table wrapper, got %q", i+1, p[:min(len(p), 40)])
+		}
+		if !strings.Contains(p, "<th>") {
+			t.Errorf("chunk %d lost the repeated header row", i+1)
+		}
+	}
+}

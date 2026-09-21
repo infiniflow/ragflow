@@ -315,26 +315,38 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 // target has no <table> tag the <caption> is prepended so the text is at least
 // preserved.
 func injectCaption(table *pdf.Section, captions []string) {
-	var b strings.Builder
 	var seen []string
 	for _, c := range captions {
 		t := strings.TrimSpace(c)
 		if t == "" {
 			continue
 		}
-		dup := false
+		// Containment is checked in both directions: an existing caption
+		// that already covers t (equal or longer) drops t; a t that covers
+		// existing captions replaces them, so "Table 1" followed by
+		// "Table 1 Results" yields just the longer text.
+		contained := false
 		for _, s := range seen {
-			if s == t || strings.Contains(s, t) {
-				dup = true
+			if strings.Contains(s, t) {
+				contained = true
 				break
 			}
 		}
-		if dup {
+		if contained {
 			continue
 		}
-		seen = append(seen, t)
+		kept := seen[:0:0]
+		for _, s := range seen {
+			if !strings.Contains(t, s) {
+				kept = append(kept, s)
+			}
+		}
+		seen = append(kept, t)
+	}
+	var b strings.Builder
+	for _, t := range seen {
 		if b.Len() > 0 {
-			b.WriteString(captionSep(c))
+			b.WriteString(captionSep(t))
 		}
 		b.WriteString(html.EscapeString(t))
 	}

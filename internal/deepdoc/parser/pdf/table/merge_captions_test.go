@@ -127,3 +127,21 @@ func TestMergeCaptions_DeduplicateRepeatedCaptions(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, result[0].Text)
 	}
 }
+
+// TestInjectCaption_SubsumingCaptions verifies containment is honored in both
+// directions: a caption that extends an earlier one replaces it instead of
+// being concatenated next to it ("Table 1" + "Table 1 Results").
+func TestInjectCaption_SubsumingCaptions(t *testing.T) {
+	section := pdf.Section{Text: "<table><tr><td>1</td></tr></table>", LayoutType: "table"}
+	injectCaption(&section, []string{"Table 1", "Table 1 Results"})
+	want := "<table><caption>Table 1 Results</caption><tr><td>1</td></tr></table>"
+	if section.Text != want {
+		t.Errorf("caption = %q, want %q", section.Text, want)
+	}
+	// Reverse order keeps the same (longer) result.
+	rev := pdf.Section{Text: "<table><tr><td>1</td></tr></table>", LayoutType: "table"}
+	injectCaption(&rev, []string{"Table 1 Results", "Table 1"})
+	if rev.Text != want {
+		t.Errorf("reverse-order caption = %q, want %q", rev.Text, want)
+	}
+}

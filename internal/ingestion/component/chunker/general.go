@@ -1038,6 +1038,11 @@ var trRegex = regexp.MustCompile(`(?is)<tr\b[^>]*>.*?</tr>`)
 // preserves the table wrapper, caption (if present), and table header rows,
 // preventing downstream embedding truncation and data loss.
 func splitTableUnit(unit schema.ChunkDoc, maxTokens int) []schema.ChunkDoc {
+	// Normalize on every return path: DOCX table units can arrive with an
+	// empty CKType, and unsplittable/small tables must not regress to the
+	// un-normalized form the pre-splitting code used to fix up.
+	unit.DocType = "table"
+	unit.CKType = "table"
 	if maxTokens <= 0 || generalUnitTokens(unit) <= maxTokens {
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
@@ -1048,8 +1053,6 @@ func splitTableUnit(unit schema.ChunkDoc, maxTokens int) []schema.ChunkDoc {
 	res := make([]schema.ChunkDoc, 0, len(parts))
 	for _, part := range parts {
 		doc := cloneChunkDoc(unit)
-		doc.DocType = "table"
-		doc.CKType = "table"
 		setChunkText(&doc, part)
 		res = append(res, doc)
 	}
@@ -1109,18 +1112,27 @@ func splitLargeHTMLTable(text string, maxTokens int) []string {
 	headerRows := rows[:headerEnd]
 	dataRows := rows[headerEnd:]
 
-	baseHeader := prefix + tableOpenTag + captionHTML + strings.Join(headerRows, "")
+	baseHeader := tableOpenTag + captionHTML + strings.Join(headerRows, "")
+	prefixTokens := tokenizeStr(prefix)
 	baseTokens := tokenizeStr(baseHeader + "</table>")
 
+	// prefix (text before the table, e.g. a short Markdown heading) belongs to
+	// the table's position in the document: repeat only the table wrapper,
+	// caption and header rows in every chunk, and prepend prefix to the first.
 	var chunks []string
 	var currentDataRows []string
-	currentTokens := baseTokens
+	currentTokens := baseTokens + prefixTokens
+	firstChunk := true
 
 	flush := func() {
 		if len(currentDataRows) == 0 {
 			return
 		}
 		var b strings.Builder
+		if firstChunk {
+			b.WriteString(prefix)
+			firstChunk = false
+		}
 		b.WriteString(baseHeader)
 		for _, dr := range currentDataRows {
 			b.WriteString(dr)
