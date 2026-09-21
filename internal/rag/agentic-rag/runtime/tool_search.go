@@ -28,8 +28,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 )
 
@@ -178,10 +180,58 @@ type DocTenantResolver interface {
 	ResolveDocTenants(ctx context.Context, docIDs []string) (map[string]DocTenant, error)
 }
 
+// MetadataResolver resolves document sets from document metadata for the metadata_search
+// tool. Like DocIDVerifier / DocTenantResolver the lookup is left to the caller, so the
+// search legs hold no metadata-index dependency of their own; the production
+// implementation is internal/service.MetadataService. Nil makes the metadata channel
+// unavailable (the tool reports a clean miss, the pre-search channel is skipped).
+//
+// Filters are the tool's own {key, value, op} condition maps, kept as maps so the
+// implementation needs no import of this package.
+type MetadataResolver interface {
+	// FilterDocIDsByMetaPushdown resolves the documents whose metadata matches filters
+	// (logic = "and" | "or") by pushing the predicate into the document-metadata index.
+	//
+	// ok=false means the push-down is NOT viable or errored and the caller must fall back
+	// to GetFlattedMetaByKBs + the in-memory filter. ok=true with an empty slice is the
+	// definitive "no document matches".
+	FilterDocIDsByMetaPushdown(ctx context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool)
+	// GetFlattedMetaByKBs returns field → value → doc_ids for the given datasets. It is
+	// the in-memory filter's input and the source of the "which fields exist" hint that
+	// turns "this dataset has no title" into advice instead of an empty retrieval the
+	// model retries forever.
+	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
+	// MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given
+	// documents. It backs the metadata_search result's context block: the ids stay the
+	// tool's machine-consumable output, while these values let the model answer FROM the
+	// selection (its titles, file names, timestamps) without spending another tool call.
+	//
+	// Best effort by contract: a dataset that cannot be read contributes nothing and the
+	// returned error says why, but the caller has already resolved the document ids and
+	// must not fail a successful selection over a missing context block.
+	MetadataForDocIDs(ctx context.Context, kbIDs []string, docIDs []string) (map[string]map[string]any, error)
+}
+
+// DeclaredMetadataResolver reads the metadata fields a dataset DECLARES in its
+// parser_config — the {key, type, description, enum} definitions a user configured for
+// extraction. Optional: nil leaves the catalog with only what the metadata index carries.
+//
+// It is separate from MetadataResolver because it answers a different question (what the
+// dataset is CONFIGURED to filter on, before anything is indexed) from a different store
+// (the KB row, not the doc-metadata index), and because the declarative read is cheap enough
+// to run per metadata_search call while the observational one scans documents.
+type DeclaredMetadataResolver interface {
+	// DeclaredMetadataFields returns the declared fields of the given datasets, in
+	// configuration order. An error means "no declarative source available"; callers degrade
+	// to the metadata index alone rather than failing.
+	DeclaredMetadataFields(ctx context.Context, kbIDs []string) ([]common.MetadataFieldDef, error)
+}
+
 // RetrieveRequest is one retrieval call.
 //
-// Weight is the vector-similarity weight: 0.3 hybrid (default), 1.0 vector-only,
-// 0.0 keyword-only (BM25). That is how the three search entry points below differ.
+// Weight is the keyword-similarity weight: 0.7 hybrid (default), 0.0 vector-only,
+// 1.0 keyword-only (BM25). This is how Python's three search entry points
+// (hybrid_search / vector_search / bm25_search) differ.
 type RetrieveRequest struct {
 	Query                 string
 	DatasetIDs            []string
@@ -193,22 +243,10 @@ type RetrieveRequest struct {
 	// (threshold 0 = no floor); nil means "not supplied", so the retriever keeps
 	// its own default instead of being handed a zero override.
 	SimilarityThreshold *float64
-	// VectorSimilarityWeight carries the VECTOR leg's weight directly: 0.3 hybrid, 1.0
-	// vector-only, 0.0 keyword-only.
-	// It is forwarded verbatim to the retrieval backend — NO inversion. The
-	// canvas-facing adapter field of the same name family
-	// (agent/tool RetrievalRequest.KeywordsSimilarityWeight) means the KEYWORD
-	// weight and is inverted there; conflating the two silently turned the
-	// agentic hybrid leg vector-dominant (0.3 -> 0.7) and the BM25 legs into
-	// pure-vector searches.
-	VectorSimilarityWeight *float64
-	// DisableVectorLeg: embd_mdl=None: bm25_search /
-	// grep_search and RAGTools.retrieve with
-	// using_embedding=False (agentic_rag.py:retrieve) run NO dense leg at all —
-	// not even a weight-0 one, which would still constrain the candidate pool
-	// through the KNN similarity option.
-	DisableVectorLeg bool
-	TenantID         string
+	// KeywordsSimilarityWeight is the keyword leg's weight. The retrieval
+	// adapter derives the complementary vector weight and pure-mode behavior.
+	KeywordsSimilarityWeight *float64
+	TenantID                 string
 	// MetaDataFilter restricts retrieval to chunks whose metadata matches
 	// Nil means no filtering.
 	MetaDataFilter map[string]any
@@ -275,29 +313,31 @@ const (
 	ChannelRetrieve
 )
 
-// resolveVectorWeight is the weight each channel computes. The gate differs per channel
-// — that is the whole point:
+// resolveKeywordsSimilarityWeight mirrors the weight each Python entry point computes. The
+// gate differs per channel — that is the whole point:
 //
-//   - ChannelGrep: always 0 (the grep leg has no vector leg).
-//   - ChannelHybrid: 0 when no embedder is available, otherwise VectorSimilarityWeight
-//     ?? 0.3. UsingEmbedding is IRRELEVANT here: this channel has no such parameter.
-//   - ChannelRetrieve: 0 unless UsingEmbedding, otherwise VectorSimilarityWeight ?? 0.7.
-func resolveVectorWeight(deps SearchDeps, ch SearchChannel) float64 {
+//   - ChannelGrep: always 1 (grep_search has no vector leg).
+//   - ChannelHybrid: 1 when no embedder is configured (Python's `if embd_mdl`),
+//     otherwise KeywordsSimilarityWeight ?? 0.7. UsingEmbedding is IRRELEVANT
+//     here: Python's hybrid_search has no such parameter.
+//   - ChannelRetrieve: 1 unless UsingEmbedding (Python's using_embedding),
+//     otherwise KeywordsSimilarityWeight ?? 0.3.
+func resolveKeywordsSimilarityWeight(deps SearchDeps, ch SearchChannel) float64 {
 	switch ch {
 	case ChannelGrep:
-		return 0
+		return 1
 	case ChannelHybrid:
 		// The configured weight when an embedder is available, else 0. HasEmbedder says
 		// only that one is available — the retrieval service resolves the actual model.
 		if !deps.HasEmbedder {
-			return 0
+			return 1
 		}
-		return floatPtrOrDef(deps.VectorSimilarityWeight, HybridSearchDefaultVectorWeight)
+		return floatPtrOrDef(deps.KeywordsSimilarityWeight, 1-HybridSearchDefaultVectorWeight)
 	default:
 		if !deps.UsingEmbedding {
-			return 0
+			return 1
 		}
-		return floatPtrOrDef(deps.VectorSimilarityWeight, DefaultHybridVectorWeight)
+		return floatPtrOrDef(deps.KeywordsSimilarityWeight, 1-DefaultHybridVectorWeight)
 	}
 }
 
@@ -364,20 +404,24 @@ type SearchDeps struct {
 	// database and therefore stays self-contained for callers that cannot or do not want
 	// to supply one.
 	Embedder nlp.NavEmbedder
-	// Retrieval tuning: top_n, similarity threshold, vector similarity weight, rerank
-	// candidates and top_k. Zero falls back to this package's Default* constants.
+	// Retrieval tuning (Python RAGTools.retrieve: _setting(self, "top_n"),
+	// similarity_threshold, keywords_similarity_weight, rerank_candidates_count,
+	// top_k). Zero falls back to this package's Default* constants.
 	TopN                int
 	SimilarityThreshold float64
-	// VectorSimilarityWeight is a pointer so an explicit 0 (keyword-only, the
-	// agentic default) is distinguishable from "not configured", which falls
-	// back to DefaultAgenticVectorWeight.
-	VectorSimilarityWeight *float64
-	// UsingEmbedding turns the embedded leg of the RETRIEVE channel on. When false (the
-	// agentic default) the vector leg is disabled and retrieval is keyword-only (vector
-	// weight 0). When true the embedder is engaged and the vector weight is applied:
-	// VectorSimilarityWeight if set, else DefaultHybridVectorWeight. The query embedder
-	// itself is supplied by the runtime retrieval service, so this carries the flag
-	// rather than a handle.
+	// KeywordsSimilarityWeight is a pointer so an explicit 0 (vector-only) is
+	// distinguishable from "not configured", which falls back to the channel's
+	// default keyword weight.
+	KeywordsSimilarityWeight *float64
+	// UsingEmbedding is the Go spelling of Python RAGTools.retrieve's
+	// `using_embedding: bool = False` (agentic_rag.py:retrieve). When false (the
+	// agentic default), the vector leg is disabled and retrieval is keyword-only
+	// (vector weight 0) — exactly Python's `embd_mdl = None; vector_weight = 0`.
+	// When true, the embedder is engaged and the vector weight is applied:
+	// KeywordsSimilarityWeight if set, else 0.3 (the complement of Python's
+	// default vector weight of 0.7). Unlike Python, the
+	// query embedder is supplied by the runtime retrieval service, so Go carries
+	// the flag rather than an embd_mdl handle on the retrieve call itself.
 	//
 	// SCOPE: this flag governs ChannelRetrieve ONLY. The hybrid channel (search_chunks)
 	// has no such parameter, so gating it here is what silently disabled the semantic
@@ -404,6 +448,15 @@ type SearchDeps struct {
 	// behaviour: each bound dataset is searched with the whole DocScope (no per-document
 	// re-grouping).
 	DocTenantResolver DocTenantResolver
+	// MetadataResolver resolves document sets from document metadata, backing the
+	// metadata_search tool and the pre-search metadata channel. Nil leaves both
+	// unavailable: the tool reports a clean miss and the channel is skipped.
+	MetadataResolver MetadataResolver
+	// DeclaredMetadata reads the metadata fields the datasets DECLARE in their
+	// parser_config (description/enum included), which is what lets the metadata_search
+	// catalog say what a field MEANS and not just that it exists. Nil leaves the catalog
+	// with the metadata index alone.
+	DeclaredMetadata DeclaredMetadataResolver
 	// DoRefer: when true, summarize_document
 	// prefixes the citation rules so the model cites the blocks it summarises.
 	DoRefer bool
@@ -522,8 +575,8 @@ func FanoutKeyedTerms(terms []string) []string {
 // similarity threshold and compiled-row exclusion are chosen by the CALLER, never by a
 // single shared "channel flag" that a global switch could silently corrupt.
 type searchOpts struct {
-	// weight is the VECTOR similarity weight.
-	weight float64
+	// keywordsSimilarityWeight is the keyword leg's similarity weight.
+	keywordsSimilarityWeight float64
 	// threshold is the engine similarity floor.
 	threshold float64
 	// excludeCompiled: must_not={"exists":"compile_kwd"}.
@@ -537,19 +590,18 @@ type searchOpts struct {
 	// "searching" line — the LOG form, terse and grep-friendly, with the keywords
 	// suffix and no period:
 	//
-	//	hybrid   → [Hybrid search] Searching for "q" (keywords: k)
+	//	hybrid   → [Hybrid search] Searching the knowledge base for "q" (keywords: k)
 	//	vector   → [Vector search] Searching by meaning for "q" (keywords: k)
 	//	bm25     → [BM25 search] Searching by keyword for "q" (keywords: k)
 	//	grep     → [Grep search] Keyword-first locate for "q"  (NO keywords)
 	//	retrieve → [Retrieve] Searching for "q" (keywords: k)  (Go-only tag)
 	//
-	// The verbs started out Python-exact (search.py:122/:215/:252/:418), and the
-	// vector/bm25/grep ones still are. The hybrid and retrieve legs dropped "the
-	// knowledge base" from it (2026-09-16): every leg searches it, so the phrase
-	// distinguishes nothing a reader can act on, and the leg's own tag
-	// ("[BM25 search]") already names the tool. The shape a Python log diff is
-	// compared against is otherwise unchanged — same tag, same keywords suffix, same
-	// `"%q -> N chunk(s): …"` result line.
+	// Every verb is Python's own (search.py:122/:216/:254/:421), so a log diff
+	// against Python lines up — retrieve is the one Go-only tag, and it no longer
+	// carries "the knowledge base" (2026-09-16), which every leg searches and which
+	// therefore distinguishes nothing a reader can act on. The shape is otherwise
+	// unchanged — same tag, same keywords suffix, same `"%q -> N chunk(s): …"`
+	// result line.
 	//
 	// The think block gets thinkVerb through searchThinkLine instead — one sentence
 	// family for every leg, with the method named and the keyword list left out. The
@@ -572,7 +624,7 @@ type searchOpts struct {
 	// SENTENCE: it names the method ("by meaning and keyword") because the
 	// "[Hybrid search]" prefix is a developer's label, and it is the reason the two
 	// projections differ at all. Every leg sets it explicitly — so the log side can
-	// be reworded (the hybrid and retrieve legs dropped "the knowledge base", above)
+	// be reworded (the Go-only retrieve leg dropped "the knowledge base", above)
 	// without the trace moving with it; the fallback to logVerb only covers a future
 	// leg that forgets to set one, where an identical sentence beats an empty one.
 	thinkVerb string
@@ -587,11 +639,6 @@ type searchOpts struct {
 	// leg passes the snake_case "hybrid_search", while the vector and bm25 legs pass their
 	// display labels "Vector search" / "BM25 search". Both forms are reproduced verbatim.
 	narrowLabel string
-	// disableVector: embd_mdl=None: when set the request
-	// carries DisableVectorLeg and the backend runs the keyword-only branch.
-	// Grep (bm25_search) always sets it; hybrid/retrieve set it from their own
-	// embedder gates (HasEmbedder / UsingEmbedding).
-	disableVector bool
 	// rankFeature opts the entry point into the question-type tag boost
 	// (rank_feature). ONLY the retrieve channel passes the question-type tags; the three
 	// search legs call the retriever WITHOUT them (the grep leg delegates to bm25). Before
@@ -695,11 +742,12 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	}
 
 	// The per-leg searching line: BOTH the bracket label and the verb vary by entry
-	// point — "[Hybrid search] Searching for", "[Vector search] Searching by meaning
-	// for", "[BM25 search] Searching by keyword for", "[Grep search]
-	// Keyword-first locate for" — and only the three keyword-carrying legs
-	// append the keywords (see searchOpts.logLabel / logVerb / logKeywords for which
-	// verbs are Python's own and which dropped "the knowledge base").
+	// point — "[Hybrid search] Searching the knowledge base for", "[Vector search]
+	// Searching by meaning for", "[BM25 search] Searching by keyword for", "[Grep
+	// search] Keyword-first locate for" — and only the three keyword-carrying legs
+	// append the keywords (see searchOpts.logLabel / logVerb / logKeywords for the
+	// Python source of each verb, and for the one Go-only tag that dropped "the
+	// knowledge base").
 	// The suffix is printed only when non-empty: a keyword-less leg is a
 	// deliberate state (fan-out Channel B is a narrow bypass,
 	// agentic_rag_graph.py:_search_one; search_chunks takes no keywords at all,
@@ -715,7 +763,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	//
 	// The two audiences get different sentences from this one call site. The log
 	// keeps Python's shape — label, keyword list and result line, plus Python's verb
-	// on the vector/bm25/grep legs (the hybrid and retrieve verbs deliberately dropped
+	// on every leg that has one (only the Go-only retrieve verb deliberately dropped
 	// "the knowledge base"; see logVerb above for what a log diff can still be
 	// compared against). The think block gets the sentence family every leg
 	// shares, which names the method inside the sentence because "[BM25 search]" is
@@ -768,26 +816,33 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// SECONDS of a 75s tool wall, the retry died immediately on `context deadline exceeded`, and the
 	// session's round was gone — the answer it salvaged could name one member of sixteen. Two bounded
 	// attempts beat one unbounded one.
-	retrieve := func(disableVector bool) ([]map[string]any, error) {
+	//
+	// The "no dense leg" retry is expressed in the request's own vocabulary: KeywordsSimilarityWeight is
+	// the keyword leg's weight (0.0 vector-only, 0.7 hybrid, 1.0 keyword-only — see RetrieveRequest), so
+	// keyword-only IS the dense leg switched off, and it is the same weight the Python entry point
+	// bm25_search passes.
+	retrieve := func(keywordOnly bool) ([]map[string]any, error) {
 		attemptCtx, cancelAttempt := context.WithTimeout(ctx, searchAttemptBudget(ctx))
 		defer cancelAttempt()
+		weight := opts.keywordsSimilarityWeight
+		if keywordOnly {
+			// 1.0 IS "no dense leg" in this API (see RetrieveRequest): the keyword leg is then the whole
+			// retrieval, which is what the retry wants when the embedder is the thing that is down.
+			weight = 1.0
+		}
 		return deps.Backend.Retrieve(attemptCtx, RetrieveRequest{
-			Query:                 effectiveQuery,
-			DatasetIDs:            targetIDs,
-			DocScope:              docScope,
-			TopN:                  topN,
-			TopK:                  intOrDef(deps.TopK, DefaultTopK),
-			RerankCandidatesCount: max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
-			SimilarityThreshold:   &opts.threshold,
-			// VectorSimilarityWeight carries the VECTOR weight verbatim; the canvas
-			// adapter's keyword-weight inversion does NOT apply to this field.
-			// DisableVectorLeg is the hard switch: no dense leg at all.
-			VectorSimilarityWeight: &opts.weight,
-			DisableVectorLeg:       opts.disableVector || disableVector,
-			TenantID:               deps.TenantID,
-			MetaDataFilter:         deps.MetaDataFilter,
-			RankFeature:            rankFeature,
-			ExcludeCompiled:        opts.excludeCompiled,
+			Query:                    effectiveQuery,
+			DatasetIDs:               targetIDs,
+			DocScope:                 docScope,
+			TopN:                     topN,
+			TopK:                     intOrDef(deps.TopK, DefaultTopK),
+			RerankCandidatesCount:    max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
+			SimilarityThreshold:      &opts.threshold,
+			KeywordsSimilarityWeight: &weight,
+			TenantID:                 deps.TenantID,
+			MetaDataFilter:           deps.MetaDataFilter,
+			RankFeature:              rankFeature,
+			ExcludeCompiled:          opts.excludeCompiled,
 		})
 	}
 	chunks, err := retrieve(false)
@@ -865,23 +920,357 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 // weight when one is, else 0); default weight 0.3. Compiled rows are excluded.
 func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
-		weight:          resolveVectorWeight(deps, ChannelHybrid),
-		threshold:       floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
-		excludeCompiled: true,
-		promoteChildren: true,
-		// The real embedder is passed even at weight 0; the dense leg is dropped only when
-		// none is configured.
-		disableVector: !deps.HasEmbedder,
-		logLabel:      "Hybrid search",
-		logVerb:       "Searching for",
-		logKeywords:   true,
-		thinkVerb:     "Searching by meaning and keyword for",
-		cache:         true, // Python's search_cache is read/written here only (:136/:207)
+		keywordsSimilarityWeight: resolveKeywordsSimilarityWeight(deps, ChannelHybrid),
+		threshold:                floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
+		excludeCompiled:          true,
+		promoteChildren:          true,
+		logLabel:                 "Hybrid search",
+		logVerb:                  "Searching the knowledge base for",
+		logKeywords:              true,
+		cache:                    true, // Python's search_cache is read/written here only (:136/:207)
+		thinkVerb:                "Searching by meaning and keyword for",
 		// Python passes the SNAKE_CASE tag to _narrow_or_keep on this leg
 		// (search.py:hybrid_search) although its own lines say "Hybrid search" — the
 		// inconsistency is Python's and is reproduced verbatim.
 		narrowLabel: "hybrid_search",
 	})
+}
+
+// MetadataDocIDs resolves the documents a metadata filter matches: metadata-index
+// push-down (ES / Infinity) -> in-memory filter when the push-down is not viable ->
+// intersect with the session document scope.
+//
+// ok=false means NO document is eligible — nothing matched, or the session scope removed
+// every match. That is a normal empty result, never an error: the caller reports a
+// query-level miss. The resolution is query-independent, so callers resolve once and then
+// search inside the returned documents.
+func MetadataDocIDs(ctx context.Context, deps SearchDeps, filters []map[string]any, logic string) ([]string, bool) {
+	logger := searchLogger(deps)
+	if len(filters) == 0 || deps.MetadataResolver == nil {
+		return nil, false
+	}
+	targetIDs := metadataTargetIDs(deps)
+	if len(targetIDs) == 0 {
+		return nil, false
+	}
+	docIDs, pushdownOK := deps.MetadataResolver.FilterDocIDsByMetaPushdown(ctx, targetIDs, filters, logic)
+	if !pushdownOK {
+		metas, err := deps.MetadataResolver.GetFlattedMetaByKBs(ctx, targetIDs)
+		if err != nil {
+			logger.Printf("[Metadata search] push-down unavailable and the in-memory fallback failed: %v", err)
+			return nil, false
+		}
+		docIDs = metaFilterDocIDs(metas, filters, logic)
+	}
+	if len(docIDs) == 0 {
+		logger.Printf("[Metadata search] no documents matched filters=%v logic=%s", filters, logic)
+		return nil, false
+	}
+	// The session's document scope is a ceiling: a document outside it stays unreachable
+	// even when its metadata matches.
+	scoped := scopedDocIDs(deps.DocScope, docIDs)
+	if len(scoped) == 0 {
+		logger.Printf("[Metadata search] 0 documents after the doc-scope intersection")
+		return nil, false
+	}
+	return scoped, true
+}
+
+// MetadataSearch: hybrid retrieval restricted to the documents a metadata filter matches
+// (MetadataDocIDs + HybridSearch), the leg the pre-search metadata channel runs.
+//
+// Compiled expansion stays OFF: it would pull in out-of-scope chunks and break the "only
+// these documents" contract.
+func MetadataSearch(ctx context.Context, deps SearchDeps, p SearchParams, filters []map[string]any, logic string) ([]map[string]any, []map[string]any) {
+	docIDs, ok := MetadataDocIDs(ctx, deps, filters, logic)
+	if !ok {
+		return nil, nil
+	}
+	searchLogger(deps).Printf("[Metadata search] %q searching %d matched doc(s) via filters=%v", trunc(p.Question, 80), len(docIDs), filters)
+	return HybridSearch(ctx, deps, SearchParams{
+		Question:    p.Question,
+		Keywords:    p.Keywords,
+		DocScope:    docIDs,
+		TopN:        p.TopN,
+		UseCompiled: false,
+	})
+}
+
+// metadataTargetIDs is the deduplicated dataset id list a metadata lookup spans: the
+// session's bound datasets plus its structured (SQL-backed) ones.
+func metadataTargetIDs(deps SearchDeps) []string {
+	merged := append(append([]string{}, deps.KbIDs...), deps.SQLKBs...)
+	out := make([]string, 0, len(merged))
+	seen := make(map[string]struct{}, len(merged))
+	for _, id := range merged {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// Metadata-search catalog caps: fields listed, values shown per field, and the rendered
+// block's length in CODE POINTS (a byte cap would cut CJK fields early).
+const (
+	metadataCatalogKeysMax       = 20
+	metadataCatalogSamplesPerKey = 8
+	metadataCatalogRenderMax     = 2000
+)
+
+// metadataCatalogSystemKeys are metadata keys that exist in the doc-metadata index but
+// must never be offered as filters: unique identifiers and benchmark annotations let a
+// model shrink retrieval to the answer's own documents (the FRAMES `question_id` stamps
+// every document of one question with the same id), and the PDF/connector-derived fields
+// describe the file rather than its content.
+var metadataCatalogSystemKeys = map[string]bool{
+	"question_id": true,
+	"source_uri":  true,
+	"pageid":      true,
+	"outline":     true,
+}
+
+// MetadataSample is one value of a metadata field plus how many documents carry it.
+type MetadataSample struct {
+	Value string `json:"value"`
+	Docs  int    `json:"docs"`
+}
+
+// MetadataCatalog is what a dataset offers as metadata_search filters, drawn from BOTH
+// sources it has:
+//
+//   - the DECLARATIVE one (Fields): the {key, type, description, enum} definitions stored in
+//     the dataset's parser_config. They exist BEFORE anything is indexed, and they carry what
+//     the observational source cannot: what a field MEANS and which values it accepts;
+//   - the OBSERVATIONAL one (Samples): the values the doc-metadata index actually carries,
+//     with document counts.
+//
+// It is rendered into three places: the metadata_search tool schema (the `key` enum), the
+// action-session seed (the AVAILABLE METADATA block) and the pre-search fan-out channel's
+// field vocabulary. Nothing is baked in as a fallback — no field is advertised, filtered on or
+// named in a prompt unless the dataset's catalog carries it. The tool's own key check reads the
+// same two sources (see resolveMetadataFields), so what is advertised is what is accepted.
+type MetadataCatalog struct {
+	Keys    []string
+	Samples map[string][]MetadataSample
+	// Fields holds a key's DECLARED definition when the dataset declares one. A key present
+	// only here is declared but not yet indexed: still a legitimate filter, just with no value
+	// sample to show for it.
+	Fields map[string]common.MetadataFieldDef
+}
+
+// Empty reports whether the catalog carries no usable field. An empty catalog means
+// "leave the tool spec exactly as it ships" — never "offer a field list that is empty",
+// because some providers reject an empty enum.
+func (c MetadataCatalog) Empty() bool { return len(c.Keys) == 0 }
+
+// Render builds the seed block. Empty catalogs render as "" so the caller can append
+// unconditionally. Each field carries what is known about it — its declared meaning, the
+// values it accepts, and the values seen in the index — so the model fills a filter instead
+// of guessing. The result is capped at metadataCatalogRenderMax code points.
+func (c MetadataCatalog) Render() string {
+	if c.Empty() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("AVAILABLE METADATA (dataset fields usable as metadata_search filters):")
+	for _, k := range c.Keys {
+		b.WriteString("\n- ")
+		b.WriteString(k)
+		b.WriteString(describeMetadataField(c.Fields[k]))
+		if samples := c.Samples[k]; len(samples) > 0 {
+			b.WriteString("; values seen: ")
+			for i, s := range samples {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				fmt.Fprintf(&b, "%q (%d doc(s))", s.Value, s.Docs)
+			}
+		}
+	}
+	b.WriteString("\nFields NOT listed here are unusable as filters — never invent one.")
+	return truncateRunes(b.String(), metadataCatalogRenderMax)
+}
+
+// describeMetadataField renders a field's declared meaning and allowed values, shared by
+// Render and FieldList so the two can never describe the same field differently.
+func describeMetadataField(def common.MetadataFieldDef) string {
+	var b strings.Builder
+	if def.Description != "" {
+		b.WriteString(" — ")
+		b.WriteString(def.Description)
+	}
+	if len(def.Enum) > 0 {
+		b.WriteString(" (one of: ")
+		b.WriteString(strings.Join(def.Enum, " / "))
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
+// MetadataCatalogFor reads the metadata fields the session's datasets offer, for the
+// metadata_search schema and the session seed.
+//
+// It is DELIBERATELY error-free: the observational read is the same GetFlattedMetaByKBs the
+// executor already performs for its key check, and a nil resolver, an unreadable index or an
+// empty KB set all degrade to whatever the other half provides — "keep today's behaviour"
+// rather than failing the session. (A resolver failure is still reported to the model by the
+// tool itself as ERROR/infra if a call reaches the executor.)
+func MetadataCatalogFor(ctx context.Context, deps SearchDeps) MetadataCatalog {
+	keys, metas, declared, err := resolveMetadataFields(ctx, deps)
+	if err != nil || len(keys) == 0 {
+		return MetadataCatalog{}
+	}
+	cat := MetadataCatalog{
+		Keys:    keys,
+		Fields:  declared,
+		Samples: make(map[string][]MetadataSample, len(keys)),
+	}
+	for _, k := range keys {
+		if samples := topMetadataSamples(metas[k], metadataCatalogSamplesPerKey); len(samples) > 0 {
+			cat.Samples[k] = samples
+		}
+	}
+	return cat
+}
+
+// MetadataCatalogPtr is MetadataCatalogFor returning nil for an empty catalog, so a
+// Toolset carries "no catalog" as nil and every render path skips it by construction.
+func MetadataCatalogPtr(ctx context.Context, deps SearchDeps) *MetadataCatalog {
+	cat := MetadataCatalogFor(ctx, deps)
+	if cat.Empty() {
+		return nil
+	}
+	return &cat
+}
+
+// resolveMetadataFields is the single resolution both the catalog (what to advertise) and the
+// executor (what to accept) run. It returns the offered keys in sorted order, the flattened
+// observational view (for value samples), the declared definitions by key, and — unlike the
+// catalog's own view — the metadata-index read error, which the executor reports as infra
+// rather than folding into "this dataset has no metadata".
+//
+// Both halves are best-effort and independent: no declared resolver or a failing parser_config
+// read leaves the observational half alone, and vice versa. A DECLARED key is offered even
+// when the index has no value for it yet (it is a real filter that currently matches nothing);
+// an OBSERVED key is offered only when it carries at least one usable value.
+func resolveMetadataFields(ctx context.Context, deps SearchDeps) ([]string, common.MetaData, map[string]common.MetadataFieldDef, error) {
+	targetIDs := metadataTargetIDs(deps)
+	if len(targetIDs) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	declared := map[string]common.MetadataFieldDef{}
+	if deps.DeclaredMetadata != nil {
+		if defs, err := deps.DeclaredMetadata.DeclaredMetadataFields(ctx, targetIDs); err == nil {
+			for _, def := range defs {
+				if metadataCatalogExcluded(def.Key) {
+					continue
+				}
+				if _, dup := declared[def.Key]; dup {
+					continue
+				}
+				declared[def.Key] = def
+			}
+		}
+	}
+
+	metas := common.MetaData{}
+	if deps.MetadataResolver != nil {
+		got, err := deps.MetadataResolver.GetFlattedMetaByKBs(ctx, targetIDs)
+		if err != nil {
+			return nil, nil, declared, err
+		}
+		metas = got
+	}
+
+	seen := make(map[string]bool, len(declared)+len(metas))
+	keys := make([]string, 0, len(declared)+len(metas))
+	for k := range declared {
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	for k := range metas {
+		if seen[k] || metadataCatalogExcluded(k) {
+			continue
+		}
+		if len(topMetadataSamples(metas[k], 1)) == 0 {
+			// No usable value: offering the key would only invite a call that cannot match.
+			continue
+		}
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) > metadataCatalogKeysMax {
+		keys = keys[:metadataCatalogKeysMax]
+	}
+	if len(declared) == 0 {
+		declared = nil
+	}
+	return keys, metas, declared, nil
+}
+
+// metadataCatalogExcluded reports whether a metadata key must stay out of the catalog:
+// blank, a connector/derived field (leading underscore is how they are namespaced), or a
+// system/label field (see metadataCatalogSystemKeys).
+func metadataCatalogExcluded(key string) bool {
+	k := strings.TrimSpace(key)
+	if k == "" || strings.HasPrefix(k, "_") {
+		return true
+	}
+	return metadataCatalogSystemKeys[k]
+}
+
+// topMetadataSamples orders one field's values by document count (descending) then value,
+// so the rendered sample is deterministic, and caps them at n (n <= 0 means "no cap").
+func topMetadataSamples(values common.MetaValueDocs, n int) []MetadataSample {
+	out := make([]MetadataSample, 0, len(values))
+	for v, docs := range values {
+		if strings.TrimSpace(v) == "" || len(docs) == 0 {
+			continue
+		}
+		out = append(out, MetadataSample{Value: v, Docs: len(docs)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Docs != out[j].Docs {
+			return out[i].Docs > out[j].Docs
+		}
+		return out[i].Value < out[j].Value
+	})
+	if n > 0 && len(out) > n {
+		out = out[:n]
+	}
+	return out
+}
+
+// metaFilterDocIDs is the in-memory metadata filter used when the index push-down is not
+// viable. The condition conversion and the operator normalisation stay in
+// internal/service, where the chat pipeline's own filter shares them.
+func metaFilterDocIDs(metas common.MetaData, filters []map[string]any, logic string) []string {
+	if len(metas) == 0 || len(filters) == 0 {
+		return nil
+	}
+	conditions := make([]service.MetaFilterCondition, 0, len(filters))
+	for _, f := range filters {
+		if f == nil {
+			continue
+		}
+		conditions = append(conditions, service.MetaFilterCondition{
+			Key:   asString(f["key"]),
+			Value: f["value"],
+			Op:    asString(f["op"]),
+		})
+	}
+	if len(conditions) == 0 {
+		return nil
+	}
+	return service.ApplyMetaFilter(metas, conditions, logic)
 }
 
 // VectorSearch: the pure vector entry point. With no embedder it returns nothing,
@@ -891,15 +1280,15 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 		return nil, nil
 	}
 	return runSearch(ctx, deps, p, searchOpts{
-		weight:          1.0,
-		threshold:       VectorSearchDefaultSimilarityThreshold,
-		excludeCompiled: true,
-		promoteChildren: true,
-		logLabel:        "Vector search",
-		logVerb:         "Searching by meaning for",
-		logKeywords:     true,
-		thinkVerb:       "Searching by meaning for",
-		narrowLabel:     "Vector search",
+		keywordsSimilarityWeight: 0,
+		threshold:                VectorSearchDefaultSimilarityThreshold,
+		excludeCompiled:          true,
+		promoteChildren:          true,
+		logLabel:                 "Vector search",
+		logVerb:                  "Searching by meaning for",
+		logKeywords:              true,
+		thinkVerb:                "Searching by meaning for",
+		narrowLabel:              "Vector search",
 	})
 }
 
@@ -908,17 +1297,15 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 // rows are excluded.
 func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
-		weight:          0,
-		threshold:       BM25SearchDefaultSimilarityThreshold,
-		excludeCompiled: true,
-		promoteChildren: true,
-		// Keyword only, NO dense leg at all — not even a weight-0 one.
-		disableVector: true,
-		logLabel:      "BM25 search",
-		logVerb:       "Searching by keyword for",
-		logKeywords:   true,
-		thinkVerb:     "Searching by keyword for",
-		narrowLabel:   "BM25 search",
+		keywordsSimilarityWeight: 1,
+		threshold:                BM25SearchDefaultSimilarityThreshold,
+		excludeCompiled:          true,
+		promoteChildren:          true,
+		logLabel:                 "BM25 search",
+		logVerb:                  "Searching by keyword for",
+		logKeywords:              true,
+		thinkVerb:                "Searching by keyword for",
+		narrowLabel:              "BM25 search",
 	})
 }
 
@@ -1257,14 +1644,14 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 // UsingEmbedding and does NOT exclude compiled rows.
 func RetrieveSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
-		weight:          resolveVectorWeight(deps, ChannelRetrieve),
-		threshold:       floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
-		excludeCompiled: false,
-		promoteChildren: true,
-		// No dense leg without the flag.
-		disableVector: !deps.UsingEmbedding,
-		// This pass has its own identity line: the tag stays human-readable and the extra
-		// lines stay on, because this is the only trace the low-mode direct pass leaves.
+		keywordsSimilarityWeight: resolveKeywordsSimilarityWeight(deps, ChannelRetrieve),
+		threshold:                floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
+		excludeCompiled:          false,
+		promoteChildren:          true,
+		// Go-only identity: Python's L1 RAGTools.retrieve
+		// logs nothing of its own, so there is no Python string to mirror. The
+		// tag stays human-readable and the extra lines stay on, because this is
+		// the only trace the low-mode direct pass leaves.
 		logLabel:    "Retrieve",
 		logVerb:     "Searching for",
 		logKeywords: true,

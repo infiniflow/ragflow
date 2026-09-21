@@ -102,12 +102,6 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserConfig, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, pipelineID)
-	if cpErr != nil {
-		common.Warn("failed to resolve component params defaults for dataset",
-			zap.String("parserID", parserID), zap.Error(cpErr))
-		parserConfig = entity.JSONMap{}
-	}
 	if req.ParserConfig != nil {
 		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
 			return nil, common.CodeArgumentError, err
@@ -118,18 +112,35 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeArgumentError, err
 		}
-		flatParserID := parserID
-		if flatParserID == "general" {
-			flatParserID = "naive"
-		}
-		flat := common.GetParserConfig(flatParserID, req.ParserConfig)
-		delete(flat, "raptor")
-		delete(flat, "graphrag")
-		flat["llm_id"] = tenant.LLMID
-		flat["parent_child"] = map[string]interface{}{"use_parent_child": false, "children_delimiter": "\n"}
-		flat["children_delimiter"] = ""
-		parserConfig = entity.JSONMap(flat)
 	}
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
+	parserConfig := entity.JSONMap{}
+	if dslErr != nil {
+		common.Warn("failed to load pipeline DSL for building parser_config",
+			zap.String("parserID", parserID), zap.Error(dslErr))
+	} else {
+		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+	}
+
+	// Preserve the public default shape when parser_config is empty. The
+	// parent_child block remains the single source of truth; chunker
+	// children_delimiters are derived below only when it is configured.
+	var parentChild map[string]interface{}
+	if req.ParserConfig != nil {
+		if pc, ok := req.ParserConfig["parent_child"].(map[string]interface{}); ok {
+			parentChild = pc
+		}
+	}
+	if parentChild == nil {
+		parentChild = map[string]interface{}{
+			"use_parent_child":   false,
+			"children_delimiter": "\n",
+		}
+	}
+	parserConfig["parent_child"] = parentChild
+
+	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, map[string]interface{}(parserConfig))
 
 	var parserConfigMap map[string]interface{} = parserConfig
 

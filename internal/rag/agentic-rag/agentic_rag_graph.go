@@ -209,11 +209,25 @@ const (
 	maxSlotsTotal = 8
 )
 
-// fanoutPrompt, fanoutStrictRetry, the shape guards (fanoutMaxWords / fanoutMaxChars /
-// fanoutLooseMaxWords) and fanoutAnswerMarks are gone with the opening decomposition stage: they
-// existed to ask for sub-questions and to police what came back. The slot table's own call asks
-// for the queries directly (see plannerNode), so there is no "did this line look like a query"
-// question left for code to answer.
+// fanoutPrompt, fanoutStrictRetry and the shape guards (fanoutMaxWords / fanoutMaxChars /
+// fanoutLooseMaxWords) are gone with the opening decomposition stage: they existed to ask for
+// sub-questions and to police what came back. The slot table's own call asks for the queries
+// directly (see plannerNode), so there is no "did this line look like a query" question left for
+// code to answer.
+//
+// fanoutAnswerMarks SURVIVES that deletion, because the metadata channel needs it: a filter VALUE
+// copied from the model's own prose is not a value the index stores, and this is the list that
+// rejects one (see fanoutValueLooksUsable). It is the only user left.
+var fanoutAnswerMarks = []string{
+	"http://",
+	"https://",
+	"**",
+	"sources:",
+	"source:",
+	"references:",
+	"citation",
+	"according to",
+}
 
 // Fanout search tuning .
 //
@@ -426,11 +440,24 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		queries = []string{st.Question}
 	}
 	// The opening's remaining share, not a cap of its own: the planner set OpeningDeadline, and a
-	// decomposition that used all of it leaves this at zero — which nodeClock reports as "do not
-	// start" rather than "start and be cancelled".
+	// decomposition that used all of it leaves this at zero.
+	//
+	// A SPENT share means the wide legs do not start, and that has to be said HERE — nodeClock's floor
+	// now wins even over a spent room (upstream 47a444039: a node worth its floor runs even on an
+	// overrun budget). That rule is about the QUESTION's clock: a run with nothing left still gets one
+	// retrieval, because that is its only chance at a pool. It is not about a share the caller already
+	// spent on the decomposition, where the room behind it belongs to the research rounds. Measured
+	// 2026-09-21 (FRAMES, after the upstream merge): with the floor winning here, one question's opening
+	// ran 42s of its 45s share and another 67s of 67s, and the seconds came out of the rounds — 142 and
+	// 558 lost their last hop and answered "unable to find".
+	//
+	// The SCAN still runs when the legs are skipped: it is the enumeration channel, it has its own small
+	// slice (see scanBudgetS), and a spent opening share is no reason to take an enumeration's material
+	// away.
 	timeout := nodeClock(PrefetchTimeoutS, OpeningMinS, st.openingLeftS())
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout*float64(time.Second)))
 	defer cancel()
+	skipLegs := st.openingLeftS() <= 0 && st.RemainingS() > 0
 
 	// The opening line brackets the leg lines below: FanoutSearch reports each leg
 	// under its own tag ("[BM25 search]", "[Hybrid search]") and its ONLY other
@@ -441,7 +468,15 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
 	// The legs report one level deeper: they are what this prefetch runs, not
 	// sibling steps of it.
-	added, ranking := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN)
+	// The FIRST prefetch round is the one that runs the metadata channel (channel C): the rewrites that
+	// follow are already targeted at a gap, while these sub-questions are the planner's raw wording and
+	// more likely to NAME a document.
+	added, ranking := 0, []string(nil)
+	if skipLegs {
+		step(ctx, logger, "Prefetch", "the opening's share is spent (%.0fs of the question left): the wide legs are skipped and the rest of the clock goes to the research rounds.", st.RemainingS())
+	} else {
+		added, ranking = FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, true)
+	}
 	// The SCAN channel, alongside the ranked legs: the plan's own declared probe terms asked of the
 	// corpus with containment as the match (see runtime.ScanMatchAny). It is gated on the plan
 	// DECLARING member probes — a single-value question declares no act words and never pays for it —
@@ -1428,9 +1463,13 @@ func NewAgenticLoop() AgenticLoop {
 			// web_search is visible only when the mode exposes it AND a provider is actually
 			// wired. Advertising it without a provider leaves the model calling a tool that can
 			// only return an infra error.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields, read once here and rendered into the
+			// metadata_search schema and the session seed. Nil (no metadata / unreadable
+			// index / no resolver) keeps the shipped title-only schema.
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		}
 
 		st, runErr := BuildAgenticGraph(ctx, RAGTools{
@@ -1684,6 +1723,27 @@ type AnswerResult struct {
 	// Failed is true when the composition call failed and the fallback message
 	// was returned.
 	Failed bool
+}
+
+// providerErrorSummary renders a provider failure as ONE bounded line for the
+// think block: whitespace collapsed (a model client's error can embed newlines
+// and a whole JSON body) and cut at providerErrorSummaryMax. The developer log
+// keeps the error verbatim — this is the sentence a user reads while waiting.
+func providerErrorSummary(err error) string {
+	if err == nil {
+		return ""
+	}
+	return truncateRunes(strings.Join(strings.Fields(err.Error()), " "), providerErrorSummaryMax)
+}
+
+// errorAnswerText renders a provider failure as the ANSWER, in the shape the
+// classic chat path uses for its own failures (`**ERROR**: …`): an agentic run
+// that cannot call the model must read to the user exactly like a naive-mode one
+// — bold ERROR plus the provider's own message — instead of Python's generic
+// "I'm sorry…" sentence, which hid the cause and made an exhausted quota look
+// like a RAG bug.
+func errorAnswerText(err error) string {
+	return "**ERROR**: " + providerErrorSummary(err)
 }
 
 // ComposeAnswer: turn the gathered

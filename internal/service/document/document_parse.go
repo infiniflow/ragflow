@@ -58,10 +58,10 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// purgeTaskStateForCleanup removes resumable checkpoint, tracker, and chunk
-// cache state before a task row is deleted. The bounded context makes Redis
-// outages and hung clients observable to the caller instead of allowing a
-// destructive task/document delete to proceed with stale resume state.
+// purgeTaskStateForCleanup removes the per-chunk cache state for a task before
+// its row is deleted. The bounded context makes Redis outages and hung clients
+// observable to the caller instead of allowing a destructive task/document
+// delete to proceed with stale cache state.
 func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID string) error {
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
@@ -584,7 +584,7 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 	}
 
 	if s.docEngine != nil {
-		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+		if err := s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
 			return err
 		}
 	}

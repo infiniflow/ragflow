@@ -592,6 +592,88 @@ func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) 
 	}
 }
 
+// TestTerminalDurationAnchorsToProcessBeginAt pins the single duration anchor:
+// a persisted run measures from the document's process_begin_at (the value
+// PrepareValidatedRun stamped), not from executor start, so the document and
+// the pipeline operation log record one number. A begin time in the future
+// (DB/worker clock skew) clamps to zero like UpdateRunState does; a missing
+// begin time falls back to the executor start.
+func TestTerminalDurationAnchorsToProcessBeginAt(t *testing.T) {
+	begin := time.Now().Add(-2 * time.Second)
+	exec := &PipelineExecutor{taskCtx: &TaskContext{Doc: entity.Document{ProcessBeginAt: &begin}}}
+	start := time.Now()
+	if d := exec.terminalDuration(start); d < 2.0 || d > 3.0 {
+		t.Fatalf("terminalDuration = %v, want ~2s measured from process_begin_at", d)
+	}
+
+	future := time.Now().Add(time.Minute)
+	execFuture := &PipelineExecutor{taskCtx: &TaskContext{Doc: entity.Document{ProcessBeginAt: &future}}}
+	if d := execFuture.terminalDuration(start); d != 0 {
+		t.Fatalf("terminalDuration with future begin = %v, want 0", d)
+	}
+
+	execNoBegin := &PipelineExecutor{taskCtx: &TaskContext{}}
+	if d := execNoBegin.terminalDuration(start); d < 0 || d > 1.0 {
+		t.Fatalf("terminalDuration without begin = %v, want executor-start fallback", d)
+	}
+}
+
+// TestRecordPipelineLog_TerminalDurationOverridesDocumentCopy locks the
+// unification handover: when the run passes its measured terminal duration,
+// the operation log records exactly that value — not the reloaded document's
+// stale mid-run progress-sink value — so the final ApplyDocCounts write to
+// document.process_duration and the log row agree.
+func TestRecordPipelineLog_TerminalDurationOverridesDocumentCopy(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+	}).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Document{
+		ID:              "doc-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		ParserConfig:    entity.JSONMap{},
+		SourceType:      "local",
+		Type:            "pdf",
+		CreatedBy:       "tenant-1",
+		Suffix:          ".pdf",
+		ProcessDuration: 0.719,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	terminal := 0.627
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:         "tenant-1",
+		KbID:             "kb-1",
+		DocumentID:       "doc-1",
+		Status:           "3",
+		PipelineLogID:    "open-log",
+		TerminalDuration: &terminal,
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
+	}
+	if log.ProcessDuration != terminal {
+		t.Fatalf("ProcessDuration = %v, want the run's terminal value %v, not the document's mid-run 0.719",
+			log.ProcessDuration, terminal)
+	}
+}
+
 // TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow locks the run-isolation
 // contract: a terminal write is bound to the row its own run opened, so a late
 // write from a superseded run (whose row was replaced) can neither finalize nor
@@ -706,6 +788,112 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 	_, err := svc.processOutput(ctx, output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestPipelineExecutor_ProcessOutputMaterializesParentChunk verifies the
+// persistence boundary turns chunker-level mom text into one hidden parent row
+// and links every child to it. Removing that materialization would leave only
+// independently retrievable child rows, which is the parent-child regression.
+func TestPipelineExecutor_ProcessOutputMaterializesParentChunk(t *testing.T) {
+	var inserted []map[string]any
+	writeCalls := 0
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithInsertFunc(
+		func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+			writeCalls++
+			inserted = append(inserted, chunks...)
+			return nil, nil
+		},
+	)
+
+	_, err := svc.processOutput(t.Context(), map[string]any{
+		"chunks": []map[string]any{
+			{"text": "child one", "mom": "full parent passage"},
+			{"text": "child two", "mom": "full parent passage"},
+		},
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	if len(inserted) != 3 {
+		t.Fatalf("persisted rows = %d, want two children and one parent", len(inserted))
+	}
+	if writeCalls != 1 {
+		t.Fatalf("write calls = %d, want children and parents in one write", writeCalls)
+	}
+
+	var parent map[string]any
+	children := make([]map[string]any, 0, 2)
+	for _, row := range inserted {
+		if row["available_int"] == 0 && row["content_with_weight"] == "full parent passage" {
+			parent = row
+			continue
+		}
+		children = append(children, row)
+	}
+	if parent == nil {
+		t.Fatal("hidden parent row was not persisted")
+	}
+	parentID, _ := parent["id"].(string)
+	if parentID == "" {
+		t.Fatalf("parent id = %#v, want deterministic non-empty id", parent["id"])
+	}
+	for _, child := range children {
+		if child["mom_id"] != parentID {
+			t.Errorf("child mom_id = %#v, want parent id %q", child["mom_id"], parentID)
+		}
+		if _, exists := child["mom"]; exists {
+			t.Errorf("child retained pipeline-only mom field: %#v", child)
+		}
+	}
+}
+
+func TestPipelineExecutorCompensatesAfterExhaustingCombinedWriteRetries(t *testing.T) {
+	var deleted map[string]any
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithInsertFunc(func(context.Context, []map[string]any, string, string) ([]string, error) {
+			return nil, errors.New("index unavailable")
+		}).
+		WithDeleteChunksFunc(func(_ context.Context, condition map[string]any, _, _ string) (int64, error) {
+			deleted = condition
+			return 0, nil
+		})
+
+	_, err := svc.processOutput(t.Context(), map[string]any{
+		"chunks": []map[string]any{{"text": "child", "mom": "parent"}},
+	}, time.Now())
+	if err == nil {
+		t.Fatal("processOutput succeeded after exhausted writes")
+	}
+	ids, ok := deleted["id"].([]string)
+	if !ok || len(ids) != 2 {
+		t.Fatalf("compensation ids = %#v, want child and parent IDs", deleted)
+	}
+}
+
+func TestPipelineExecutorBoundsCompensationCleanup(t *testing.T) {
+	var cleanupCtx context.Context
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithInsertFunc(func(context.Context, []map[string]any, string, string) ([]string, error) {
+			return nil, errors.New("index unavailable")
+		}).
+		WithDeleteChunksFunc(func(ctx context.Context, _ map[string]any, _, _ string) (int64, error) {
+			cleanupCtx = ctx
+			return 0, nil
+		})
+
+	_, err := svc.processOutput(t.Context(), map[string]any{
+		"chunks": []map[string]any{{"text": "child", "mom": "parent"}},
+	}, time.Now())
+	if err == nil {
+		t.Fatal("processOutput succeeded after exhausted writes")
+	}
+	deadline, ok := cleanupCtx.Deadline()
+	if !ok {
+		t.Fatal("compensation cleanup context has no deadline")
+	}
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > 5*time.Second {
+		t.Fatalf("compensation cleanup deadline remaining = %s, want (0, 5s]", remaining)
 	}
 }
 
@@ -845,6 +1033,73 @@ func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
 
 	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestPipelineExecutor_Execute_EmptyOutputRecordsTerminalDuration pins the
+// no-chunk success branch: such a run never writes a terminal duration to the
+// document (processOutput returns before ApplyDocCounts), so Execute must
+// recompute from the same process_begin_at anchor and hand that value to the
+// operation log instead of letting the row keep the stale mid-run
+// progress-sink duration.
+func TestPipelineExecutor_Execute_EmptyOutputRecordsTerminalDuration(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	begin := time.Now().Add(-2 * time.Second)
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+	}).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Document{
+		ID:              "doc-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		ParserConfig:    entity.JSONMap{},
+		SourceType:      "local",
+		Type:            "pdf",
+		CreatedBy:       "tenant-1",
+		Suffix:          ".pdf",
+		ProcessBeginAt:  &begin,
+		ProcessDuration: 0.719,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	logID := "open-log"
+	taskCtx := makeTaskCtx()
+	taskCtx.Ctx = t.Context()
+	taskCtx.IngestionTask.PipelineLogID = &logID
+	taskCtx.Doc.ProcessBeginAt = &begin
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+			return map[string]any{"chunks": []map[string]any{}}, dsl, nil
+		})
+
+	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load log row: %v", err)
+	}
+	if log.OperationStatus != string(entity.TaskStatusDone) {
+		t.Fatalf("OperationStatus = %q, want DONE", log.OperationStatus)
+	}
+	if log.ProcessDuration < 2.0 || log.ProcessDuration > 3.0 {
+		t.Fatalf("ProcessDuration = %v, want ~2s measured from process_begin_at, not the stale 0.719", log.ProcessDuration)
 	}
 }
 

@@ -264,7 +264,7 @@ func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
 		p.nextToken() // move past the dataset id
 	}
 
-	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+	if err := p.parseSyncLogsWithOptions(1, cmd); err != nil {
 		return nil, err
 	}
 
@@ -282,7 +282,7 @@ func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, erro
 	cmd := NewCommand("api_list_sync_logs")
 	cmd.Params["dataset_name"] = datasetName
 
-	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+	if err := p.parseSyncLogsWithOptions(1, cmd); err != nil {
 		return nil, err
 	}
 
@@ -296,7 +296,7 @@ func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, erro
 // parseSyncLogsWithOptions parses the optional WITH clause of the sync logs
 // listing commands. Only PAGE and PAGE_SIZE are accepted, both as integers,
 // mirroring the search command's space-separated WITH syntax.
-func (p *Parser) parseSyncLogsWithOptions(cmd *Command) error {
+func (p *Parser) parseSyncLogsWithOptions(commandCount int, cmd *Command) error {
 	if p.curToken.Type != TokenWith && !(p.curToken.Type == TokenIdentifier && strings.EqualFold(p.curToken.Value, "with")) {
 		return nil
 	}

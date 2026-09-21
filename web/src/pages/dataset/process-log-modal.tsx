@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 import { IngestionEventItem } from '@/interfaces/database/ingestion';
+import { formatTime } from '@/utils/date';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -43,6 +44,9 @@ interface ProcessLogModalProps {
   title: string;
   translateKey?: string;
 }
+
+const MissingStorageFilePattern =
+  /storage\.Get\("(?:[^"\\]|\\.)*",\s*"(?:[^"\\]|\\.)*"\):\s*The specified key does not exist\./;
 
 const InfoItem: React.FC<{
   overflowTip?: boolean;
@@ -104,9 +108,19 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   const logInfo = useMemo(() => {
     return initData;
   }, [initData]);
+  const hasMissingStorageFile =
+    MissingStorageFilePattern.test(logInfo.details) ||
+    logInfo.events?.some((event) =>
+      MissingStorageFilePattern.test(event.message),
+    );
   const eventListRef = useRef<HTMLDivElement>(null);
   const prependHeightRef = useRef<number | null>(null);
   const eventCount = logInfo.events?.length ?? 0;
+  const missingStorageFileHint = hasMissingStorageFile && (
+    <div className="text-state-error font-medium">
+      File not found in object storage.
+    </div>
+  );
   useEffect(() => {
     const list = eventListRef.current;
     const previousHeight = prependHeightRef.current;
@@ -166,18 +180,30 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                             Loading earlier events…
                           </div>
                         )}
-                        {logInfo.events?.map((event) => (
-                          <div
-                            className={
-                              event.event_type === 3
-                                ? 'text-text-secondary'
-                                : undefined
-                            }
-                            key={event.id}
-                          >
-                            {replaceText(event.message)}
-                          </div>
-                        ))}
+                        {logInfo.events?.map((event) => {
+                          const time = formatTime(event.ts);
+                          return (
+                            <div
+                              className={
+                                event.event_type === 3
+                                  ? 'text-text-secondary'
+                                  : undefined
+                              }
+                              key={event.id}
+                            >
+                              {time && (
+                                <span
+                                  className="text-text-secondary mr-1"
+                                  data-testid="ingestion-event-time"
+                                >
+                                  {time}
+                                </span>
+                              )}
+                              {replaceText(event.message)}
+                            </div>
+                          );
+                        })}
+                        {eventCount > 0 && missingStorageFileHint}
                       </div>
                     }
                   />
@@ -192,6 +218,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                     value={
                       <div className="w-full  whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto p-2.5">
                         {replaceText(logInfo.details)}
+                        {eventCount === 0 && missingStorageFileHint}
                       </div>
                     }
                   />

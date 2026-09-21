@@ -270,7 +270,13 @@ func NarrowContent(content string, kwds []string) (string, bool) {
 	}
 	lowContent := strings.ToLower(content)
 	if strings.Contains(lowContent, "<table") || strings.Contains(lowContent, "<tr") || strings.Contains(lowContent, "<td") {
-		return "..." + HighlightKeywords(content, kwds) + "...", true
+		// Serialize the table to Markdown before the model sees it: the format
+		// comparison over 11 serializations ranks Markdown-KV first for field lookups
+		// (key: value beats header/position alignment) and a Markdown table as the
+		// cost/accuracy compromise; raw HTML is the expensive and least readable
+		// option. The row set is NOT pruned — rank/order and completeness decide table
+		// answers. Falls back to the raw text when nothing renders.
+		return "..." + HighlightKeywords(TableViewOrRaw(content), kwds) + "...", true
 	}
 	pipeRows := 0
 	for _, line := range strings.Split(content, "\n") {

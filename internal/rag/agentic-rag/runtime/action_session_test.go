@@ -1154,11 +1154,13 @@ var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTP
 // executorSupportedParams lists the params the executor actually consumes per
 // tool (mirrors _EXECUTOR_SUPPORTED). The schema MUST NOT declare any param
 // outside this set — otherwise the model is told to fill an argument the runtime
-// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: doc_scope /
-// keywords are supported by the executor but intentionally NOT declared in the
-// schema (keep the description honest with the implementation).
+// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: keywords are
+// supported by the executor but intentionally NOT declared in the schema (keep
+// the description honest with the implementation); doc_scope IS declared on the
+// two tools that consume it (retrieve, graph_explore).
 var executorSupportedParams = map[string]map[string]bool{
 	"retrieve":           {"query": true, "doc_scope": true, "reason": true},
+	"metadata_search":    {"filters": true, "logic": true},
 	"search_chunks":      {"query": true, "reason": true},
 	"list_chunks":        {"doc_id": true, "offset": true},
 	"navigate_tree":      {"query": true, "keywords": true},
@@ -1167,8 +1169,8 @@ var executorSupportedParams = map[string]map[string]bool{
 	"web_search":         {"query": true},
 }
 
-// TestToolSpecsHavePlaybookSections pins the PR: each of the 7 tools documents
-// the 5-section contract, within the token budget (cap 1200 chars).
+// TestToolSpecsHavePlaybookSections pins the PR: every tool documents the
+// 5-section contract, within the token budget (cap 1200 chars).
 func TestToolSpecsHavePlaybookSections(t *testing.T) {
 	for _, name := range allTools {
 		desc := ToolMap[name].Function.Description
@@ -1184,7 +1186,7 @@ func TestToolSpecsHavePlaybookSections(t *testing.T) {
 }
 
 // TestActiveToolSpecsToolSurface pins mode -> exposed tool count: low=0,
-// medium/high=7, ultra=8, web-hidden=6.
+// medium/high=8, ultra=9, web-hidden=7.
 func TestActiveToolSpecsToolSurface(t *testing.T) {
 	cases := []struct {
 		mode string
@@ -1192,10 +1194,10 @@ func TestActiveToolSpecsToolSurface(t *testing.T) {
 		want int
 	}{
 		{"low", true, 0},
-		{"medium", true, 7},
-		{"high", true, 7},
-		{"ultra", true, 8},
-		{"medium", false, 6},
+		{"medium", true, 8},
+		{"high", true, 8},
+		{"ultra", true, 9},
+		{"medium", false, 7},
 	}
 	for _, c := range cases {
 		ts := &Toolset{ThinkingMode: c.mode, HasWebSearch: c.web}

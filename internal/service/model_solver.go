@@ -45,6 +45,12 @@ type ModelTarget struct {
 	ModelInfo     *modelModule.Model
 	ContextLength int
 	MaxTokens     int
+	// SupportsTools is the resolved model's tool-calling capability, computed
+	// while the model is being resolved (see resolvedModel.supportsTools) so
+	// callers never have to look the model up a second time to read it. Python
+	// carries the same value as the `is_tools` field of the model config it
+	// resolved once, and every consumer reads it from there.
+	SupportsTools bool
 }
 
 // ModelSolver is the new model-resolution entry point. The existing
@@ -110,7 +116,41 @@ func (s *ModelSolver) ResolveModelConfig(ctx context.Context, tenantID string, m
 		ModelInfo:     model.modelInfo,
 		ContextLength: contextLength,
 		MaxTokens:     maxTokens,
+		SupportsTools: model.supportsTools(),
 	}, nil
+}
+
+// ResolveChatModelType returns the type a chat reference must be resolved as:
+// ModelTypeImage2Text when the reference is enrolled vision-capable, chat
+// otherwise.
+//
+// A dialog's llm_id may name a model that is enrolled ONLY as image-to-text, and
+// that model is still a valid chat-pipeline input. Resolving such a reference as
+// chat fails outright ("cannot be used as chat model"), so every caller that
+// needs a capability of the request's chat model must agree on which row to load
+// — otherwise the model the request runs on and the model it is judged by are two
+// different rows (or, for an image2text-only enrollment, the second lookup fails
+// and the capability reads as absent).
+//
+// Probe failures are conservative and yield chat: that is the type a plain chat
+// model is enrolled as, and it keeps image attachments out of a model whose
+// vision support could not be established.
+func (s *ModelSolver) ResolveChatModelType(ctx context.Context, tenantID, modelRef string) entity.ModelType {
+	if s == nil || strings.TrimSpace(modelRef) == "" {
+		return entity.ModelTypeChat
+	}
+	modelTypes, err := s.ResolveModelType(ctx, tenantID, modelRef)
+	if err != nil {
+		return entity.ModelTypeChat
+	}
+	for _, mt := range modelTypes {
+		// ModelType is a bitmask: a model enrolled as chat+image2text reports a
+		// combined value, so test membership, not equality.
+		if mt.Has(entity.ModelTypeImage2Text) {
+			return entity.ModelTypeImage2Text
+		}
+	}
+	return entity.ModelTypeChat
 }
 
 // ResolveDefaultModelConfig resolves the tenant's configured default model
@@ -220,6 +260,35 @@ type resolvedModel struct {
 	maxTokens      int
 }
 
+// supportsTools reports whether the resolved model can emit tool calls, using the
+// same precedence the standalone probe uses: the flag persisted on the enrolled
+// model, then the instance credential payload, then the provider catalog.
+//
+// It is a method on the resolution rather than a separate lookup so that the
+// capability is answered by the row that was just loaded, instead of by a second
+// lookup the caller has to key on a type it may get wrong (see
+// ResolveChatModelType).
+func (m *resolvedModel) supportsTools() bool {
+	if m == nil {
+		return false
+	}
+	var extra, providerName, modelName, instanceAPIKey string
+	if m.modelEntity != nil {
+		extra = m.modelEntity.Extra
+		modelName = m.modelEntity.ModelName
+	}
+	if m.providerEntity != nil {
+		providerName = m.providerEntity.ProviderName
+	}
+	if modelName == "" {
+		modelName = m.modelName
+	}
+	if m.apiConfig != nil && m.apiConfig.ApiKey != nil {
+		instanceAPIKey = *m.apiConfig.ApiKey
+	}
+	return toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName)
+}
+
 func (s *ModelSolver) lookupTenantModel(ctx context.Context, tenantID, modelRef string) (*entity.TenantModel, error) {
 	if s == nil || s.service == nil {
 		return nil, fmt.Errorf("%w: model solver is not initialized", errModelConfigUnavailable)
@@ -289,7 +358,17 @@ func (s *ModelSolver) resolveModel(ctx context.Context, tenantID string, modelTy
 	modelEntity, err := s.lookupTenantModel(ctx, tenantID, modelRef)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return s.resolveCompositeModel(ctx, tenantID, modelType, modelRef)
+			// A bare ref that is BOTH unknown as a tenant model id AND rejected as
+			// a composite name is almost always a DANGLING REFERENCE — a knowledge
+			// base or chat pointing at a tenant_model row that was deleted. Say so
+			// explicitly: the underlying "provider name missing in model name:
+			// <uuid>" reads like a naming-format mistake and sends the operator to
+			// look at the model's name instead of at the row that no longer exists.
+			composite, compositeErr := s.resolveCompositeModel(ctx, tenantID, modelType, modelRef)
+			if compositeErr != nil && !strings.Contains(modelRef, "@") {
+				return nil, fmt.Errorf("model %q is neither a tenant model id (no tenant_model row) nor a valid composite name — the reference is dangling: %w", modelRef, compositeErr)
+			}
+			return composite, compositeErr
 		}
 		return nil, err
 	}

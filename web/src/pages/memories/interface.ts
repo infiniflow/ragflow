@@ -48,6 +48,15 @@ export interface MemoryListResponse {
   message: string;
 }
 
+export interface MemoryFiltersResponse {
+  filter: {
+    owner: Array<{ id: string; label: string; count: number }>;
+    memory_type: Array<{ id: string; label: string; count: number }>;
+    storage_type: Array<{ id: string; label: string; count: number }>;
+  };
+  total: number;
+}
+
 export interface DeleteMemoryProps {
   memory_id: string;
 }

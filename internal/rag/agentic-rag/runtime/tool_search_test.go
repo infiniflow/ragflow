@@ -32,6 +32,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -344,6 +345,30 @@ func TestNarrowContentKeepsNeighboursAndHighlights(t *testing.T) {
 	}
 }
 
+// TestNarrowContentRendersHTMLTablesAsMarkdown pins the table branch: an HTML table is
+// serialized to a Markdown view before the model sees it (raw <table>/<td> markup is the
+// expensive and least readable form), and the row set is not pruned.
+func TestNarrowContentRendersHTMLTablesAsMarkdown(t *testing.T) {
+	content := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
+		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
+		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
+	got, ok := NarrowContent(content, []string{"danilo"})
+	if !ok {
+		t.Fatal("NarrowContent must keep a table whole")
+	}
+	if strings.Contains(got, "<td>") || strings.Contains(got, "<table") {
+		t.Errorf("narrowed table still carries raw HTML: %q", got)
+	}
+	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("narrowed table lost %q: %q", want, got)
+		}
+	}
+	if !strings.HasPrefix(got, "...") || !strings.HasSuffix(got, "...") {
+		t.Errorf("narrowed text must be wrapped in ellipses: %q", got)
+	}
+}
+
 func TestSplitKeywordsFallsBackToBigrams(t *testing.T) {
 	// >=3 comma terms -> used as-is, lower-cased.
 	got := SplitKeywords("Alpha, Beta, Gamma")
@@ -537,6 +562,445 @@ func TestHybridSearchInvokesCompiledExpansion(t *testing.T) {
 
 type stubExpander struct{ calls int }
 
+// stubMetadataResolver is a scripted MetadataResolver: the push-down answer, the
+// flattened view and the call log are all set per test.
+type stubMetadataResolver struct {
+	pushdownIDs   []string
+	pushdownOK    bool
+	metas         common.MetaData
+	flattenErr    error
+	pushdownCalls int
+	flattenCalls  int
+	gotKbIDs      []string
+	gotFilters    []map[string]any
+	gotLogic      string
+	// docMeta is the per-document metadata the context block is built from; docMetaErr lets
+	// a test pin that a failed context read still returns the selected ids.
+	docMeta    map[string]map[string]any
+	docMetaErr error
+}
+
+func (s *stubMetadataResolver) FilterDocIDsByMetaPushdown(_ context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool) {
+	s.pushdownCalls++
+	s.gotKbIDs = kbIDs
+	s.gotFilters = filters
+	s.gotLogic = logic
+	return s.pushdownIDs, s.pushdownOK
+}
+
+func (s *stubMetadataResolver) GetFlattedMetaByKBs(context.Context, []string) (common.MetaData, error) {
+	s.flattenCalls++
+	return s.metas, s.flattenErr
+}
+
+func (s *stubMetadataResolver) MetadataForDocIDs(context.Context, []string, []string) (map[string]map[string]any, error) {
+	return s.docMeta, s.docMetaErr
+}
+
+// TestMetadataSearchScopesHybridToMatchedDocuments pins the retrieval leg: the metadata
+// match decides the document set, the hybrid search runs inside it (compiled expansion
+// OFF, so nothing outside the set can be pulled in), and the push-down hit means the
+// flattened view is never read.
+func TestMetadataSearchScopesHybridToMatchedDocuments(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"id": "c1", "doc_id": "d1", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	res := &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1", "d2"}}
+	deps.MetadataResolver = res
+
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "New York"}}
+	chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "how many?", TopN: 20}, filters, "and")
+
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	if res.flattenCalls != 0 {
+		t.Errorf("flatten calls = %d: a push-down hit must not read the flattened view", res.flattenCalls)
+	}
+	if res.gotLogic != "and" || len(res.gotFilters) != 1 {
+		t.Errorf("resolver got filters=%v logic=%q", res.gotFilters, res.gotLogic)
+	}
+	if len(res.gotKbIDs) != 1 || res.gotKbIDs[0] != "kb1" {
+		t.Errorf("resolver kbIDs = %v, want the session's datasets", res.gotKbIDs)
+	}
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	scope := r.requests[0].DocScope
+	if len(scope) != 2 || scope[0] != "d1" || scope[1] != "d2" {
+		t.Errorf("doc_scope = %v, want the matched documents", scope)
+	}
+}
+
+// TestMetadataSearchFallsBackToInMemoryFilter pins the fallback: when the push-down is
+// not viable, the flattened metadata is filtered in memory with the same conditions.
+func TestMetadataSearchFallsBackToInMemoryFilter(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"id": "c1", "doc_id": "d1", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	res := &stubMetadataResolver{
+		pushdownOK: false,
+		metas: common.MetaData{
+			"title": {"New York City": {"d1"}, "Boston": {"d2"}},
+		},
+	}
+	deps.MetadataResolver = res
+
+	chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"},
+		[]map[string]any{{"key": "title", "op": "contains", "value": "New York"}}, "and")
+
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want the in-memory hit", len(chunks))
+	}
+	if res.flattenCalls != 1 {
+		t.Errorf("flatten calls = %d, want 1", res.flattenCalls)
+	}
+	if scope := r.requests[0].DocScope; len(scope) != 1 || scope[0] != "d1" {
+		t.Errorf("doc_scope = %v, want the in-memory match", scope)
+	}
+}
+
+// TestMetadataSearchEmptyResultIsNotASearch pins the miss path: an empty match (definitive
+// from the push-down, or after the session ceiling) must reach the retriever zero times,
+// and must not be reported as an error.
+func TestMetadataSearchEmptyResultIsNotASearch(t *testing.T) {
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "nowhere"}}
+
+	// Push-down says: definitively no match.
+	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
+	deps, _ := newTestSearchDeps(r)
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true}
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, filters, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil", chunks)
+	}
+	if len(r.requests) != 0 {
+		t.Errorf("requests = %d: an empty match must not search", len(r.requests))
+	}
+
+	// The session ceiling removes every matched document.
+	r2 := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
+	deps2, _ := newTestSearchDeps(r2)
+	deps2.DocScope = []string{"d9"}
+	deps2.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1"}}
+	if chunks, _ := MetadataSearch(context.Background(), deps2, SearchParams{Question: "q"}, filters, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil", chunks)
+	}
+	if len(r2.requests) != 0 {
+		t.Errorf("requests = %d: a scope that excludes everything must not search", len(r2.requests))
+	}
+}
+
+// TestMetadataSearchIntersectsTheSessionScope pins the ceiling: the metadata set cannot
+// escape the session's document restriction.
+func TestMetadataSearchIntersectsTheSessionScope(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"id": "c1", "doc_id": "d2", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	deps.DocScope = []string{"d2", "d3"}
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1", "d2", "d3"}}
+
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "x"}}
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, filters, "and"); len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	scope := r.requests[0].DocScope
+	if len(scope) != 2 || scope[0] != "d2" || scope[1] != "d3" {
+		t.Errorf("doc_scope = %v, want the intersection with the session scope", scope)
+	}
+}
+
+// TestMetadataSearchWithoutResolverIsInert pins the unwired seam: no resolver (or no
+// filters) means the leg does nothing at all, never a failed search.
+func TestMetadataSearchWithoutResolverIsInert(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
+	deps, _ := newTestSearchDeps(r)
+	filters := []map[string]any{{"key": "title", "op": "contains", "value": "x"}}
+
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, filters, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil without a resolver", chunks)
+	}
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1"}}
+	if chunks, _ := MetadataSearch(context.Background(), deps, SearchParams{Question: "q"}, nil, "and"); chunks != nil {
+		t.Errorf("chunks = %v, want nil without filters", chunks)
+	}
+	if len(r.requests) != 0 {
+		t.Errorf("requests = %d, want none", len(r.requests))
+	}
+}
+
+// ===================== metadata catalog =====================
+
+// TestMetadataCatalogForBuildsSortedKeysWithSamples pins what the model gets to see: the
+// dataset's real fields, deterministically ordered, each with its strongest values.
+func TestMetadataCatalogForBuildsSortedKeysWithSamples(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"title":  {"Boston": {"d1"}, "New York City": {"d2", "d3", "d4"}},
+		"author": {"Alice": {"d1"}, "Bob": {"d2"}},
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "author,title" {
+		t.Fatalf("keys = %q, want author,title (sorted, deterministic)", got)
+	}
+	samples := cat.Samples["title"]
+	if len(samples) != 2 {
+		t.Fatalf("title samples = %v, want 2", samples)
+	}
+	// Ordered by document count: the value most documents carry is the useful one to show.
+	if samples[0].Value != "New York City" || samples[0].Docs != 3 {
+		t.Errorf("first title sample = %+v, want New York City (3 docs)", samples[0])
+	}
+
+	render := cat.Render()
+	for _, want := range []string{"AVAILABLE METADATA", "title", "author", "New York City"} {
+		if !strings.Contains(render, want) {
+			t.Errorf("render missing %q:\n%s", want, render)
+		}
+	}
+	if n := utf8.RuneCountInString(render); n > metadataCatalogRenderMax {
+		t.Errorf("render = %d runes, cap is %d", n, metadataCatalogRenderMax)
+	}
+}
+
+// TestMetadataCatalogForDropsSystemAndLabelKeys pins the blacklist: identifiers and
+// benchmark annotations must never become filters — a `question_id` filter would let the
+// model shrink retrieval to the very documents that answer the question.
+func TestMetadataCatalogForDropsSystemAndLabelKeys(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"title":       {"A": {"d1"}},
+		"question_id": {"444": {"d1"}},
+		"source_uri":  {"s3://x": {"d1"}},
+		"pageid":      {"1": {"d1"}},
+		"outline":     {"intro": {"d1"}},
+		"_version":    {"2": {"d1"}},
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "title" {
+		t.Fatalf("keys = %q, want only title", got)
+	}
+	if render := cat.Render(); strings.Contains(render, "question_id") {
+		t.Errorf("the benchmark-annotation key leaked into the catalog:\n%s", render)
+	}
+}
+
+// TestMetadataCatalogForDegradesToEmpty pins the failure contract every "no metadata" path
+// depends on: a nil resolver, an unreadable index, a metadata-free dataset or no bound
+// datasets all yield the EMPTY catalog — never an error and never a panic. An empty
+// catalog is what makes the session keep the shipped title-only schema.
+func TestMetadataCatalogForDegradesToEmpty(t *testing.T) {
+	ctx := context.Background()
+	base, _ := newTestSearchDeps(&stubRetriever{})
+
+	// No resolver wired (deployment without the metadata link).
+	if cat := MetadataCatalogFor(ctx, base); !cat.Empty() {
+		t.Errorf("keys = %v, want empty without a resolver", cat.Keys)
+	}
+	if ptr := MetadataCatalogPtr(ctx, base); ptr != nil {
+		t.Error("MetadataCatalogPtr must be nil for an empty catalog")
+	}
+
+	// Index unreadable.
+	broken := base
+	broken.MetadataResolver = &stubMetadataResolver{flattenErr: errors.New("es down")}
+	if cat := MetadataCatalogFor(ctx, broken); !cat.Empty() {
+		t.Errorf("keys = %v, want empty when the index is unreadable", cat.Keys)
+	}
+
+	// Dataset carries metadata rows but no usable field.
+	blank := base
+	blank.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"_version": {"2": {"d1"}}, // hidden by the blacklist
+		"empty":    {},            // no value to match
+	}}
+	if cat := MetadataCatalogFor(ctx, blank); !cat.Empty() {
+		t.Errorf("keys = %v, want empty when no field is usable", cat.Keys)
+	}
+
+	// No bound datasets at all.
+	unbound, _ := newTestSearchDeps(&stubRetriever{})
+	unbound.KbIDs = nil
+	unbound.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{"title": {"A": {"d1"}}}}
+	if cat := MetadataCatalogFor(ctx, unbound); !cat.Empty() {
+		t.Errorf("keys = %v, want empty without datasets", cat.Keys)
+	}
+}
+
+// TestActiveToolSpecsRendersCatalogKeyEnum pins the payoff: the advertised `key` enum is
+// the dataset's real fields, so a model can name one. Before this it was ["title"] and no
+// other field could be asked for however plainly the question named it.
+func TestActiveToolSpecsRendersCatalogKeyEnum(t *testing.T) {
+	cat := &MetadataCatalog{
+		Keys:    []string{"author", "title"},
+		Samples: map[string][]MetadataSample{"author": {{Value: "Alice", Docs: 1}}},
+	}
+	ts := &Toolset{ThinkingMode: "high", MetadataFields: cat}
+	spec, ok := findSpec(ts.ActiveToolSpecs(), "metadata_search")
+	if !ok {
+		t.Fatal("metadata_search missing from the high-mode surface")
+	}
+
+	if got := strings.Join(metadataKeyEnum(spec), ","); got != "author,title" {
+		t.Errorf("key enum = %q, want the catalog's fields", got)
+	}
+	desc := spec.Function.Description
+	for _, want := range []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTPUT", "IF IT FAILS", "AVAILABLE METADATA"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description missing %q:\n%s", want, desc)
+		}
+	}
+	// The key parameter's description is dataset-independent — it points at AVAILABLE METADATA
+	// and names no field, so a dataset's field list can never leak into another session's view
+	// of the tool; the fields themselves reach the model through the enum asserted above and
+	// through the seed's block.
+	const wantKeyDesc = "one of this dataset's metadata fields (see AVAILABLE METADATA)"
+	if got, _ := metadataKeyParam(spec)["description"].(string); got != wantKeyDesc {
+		t.Errorf("key description = %q, want %q", got, wantKeyDesc)
+	}
+	if n := utf8.RuneCountInString(desc); n > maxToolDescriptionRunes {
+		t.Errorf("description = %d runes, cap = %d", n, maxToolDescriptionRunes)
+	}
+}
+
+// TestActiveToolSpecsKeepsStaticSpecWithoutCatalog pins the "no metadata = no field
+// advertised" contract: without a catalog the shipped spec is returned untouched — same
+// struct — and it names NO field, so a model cannot be told `title` is filterable on a
+// dataset that never said so. That is also how an empty enum (which some providers reject)
+// is avoided.
+func TestActiveToolSpecsKeepsStaticSpecWithoutCatalog(t *testing.T) {
+	for _, cat := range []*MetadataCatalog{nil, &MetadataCatalog{}} {
+		ts := &Toolset{ThinkingMode: "high", MetadataFields: cat}
+		spec, ok := findSpec(ts.ActiveToolSpecs(), "metadata_search")
+		if !ok {
+			t.Fatal("metadata_search missing from the high-mode surface")
+		}
+		if !reflect.DeepEqual(spec, ToolMap["metadata_search"]) {
+			t.Errorf("catalog %v: an empty catalog must leave the shipped spec untouched", cat)
+		}
+		if got := metadataKeyEnum(spec); len(got) != 0 {
+			t.Errorf("key enum = %v, want NO advertised field without a catalog", got)
+		}
+		key, _ := metadataKeyParam(spec)["enum"]
+		if key != nil {
+			t.Errorf("key enum key = %v, want it absent (an empty enum is rejected by some providers)", key)
+		}
+		if strings.Contains(spec.Function.Description, "'title'") {
+			t.Errorf("the shipped description still names a field:\n%s", spec.Function.Description)
+		}
+	}
+}
+
+// metadataKeyParam reads the metadata_search `key` parameter object off a spec.
+func metadataKeyParam(spec ToolSpec) map[string]any {
+	props, _ := spec.Function.Parameters["properties"].(map[string]any)
+	filters, _ := props["filters"].(map[string]any)
+	items, _ := filters["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	key, _ := itemProps["key"].(map[string]any)
+	return key
+}
+
+// stubDeclaredMetadata is a scripted DeclaredMetadataResolver.
+type stubDeclaredMetadata struct {
+	defs []common.MetadataFieldDef
+	err  error
+}
+
+func (s *stubDeclaredMetadata) DeclaredMetadataFields(context.Context, []string) ([]common.MetadataFieldDef, error) {
+	return s.defs, s.err
+}
+
+// TestMetadataCatalogForIncludesDeclaredFields pins the declarative half: a dataset that
+// declares its fields is described with what each field MEANS and which values it accepts,
+// which is what the metadata index alone cannot supply. It also pins that the blacklist
+// applies to the declarative source too.
+func TestMetadataCatalogForIncludesDeclaredFields(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{
+		"author": {"Alice": {"d1", "d2"}},
+	}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "author", Type: "string", Description: "who wrote it"},
+		{Key: "doc_type", Type: "string", Description: "kind of document", Enum: []string{"report", "paper"}},
+		{Key: "question_id", Description: "benchmark label"}, // blacklisted
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "author,doc_type" {
+		t.Fatalf("keys = %q, want the declared fields (minus the blacklist), sorted", got)
+	}
+	if cat.Fields["author"].Description != "who wrote it" {
+		t.Errorf("declared definition lost: %+v", cat.Fields["author"])
+	}
+
+	render := cat.Render()
+	for _, want := range []string{
+		"author — who wrote it",
+		"doc_type — kind of document",
+		"one of: report / paper",
+		`values seen: "Alice" (2 doc(s))`,
+	} {
+		if !strings.Contains(render, want) {
+			t.Errorf("render missing %q:\n%s", want, render)
+		}
+	}
+	if strings.Contains(render, "question_id") {
+		t.Errorf("the blacklist must cover the declarative source too:\n%s", render)
+	}
+}
+
+// TestMetadataCatalogForOffersDeclaredFieldWithoutIndexedValues pins the case the
+// observational source cannot see at all: a field declared but not yet indexed is still a
+// legitimate filter, so it is offered (with its description) and advertised in the schema.
+func TestMetadataCatalogForOffersDeclaredFieldWithoutIndexedValues(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "doc_type", Description: "kind of document", Enum: []string{"report"}},
+	}}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "doc_type" {
+		t.Fatalf("keys = %q, want the declared field even with no indexed value", got)
+	}
+	if len(cat.Samples["doc_type"]) != 0 {
+		t.Errorf("samples = %v, want none: the index carries no value yet", cat.Samples["doc_type"])
+	}
+
+	ts := &Toolset{ThinkingMode: "high", MetadataFields: &cat}
+	spec, ok := findSpec(ts.ActiveToolSpecs(), "metadata_search")
+	if !ok {
+		t.Fatal("metadata_search missing from the high-mode surface")
+	}
+	if got := strings.Join(metadataKeyEnum(spec), ","); got != "doc_type" {
+		t.Errorf("key enum = %q, want the declared field advertised", got)
+	}
+}
+
+// TestMetadataCatalogForDegradesWhenDeclaredReadFails pins the independence of the two
+// halves: an unreadable parser_config leaves the observational source untouched, and vice
+// versa (see TestMetadataCatalogForDegradesToEmpty for the index failure).
+func TestMetadataCatalogForDegradesWhenDeclaredReadFails(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{"title": {"A": {"d1"}}}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{err: errors.New("kb row unreadable")}
+
+	cat := MetadataCatalogFor(context.Background(), deps)
+	if got := strings.Join(cat.Keys, ","); got != "title" {
+		t.Errorf("keys = %q, want the observational half alone", got)
+	}
+}
+
+// metadataKeyEnum reads the metadata_search `key` enum off a rendered spec.
+func metadataKeyEnum(spec ToolSpec) []string {
+	props, _ := spec.Function.Parameters["properties"].(map[string]any)
+	filters, _ := props["filters"].(map[string]any)
+	items, _ := filters["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	key, _ := itemProps["key"].(map[string]any)
+	out, _ := key["enum"].([]string)
+	return out
+}
+
 func (s *stubExpander) Expand(_ context.Context, _ *Kbinfos, _, _ string, _ []string) error {
 	s.calls++
 	return nil
@@ -576,35 +1040,31 @@ func TestVectorSearchBailsWithoutEmbedder(t *testing.T) {
 	}
 }
 
-// TestVectorSearchWeightIsOne: the pure-vector leg
-// carries weight 1.0 and excludes compiled rows.
-func TestVectorSearchWeightIsOne(t *testing.T) {
+// TestVectorSearchUsesZeroKeywordWeight mirrors Python vector_search: the
+// pure-vector leg carries keyword weight 0 and excludes compiled rows.
+func TestVectorSearchUsesZeroKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.HasEmbedder = true
 	VectorSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 1.0 {
-		t.Errorf("vector search weight = %v, want 1.0", got)
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 0 {
+		t.Errorf("vector search keyword weight = %v, want 0", got)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("vector search must exclude compiled rows")
 	}
 }
 
-// TestBM25SearchUsesZeroWeight: keyword-only, vector
-// weight unconditionally 0, threshold 0.0, excludes compiled rows.
-func TestBM25SearchUsesZeroWeight(t *testing.T) {
+// TestBM25SearchUsesFullKeywordWeight mirrors Python bm25_search: keyword-only,
+// keyword weight 1, threshold 0.0, excludes compiled rows.
+func TestBM25SearchUsesFullKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	BM25Search(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
-		t.Errorf("bm25 search weight = %v, want 0", got)
-	}
-	// No dense leg at all.
-	if !req.DisableVectorLeg {
-		t.Error("bm25 search must disable the vector leg")
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1 {
+		t.Errorf("bm25 search keyword weight = %v, want 1", got)
 	}
 	if got := ptrFloat(t, req.SimilarityThreshold); got != 0 {
 		t.Errorf("bm25 search threshold = %v, want 0", got)
@@ -614,18 +1074,15 @@ func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	}
 }
 
-// TestGrepSearchDelegatesToBM25: it is bm25_search
-// with a keyword-only (weight 0) leg and compiled-row exclusion.
+// TestGrepSearchDelegatesToBM25 mirrors Python grep_search: it is bm25_search
+// with a keyword-only (weight 1) leg and compiled-row exclusion.
 func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	GrepSearch(context.Background(), deps, SearchParams{Question: "q", Keywords: "kw"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
-		t.Errorf("grep search weight = %v, want 0", got)
-	}
-	if !req.DisableVectorLeg {
-		t.Error("grep search must disable the vector leg (embd_mdl=None)")
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1 {
+		t.Errorf("grep search keyword weight = %v, want 1", got)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("grep search must exclude compiled rows")
@@ -932,8 +1389,8 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	if want := "who made Culdcept? who made Culdcept"; req.Query != want {
 		t.Errorf("query = %q, want %q (question + derived terms)", req.Query, want)
 	}
-	if ptrFloat(t, req.VectorSimilarityWeight) != 0 || !req.ExcludeCompiled {
-		t.Error("grep must stay keyword-only (weight 0) and exclude compiled rows")
+	if ptrFloat(t, req.KeywordsSimilarityWeight) != 1 || !req.ExcludeCompiled {
+		t.Error("grep must stay keyword-only (weight 1) and exclude compiled rows")
 	}
 	// The derived hint also drives the narrowing stage: a prose candidate whose
 	// sentences miss those terms is dropped, while a >=3-row pipe table is kept
@@ -977,21 +1434,17 @@ func TestSearchCacheIsHybridOnly(t *testing.T) {
 	}
 }
 
-// TestHybridSearchExcludesCompiledAndWeightsThreeTenths: vector weight 0.3 when an
-// embedder is configured, compiled rows excluded.
-func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
+// TestHybridSearchExcludesCompiledAndUsesSevenTenthsKeywordWeight mirrors Python
+// hybrid_search: keyword weight 0.7 when an embedder is configured, compiled
+// rows excluded.
+func TestHybridSearchExcludesCompiledAndUsesSevenTenthsKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.HasEmbedder = true
 	HybridSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != HybridSearchDefaultVectorWeight {
-		t.Errorf("hybrid search weight = %v, want %v", got, HybridSearchDefaultVectorWeight)
-	}
-	// With an embedder configured the real handle is passed: the dense leg RUNS at
-	// weight 0.3.
-	if req.DisableVectorLeg {
-		t.Error("hybrid search with an embedder must keep the vector leg")
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-HybridSearchDefaultVectorWeight {
+		t.Errorf("hybrid search keyword weight = %v, want %v", got, 1-HybridSearchDefaultVectorWeight)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("hybrid search must exclude compiled rows")
@@ -1010,8 +1463,8 @@ func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
 	if req.ExcludeCompiled {
 		t.Error("retrieve search must NOT exclude compiled rows")
 	}
-	if got := ptrFloat(t, req.VectorSimilarityWeight); got != DefaultHybridVectorWeight {
-		t.Errorf("retrieve search weight = %v, want %v", got, DefaultHybridVectorWeight)
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-DefaultHybridVectorWeight {
+		t.Errorf("retrieve search keyword weight = %v, want %v", got, 1-DefaultHybridVectorWeight)
 	}
 }
 
@@ -1179,52 +1632,55 @@ func TestRetrievalDefaultsUseIntOrDef(t *testing.T) {
 	}
 }
 
-func TestResolveVectorWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
-	// UsingEmbedding off → keyword-only (weight 0); on → 0.7 default or the configured
-	// override.
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 0 {
-		t.Fatalf("using_embedding=false → %v, want 0 (keyword-only)", got)
+func TestResolveKeywordsSimilarityWeightRetrieveMirrorsUsingEmbedding(t *testing.T) {
+	// Python RAGTools.retrieve(using_embedding: bool = False).
+	// Off → keyword-only (weight 1); on → 0.3 default or the configured override.
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 1 {
+		t.Fatalf("using_embedding=false → %v, want 1 (keyword-only)", got)
 	}
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != DefaultHybridVectorWeight {
-		t.Fatalf("using_embedding=true → %v, want %v", got, DefaultHybridVectorWeight)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != 1-DefaultHybridVectorWeight {
+		t.Fatalf("using_embedding=true → %v, want %v", got, 1-DefaultHybridVectorWeight)
 	}
 	override := 0.5
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, VectorSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, KeywordsSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
 		t.Fatalf("using_embedding=true with override → %v, want 0.5", got)
 	}
 }
 
-func TestResolveVectorWeightHybridDefaultsToThreeTenths(t *testing.T) {
-	// The hybrid leg defaults the vector weight to 0.3, unlike the retrieve channel's 0.7.
-	if got := resolveVectorWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
-		t.Fatalf("hybrid → %v, want %v", got, HybridSearchDefaultVectorWeight)
+func TestResolveKeywordsSimilarityWeightHybridDefaultsToSevenTenths(t *testing.T) {
+	// Python hybrid_search defaults the vector weight to 0.3, hence its
+	// keyword weight is 0.7.
+	// (_DEFAULT_HYBRID_VECTOR_WEIGHT,), unlike RAGTools.retrieve's 0.7.
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != 1-HybridSearchDefaultVectorWeight {
+		t.Fatalf("hybrid → %v, want %v", got, 1-HybridSearchDefaultVectorWeight)
 	}
-	if got := resolveVectorWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 0 {
-		t.Fatalf("hybrid with no embedder → %v, want 0", got)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 1 {
+		t.Fatalf("hybrid with no embedder → %v, want 1 (Python: `if embd_mdl`)", got)
 	}
 }
 
-// TestResolveVectorWeightHybridIgnoresUsingEmbedding is the regression guard for the
-// channel-granularity bug: the hybrid leg has NO using_embedding parameter, so gating it
-// on that flag disabled the semantic leg for search_chunks — losing recall of passages
-// sharing no surface words. The gate for this channel is the embedder, nothing else.
-func TestResolveVectorWeightHybridIgnoresUsingEmbedding(t *testing.T) {
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != HybridSearchDefaultVectorWeight {
+// TestResolveKeywordsSimilarityWeightHybridIgnoresUsingEmbedding is the regression guard for
+// the channel-granularity bug: Python's hybrid_search has NO using_embedding
+// parameter (search.py:hybrid_search, :143-145), so gating it on that flag disabled the
+// semantic leg for search_chunks — losing recall of passages sharing no surface
+// words. The gate for this channel is the embedder, nothing else.
+func TestResolveKeywordsSimilarityWeightHybridIgnoresUsingEmbedding(t *testing.T) {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != 1-HybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid with using_embedding=false → %v, want %v: the vector leg "+
-			"must NOT depend on using_embedding", got, HybridSearchDefaultVectorWeight)
+			"must NOT depend on using_embedding", got, 1-HybridSearchDefaultVectorWeight)
 	}
 }
 
-// TestResolveVectorWeightGrepIsAlwaysZero: the grep channel and the retrieve / grep_*
-// session tools are keyword-only and have no vector leg at all, so no flag can turn one
-// on.
-func TestResolveVectorWeightGrepIsAlwaysZero(t *testing.T) {
-	override := 0.9
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 0 {
-		t.Fatalf("grep → %v, want 0 (grep_search has no vector leg)", got)
+// TestResolveKeywordsSimilarityWeightGrepIsAlwaysOne pins Python grep_search: the retrieve
+// and grep_* session tools are keyword-only and have no vector leg at all, so no
+// flag can turn one on.
+func TestResolveKeywordsSimilarityWeightGrepIsAlwaysOne(t *testing.T) {
+	override := 0.1
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 1 {
+		t.Fatalf("grep → %v, want 1 (grep_search has no vector leg)", got)
 	}
-	if got := resolveVectorWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, VectorSimilarityWeight: &override}, ChannelGrep); got != 0 {
-		t.Fatalf("grep with override → %v, want 0 (grep_search has no vector leg)", got)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, KeywordsSimilarityWeight: &override}, ChannelGrep); got != 1 {
+		t.Fatalf("grep with override → %v, want 1 (grep_search has no vector leg)", got)
 	}
 }
 
@@ -1696,11 +2152,18 @@ type flakyRetriever struct {
 	chunks []map[string]any
 }
 
+// keywordOnlyLeg reports whether a request asks for the keyword leg ALONE. In this API that is
+// KeywordsSimilarityWeight 1.0 (see RetrieveRequest: 0.0 vector-only, 0.7 hybrid, 1.0 keyword-only) —
+// the dense leg is off, so a keyword-only caller must not need an embedder.
+func keywordOnlyLeg(req RetrieveRequest) bool {
+	return req.KeywordsSimilarityWeight != nil && *req.KeywordsSimilarityWeight >= 1.0
+}
+
 func (f *flakyRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, req)
 	f.mu.Unlock()
-	if !req.DisableVectorLeg {
+	if !keywordOnlyLeg(req) {
 		return nil, errors.New("GetVector failed: failed to send request")
 	}
 	return f.chunks, nil
@@ -1727,9 +2190,9 @@ func TestADeadEmbedderCostsTheLegItsDenseHalfOnly(t *testing.T) {
 	if len(r.calls) != 2 {
 		t.Fatalf("attempts = %d, want the failure retried once", len(r.calls))
 	}
-	if r.calls[0].DisableVectorLeg || !r.calls[1].DisableVectorLeg {
-		t.Errorf("attempts used DisableVectorLeg %v/%v, want the retry to go keyword-only",
-			r.calls[0].DisableVectorLeg, r.calls[1].DisableVectorLeg)
+	if keywordOnlyLeg(r.calls[0]) || !keywordOnlyLeg(r.calls[1]) {
+		t.Errorf("attempts used the keyword-alone weight %v/%v, want the retry to go keyword-only",
+			r.calls[0].KeywordsSimilarityWeight, r.calls[1].KeywordsSimilarityWeight)
 	}
 }
 

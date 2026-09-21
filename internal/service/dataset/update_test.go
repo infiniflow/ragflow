@@ -98,6 +98,77 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	}
 }
 
+// TestUpdateDataset_ParentChildConfigReachesGeneralChunker verifies an edit to
+// the dataset setting updates the runtime chunker parameter, not only the UI
+// payload retained in parser_config.
+func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"parent_child": map[string]interface{}{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated dataset: %v", err)
+	}
+	chunker, ok := persisted.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", persisted.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
+	}
+	parentChild, ok := persisted.ParserConfig["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("parent_child = %#v, want persisted public setting", persisted.ParserConfig["parent_child"])
+	}
+}
+
+func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	existingConfig := entity.JSONMap{
+		"parent_child": map[string]interface{}{
+			"use_parent_child":   true,
+			"children_delimiter": "|",
+		},
+	}
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", existingConfig).Error; err != nil {
+		t.Fatalf("seed parent-child parser config: %v", err)
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{"chunk_token_num": float64(256)},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("load updated dataset: %v", err)
+	}
+	chunker, ok := persisted.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", persisted.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
+	}
+}
+
 func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)

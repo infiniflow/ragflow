@@ -241,8 +241,13 @@ const (
 	naiveEvidenceChunkCap = 8
 	// naiveEvidenceCharCap caps each naive evidence chunk.
 	naiveEvidenceCharCap = 1500
-	// answerErrorFallback is the stream-failure message.
-	answerErrorFallback = "I'm sorry, I encountered an error while composing the answer."
+	// composeStage tags the terminal composition in the log and in the think
+	// block.
+	composeStage = "Composing the answer"
+	// providerErrorSummaryMax bounds the provider error a user reads inside the
+	// think block: the message can be a whole JSON body or a wall of retry
+	// advice, and the block is a narrative, not a log dump.
+	providerErrorSummaryMax = 300
 	// graphFailureFallback: last-resort message
 	// (run_agentic_rag), used only when the graph failed AND produced nothing.
 	graphFailureFallback = "I couldn't complete the search due to an internal error."
@@ -446,7 +451,7 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	// repeating their numbers only made the block longer. The paths that have no
 	// [Finalize] — the low graph's last node, every fallback compose — keep it.
 	if !finalizeAnnounced(ctx) {
-		step(ctx, logger, "Composing the answer", "Composing the answer from %s.",
+		step(ctx, logger, composeStage, "Composing the answer from %s.",
 			runtime.CountOf(len(chunks), "gathered passage"))
 	}
 
@@ -457,7 +462,7 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	// _compose_answer_from_evidence: no_evidence = abstain or empty_result or not chunks.
 	noEvidence := abstain || emptyResult || len(chunks) == 0
 	if noEvidence && deps.EmptyResponse != "" {
-		step(ctx, logger, "Composing the answer", "No supporting evidence was found, so the configured empty response is returned without calling the model.")
+		step(ctx, logger, composeStage, "No supporting evidence was found, so the configured empty response is returned without calling the model.")
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}
 	}
 	if deps.Model == nil {
@@ -504,8 +509,19 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 		*userMsg,
 	}, nil)
 	if err != nil {
-		logger.Printf("[Composing the answer] composition failed: %v", err)
-		return AnswerResult{Answer: answerErrorFallback, Failed: true}
+		// Deliberately NOT Python's bare "I'm sorry…" sentence. The ANSWER
+		// carries the provider's own message in the classic `**ERROR**: …` shape
+		// the rest of the chat pipeline uses for its failures, so an agentic
+		// failure reads exactly like a naive-mode one instead of hiding the
+		// cause — an exhausted quota or a provider 5xx used to look like a RAG
+		// bug. The think block gets the same text as a reasoning step, and the
+		// developer log line stays byte-for-byte what it was (the detail half of
+		// StageLineDetail).
+		summary := providerErrorSummary(err)
+		runtime.StepsFrom(ctx).StageLineDetail(logger, composeStage,
+			"Composing the answer failed: "+summary,
+			fmt.Sprintf("composition failed: %v", err))
+		return AnswerResult{Answer: errorAnswerText(err), Failed: true}
 	}
 	answer := cleanAnswer(reply.Content)
 	logComposeDone(logger, started, answer, len(chunks))
@@ -604,7 +620,7 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	// streaming path has no separate `abstain` signal (Go threads only
 	// partial/emptyResult), so the abstain note term cannot fire here.
 	if !finalizeAnnounced(ctx) {
-		step(ctx, logger, "Composing the answer", "Composing the answer from %s.",
+		step(ctx, logger, composeStage, "Composing the answer from %s.",
 			runtime.CountOf(len(chunks), "gathered passage"))
 	}
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)

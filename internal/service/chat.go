@@ -1318,6 +1318,36 @@ func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string)
 	// Resolve kb_ids to kb_names
 	kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
 
+	// Normalize fields that the frontend chat-setting form schema requires to
+	// be present and valid. The Python API returns these defaults; the Go
+	// port previously omitted them (rerank_candidates_count=0,
+	// reference_metadata=null), which made the form invalid and silently
+	// blocked Save (no request sent). Mirror Python's defaults without
+	// touching the persisted DB row.
+	if chat.RerankCandidatesCount <= 0 {
+		chat.RerankCandidatesCount = 64
+	}
+	if chat.PromptConfig != nil {
+		refMeta, ok := chat.PromptConfig["reference_metadata"].(map[string]interface{})
+		if !ok || refMeta == nil {
+			refMeta = map[string]interface{}{}
+		}
+		if _, hasInclude := refMeta["include"]; !hasInclude {
+			refMeta["include"] = false
+		}
+		if _, hasFields := refMeta["fields"]; !hasFields {
+			refMeta["fields"] = []interface{}{}
+		}
+		chat.PromptConfig["reference_metadata"] = refMeta
+
+		// refine_multiturn is required by the frontend schema (z.boolean()),
+		// but the DB column omits it (Python defaults to false). Default it
+		// so the chat-setting form validates and Save can be submitted.
+		if _, hasRefine := chat.PromptConfig["refine_multiturn"]; !hasRefine {
+			chat.PromptConfig["refine_multiturn"] = false
+		}
+	}
+
 	return &GetChatResponse{
 		Chat:       chat,
 		DatasetIDs: datasetIDs,

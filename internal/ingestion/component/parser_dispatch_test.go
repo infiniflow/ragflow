@@ -28,10 +28,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -47,9 +45,11 @@ import (
 	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
+	"github.com/glebarez/sqlite"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
@@ -679,12 +679,15 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Mock resolveTenantModelByType to return a MinerU driver pointing at the test server.
-	origResolver := resolveTenantModelByType
-	defer func() { resolveTenantModelByType = origResolver }()
+	// Mock the MinerU provider resolver to return a driver pointing at the test server.
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
 	baseURL := server.URL
 	apiKey := ""
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "MinerU"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
@@ -725,11 +728,14 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origResolver := resolveTenantModelByType
-	defer func() { resolveTenantModelByType = origResolver }()
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
 	baseURL := server.URL
 	apiKey := ""
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "MinerU"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
@@ -889,7 +895,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 		if got, want := providerName, "PaddleOCR"; got != want {
 			t.Fatalf("providerName = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
 	setups := defaultSetups()
@@ -916,30 +922,28 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 // PaddleOCR configuration contract: the tenant api_key is a JSON payload
 // (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm) and the
 // instance base_url field stays empty, mirroring Python's PaddleOCROcrModel.
-// Dispatch must unwrap that payload into a concrete base url, bearer token and
-// algorithm before handing the driver its API config.
+// The driver, not the dispatch layer, unwraps that payload into the wire
+// bearer token and server endpoint.
 func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/layout-parsing" {
-			http.NotFound(w, r)
-			return
-		}
-		if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
-			t.Errorf("Authorization = %q, want %q (must unwrap api_key payload)", got, want)
-			return
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode body: %v", err)
-			return
-		}
-		if got, want := body["algorithm"], "PaddleOCR-VL"; got != want {
-			t.Errorf("algorithm = %v, want %v (must unwrap api_key payload)", got, want)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped Title\n\nUnwrapped body.\n"}}]}}`))
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("Authorization = %q, want %q (driver must unwrap api_key payload)", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("poll Authorization = %q, want %q", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"state":"done","resultUrl":{"jsonUrl":"http://` + r.Host + `/result"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/result":
+			_, _ = w.Write([]byte(`[{"logId":"l1","errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped Title\n\nUnwrapped body.\n"}}]}}]`))
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 
@@ -953,7 +957,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 		if got, want := providerName, "PaddleOCR"; got != want {
 			t.Fatalf("providerName = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
+		return models.NewPaddleOCRModel(nil, models.URLSuffix{OCR: "v2/ocr/jobs"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
 	}
 
 	setups := defaultSetups()
@@ -1041,7 +1045,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 		if got, want := mid, modelID; got != want {
 			t.Fatalf("modelID = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	setups := defaultSetups()
@@ -1105,7 +1109,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 		if got, want := mid, modelID; got != want {
 			t.Fatalf("modelID = %q, want %q", got, want)
 		}
-		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	setups := defaultSetups()
@@ -1128,115 +1132,439 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
-// paddleocrTestDriver is a minimal ModelDriver mock whose Name() returns "paddleocr".
-type paddleocrTestDriver struct{}
+// TestDispatch_PDFMinerU_BareModelUUID_InParseMethod pins the routing of a
+// bare tenant model UUID in parse_method — the value stored when a user picks
+// an OCR model for PDF parsing — to the MinerU dispatch path using that exact
+// model. The UUID carries no "@provider" hint, so it must be resolved before
+// the dispatch path is chosen instead of falling through to the image2text
+// VLM path.
+func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer mineru-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# Cloud MinerU Title\n\nCloud body.\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
 
-func (d *paddleocrTestDriver) NewInstance(baseURL map[string]string) models.ModelDriver { return d }
-func (d *paddleocrTestDriver) Name() string                                             { return "paddleocr" }
-func (d *paddleocrTestDriver) ChatWithMessages(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, chatModelConfig *models.ChatConfig, usage *common.ModelUsage) (*models.ChatResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, modelConfig *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) Embed(ctx context.Context, modelName *string, request models.EmbedRequest, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
-	return nil, fmt.Errorf("not implemented")
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	origProbe := isMinerULayoutModelID
+	origResolve := resolveMinerUModelForDispatch
+	defer func() {
+		isMinerULayoutModelID = origProbe
+		resolveMinerUModelForDispatch = origResolve
+	}()
+	isMinerULayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "scansmpl.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "Cloud MinerU Title")
 }
 
-func (d *paddleocrTestDriver) Rerank(ctx context.Context, modelName *string, request models.RerankRequest, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage) (*models.ASRResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *models.APIConfig, ttsConfig *models.TTSConfig, usage *common.ModelUsage) (*models.TTSResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (d *paddleocrTestDriver) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *models.APIConfig, ttsConfig *models.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("not implemented")
+// TestDispatch_PDFMinerU_LanguageChain pins the lang_list chain
+// (mineru_lang → setup lang → "English"), mirroring Python's
+// mineru_parser.py:1181. The pdf setup's default lang ("Chinese") keeps the
+// unconfigured form value on Python's ch code.
+func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
+	tests := []struct {
+		name      string
+		overrides map[string]any
+		wantLang  string
+	}{
+		{name: "default setup lang maps to ch", overrides: nil, wantLang: "ch"},
+		{name: "mineru_lang wins over setup lang", overrides: map[string]any{"mineru_lang": "English"}, wantLang: "en"},
+		{name: "setup lang used when mineru_lang unset", overrides: map[string]any{"lang": "Japanese"}, wantLang: "japan"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			withSSRFBypass(t)
+			var gotLang string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+					http.NotFound(w, r)
+					return
+				}
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Errorf("parse form: %v", err)
+					return
+				}
+				gotLang = r.FormValue("lang_list")
+				buf := new(bytes.Buffer)
+				zw := zip.NewWriter(buf)
+				f, _ := zw.Create("content_list.json")
+				_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody.\n"}]`))
+				_ = zw.Close()
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(buf.Bytes())
+			}))
+			defer server.Close()
+
+			origResolve := resolveMinerUModelForDispatch
+			defer func() { resolveMinerUModelForDispatch = origResolve }()
+			baseURL := server.URL
+			apiKey := "mineru-secret"
+			resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+				return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+			}
+
+			setups := defaultSetups()
+			setups["pdf"]["parse_method"] = "mineru"
+			setups["pdf"]["output_format"] = "markdown"
+			for k, v := range tc.overrides {
+				setups["pdf"][k] = v
+			}
+			c := &ParserComponent{setups: setups}
+
+			if _, err := c.Invoke(t.Context(), nil, map[string]any{
+				"binary":    []byte("%PDF-1.4"),
+				"file_type": "pdf",
+				"name":      "scansmpl.pdf",
+				"tenant_id": "test-tenant",
+			}); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if gotLang != tc.wantLang {
+				t.Errorf("lang_list = %q, want %q", gotLang, tc.wantLang)
+			}
+		})
+	}
 }
 
-// OCRFile mimics the local PaddleOCRLocalModel protocol: a synchronous
-// JSON POST to {baseURL}/layout-parsing carrying the file as base64, with
-// Bearer auth when the API config provides a key.
-func (d *paddleocrTestDriver) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, ocrConfig *models.OCRConfig, usage *common.ModelUsage) (*models.OCRFileResponse, error) {
-	if apiConfig == nil || apiConfig.BaseURL == nil || *apiConfig.BaseURL == "" {
-		return nil, fmt.Errorf("missing base url")
+// TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer pins the same
+// bare-UUID routing when the model id lands in layout_recognizer while
+// parse_method stays a named method: the layout selector drives the probe and
+// the named parse method never reaches the MinerU API form.
+func TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# Cloud MinerU Title\n\nCloud body.\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	origProbe := isMinerULayoutModelID
+	origResolve := resolveMinerUModelForDispatch
+	defer func() {
+		isMinerULayoutModelID = origProbe
+		resolveMinerUModelForDispatch = origResolve
+	}()
+	isMinerULayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
 	}
-	endpoint := strings.TrimRight(*apiConfig.BaseURL, "/") + "/layout-parsing"
-	reqData := map[string]any{
-		"file":     base64.StdEncoding.EncodeToString(content),
-		"fileType": 0,
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
-	if ocrConfig != nil && strings.TrimSpace(ocrConfig.Algorithm) != "" {
-		reqData["algorithm"] = ocrConfig.Algorithm
-	}
-	jsonData, err := json.Marshal(reqData)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "deepdoc"
+	setups["pdf"]["layout_recognizer"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "scansmpl.pdf",
+		"tenant_id": "test-tenant",
+	})
 	if err != nil {
-		return nil, err
+		t.Fatalf("Invoke: %v", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
+	requireJSONText(t, out, "Cloud MinerU Title")
+}
+
+func writeMinerUZipResponse(w http.ResponseWriter, markdown string) {
+	payload, _ := json.Marshal([]map[string]string{{"type": "text", "text": markdown}})
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+	f, _ := zw.Create("content_list.json")
+	_, _ = f.Write(payload)
+	_ = zw.Close()
+	w.Header().Set("Content-Type", "application/zip")
+	_, _ = w.Write(buf.Bytes())
+}
+
+// setupMinerUVisionDispatchDB seeds an in-memory provider -> instance -> OCR
+// model chain for the MinerU provider so the production dispatch probe and
+// resolver run against tenant data instead of stubs.
+func setupMinerUVisionDispatchDB(t *testing.T, baseURL string) (*gorm.DB, string) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
-		return nil, err
+		t.Fatalf("open sqlite: %v", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := models.BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate model tables: %v", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	rows := []any{
+		&entity.TenantModelProvider{ID: "provider-mineru-1", TenantID: "test-tenant", ProviderName: "MinerU"},
+		&entity.TenantModelInstance{ID: "instance-mineru-1", ProviderID: "provider-mineru-1", InstanceName: "default", APIKey: "mineru-secret", Status: "active", Extra: `{"base_url":"` + baseURL + `"}`},
+		&entity.TenantModel{ID: modelID, ProviderID: "provider-mineru-1", InstanceID: "instance-mineru-1", ModelName: "MinerU-model", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
-	}
-	var ocrResp struct {
-		Result struct {
-			LayoutParsingResults []struct {
-				Markdown struct {
-					Text string `json:"text"`
-				} `json:"markdown"`
-			} `json:"layoutParsingResults"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(body, &ocrResp); err != nil {
-		return nil, err
-	}
-	var md strings.Builder
-	for _, lr := range ocrResp.Result.LayoutParsingResults {
-		if lr.Markdown.Text != "" {
-			md.WriteString(lr.Markdown.Text)
-			md.WriteString("\n\n")
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
 		}
 	}
-	text := strings.TrimSpace(md.String())
-	return &models.OCRFileResponse{Text: &text}, nil
+	return db, modelID
 }
-func (d *paddleocrTestDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, parseFileConfig *models.ParseFileConfig, usage *common.ModelUsage) (*models.ParseFileResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+
+// newMinerUVisionTestServer serves the MinerU /file_parse endpoint, asserting
+// the tenant instance credentials and API parse method posted by the
+// dispatch.
+func newMinerUVisionTestServer(t *testing.T, wantParseMethod string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer mineru-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		if wantParseMethod != "" {
+			if got := r.FormValue("parse_method"); got != wantParseMethod {
+				t.Errorf("parse_method form value = %q, want %q", got, wantParseMethod)
+			}
+		}
+		writeMinerUZipResponse(w, "# Real Resolver Title\n\nReal body.\n")
+	}))
 }
-func (d *paddleocrTestDriver) ListModels(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListModelResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+
+func invokeMinerUDispatch(t *testing.T, db *gorm.DB, setups map[string]schema.ParserSetup) map[string]any {
+	t.Helper()
+	c := &ParserComponent{setups: setups}
+	out, err := c.Invoke(t.Context(), db, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	return out
 }
-func (d *paddleocrTestDriver) Balance(ctx context.Context, apiConfig *models.APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("not implemented")
+
+// TestDispatch_PDFMinerU_HonorsMinerUParseMethodOption pins the dedicated
+// mineru_parse_method parser option flowing to the MinerU /file_parse form:
+// parse_method stays the dispatch selector while the API method comes from
+// mineru_parse_method, mirroring Python's mineru_parser.py.
+func TestDispatch_PDFMinerU_HonorsMinerUParseMethodOption(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "ocr")
+	defer server.Close()
+
+	origResolve := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolve }()
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if mid != "" {
+			t.Fatalf("modelID = %q, want empty for the named selector", mid)
+		}
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["mineru_parse_method"] = "ocr"
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, nil, setups)
+	requireJSONText(t, out, "Real Resolver Title")
 }
-func (d *paddleocrTestDriver) CheckConnection(ctx context.Context, apiConfig *models.APIConfig) error {
-	return fmt.Errorf("not implemented")
+
+// TestDispatch_PDFMinerU_CompositeSelectorInParseMethod pins composite
+// model@instance@provider selectors naming MinerU in parse_method: the
+// dispatch matches the provider suffix and forwards the full selector to
+// the model resolver.
+func TestDispatch_PDFMinerU_CompositeSelectorInParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+
+	selector := "MinerU-model@default@MinerU"
+	origResolve := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolve }()
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, selector; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = selector
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, nil, setups)
+	requireJSONText(t, out, "Real Resolver Title")
 }
-func (d *paddleocrTestDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListTaskStatus, error) {
-	return nil, fmt.Errorf("not implemented")
+
+// TestDispatch_PDFMinerU_NamedSelector_ResolvesMinerUProviderModel runs the
+// named "mineru" dispatch with the production probe and resolver against a
+// seeded tenant MinerU provider, pinning provider -> instance -> model
+// resolution and the instance credentials reaching the MinerU API.
+func TestDispatch_PDFMinerU_NamedSelector_ResolvesMinerUProviderModel(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+	db, _ := setupMinerUVisionDispatchDB(t, server.URL)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, db, setups)
+	requireJSONText(t, out, "Real Resolver Title")
 }
-func (d *paddleocrTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+
+// TestDispatch_PDFMinerU_BareModelUUID_ResolvesThroughRealProbeAndResolver
+// runs the bare model UUID dispatch with the production probe and resolver:
+// the UUID resolves to the seeded MinerU OCR model and the exact instance
+// credentials reach the MinerU API.
+func TestDispatch_PDFMinerU_BareModelUUID_ResolvesThroughRealProbeAndResolver(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+	db, modelID := setupMinerUVisionDispatchDB(t, server.URL)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, db, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestDispatch_PDFMinerU_CompositeSelector_ResolvesThroughRealResolver runs
+// the composite model@instance@provider dispatch (layout_recognizer from the
+// web model picker, parse_method untouched) with the production resolver
+// against the seeded tenant model chain.
+func TestDispatch_PDFMinerU_CompositeSelector_ResolvesThroughRealResolver(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+	db, _ := setupMinerUVisionDispatchDB(t, server.URL)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "deepdoc"
+	setups["pdf"]["layout_recognizer"] = "MinerU-model@default@MinerU"
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, db, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestResolveTenantOCRModelByProvider_MinerUProviderAlias pins the sibling
+// provider spelling tolerance: a tenant that configured only the remote
+// "MinerU.Net" provider still resolves through the canonical "MinerU" name.
+func TestResolveTenantOCRModelByProvider_MinerUProviderAlias(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate model tables: %v", err)
+	}
+	rows := []any{
+		&entity.TenantModelProvider{ID: "provider-minerunet-1", TenantID: "test-tenant", ProviderName: "MinerU.Net"},
+		&entity.TenantModelInstance{ID: "instance-minerunet-1", ProviderID: "provider-minerunet-1", InstanceName: "default", APIKey: "mineru-secret", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-minerunet-1", ProviderID: "provider-minerunet-1", InstanceID: "instance-minerunet-1", ModelName: "MinerU-model", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	driver, modelName, _, _, err := resolveTenantOCRModelByProvider(t.Context(), db, "test-tenant", "MinerU")
+	if err != nil {
+		t.Fatalf("resolveTenantOCRModelByProvider: %v", err)
+	}
+	if got, want := modelName, "MinerU-model"; got != want {
+		t.Fatalf("modelName = %q, want %q", got, want)
+	}
+	if driver == nil || !isMinerUDriver(driver) {
+		t.Fatalf("driver = %v, want a MinerU driver", driver)
+	}
 }
 
 func TestIsPaddleOCRDriver(t *testing.T) {
@@ -1245,7 +1573,7 @@ func TestIsPaddleOCRDriver(t *testing.T) {
 		d    models.ModelDriver
 		want bool
 	}{
-		{"local", &paddleocrTestDriver{}, true},
+		{"local", &models.PaddleOCRLocalModel{}, true},
 		{"remote", &models.PaddleOCRModel{}, true},
 		{"dummy", &models.DummyModel{}, false},
 	} {

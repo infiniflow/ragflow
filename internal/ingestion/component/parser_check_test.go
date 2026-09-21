@@ -26,9 +26,9 @@ import (
 // TestParserComponent_Check covers the construction-time business
 // validation for parser methods that require language configuration.
 //
-// Go does NOT validate audio/video vlm.llm_id because media_dispatch
-// resolves tenant default models via resolveTenantModelByType, not
-// setup["vlm"]["llm_id"]. See plan: quantum-forging-curie-sZ_7zRZb.
+// audio/video vlm.llm_id is not validated: Python's check() has no
+// such branch, and audio resolves its model at dispatch time with a
+// tenant-default fallback.
 func TestParserComponent_Check(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -99,17 +99,17 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"image": {"lang": "English"}},
 		},
 
-		// --- audio/video: vlm.llm_id NOT validated in Go ---
+		// --- audio/video: vlm.llm_id not validated (matches Python check()) ---
 		{
-			name:   "audio: no vlm field → pass (Go uses tenant default ASR)",
+			name:   "audio: no vlm field → pass (model falls back to tenant default)",
 			setups: map[string]schema.ParserSetup{"audio": {"output_format": "text"}},
 		},
 		{
-			name:   "video: no vlm field → pass (Go uses tenant default VISION)",
+			name:   "video: no vlm field → pass",
 			setups: map[string]schema.ParserSetup{"video": {"output_format": "text"}},
 		},
 		{
-			name:   "audio: vlm.llm_id empty → pass (Go ignores vlm.llm_id)",
+			name:   "audio: vlm.llm_id empty → pass (empty falls back to tenant default)",
 			setups: map[string]schema.ParserSetup{"audio": {"vlm": map[string]any{"llm_id": ""}}},
 		},
 

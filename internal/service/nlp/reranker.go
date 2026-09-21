@@ -17,9 +17,7 @@ package nlp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -153,13 +151,12 @@ func RerankByModel(
 		// tokenized content_ltks. Neural rerankers score stemmed / accent-split
 		// tokens far lower, which collapses relevance scores and forces an
 		// artificially low similarity_threshold. The natural text is passed
-		// as-is: RemoveRedundantSpaces is ASCII-oriented and mangles
-		// multilingual text ("sécurité des données" -> "sécuritédes données"),
-		// so it is only applied to the tokenized fallback used when
-		// content_with_weight is absent. Mirrors rag/nlp/search.py.
+		// as-is; common.RemoveRedundantSpaces is only applied to the tokenized
+		// fallback used when content_with_weight is absent, where it drops the
+		// space before punctuation tokens. Mirrors rag/nlp/search.py.
 		docText := extractNaturalText(chunk)
 		if docText == "" {
-			docText = RemoveRedundantSpaces(strings.Join(tks, " "))
+			docText = common.RemoveRedundantSpaces(strings.Join(tks, " "))
 		}
 		docs = append(docs, docText)
 	}
@@ -170,12 +167,7 @@ func RerankByModel(
 	// Get similarity scores from reranker model
 	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
 	if err != nil {
-		if errors.Is(err, models.ErrRerankTokenLimitPolicy) {
-			return nil, nil, nil, err
-		}
-		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
-		// If model fails, fall back to token similarity only
-		rerankResponse = &models.RerankResponse{}
+		return nil, nil, nil, err
 	}
 
 	// Use the Index field from the response to place scores in the correct position,
@@ -581,7 +573,7 @@ func extractTitleTokens(fields map[string]interface{}) []string {
 	if !ok {
 		return []string{}
 	}
-	// NOTE: Do NOT call RemoveRedundantSpaces here - it removes spaces between Chinese chars
+	// title_tks is a space-separated token list: split it, do not clean it as prose.
 	var result []string
 	for t := range strings.FieldsSeq(v) {
 		if t != "" {
@@ -656,21 +648,6 @@ func cosineSimilarity(a, b []float64) float64 {
 	}
 
 	return dot / (common.PySqrt(normA) * common.PySqrt(normB))
-}
-
-// RemoveRedundantSpaces removes redundant spaces from text
-// First pass: remove spaces after left-boundary characters
-// Second pass: remove spaces before right-boundary characters
-func RemoveRedundantSpaces(s string) string {
-	// First pass: remove spaces after left-boundary characters (opening brackets, etc.)
-	// e.g., "（ text" -> "（text", "【 text" -> "【text"
-	s = regexp.MustCompile(`([^\sa-z0-9.,\)>]) +([^\s])`).ReplaceAllString(s, "$1$2")
-
-	// Second pass: remove spaces before right-boundary characters (closing brackets, punctuation)
-	// e.g., "text ！" -> "text！"
-	s = regexp.MustCompile(`([^\s]) +([^\sa-z0-9.,\(])`).ReplaceAllString(s, "$1$2")
-
-	return s
 }
 
 // parseFloat parses a string to float64
@@ -934,6 +911,7 @@ func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]inte
 //   - qb: QueryBuilder for token processing
 //   - rankFeature: rank feature weights (e.g., {"pagerank_fea": 10.0})
 func RerankWithKNN(
+	ctx context.Context,
 	chunks []map[string]interface{},
 	ids []string,
 	field map[string]map[string]interface{},
@@ -948,7 +926,7 @@ func RerankWithKNN(
 		return []float64{}, []float64{}, []float64{}
 	}
 
-	common.Debug("RerankWithKNN started", zap.Int("chunkCount", len(ids)), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+	common.DebugCtx(ctx, "RerankWithKNN started", zap.Int("chunkCount", len(ids)), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
 
 	// Normalize important_kwd - Python checks if it's a string and wraps in list
 	// for i in sres.ids:
@@ -971,7 +949,7 @@ func RerankWithKNN(
 	if qb != nil {
 		_, keywords = qb.Question(query, "qa", 0.6)
 	}
-	common.Debug("RerankWithKNN keywords", zap.Any("keywords", keywords))
+	common.DebugCtx(ctx, "RerankWithKNN keywords", zap.Any("keywords", keywords))
 
 	// Build token lists matching Python's OrderedDict approach
 	insTw := make([][]string, 0, len(ids))
@@ -1010,14 +988,14 @@ func RerankWithKNN(
 
 	// Calculate token similarity
 	tsim = TokenSimilarity(keywords, insTw, qb)
-	common.Debug("RerankWithKNN tsim", zap.Float64s("tsim", tsim))
+	common.DebugCtx(ctx, "RerankWithKNN tsim", zap.Float64s("tsim", tsim))
 
 	// Build vector similarity from knnScores - matches Python's np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids])
 	vsim = make([]float64, len(ids))
 	for i, chunkID := range ids {
 		vsim[i] = knnScores[chunkID] // Returns 0.0 if not found (Go map default)
 	}
-	common.Debug("RerankWithKNN knnScores", zap.Int("knnScoreCount", len(knnScores)), zap.Float64s("vsim", vsim), zap.Strings("ids", ids), zap.Float64s("knnScores", func() []float64 {
+	common.InfoCtx(ctx, "RerankWithKNN knnScores", zap.Int("knnScoreCount", len(knnScores)), zap.Float64s("vsim", vsim), zap.Strings("ids", ids), zap.Float64s("knnScores", func() []float64 {
 		scores := make([]float64, 0, len(knnScores))
 		for _, id := range ids {
 			if s, ok := knnScores[id]; ok {
@@ -1035,9 +1013,9 @@ func RerankWithKNN(
 
 	// Apply rank feature scores (tag_score * 10 + pagerank)
 	sim = applyRankFeatureScoresForIDs(ids, field, sim, rankFeature)
-	common.Debug("RerankWithKNN rankFeatureScores", zap.Any("rankFeature", rankFeature), zap.Any("simAfterRank", sim))
+	common.DebugCtx(ctx, "RerankWithKNN rankFeatureScores", zap.Any("rankFeature", rankFeature), zap.Any("simAfterRank", sim))
 
-	common.Debug("RerankWithKNN completed", zap.Int("outputChunks", len(sim)))
+	common.DebugCtx(ctx, "RerankWithKNN completed", zap.Int("outputChunks", len(sim)))
 	return sim, tsim, vsim
 }
 

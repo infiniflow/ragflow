@@ -101,6 +101,58 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	}
 }
 
+// TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage pins the
+// positions-driven contract for figure-caption classification. The parser's
+// JSON path no longer inlines cropped media, so a figure caption is promoted to
+// doc_type_kwd "image" only when it carries a usable PDF positions matrix
+// (the on-demand crop source) — NOT merely because an image is present. This
+// locks down the fix for the previous loose `v != nil` check, which promoted
+// captions whose _pdf_positions were empty or not a real matrix to "image".
+func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
+	// A figure caption WITH positions is classified as image: the on-demand
+	// VLM/chunker crop path fires.
+	withPos := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{{
+			Text:       "小灰灰",
+			LayoutType: deepdoctype.DLALabelFigureCaption,
+			Positions: []deepdoctype.Position{{
+				PageNumbers: []int{0},
+				Left:        10,
+				Right:       50,
+				Top:         10,
+				Bottom:      50,
+			}},
+		}},
+	}
+	res := pdfParseResultToJSON("with-pos.pdf", withPos)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if got := res.JSON[0]["doc_type_kwd"]; got != "image" {
+		t.Fatalf("figure caption with positions doc_type_kwd = %v, want image", got)
+	}
+
+	// A figure caption with an inlined image but NO positions is NOT promoted
+	// to image: positions are the sole classifier now. (In the PDF JSON path
+	// an inlined image without positions does not occur — cropMediaSections was
+	// removed — so this documents that the presence of a stray image alone is
+	// insufficient.)
+	withImageNoPos := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{{
+			Text:       "小灰灰",
+			LayoutType: deepdoctype.DLALabelFigureCaption,
+			Image:      "aGVsbG8=",
+		}},
+	}
+	res2 := pdfParseResultToJSON("with-image-no-pos.pdf", withImageNoPos)
+	if res2.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res2.Err)
+	}
+	if got := res2.JSON[0]["doc_type_kwd"]; got != "text" {
+		t.Fatalf("figure caption with image but no positions doc_type_kwd = %v, want text", got)
+	}
+}
+
 // TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
 // DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
 // SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
@@ -445,7 +497,12 @@ func (m *mockPDFEngineForCommonTest) Close() error {
 	return nil
 }
 
-func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
+// TestPDFParseResultToJSON_NoInlineRetainsPositions pins the new cgo contract:
+// the parser no longer inlines base64 media into the JSON items (that bounded
+// the parser-phase memory peak). Figure/table sections keep their PDF
+// positions so the chunker and VLM can crop on demand. The crop logic itself
+// is still exercised by the Markdown inline tests.
+func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 	mockEngine := &mockPDFEngineForCommonTest{}
 	parsed := &deepdoctype.ParseResult{
 		Engine:     mockEngine,
@@ -489,28 +546,187 @@ func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
 	}
 
-	// Figure should have cropped image populated
-	figImg, ok := res.JSON[0]["image"].(string)
-	if !ok || figImg == "" {
-		t.Fatalf("Figure JSON[0].image should be non-empty base64 data url, got %v", res.JSON[0]["image"])
+	// Figure must retain positions but NOT inline an image.
+	figPos, ok := res.JSON[0]["_pdf_positions"].([][]any)
+	if !ok || len(figPos) == 0 {
+		t.Fatalf("Figure should retain _pdf_positions, got %v", res.JSON[0]["_pdf_positions"])
 	}
-	if !strings.HasPrefix(figImg, "data:image/png;base64,") {
-		t.Fatalf("Figure JSON[0].image prefix mismatch, got %q", figImg)
-	}
-
-	// Table should have cropped image populated
-	tblImg, ok := res.JSON[1]["image"].(string)
-	if !ok || tblImg == "" {
-		t.Fatalf("Table JSON[1].image should be non-empty base64 data url, got %v", res.JSON[1]["image"])
-	}
-	if !strings.HasPrefix(tblImg, "data:image/png;base64,") {
-		t.Fatalf("Table JSON[1].image prefix mismatch, got %q", tblImg)
+	if img, _ := res.JSON[0]["image"].(string); img != "" {
+		t.Fatalf("Figure should not inline image under cgo, got %q", img)
 	}
 
-	// Plain text should NOT have cropped image
-	textImg, _ := res.JSON[2]["image"].(string)
-	if textImg != "" {
-		t.Fatalf("Text JSON[2].image should be empty, got %q", textImg)
+	// Table likewise retains positions, no inline image.
+	tblPos, ok := res.JSON[1]["_pdf_positions"].([][]any)
+	if !ok || len(tblPos) == 0 {
+		t.Fatalf("Table should retain _pdf_positions, got %v", res.JSON[1]["_pdf_positions"])
+	}
+	if img, _ := res.JSON[1]["image"].(string); img != "" {
+		t.Fatalf("Table should not inline image under cgo, got %q", img)
+	}
+
+	// Plain text: no image, positions retained.
+	if img, _ := res.JSON[2]["image"].(string); img != "" {
+		t.Fatalf("Text should not inline image, got %q", img)
+	}
+}
+
+// TestPDFParseResultToJSON_FigureCaptionNoInline pins that a figure caption is
+// still classified as doc_type_kwd "image" (so the chunker/VLM crop it on
+// demand) but the parser does not inline the cropped image for it.
+func TestPDFParseResultToJSON_FigureCaptionNoInline(t *testing.T) {
+	mockEngine := &mockPDFEngineForCommonTest{}
+	parsed := &deepdoctype.ParseResult{
+		Engine:     mockEngine,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{{
+			Text:       "Figure caption",
+			LayoutType: deepdoctype.DLALabelFigureCaption,
+			Positions: []deepdoctype.Position{{
+				PageNumbers: []int{0},
+				Left:        10,
+				Right:       50,
+				Top:         10,
+				Bottom:      50,
+			}},
+		}},
+	}
+
+	res := pdfParseResultToJSON("figure-caption.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+	if pos, ok := res.JSON[0]["_pdf_positions"].([][]any); !ok || len(pos) == 0 {
+		t.Fatal("figure caption should retain _pdf_positions for on-demand crop")
+	}
+	if image, _ := res.JSON[0]["image"].(string); image != "" {
+		t.Fatalf("figure caption should not be inlined by the parser, got %q", image)
+	}
+}
+
+// TestExtractPDFPositions locks down the single source of truth for "does this
+// item carry a usable PDF crop region". The historical bug was a loose
+// `v != nil` test that accepted empty slices and stray scalars; this test
+// proves the contract is now strict (non-empty matrix only) and that both the
+// canonical _pdf_positions key and the legacy positions key are honored, in
+// both the typed [][]any form and the JSON-decoded []any form.
+func TestExtractPDFPositions(t *testing.T) {
+	cases := []struct {
+		name string
+		item map[string]any
+		want bool
+		rows int
+		key  string
+	}{
+		{
+			name: "typed non-empty matrix under _pdf_positions",
+			item: map[string]any{"_pdf_positions": [][]any{{float64(1), float64(2), float64(3), float64(4), float64(1)}}},
+			want: true, rows: 1, key: "_pdf_positions",
+		},
+		{
+			name: "json-decoded []any rows under _pdf_positions",
+			item: map[string]any{"_pdf_positions": []any{[]any{float64(1), float64(2), float64(3), float64(4), float64(1)}}},
+			want: true, rows: 1, key: "_pdf_positions",
+		},
+		{
+			name: "legacy positions key honored",
+			item: map[string]any{"positions": [][]any{{float64(1), float64(2), float64(3), float64(4), float64(1)}}},
+			want: true, rows: 1, key: "positions",
+		},
+		{
+			name: "empty typed matrix rejected",
+			item: map[string]any{"_pdf_positions": [][]any{}},
+			want: false,
+		},
+		{
+			name: "empty json-decoded matrix rejected",
+			item: map[string]any{"_pdf_positions": []any{}},
+			want: false,
+		},
+		{
+			name: "nil value rejected",
+			item: map[string]any{"_pdf_positions": nil},
+			want: false,
+		},
+		{
+			name: "missing key rejected",
+			item: map[string]any{"doc_type_kwd": "image"},
+			want: false,
+		},
+		{
+			name: "stray scalar rejected (old v != nil bug)",
+			item: map[string]any{"_pdf_positions": "not-a-matrix"},
+			want: false,
+		},
+		{
+			name: "non-slice numeric rejected",
+			item: map[string]any{"_pdf_positions": float64(42)},
+			want: false,
+		},
+		{
+			name: "[]any with non-row element rejected",
+			item: map[string]any{"_pdf_positions": []any{"bad", float64(1)}},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			matrix, ok := ExtractPDFPositions(tc.item)
+			if ok != tc.want {
+				t.Fatalf("ExtractPDFPositions ok = %v, want %v", ok, tc.want)
+			}
+			if tc.want {
+				if len(matrix) != tc.rows {
+					t.Fatalf("matrix rows = %d, want %d", len(matrix), tc.rows)
+				}
+				// Every returned row must be []any (normalized form).
+				for i, row := range matrix {
+					if row == nil {
+						t.Fatalf("matrix[%d] is nil after normalization", i)
+					}
+				}
+				// The honored key must carry the matrix in normalized [][]any.
+				if _, present := tc.item[tc.key]; !present {
+					t.Fatalf("expected honored key %q missing", tc.key)
+				}
+			}
+		})
+	}
+}
+
+// TestNormalizePDFDocType_FigureCaptionPositionsGate proves Finding B: a figure
+// caption is only promoted to doc_type_kwd "image" (which lights up the
+// on-demand VLM/chunker crop) when it actually carries a usable positions
+// matrix. The previous loose `v != nil` check promoted captions whose
+// _pdf_positions were empty or not a real matrix, wrongly flagging them for
+// cropping. normalizePDFDocType must delegate to ExtractPDFPositions.
+func TestNormalizePDFDocType_FigureCaptionPositionsGate(t *testing.T) {
+	withPos := map[string]any{
+		"layout_type":    deepdoctype.DLALabelFigureCaption,
+		"_pdf_positions": [][]any{{float64(1), float64(2), float64(3), float64(4), float64(1)}},
+	}
+	normalizePDFDocType(withPos)
+	if got := withPos["doc_type_kwd"]; got != "image" {
+		t.Fatalf("with positions doc_type_kwd = %v, want image", got)
+	}
+
+	for _, empty := range []any{
+		[]any{},
+		[][]any{},
+		nil,
+		"stray-scalar",
+	} {
+		withoutPos := map[string]any{
+			"layout_type":    deepdoctype.DLALabelFigureCaption,
+			"_pdf_positions": empty,
+		}
+		normalizePDFDocType(withoutPos)
+		if got := withoutPos["doc_type_kwd"]; got != "text" {
+			t.Fatalf("_pdf_positions=%#v doc_type_kwd = %v, want text (must not promote empty/non-matrix)", empty, got)
+		}
 	}
 }
 

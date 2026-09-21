@@ -60,8 +60,8 @@ func TestTheScanMatchesContainmentNotRankPosition(t *testing.T) {
 		t.Error("a passage carrying no term was delivered as a match")
 	}
 	// The keyword call is the dense-leg-free one: a scan must not depend on an embedding service.
-	if len(r.requests) == 0 || !r.requests[0].DisableVectorLeg {
-		t.Errorf("scan request DisableVectorLeg = %v, want the keyword-only leg", r.requests)
+	if len(r.requests) == 0 || !keywordOnlyLeg(r.requests[0]) {
+		t.Errorf("scan request weight = %v, want the keyword-only leg", r.requests)
 	}
 }
 
@@ -171,7 +171,7 @@ func TestTheScanAsksBM25OncePerDeclaredProbe(t *testing.T) {
 			t.Errorf("request %d queried %q, want the probe %q on its own (a batch dilutes the rare word)",
 				i, req.Query, terms[i])
 		}
-		if !req.DisableVectorLeg {
+		if !keywordOnlyLeg(req) {
 			t.Errorf("request %d used the dense leg: the scan must not need an embedder", i)
 		}
 	}

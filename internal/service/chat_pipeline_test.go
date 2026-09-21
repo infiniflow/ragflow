@@ -25,7 +25,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -99,6 +103,38 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+// TestBuildChatConfig_GenerationConfigReachesModel pins that the dialog's LLM
+// setting and per-request overrides (temperature, top_p, max_tokens, thinking,
+// stop) reach the model driver, and that request-level overrides win.
+func TestBuildChatConfig_GenerationConfigReachesModel(t *testing.T) {
+	chat := dialForTest("llm-1")
+	chat.LLMSetting = entity.JSONMap{
+		"temperature": 0.7,
+		"top_p":       0.9,
+		"max_tokens":  512,
+		"thinking":    true,
+		"stop":        []interface{}{"\n", "END"},
+	}
+	// Request-level overrides win over dialog values.
+	cfg := BuildChatConfig(chat, map[string]interface{}{"temperature": 0.3})
+
+	if cfg.Temperature == nil || *cfg.Temperature != 0.3 {
+		t.Fatalf("Temperature: want request override 0.3, got %v", cfg.Temperature)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Fatalf("TopP: want dialog 0.9, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 512 {
+		t.Fatalf("MaxTokens: want 512, got %v", cfg.MaxTokens)
+	}
+	if cfg.Thinking == nil || !*cfg.Thinking {
+		t.Fatalf("Thinking: want true, got %v", cfg.Thinking)
+	}
+	if cfg.Stop == nil || len(*cfg.Stop) != 2 {
+		t.Fatalf("Stop: want [\"\\n\", \"END\"], got %v", cfg.Stop)
 	}
 }
 
@@ -199,8 +235,8 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 }
 
 // TestDecorateAnswer_LeavesCanonicalMarkers covers P0: the decorator
-// passes canonical [ID:N] markers through unchanged when there are
-// no chunks to cite (so insertCitations is skipped).
+// passes canonical [ID:N] markers through unchanged when quoting is enabled
+// and there are no chunks to cite (so insertCitations is skipped).
 func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
@@ -212,7 +248,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -226,14 +262,14 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 }
 
 // TestDecorateAnswer_RepairNotRunWhenNoQuote covers P0.10: when
-// quote=false, the citation-repair branch is gated off and the
-// answer is preserved verbatim.
+// quote=false, citation markers are removed without rewriting ordinary
+// bracketed numbers.
 func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
 		t.Context(),
-		"see (ID: 12) for details",
+		"<think>Checking[ID:0]##0$$</think>see (ID: 12)[ID:0]##1$$ in [2024] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
 		[]string{"q"},
@@ -247,8 +283,8 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 		nil,
 		false,
 	)
-	if result.Answer != "see (ID: 12) for details" {
-		t.Errorf("quote=false must not repair, got %q", result.Answer)
+	if result.Answer != "<think>Checking</think>see  in [2024] for details" {
+		t.Errorf("quote=false citation cleanup = %q", result.Answer)
 	}
 }
 
@@ -289,6 +325,47 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 	)
 	if !strings.Contains(result.Answer, "[ID:12]") {
 		t.Errorf("quote=true must repair to [ID:12], got %q", result.Answer)
+	}
+}
+
+// TestDecorateAnswer_CitesThinkBlock ensures citations emitted inside the
+// hidden thinking block still determine the returned reference documents.
+func TestDecorateAnswer_CitesThinkBlock(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "hello world",
+				"doc_id":              "d1",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "doc.txt"},
+		},
+	}
+	result := s.decorateAnswer(
+		t.Context(),
+		"<think>Supported by [ID:0].</think>visible answer",
+		kbinfos,
+		"system prompt",
+		[]string{"q"},
+		0,
+		timer,
+		nil, 0.0, true,
+		nil,
+		"",
+		nil,
+		"",
+		nil,
+		true,
+	)
+	if result.Reference == nil {
+		t.Fatal("a think-block citation must carry a reference")
+	}
+	if aggs, _ := result.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 || aggs[0].(map[string]interface{})["doc_id"] != "d1" {
+		t.Fatalf("reference doc_aggs = %#v, want the cited document", result.Reference["doc_aggs"])
 	}
 }
 
@@ -572,7 +649,7 @@ func TestBuildSQLReference_Scalar(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "42" {
 		t.Errorf("buildSQLReference scalar answer = %q, want %q", ans, "42")
@@ -599,7 +676,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "select id, name from t",
 		rows,
-		"sys", "elasticsearch", nil, nil,
+		"sys", "elasticsearch", nil, nil, true,
 	)
 	// No source columns → empty chunks/doc_aggs.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
@@ -691,13 +768,13 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	}
 	result := s.decorateAnswer(
 		t.Context(),
-		"x",
+		"x [ID:0]",
 		kb,
 		"system prompt",
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -712,6 +789,23 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	chunk := chunks[0]
 	if _, has := chunk["vector"]; has {
 		t.Errorf("vector field should be stripped from reference chunks, got %+v", chunk)
+	}
+}
+
+func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kb := map[string]interface{}{
+		"chunks":   []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Source"}},
+	}
+	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
+		nil, 0, false, nil, "", nil, "", nil, true)
+	if result.Reference == nil || len(result.Reference) != 0 {
+		t.Fatalf("disabled citations must explicitly clear references: %#v", result.Reference)
+	}
+	if result.Answer != "Answer" {
+		t.Fatalf("answer changed: %q", result.Answer)
 	}
 }
 
@@ -829,35 +923,6 @@ func TestShouldUseWebSearch_RequiresTavilyAndTruthyInternet(t *testing.T) {
 }
 
 // --- P5 SQL retrieval parity helpers (Python use_sql alignment) ---
-
-// TestRemoveRedundantSpaces mirrors common.string_utils.remove_redundant_spaces.
-func TestRemoveRedundantSpaces(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		// Both passes run sequentially — pass 1 strips space after `(`,
-		// pass 2 strips space before `)`, so both go.
-		{"pass1+pass2 on ( world )", "hello ( world )", "hello (world)"},
-		// Pass 2 strips space before `!`.
-		{"pass2: space before !", "world !", "world!"},
-		// Comma is not a boundary in pass 2 (it's in the negated set
-		// along with `<` and `(`), so no change.
-		{"comma not a boundary", "a , b", "a , b"},
-		{"no match", "foo bar", "foo bar"},
-		{"empty", "", ""},
-		{"digit not a boundary", "abc 123", "abc 123"},
-		{"left paren kept (no following space)", "(abc)", "(abc)"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := removeRedundantSpaces(tc.in); got != tc.want {
-				t.Errorf("removeRedundantSpaces(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
 
 // TestStripISOTimestamps verifies the dialog_service.py:1309 cleanup.
 // The pattern `T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|` strips the
@@ -1328,7 +1393,7 @@ func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "", nil,
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "No results." {
 		t.Errorf("ans = %q, want %q", ans, "No results.")
@@ -1350,7 +1415,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	if !strings.Contains(ans, "Source|") {
 		t.Errorf("expected Source column in answer, got:\n%s", ans)
@@ -1371,6 +1436,17 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 		if cm["dataset_id"] != "kb_a" {
 			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
 		}
+	}
+
+	ans, ref = s.buildSQLReference(
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		rows, "", "elasticsearch", kbs, nil, false,
+	)
+	if strings.Contains(ans, "Source|") || strings.Contains(ans, "##0$$") {
+		t.Errorf("quote=false leaked SQL citations in answer:\n%s", ans)
+	}
+	if len(ref) != 0 {
+		t.Errorf("quote=false reference = %#v, want empty", ref)
 	}
 }
 
@@ -1398,7 +1474,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	ans, ref := s.buildSQLReference(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	// Multi-cell aggregate → renders as a table, not a scalar.
 	if !strings.Contains(ans, "|42|") {
@@ -1421,7 +1497,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select title from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
 		t.Errorf("expected table data in answer, got:\n%s", ans)
@@ -1449,7 +1525,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", nil, fieldMap,
+		rows, "", "elasticsearch", nil, fieldMap, true,
 	)
 	if !strings.Contains(ans, "|My Title|") {
 		t.Errorf("expected translated column name, got:\n%s", ans)
@@ -1468,7 +1544,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if strings.Contains(ans, "T13:24:55") {
 		t.Errorf("expected ISO timestamp stripped, got:\n%s", ans)
@@ -1597,6 +1673,36 @@ func stubHarness(t *testing.T, answer string) {
 	}
 }
 
+// TestRetrieveViaHarnessForwardsRetrievalTuning pins the fix for a harness that
+// ignored the dialog's retrieval settings: without them it falls back to its
+// package default top_n=12, so a dialog configured with top_n=8 retrieved a
+// different passage set than the standard path — the failure that answered a
+// two-document comparison from one document's chunks because that document's
+// nine chunks filled the widened budget.
+func TestRetrieveViaHarnessForwardsRetrievalTuning(t *testing.T) {
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	var got HarnessRequest
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		got = req
+		return HarnessResult{}, nil
+	}
+
+	s := &ChatPipelineService{}
+	want := HarnessRetrieval{
+		TopN:                   8,
+		SimilarityThreshold:    0.2,
+		VectorSimilarityWeight: 0.3,
+		RerankCandidatesCount:  64,
+	}
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "low", "t", "m", "sess", want, nil, nil, nil, "", nil); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if got.Retrieval != want {
+		t.Errorf("harness retrieval = %+v, want %+v", got.Retrieval, want)
+	}
+}
+
 // collectSink records every delta with its isThink flag.
 func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 	return func(delta string, isThink bool) {
@@ -1632,7 +1738,7 @@ func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
 	var thinks []bool
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	_, _, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
+	_, _, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", HarnessRetrieval{}, nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
@@ -1673,7 +1779,7 @@ func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
 	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
 	var events []ThinkEvent
 	s := &ChatPipelineService{}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, nil, collectThinkSink(&events), "", nil); err != nil {
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", HarnessRetrieval{}, nil, nil, collectThinkSink(&events), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	// Only what the harness reported: the pipeline adds nothing of its own.
@@ -1730,7 +1836,7 @@ func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
+	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", HarnessRetrieval{}, nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {
@@ -1757,7 +1863,7 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, nil)
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, nil, true)
 	if res.Reference == nil {
 		t.Fatal("a cited answer must carry a reference")
 	}
@@ -1853,6 +1959,7 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 		kbinfos,
 		map[string][]string{"0": {"c9"}},
 		nil,
+		true,
 	)
 	if strings.Contains(res.Answer, "[ID:Slot") {
 		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
@@ -1871,6 +1978,114 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
+	}
+}
+
+func TestAsyncChatHarnessQuote(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	previousHarness := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = previousHarness })
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		req.AnswerSink("Research[ID:", true)
+		req.AnswerSink("0] done", true)
+		for _, delta := range []string{"Answer[", "ID:0", "] end"} {
+			req.AnswerSink(delta, false)
+		}
+		return HarnessResult{
+			Answer:  "Answer[ID:0] end",
+			Chunks:  []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+			DocAggs: []map[string]interface{}{{"doc_id": "d1", "doc_name": "Source"}},
+		}, nil
+	}
+	for _, tt := range []struct {
+		name            string
+		config, request any
+		wantQuote       bool
+	}{
+		{"default enabled", nil, nil, true},
+		{"chat disabled", false, true, false},
+		{"request disabled", true, false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			chat := dialForTest("glm-4-flash@ZHIPU-AI")
+			chat.KBIDs = entity.JSONSlice{"kb-1"}
+			chat.PromptConfig["system"] = "Answer using {knowledge}"
+			chat.PromptConfig["quote"] = tt.config
+			results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+				[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+				map[string]interface{}{"reasoning": 1, "quote": tt.request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var streamed, reasoning strings.Builder
+			var final AsyncChatResult
+			want := "Answer end"
+			if tt.wantQuote {
+				want = "Answer[ID:0] end"
+			}
+			for result := range results {
+				reasoning.WriteString(result.Reasoning)
+				if result.Final {
+					final = result
+				} else {
+					streamed.WriteString(result.Answer)
+					if !strings.HasPrefix(want, streamed.String()) {
+						t.Fatalf("stream leaked citation text: %q", streamed.String())
+					}
+				}
+			}
+			if !final.Final || final.Answer != want || streamed.String() != want {
+				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
+			}
+			if (len(final.Reference) > 0) != tt.wantQuote {
+				t.Fatalf("references=%#v, quote=%v", final.Reference, tt.wantQuote)
+			}
+			if !tt.wantQuote && (final.Reference == nil || strings.Contains(reasoning.String(), "[ID:")) {
+				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
+			}
+		})
+	}
+}
+
+func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	chat.KBIDs = entity.JSONSlice{"kb-1"}
+	chat.PromptConfig["system"] = "Answer using {knowledge}"
+	chat.PromptConfig["empty_response"] = "Nothing found."
+	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+		map[string]interface{}{"quote": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var final AsyncChatResult
+	for result := range results {
+		if result.Final {
+			final = result
+		}
+	}
+	if !final.Final || final.Answer != "Nothing found." {
+		t.Fatalf("final=%+v, want empty-response result", final)
+	}
+	if final.Reference == nil || len(final.Reference) != 0 {
+		t.Fatalf("quote=false reference = %#v, want explicit empty object", final.Reference)
 	}
 }
 
@@ -1935,13 +2150,9 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	return keys
 }
 
-// TestDecorateHarnessAnswerUncitedStillCarriesReference: an agentic answer the
-// model composed WITHOUT citation markers must still ship the passages it was
-// composed from. Python's `refs = ... if doc_ids else []` returned an empty
-// reference for exactly that case (a one-passage pool is the common one), which
-// left the user with an answer and nothing to open — while the naive path hands
-// the passages back unconditionally.
-func TestDecorateHarnessAnswerUncitedStillCarriesReference(t *testing.T) {
+// TestDecorateHarnessAnswerUncitedOmitsReference ensures an agentic answer
+// without citation markers does not expose the internal evidence pool.
+func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
 			{
@@ -1958,17 +2169,36 @@ func TestDecorateHarnessAnswerUncitedStillCarriesReference(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil)
+	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil, true)
+	if res.Reference != nil {
+		t.Fatalf("uncited answer must not carry a reference, got %#v", res.Reference)
+	}
+}
+
+// TestDecorateHarnessAnswerCitesThinkBlock ensures citations emitted inside the
+// hidden thinking block still resolve to client-visible source documents.
+func TestDecorateHarnessAnswerCitesThinkBlock(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "the wolf is grey",
+				"doc_id":              "d1",
+				"docnm_kwd":           "wolf.jpg",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
+		},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(" thinkingSupported by [ID:0]. response小狼的颜色是灰色的。", kbinfos, nil, []string{"c1"}, true)
 	if res.Reference == nil {
-		t.Fatal("an agentic answer with a citation pool must carry a reference")
+		t.Fatal("a think-block citation must carry a reference")
 	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["document_name"] != "wolf.jpg" {
-		t.Fatalf("reference chunks = %#v, want the pool in the client-facing shape", res.Reference["chunks"])
-	}
-	// Nothing was cited, so no document can be filtered out.
-	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
-		t.Fatalf("reference doc_aggs = %#v, want the whole pool kept", res.Reference["doc_aggs"])
+	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 || aggs[0].(map[string]interface{})["doc_id"] != "d1" {
+		t.Fatalf("reference doc_aggs = %#v, want the cited document", res.Reference["doc_aggs"])
 	}
 }
 
@@ -1993,7 +2223,7 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:0]。", kbinfos, nil, []string{"c1"})
+	res := s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:0]。", kbinfos, nil, []string{"c1"}, true)
 	if !strings.Contains(res.Answer, "[ID:0]") {
 		t.Fatalf("the marker is the client's index and must survive, got %q", res.Answer)
 	}
@@ -2007,12 +2237,12 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 
 	// The old numbering (a 1-based position) names no entry in a one-passage
 	// reference, so it must be dropped rather than shipped as a dead marker.
-	res = s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:1]。", kbinfos, nil, []string{"c1"})
+	res = s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:1]。", kbinfos, nil, []string{"c1"}, true)
 	if strings.Contains(res.Answer, "[ID:1]") {
 		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
 	}
-	if res.Reference == nil {
-		t.Fatal("the reference must survive a dropped marker")
+	if res.Reference != nil {
+		t.Fatalf("an answer without a resolvable citation must not carry a reference, got %#v", res.Reference)
 	}
 }
 
@@ -2041,6 +2271,7 @@ func TestDecorateHarnessAnswerOrdersReferenceByRenderedOrder(t *testing.T) {
 		kbinfos,
 		nil,
 		[]string{"c3", "c1"},
+		true,
 	)
 	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
 	if len(chunks) != 3 {
@@ -2081,6 +2312,7 @@ func TestDecorateHarnessAnswerDropsOnlyCanonicalMarkers(t *testing.T) {
 		kbinfos,
 		nil,
 		[]string{"c1"},
+		true,
 	)
 	if !strings.Contains(res.Answer, "[2024]") {
 		t.Errorf("prose brackets must survive, got %q", res.Answer)
@@ -2117,6 +2349,7 @@ func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
 		kbinfos,
 		nil,
 		[]string{"c1", "gone", "c3"},
+		true,
 	)
 	if !strings.Contains(res.Answer, "[ID:2]") {
 		t.Fatalf("a marker past the unknown block must survive, got %q", res.Answer)
@@ -2127,5 +2360,265 @@ func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
 	}
 	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
 		t.Fatalf("reference doc_aggs = %#v, want d2 (c3)", aggs[0])
+	}
+}
+
+// setupChatPipelineToolSupportTestDB seeds an in-memory scope whose models differ
+// only in their persisted tool-calling flag, so the probe runs without the provider
+// catalog:
+//
+//	model-tools-on        — chat,    extra {"is_tools": true}
+//	model-tools-off       — chat,    extra {"is_tools": false}
+//	model-tools-disabled  — chat,    extra {"is_tools": true}, status inactive
+//	model-embedding-tools — embedding, extra {"is_tools": true}
+func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("failed to migrate model tables: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-tools-on", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-plus", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-tools-off", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
+		&entity.TenantModel{ID: "model-tools-disabled", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-air", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-embedding-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "embedding-3", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+		// Enrolled ONLY as image-to-text: a valid chat-pipeline input, and the case
+		// that used to be resolved as chat and rejected.
+		&entity.TenantModel{ID: "model-image2text-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v-plus", ModelType: int(entity.ModelTypeImage2Text), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+	return db
+}
+
+// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// the no-explicit-LLM branch of the probe resolves.
+func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
+	t.Helper()
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-1",
+		LLMID:  defaultLLMID,
+		Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+}
+
+// TestGetLLMModelConfigCarriesToolSupport pins that the resolution reports the
+// capability of the row it actually loaded — the config the pipeline then carries
+// through the request, which is where Python reads chat_mdl.is_tools from too.
+func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name      string
+		llm       string
+		wantTools bool
+		wantType  string
+	}{
+		{"tool-capable model", "model-tools-on", true, "chat"},
+		{"model without tool support", "model-tools-off", false, "chat"},
+		// Enrolled only as image-to-text. The type has to be resolved before the
+		// row is loaded, otherwise the load is rejected as a chat model and the
+		// capability reads as absent while the pipeline runs on this same model.
+		{"image2text-only model", "model-image2text-tools", true, "image2text"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err != nil {
+				t.Fatalf("getLLMModelConfig(%s) failed: %v", tc.llm, err)
+			}
+			if got := chatConfigSupportsTools(cfg); got != tc.wantTools {
+				t.Errorf("is_tools for %s = %v, want %v", tc.llm, got, tc.wantTools)
+			}
+			if got, _ := cfg["model_type"].(string); got != tc.wantType {
+				t.Errorf("model_type for %s = %q, want %q", tc.llm, got, tc.wantType)
+			}
+		})
+	}
+}
+
+// TestResolveChatModelTargetAcceptsImage2TextOnlyModel pins the shared entry point
+// the agentic wiring and the generation path both use: it must load a model
+// enrolled only as image-to-text — and report its capability — instead of
+// rejecting it as a chat model, which is what made such a request silently fall
+// back to the regular RAG path.
+func TestResolveChatModelTargetAcceptsImage2TextOnlyModel(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	target, err := svc.ModelProviderSvc.ResolveChatModelTarget(t.Context(), "tenant-1", "model-image2text-tools")
+	if err != nil {
+		t.Fatalf("ResolveChatModelTarget(image2text-only model) failed: %v", err)
+	}
+	if !target.ModelType.Has(entity.ModelTypeImage2Text) {
+		t.Errorf("resolved type = %v, want image2text", target.ModelType)
+	}
+	if !target.SupportsTools {
+		t.Error("resolved target reported no tool support, want true")
+	}
+}
+
+// TestGetLLMModelConfigRejectsUnusableModels pins the fail-closed rule: a disabled
+// model, a model not enrolled as a chat model, and an unenrolled reference all
+// fail to resolve (or resolve without a capability) instead of reporting tool
+// support — the same outcome as Python's `getattr(chat_mdl, "is_tools", False)`
+// default.
+func TestGetLLMModelConfigRejectsUnusableModels(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name string
+		llm  string
+	}{
+		{"disabled model", "model-tools-disabled"},
+		{"not enrolled as chat", "model-embedding-tools"},
+		{"unknown model", "no-such-model"},
+		{"unenrolled composite reference", "ghost@default@ZHIPU-AI"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err == nil && chatConfigSupportsTools(cfg) {
+				t.Errorf("unusable model %s reported tool support", tc.llm)
+			}
+		})
+	}
+}
+
+// TestGetLLMModelConfigFallsBackToTenantDefault covers the no-explicit-LLM branch:
+// the resolution must fall back to the tenant default chat model (composite
+// "model@provider" reference) and report its capability.
+func TestGetLLMModelConfigFallsBackToTenantDefault(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-plus@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if !chatConfigSupportsTools(cfg) {
+		t.Error("tenant default with is_tools=true reported no tool support, want true")
+	}
+}
+
+// TestGetLLMModelConfigTenantDefaultWithoutToolSupport is the mirror case: a
+// tenant default that cannot call tools must not be reported as capable.
+func TestGetLLMModelConfigTenantDefaultWithoutToolSupport(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if chatConfigSupportsTools(cfg) {
+		t.Error("tenant default with is_tools=false reported tool support, want false")
+	}
+}
+
+// TestChatConfigSupportsToolsFailClosed is the guard case for the config read: a
+// missing config, a config without the flag, and a flag carrying anything but a
+// truthy boolean all mean "no tool support", the same outcome as Python's default.
+func TestChatConfigSupportsToolsFailClosed(t *testing.T) {
+	if chatConfigSupportsTools(nil) {
+		t.Error("nil config reported tool support, want false")
+	}
+	if chatConfigSupportsTools(map[string]interface{}{"model_type": "chat"}) {
+		t.Error("config without an is_tools flag reported tool support, want false")
+	}
+	for _, v := range []interface{}{false, "false", "", 0, nil} {
+		if chatConfigSupportsTools(map[string]interface{}{"is_tools": v}) {
+			t.Errorf("is_tools=%#v reported tool support, want false", v)
+		}
+	}
+	if !chatConfigSupportsTools(map[string]interface{}{"is_tools": true}) {
+		t.Error("is_tools=true reported no tool support, want true")
+	}
+}
+
+// TestReasoningNeedsAgenticGraphGatesOnToolSupport pins the gate Python
+// rag_agent applies before building its agentic loop: reasoning level 0 turns it
+// off, and so does a chat model that cannot call tools. Only reasoning enabled
+// together with tool support drives the agentic graph.
+func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
+	capable := map[string]interface{}{"model_type": "chat", "is_tools": true}
+	incapable := map[string]interface{}{"model_type": "chat", "is_tools": false}
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+
+	for _, tc := range []struct {
+		name           string
+		chat           *entity.Chat
+		cfg            map[string]interface{}
+		reasoningLevel int
+		want           bool
+	}{
+		{"reasoning off", chat, capable, 0, false},
+		{"reasoning on and tool-capable", chat, capable, 2, true},
+		{"reasoning on but no tool support", chat, incapable, 2, false},
+		{"reasoning on, unresolvable model", chat, nil, 4, false},
+		{"reasoning on, nil dialog", nil, capable, 2, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := reasoningNeedsAgenticGraph(tc.chat, tc.cfg, tc.reasoningLevel); got != tc.want {
+				t.Errorf("reasoningNeedsAgenticGraph(level=%d) = %v, want %v", tc.reasoningLevel, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
+// carrying the flag on the resolution instead of memoizing it: a model edited
+// after the first request is seen by the next resolution, with no TTL to wait out.
+func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig failed: %v", err)
+	}
+	if !chatConfigSupportsTools(cfg) {
+		t.Fatal("tool-capable model reported no support")
+	}
+
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-tools-on").
+		Update("extra", `{"is_tools":false}`).Error; err != nil {
+		t.Fatalf("flip is_tools: %v", err)
+	}
+
+	cfg, _, _, _, err = svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig after the flag flip failed: %v", err)
+	}
+	if chatConfigSupportsTools(cfg) {
+		t.Error("a flipped is_tools flag was not seen by the next resolution")
 	}
 }

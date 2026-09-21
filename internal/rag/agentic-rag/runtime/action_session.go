@@ -995,6 +995,21 @@ func arrayParamWithReason(minItems, maxItems int) map[string]any {
 	return p
 }
 
+// arrayParamWithReasonAndDocScope is arrayParamWithReason plus `doc_scope`: the retrieve family honours
+// a scope that pins the search INSIDE documents the model already has (see resolveDocScope), and this is
+// the only tool that does. Decoding is ceiling-ed by the session's own DocScope and verified against the
+// bound datasets, so a stale or out-of-dataset doc_id cannot widen the search — the property exists so
+// the model can ASK for it, which it could not when the schema omitted it while the tool accepted it.
+func arrayParamWithReasonAndDocScope(minItems, maxItems int) map[string]any {
+	p := arrayParamWithReason(minItems, maxItems)
+	p["properties"].(map[string]any)["doc_scope"] = map[string]any{
+		"type":        "array",
+		"items":       map[string]any{"type": "string"},
+		"description": "optional doc_ids from a prior tool result (metadata_search / navigate_tree / list_chunks), to search inside those documents only",
+	}
+	return p
+}
+
 // Tool schemas. The descriptions are the model's only guide for when to pick which tool,
 // and rephrasing them changes routing behaviour.
 var (
@@ -1003,14 +1018,14 @@ var (
 		Function: ToolFunction{
 			Name: "retrieve",
 			Description: `WHEN TO CALL: you know or suspect exact surface terms in the corpus (names, titles, codes, phrases) — the first recall pass; cover different facets.` +
-				`HOW IT WORKS: keyword recall FIRST, then the pattern is applied to what came back — ` + "`A.*B`" + ` (A then B, anything between) matches only inside the passages its operands recalled, and the RAREST operand bounds it: put the rare word first. A FULL recall page was truncated.` +
-				`ONE STRING, MANY TERMS: ` + "`A|B|C`" + ` recalls each term in ONE call — synonyms belong in one string, not one call each.` +
-				`ENUMERATING A SET: probe the NAMES themselves, alternated with |, 4-6 per query. Hits are members; guess the next batch yourself rather than stopping at what you hold.` +
+				`HOW IT WORKS: keyword recall FIRST, then the pattern applies to what came back — ` + "`A.*B`" + ` (A then B, anything between) matches only inside the passages its operands recalled, and the RAREST operand bounds it: put the rare word first. A FULL recall page was truncated.` +
+				`ONE STRING, MANY TERMS: ` + "`A|B|C`" + ` recalls each in ONE call — synonyms go in one string.` +
+				`ENUMERATING A SET: probe the NAMES themselves, alternated with |, 4-6 per query; hits are members — guess the next batch yourself.` +
 				`DO NOT CALL: for a whole document (list_chunks); when no surface word matches (search_chunks).` +
-				`ARGUMENTS: query — array of 1-3 strings; only a query's first ~10 snippets survive; doc_scope is NOT declared.` +
+				`ARGUMENTS: query — array of 1-3 strings (only the first ~10 snippets survive); doc_scope — optional doc_ids from an earlier tool result, to search INSIDE them only.` +
 				`OUTPUT: Exact-term snippets with doc_id and chunk id. ok = new evidence; redundant = seen.` +
 				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (record it as not a member, probe the next). redundant = stop and emit a state patch.`,
-			Parameters: arrayParamWithReason(1, 3),
+			Parameters: arrayParamWithReasonAndDocScope(1, 3),
 		},
 	}
 
@@ -1052,6 +1067,50 @@ var (
 				`ok = new evidence; redundant = already seen.` +
 				`IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it.`,
 			Parameters: arrayParamWithReason(1, 2),
+		},
+	}
+
+	metadataSearchToolSpec = ToolSpec{
+		Type: "function",
+		Function: ToolFunction{
+			Name: "metadata_search",
+			Description: `WHEN TO CALL: SELECT the document set by METADATA before searching — call it when the question names explicit entities (a person, a time, a place) or any concrete name a metadata field would carry (a title, a file name, an author, a date), or needs a named subset. Use ONLY the AVAILABLE METADATA fields; prefer 'contains' with a distinctive substring. ` +
+				`CALL AT MOST ONCE PER DIRECTION, then spend the returned doc_ids: list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[ids]). ` +
+				`DO NOT CALL: nothing names a document/subset; you already hold a doc_id; counting or enumerating. ` +
+				`ARGUMENTS: filters — [{key, value, op}] over the AVAILABLE METADATA fields; op — see enum; logic 'and'|'or'. String ops take ONE keyword, one call per keyword; 'in' takes a list; 'empty' none. Example (one day): [{key: 'update_time', op: 'start with', value: '2026-09-20'}]. ` +
+				`OUTPUT: doc_ids — the handle other tools take — plus each matched document's metadata as CONTEXT ONLY, never an argument to pass on. No passages. ok = selected; miss = nothing matched. ` +
+				`IF IT FAILS: 'no documents match' — shorten the substring or use search_chunks; do not retry.`,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"filters": map[string]any{
+						"type":     "array",
+						"minItems": 1,
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								// The field enum is rendered PER SESSION from the dataset's
+								// catalog (see metadataSearchSpecForCatalog); the shipped
+								// parameter deliberately carries no enum, so no field is
+								// advertised as available before the dataset says it is.
+								"key": paramString("a metadata field of this dataset — one of those listed under AVAILABLE METADATA"),
+								"value": map[string]any{
+									"type": []any{"string", "array", "null"},
+									"description": "the keyword/value to match: ONE string keyword for contains / = / start with / " +
+										"end with / not contains (call once per keyword); a list for in / not in; nothing for empty / not empty. " +
+										"Copy a value exactly as the dataset stores it — never re-normalise it. " +
+										"A 'time' field stores 'YYYY-MM-DD HH:MM:SS', so filter ONE day with op 'start with' and the bare " +
+										"'YYYY-MM-DD' — '=' never matches a stored time.",
+								},
+								"op": paramEnum("the comparison", "=", "contains", "not contains", "start with", "end with", "in", "empty", "not empty"),
+							},
+							"required": []string{"key", "op"},
+						},
+					},
+					"logic": paramEnum("how several filters combine, default and", "and", "or"),
+				},
+				"required": []string{"filters"},
+			},
 		},
 	}
 
@@ -1179,11 +1238,74 @@ func paramEnum(desc string, values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": values, "description": desc}
 }
 
+const (
+	// maxToolDescriptionRunes is the per-tool description budget TestToolSpecsHavePlaybookSections
+	// pins.
+	maxToolDescriptionRunes = 1200
+)
+
+// metadataSearchSpecForCatalog renders the metadata_search schema for a session's catalog: the
+// `key` enum becomes the fields the dataset offers, so a model can name any of them. The
+// description is dataset-independent (it points at AVAILABLE METADATA and never names a field),
+// so it needs no per-session rewriting and cannot outgrow its budget.
+//
+// An empty (or nil) catalog returns the base spec UNCHANGED: no field is advertised at all —
+// the `key` stays the free-form string the shipped spec carries, which is also how an empty
+// enum is avoided (some providers reject `"enum": []`).
+//
+// The base spec is the shared package-level ToolMap entry, so every map this touches is
+// COPIED — mutating them in place would leak one session's dataset fields into every other
+// session (and into a session's concurrent rag calls, see Toolset.mu).
+func metadataSearchSpecForCatalog(base ToolSpec, cat *MetadataCatalog) ToolSpec {
+	if cat == nil || cat.Empty() {
+		return base
+	}
+
+	baseProps, _ := base.Function.Parameters["properties"].(map[string]any)
+	filters, _ := baseProps["filters"].(map[string]any)
+	items, _ := filters["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	if baseProps == nil || filters == nil || items == nil || itemProps == nil {
+		// The schema shape changed under us; the unpatched spec is still valid.
+		return base
+	}
+
+	patchedItemProps := copyAnyMap(itemProps)
+	patchedItemProps["key"] = paramEnum("one of this dataset's metadata fields (see AVAILABLE METADATA)", cat.Keys...)
+
+	patchedItems := copyAnyMap(items)
+	patchedItems["properties"] = patchedItemProps
+
+	patchedFilters := copyAnyMap(filters)
+	patchedFilters["items"] = patchedItems
+
+	patchedProps := copyAnyMap(baseProps)
+	patchedProps["filters"] = patchedFilters
+
+	patchedParams := copyAnyMap(base.Function.Parameters)
+	patchedParams["properties"] = patchedProps
+
+	out := base
+	out.Function.Parameters = patchedParams
+	return out
+}
+
+// copyAnyMap shallow-copies a JSON-shaped map, so a patched tool spec shares no map with
+// ToolMap.
+func copyAnyMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // ToolMap is the multi-tool registry.
 // executeTool dispatches by name; add a tool by registering its schema here.
 var ToolMap = map[string]ToolSpec{
 	"retrieve":           retrieveToolSpec,
 	"search_chunks":      searchChunksToolSpec,
+	"metadata_search":    metadataSearchToolSpec,
 	"list_chunks":        listChunksToolSpec,
 	"navigate_tree":      navigateTreeToolSpec,
 	"navigate_structure": navigateStructureToolSpec,
@@ -1224,6 +1346,11 @@ type Toolset struct {
 	// HasWebSearch reports whether a web provider is configured. When false,
 	// web_search is hidden from the surface rather than merely discouraged.
 	HasWebSearch bool
+	// MetadataFields is the session's metadata catalog (see MetadataCatalogFor). It supplies
+	// the metadata_search key enum and rides the session seed, so a filter can name the fields
+	// the dataset really carries. Nil or empty advertises no field at all — there is no field
+	// name baked into the shipped schema to fall back on.
+	MetadataFields *MetadataCatalog
 	// DisabledTools holds tools proven unavailable this session (no compiled
 	// structure of their kind).
 	DisabledTools map[string]bool
@@ -1267,6 +1394,11 @@ func (t *Toolset) ActiveToolSpecs() []ToolSpec {
 			continue
 		}
 		if s, ok := ToolMap[name]; ok {
+			if name == "metadata_search" {
+				// Per-session rewrite: the catalog names the dataset's real fields. It
+				// returns the shared spec untouched when there is no catalog.
+				s = metadataSearchSpecForCatalog(s, t.MetadataFields)
+			}
 			out = append(out, s)
 		}
 	}
@@ -1900,6 +2032,11 @@ type SessionState struct {
 	SearchQueries []string
 	// SkippedDup counts near-duplicate retrievals suppressed so far.
 	SkippedDup int
+	// MetadataSearchUsed is the metadata_search ONE-SHOT: the tool SELECTS a document
+	// set, so a second call within the SAME direction is blocked with a nudge (Python's
+	// _metadata_search_used). It survives across the session's turns but not across
+	// directions — each direction runs its own session.
+	MetadataSearchUsed bool
 	// ToolStrikes counts dataset-level empties per tool.
 	ToolStrikes map[string]int
 	// ToolOutcomes is the audit trail of (name, status, reason, metrics).
@@ -2202,6 +2339,18 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			}}))
 			continue
 		}
+		// metadata_search ONE-SHOT guard: block any 2nd call within this direction.
+		// The tool SELECTS a document set — once the ids are in hand there is nothing a
+		// second call could add, and re-issuing it would burn the direction's turns
+		// re-applying a filter that is already in force.
+		if c.Name == "metadata_search" && s.MetadataSearchUsed {
+			_LOG.Printf("[Action Session] blocking 2nd metadata_search this direction (one-shot guard): %s", RenderToolArgs(c.Args))
+			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
+				"kind": "metadata_search",
+				"note": "metadata_search is a ONE-SHOT metadata selector and was ALREADY used this direction. Spend the doc_ids it returned — list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[...]) — do NOT call metadata_search again this direction.",
+			}}))
+			continue
+		}
 		// Unknown tool name — never execute it; answer with a correction so the
 		// model can recover. Models usually emit the XML protocol tags (state /
 		// answer) as tool names; they belong in the reply body as plain text.
@@ -2234,6 +2383,11 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			seenQueries = append(seenQueries, q)
 		}
 		evidenceIDs = append(evidenceIDs, oc.EvidenceIDs...)
+		if c.Name == "metadata_search" {
+			// Used whatever the status: the guard is about not re-filtering, not about
+			// the filter having matched.
+			s.MetadataSearchUsed = true
+		}
 		chunks := append([]any(nil), oc.Payload...)
 
 		// ── Policy: act on WHAT happened, not just on payload size ──────────
@@ -4244,6 +4398,17 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	// from a slot type — "how many people did X kill" and "how many times larger is A than B"
 	// are the same shape — and being wrong about it meant a value question was handed set
 	// strategy it could only pay for. The batch tell needs no such guess.
+
+	// AVAILABLE METADATA: the dataset's real metadata fields, so a metadata_search filter
+	// can name one the dataset actually carries. Omitted entirely when the catalog is
+	// empty (no metadata, an unreadable index, or no resolver wired), which keeps a
+	// metadata-free corpus's prompt exactly as it shipped.
+	if deps.Tools != nil && deps.Tools.MetadataFields != nil {
+		if block := deps.Tools.MetadataFields.Render(); block != "" {
+			seedUser += "\n\n" + block
+			_LOG.Printf("[Action Session] metadata catalog in the seed (%d field(s))", len(deps.Tools.MetadataFields.Keys))
+		}
+	}
 
 	// ALREADY RETRIEVED: surface the evidence already in the shared pool so the model fills
 	// slots from it instead of re-retrieving the same ground. Without this the ReAct loop

@@ -16,7 +16,20 @@
 
 package task
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
+)
+
+const (
+	chunkInsertAttempts       = 3
+	chunkInsertRetryBaseDelay = 100 * time.Millisecond
+)
 
 // InsertFunc is the signature of the chunk insertion backend (e.g. engine.InsertChunks).
 type InsertFunc func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error)
@@ -65,8 +78,38 @@ func (w *chunkIndexWriter) Write(ctx context.Context, chunks []map[string]any) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, err := w.insertFunc(ctx, chunks[b:end], w.baseName, w.datasetID); err != nil {
-			return err
+		var err error
+		for attempt := 1; attempt <= chunkInsertAttempts; attempt++ {
+			_, err = w.insertFunc(ctx, chunks[b:end], w.baseName, w.datasetID)
+			if err == nil {
+				break
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if attempt == chunkInsertAttempts {
+				continue
+			}
+
+			delay := chunkInsertRetryBaseDelay << (attempt - 1)
+			common.Warn("retrying chunk index write",
+				zap.Int("batch_start", b),
+				zap.Int("batch_end", end),
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_attempts", chunkInsertAttempts),
+				zap.Duration("delay", delay),
+				zap.Error(err),
+			)
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("insert chunk batch %d-%d after %d attempts: %w", b, end, chunkInsertAttempts, err)
 		}
 	}
 	return nil

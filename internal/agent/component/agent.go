@@ -885,17 +885,15 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		if inputs["_ERROR"] == "No dataset is selected." {
 			return map[string]any{"content": "No dataset is selected."}, nil
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.SystemPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
-			}
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.UserPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
-			}
 		}
 	}
 	if state != nil {
@@ -1013,8 +1011,17 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		out["grounding_status"] = groundingStatus
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
-	if !streamed {
+	switch {
+	case !streamed:
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case artifactMD != "":
+		// Python's stream_output_with_tools_async yields the tool-artifact
+		// markdown as a trailing delta after the LLM stream, so the live SSE
+		// stream (and hence the chat) includes the artifact references even
+		// when the model did not embed them itself. The Go port previously
+		// appended them only to the recorded output and skipped live emission
+		// once the stream had run, so artifact images never appeared in chat.
+		runtime.EmitAgentMessage(ctx, artifactMD, "")
 	}
 	return out, nil
 }
@@ -1138,8 +1145,9 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 // artifactEntry is the shape of a single tool-returned artifact
 // surfaced through the Agent's outputs["artifacts"].
 type artifactEntry struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // artifactCollectorKey is the context key used to share the
@@ -1283,19 +1291,11 @@ func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
 		}
 		name, _ := m["name"].(string)
 		url, _ := m["url"].(string)
-		if url == "" {
-			if content, ok := m["content_b64"].(string); ok && content != "" {
-				mime, _ := m["mime_type"].(string)
-				if mime == "" {
-					mime = "application/octet-stream"
-				}
-				url = "data:" + mime + ";base64," + content
-			}
-		}
 		if name == "" || url == "" {
 			continue
 		}
-		out = append(out, artifactEntry{Name: name, URL: url})
+		mime, _ := m["mime_type"].(string)
+		out = append(out, artifactEntry{Name: name, URL: url, MIMEType: mime})
 	}
 	return out
 }
@@ -1334,16 +1334,23 @@ func formatArtifactMarkdown(artifacts []artifactEntry, existingText string) stri
 		if strings.Contains(existingText, a.URL) {
 			continue
 		}
-		lower := strings.ToLower(a.URL)
-		if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
-			strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
-			strings.HasSuffix(lower, ".webp") {
+		if isImageArtifact(a) {
 			fmt.Fprintf(&sb, "\n\n![%s](%s)", a.Name, a.URL)
 		} else {
 			fmt.Fprintf(&sb, "\n\n[Download %s](%s)", a.Name, a.URL)
 		}
 	}
 	return sb.String()
+}
+
+func isImageArtifact(a artifactEntry) bool {
+	if strings.HasPrefix(strings.ToLower(a.MIMEType), "image/") {
+		return true
+	}
+	lower := strings.ToLower(a.URL)
+	return strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp") || strings.HasSuffix(lower, ".svg")
 }
 
 // extractToolCalls converts eino ToolCalls from a message into the

@@ -27,9 +27,9 @@ import (
 // newTestStore spins up a miniredis-backed store for table-driven tests.
 // Returns the store, the miniredis handle (caller must Close()), and a
 // cleanup function. We construct the struct directly so we can inject the
-// *redis.Client — NewRedisCheckPointStore reads from the global cache
+// *redis.Client — NewKvrocksCheckPointStore reads from the global cache
 // which is nil in unit tests.
-func newTestStore(t *testing.T, ttl time.Duration) (*RedisCheckPointStore, *miniredis.Miniredis) {
+func newTestStore(t *testing.T, ttl time.Duration) (*KvrocksCheckPointStore, *miniredis.Miniredis) {
 	t.Helper()
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -40,7 +40,7 @@ func newTestStore(t *testing.T, ttl time.Duration) (*RedisCheckPointStore, *mini
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
 
-	return &RedisCheckPointStore{client: client, ttl: ttl}, mr
+	return &KvrocksCheckPointStore{client: client, ttl: ttl}, mr
 }
 
 func TestRedisCheckPointStore_RoundTrip(t *testing.T) {
@@ -123,9 +123,9 @@ func TestRedisCheckPointStore_Delete(t *testing.T) {
 }
 
 func TestRedisCheckPointStore_NilClient(t *testing.T) {
-	// Cache uninitialized → NewRedisCheckPointStore returns a store with
+	// Cache uninitialized → NewKvrocksCheckPointStore returns a store with
 	// nil client. Operations must error rather than panic.
-	store := &RedisCheckPointStore{client: nil, ttl: time.Minute}
+	store := &KvrocksCheckPointStore{client: nil, ttl: time.Minute}
 	ctx := t.Context()
 
 	if _, _, err := store.Get(ctx, "x"); err == nil {

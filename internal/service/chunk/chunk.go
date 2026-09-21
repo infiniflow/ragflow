@@ -863,12 +863,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 
 	// Build search request - same as retrieval test but filtered by doc_id
 	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		MatchExprs: matchExprs,
-		KbIDs:      kbIDs,
-		Offset:     (page - 1) * size,
-		Limit:      size,
-		OrderBy:    orderBy,
+		IndexNames:         []string{indexName},
+		MatchExprs:         matchExprs,
+		KbIDs:              kbIDs,
+		Offset:             (page - 1) * size,
+		Limit:              size,
+		OrderBy:            orderBy,
+		IncludeUnavailable: req.AvailableInt == nil,
 		SelectFields: []string{
 			"id",
 			"content_with_weight",

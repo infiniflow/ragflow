@@ -711,6 +711,15 @@ func ReachTermsOf(query string) []string {
 //   - still no hit -> narrowing abandoned, originals returned (matched=false);
 //   - when matched, a total-length budget is distributed across chunks.
 //
+// Table exemption: chunks that look like tables (HTML <table>/<tr> markup, or >=3 pipe
+// rows — see IsTableChunk) are NEVER narrowed, by any caller of this engine, and are
+// exempt from the per-chunk/total char budget. Two reasons, both measured: the term
+// window either cuts the <table> opening tag, and then the downstream table view
+// refuses the fragment ("<table" not present) so the model is handed a partial
+// raw-HTML row dump; or it keeps the tag and silently drops the remaining rows, and row
+// order/coverage is exactly what decides table answers (a rank row can sit at 62% of a
+// 14.7K-char table). Tables come back VERBATIM.
+//
 // Never raises.
 func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []string, keywords string, context NarrowContext, maxOutCharsPerChunk, maxOutTotalChars int) NarrowResult {
 	before := clampInt(context.Before, 0, maxContext)
@@ -736,18 +745,27 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 		return NarrowResult{Kept: narrowed, Stats: stats}
 	}
 
+	// Whole-table exemption, computed once and reused by the char-budget pass below
+	// (that pass preserves order and length, so the two lists stay aligned).
+	// false = "this chunk was NOT narrowed" -> returned verbatim.
+	tableFlags := make([]bool, len(chunks))
+	for i, c := range chunks {
+		tableFlags[i] = IsTableChunk(c)
+	}
+
 	run := func(active []*regexp.Regexp) ([]map[string]any, []bool, int) {
 		var kept []map[string]any
 		var flags []bool
 		matched := 0
-		for _, c := range chunks {
+		for i, c := range chunks {
 			raw := ChunkTextOf(c)
-			if charLen(raw) <= minNarrowChars {
-				// Short chunk: kept whole. Flagged as matched so it still
-				// participates in the total-budget distribution; the text is unchanged and
-				// "highlight" is popped.
+			if tableFlags[i] || charLen(raw) <= minNarrowChars {
+				// Table or short chunk: kept whole. The flag is false for a table so the
+				// char-budget pass below recognises it; a short chunk is flagged as
+				// matched so it still participates in the total-budget distribution. The
+				// text is unchanged and "highlight" is popped.
 				kept = append(kept, withNarrowedText(c, raw))
-				flags = append(flags, true)
+				flags = append(flags, !tableFlags[i])
 				continue
 			}
 			text, ok := execOnText(raw, active, before, after, maxOutCharsPerChunk)
@@ -787,7 +805,18 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 			perChunk := max(200, min(maxOutCharsPerChunk, maxOutTotalChars/max(1, len(kept))))
 			acc := 0
 			var trimmed []map[string]any
-			for _, c := range kept {
+			for i, c := range kept {
+				if tableFlags[i] {
+					// Tables are indivisible and exempt from the char budget: a head
+					// slice keeps the header and the first rows and drops the answer row,
+					// and the dropped rows carry no marker, so the model reads a
+					// truncated table as a complete one. The budget therefore bounds
+					// PROSE only; a large table can push the narrowed prose set past
+					// maxOutTotalChars, which is the intended trade
+					// (readability/correctness > char cap).
+					trimmed = append(trimmed, c)
+					continue
+				}
 				t := ChunkTextOf(c)
 				room := maxOutTotalChars - acc
 				if room <= 0 {
