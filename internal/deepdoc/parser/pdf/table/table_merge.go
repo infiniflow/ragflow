@@ -177,13 +177,14 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		// When every page's grid detected the same number of columns, index
 		// i is the same logical column on every page and short rows are
 		// padded by index. When TSR missed a separator on some pages only
-		// (e.g. 江西材料价格表: 16 columns on pages 5/11, 15 elsewhere because
-		// the 序号|材料名称 line went undetected), index padding shifts every
-		// cell after the missed column one position left and prices land
-		// under the wrong headers; there the cells are re-mapped onto the
-		// widest grid's columns by X overlap instead. Both paths keep the
-		// grid uniform (CalSpans / CleanupOrphanColumns / RowsToHTML never
-		// see a jagged grid) while preserving every row.
+		// (e.g. a materials price list where pages 5/11 detect 16 columns
+		// but the rest detect 15 because one vertical line went
+		// undetected), index padding shifts every cell after the missed
+		// column one position left and prices land under the wrong headers;
+		// there the cells are re-mapped onto the widest grid's columns by X
+		// overlap instead. Both paths keep the grid uniform (CalSpans /
+		// CleanupOrphanColumns / RowsToHTML never see a jagged grid) while
+		// preserving every row.
 		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
 			allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)
 			uniCols := 0

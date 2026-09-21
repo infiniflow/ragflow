@@ -685,14 +685,14 @@ func TestMergeTablesAcrossPages_DeduplicateCaption(t *testing.T) {
 	}
 }
 
-// TestMergeTablesAcrossPages_MisalignedColumnsAlignByX reproduces the 江西
-// 材料价格表 cross-page case: the anchor page detects all 16 columns while
-// continuation pages miss the 序号|材料名称 separator, so their first cell
-// spans the 序号 column position with merged text ("21 切换模块") and every
-// later cell is one grid position to the left of its logical column.
-// Index-based padding would place the 规格 value under 材料名称 (and every
-// price under the wrong city header); the merged grid must instead be
-// re-aligned by X so each value lands under the anchor column it overlaps.
+// TestMergeTablesAcrossPages_MisalignedColumnsAlignByX reproduces a real
+// materials-price-list cross-page case: the anchor page detects all 3 columns
+// while the continuation page misses the first separator, so its first cell
+// carries the merged "number name" text at the first column's position and
+// every later cell sits one grid index to the left of its logical column.
+// Index-based padding would place the last-column value under the middle
+// header; the merged grid must instead re-align by X so each value lands
+// under the anchor column it overlaps.
 func TestMergeTablesAcrossPages_MisalignedColumnsAlignByX(t *testing.T) {
 	cell := func(x0, y0, x1, y1 float64, text string) pdf.TSRCell {
 		return pdf.TSRCell{X0: x0, Y0: y0, X1: x1, Y1: y1, Text: text}
@@ -709,8 +709,8 @@ func TestMergeTablesAcrossPages_MisalignedColumnsAlignByX(t *testing.T) {
 		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 400, Top: 0, Bottom: 60}},
 		Scale:     1.0,
 		Grid: [][]pdf.TSRCell{
-			// 序号+材料名称 merged into the 序号-position cell; 规格 keeps the
-			// anchor's X range but sits at grid index 1.
+			// The first two logical columns merged into one cell; the last
+			// column keeps the anchor's X range but sits at grid index 1.
 			{cell(0, 0, 100, 30, "21 切换模块"), cell(250, 0, 400, 30, "K-30")},
 		},
 	}
