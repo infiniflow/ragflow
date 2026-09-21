@@ -39,6 +39,7 @@ function Wrapper({ children }: { children: JSX.Element }) {
 
 describe('useListMcpServer', () => {
   beforeEach(() => {
+    mockListMcpServers.mockReset();
     mockListMcpServers.mockResolvedValue({
       data: { data: { total: 0, mcp_servers: [] } },
     } as never);
