@@ -774,16 +774,14 @@ func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
 	if !ok || len(raw) == 0 {
 		return
 	}
-	st := storage.GetStorageFactory().GetStorage()
-	if st == nil {
-		common.Error("CodeExec: storage not initialized; cannot attach artifacts", nil)
-		return
-	}
 	sessionID := ""
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
 		sessionID = state.SessionID
 	}
-	uploaded, markdown, attachmentContent := uploadCodeExecArtifacts(ctx, raw, sessionID, st)
+	// The CodeExec tool already hosts sandbox artifacts and surfaces
+	// them as `_ARTIFACTS` entries carrying a `url`; storage is only
+	// needed for the legacy content_b64 fallback below.
+	uploaded, markdown, attachmentContent := uploadCodeExecArtifacts(ctx, raw, sessionID, storage.GetStorageFactory().GetStorage())
 	if len(uploaded) == 0 {
 		return
 	}
@@ -832,24 +830,35 @@ func uploadCodeExecArtifacts(ctx context.Context, artifacts []any, sessionID str
 			continue
 		}
 		name := codeExecArtifactString(m["name"])
-		contentB64 := codeExecArtifactString(m["content_b64"])
-		if name == "" || contentB64 == "" {
+		if name == "" {
 			continue
 		}
 		mimeType := codeExecArtifactString(m["mime_type"])
 		size := codeExecArtifactInt64(m["size"])
-		binary, err := base64.StdEncoding.DecodeString(contentB64)
-		if err != nil || len(binary) == 0 {
-			common.Warn("CodeExec: skip artifact with undecodable content_b64", zap.String("name", name))
-			continue
+		url := codeExecArtifactString(m["url"])
+		if url == "" {
+			// Legacy / direct-producer envelopes still carry the
+			// base64 blob (content_b64) instead of a hosted url.
+			contentB64 := codeExecArtifactString(m["content_b64"])
+			if contentB64 == "" {
+				continue
+			}
+			binary, err := base64.StdEncoding.DecodeString(contentB64)
+			if err != nil || len(binary) == 0 {
+				common.Warn("CodeExec: skip artifact with undecodable content_b64", zap.String("name", name))
+				continue
+			}
+			if st == nil {
+				common.Warn("CodeExec: storage not initialized; cannot upload artifact", zap.String("name", name))
+				continue
+			}
+			storageName := uuid.NewString() + strings.ToLower(filepath.Ext(name))
+			if err := st.Put(ctx, bucket, storageName, binary); err != nil {
+				common.Warn("CodeExec: failed to upload artifact", zap.String("name", name), zap.String("storage", storageName), zap.Error(err))
+				continue
+			}
+			url = fmt.Sprintf("/api/v1/documents/artifact/%s?session_id=%s", storageName, sessionID)
 		}
-
-		storageName := uuid.NewString() + strings.ToLower(filepath.Ext(name))
-		if err := st.Put(ctx, bucket, storageName, binary); err != nil {
-			common.Warn("CodeExec: failed to upload artifact", zap.String("name", name), zap.String("storage", storageName), zap.Error(err))
-			continue
-		}
-		url := fmt.Sprintf("/api/v1/documents/artifact/%s?session_id=%s", storageName, sessionID)
 		uploaded = append(uploaded, map[string]any{
 			"name":      name,
 			"url":       url,

@@ -148,8 +148,22 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // cropped; text chunks with positions get a rendered preview of the text
 // region (Python restore_pdf_text_previews). A pre-existing Image is never
 // re-cropped — cropImageChunks honors that separately.
+//
+// CKType is the chunker-layer refinement (heading/table_header/table_row/text/
+// image/table). General and token chunkers always set it before cropping, so
+// they are handled by the CKType branch above. Group and hierarchy chunkers
+// forward the parser's output verbatim, which carries only the coarser
+// doc_type_kwd (no ck_type). For those, fall back to DocType so image/table/
+// text regions are still cropped on demand — otherwise every figure/table/
+// text preview in group/hierarchy would be silently skipped. When CKType is
+// set (general/token) it takes priority, so headings (CKType "heading") stay
+// excluded from preview cropping.
 func needsCrop(ck schema.ChunkDoc) bool {
-	switch ck.CKType {
+	typ := ck.CKType
+	if typ == "" {
+		typ = ck.DocType
+	}
+	switch typ {
 	case "image", "table", "text":
 		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
 	default:

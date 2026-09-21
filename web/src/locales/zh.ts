@@ -98,7 +98,7 @@ export default {
       title: 'A leading RAG engine for LLM context',
       start: '立即开始',
       description:
-        '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
+        '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强业务',
       review: '来自 500 多条评论',
     },
     header: {
@@ -130,7 +130,7 @@ export default {
       spaceName: 'Skills 空间名称',
       spaceNamePlaceholder: '例如：my-space',
       spaceNameRequired: '请输入空间名称',
-      noSpaces: '暂无 Skills 空间，创建您的第一个！',
+      noSpaces: '暂无 Skills 空间，创建第一个！',
       enterSpace: '进入',
       spaceCreated: 'Skills 空间创建成功',
       spaceDeleted: 'Skills 空间删除成功',
@@ -146,7 +146,7 @@ export default {
       skillExists: '同名 Skills 已存在，请先删除或使用其他名称',
       uploadSkill: '上传 Skills',
       searchPlaceholder: '搜索 Skills...',
-      noSkills: '暂无 Skills，上传您的第一个 Skill',
+      noSkills: '暂无 Skills，上传第一个 Skill',
       noSearchResults: '没有找到匹配的 Skill',
       filesCount: '{{count}} 个文件',
       foldersCount: '{{count}} 个文件夹',
@@ -318,7 +318,7 @@ export default {
       },
       config: {
         titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
-        descriptionPlaceholder: '描述你的记忆',
+        descriptionPlaceholder: '描述您的记忆',
         memorySizeTooltip: `记录每条消息的内容 + 其 Embedding（≈ 内容 + 维度 × 8 字节）。
 例如：一条带有 1024 维 Embedding 的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
@@ -438,9 +438,9 @@ export default {
       generateArtifact:
         '从配置了知识编译模板的每个文档中编译 Artifact 页面（Entity / Concept / Topic）。每次运行仅处理新添加的 Chunk。',
       generateToSkills:
-        '从该数据集构建分层 Skills 树，并存储生成的 Skills 页面以供搜索和复用。',
+        '从该知识库构建分层 Skills 树，并存储生成的 Skills 页面以供搜索和复用。',
       processingType: '处理类型',
-      dataPipeline: '切换或配置 ingestion pipeline。',
+      dataPipeline: '选择或切换解析方式',
       dataPipelineTitle: '数据管道',
       operations: '操作',
       taskId: '任务ID',
@@ -459,7 +459,7 @@ export default {
       completed: '已完成',
       datasetLog: '知识库日志',
       created: '创建于',
-      learnMore: '查看内置解析方法说明',
+      learnMore: '查看内置解析模板说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
@@ -510,7 +510,7 @@ export default {
       keywordSimilarityWeightTip:
         '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
       testText: '测试文本',
-      testTextPlaceholder: '请输入您的问题！',
+      testTextPlaceholder: '请输问题！',
       testingLabel: '运行',
       similarity: '混合相似度',
       termSimilarity: '关键词相似度',
@@ -539,7 +539,7 @@ export default {
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任务页面大小',
-      taskPageSizeMessage: '请输入您的任务页面大小！',
+      taskPageSizeMessage: '请输入任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
       addPage: '新增页面',
       greaterThan: '当前值必须大于起始值！',
@@ -575,7 +575,7 @@ export default {
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自动问题提取数',
       autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
-      autoTags: '自动标签提取',
+      autoTags: '自动标签提取数',
       redo: '是否清空已有 {{chunkNum}}个 Chunk？',
       setMetaData: '设置元数据',
       pleaseInputJson: '请输入JSON',
@@ -688,7 +688,7 @@ export default {
       builtIn: '内置解析模板',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
-      titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
+      titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '可以上传 4MB 以内的文件',
@@ -712,6 +712,7 @@ export default {
       english: '英文',
       chinese: '中文',
       embeddingModelPlaceholder: '请选择 Embedding 模型',
+      checkingEmbedding: '正在校验 Embedding 模型兼容性…',
       chunkMethodPlaceholder: '请选择分块方法',
       save: '保存',
       me: '只有我',
@@ -728,7 +729,7 @@ export default {
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
 <p>本方法解析电子邮件文件，提取头部字段（如发件人、收件人、抄送、主题和日期）、正文内容以及附件。</p>`,
-      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或数据集导航）。</p>
+      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或知识库导航）。</p>
 <p>编译后的知识单元以分块形式合并进分块流输出，适合在分块文档之上构建可检索的知识层。</p>`,
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
       由于一本书很长，并不是所有部分都有用，如果是 PDF，
@@ -945,7 +946,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
     chat: {
       chatSupport: '聊天支持',
       replyInstantly: '我们通常会即时回复',
-      typeYourMessage: '输入您的消息...',
+      typeYourMessage: '输入消息...',
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
@@ -1448,7 +1449,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldProjectId: '项目 ID',
       dataSourceFieldLocation: '位置',
       dataSourceFieldServiceAccountJson: '服务账号 JSON',
-      dataSourceFieldDatasetId: '数据集 ID',
+      dataSourceFieldDatasetId: '知识库 ID',
       dataSourceFieldTableId: '表 ID',
       dataSourceFieldMaxBytesBilled: '最大计费字节数',
       dataSourceFieldJobTimeout: '作业超时时间（毫秒）',
@@ -1581,11 +1582,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceAzureSasTokenRequired: '使用 SAS 令牌认证时，SAS 令牌为必填项',
       dataSourceAzureContainerNameRequired: '在此认证模式下，容器名称为必填项',
       dataSourceBigqueryDatasetIdRequired:
-        '未使用自定义 SQL 查询时，数据集 ID 为必填项',
+        '未使用自定义 SQL 查询时，知识库 ID 为必填项',
       dataSourceBigqueryTableIdRequired:
         '未使用自定义 SQL 查询时，表 ID 为必填项',
       dataSourceBigqueryQueryRequired:
-        '请提供 SQL 查询，或同时提供数据集 ID 和表 ID',
+        '请提供 SQL 查询，或同时提供知识库 ID 和表 ID',
       dataSourceSalesforceInstanceUrlInvalid:
         '必须为合法的 Salesforce 域名 (https://...salesforce.com)',
       dataSourceSalesforceApiVersionInvalid: 'API 版本格式必须如 v59.0',
@@ -2074,7 +2075,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       jsonPreview: 'JSON 预览',
       processFlow: '流程视图',
       processFlowComingSoon: '流程视图预览即将到来',
-      compilationTitleSuffix: '的数据集',
+      compilationTitleSuffix: '的知识库',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -2093,7 +2094,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
-        '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
+        '确定要清空该知识库下的所有 Wiki 页面吗？此操作无法撤销。',
       update: '更新',
       updateTooltip:
         '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档，{{changed}} 个已变更文档。点击编译并合并到当前 Wiki。',
@@ -3059,7 +3060,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{num}} 处未绑定知识库的数据集检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalTemplateMemoryHint:
         '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalDatasetRequired: '请先选择知识库',

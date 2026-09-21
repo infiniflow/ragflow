@@ -447,22 +447,6 @@ func (dao *DocumentDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string)
 	return documents, nil
 }
 
-// GetByIDsAndTenantIDs retrieves documents by IDs scoped to knowledgebase owners.
-func (dao *DocumentDAO) GetByIDsAndTenantIDs(ctx context.Context, db *gorm.DB, ids, tenantIDs []string) ([]*entity.Document, error) {
-	if len(ids) == 0 || len(tenantIDs) == 0 {
-		return nil, nil
-	}
-	var documents []*entity.Document
-	err := db.WithContext(ctx).Model(&entity.Document{}).
-		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
-		Where("document.id IN ? AND knowledgebase.tenant_id IN ? AND knowledgebase.status = ?", ids, tenantIDs, string(entity.StatusValid)).
-		Find(&documents).Error
-	if err != nil {
-		return nil, err
-	}
-	return documents, nil
-}
-
 // GetByDocumentIDAndDatasetID retrieves a document by document ID and dataset/KB ID.
 func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(ctx context.Context, db *gorm.DB, documentID, datasetID string) (*entity.Document, error) {
 	var document entity.Document

@@ -9,31 +9,21 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
-
-// builtinHTTPClient is a shared client with timeouts for all Builtin model
-// requests. http.DefaultClient has no timeout, so a hung or slow TEI server
-// would otherwise block goroutines indefinitely.
-var builtinHTTPClient = &http.Client{
-	Timeout: 30 * time.Second,
-	Transport: newProviderLoggingTransport(&http.Transport{
-		MaxIdleConnsPerHost:   10,
-		ResponseHeaderTimeout: 10 * time.Second,
-	}),
-}
 
 // BuiltinModel implements ModelDriver for Builtin (local embedding models via TEI)
 type BuiltinModel struct {
-	baseURL string
-	model   string
+	baseURL    string
+	model      string
+	httpClient *http.Client
 }
 
 // NewBuiltinModel creates a new Builtin model instance
 func NewBuiltinModel(baseURL, model string) *BuiltinModel {
 	return &BuiltinModel{
-		baseURL: baseURL,
-		model:   model,
+		baseURL:    baseURL,
+		model:      model,
+		httpClient: common.GetSchemeSafeHTTPClient(),
 	}
 }
 
@@ -91,7 +81,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, request Emb
 	req.Header.Set("Content-Type", "application/json")
 	// Note: TEI server typically doesn't require auth for local deployments
 
-	resp, err := builtinHTTPClient.Do(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

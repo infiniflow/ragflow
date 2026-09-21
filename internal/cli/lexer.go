@@ -479,8 +479,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDocument, Value: ident}
 	case "DOCUMENTS":
 		return Token{Type: TokenDocuments, Value: ident}
-	case "TAGS":
-		return Token{Type: TokenTag, Value: ident}
 	case "REGION":
 		return Token{Type: TokenRegion, Value: ident}
 	case "URL":
@@ -537,6 +535,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenWindow, Value: ident}
 	case "ACTIVITY":
 		return Token{Type: TokenActivity, Value: ident}
+	case "HARDWARE":
+		return Token{Type: TokenHardware, Value: ident}
 	case "PURGE":
 		return Token{Type: TokenPurge, Value: ident}
 	case "PREVIEW":

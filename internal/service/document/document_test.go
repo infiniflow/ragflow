@@ -73,6 +73,7 @@ func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.T
 type fakeUploadStorage struct {
 	objects  map[string][]byte
 	afterPut func()
+	getCalls int
 }
 
 func newFakeUploadStorage() *fakeUploadStorage {
@@ -90,11 +91,23 @@ func (f *fakeUploadStorage) Put(ctx context.Context, bucket, fnm string, binary 
 	return nil
 }
 func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
+	f.getCalls++
 	v, ok := f.objects[f.key(bucket, fnm)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
+}
+
+type imageOwnershipEngine struct {
+	fakeChatDocEngine
+	result  *types.SearchResult
+	request *types.SearchRequest
+}
+
+func (e *imageOwnershipEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.request = req
+	return e.result, nil
 }
 func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
@@ -235,6 +248,7 @@ type rerunDeleteDocEngine struct {
 	condition   map[string]interface{}
 	indexName   string
 	datasetID   string
+	search      *types.SearchRequest
 }
 
 type failingDeleteDocEngine struct {
@@ -273,11 +287,13 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
-func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *rerunDeleteDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "parent-1", "available_int": 0},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
-	}, Total: 2}, nil
+	}, Total: 3}, nil
 }
 
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -295,10 +311,12 @@ func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interf
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
 	updateValues     []map[string]interface{}
 }
 
-func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
 		{"id": "tree-1", "compile_kwd": "tree"},
@@ -2462,8 +2480,11 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 2 {
 		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1", "parent-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+	if engine.search == nil || !engine.search.IncludeUnavailable {
+		t.Fatalf("reparse search = %#v, want hidden parent rows included", engine.search)
 	}
 }
 
@@ -2570,6 +2591,9 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
 		t.Fatalf("available_int = %#v, want 0", got)
+	}
+	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
 	}
 }
 
@@ -3392,6 +3416,43 @@ func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T
 	}
 }
 
+func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]any{
+			"children_delimiters": []any{},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed document parser config: %v", err)
+	}
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+}
+
 // TestUpdateDatasetDocumentRejectsInvalidPages verifies the fail-fast contract
 // for the "pages" range: an invalid range (from<1) aborts the request with
 // CodeDataError instead of being silently dropped or persisted.
@@ -3421,6 +3482,36 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want CodeDataError", code)
+	}
+}
+
+func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+	parentChild, ok := resp.ParserConfig["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("parent_child = %#v, want persisted public setting", resp.ParserConfig["parent_child"])
 	}
 }
 
@@ -3714,7 +3805,7 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
 
-	if got["doc-file"] != "/api/v1/documents/images/kb-1-thumb.png" {
+	if got["doc-file"] != "/api/v1/documents/doc-file/thumbnail" {
 		t.Fatalf("unexpected file thumbnail: %q", got["doc-file"])
 	}
 	if got["doc-base64"] != base64Thumb {
@@ -3725,6 +3816,102 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}
 	if _, ok := got["doc-other"]; ok {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
+	}
+}
+
+func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("a", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	engine := &imageOwnershipEngine{result: &types.SearchResult{}}
+	store := useFakeStorage(t)
+	if err := store.Put(ctx, kbID, "raw.pdf", []byte("%PDF-1.7")); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	if _, err := svc.GetDocumentImage(ctx, "user-1", kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("GetDocumentImage() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after ownership denial", store.getCalls)
+	}
+}
+
+func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("b", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	imageID := "imagetemps-page-1.png"
+	engine := &imageOwnershipEngine{result: &types.SearchResult{Total: 1, Chunks: []map[string]any{{"doc_id": "doc-1", "img_id": imageID}}}}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "imagetemps", "page-1.png", image); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	got, err := svc.GetDocumentImageForDocument(ctx, "user-1", "doc-1", imageID)
+	if err != nil {
+		t.Fatalf("GetDocumentImageForDocument() error = %v", err)
+	}
+	if !bytes.Equal(got, image) {
+		t.Fatalf("GetDocumentImageForDocument() = %q", got)
+	}
+	if engine.request == nil || engine.request.Filter["doc_id"] != "doc-1" || engine.request.Filter["img_id"] != imageID {
+		t.Fatalf("ownership search = %#v", engine.request)
+	}
+}
+
+func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-thumb", "owner-1", 0, 0, 0)
+	thumbnail := "thumbnail.png"
+	if err := db.Create(&entity.Document{
+		ID: "doc-thumb", KbID: "kb-thumb", Thumbnail: &thumbnail,
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "owner-1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "kb-thumb", thumbnail, image); err != nil {
+		t.Fatal(err)
+	}
+	svc := testDocumentService(t)
+
+	if _, err := svc.GetDocumentThumbnail(ctx, "other-user", "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("unauthorized GetDocumentThumbnail() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
+	}
+	got, err := svc.GetDocumentThumbnail(ctx, "owner-1", "doc-thumb")
+	if err != nil || !bytes.Equal(got, image) {
+		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}
 }
 

@@ -334,6 +334,9 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	if engine.searchReq == nil {
 		t.Fatal("expected Search to be called")
 	}
+	if !engine.searchReq.IncludeUnavailable {
+		t.Fatal("management chunk list must include disabled parent chunks")
+	}
 	if engine.searchReq.OrderBy == nil {
 		t.Fatal("expected OrderBy to be set")
 	}
@@ -562,7 +565,6 @@ func TestAddChunkSuccess(t *testing.T) {
 		Content:           "chunk body",
 		ImportantKeywords: []string{"k1"},
 		Questions:         []string{" q1 ", ""},
-		TagKwd:            []string{"tag1"},
 		TagFeas:           map[string]interface{}{"tag1": float64(0.5)},
 	}, userID)
 	if err != nil {

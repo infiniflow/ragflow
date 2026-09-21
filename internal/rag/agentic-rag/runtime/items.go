@@ -208,6 +208,15 @@ func spaceLess(s string) string {
 		"“", "", "”", "", "\"", "", "…", "").Replace(s)
 }
 
+// QuoteHeldBy reports whether a passage carries a quotation. It is the ONE definition of "the quote
+// is in this passage", asked by both sides of the ledger: the citation step decides which anchor a
+// member's marker may open with it (see CitedAnchoredMembers), and publishing decides with it
+// whether a recorded quote may stand as that member's block text — a quote the passage does not
+// contain must not be rendered IN THE PASSAGE'S PLACE (see compactAnchored).
+func QuoteHeldBy(passage, quote string) bool {
+	return quote != "" && strings.Contains(spaceLess(passage), spaceLess(quote))
+}
+
 // CitedAnchoredMembers is CiteAnchoredMembers plus the number of LINES it rewrote, so a caller can
 // report whether the step touched the answer at all: a run whose members all carried markers
 // already is indistinguishable from one the step never reached otherwise.
@@ -249,7 +258,7 @@ func CitedAnchoredMembers(answer string, refs []AnchoredRef, citeIDs []string, t
 				// the anchored passage is another published passage tried, and only when none of
 				// them holds either is the line left uncited.
 				holds := func(cand, q string) bool {
-					return q != "" && strings.Contains(spaceLess(textOf(cand)), spaceLess(q))
+					return QuoteHeldBy(textOf(cand), q)
 				}
 				asked, own := answerQuote(line), strings.TrimSpace(r.Quote)
 				if !holds(id, asked) && !holds(id, own) {

@@ -56,7 +56,6 @@ var (
 )
 
 const (
-	graphRaptorQueueDocID    = "graph_raptor_x"
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
@@ -508,7 +507,7 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	return embdID, true, nil
 }
 
-func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
 	if next == nil {
 		next = entity.JSONMap{}
 	}
@@ -526,6 +525,24 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	if mm != nil {
 		next["metadata"] = mm
 	}
+	var parentChild map[string]any
+	if incoming != nil {
+		if value, ok := incoming["parent_child"].(map[string]any); ok {
+			parentChild = value
+		}
+	}
+	if parentChild == nil && existing != nil {
+		if value, ok := existing["parent_child"].(map[string]any); ok {
+			parentChild = value
+		}
+	}
+	if parentChild != nil {
+		next["parent_child"] = parentChild
+	}
+	// The persisted top-level setting is authoritative. Re-derive the
+	// chunker's runtime delimiter after every config merge so parser/pipeline
+	// switches cannot retain parent_child without retaining its behavior.
+	pipelinepkg.ApplyParentChildChunkerConfig(next, map[string]interface{}(next))
 	return next
 }
 

@@ -49,10 +49,12 @@ type DetResult struct {
 // at a VARIABLE input size: each page is aspect-preserved-rescaled to a round32
 // size bounded by detLimitSideLen, so the pool is keyed by the resized
 // (height, width) and distinct page sizes get distinct sessions. Sessions are
-// pooled per instance, never shared across concurrent Run calls, because
-// session.Run mutates the session's fixed-shape input/output tensors; the
+// pooled per instance, never shared across concurrent Run calls, because a
+// session's underlying ONNX handle is not safe for concurrent use; the
 // native det branch runs concurrently across the page worker pool, so a
-// naively shared single session would race.
+// naively shared single session would race. (Each Run allocates its own
+// input/output tensors and frees them before returning, so the constraint is
+// about the session handle, not any pinned buffer.)
 //
 // The set of distinct shapes is BOUNDED (detMaxShapePools). A long-running
 // server ingesting many differently-sized pages would otherwise pin a pool
@@ -86,8 +88,7 @@ func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*sessio
 	key := detSessKey{modelPath, rh, rw}
 	return detSessions.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, "x",
-			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0",
-			[]int64{1, 1, rh, rw})
+			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0")
 	})
 }
 
@@ -104,6 +105,9 @@ func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error)
 
 	out, e := sess.Run(ctx, blob)
 	if e != nil {
+		return DetResult{}, e
+	}
+	if e := checkOutputLength("det", len(out), rh*rw); e != nil {
 		return DetResult{}, e
 	}
 	// out is [1,1,rh,rw]; flatten to [rh,rw].

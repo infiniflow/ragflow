@@ -227,32 +227,24 @@ func TestCodeExec_ResultExtractsArtifacts(t *testing.T) {
 func TestCodeExec_ResultExtractsArtifactsFromProviderShape(t *testing.T) {
 	t.Parallel()
 
-	resp := &SandboxResponse{
-		Returned: "ok",
-		ExitCode: 0,
-		Metadata: map[string]any{
-			"artifacts": []map[string]any{
-				{"name": "simple_plot.png", "mime_type": "image/png", "size": 20365, "content_b64": "aGVsbG8="},
-				{"name": "data.csv", "mime_type": "text/csv", "size": 12, "content_b64": "YQpi"},
-			},
+	// The sandbox providers (local.go / ssh.go / self_managed.go)
+	// store Metadata["artifacts"] as []map[string]any; the extractor
+	// must surface that shape instead of dropping it. The []any
+	// assertion alone silently lost every sandbox artifact.
+	got := extractArtifactList(map[string]any{
+		"artifacts": []map[string]any{
+			{"name": "simple_plot.png", "mime_type": "image/png", "size": 20365, "content_b64": "aGVsbG8="},
+			{"name": "data.csv", "mime_type": "text/csv", "size": 12, "content_b64": "YQpi"},
 		},
+	}, "artifacts")
+	if len(got) != 2 {
+		t.Fatalf("extractArtifactList len = %d, want 2", len(got))
 	}
-	out, err := codeExecResultJSON(resp)
-	if err != nil {
-		t.Fatalf("codeExecResultJSON: %v", err)
+	if got[0]["name"] != "simple_plot.png" {
+		t.Errorf("got[0][name] = %v, want simple_plot.png", got[0]["name"])
 	}
-	var got codeExecResult
-	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
-		t.Fatalf("output not valid JSON: %v (raw=%s)", jerr, out)
-	}
-	if len(got.Artifacts) != 2 {
-		t.Fatalf("Artifacts len = %d, want 2 (raw=%s)", len(got.Artifacts), out)
-	}
-	if got.Artifacts[0]["name"] != "simple_plot.png" {
-		t.Errorf("Artifacts[0][name] = %v, want simple_plot.png", got.Artifacts[0]["name"])
-	}
-	if got.Artifacts[1]["name"] != "data.csv" {
-		t.Errorf("Artifacts[1][name] = %v, want data.csv", got.Artifacts[1]["name"])
+	if got[1]["name"] != "data.csv" {
+		t.Errorf("got[1][name] = %v, want data.csv", got[1]["name"])
 	}
 }
 

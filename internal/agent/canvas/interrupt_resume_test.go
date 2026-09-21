@@ -350,6 +350,18 @@ func TestBuildUserFillUpResumeOutput_SingleFieldUsesFieldName(t *testing.T) {
 	}
 }
 
+func TestBuildUserFillUpResumeOutput_SingleNamedFieldUsesMapValue(t *testing.T) {
+	out := buildUserFillUpResumeOutput("UserFillUp:Menu", map[string]any{
+		"inputs": map[string]any{
+			"demo": map[string]any{"type": "options"},
+		},
+	}, map[string]any{"demo": "loop"})
+
+	if out["demo"] != "loop" {
+		t.Fatalf("demo = %v, want loop", out["demo"])
+	}
+}
+
 func TestBuildUserFillUpResumeOutput_MapResumeUsesMatchingFields(t *testing.T) {
 	out := buildUserFillUpResumeOutput("UserFillUp:Form", map[string]any{
 		"inputs": map[string]any{

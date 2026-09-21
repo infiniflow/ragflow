@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -18,8 +19,8 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
-		t.Fatalf("migrate pipeline log: %v", err)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}); err != nil {
+		t.Fatalf("migrate ingestion logs: %v", err)
 	}
 	oldDB := kcDB
 	kcDB = db
@@ -31,6 +32,9 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 	}
 	if err := startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
 		t.Fatalf("start dataset log: %v", err)
+	}
+	if err := startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
+		t.Fatalf("restart dataset log: %v", err)
 	}
 	if err := updateDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, 0.5, "Comparing knowledge contributions: 2 affected page(s)"); err != nil {
 		t.Fatalf("update dataset log: %v", err)
@@ -47,14 +51,14 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 		t.Fatalf("want one log per task type, got %d: %+v", len(logs), logs)
 	}
 	for _, log := range logs {
-		if log.DocumentID != datasetLogDocumentID || log.OperationStatus != "DONE" || log.Progress != 1 {
+		if log.DocumentID != entity.DatasetLogDocumentID || log.RunCount != nil || log.OperationStatus != "DONE" || log.Progress != 1 {
 			t.Fatalf("unexpected dataset log state: %+v", log)
 		}
 		if log.ID != datasetCompileLogID("claim-1", log.TaskType) {
 			t.Fatalf("dataset log id is not task-type scoped: %+v", log)
 		}
-		if log.ProgressMsg == nil || !strings.Contains(*log.ProgressMsg, "2 affected page(s)") || !strings.Contains(*log.ProgressMsg, "completed") {
-			t.Fatalf("progress messages were not persisted: %v", log.ProgressMsg)
+		if log.ProgressMsg != nil {
+			t.Fatalf("dataset log retained progress_msg: %q", *log.ProgressMsg)
 		}
 		if log.DSL["task_type"] != log.TaskType {
 			t.Fatalf("dataset log DSL task type = %v, want %s", log.DSL["task_type"], log.TaskType)
@@ -62,6 +66,28 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 		entries, ok := log.DSL["entries"].([]any)
 		if !ok || len(entries) != 1 {
 			t.Fatalf("dataset log entries were not split by task type: %+v", log.DSL["entries"])
+		}
+
+		var events []entity.IngestionTaskLog
+		if err := db.Where("pipeline_log_id = ?", log.ID).Order("id ASC").Find(&events).Error; err != nil {
+			t.Fatalf("load dataset log events: %v", err)
+		}
+		if len(events) != 3 {
+			t.Fatalf("dataset log %s event count = %d, want 3: %+v", log.ID, len(events), events)
+		}
+		if events[0].EventType != dao.EventTypeMessage || !strings.Contains(events[0].Message, "Created automatic "+log.TaskType+" dataset task") {
+			t.Fatalf("unexpected initial event: %+v", events[0])
+		}
+		if events[1].EventType != dao.EventTypeMessage || !strings.Contains(events[1].Message, "2 affected page(s)") {
+			t.Fatalf("unexpected progress event: %+v", events[1])
+		}
+		if events[2].EventType != dao.EventTypeTerminal || !strings.Contains(events[2].Message, "completed") {
+			t.Fatalf("unexpected terminal event: %+v", events[2])
+		}
+		for _, event := range events {
+			if event.TaskID != log.ID || event.PipelineLogID == nil || *event.PipelineLogID != log.ID {
+				t.Fatalf("event is not scoped to dataset log %s: %+v", log.ID, event)
+			}
 		}
 	}
 }

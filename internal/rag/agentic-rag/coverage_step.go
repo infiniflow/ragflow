@@ -87,8 +87,12 @@ func RunCoverageResolve(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	}
 
 	// Bounded like every other single-purpose call in this graph: the answer composition
-	// still has to fit inside the request's clock, so this step may not spend it.
-	t := nodeClock(CoverageResolveTimeoutS, 10.0, st.RemainingS()-10.0)
+	// still has to fit inside the request's clock, so this step may not spend it — and
+	// unlike the research nodes it does not claim its floor once that room is gone.
+	t := 0.0
+	if room := st.RemainingS() - 10.0; room > 0 {
+		t = nodeClock(CoverageResolveTimeoutS, 10.0, room)
+	}
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
 	defer cancel()
 

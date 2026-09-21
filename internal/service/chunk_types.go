@@ -73,7 +73,6 @@ type AddChunkRequest struct {
 	Content           string      `json:"content"`
 	ImportantKeywords []string    `json:"important_keywords,omitempty"`
 	Questions         []string    `json:"questions,omitempty"`
-	TagKwd            []string    `json:"tag_kwd,omitempty"`
 	TagFeas           interface{} `json:"tag_feas,omitempty"`
 	ImageBase64       *string     `json:"image_base64,omitempty"`
 }
@@ -148,7 +147,6 @@ type UpdateChunkRequest struct {
 	Questions    []string      `json:"questions,omitempty"`
 	Available    *bool         `json:"available,omitempty"`
 	Positions    []interface{} `json:"positions,omitempty"`
-	TagKwd       []string      `json:"tag_kwd,omitempty"`
 	TagFeas      interface{}   `json:"tag_feas,omitempty"`
 }
 

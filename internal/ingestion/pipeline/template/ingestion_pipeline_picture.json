@@ -255,7 +255,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_picture"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:ViewsCaptureLight",
@@ -283,7 +283,7 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker_picture"
+                        "name": "Picture Chunker"
                     },
                     "id": "OneChunker:BrightColorsGlow",
                     "measured": {
@@ -311,7 +311,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_picture"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:SharpLensFocus",
                     "measured": {
