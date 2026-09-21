@@ -132,10 +132,16 @@ class OAuthClient:
             raise ValueError(f"Failed to fetch user info: {e}")
 
     def normalize_user_info(self, user_info):
-        email = user_info.get("email")
-        username = user_info.get("username", str(email).split("@")[0])
-        nickname = user_info.get("nickname", username)
-        avatar_url = user_info.get("avatar_url", None)
+        profile = user_info.get("data") if isinstance(user_info.get("data"), dict) else user_info
+        email = (
+            profile.get("email")
+            or profile.get("enterprise_email")
+            or profile.get("mail")
+            or profile.get("email_address")
+        )
+        username = profile.get("username", str(email).split("@")[0] if email else "")
+        nickname = profile.get("nickname", profile.get("name", username))
+        avatar_url = profile.get("avatar_url", None)
         if avatar_url is None:
-            avatar_url = user_info.get("picture", "")
+            avatar_url = profile.get("picture", "")
         return UserInfo(email=email, username=username, nickname=nickname, avatar_url=avatar_url)
