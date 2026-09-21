@@ -657,6 +657,13 @@ func isRetryableErr(err error) bool {
 		return isRetryableNetErr(err, netErr)
 	}
 	msg := strings.ToLower(err.Error())
+	// net/http's HTTP/2 transport uses an internal error type for a graceful
+	// connection retirement, so errors.As cannot identify it here. Embedding is
+	// safe to repeat, and the transport will put the retry on a fresh connection.
+	if strings.Contains(msg, "http2: server sent goaway and closed the connection") &&
+		strings.Contains(msg, "errcode=no_error") {
+		return true
+	}
 	if code, ok := statusFromMessage(msg); ok {
 		return retryableStatus(code)
 	}
