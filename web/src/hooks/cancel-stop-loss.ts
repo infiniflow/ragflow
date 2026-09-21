@@ -51,16 +51,22 @@ export const getCancelRequestInterval = (stoppingIds: string[]) => {
     : 5000;
 };
 
-// Called on every list poll with the ids currently stopping: starts the
-// window for ids first seen here, drops trackers for ids that left the
-// stopping state, and returns the overdue cancels whose retry has not been
-// sent yet.
-export const observeStoppingDocuments = (stoppingIds: string[]) => {
+// Called on every list poll with the ids the poll observed and the subset
+// still stopping: starts the window for ids first seen here, drops trackers
+// for observed ids that left the stopping state, and returns the overdue
+// cancels whose retry has not been sent yet. Ids missing from the observed
+// set (another page, a search or a filter) keep their trackers, so their
+// retry is still there when the document shows up again.
+export const observeStoppingDocuments = (
+  observedIds: string[],
+  stoppingIds: string[],
+) => {
   const now = Date.now();
+  const observedIdSet = new Set(observedIds);
   const stoppingIdSet = new Set(stoppingIds);
 
   cancelRequestedAt.forEach((_, id) => {
-    if (!stoppingIdSet.has(id)) {
+    if (observedIdSet.has(id) && !stoppingIdSet.has(id)) {
       cancelRequestedAt.delete(id);
       userRequestedCancelIds.delete(id);
       cancelRetrySent.delete(id);

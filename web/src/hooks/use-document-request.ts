@@ -71,6 +71,7 @@ import {
   markCancelRequested,
   observeStoppingDocuments,
 } from './cancel-stop-loss';
+import { sendDocumentIngest } from './document-ingest-in-flight';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -92,37 +93,6 @@ export const enum DocumentStructureApiAction {
   FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
   DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
 }
-
-const documentIngestInFlight = new Map<string, Promise<unknown>>();
-
-const sendDocumentIngest = (
-  params: {
-    documentIds: string[];
-    run: number;
-    option?: { delete: boolean; apply_kb: boolean };
-  },
-  request: () => Promise<unknown>,
-) => {
-  const key = JSON.stringify({
-    documentIds: [...params.documentIds].sort(),
-    run: params.run,
-    option: params.option || null,
-  });
-  const existingRequest = documentIngestInFlight.get(key);
-  if (existingRequest) {
-    return existingRequest;
-  }
-
-  const inFlight = request();
-  documentIngestInFlight.set(key, inFlight);
-  const clearRequest = () => {
-    if (documentIngestInFlight.get(key) === inFlight) {
-      documentIngestInFlight.delete(key);
-    }
-  };
-  void inFlight.then(clearRequest, clearRequest);
-  return inFlight;
-};
 
 export const DocumentStructureKeys = {
   graph: (datasetId: string, documentId: string) =>
@@ -309,24 +279,27 @@ export const useFetchDocumentList = (loop = true) => {
     });
   }, [data.docs, queryClient]);
 
-  // Stop-loss: observe the documents currently stopping on every poll. This
-  // starts the window for cancels first seen here, prunes trackers for ids
-  // that left the stopping state, and re-sends one cancel request for the
-  // overdue ones.
+  // Stop-loss: observe the documents on every poll. This starts the window
+  // for cancels first seen here, prunes trackers for observed ids that left
+  // the stopping state, and re-sends one cancel request for the overdue ones.
   useEffect(() => {
     if (!isGo) {
       return;
     }
     const overdueIds = observeStoppingDocuments(
+      data.docs.map((doc) => doc.id),
       data.docs.filter(isDocumentStopping).map((doc) => doc.id),
     );
     if (overdueIds.length === 0) {
       return;
     }
-    void sendDocumentIngest({ documentIds: overdueIds, run: 2 }, () =>
-      kbService.documentIngest(
-        buildDocumentIngestPayload({ documentIds: overdueIds, run: 2 }),
-      ),
+    void sendDocumentIngest(
+      { documentIds: overdueIds, run: 2 },
+      () =>
+        kbService.documentIngest(
+          buildDocumentIngestPayload({ documentIds: overdueIds, run: 2 }),
+        ),
+      { force: true },
     ).then(
       () => {
         queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
