@@ -102,6 +102,33 @@ def test_session_create_name_validation(rest_client, create_chat):
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(IS_GO_PROXY, reason="the Go proxy neither stores a caller-supplied user_id nor filters the session list by it")
+def test_session_create_keeps_caller_supplied_user_id(rest_client, create_chat):
+    """An API key serves many end users, so the `user_id` it sends is stored and
+    stays filterable instead of being replaced by the key owner's tenant id."""
+    chat_id = create_chat("restful_session_user_id_chat")
+    external_user_id = "external_user_2606165351808"
+
+    create_res = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "session_for_end_user", "user_id": external_user_id})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    assert create_payload["data"]["user_id"] == external_user_id, create_payload
+    session_id = create_payload["data"]["id"]
+
+    other_res = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "session_for_other_user", "user_id": "external_user_other"})
+    assert other_res.status_code == 200
+    other_payload = other_res.json()
+    assert other_payload["code"] == 0, other_payload
+
+    list_res = rest_client.get(f"/chats/{chat_id}/sessions", params={"user_id": external_user_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert [item["id"] for item in list_payload["data"]] == [session_id], list_payload
+
+
+@pytest.mark.p2
 def test_session_update_blocks_messages_and_reference(rest_client, create_chat):
     chat_id = create_chat("restful_session_guard_chat")
     create_res = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "session_guard"})
