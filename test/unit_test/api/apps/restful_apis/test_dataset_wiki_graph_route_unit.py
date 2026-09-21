@@ -29,7 +29,7 @@ def _load_route(top_n):
         "dataset_api_service": Service(),
         "get_result": result,
         "get_error_data_result": result,
-        "RetCode": type("RetCode", (), {"SERVER_ERROR": 500}),
+        "RetCode": type("RetCode", (), {"ARGUMENT_ERROR": 101, "SERVER_ERROR": 500}),
         "logging": __import__("logging"),
     }
     exec(compile(module, str(path), "exec"), namespace)
@@ -37,7 +37,8 @@ def _load_route(top_n):
 
 
 @pytest.mark.p2
-@pytest.mark.parametrize("value", ["not-a-number", "1.5"])
+@pytest.mark.parametrize("value", ["", "not-a-number", "1.5"])
 def test_get_wiki_graph_rejects_non_integer_top_n(value):
     response = asyncio.run(_load_route(value)("tenant", "dataset"))
+    assert response["code"] == 101
     assert response["message"] == "top_n must be an integer"
