@@ -78,7 +78,7 @@ import (
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer
+	mode          *string // admin | api | ingestor | syncer | deepdoc
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
@@ -86,8 +86,8 @@ type serverArgs struct {
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
-	adminHost     *string // Used by api, ingestor, syncer for heartbeat
-	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
+	adminHost     *string // Used by api, ingestor, syncer, deepdoc for heartbeat
+	adminPort     *int    // Used by api, ingestor, syncer, deepdoc for heartbeat, "ip:port"
 	name          *string // server name
 	enablePProf   bool    // enable pprof
 	mcpEnabled    bool
@@ -251,6 +251,9 @@ func parseArgs() (*serverArgs, error) {
 		case "--syncer":
 			serverMode = "syncer"
 			args.mode = &serverMode
+		case "--deepdoc":
+			serverMode = "deepdoc"
+			args.mode = &serverMode
 		case "-h", "--help":
 			args.helpFlag = true
 		case "-v", "--version":
@@ -393,21 +396,22 @@ func parsePort(value, name string) (int, error) {
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
-		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
+		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n")
+		fmt.Fprintf(os.Stderr, "  --deepdoc      \tRun as DeepDoc server\n\n")
 		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
 		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
 		fmt.Fprintf(os.Stderr, "  -f, --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor and syncer)\n")
-		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor and syncer)\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
@@ -426,6 +430,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --syncer --help' for syncer options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --deepdoc --help' for DeepDoc server options.\n", os.Args[0])
 	case *args.mode == "api":
 		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
@@ -470,6 +475,17 @@ func printHelp(args *serverArgs) {
 	case *args.mode == "syncer":
 		fmt.Fprintf(os.Stderr, "Usage: %s --syncer [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Sync Service - Sync files from source to RAGFlow\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+	case *args.mode == "deepdoc":
+		fmt.Fprintf(os.Stderr, "Usage: %s --deepdoc [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
@@ -587,6 +603,11 @@ func main() {
 		if serverName == "" {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
+		}
+	case "deepdoc":
+		if serverName == "" {
+			uuid := utility.GenerateUUID()
+			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
 		}
 	default:
 		err = errors.New(*arguments.mode)
@@ -717,6 +738,11 @@ func main() {
 	case "syncer":
 		if err = runSyncer(ctx, cancel, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
+			os.Exit(1)
+		}
+	case "deepdoc":
+		if err = runDeepDoc(ctx, arguments); err != nil {
+			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:

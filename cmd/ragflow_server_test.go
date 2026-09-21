@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	server2 "ragflow/cmd/server"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -80,7 +81,7 @@ func TestParseArgsMCPEnvOverridesCLI(t *testing.T) {
 			"RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED": "true",
 			"RAGFLOW_MCP_JSON_RESPONSE":                "true",
 		}, func() {
-			args, err := parseArgs()
+			args, err := server2.parseArgs()
 			if err != nil {
 				t.Fatalf("parseArgs: %v", err)
 			}
@@ -97,7 +98,7 @@ func TestParseArgsMCPTransportFallbackMatchesPython(t *testing.T) {
 	withArgsAndEnv(t,
 		[]string{"--api", "--enable-mcpserver", "--mcp-mode=host", "--no-transport-sse-enabled", "--no-transport-streamable-http-enabled"},
 		nil, func() {
-			args, err := parseArgs()
+			args, err := server2.parseArgs()
 			if err != nil {
 				t.Fatalf("parseArgs: %v", err)
 			}
@@ -116,28 +117,28 @@ func TestParseArgsMCPTransportFallbackMatchesPython(t *testing.T) {
 func TestParseArgsMCPValidation(t *testing.T) {
 	t.Run("invalid mode", func(t *testing.T) {
 		withArgsAndEnv(t, []string{"--api", "--mcp-mode=bogus"}, nil, func() {
-			if _, err := parseArgs(); err == nil {
+			if _, err := server2.parseArgs(); err == nil {
 				t.Fatal("expected invalid mode error")
 			}
 		})
 	})
 	t.Run("invalid port", func(t *testing.T) {
 		withArgsAndEnv(t, []string{"--api", "--mcp-port=0"}, nil, func() {
-			if _, err := parseArgs(); err == nil {
+			if _, err := server2.parseArgs(); err == nil {
 				t.Fatal("expected invalid port error")
 			}
 		})
 	})
 	t.Run("missing self-host key only when enabled", func(t *testing.T) {
 		withArgsAndEnv(t, []string{"--api", "--enable-mcpserver"}, nil, func() {
-			if _, err := parseArgs(); err == nil {
+			if _, err := server2.parseArgs(); err == nil {
 				t.Fatal("expected missing self-host key error")
 			}
 		})
 	})
 	t.Run("self-host key not required while disabled", func(t *testing.T) {
 		withArgsAndEnv(t, []string{"--api"}, nil, func() {
-			if _, err := parseArgs(); err != nil {
+			if _, err := server2.parseArgs(); err != nil {
 				t.Fatalf("parseArgs: %v", err)
 			}
 		})
@@ -152,12 +153,12 @@ func kb(embdID string, tenantEmbdID string) *entity.Knowledgebase {
 	return kb
 }
 
-func parseArgsForTest(t *testing.T, argv ...string) (*serverArgs, error) {
+func parseArgsForTest(t *testing.T, argv ...string) (*server2.serverArgs, error) {
 	t.Helper()
 	orig := os.Args
 	os.Args = append([]string{"ragflow_server"}, argv...)
 	defer func() { os.Args = orig }()
-	return parseArgs()
+	return server2.parseArgs()
 }
 
 // TestHasEmbedderForMirrorsPython pins dialog_service.py:362 —
@@ -179,7 +180,7 @@ func TestHasEmbedderForMirrorsPython(t *testing.T) {
 		{"all with the same model", []*entity.Knowledgebase{kb("bge-m3", ""), kb("bge-m3", "")}, true},
 	}
 	for _, c := range cases {
-		if got := hasEmbedderFor(c.kbs); got != c.want {
+		if got := server2.hasEmbedderFor(c.kbs); got != c.want {
 			t.Errorf("%s: hasEmbedderFor = %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -190,7 +191,7 @@ func TestHasEmbedderForMirrorsPython(t *testing.T) {
 // NOT a silent fallback to keyword-only retrieval.
 func TestValidateDatasetEmbeddingModels(t *testing.T) {
 	t.Run("all without a model is allowed", func(t *testing.T) {
-		if err := validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
+		if err := server2.validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
 			kb("", ""), kb("", ""),
 		}); err != nil {
 			t.Errorf("all-without must be allowed, got %v", err)
@@ -198,7 +199,7 @@ func TestValidateDatasetEmbeddingModels(t *testing.T) {
 	})
 
 	t.Run("all same model is allowed", func(t *testing.T) {
-		if err := validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
+		if err := server2.validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
 			kb("bge-m3", ""), kb("bge-m3", ""),
 		}); err != nil {
 			t.Errorf("same model must be allowed, got %v", err)
@@ -206,7 +207,7 @@ func TestValidateDatasetEmbeddingModels(t *testing.T) {
 	})
 
 	t.Run("some with some without is an error", func(t *testing.T) {
-		if err := validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
+		if err := server2.validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
 			kb("bge-m3", ""), kb("", ""),
 		}); err == nil {
 			t.Error("mixing present/absent embedding models must error (Python raises)")
@@ -214,7 +215,7 @@ func TestValidateDatasetEmbeddingModels(t *testing.T) {
 	})
 
 	t.Run("different models is an error", func(t *testing.T) {
-		if err := validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
+		if err := server2.validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
 			kb("bge-m3", ""), kb("text-embedding-3", ""),
 		}); err == nil {
 			t.Error("different embedding models must error (Python raises)")
@@ -225,7 +226,7 @@ func TestValidateDatasetEmbeddingModels(t *testing.T) {
 		// Python silently skips ids that no longer resolve
 		// (tenant_model_service.py:557) and falls back to
 		// _base_model_name(embd_id) — it must not fail the request.
-		if err := validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
+		if err := server2.validateDatasetEmbeddingModels(context.Background(), []*entity.Knowledgebase{
 			kb("bge-m3@inst@prov", "gone-1"), kb("bge-m3@inst2@prov2", "gone-2"),
 		}); err != nil {
 			t.Errorf("two dangling refs with the same base name must be allowed, got %v", err)
@@ -243,7 +244,7 @@ func TestBaseModelNameMirrorsPython(t *testing.T) {
 		{"", ""},
 	}
 	for _, c := range cases {
-		if got := baseModelName(c.in); got != c.want {
+		if got := server2.baseModelName(c.in); got != c.want {
 			t.Errorf("baseModelName(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
@@ -253,11 +254,11 @@ func TestBaseModelNameMirrorsPython(t *testing.T) {
 // must yield a nil harness.WebSearcher (which hides the web_search tool), and a
 // non-nil one must be callable through the seam.
 func TestHarnessWebSearcherNilAndWrapped(t *testing.T) {
-	if got := harnessWebSearcher(nil); got != nil {
+	if got := server2.harnessWebSearcher(nil); got != nil {
 		t.Error("nil callback must yield a nil WebSearcher")
 	}
 	called := false
-	searcher := harnessWebSearcher(func(_ context.Context, queries []string) ([]string, error) {
+	searcher := server2.harnessWebSearcher(func(_ context.Context, queries []string) ([]string, error) {
 		called = true
 		return queries, nil
 	})
@@ -338,7 +339,7 @@ func (e *recordingEngine) Search(_ context.Context, req *types.SearchRequest) (*
 func TestEngineCompiledStoreSearchCompiledMapsRequest(t *testing.T) {
 	eng := &recordingEngine{}
 	// No embedder wired → the keyword leg stands alone.
-	store := newEngineCompiledStore(eng, nil, "")
+	store := server2.newEngineCompiledStore(eng, nil, "")
 	_, err := store.SearchCompiled(context.Background(), "kb1", "t1", []string{"d1"}, map[string][]string{
 		"compile_kwd":   {"wiki_page"},
 		"available_int": {"1"},
@@ -403,7 +404,7 @@ func TestCompiledDocScopeKey(t *testing.T) {
 		{"essence", map[string][]string{"compile_kwd": {"essence"}}, "source_doc_ids"},
 	}
 	for _, c := range cases {
-		if got := compiledDocScopeKey(c.filters); got != c.want {
+		if got := server2.compiledDocScopeKey(c.filters); got != c.want {
 			t.Errorf("%s: compiledDocScopeKey = %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -413,7 +414,7 @@ func TestCompiledDocScopeKey(t *testing.T) {
 // source chunks into evidence.
 func TestEngineCompiledStoreLoadChunks(t *testing.T) {
 	eng := &recordingEngine{res: &types.SearchResult{Chunks: []map[string]interface{}{{"id": "c1"}}}}
-	store := newEngineCompiledStore(eng, nil, "")
+	store := server2.newEngineCompiledStore(eng, nil, "")
 	rows, err := store.LoadChunks(context.Background(), "kb1", "t1", []string{"c1", "c2"})
 	if err != nil {
 		t.Fatalf("LoadChunks: %v", err)
@@ -436,15 +437,15 @@ func TestEngineCompiledStoreLoadChunks(t *testing.T) {
 // tenant (not a tenant default or the request tenant).
 func TestNewDatasetCompiledStore(t *testing.T) {
 	eng := &recordingEngine{}
-	if got := newDatasetCompiledStore(nil, nil, nil); got != nil {
+	if got := server2.newDatasetCompiledStore(nil, nil, nil); got != nil {
 		t.Error("nil engine must disable the compiled store")
 	}
-	if got := newDatasetCompiledStore(eng, nil, []*entity.Knowledgebase{{ID: "kb1", TenantID: "t1"}}); got == nil {
+	if got := server2.newDatasetCompiledStore(eng, nil, []*entity.Knowledgebase{{ID: "kb1", TenantID: "t1"}}); got == nil {
 		t.Error("engine without an embedder must still build a keyword-only store")
 	}
-	store := newDatasetCompiledStore(eng, service.NewModelProviderService(),
+	store := server2.newDatasetCompiledStore(eng, service.NewModelProviderService(),
 		[]*entity.Knowledgebase{{ID: "kb1", EmbdID: "bge-m3@inst@prov", TenantID: "owner-tenant"}})
-	es, ok := store.(*engineCompiledStore)
+	es, ok := store.(*server2.engineCompiledStore)
 	if !ok {
 		t.Fatalf("store = %T, want *engineCompiledStore", store)
 	}
@@ -480,7 +481,7 @@ func TestEngineCompiledStoreUsesDenseSeedLeg(t *testing.T) {
 	eng := &recordingEngine{}
 	enc := &stubQueryEncoder{vecs: [][]float32{{1, 2, 3}}}
 	// Scope tenant differs from the embedder's owner tenant on purpose.
-	store := newEngineCompiledStore(eng, enc, "owner-tenant")
+	store := server2.newEngineCompiledStore(eng, enc, "owner-tenant")
 
 	if _, err := store.SearchCompiled(context.Background(), "kb1", "scope-tenant", nil,
 		map[string][]string{"knowledge_graph_kwd": {"entity"}}, "culdcept", 5); err != nil {
@@ -538,7 +539,7 @@ func TestEngineCompiledStoreDenseFallsBackToKeyword(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			eng := &recordingEngine{}
-			store := newEngineCompiledStore(eng, c.enc, "t1")
+			store := server2.newEngineCompiledStore(eng, c.enc, "t1")
 			if _, err := store.SearchCompiled(context.Background(), "kb1", "t1", nil,
 				map[string][]string{"knowledge_graph_kwd": {"entity"}}, "culdcept", 5); err != nil {
 				t.Fatalf("SearchCompiled: %v", err)
