@@ -24,7 +24,7 @@ from common.connection_utils import timeout
 
 WEBZ_NEWS_SEARCH_URL = "https://api.webz.io/newsApiLite"
 WEBZ_USER_AGENT = "RAGFlow webz-integration/infiniflow-ragflow"
-WEBZ_MAX_COUNT = 100
+WEBZ_MAX_COUNT = 10
 
 
 def _search(api_key: str, params: dict, timeout_s: int = 30) -> dict:
@@ -144,6 +144,14 @@ class WebzSearch(ToolBase, ABC):
 
                 last_e = e
                 logging.error(f"Webz.io error: {type(e).__name__}")
+                # Do not retry non-transient validation errors or client 4xx (except rate-limit 429)
+                if isinstance(e, ValueError) or (
+                    isinstance(e, requests.HTTPError)
+                    and e.response is not None
+                    and 400 <= e.response.status_code < 500
+                    and e.response.status_code != 429
+                ):
+                    break
                 if attempt < attempts - 1:
                     time.sleep(self._param.delay_after_error)
 
