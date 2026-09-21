@@ -992,49 +992,6 @@ func argInt(args map[string]any, key string, def int) int {
 	return def
 }
 
-// namedTermsOf is the call's own statement of WHICH individuals it asked about:
-// the terms of the queries it carried, deduped and capped.
-//
-// Every shape the model uses lands here — an alternation ("A|B|C"), a
-// space-separated list inside one string, or a list of query strings — because
-// GrepTermsFromQuery already reads all three. That is the point: the seat
-// mechanism is attached to the FACT that the call named terms, not to a syntax
-// the model may never write — a `|`-triggered mechanism would fire never.
-//
-// The cap (GrepTermsMax) bounds the seat pass, which runs one cheap keyword
-// search per unreached term; the caller logs how many named terms were dropped
-// so the ceiling is visible in the run.
-//
-// The terms are the caller's OWN WORDS (GrepWordsFromQuery), not the CJK windows
-// the locate step derives from them: a window is our guess at where a name can be
-// found, and probing one spends a retrieval on a fragment nobody asked about.
-func namedTermsOf(queries []string) []string {
-	var out []string
-	seen := make(map[string]bool, len(queries)*2)
-	for _, q := range queries {
-		for _, t := range GrepWordsFromQuery(q) {
-			// A PIECE OF A PATTERN is a phrase, not a name: an alternation carrying
-			// operators asks how a deed is written, and probing its pieces as names
-			// spends a retrieval on a word nobody proposed as a member. An alternation
-			// of PLAIN words is exactly what the seat exists for, so the test is pattern
-			// OPERATORS, not "|".
-			if strings.ContainsAny(t, ".*+?()[]{}^$\\") {
-				continue
-			}
-			low := strings.ToLower(strings.TrimSpace(t))
-			if low == "" || seen[low] {
-				continue
-			}
-			seen[low] = true
-			out = append(out, t)
-			if len(out) >= GrepTermsMax {
-				return out
-			}
-		}
-	}
-	return out
-}
-
 // search runs one retrieval call for a tool invocation.
 //
 // The two retrieval tools share this body, differing only in whether compiled expansion
@@ -1216,16 +1173,20 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		if line := GrepReachLine(q, chunks, ReachTermsOf(q)); line != "" {
 			reachNotes = append(reachNotes, line)
 		}
-		// Only the first snippetsPerQueryFor(mode) hits of each query are considered
-		// — EXCEPT for a query that NAMES
-		// terms, which keeps one candidate per named term first. The locate step
-		// hands back one window per term, and a flat cut is what turns a six-name
-		// call into "the names that matched most": the rarest lose their seat to the
-		// ones the ranking already preferred.
+		// A NAME this query reached is a member candidate WITH its evidence, and the ledger of that
+		// pair is what the record line ("FOUND BUT NOT RECORDED"), the record checkpoint and the
+		// answer stage's material list all read.
+		//
+		// It used to be written only on the grep/pattern path and by the named-term seats, so a
+		// session that probed names with search_chunks left NO trace — while the reach note printed
+		// them on every call. Measured 2026-09-20 (三国/关羽): `[reach] 20 candidate(s) … 颜良(20)`
+		// on each call and `probed-reached=0` in the record, so there was nothing to checkpoint,
+		// nothing to render for a member, and the answer read "insufficient evidence".
+		// The cut is the mode's per-query snippet count, applied in RANK order: which snippets matter
+		// is the model's reading decision, and the runtime no longer widens the cut for a query it
+		// reads names out of (that reading was the inference this design removes — see the note in
+		// session_state_line.go).
 		limit := snippetsPerQueryFor(e.req.ThinkingMode)
-		if n := len(namedTermsOf([]string{q})); n > limit {
-			limit = n
-		}
 		if len(chunks) > limit {
 			chunks = chunks[:limit]
 		}
@@ -1266,85 +1227,6 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// Pool this search's doc_aggs (skipped when it returned no chunks, like
 		// _merge_kbinfos).
 		e.deps.KB.MergeDocAggs(aggs)
-	}
-
-	// ── Named-term seats ─────────────────────────────────────────────────────
-	// The individuals this call named are honored IN FULL, independent of the
-	// expensive leg's own limits: one cheap keyword search per term the call's
-	// retrievals did not reach, each keeping the window that carries it (see
-	// TermSeat). The terms of list items maxQ dropped are included — "the model
-	// already said the name" should mean the name was looked for, whatever
-	// syntax carried it and whichever leg ran.
-	//
-	// A term that reaches nothing is RECORDED, not retried (Kbinfos.RecordProbedAbsent):
-	// "this corpus has no 荀正" is the answer to a probe, and it is what the
-	// rewrite reads before choosing its next angle.
-	if named := namedTermsOf(allQueries); len(named) > 0 {
-		seatScope := []string(nil)
-		if name != "search_chunks" {
-			// doc_scope is a retrieve-family argument; search_chunks takes none
-			// (see the query loop above).
-			seatScope = toolDocScope(args)
-		}
-		unreached := termsNotCarried(reached, named)
-		// Every named term is PROBED (recall: its own window enters the pool), but
-		// only the ones the call proposed as ITEMS are RECORDED — the ledger is read
-		// back as the session's to-do list, and a question's words are not members
-		// it could record (see probeItemsOf).
-		proposed := probeItemsOf(allQueries)
-		seats, absent := 0, 0
-		for _, term := range unreached {
-			record := proposed[strings.ToLower(term)]
-			seat, found := TermSeat(ctx, e.deps, SearchParams{
-				KbIDs:    e.req.DatasetIDs,
-				DocScope: seatScope,
-			}, term)
-			if !found {
-				absent++
-				if record {
-					e.deps.KB.RecordProbedAbsent(term)
-				}
-				continue
-			}
-			// The seat's ids are collected here and recorded AFTER the batch: the
-			// ledger has its own lock, so writing it inside the critical section
-			// would be safe, but keeping the pool lock to pool work costs nothing
-			// and leaves the locking order (pool → ledger) exercised in one place
-			// only.
-			var seatedIDs []string
-			e.deps.KB.Admit(func(p *PoolAdmitter) {
-				for _, c := range seat {
-					cid := ChunkIDOf(c)
-					if cid != "" && seen[cid] {
-						continue
-					}
-					if cid != "" {
-						seen[cid] = true
-					}
-					evidenceIDs = append(evidenceIDs, cid)
-					payload = append(payload, passageFromChunk(c))
-					if p.Add(c) {
-						newChunks++
-					}
-					if cid != "" {
-						seatedIDs = append(seatedIDs, cid)
-					}
-					seats++
-				}
-			})
-			// A seat IS the proof that this name is a member: record the pair
-			// (term, passage) so the round's record holds the members with their
-			// evidence, not just the count — again only for a proposed item.
-			if record {
-				for _, cid := range seatedIDs {
-					e.deps.KB.RecordReachedTerm(term, cid)
-				}
-			}
-		}
-		if len(unreached) > 0 {
-			logger.Printf("[Action Session] named-term seats: %d named, %d unreached, %d seat(s) admitted, %d absent.",
-				len(named), len(unreached), seats, absent)
-		}
 	}
 
 	// A cut is a fact about the SEARCH, not about the corpus, and the model cannot

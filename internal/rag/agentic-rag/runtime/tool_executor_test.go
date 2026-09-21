@@ -1479,63 +1479,6 @@ func (s *seatRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[
 	return s.byQuery[strings.Join(tokens, " ")], nil
 }
 
-// TestNamedTermSeatsReachTermsThePhraseSearchMissed pins the seat pass: every
-// individual a call NAMES gets its own cheap keyword search, so the names the
-// call's own phrase queries cannot reach still arrive with a passage.
-//
-// Three things are asserted, and each one is a measured loss from the 2026-09-15
-// run: (a) a name the phrase query's ranking stranded (荀正) still gets a
-// passage; (b) a name in a list item maxQ DROPPED (杨龄 — the run left 8 of 29
-// named queries unexecuted) still gets one; (c) a name nothing reaches is
-// recorded as probed-and-absent rather than silently dropped (庞德).
-func TestNamedTermSeatsReachTermsThePhraseSearchMissed(t *testing.T) {
-	famous := map[string]any{"chunk_id": "c-famous", "content": "关羽 斩华雄 于马下。"}
-	rare := map[string]any{"chunk_id": "c-rare", "content": "荀正 引军来战，关羽一刀斩之。"}
-	predicate := map[string]any{"chunk_id": "c-pred", "content": "云长 斩颜良 于白马，文丑心怯。"}
-	third := map[string]any{"chunk_id": "c-third", "content": "杨龄 出马，关羽手起刀落。"}
-	r := &seatRetriever{byQuery: map[string][]map[string]any{
-		// The phrase batch returns ONLY the passage matching several names at
-		// once — the ranking that strands the rare ones.
-		"关羽 斩华雄 荀正": {famous},
-		"关羽 斩颜良":    {},
-		"关羽":        {famous},
-		"斩华雄":       {famous},
-		"荀正":        {rare},
-		"斩颜良":       {predicate},
-		"杨龄":        {third},
-		// 庞德 reaches nothing anywhere: the corpus does not carry it.
-		"庞德": {},
-	}}
-	deps, kb := newTestSearchDeps(r)
-	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
-
-	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{
-		"query": []any{"关羽 斩华雄 荀正", "关羽 斩颜良", "杨龄", "庞德"},
-	})
-	if err != nil {
-		t.Fatalf("retrieve: %v", err)
-	}
-	pool := map[string]bool{}
-	for _, c := range kb.Chunks {
-		pool[ChunkIDOf(c)] = true
-	}
-	for _, want := range []string{"c-famous", "c-rare", "c-pred", "c-third"} {
-		if !pool[want] {
-			t.Errorf("pool lacks %s: %v — a named term lost its seat (phrase ranking, maxQ cut, or the flat per-query cap)", want, pool)
-		}
-	}
-	if oc.Status != StatusOK {
-		t.Errorf("status = %s, want %s (the seats are new evidence)", oc.Status, StatusOK)
-	}
-	absent := kb.ProbedAbsentTerms()
-	if !containsString(absent, "庞德") {
-		t.Errorf("ProbedAbsent = %v, want 庞德 recorded: a probe that reaches nothing is a fact about the corpus, not a failed lookup", absent)
-	}
-	if containsString(absent, "荀正") || containsString(absent, "杨龄") {
-		t.Errorf("ProbedAbsent = %v: a term that got a seat must not be recorded as unreached", absent)
-	}
-}
-
 func containsString(list []string, want string) bool {
 	for _, s := range list {
 		if s == want {

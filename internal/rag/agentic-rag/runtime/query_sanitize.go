@@ -114,11 +114,18 @@ func allDigits(s string) bool {
 	return true
 }
 
+// isQueryHeading reports whether a line is a label the seed uses rather than its content.
+//
+// The match is a PREFIX, not equality: a label that carries a qualifier after it ("Clues to cover
+// (turn each into your OWN short probe query — a few words; never pass this block…):") is still a
+// label, and treating it as content handed retrieval the INSTRUCTION — measured 2026-09-20 三国:
+// `[BM25 search] Searching by keyword for "probe"`, and asked-nothing-back=10
+// "Clues、to、cover、turn…" from one copied block.
 func isQueryHeading(s string) bool {
 	lower := strings.ToLower(strings.TrimSpace(s))
 	lower = strings.TrimSuffix(lower, ":")
 	for _, h := range queryHeadings {
-		if lower == h {
+		if lower == h || strings.HasPrefix(lower, h) {
 			return true
 		}
 	}

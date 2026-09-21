@@ -94,11 +94,13 @@ type Variable struct {
 	// (see Coverage / EnumerateCoverage), and the sessions read what came back, so the
 	// tail of the list is a property of the corpus rather than of the model's memory.
 	Terms []string
-	// Subject is WHO the act is about, declared next to the act words. The pattern asks for
-	// subject AND act together, because an act word on its own has a poor candidate pool — a
-	// rare verb can come back empty for a text that does state the deed. Empty means the
-	// pattern searches the term alone.
-	Subject string
+	// Subjects is WHO the act is about: one entry per spelling the SOURCE uses for them, declared
+	// next to the act words. It is a LIST and not a delimited string, because a runtime that splits
+	// a string is a runtime guessing the writer's punctuation — the same reason Variable.Value is
+	// opaque (see its note). The plan writes JSON; an array is what a list looks like in JSON.
+	//
+	// Empty means the slot is not about one actor, and the scan asks nothing for it.
+	Subjects []string
 }
 
 // Typed is the value this slot holds, for merging and counting. An untyped slot is
@@ -1470,6 +1472,9 @@ const (
 	// minSessionClockS is the floor for the session clock after the guard is subtracted: a session
 	// handed almost no budget still gets a moment to answer rather than a negative clock.
 	minSessionClockS = 5.0
+	// minSalvageRetryS is what has to be left, after the answer's own margin, before the answer call
+	// is retried: below it a second attempt would only race the wall (see the retry in finalizeNode).
+	minSalvageRetryS = 8.0
 	// answerReserveS is the slice of the session clock that belongs to the ANSWER turn: below it
 	// the session stops searching and spends what is left writing the answer.
 	//
@@ -1855,9 +1860,32 @@ type SessionState struct {
 	evidenceRefOf map[string]int
 	// lastReply is the previous turn's assistant text, so an exactly repeated reply can END the
 	// session (see runActionNode).
-	lastReply    string
-	Attempts     int
+	lastReply string
+	Attempts  int
+	// DeadlineLeft is what is left of the session's own clock (see sessionClockFor). It is DERIVED
+	// from SessionDeadline at the top of every turn and route (see refreshClock).
 	DeadlineLeft float64
+	// SessionDeadline is when the session's clock runs out, as an absolute time.
+	//
+	// The clock used to be a number written ONCE (after the navigation prefix) and never read
+	// again, so nothing inside the loop knew how much time was left: turns were bounded only by
+	// the CALLER's context, which expires mid-call — which is how a session ends with no answer
+	// and no patch (measured 2026-09-20, 三国: three turns of 36s and 74s inside a 110s clock,
+	// `session cut` inside the third call, 0 patches, no answer, and an answer composed for it
+	// that named six of the seventeen members).
+	SessionDeadline time.Time
+	// expectedTurnS is the longest turn this session has completed: the pace to plan the answer
+	// turn around (see affordableSearchTurns). Zero until the first turn returns.
+	expectedTurnS float64
+	// BudgetS is the session's WHOLE clock, kept so the patch checkpoint can say how much of it is
+	// gone. Only the remaining half moves.
+	BudgetS float64
+	// PatchChecked says the record checkpoint has already been delivered: it fires once per
+	// session, because a session that ignored it once is not helped by hearing it again.
+	PatchChecked bool
+	// LastTurnNoticed says the "this is your last search turn" notice has been sent (see
+	// runActionNode).
+	LastTurnNoticed bool
 
 	// CtxBudget is the cumulative tool-payload char ceiling for the session.
 	CtxBudget int
@@ -1916,6 +1944,12 @@ type SessionState struct {
 
 	TerminalType    *string
 	TerminalPayload map[string]any
+
+	// notesAtEvidence is how many passages had been shown when the model last wrote a note (see
+	// SessionRecord.ShownSinceNote). It is the one mechanical fact behind "you have read more than you
+	// have written down" — a COUNT about the session's own behaviour, not a judgement about what the
+	// passages mean.
+	notesAtEvidence int
 }
 
 // appendMessages is the single place a session grows its message list.
@@ -1974,6 +2008,17 @@ func ExecuteTool(ctx context.Context, tools *Toolset, name string, args map[stri
 // It appends the assistant message and records any tool calls as pending.
 func (s *SessionState) runActionNode(ctx context.Context) error {
 	s.Attempts++
+	s.refreshClock()
+	// On the LAST search turn this session can afford, say so (see lastSearchTurnNotice): the
+	// session is one turn's notice ahead of the wall, which is where a patch and an answer still
+	// fit. The paper says this at 70% of T; here it is said at the point the MEASURED pace says no
+	// further searching turn fits.
+	if !s.LastTurnNoticed && s.Attempts >= s.effectiveTurnFloor() {
+		s.LastTurnNoticed = true
+		s.Messages = append(s.Messages, *schema.UserMessage(lastSearchTurnNotice))
+		_LOG.Printf("[Action Session] last search turn (turn %d; the clock affords %d): told the session to close out with a patch and an answer.",
+			s.Attempts, s.effectiveTurnFloor())
+	}
 	// Per-turn wall budget: max(15, min(75, deadline_left - answerReserveS)).
 	//
 	// The reserve is subtracted HERE and not only at routing time. The route checks the clock
@@ -1984,7 +2029,14 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 	wall := max(15.0, min(75.0, s.DeadlineLeft-answerReserveS))
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(wall*float64(time.Second)))
 	defer cancel()
+	turnStarted := time.Now()
 	reply, err := s.Model.Complete(callCtx, s.Messages, s.Tools.ActiveToolSpecs())
+	// The session's own pace: what ONE call to this provider on this question costs. It is what the
+	// search/answer split is planned around (see affordableSearchTurns), and it is measured rather
+	// than assumed because it varies by an order of magnitude between providers.
+	if turnWall := time.Since(turnStarted).Seconds(); turnWall > s.expectedTurnS {
+		s.expectedTurnS = turnWall
+	}
 	if err != nil {
 		// A failed or timed-out turn does NOT end the session and does NOT clear its record.
 		//
@@ -2064,6 +2116,10 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 		// APPEND, never replace: a later patch is a further finding, and the round folds every
 		// branch this session wrote (see RunSlotResearchPass).
 		s.NewStates = append(s.NewStates, newStates...)
+		// Writing a note resets the "shown since your last note" counter: the fact it reports is about
+		// how much evidence has arrived since the model last spoke, so the model's own writing is what
+		// moves it (see SessionRecord).
+		s.notesAtEvidence = len(s.RetrievedEvidenceIDs)
 	}
 	if foundAnswer != nil {
 		s.FoundAnswer = foundAnswer
@@ -2414,6 +2470,98 @@ func (s *SessionState) stampEvidenceRefs(chunks []any) {
 	}
 }
 
+// navPrefixQuoteChars is how much of each prefix-read passage the numbered block shows: enough to
+// tell them apart and to see which part of the document was read, not a second copy of the payload
+// the ladder already put in the history.
+const navPrefixQuoteChars = 200
+
+// seedEvidenceRefs registers passages the SEED showed the model — the opening's ranked previews, the
+// nav prefix's tool payloads — in the run's citation registry, in the order they were shown, and
+// returns one line per passage carrying the handle the model can cite.
+//
+// The registry is what the answer's [ID:n] markers resolve against, and until this existed ONLY the
+// tool loop wrote to it (see stampEvidenceRefs). The opening's previews and the ladder's payloads
+// were shown with a raw chunk id or with nothing at all, so the material an answer was WRITTEN FROM
+// was absent from the registry the answer was resolved against. Measured 2026-09-20 (三国/关羽): the
+// ladder's own retrieve brought the ten passages holding every name, the session answered from them
+// on its first turn, and the final answer — sixteen members, all correct — shipped with 0 passages in
+// the citation registry, so not one member could be cited.
+//
+// The numbers come from the POOL (see Kbinfos.PublishEvidence), so this session's numbering continues
+// the run's rather than restarting: a marker written in round 1 keeps pointing at the passage it was
+// written for after round 2 has shown its own.
+//
+// quoteChars > 0 renders those lines (the prefix path, whose payloads carry no handle yet);
+// 0 registers only (the opening path, whose lines already printed their handle in the seed).
+func (s *SessionState) seedEvidenceRefs(ids []string, quoteChars int) []string {
+	if s == nil || s.KB == nil || len(ids) == 0 {
+		return nil
+	}
+	var lines []string
+	for _, id := range ids {
+		n, c, ok := s.publishEvidenceID(id)
+		if !ok {
+			continue
+		}
+		if quoteChars > 0 {
+			text := strings.Join(strings.Fields(ChunkTextOf(c)), " ")
+			lines = append(lines, fmt.Sprintf("[ID:%d] %s", n, truncateRunes(text, quoteChars)))
+		}
+	}
+	return lines
+}
+
+// publishEvidenceID publishes one passage and mirrors the number into the session's own registry,
+// which is what makes the model's [ID:n] and the run's list the same numbering.
+//
+// An id the pool holds no chunk for is refused: navigate_tree reports DOC ids, and the client opens
+// chunk ids, so an id with no chunk behind it must not take a number.
+func (s *SessionState) publishEvidenceID(id string) (int, map[string]any, bool) {
+	id = strings.TrimSpace(id)
+	if s == nil || id == "" || s.KB == nil {
+		return 0, nil, false
+	}
+	c := s.KB.ChunkByID(id)
+	if c == nil {
+		return 0, nil, false
+	}
+	nums := s.KB.PublishEvidence([]string{id})
+	if len(nums) == 0 {
+		return 0, nil, false
+	}
+	n := nums[0]
+	if s.evidenceRefOf == nil {
+		s.evidenceRefOf = map[string]int{}
+	}
+	if _, seen := s.evidenceRefOf[id]; !seen {
+		s.evidenceRefOf[id] = n
+		s.EvidenceRefs = append(s.EvidenceRefs, id)
+	}
+	return n, c, true
+}
+
+// loadEvidenceRefs starts this session's registry from the run's, so its numbering continues where the
+// last round stopped instead of restarting at zero (see Kbinfos.PublishEvidence).
+func (s *SessionState) loadEvidenceRefs(kb *Kbinfos) {
+	if s == nil || kb == nil || len(kb.SessionEvidenceRefs) == 0 {
+		return
+	}
+	if s.evidenceRefOf == nil {
+		s.evidenceRefOf = map[string]int{}
+	}
+	for i, id := range kb.SessionEvidenceRefs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, seen := s.evidenceRefOf[id]; seen {
+			continue
+		}
+		s.evidenceRefOf[id] = i
+		s.EvidenceRefs = append(s.EvidenceRefs, id)
+	}
+}
+
 // payloadChunkID is the chunk identity inside a tool payload entry. The search tools name it
 // "chunk_id"; list_chunks' passages are {"id","content"} (see listChunks), so both are read.
 func payloadChunkID(m map[string]any) string {
@@ -2488,8 +2636,7 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	if !ranAny || len(s.Messages) == 0 {
 		return
 	}
-	rec := s.sessionRecordNow()
-	grew := rec.grewFrom(s.Record)
+	rec := s.sessionRecord()
 	s.Record = rec
 	// EVERY session gets the line. It used to be gated on enumeration, on the argument that on a
 	// single-value question every field of it is empty or meaningless — but the line also carries
@@ -2517,7 +2664,7 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	// already paid for that text, unread text is where unnoticed members live, and a
 	// session that is still finding things does not need rescuing. Gated on the
 	// shape so no other question pays for it at all, and one excerpt per turn.
-	if s.enumerating() && !grew {
+	if s.enumerating() {
 		if excerpt := s.unreadPoolExcerpt(); excerpt != "" {
 			// Logged as well as delivered: whether the mechanism fired is otherwise
 			// only visible inside the message content.
@@ -2525,6 +2672,10 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 			last.Content += "\n" + excerpt
 		}
 	}
+	// What the model did NOT write down is not the runtime's to reconstruct: the one mechanical signal
+	// that says "you have read more than you have written down" is the count in the line above
+	// (ShownSinceNote). Whether that means anything is the model's judgement, made on its own record
+	// (see SessionRecord).
 }
 
 // turnRunCap is the hard ceiling on a session's turns: the mode's floor plus the
@@ -2562,7 +2713,7 @@ func (s *SessionState) offerContinuation() bool {
 		return true
 	}
 	s.ContinuationAsked = s.Attempts
-	ask := continuationAsk(s.Attempts, s.turnRunCap(), s.Record.Brief())
+	ask := continuationAsk(s.Attempts, s.turnRunCap(), s.Record.Brief(), s.Record.Verbose())
 	s.Messages = appendMessages(s.Messages, *schema.UserMessage(ask))
 	_LOG.Printf("[Action Session] turn %d/%d — the floor is spent; offered the model one more turn while the record says something is missing (%s, %.0fs left).\noffer=%q",
 		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, trunc(ask, 700))
@@ -2609,14 +2760,21 @@ func (s *SessionState) enumerating() bool {
 // remaining turns, and the ONLY grounds on which another turn is granted — what
 // the record line shows is still missing. The record itself was appended to the
 // model's last tool result, so the decision is made on facts, not on appetite.
-func continuationAsk(taken, cap int, record string) string {
-	return fmt.Sprintf(
+func continuationAsk(taken, cap int, record, notes string) string {
+	ask := fmt.Sprintf(
 		"TURN BUDGET: %d turn(s) taken, up to %d available. DECIDE NOW — your next reply decides it:\n"+
 			"- If the [record] line still shows something MISSING — a name you proved reachable and never recorded, a slot with no candidate, an angle you have not tried — call ONE more tool aimed at exactly that. %d turn(s) left.\n"+
 			"- Otherwise emit the state patch NOW with everything you have.\n"+
 			"An extra turn is only for something the record line shows is missing; re-running a search you already ran is not.\n"+
 			"Current record: %s",
 		taken, cap, cap-taken, record)
+	if notes = strings.TrimSpace(notes); notes != "" {
+		// The model's OWN notes ride the DECISION, verbatim. The runtime neither summarizes them nor
+		// adds a list of its own: "what is still missing" is read off what the model wrote, which is
+		// the only place that fact exists (see SessionRecord).
+		ask += "\n" + notes
+	}
+	return ask
 }
 
 // finalizeNode: tool budget spent — ONE last call
@@ -2638,6 +2796,9 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		"<answer>your answer</answer>.\n" +
 		"The answer is what the user receives: answer the question that was asked, in prose, and cite " +
 		"the passage behind EVERY fact with its [ID:n]. Do not include an [ID:n] you were not shown. " +
+		"If the question counts members of a set (how many named people X killed), the answer LISTS " +
+		"them — one per line with the passage behind it — and gives the total last; the number alone " +
+		"is not an answer. " +
 		"If part of the question cannot be supported by a passage you read, say which part and what " +
 		"you could not find — do not leave it out and do not guess.\n" +
 		"Also write <unresolved>…</unresolved> in the same reply, naming each part you could not " +
@@ -2658,11 +2819,14 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 	// is the only place that fact exists, and this is the last call that can act on it, so the
 	// salvage order names the names it has to account for instead of asking for "whatever you
 	// have".
-	if rec := s.sessionRecordNow(); rec.Pool > 0 {
-		budgetPrompt += "\n\nAccount for the record below in the patch you write. Every name listed as " +
-			"FOUND BUT NOT RECORDED has a passage in the pool, so it is either a member this patch includes or " +
-			"a name this patch REJECTS with its clue. More searching is no longer possible, so an unmentioned " +
-			"name is simply lost.\n" + rec.Line()
+	if rec := s.sessionRecord(); rec.Pool > 0 {
+		budgetPrompt += "\n\n" + rec.Line()
+		// The notes the model wrote are rendered WHOLE here, verbatim: this is the last call that can
+		// answer from them, and the runtime adds no list of its own — what the run holds is what the
+		// model wrote down, plus the passages it was shown (see SessionRecord).
+		if notes := rec.Verbose(); notes != "" {
+			budgetPrompt += "\n" + notes
+		}
 	}
 
 	// Defensive: strip any assistant.tool_calls that never got a tool response,
@@ -2685,11 +2849,27 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 
 	reply, err := s.Model.Complete(callCtx, msgs, nil)
 	if err != nil {
+		// ONE retry, because a transient provider stall is not a reason to lose an answer the session
+		// already HAS. Measured 2026-09-20 (三国/关羽): `salvage call failed: … Post
+		// "https://api.minimaxi.com/v1/text/chat…": failed to send request` cost the run the
+		// sixteen-member answer whose evidence the session had already read, and the fallback
+		// composition answered from the few passages its own budget admitted (six members). The
+		// init call retries once for the same reason (see initRetryTimeout).
+		_LOG.Printf("[Action Session] salvage call failed: %v — retrying once.", err)
+		s.refreshClock()
+		if left := s.DeadlineLeft - finalizeMarginS; left > minSalvageRetryS {
+			retryCtx, cancelRetry := context.WithTimeout(ctx,
+				time.Duration(min(left, tmo)*float64(time.Second)))
+			reply, err = s.Model.Complete(retryCtx, msgs, nil)
+			cancelRetry()
+		}
+	}
+	if err != nil {
 		// A failed salvage call is logged and the node CONTINUES to the deterministic
 		// loose-clue harvest below. Returning early here drops the last-narration
 		// breadcrumb exactly when the salvage model is unavailable, which is the case the
 		// harvest exists for.
-		_LOG.Printf("[Action Session] salvage call failed: %v", err)
+		_LOG.Printf("[Action Session] salvage call failed twice: %v", err)
 	} else {
 		newStates, foundAnswer, terminalType, payload := ParseTerminal(reply.Content, s.ParentState)
 		// APPEND, like every other checkpoint: the answer turn is the last word, not the only
@@ -2701,6 +2881,10 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		// showed rounds reporting unresolved=0 for questions whose sessions had filled slots).
 		if len(newStates) > 0 {
 			s.NewStates = append(s.NewStates, newStates...)
+			// Writing a note resets the "shown since your last note" counter: the fact it reports is about
+			// how much evidence has arrived since the model last spoke, so the model's own writing is what
+			// moves it (see SessionRecord).
+			s.notesAtEvidence = len(s.RetrievedEvidenceIDs)
 		}
 		s.FoundAnswer = foundAnswer
 		s.TerminalType = terminalType
@@ -2815,21 +2999,19 @@ func (s *SessionState) route() routeTarget {
 	if s.Done {
 		return routeEnd
 	}
-	// Run pending tool_calls FIRST, even at the turn budget: leaving an
-	// assistant.tool_calls message without its tool response makes the provider
-	// reject the next call. The tool node clears PendingCalls, then the route
-	// re-checks the budget.
-	if len(s.PendingCalls) > 0 {
-		return routeTool
-	}
+	s.refreshClock()
 	// The answer turn owns the last slice of the clock — the paper's "submit-now" applied to a
 	// session: at a fraction of the budget the retrieval stops and the agent answers in its own
 	// words.
 	//
-	// Routing to finalize at 0s left is how a session ends with no answer at all: measured
-	// 2026-09-20 (三国), the last turn timed out after 39s and the round's own research — twelve
-	// members with the quoted line behind each — reached the evidence pool but never the answer.
-	// So the session stops SEARCHING with this reserve still in hand and spends it answering.
+	// This check comes BEFORE the pending tool calls, and that order is the whole point. Pending
+	// calls used to run first ("so the provider never sees a dangling tool_calls"), and the answer
+	// turn strips them anyway (see finalizeNode's stripUnpairedToolCalls). Running them cost the
+	// session its answer: measured 2026-09-20 (三国), the last reply declared three probes, the
+	// tool node ran them into the wall, and the round ended with
+	// "session cut … returning the 44 passage(s) and 0 patch(es)" — the answer turn never ran, so
+	// the count and every citation were lost. At this boundary the answer is worth more than one
+	// more search, which is exactly what the paper does at 70% of T.
 	//
 	// ForceAnswer is the same destination reached the other way: a turn that failed, timed out or
 	// got stuck has no more searching to do either, and it keeps the record it has.
@@ -2841,10 +3023,17 @@ func (s *SessionState) route() routeTarget {
 		_LOG.Printf("[Action Session] %.0fs left: stopping the search so the answer has its own clock", s.DeadlineLeft)
 		return routeFinalize
 	}
-	if s.Attempts >= s.actionMaxTurns() {
-		// The mode's turn count is a FLOOR: past it the MODEL decides whether the
-		// session takes another turn, up to the run cap (see offerContinuation).
-		if s.offerContinuation() {
+	// Run pending tool_calls now that the answer's clock is safe: leaving an assistant.tool_calls
+	// message without its tool response makes the provider reject the next call, so the tool node
+	// clears PendingCalls and the route re-checks the clock.
+	if len(s.PendingCalls) > 0 {
+		return routeTool
+	}
+	if s.Attempts >= s.effectiveTurnFloor() {
+		// The mode's turn count is a FLOOR, capped by what the clock can afford at this session's
+		// own pace (see affordableSearchTurns): past it the MODEL decides whether the session takes
+		// another turn — but only one that still leaves the answer its clock.
+		if s.canAffordAnotherTurn() && s.offerContinuation() {
 			return routeRunAction
 		}
 		return routeFinalize
@@ -2865,6 +3054,7 @@ func (s *SessionState) route() routeTarget {
 // emitting tool_calls, PendingCalls stayed non-empty, so the attempts check in
 // route was never reached and the session burned the whole timeout.
 func (s *SessionState) routeAfterTool() routeTarget {
+	s.refreshClock()
 	// Same reserve as route(): the answer turn needs the clock more than another probe does.
 	if s.ForceAnswer {
 		return routeFinalize
@@ -2873,11 +3063,11 @@ func (s *SessionState) routeAfterTool() routeTarget {
 		_LOG.Printf("[Action Session] %.0fs left: stopping the search so the answer has its own clock", s.DeadlineLeft)
 		return routeFinalize
 	}
-	if s.Attempts >= s.actionMaxTurns() {
+	if s.Attempts >= s.effectiveTurnFloor() {
 		// Same rule as route: the tool result that just arrived is what the continuation offer
 		// is about, so the model decides with it in hand — otherwise the last probe's result is
-		// never read by a turn.
-		if s.offerContinuation() {
+		// never read by a turn. The offer is still bounded by the clock (see canAffordAnotherTurn).
+		if s.canAffordAnotherTurn() && s.offerContinuation() {
 			return routeRunAction
 		}
 		return routeFinalize
@@ -3393,12 +3583,32 @@ type NavRule struct {
 //
 // There is deliberately NO LLM verdict on the drill evidence: retrieval is not
 // scope-locked, so there is no "did the scoped search miss?" signal to grade.
+// navQuery is what the LADDER searches with: the direction's question, not the direction block.
+//
+// Every rung used to hand `nav.Direction` verbatim to its tool, so the retrieval the ladder runs on
+// the session's behalf searched the seed's own scaffolding. Measured 2026-09-20 (三国/关羽): one
+// prefix leg issued keyword searches for "Clues", "to" and "cover" beside the question — the exact
+// tokenization the tool path has guarded against since SanitizeRetrievalQuery exists, unapplied here
+// because this call is CODE's and sanitizing was only wired into the model's calls.
+//
+// The direction's first content line IS the question (see graph_slots.go where it is assembled), so
+// the sanitizer's answer is the right probe rather than a heuristic of ours.
+func navQuery(nav *NavContext) string {
+	if nav == nil {
+		return ""
+	}
+	if q := SanitizeRetrievalQuery(nav.Direction); q != "" {
+		return q
+	}
+	return strings.TrimSpace(nav.Direction)
+}
+
 var NavRules = []NavRule{
 	{
 		ID:   "locate",
 		Tool: "navigate_tree",
 		Mode: ModeAuto,
-		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": nav.Direction} },
+		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": navQuery(nav)} },
 		// Tree missed => no routed hints to merge against; the only useful step
 		// is an unscoped search. — {OK, MISS, EMPTY, POOR, ERROR};
 		// REDUNDANT is deliberately absent: a redundant locate changed nothing,
@@ -3417,7 +3627,7 @@ var NavRules = []NavRule{
 		Tool: "navigate_structure",
 		Mode: ModeAuto,
 		Run:  runDrillMerge,
-		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": nav.Direction} },
+		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": navQuery(nav)} },
 		// drill returns OK with the merged, re-ranked evidence; only an empty
 		// whole-corpus result (MISS) or an infra failure falls through to global.
 		// {OK, MISS, EMPTY, ERROR}; no POOR and no REDUNDANT.
@@ -3432,7 +3642,7 @@ var NavRules = []NavRule{
 		ID:   "global",
 		Tool: "retrieve",
 		Mode: ModeAuto,
-		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": []string{nav.Direction}} },
+		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": []string{navQuery(nav)}} },
 		Next: map[string]string{},
 	},
 }
@@ -3589,6 +3799,84 @@ func stepBudget(remaining float64) time.Duration {
 func sessionClockFor(budgetLeft float64) float64 {
 	return max(minSessionClockS, budgetLeft-sessionClockGuardS)
 }
+
+// clockLeftS is what is left of the session's own clock, never negative.
+func (s *SessionState) clockLeftS() float64 {
+	if s == nil || s.SessionDeadline.IsZero() {
+		return s.DeadlineLeft
+	}
+	if left := time.Until(s.SessionDeadline).Seconds(); left > 0 {
+		return left
+	}
+	return 0
+}
+
+// refreshClock re-reads the session's clock. Called at the top of every turn and every route: the
+// clock is a deadline, and a value read once at the start is not a clock at all.
+func (s *SessionState) refreshClock() {
+	if s == nil || s.SessionDeadline.IsZero() {
+		return
+	}
+	s.DeadlineLeft = s.clockLeftS()
+}
+
+// paceS is the pace the session's own calls actually take: the longest turn it has completed, or
+// zero before the first one returns. minExpectedTurnS floors it so a session that has not run a
+// turn yet is not planned around a 3-second call.
+func (s *SessionState) paceS() float64 {
+	if s.expectedTurnS > minExpectedTurnS {
+		return s.expectedTurnS
+	}
+	return minExpectedTurnS
+}
+
+// affordableSearchTurns is how many SEARCH turns still fit at this pace, with the answer's own
+// reserve out of the clock. One is the floor: a session always gets a turn to work with.
+//
+// It is the answer to "how many calls does this question's clock actually buy", measured rather
+// than assumed — the turn budget used to be the mode's constant (8 on high) whatever the clock or
+// the provider's latency, so a session whose calls take 40s ran until the wall and never reached an
+// answer turn (measured 2026-09-20, 三国: 3 turns of 36s/74s in a 110s clock).
+func (s *SessionState) affordableSearchTurns() int {
+	room := s.DeadlineLeft - answerReserveS
+	if room <= 0 {
+		return 0
+	}
+	n := int(room / s.paceS())
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+// effectiveTurnFloor is the mode's turn floor, capped by what the clock can afford: it is the point
+// where the session stops SEARCHING and the answer turn takes over.
+func (s *SessionState) effectiveTurnFloor() int {
+	affordable := s.affordableSearchTurns()
+	if floor := s.actionMaxTurns(); affordable < floor {
+		if affordable < 1 {
+			return 1
+		}
+		return affordable
+	}
+	return s.actionMaxTurns()
+}
+
+// canAffordAnotherTurn reports whether ONE more turn at this session's pace still leaves the answer
+// its share. The answer turn is the one call that must not be raced (see FinaleMinS).
+func (s *SessionState) canAffordAnotherTurn() bool {
+	return s.DeadlineLeft-s.paceS() > answerReserveS
+}
+
+// minExpectedTurnS floors the measured pace: below it a turn is not a turn.
+const minExpectedTurnS = 20.0
+
+// lastSearchTurnNotice is what the session is told on the last search turn it can afford.
+const lastSearchTurnNotice = "LAST SEARCH TURN: this is the final turn of this session's clock that " +
+	"can search — after it, only the answer fits. Use it to CLOSE OUT: write a <state> patch with " +
+	"everything you have established (members with the passage behind each), then <answer> with what " +
+	"the evidence supports and <unresolved> naming what it does not. Do not start a new line of " +
+	"searching you cannot finish."
 
 // toolWallS is how long ONE tool call may take: the session clock minus the answer's reserve, so
 // the tools spend the searching budget and never the answering one (see answerReserveS).
@@ -3922,8 +4210,10 @@ const answerContract = `
 
 FINAL ANSWER: when you have read enough, write the answer as <answer>…</answer> and stop
 searching. That text is what the user receives — not a draft, not a summary of what you did.
-Cite with [ID:n], where n is the "ref" number that tool results print beside each passage: only
-numbers you have actually been shown will resolve. If part of the question cannot be supported
+CITE AS YOU WRITE: put the handle of the passage behind a fact right after it — the [ID:n] a seed
+block prints beside a passage, or the ref number a tool result prints beside one, and only handles
+you were actually shown. The reader's numbers are renumbered from what you cite, so cite the handle
+you saw rather than renumbering it yourself. If part of the question cannot be supported
 by passages you have read, say so in the answer (which part, and what you could not find) rather
 than leaving it out or guessing.
 
@@ -3966,6 +4256,30 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		seedUser += fmt.Sprintf("\n\nPrior round summary:\n%s", baseSummary)
 	}
 
+	// The opening's RANKED union, best first: the session's first observation is a ranked candidate
+	// list (the paper's o_1), not the pool's insertion order and not a search of its own. Measured
+	// 2026-09-20 (三国/关羽): the session spent its only two calls searching a sixty-passage pool and
+	// never answered, while the passages its answer needed were reachable but unnamed.
+	if opening := renderOpening(deps.KB); opening != "" {
+		seedUser += "\n\nOPENING (candidates for this question in RANKED order, best first — these are PREVIEWS: read a passage before you cite or answer from it):\n" + opening
+	}
+
+	// The scan channel: its coverage line AND its delivered windows. Both ride the seed because the
+	// number that matters to an enumeration is the one the model cannot see for itself — how much of the
+	// corpus's matching material it has NOT been shown — and because windows left in the pool unrendered
+	// are windows no answer can enumerate (measured 2026-09-21: 99 windows matched and delivered, and the
+	// answer listed twelve of the sixteen members).
+	if deps.KB != nil {
+		if line := deps.KB.ScanLine(); line != "" {
+			seedUser += "\n\n" + line
+		}
+		// The whole delivered material, not a sample of it: completeness is a property of what the model
+		// was SHOWN (see renderScanWindows and scanSeedChars).
+		if block := renderScanWindows(deps.KB, 0); block != "" {
+			seedUser += "\n\n" + block
+		}
+	}
+
 	// Documents the run has READ (as opposed to searched), and how far into each it got. The
 	// distinction is the difference between the snippets above and the pages behind them: a
 	// document read to page 1 of 9 with the answer plausibly further in is the cheapest thing to
@@ -3987,6 +4301,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// the direction's shape (see the note on setActionTimeoutS).
 		budgetLeft = actionTimeoutS
 	}
+	sessionClock := sessionClockFor(budgetLeft)
 
 	st := &SessionState{
 		Messages: []schema.Message{
@@ -4006,7 +4321,8 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// The session's clock, INSIDE the context deadline it runs under (see sessionClockGuardS):
 		// every budget derived from it — turn wall, tool budget, answer timeout — has to end before
 		// the wall does, or the last call is lost at the boundary.
-		DeadlineLeft:  sessionClockFor(budgetLeft),
+		DeadlineLeft:  sessionClock,
+		BudgetS:       sessionClock,
 		CtxBudget:     maxToolResponseChars * 4,
 		ToolChars:     0,
 		ToolCache:     sharedToolCache,
@@ -4023,6 +4339,10 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	if st.ToolCache == nil {
 		st.ToolCache = NewToolCache()
 	}
+	// This session's numbering CONTINUES the run's: the opening's previews were already published
+	// while the seed was built, and the earlier rounds' passages keep the numbers their answers'
+	// markers were written against (see Kbinfos.PublishEvidence).
+	st.loadEvidenceRefs(deps.KB)
 
 	// The graph loop is bounded by the turn budget and the deadline; the context
 	// carries the wall-clock so a stalled provider cannot outlive the request.
@@ -4037,10 +4357,11 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	nav := &NavContext{Direction: direction}
 	prefixStarted := time.Now()
 	prefix := RunNavPrefix(runCtx, deps.Tools, direction, budgetLeft, nav)
-	// The prefix's elapsed time is charged to the session with a 10s floor, so prefix + loop
-	// stay inside the caller's deadline. Leaving DeadlineLeft at budgetLeft let one action
-	// session run a whole prefix too long.
-	st.DeadlineLeft = max(10.0, budgetLeft-time.Since(prefixStarted).Seconds())
+	// The prefix's elapsed time is charged to the session through the CLOCK, which is an absolute
+	// deadline from here on (see refreshClock): the assignment that used to live here subtracted
+	// the prefix from a value nothing ever decremented again, so the loop ran on a stale number.
+	st.SessionDeadline = time.Now().Add(time.Duration(max(10.0, budgetLeft-time.Since(prefixStarted).Seconds()) * float64(time.Second)))
+	st.refreshClock()
 	if len(prefix.Messages) > 0 {
 		st.Messages = append(st.Messages, prefix.Messages...)
 		st.RetrievedEvidenceIDs = append(st.RetrievedEvidenceIDs, prefix.EvidenceIDs...)
@@ -4050,6 +4371,14 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		st.NavHint = nav.NavHint
 		_LOG.Printf("[Action Session] nav prefix: %d exchange(s), %d evidence id(s), resting on %q",
 			len(prefix.Messages)/2, len(prefix.EvidenceIDs), prefix.PendingRule)
+		// The ladder's payloads print no handle, and nothing registered them: they are the FIRST
+		// passages the model reads, so they are the first it may answer from (see seedEvidenceRefs).
+		if lines := st.seedEvidenceRefs(prefix.EvidenceIDs, navPrefixQuoteChars); len(lines) > 0 {
+			st.Messages = append(st.Messages, *schema.UserMessage(
+				"NAV PREFIX EVIDENCE — the ladder already read these passages; [ID:n] is the handle to cite each of them:\n- " +
+					strings.Join(lines, "\n- ")))
+			_LOG.Printf("[Action Session] nav prefix: %d passage(s) numbered for citation.", len(lines))
+		}
 	}
 
 	if err := st.sessionLoop(runCtx); err != nil {
@@ -4179,8 +4508,16 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 					kept = append(kept, t)
 				}
 			}
-			subject := strings.TrimSpace(displayText(m["subject"]))
-			slots = append(slots, Variable{ID: id, Type: vType, QuestionClues: clues, Terms: kept, Subject: subject})
+			// The spellings arrive as a list, like `scan`: a field the model writes is read as the
+			// model wrote it, never parsed out of a string (see Variable.Subjects).
+			rawSubjects, _ := asStringList(m["subjects"])
+			subjects := make([]string, 0, len(rawSubjects))
+			for _, sp := range rawSubjects {
+				if sp = strings.TrimSpace(sp); sp != "" {
+					subjects = append(subjects, sp)
+				}
+			}
+			slots = append(slots, Variable{ID: id, Type: vType, QuestionClues: clues, Terms: kept, Subjects: subjects})
 		}
 	}
 	// `[str(q).strip for q in (data.get("first_queries") or [])][:3]`:
@@ -4419,10 +4756,143 @@ func deadlineToDuration(seconds float64) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
+// scanSeedChars bounds the seed's scan material by CHARACTERS — the one bound, rather than a line cap,
+// because the point of the block is that it is the whole delivered material (see renderScanWindows).
+// 40000 is about 20-30k tokens of Chinese, the same order as what a WeKnora-style pipeline hands its
+// answerer in one pass. The block is a PAGE, not the pool: a bigger one does not buy members — measured
+// 2026-09-21 00:52, an 80000-character page with the actor channel in front of it produced a FIVE-member
+// answer, because the round costing nothing but reading is the same round that has nothing left to
+// search with. The actor channel's coverage lives in the pool (every window it reached is citable), and
+// the page shows the head of the act-word ranking, which is where the deed's sentences are.
+const scanSeedChars = 40000
+
+// scanWindowRunes bounds one rendered scan window: the sentence around the match.
+const scanWindowRunes = 240
+
+// renderScanWindows renders the scan's delivered windows as the enumeration material the session starts
+// from: one line per window, each with the citation handle of the passage it came from, bounded by
+// CHARACTERS (scanSeedChars) and by max lines when a caller asks for one (max <= 0: no line cap, which
+// is what production passes). Every window it shows is PUBLISHED, so the answer can cite what it read.
+//
+// COMPLETE by construction, and that is the point. The block used to render thirty lines and say "…and
+// 103 more window(s)" — a sample, so the model enumerated from a sample. Measured 2026-09-21 (三国/关羽):
+// the scan matched 162 windows and delivered 133, the seed showed 30, and the answer listed eleven of
+// the sixteen members, while the round before — 141 matched — listed fourteen. A counted answer needs
+// the whole set in front of it ONCE, the way a WeKnora-style pipeline hands its answerer every retained
+// chunk in a single pass and asks it to cite; more retrieval and a better sample of it do not help.
+//
+// A window is a PREVIEW of the deed's wording (the sentence the probe matched, with its neighbours), not
+// proof: the playbook's rule stands — read the passage before you cite it — and the line names the
+// passage to read. An identical window is shown once: overlapping windows repeat a sentence, and a
+// repeat is not a second member.
+func renderScanWindows(kb *Kbinfos, max int) string {
+	if kb == nil {
+		return ""
+	}
+	windows := kb.ScanWindows()
+	if len(windows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("SCAN WINDOWS (the run's own declared probes matched these passages; each line is the " +
+		"sentence around the match — the material to enumerate from):\n")
+	shown, chars, repeated := 0, 0, 0
+	seen := map[string]bool{}
+	for _, w := range windows {
+		if max > 0 && shown >= max {
+			break
+		}
+		text := strings.Join(strings.Fields(w.Text), " ")
+		if text == "" {
+			continue
+		}
+		if seen[text] {
+			repeated++
+			continue
+		}
+		nums := kb.PublishEvidence([]string{w.ChunkID})
+		if len(nums) == 0 {
+			continue
+		}
+		line := fmt.Sprintf("[ID:%d] %s | doc %s\n", nums[0], truncateRunes(text, scanWindowRunes), w.DocID)
+		if chars+len([]rune(line)) > scanSeedChars {
+			break
+		}
+		seen[text] = true
+		b.WriteString(line)
+		chars += len([]rune(line))
+		shown++
+	}
+	if shown == 0 {
+		return ""
+	}
+	if rest := len(windows) - shown - repeated; rest > 0 {
+		fmt.Fprintf(&b, "…and %d more window(s) in the evidence pool (this block is bounded by %d "+
+			"characters); read on with list_chunks on the documents above.\n", rest, scanSeedChars)
+	}
+	return b.String()
+}
+
 // extractRelevantEvidence flattens the shared evidence pool into a compact, line-delimited
 // digest the model can read without re-retrieving. Chunks are ranked by the number of
 // direction tokens they contain, then the top maxChunks are surfaced so the seed prompt
 // stays bounded.
+// openingPreviewMax and openingPreviewChars bound the opening list the session is handed: eight
+// previews of one sentence each. It is the head of the ranked union, and it is a PREVIEW list — the
+// passages behind it are in the pool and the session reads the ones it needs (see the read/preview
+// rule in the playbook).
+const (
+	openingPreviewMax   = 8
+	openingPreviewChars = 300
+)
+
+// renderOpening renders the opening's ranked union as a bounded, ranked preview list, publishing each
+// preview it shows into the run's citation registry (see Kbinfos.PublishEvidence).
+//
+// The rank order IS the product (see the fan-out's rankOpening): with a clock that affords two
+// calls, the order decides what the session reads first. Nothing is filtered — the rest of the
+// opening's passages stay in the pool and reachable through the tools.
+//
+// Each line carries the citation handle of its passage, taken from the registry the answer's markers
+// are resolved against: a preview the model may answer from must be citable, and the handle it prints
+// must be the number the registry holds — the seed is rendered before the session exists, so the pool
+// is the only place that can hand out both.
+func renderOpening(kb *Kbinfos) string {
+	if kb == nil {
+		return ""
+	}
+	ids := kb.Opening()
+	if len(ids) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	shown := 0
+	for _, id := range ids {
+		if shown >= openingPreviewMax {
+			break
+		}
+		c := kb.ChunkByID(id)
+		if c == nil {
+			continue
+		}
+		text := strings.Join(strings.Fields(ChunkTextOf(c)), " ")
+		if text == "" {
+			continue
+		}
+		nums := kb.PublishEvidence([]string{id})
+		if len(nums) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "[ID:%d] %s | doc %s\n", nums[0],
+			truncateRunes(text, openingPreviewChars), DocIDOf(c))
+		shown++
+	}
+	if shown == 0 {
+		return ""
+	}
+	return b.String()
+}
+
 func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) string {
 	if kb == nil || maxChunks <= 0 {
 		return ""

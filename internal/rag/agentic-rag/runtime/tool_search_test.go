@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"ragflow/internal/entity"
@@ -1562,25 +1563,6 @@ func TestPatternNeverReachesTheEngine(t *testing.T) {
 	}
 }
 
-// TestPerTermSearchRecordsConfirmedMembers pins that the weave's per-term search
-// doubles as the member record: a term searched ON ITS OWN that comes back with a
-// passage is a confirmed member with its evidence.
-func TestPerTermSearchRecordsConfirmedMembers(t *testing.T) {
-	r := &stubRetriever{chunks: []map[string]any{
-		{"chunk_id": "c-yan", "content": "荀正 引军来战，被云长一刀斩于马下。"},
-	}}
-	deps, kb := newTestSearchDeps(r)
-
-	GrepSearch(context.Background(), deps, SearchParams{Question: "荀正|管亥"})
-	got := kb.ReachedTerms()
-	if len(got) != 1 || got[0].Term != "荀正" {
-		t.Fatalf("ReachedTerms = %+v, want 荀正 recorded with the passage that carries it", got)
-	}
-	if got[0].ChunkID != "c-yan" {
-		t.Errorf("recorded chunk = %q, want the passage the term's own search returned", got[0].ChunkID)
-	}
-}
-
 // TestPatternRecallIsPerOperandAndWide pins the LOCATOR fix: a structural pattern
 // ("关公.*斩") asks the engine about each of its operands, at a width that gives
 // the pattern ground to match in.
@@ -1656,40 +1638,123 @@ func TestCallerBatchRecognisesTheBatchTheModelWrites(t *testing.T) {
 	}
 }
 
-// TestProbeItemsAreTheCallersOwnWords pins the reach ledger's reading of a call.
+// blockingExpander stands in for a compiled-expansion backend that never answers — the dead
+// Elasticsearch behind a 68-second search_chunks call (see compiledExpansionTimeout).
+type blockingExpander struct{ entered chan struct{} }
+
+func (b *blockingExpander) Expand(ctx context.Context, _ *Kbinfos, _, _ string, _ []string) error {
+	select {
+	case <-b.entered:
+	default:
+		close(b.entered)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestAnEnrichmentCannotEatTheSearch pins the wall on the compiled expansion.
 //
-// The ledger is read back as the session's to-do list ("probed, came back with a
-// passage, not recorded"), so it may only hold what the call PROPOSED as items —
-// the pieces of a batch, or a query that is one word. Measured (2026-09-15): the
-// line read `FOUND BUT NOT RECORDED=三国、演义、关羽、五关…+15` in a run whose
-// sessions were missing six members, none of which was on the list, because the
-// windows an unbroken clause decomposes into had been probed AND recorded.
-func TestProbeItemsAreTheCallersOwnWords(t *testing.T) {
-	got := probeItemsOf([]string{"关羽 古城 蔡阳 斩 颜良 文丑 华雄 庞德 荀正", "韩福"})
-	for _, want := range []string{"蔡阳", "颜良", "华雄", "荀正", "韩福"} {
-		if !got[strings.ToLower(want)] {
-			t.Errorf("probeItemsOf missed the proposed item %q", want)
-		}
-	}
-	// A one-rune verb is stripped as a term edge, not proposed as an item.
-	if got["斩"] {
-		t.Error("a single-rune fragment must not count as a proposed item")
-	}
+// Measured 2026-09-20 (三国/关羽): `[Hybrid search] Compiled expansion enabled` at 22:18:30, then nine
+// `Elasticsearch query failed` warnings at 22:19:32 — 68 seconds inside a step that only ENRICHES a
+// result the leg already holds. The round spent a third of the question there, and the session's own
+// answer call lost its race with the clock right after.
+//
+// The enrichment is a seam (SearchDeps.Expand), so this needs no search backend at all: what is
+// pinned is that a stuck enrichment cannot hold the leg, and that the leg's own chunks still come
+// back when it stalls.
+func TestAnEnrichmentCannotEatTheSearch(t *testing.T) {
+	prev := compiledExpansionTimeout
+	compiledExpansionTimeout = 50 * time.Millisecond
+	defer func() { compiledExpansionTimeout = prev }()
 
-	// A question is not a proposal, and an unbroken clause yields no item either.
-	if items := probeItemsOf([]string{"三国演义中关羽一共杀死多少有姓名的人物"}); len(items) != 0 {
-		t.Errorf("a sentence proposed %v as items, want nothing", items)
-	}
+	exp := &blockingExpander{entered: make(chan struct{})}
+	r := &stubRetriever{chunks: []map[string]any{{"chunk_id": "c1", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	deps.Expand = exp
 
-	// The batch case that produced the junk: the windows of 关羽过五关斩六将 must
-	// not appear, while the caller's own words do.
-	batch := probeItemsOf([]string{"三国演义 关羽过五关斩六将 六将姓名"})
-	for _, window := range []string{"国演", "演义", "羽过", "过五", "关斩", "斩六"} {
-		if batch[window] {
-			t.Errorf("window %q must never reach the ledger", window)
-		}
+	started := time.Now()
+	got, _ := HybridSearch(context.Background(), deps, SearchParams{Question: "q", UseCompiled: true})
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("the leg took %.1fs with a stuck enrichment, want it bounded by %v",
+			elapsed.Seconds(), compiledExpansionTimeout)
 	}
-	if !batch["三国演义"] {
-		t.Error("the caller's own word 三国演义 must be a candidate item")
+	if len(got) == 0 {
+		t.Error("the leg returned nothing: its own chunks are the point, the enrichment is not")
+	}
+	select {
+	case <-exp.entered:
+	default:
+		t.Error("the expander never ran, so nothing was bounded")
+	}
+}
+
+// flakyRetriever fails while the DENSE leg is on, the way a dead embedding service does, and answers
+// when the dense leg is off.
+type flakyRetriever struct {
+	mu     sync.Mutex
+	calls  []RetrieveRequest
+	chunks []map[string]any
+}
+
+func (f *flakyRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, req)
+	f.mu.Unlock()
+	if !req.DisableVectorLeg {
+		return nil, errors.New("GetVector failed: failed to send request")
+	}
+	return f.chunks, nil
+}
+
+// TestADeadEmbedderCostsTheLegItsDenseHalfOnly pins the degradation on the retry path.
+//
+// The retry used to repeat the same request, so when the embedder was the thing that was down both
+// attempts failed and the leg returned NOTHING — discarding the passages its keyword half had already
+// matched. Measured 2026-09-20 (三国/关羽): `GetVector failed: failed to send request` cost one
+// search_chunks call 56 seconds inside a 75s tool wall, the retry died on `context deadline exceeded`,
+// and the round had read 16 passages when its clock ran out — the salvaged answer could name one member
+// of sixteen. A dense leg that cannot be computed must cost the leg its dense half, not its results.
+func TestADeadEmbedderCostsTheLegItsDenseHalfOnly(t *testing.T) {
+	r := &flakyRetriever{chunks: []map[string]any{{"chunk_id": "c1", "content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	// An embedder IS configured: without one the dense leg is off before the first attempt and the
+	// failure this test is about cannot happen.
+	deps.HasEmbedder = true
+	got, _ := HybridSearch(context.Background(), deps, SearchParams{Question: "q", KbIDs: []string{"kb1"}})
+	if len(got) == 0 {
+		t.Fatal("the leg discarded its keyword hits along with the vector failure")
+	}
+	if len(r.calls) != 2 {
+		t.Fatalf("attempts = %d, want the failure retried once", len(r.calls))
+	}
+	if r.calls[0].DisableVectorLeg || !r.calls[1].DisableVectorLeg {
+		t.Errorf("attempts used DisableVectorLeg %v/%v, want the retry to go keyword-only",
+			r.calls[0].DisableVectorLeg, r.calls[1].DisableVectorLeg)
+	}
+}
+
+// TestOneAttemptCannotEatTheLegsClock pins the bound each attempt runs under: the retry needs room, and
+// the leg's clock belongs to the question.
+func TestOneAttemptCannotEatTheLegsClock(t *testing.T) {
+	if got := searchAttemptBudget(context.Background()); got.Seconds() != searchAttemptMaxS {
+		t.Errorf("unbounded context gave %.0fs, want the cap %.0fs", got.Seconds(), searchAttemptMaxS)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if got := searchAttemptBudget(ctx); got.Seconds() > searchAttemptMaxS {
+		t.Errorf("a 60s leg gave one attempt %.0fs, want at most %.0fs", got.Seconds(), searchAttemptMaxS)
+	}
+	// Half of a small clock, but the floor wins when the half is too small to be worth an attempt —
+	// and the attempt can never outlive the caller either way (context.WithTimeout takes the earlier
+	// deadline of the two).
+	tight, cancelTight := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancelTight()
+	if got := searchAttemptBudget(tight); got.Seconds() != searchAttemptMinS {
+		t.Errorf("a 6s leg gave one attempt %.0fs, want the floor %.0fs", got.Seconds(), searchAttemptMinS)
+	}
+	spent, cancelSpent := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelSpent()
+	if got := searchAttemptBudget(spent); got.Seconds() != searchAttemptMinS {
+		t.Errorf("an almost-spent leg gave one attempt %.0fs, want the floor %.0fs", got.Seconds(), searchAttemptMinS)
 	}
 }

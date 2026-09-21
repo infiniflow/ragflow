@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,13 +31,15 @@ func typedCountSlot(id int, typ string, n int) Variable {
 	return Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
 }
 
-// TestCollectSessionRecordFlagsFoundButNotRecorded is the defect this record
-// exists for: a name the session PROVED reachable (it has a passage) and never
-// took a position on must be visible, not silent.
+// TestSessionRecordCarriesTheModelsOwnNotesVerbatim pins what the record IS now: the notes the model
+// wrote, whole and unsplit, plus counters about what it has been shown.
 //
-// Measured (fixrecall2, 2026-09-15): 庞德 was queried, a passage came back, and
-// the model's own reasoning dropped him — the framework saw nothing.
-func TestCollectSessionRecordFlagsFoundButNotRecorded(t *testing.T) {
+// It used to be a member list the runtime DERIVED — reached terms, names the slots did not mention,
+// items a slot type declared — and recall was decided by that derivation: a name behind the one-line
+// record's "+15" was a name no answer could have (measured 2026-09-20, 三国/关羽: nineteen names in the
+// derived ledger, ten in the answer). What counts as a member is a SEMANTIC judgement, and the runtime
+// does not make it (see SessionRecord).
+func TestSessionRecordCarriesTheModelsOwnNotesVerbatim(t *testing.T) {
 	kb := &Kbinfos{}
 	for i := 0; i < 5; i++ {
 		id := "c" + strconv.Itoa(i)
@@ -44,47 +47,60 @@ func TestCollectSessionRecordFlagsFoundButNotRecorded(t *testing.T) {
 			p.Add(map[string]any{"chunk_id": id, "content": "prose"})
 		})
 	}
-	kb.RecordReachedTerm("荀正", "c1")
-	kb.RecordReachedTerm("庞德", "c2")
-	kb.RecordProbedAbsent("杨龄")
-
-	table := State{State: []Variable{
-		typedCountSlot(0, "count", 13),
-		typedMembersSlot(1, "person", "孔秀", "孟坦", "荀正"),
-	}}
-	rec := CollectSessionRecord(table, kb)
-	// 13 is the COUNT, not a member: a member count inflated by the answer slot is
-	// the number the model steers by, so the answer slot must not be in it.
-	if len(rec.Members) != 3 || rec.Members[0] != "孔秀" {
-		t.Fatalf("members = %v, want the 3 names the candidates list (no count)", rec.Members)
+	s := &SessionState{
+		KB: kb,
+		ParentState: State{State: []Variable{
+			{ID: 0, Type: "count", Candidate: strPtr("13")},
+			// ONE value with separators inside it: the runtime may not split it, because splitting a
+			// candidate is reading it — and a slot's text is opaque (see slots.Value).
+			{ID: 1, Type: "person", Candidate: strPtr("孔秀、孟坦")},
+		}},
+		RetrievedEvidenceIDs: []string{"c0", "c1", "c2"},
+		notesAtEvidence:      1,
+		SearchQueries:        []string{"关羽 斩 颜良"},
 	}
-	if len(rec.Reached) != 2 || len(rec.Absent) != 1 {
-		t.Fatalf("ledger = reached %v absent %v, want 2 reached / 1 absent", rec.Reached, rec.Absent)
+	rec := s.sessionRecord()
+	if want := []string{"13", "孔秀、孟坦"}; !reflect.DeepEqual(rec.Notes, want) {
+		t.Fatalf("notes = %v, want the model's own values verbatim (%v)", rec.Notes, want)
 	}
-	if len(rec.Undecided) != 1 || rec.Undecided[0] != "庞德" {
-		t.Fatalf("undecided = %v, want [庞德]: 荀正 is recorded, 庞德 is not", rec.Undecided)
+	if rec.ShownSinceNote != 2 {
+		t.Errorf("ShownSinceNote = %d, want 2 (three shown, one already noted)", rec.ShownSinceNote)
 	}
 	line := rec.Line()
-	for _, want := range []string{"members=3", "FOUND BUT NOT RECORDED=庞德", "asked-nothing-back=1", "pool=5"} {
+	for _, want := range []string{"your notes=2 item(s)", "2 passage(s) shown since your last note",
+		"pool=5", "already asked: 关羽 斩 颜良"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line %q missing %q", line, want)
 		}
 	}
+	// The line never summarizes the model's own notes: no elision marker anywhere in it.
+	for _, banned := range []string{"…", "..."} {
+		if strings.Contains(line, banned) {
+			t.Errorf("line %q elides the model's own record", line)
+		}
+	}
+	// The places that have to account for the notes render them WHOLE.
+	whole := rec.Verbose()
+	for _, note := range rec.Notes {
+		if !strings.Contains(whole, note) {
+			t.Errorf("Verbose() %q is missing the note %q", whole, note)
+		}
+	}
 }
 
-// TestSessionRecordLineCarriesNoPoolJudgement pins what the line does NOT claim:
-// it reports the pool's size as a number and nothing more. The turn budget is the
-// model's decision now (see offerContinuation), so no runtime predicate may turn
-// "the pool grew" into "keep going".
+// TestSessionRecordLineCarriesNoPoolJudgement pins what the line does NOT claim: it reports the pool's
+// size as a number and nothing more. The turn budget is the model's decision (see offerContinuation),
+// so no runtime predicate may turn "the pool grew" into "keep going" — and the line may not turn "a
+// passage mentions this name" into "this name is a member" either.
 func TestSessionRecordLineCarriesNoPoolJudgement(t *testing.T) {
-	rec := SessionRecord{Pool: 500, Members: []string{"华雄"}, Reached: []string{"华雄", "颜良"}}
+	rec := SessionRecord{Pool: 500, Notes: []string{"华雄"}, ShownSinceNote: 3}
 	line := rec.Line()
 	if !strings.Contains(line, "pool=500") {
 		t.Fatalf("line %q, want the pool size reported", line)
 	}
-	for _, banned := range []string{"grew", "growth", "continue"} {
+	for _, banned := range []string{"grew", "growth", "continue", "missing", "member", "undecided"} {
 		if strings.Contains(strings.ToLower(line), banned) {
-			t.Errorf("line %q must not advise on continuing", line)
+			t.Errorf("line %q must not carry a judgement (%q)", line, banned)
 		}
 	}
 }
@@ -142,8 +158,8 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 	if !strings.HasPrefix(got, `{"passages": []}`) {
 		t.Fatalf("tool message = %q, want the payload preserved ahead of the line", got)
 	}
-	if !strings.Contains(got, "members=2") {
-		t.Errorf("line %q, want the members the table holds", got)
+	if !strings.Contains(got, "your notes=2 item(s)") {
+		t.Errorf("line %q, want one note per value the model wrote", got)
 	}
 
 	// A turn with no tool call must not touch the previous result.
@@ -368,36 +384,32 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 	}
 }
 
-// TestCoverageFollowsThePlannersDeclaration pins the half of the gate that reads the
-// table: what the planner TYPED, never what a candidate looks like. A list-shaped
-// candidate under a scalar type is prose that happens to contain separators —
-// measured (2026-09-15, FRAMES) a slot typed "dataset" carried
-// `Grace's、High、Falls、Colonial、Creek`, ONE waterfall's name, and the permissive
-// reading of it is how a "how much shorter" record came to say "enumerated
-// members: 16" and how a `[count]` slot on a "how many times larger" question once
-// bought 24 continuation offers.
-func TestRecordReadsWhatTheTableHoldsNotItsTypeWords(t *testing.T) {
-	// A type word is a LABEL THE PLAN CHOSE, so it decides nothing. Reading "count" as "the answer
-	// is a set" is how a "how many times larger is A than B" question came to carry a member list
-	// (measured: a `[count]` slot on that question bought 24 continuation offers).
+// TestTheRecordReadsNoTypeWordsAndSplitsNoText pins the two things the record may NOT do: read a slot's
+// TYPE as a claim about the question, and split a value to find items inside it.
+//
+// A type word is a label the plan chose (measured: a `[count]` slot on a "how many times larger"
+// question once bought 24 continuation offers), and a value is opaque: `Grace's、High、Falls、Colonial、
+// Creek` is ONE waterfall's name, and the permissive reading of it is how a "how much shorter" record
+// came to say "enumerated members: 16".
+func TestTheRecordReadsNoTypeWordsAndSplitsNoText(t *testing.T) {
 	for _, typ := range []string{"entity", "count", "number", "dataset", "person"} {
-		table := State{State: []Variable{{ID: 0, Type: typ, Candidate: strPtr("白马坡")}}}
-		if got := len(ItemValues(&table)); got != 0 {
-			t.Errorf("a %q slot holding one value: members = %d, want 0 (nothing is held)", typ, got)
+		for _, value := range []string{"白马坡", "Grace's、High、Falls、Colonial、Creek"} {
+			s := &SessionState{ParentState: State{State: []Variable{{ID: 0, Type: typ, Candidate: strPtr(value)}}}}
+			if got := s.sessionRecord().Notes; len(got) != 1 || got[0] != value {
+				t.Errorf("a %q slot holding %q gave notes %v, want the value verbatim as ONE note", typ, value, got)
+			}
 		}
 	}
-	// The actor's forms come out of the TABLE's own Subject field, and they are what an item list
-	// must not count as members of the deed.
-	shaped := State{State: []Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩", "杀", "斩"}, Subject: "关羽|云长"},
-		{ID: 1, Type: "dataset"},
-	}}
-	if forms := ActorForms(shaped); len(forms) != 2 || forms[0] != "关羽" || forms[1] != "云长" {
-		t.Errorf("actor forms = %v, want the two declared spellings", forms)
+	// The claims a value displaced are the model's writing too, and they are kept.
+	s := &SessionState{ParentState: State{State: []Variable{
+		{ID: 0, Type: "person", Candidate: strPtr("荀正"), Alternates: []string{"杨龄"}},
+	}}}
+	if got := s.sessionRecord().Notes; !reflect.DeepEqual(got, []string{"荀正", "杨龄"}) {
+		t.Errorf("notes = %v, want the candidate and the claim it displaced", got)
 	}
-	// A table that declares no actor declares no forms — an empty list, never a guess.
-	if forms := ActorForms(State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}); len(forms) != 0 {
-		t.Errorf("actor forms = %v, want none", forms)
+	// A table the model wrote nothing into has NO notes: the record never invents one.
+	if got := (&SessionState{ParentState: State{State: []Variable{{ID: 0, Type: "date"}}}}).sessionRecord(); len(got.Notes) != 0 {
+		t.Errorf("notes = %v from an empty table, want none", got.Notes)
 	}
 }
 

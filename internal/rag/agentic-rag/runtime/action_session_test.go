@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/compose"
@@ -1653,5 +1654,407 @@ func TestTheReadLedgerCountsDistinctChunksPerDocument(t *testing.T) {
 	}
 	if kb.ReadProgress() == nil || (&Kbinfos{}).ReadProgress() != nil {
 		t.Error("an empty pool must report no read progress, and a nil pool must not panic")
+	}
+}
+
+// TestTheRouteKeepsTheAnswerClockBeforeTheLastToolCall pins the ORDER of the two checks that decide
+// what happens at the end of a session's budget.
+//
+// Pending tool calls used to run FIRST, so that the provider never saw a dangling tool_calls — and
+// the answer turn strips those anyway (finalizeNode → stripUnpairedToolCalls). Measured 2026-09-20
+// (三国): the last reply declared three probes, the tool node ran them into the wall, and the round
+// ended with "session cut … returning the 44 passage(s) and 0 patch(es)" — the answer turn never
+// ran, which is how a run loses its count and every citation at once.
+func TestTheRouteKeepsTheAnswerClockBeforeTheLastToolCall(t *testing.T) {
+	s := &SessionState{
+		BudgetS:      100,
+		DeadlineLeft: answerReserveS - 1,
+		PendingCalls: []ToolCall{{ID: "c1", Name: "retrieve"}},
+	}
+	if got := s.route(); got != routeFinalize {
+		t.Fatalf("route = %v with the answer's reserve reached and a tool call pending, want finalize", got)
+	}
+
+	// Above the reserve the pending call still runs: the protocol needs its response.
+	s = &SessionState{
+		BudgetS:      100,
+		DeadlineLeft: answerReserveS + 30,
+		PendingCalls: []ToolCall{{ID: "c1", Name: "retrieve"}},
+	}
+	if got := s.route(); got != routeTool {
+		t.Errorf("route = %v with clock to spare, want the tool node", got)
+	}
+}
+
+// TestTheSessionsClockIsReadNotRemembered pins the fix for the clock that was a number: DeadlineLeft
+// used to be written ONCE (after the navigation prefix) and never again, so nothing inside the loop
+// knew how much time was left — turns were bounded only by the caller's context, which expires
+// mid-call. Measured 2026-09-20 (三国/关羽): three turns of 36s and 74s inside a 110s clock,
+// `session cut` inside the third call, 0 patches, no answer, and a composed answer that named six of
+// the seventeen members.
+func TestTheSessionsClockIsReadNotRemembered(t *testing.T) {
+	s := &SessionState{DeadlineLeft: 99}
+	s.refreshClock()
+	if s.DeadlineLeft != 99 {
+		t.Errorf("refreshClock without an armed deadline changed the clock to %v", s.DeadlineLeft)
+	}
+
+	s.SessionDeadline = time.Now().Add(5 * time.Second)
+	s.refreshClock()
+	if s.DeadlineLeft < 4 || s.DeadlineLeft > 5 {
+		t.Errorf("clock = %v, want the ~5s left to the session's own deadline", s.DeadlineLeft)
+	}
+	s.SessionDeadline = time.Now().Add(-time.Second)
+	if got := s.clockLeftS(); got != 0 {
+		t.Errorf("clockLeftS() = %v after the deadline, want 0", got)
+	}
+}
+
+// TestTheTurnBudgetFollowsTheClockAndTheMeasuredPace pins the turn floor as a CLOCK fact: how many
+// search turns fit before the answer's own reserve, at the pace this session's calls actually take.
+//
+// The floor used to be the mode's constant (8 on high) whatever the clock or the provider's latency,
+// so a session whose calls take 74s ran three turns into a 110s clock and was cut with nothing
+// written (measured 2026-09-20, 三国). The pace is measured, not assumed: the longest turn the
+// session has completed.
+func TestTheTurnBudgetFollowsTheClockAndTheMeasuredPace(t *testing.T) {
+	// One 74s call already spent: the question's 110s clock fits ONE more search turn at that pace,
+	// and after it the answer turn has its reserve.
+	slowPace, slowLeft := 74.0, 90.0
+	slow := &SessionState{DeadlineLeft: slowLeft, expectedTurnS: slowPace}
+	wantSlow := int((slowLeft - answerReserveS) / slowPace)
+	if wantSlow < 1 {
+		wantSlow = 1 // the floor: a session always gets a turn to work with
+	}
+	if got, want := slow.affordableSearchTurns(), wantSlow; got != want {
+		t.Errorf("affordableSearchTurns = %d at a 74s pace, want %d", got, want)
+	}
+	if got := slow.effectiveTurnFloor(); got != slow.affordableSearchTurns() {
+		t.Errorf("effectiveTurnFloor = %d, want the clock's %d (the mode says %d)",
+			got, slow.affordableSearchTurns(), slow.actionMaxTurns())
+	}
+	if slow.canAffordAnotherTurn() {
+		t.Error("canAffordAnotherTurn = true with 90s left at a 74s pace, want the answer's clock kept")
+	}
+
+	// A faster provider fits more search turns in the same clock.
+	fastPace, fastLeft := 30.0, 130.0
+	fast := &SessionState{DeadlineLeft: fastLeft, expectedTurnS: fastPace}
+	if got, want := fast.affordableSearchTurns(), int((fastLeft-answerReserveS)/fastPace); got != want {
+		t.Errorf("affordableSearchTurns = %d at a 30s pace, want %d", got, want)
+	}
+	if got := fast.effectiveTurnFloor(); got != fast.affordableSearchTurns() {
+		t.Errorf("effectiveTurnFloor = %d, want the clock's %d", got, fast.affordableSearchTurns())
+	}
+	if !fast.canAffordAnotherTurn() {
+		t.Error("canAffordAnotherTurn = false with 130s left at a 30s pace, want one more turn")
+	}
+
+	// Without a completed turn the pace is floored, so a session is never planned around a 3s call.
+	blindLeft := 100.0
+	blind := &SessionState{DeadlineLeft: blindLeft}
+	if got, want := blind.affordableSearchTurns(), int((blindLeft-answerReserveS)/minExpectedTurnS); got != want {
+		t.Errorf("affordableSearchTurns = %d with no measured pace, want %d", got, want)
+	}
+
+	// No room at all: the answer turn is what is left.
+	late := &SessionState{DeadlineLeft: answerReserveS, expectedTurnS: answerReserveS}
+	if got := late.affordableSearchTurns(); got != 0 {
+		t.Errorf("affordableSearchTurns = %d with only the reserve left, want 0", got)
+	}
+	if late.canAffordAnotherTurn() {
+		t.Error("canAffordAnotherTurn = true with only the answer's reserve left")
+	}
+}
+
+// TestTheOpeningIsHandedToTheSessionInRankOrder pins the opening's delivery: the session's first
+// observation is the RANKED union of the opening's legs, as a bounded list of previews, EACH WITH THE
+// HANDLE IT CAN BE CITED BY.
+//
+// Before this, the session was handed the pool's tail or a direction-token scan of it (see
+// extractRelevantEvidence), and the rank order the opening had already computed was thrown away:
+// with a clock that affords two model calls, the order decides what the session reads first.
+//
+// The handle half is not cosmetic. The registry a citation resolves against is written by the tool
+// loop, and the opening's previews are shown BEFORE any tool runs — so a session that answered from
+// them (which is what the ranked list is FOR) had nothing to cite: measured 2026-09-20 (三国/关羽), a
+// correct sixteen-member answer with 0 passages in the citation registry.
+func TestTheOpeningIsHandedToTheSessionInRankOrder(t *testing.T) {
+	kb := &Kbinfos{Chunks: []map[string]any{
+		{"chunk_id": "c-a", "doc_id": "d1", "content": "云长提华雄之头，掷于地上。"},
+		{"chunk_id": "c-b", "doc_id": "d2", "content": "关公斩颜良于万军之中。"},
+	}}
+	kb.NoteOpening([]string{"c-b", "c-a"})
+
+	got := renderOpening(kb)
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("opening rendered %d line(s), want 2:\n%s", len(lines), got)
+	}
+	// The RANK is what the lines carry: the best-ranked preview comes first.
+	for i, want := range []string{"关公斩颜良", "云长提华雄"} {
+		if !strings.Contains(lines[i], want) {
+			t.Errorf("line %d = %q, want the rank-%d passage (%s)", i+1, lines[i], i+1, want)
+		}
+	}
+	if !strings.Contains(lines[0], "d2") {
+		t.Errorf("the opening does not name the document: %q", lines[0])
+	}
+	// The handle a line prints is the number the registry holds, and the previews are IN the registry
+	// in the order they were shown — the seed is rendered before the session exists, so the pool is
+	// the only place that can hand out a number both halves agree on.
+	if want := []string{"c-b", "c-a"}; !reflect.DeepEqual(kb.SessionEvidenceRefs, want) {
+		t.Fatalf("published registry = %v, want the previews in rank order (%v)", kb.SessionEvidenceRefs, want)
+	}
+	for i, line := range lines {
+		if want := fmt.Sprintf("[ID:%d]", i); !strings.Contains(line, want) {
+			t.Errorf("line %d = %q, want the citation handle %s", i+1, line, want)
+		}
+	}
+
+	// A rank entry the pool no longer holds is skipped rather than rendered as a hole — and it does
+	// not take a handle with it; an empty opening renders nothing at all.
+	kb.NoteOpening([]string{"c-gone", "c-a"})
+	// c-a keeps the number it was published with, and the missing id takes no number at all.
+	again := renderOpening(kb)
+	if !strings.Contains(again, "云长提华雄") || strings.Contains(again, "c-gone") {
+		t.Errorf("renderOpening = %q, want only the chunk the pool holds", again)
+	}
+	if !strings.Contains(again, "[ID:1]") || strings.Count(again, "[ID:") != 1 {
+		t.Errorf("renderOpening = %q, want c-a's published handle and no other line", again)
+	}
+	if got := renderOpening(&Kbinfos{}); got != "" {
+		t.Errorf("an empty opening rendered %q", got)
+	}
+
+	// The list is BOUNDED: the head of the ranking is what the session pays for.
+	big := &Kbinfos{}
+	var ids []string
+	for i := 0; i < openingPreviewMax+5; i++ {
+		id := fmt.Sprintf("c-%02d", i)
+		big.Chunks = append(big.Chunks, map[string]any{"chunk_id": id, "doc_id": "d1", "content": "text " + id})
+		ids = append(ids, id)
+	}
+	big.NoteOpening(ids)
+	if got := strings.Count(renderOpening(big), "\n"); got != openingPreviewMax {
+		t.Errorf("opening rendered %d preview(s), want the cap %d", got, openingPreviewMax)
+	}
+	if len(big.SessionEvidenceRefs) != openingPreviewMax {
+		t.Errorf("opening published %d passage(s), want the cap %d", len(big.SessionEvidenceRefs), openingPreviewMax)
+	}
+}
+
+// TestWhatTheSeedShowedIsInTheCitationRegistry pins the other half of the same fact: the opening's
+// previews are REGISTERED, so an answer written from a preview before any tool call still cites.
+//
+// The nav prefix is the sharper case. Its payloads are whole tool results with no handle printed
+// beside them, and the ladder's retrieve is not a tool LOOP call, so nothing stamped them: measured
+// 2026-09-20 (三国/关羽) the prefix's retrieve brought the ten passages holding every name, the session
+// answered from them on its first turn, and the run shipped a correct answer with 0 passages in the
+// citation registry — not one member citable.
+func TestWhatTheSeedShowedIsInTheCitationRegistry(t *testing.T) {
+	kb := &Kbinfos{Chunks: []map[string]any{
+		{"chunk_id": "c-opening", "doc_id": "d1", "content": "云长提华雄之头，掷于地上。"},
+		{"chunk_id": "c-prefix", "doc_id": "d2", "content": "关公手起刀落，带头连肩，斩于马下。"},
+		{"chunk_id": "c-tool", "doc_id": "d3", "content": "关公斩蔡阳于古城之下。"},
+	}}
+	st := &SessionState{KB: kb}
+
+	// The opening's previews are published while the seed is built, and the session starts from that
+	// registry: its numbering continues the run's instead of restarting at zero.
+	kb.PublishEvidence([]string{"c-opening"})
+	st.loadEvidenceRefs(kb)
+	if want := []string{"c-opening"}; !reflect.DeepEqual(st.EvidenceRefs, want) {
+		t.Fatalf("EvidenceRefs = %v, want the run's registry (%v)", st.EvidenceRefs, want)
+	}
+	// The prefix's passages come next, and their lines carry the number the registry holds.
+	lines := st.seedEvidenceRefs([]string{"c-prefix"}, navPrefixQuoteChars)
+	if len(lines) != 1 || !strings.Contains(lines[0], "[ID:1]") || !strings.Contains(lines[0], "斩于马下") {
+		t.Fatalf("prefix lines = %v, want [ID:1] with the passage's words", lines)
+	}
+	// The next tool result continues the numbering rather than restarting it.
+	st.stampEvidenceRefs([]any{map[string]any{"chunk_id": "c-tool"}})
+	if want := []string{"c-opening", "c-prefix", "c-tool"}; !reflect.DeepEqual(st.EvidenceRefs, want) {
+		t.Fatalf("EvidenceRefs = %v, want %v", st.EvidenceRefs, want)
+	}
+	// The tool loop's own stamps stay in the SESSION until the round hands them over: that merge is
+	// what publishes them (see recordSessionEvidence in the graph), and it must not renumber.
+	if want := []string{"c-opening", "c-prefix"}; !reflect.DeepEqual(kb.SessionEvidenceRefs, want) {
+		t.Fatalf("the run's registry = %v, want the seed's two passages (%v)", kb.SessionEvidenceRefs, want)
+	}
+	kb.PublishEvidence(st.EvidenceRefs)
+	if want := []string{"c-opening", "c-prefix", "c-tool"}; !reflect.DeepEqual(kb.SessionEvidenceRefs, want) {
+		t.Fatalf("after the round's merge the registry = %v, want %v", kb.SessionEvidenceRefs, want)
+	}
+	// A document id (navigate_tree's evidence) is not a passage and gets no handle.
+	if lines := st.seedEvidenceRefs([]string{"doc-abc"}, navPrefixQuoteChars); len(lines) != 0 {
+		t.Errorf("a doc id was numbered: %v", lines)
+	}
+	// Re-registering the same passage keeps its number, so a citation written earlier still resolves.
+	st.seedEvidenceRefs([]string{"c-prefix"}, 0)
+	if want := []string{"c-opening", "c-prefix", "c-tool"}; !reflect.DeepEqual(st.EvidenceRefs, want) {
+		t.Fatalf("EvidenceRefs = %v after a repeat, want %v", st.EvidenceRefs, want)
+	}
+
+	// A SECOND round is where the numbering used to break. Its session must open on the run's registry
+	// — an answer written in round 1 cites round 1's numbers, and the published list is what those
+	// markers are resolved against. Measured 2026-09-20 (三国/关羽): the last round's session had made
+	// no tool calls, so it published only its prefix's eight passages while the answer carried
+	// [ID:45], and every anchored member came back "->(not-published)".
+	round2 := &SessionState{KB: kb}
+	round2.loadEvidenceRefs(kb)
+	if want := []string{"c-opening", "c-prefix", "c-tool"}; !reflect.DeepEqual(round2.EvidenceRefs, want) {
+		t.Fatalf("round 2 started from %v, want the run's registry %v", round2.EvidenceRefs, want)
+	}
+	if n, c, ok := round2.publishEvidenceID("c-tool"); !ok || n != 2 || c["chunk_id"] != "c-tool" {
+		t.Errorf("publishEvidenceID(c-tool) = (%d, %v, %t), want the run's number 2", n, c["chunk_id"], ok)
+	}
+	if len(kb.SessionEvidenceRefs) != 3 {
+		t.Errorf("the run's registry = %v, want no duplicate of a passage it already holds", kb.SessionEvidenceRefs)
+	}
+}
+
+// TestTheLadderSearchesTheQuestionNotTheSeedBlock pins what the navigation ladder probes with.
+//
+// Every rung handed `nav.Direction` to its tool verbatim, and the direction is the QUESTION plus the
+// seed's own scaffolding ("Clues to cover:", the clues, the open part). Retrieval tokenizes what it
+// is given, so the retrieve the ladder ran on the session's behalf searched "Clues", "to" and
+// "cover" beside the question (measured 2026-09-20, 三国/关羽) — and the sanitizer that exists for
+// exactly this was only wired into the MODEL's calls.
+func TestTheLadderSearchesTheQuestionNotTheSeedBlock(t *testing.T) {
+	nav := &NavContext{Direction: "在《三国演义》中，关羽一共杀了多少有姓名的人物？\n\nClues to cover:\n- 关羽 杀\n- 云长 斩\n\nAn earlier round could not establish: 最后一个被杀者"}
+	got := navQuery(nav)
+	if got != "在《三国演义》中，关羽一共杀了多少有姓名的人物？" {
+		t.Errorf("navQuery = %q, want the direction's question", got)
+	}
+	// Every rung uses it — the ladder's own retrieve must not search the scaffolding either.
+	for _, r := range NavRules {
+		if q, ok := r.Args(nav)["query"]; ok {
+			if fmt.Sprint(q) != got && fmt.Sprint(q) != "["+got+"]" {
+				t.Errorf("rule %q searched %v, want %q", r.ID, q, got)
+			}
+		}
+	}
+	// A direction that is only a question passes through unchanged.
+	if got := navQuery(&NavContext{Direction: "巴黎 2019 人口"}); got != "巴黎 2019 人口" {
+		t.Errorf("navQuery = %q, want the question as-is", got)
+	}
+	// No direction at all is not a reason to search the empty string twice.
+	if got := navQuery(nil); got != "" {
+		t.Errorf("navQuery(nil) = %q, want \"\"", got)
+	}
+}
+
+// flakyModel fails a fixed number of Complete calls and then answers: the provider stalls seen in
+// production (`failed to send request`) are transient.
+type flakyModel struct {
+	reply *ModelReply
+	fails int
+	calls int
+}
+
+func (m *flakyModel) Complete(_ context.Context, _ []schema.Message, _ []ToolSpec) (*ModelReply, error) {
+	m.calls++
+	if m.calls <= m.fails {
+		return nil, errors.New("Post \"https://api.example/v1/text/chat\": failed to send request")
+	}
+	return m.reply, nil
+}
+
+// TestAFailedAnswerCallIsRetriedOnce pins the retry the answer turn needs.
+//
+// Measured 2026-09-20 (三国/关羽): `salvage call failed: … failed to send request` cost a run the
+// sixteen-member answer whose evidence the session had already read; the fallback composition named
+// the six members its own budget happened to admit, and that is what the user saw.
+func TestAFailedAnswerCallIsRetriedOnce(t *testing.T) {
+	mdl := &flakyModel{reply: &ModelReply{Content: "<answer>关羽杀了十六人 [ID:0]</answer>"}, fails: 1}
+	s := &SessionState{
+		Messages:     []schema.Message{*schema.UserMessage("关羽杀了多少有姓名的人物？")},
+		Tools:        &Toolset{},
+		Model:        mdl,
+		DeadlineLeft: 40,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "count"}}},
+	}
+	if err := s.finalizeNode(context.Background()); err != nil {
+		t.Fatalf("finalizeNode = %v", err)
+	}
+	if mdl.calls != 2 {
+		t.Fatalf("the answer call ran %d time(s), want the failed one retried once", mdl.calls)
+	}
+	if s.FoundAnswer == nil || !strings.Contains(*s.FoundAnswer, "十六") {
+		t.Errorf("FoundAnswer = %v, want the retried call's answer", s.FoundAnswer)
+	}
+
+	// With nothing left but the answer's own margin, a second attempt would only race the wall.
+	none := &flakyModel{reply: &ModelReply{Content: "<answer>16 [ID:0]</answer>"}, fails: 1}
+	s2 := &SessionState{
+		Messages:     []schema.Message{*schema.UserMessage("q")},
+		Tools:        &Toolset{},
+		Model:        none,
+		DeadlineLeft: minSalvageRetryS + finalizeMarginS,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "count"}}},
+	}
+	_ = s2.finalizeNode(context.Background())
+	if none.calls != 1 {
+		t.Errorf("the answer call ran %d time(s) with only the margin left, want 1", none.calls)
+	}
+}
+
+// TestTheLedgerIsRenderedWholeWhereTheModelDecidesAndAnswers pins the general shape of the record:
+// the notes are the MODEL's (its <state> patches are this loop's scratchpad), they are rendered
+// VERBATIM wherever the model has to decide or answer, and the runtime adds no list of its own.
+//
+// Recall was lost by DERIVING one: a one-line record reading "…华雄、颜良、文丑…+15" asked the model to
+// account for names it had never been shown, and the answer enumerated ten of the nineteen names the
+// derived ledger held (measured 2026-09-20, 三国/关羽). The fix is not a longer derived list — it is not
+// deriving one: what counts as a member is a semantic judgement, and the runtime does not make it.
+func TestTheLedgerIsRenderedWholeWhereTheModelDecidesAndAnswers(t *testing.T) {
+	names := []string{"华雄", "颜良", "文丑", "车胄", "孔秀", "孟坦", "韩福", "卞喜", "王植",
+		"秦琪", "蔡阳", "荀正", "庞德", "夏侯存", "成何", "翟元", "关平", "周仓", "关羽"}
+	vars := make([]Variable, 0, len(names))
+	for i, n := range names {
+		vars = append(vars, Variable{ID: i, Type: "person", Candidate: strPtr(n)})
+	}
+	kb := &Kbinfos{}
+	kb.Admit(func(p *PoolAdmitter) {
+		// A passage that mentions a name the MODEL never wrote down: the runtime must not add it to
+		// the record, and must not score the model for omitting it. Deciding that is the model's job,
+		// from the passages it is shown (see SessionRecord).
+		p.Add(map[string]any{"chunk_id": "c-x", "content": "关羽斩华雄之外，尚有他人。"})
+	})
+	s := &SessionState{
+		KB: kb, BudgetS: 120, DeadlineLeft: 100, Attempts: 2,
+		ParentState:   State{State: vars},
+		SearchQueries: []string{"关羽 斩将 名单"},
+	}
+	rec := s.sessionRecord()
+	if len(rec.Notes) != len(names) {
+		t.Fatalf("notes = %d, want the %d the model wrote", len(rec.Notes), len(names))
+	}
+	// The DECISION carries every note, verbatim — the whole ledger, not a sample of it.
+	ask := continuationAsk(2, 16, rec.Brief(), rec.Verbose())
+	for _, n := range names {
+		if !strings.Contains(ask, n) {
+			t.Errorf("the decision offer does not carry the model's own note %q", n)
+		}
+	}
+	// The per-turn line is counts only, and it never elides the model's own writing.
+	line := rec.Line()
+	if strings.Contains(line, "…") {
+		t.Errorf("the record line elides the model's record: %q", line)
+	}
+	// The passages the run holds are NOT the ledger: what the model did not write down stays unclaimed,
+	// which is exactly why the answer is written from the notes plus the passages it was shown.
+	if got := s.sessionRecord().Notes; len(got) != len(names) {
+		t.Errorf("notes = %d after a passage naming another member, want the %d the model wrote", len(got), len(names))
+	}
+	// Writing a note is what moves the "shown since your last note" counter (see runActionNode).
+	s.notesAtEvidence, s.RetrievedEvidenceIDs = 0, []string{"c-a", "c-b"}
+	if got := s.sessionRecord().ShownSinceNote; got != 2 {
+		t.Errorf("ShownSinceNote = %d, want 2", got)
+	}
+	s.notesAtEvidence = len(s.RetrievedEvidenceIDs)
+	if got := s.sessionRecord().ShownSinceNote; got != 0 {
+		t.Errorf("ShownSinceNote = %d after a note, want 0", got)
 	}
 }

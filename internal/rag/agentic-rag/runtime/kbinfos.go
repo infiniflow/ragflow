@@ -59,15 +59,6 @@ type SearchParams struct {
 	DocScope []string
 	// TopN is the result count. <= 0 selects the configured default.
 	TopN int
-	// SkipReachLedger keeps this search's terms OUT of the reach ledger.
-	//
-	// The ledger is the record's "names you proved reachable and never recorded"
-	// list, and it is read as a to-do list, so what enters it must be a NAME the
-	// caller probed. The runtime's completeness pass queries ask for the actor and
-	// the act words (see RunCompletenessPass), which are not names and are searched
-	// by construction: without the flag every entry is a query word, and not one of them
-	// is a member the round is actually missing.
-	SkipReachLedger bool
 	// Channel is retained for backward compatibility with callers that still
 	// poke the unified HybridSearch with an explicit channel. It is DEPRECATED:
 	// each entry point is now its own function (HybridSearch / VectorSearch /
@@ -92,7 +83,7 @@ type Kbinfos struct {
 	mu      sync.Mutex
 	Chunks  []map[string]any
 	DocAggs []map[string]any
-	// ledgerMu guards the run's SEARCH RECORD (ProbedAbsent / Reached).
+	// ledgerMu guards the run's own records (the compiled-structure locate result, the read ledger).
 	//
 	// It is deliberately NOT mu. The pool lock is held across admit batches, and
 	// whoever holds it is free to write down what the batch asked and answered —
@@ -117,6 +108,7 @@ type Kbinfos struct {
 	//
 	// Guarded by mu, like Chunks: the sessions of a round run concurrently, and this is written
 	// from inside a tool call and read while a tool result is being rendered.
+	openingIDs []string
 	readChunks map[string]bool
 	// docRead is the per-document progress behind readChunks: how many pages of a document have
 	// been delivered, how many distinct chunks, where the last page started, and whether the last
@@ -149,28 +141,17 @@ type Kbinfos struct {
 	// and the answer quotes the bookkeeping verbatim:
 	// ("slot 1 [entity] … (strength=0.90) [terminal=state, evidence_ids=[…]]").
 	Record string
-	// ProbedAbsent is the run's record of NAMED terms a probe asked about and
-	// nothing reached (see RecordProbedAbsent). The pool holds what was found;
-	// this holds what was asked and not found, and the pair is what a rewrite
-	// reads before choosing its next angle. Guarded by ledgerMu.
-	ProbedAbsent []string
-	// Reached is the run's record of NAMED terms a probe asked about and DID
-	// reach, each with the pool chunk that carries it (see RecordReachedTerm):
-	// the confirmed members, with their evidence. Guarded by ledgerMu.
-	Reached []ReachedTerm
 	// setDirection records that this run carries a SET/COUNT direction — a
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
-	// citedChunks are the passages the enumerated items rest on (see NoteCitedChunks).
-	// Guarded by ledgerMu.
-	citedChunks []string
-	// anchoredRefs are the enumerated members with their passages (see NoteAnchoredRefs).
-	// Guarded by ledgerMu.
-	anchoredRefs []AnchoredRef
 	// sufficiencyUnchecked records that the completeness review never ran (see
 	// NoteSufficiencyUnchecked). Guarded by ledgerMu.
 	sufficiencyUnchecked bool
+	// scanLine is the coverage line of the run's scan channel (see NoteScanLine).
+	scanLine string
+	// scanWindows are the windows that scan delivered (see NoteScanWindows).
+	scanWindows []ScanWindow
 	// CiteChunkIDs is the ordered id list of the chunks the final-answer call
 	// rendered as numbered evidence — Python's tools._rag_cite_chunk_ids
 	// (agentic_rag_graph.py:870). The renderer puts the passages behind enumerated
@@ -272,7 +253,7 @@ func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 // holds, and a mutex wait ignores context cancellation, so the run never returns and
 // nothing is logged: the goroutine parks silently.
 //
-// What fn MAY call is the search record (RecordReachedTerm / RecordProbedAbsent):
+// What fn MAY call is the run's own records:
 // those live behind ledgerMu, precisely so the batch that answered a probe can
 // write the answer down while the pool is still held.
 func (k *Kbinfos) Admit(fn func(p *PoolAdmitter)) {
@@ -307,55 +288,6 @@ type PoolAdmitter struct{ k *Kbinfos }
 // logging, all of them only meaningful while a cap existed. They are gone with it: the pool
 // takes what retrieval finds, and what the model READS is decided by the model (progress
 // lines on tool results, list_chunks paging), not by a number here.
-
-// ProbedAbsentTerms returns a copy of the named terms nothing reached, in the
-// order they were first probed.
-func (k *Kbinfos) ProbedAbsentTerms() []string {
-	if k == nil {
-		return nil
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return append([]string(nil), k.ProbedAbsent...)
-}
-
-// ReachedTerm is one confirmed member: the term a probe asked about, and the pool
-// chunk that carries it.
-type ReachedTerm struct {
-	Term    string
-	ChunkID string
-}
-
-// RecordReachedTerm notes a named term that a probe asked about AND came back
-// with, together with the pool chunk that carries it.
-//
-// It is the mirror of RecordProbedAbsent, and the two together are the run's
-// record of its own search: this one is the CONFIRMED MEMBERS, each with the
-// passage that proves it. Two things read it:
-//
-//   - the rewrite context, which shows the rewriter the passage behind each
-//     confirmed member — the wording this text uses for the relation is in those
-//     passages, and so are the names that are still missing;
-//   - the loop, which can then ask whether the LIST is still growing rather than
-//     whether the pool got bigger (a pool that grew by forty passages of the same
-//     famous scene has learned nothing about the list).
-func (k *Kbinfos) RecordReachedTerm(term, chunkID string) {
-	term = strings.TrimSpace(term)
-	if k == nil || term == "" || chunkID == "" {
-		return
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	for _, seen := range k.Reached {
-		if strings.EqualFold(seen.Term, term) {
-			return
-		}
-	}
-	if len(k.Reached) >= reachedTermsMax {
-		return
-	}
-	k.Reached = append(k.Reached, ReachedTerm{Term: term, ChunkID: chunkID})
-}
 
 // MarkSetDirection records that this run carries a SET/COUNT direction.
 //
@@ -412,82 +344,134 @@ func (k *Kbinfos) SufficiencyUnchecked() bool {
 	return k.sufficiencyUnchecked
 }
 
-// NoteCitedChunks records the passages the enumerated items rest on (see
-// runtime.AnchoredItemChunks): the compose prompt puts them in front of the answer, which has to
-// cite one passage per element. Guarded by ledgerMu.
-func (k *Kbinfos) NoteCitedChunks(ids []string) {
+// NoteOpening records the OPENING's ranked union: the order the session is handed at the start
+// (see the fan-out's rankOpening). It is o_1 — the first thing the answer is allowed to look at —
+// and it is a RANKING, not a filter: everything else the opening admitted stays in the pool and
+// reachable through the tools.
+func (k *Kbinfos) NoteOpening(ids []string) {
 	if k == nil {
 		return
 	}
-	k.ledgerMu.Lock()
-	k.citedChunks = append([]string(nil), ids...)
-	k.ledgerMu.Unlock()
+	k.mu.Lock()
+	k.openingIDs = append([]string(nil), ids...)
+	k.mu.Unlock()
 }
 
-// CitedChunks is the passages recorded by NoteCitedChunks, empty when no enumeration wrote items.
-func (k *Kbinfos) CitedChunks() []string {
+// Opening is the ranked preview list, in rank order.
+func (k *Kbinfos) Opening() []string {
 	if k == nil {
 		return nil
 	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return append([]string(nil), k.citedChunks...)
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return append([]string(nil), k.openingIDs...)
 }
 
-// AnchoredRef is one enumerated member and the passage it rests on: the name the answer
-// states, and the chunk the naming node matched that name to.
-type AnchoredRef struct {
-	Name    string
-	ChunkID string
-	// Quote is the words the naming node matched the member to. The compose renders an anchored
-	// member's block from THIS rather than from the whole passage: the evidence budget is spent
-	// per block, so a ~1200-char chunk per member fits only the first handful of them, and the
-	// members past that are members the model cannot see (and so cannot cite).
-	Quote string
-}
-
-// NoteAnchoredRefs records the members behind the cited passages, in table order.
+// scanLine is the scan channel's coverage line (see ScanMatchAny.Line): what the run's declared-probe
+// scan found and how much of it was DELIVERED. It is a fact about delivery, not about the corpus's
+// contents in a semantic sense, so it is handed to the session as-is.
 //
-// The naming node has already matched every member to the passage that states its deed, so
-// the member→passage pointer is the RUNTIME's to know. The compose reads it back through
-// CiteAnchoredMembers to attach a citation to every member the answer states: a model that
-// cites only the handful of blocks it happened to read leaves the rest of the list
-// unreachable, and no prompt can make it cite a block it never saw (the evidence budget
-// admits only the first few whole chunks).
-func (k *Kbinfos) NoteAnchoredRefs(refs []AnchoredRef) {
+// Written by the round's scan before the session starts and read while the seed is built, on the same
+// goroutine — not part of the pool lock's protected state, like CiteChunkIDs.
+var scanLineField = struct{}{}
+
+// NoteScanWindows records what the run's scan DELIVERED (see ScanMatchAny): the windows whose text
+// matches a probe the plan declared. Kept on the pool because the seed renders them and the answer may
+// cite them — they are the enumeration channel's material, and a window the session never sees is a
+// window no answer can enumerate.
+func (k *Kbinfos) NoteScanWindows(w []ScanWindow) {
 	if k == nil {
 		return
 	}
-	k.ledgerMu.Lock()
-	k.anchoredRefs = append([]AnchoredRef(nil), refs...)
-	k.ledgerMu.Unlock()
+	k.scanWindows = append([]ScanWindow(nil), w...)
 }
 
-// AnchoredRefs is the list recorded by NoteAnchoredRefs, empty when nothing was enumerated.
-func (k *Kbinfos) AnchoredRefs() []AnchoredRef {
+// ScanWindows are the windows recorded by NoteScanWindows, empty when no scan ran.
+func (k *Kbinfos) ScanWindows() []ScanWindow {
 	if k == nil {
 		return nil
 	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return append([]AnchoredRef(nil), k.anchoredRefs...)
+	return append([]ScanWindow(nil), k.scanWindows...)
 }
 
-// ReachedTerms returns a copy of the confirmed members and the chunk that carries
-// each.
-func (k *Kbinfos) ReachedTerms() []ReachedTerm {
+// NoteScanLine records the scan's coverage line for this run.
+func (k *Kbinfos) NoteScanLine(line string) {
+	if k == nil {
+		return
+	}
+	k.scanLine = strings.TrimSpace(line)
+}
+
+// ScanLine is the line recorded by NoteScanLine, empty when no scan ran.
+func (k *Kbinfos) ScanLine() string {
+	if k == nil {
+		return ""
+	}
+	return k.scanLine
+}
+
+// ReadIDs are the passages the run has actually READ — deep-read through list_chunks, as opposed to
+// the ones it has only been shown as a search snippet (see readChunks) — in pool order, which is the
+// order they were first seen.
+//
+// It is the evidence half of "answer from what you read": the composition renders these first, and
+// being a fact about tool calls rather than about the text, it needs no reading of the text.
+func (k *Kbinfos) ReadIDs() []string {
 	if k == nil {
 		return nil
 	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return append([]ReachedTerm(nil), k.Reached...)
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	var out []string
+	for _, c := range k.Chunks {
+		id := ChunkIDOf(c)
+		if id == "" || !k.readChunks[id] {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
 }
 
-// reachedTermsMax bounds the confirmed-member ledger (see RecordReachedTerm):
-// it is rendered into the rewrite context, so it may not grow with the number of
-// probes a long round happens to make.
-const reachedTermsMax = 24
+// PublishEvidence gives each id its number in the run's citation registry, in first-seen order,
+// appending the ones the registry does not hold yet, and returns the numbers in the caller's order.
+//
+// The registry belongs to the RUN, not to one round. Each round's session numbers what it shows the
+// model, and the answer's [ID:n] markers are resolved against this list after the run; two rounds
+// used to keep two separate lists — every session numbering from ZERO, and the LAST round's list
+// being the one published — so an answer written in round 1 shipped markers pointing into round 2's
+// eight passages. Measured 2026-09-20 (三国/关羽): `[Citation] anchored 10 member(s), rewrote 0
+// line(s); 华雄->(not-published) 颜良->(not-published) …` for every member, an answer citing [ID:45],
+// and a registry of 8 — the citation count and the markers could not both be right.
+//
+// Not pool-locked state (see the field's note): rounds run one after another, and this is written by
+// the round's session while the concurrent slots have already joined.
+func (k *Kbinfos) PublishEvidence(ids []string) []int {
+	if k == nil {
+		return nil
+	}
+	pos := make(map[string]int, len(k.SessionEvidenceRefs))
+	for i, id := range k.SessionEvidenceRefs {
+		if _, dup := pos[id]; !dup {
+			pos[id] = i
+		}
+	}
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		n, seen := pos[id]
+		if !seen {
+			n = len(k.SessionEvidenceRefs)
+			k.SessionEvidenceRefs = append(k.SessionEvidenceRefs, id)
+			pos[id] = n
+		}
+		out = append(out, n)
+	}
+	return out
+}
 
 // termsNotCarried reports which of terms no chunk's text carries
 // (case-insensitively), preserving the caller's order.
@@ -546,38 +530,6 @@ func termReach(chunks []map[string]any, terms []string) (located []string, count
 	}
 	return located, counts, absent
 }
-
-// RecordProbedAbsent notes a named term that a probe asked about and nothing
-// reached, deduped, under the pool lock.
-//
-// The pool holds what was FOUND; ProbedAbsent holds what was ASKED and not
-// found. Together they are the round's record of its own search, which is the
-// fact a rewrite needs: re-asking a name the corpus already came back empty on
-// is the loop's most common waste, and "these came back empty" is also what
-// tells the model to change the ANGLE (ask for the act instead of the name)
-// rather than to ask the same thing louder.
-func (k *Kbinfos) RecordProbedAbsent(term string) {
-	term = strings.TrimSpace(term)
-	if k == nil || term == "" {
-		return
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	for _, seen := range k.ProbedAbsent {
-		if strings.EqualFold(seen, term) {
-			return
-		}
-	}
-	if len(k.ProbedAbsent) >= probedAbsentMax {
-		// Bounded storage: the record is carried into the rewrite context, so it
-		// may not grow with the number of probes a long round happens to make.
-		return
-	}
-	k.ProbedAbsent = append(k.ProbedAbsent, term)
-}
-
-// probedAbsentMax bounds ProbedAbsent (see RecordProbedAbsent).
-const probedAbsentMax = 16
 
 // DocRead is how far into ONE document the run has read (see Kbinfos.readChunks).
 type DocRead struct {

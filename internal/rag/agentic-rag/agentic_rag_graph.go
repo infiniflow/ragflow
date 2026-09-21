@@ -216,13 +216,29 @@ const (
 // question left for code to answer.
 
 // Fanout search tuning .
+//
+// The OPENING's depth lives here, and it is the same order of magnitude as the grep leg's recall
+// bound (see patternRecallTopN = 200 in runtime/tool_search.go): the opening is a programmatic
+// fan-out, so it does not go through the session's retrieve leg and used to be the narrowest
+// retrieval in the run — 60 candidates per clue, narrowed, then cut to eight. Three clues therefore
+// put ~24 passages in front of a question that needs seventeen members (measured 2026-09-20,
+// 三国/关羽: `named-term seats: 10 named, 8 unreached`, six members in the answer).
+//
+// Depth here costs retrieval, not prompt: the legs are parallel and only the RANKED top of the
+// union is ever delivered (see rankOpening / OpeningPreview); the pool has no ceiling.
 const (
 	// fanoutBM25TopN is the keyword-leg candidate pool.
-	fanoutBM25TopN = 60
+	fanoutBM25TopN = 200
 	// fanoutHybridTopN is the semantic-leg candidate pool.
-	fanoutHybridTopN = 30
+	fanoutHybridTopN = 60
 	// fanoutSemanticQuota caps narrow-BYPASS hits admitted per fan-out.
-	fanoutSemanticQuota = 4
+	fanoutSemanticQuota = 8
+	// OpeningPreview is how many of the ranked union the session is HANDED at the start: the
+	// opening's product is a ranked, bounded preview list (o_1), not a pool the model must search.
+	OpeningPreview = 8
+	// openingRrfK is the reciprocal-rank constant of the fusion (see rankOpening): the standard 60
+	// keeps the head of each leg's ranking meaningful without letting one leg's #1 dominate.
+	openingRrfK = 60.0
 	// evidenceTopUp caps how many of the chunks cited by the channel-0 claim rows to pull
 	// in verbatim. A directed fetch by id, not another recall.
 	evidenceTopUp = 8
@@ -359,6 +375,13 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 		}
 	}
 	plan = dedupe(plan)
+	// The probes the TABLE declared are part of the plan: a member-set slot names the actor and the
+	// words the SOURCE uses for the deed (Variable.Terms/Subject), and combining them is how a passage
+	// phrased in a way no planner query names still gets searched. Nothing read those fields after the
+	// coverage engine went, so the one declaration that exists to reach the source's own wording was
+	// dropped on the floor (measured 2026-09-20, 三国/关羽: the plan was three queries, none of them the
+	// act-word probes the table had already written).
+	plan = dedupe(append(plan, runtime.DeclaredProbes(root)...))
 	if len(plan) == 0 {
 		plan = planFromSlots(root)
 	}
@@ -409,7 +432,34 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
 	// The legs report one level deeper: they are what this prefetch runs, not
 	// sibling steps of it.
-	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN)
+	added, ranking := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN)
+	// The SCAN channel, alongside the ranked legs: the plan's own declared probe terms asked of the
+	// corpus with containment as the match (see runtime.ScanMatchAny). It is gated on the plan
+	// DECLARING member probes — a single-value question declares no act words and never pays for it —
+	// and its hits enter the pool and lead the ranked union, because they are windows a ranking may
+	// have cut (measured 2026-09-20, 三国/关羽: 程远志 ranked 9 with a per-query cap of 8, twice).
+	scanAdded, scanHead, scanLine := scanDeclaredProbes(callCtx, deps, st, logger)
+	added += scanAdded
+	if len(scanHead) > 0 {
+		ranking = append(scanHead, ranking...)
+	}
+	_ = scanLine
+	// The opening's product: the RANKED union. The session is handed its head (see the seed) — the
+	// first thing it looks at is a ranked preview list rather than an unordered pool.
+	if st.KB != nil {
+		st.KB.NoteOpening(ranking)
+	}
+	// The opening's product, in the log: the ranked union's head is what the session reads first, and
+	// until this line existed nothing recorded WHICH passages the opening delivered — so "gold never
+	// reached the previews" could not be told from "the session never read them" (the metric the
+	// opening is judged by, see the fan-out's rankOpening).
+	if head := st.KB.Opening(); len(head) > 0 {
+		if len(head) > openingLogHead {
+			head = head[:openingLogHead]
+		}
+		step(ctx, logger, "Prefetch", "ranked union: %s (head: %s).",
+			runtime.CountOf(len(st.KB.Opening()), "passage"), strings.Join(head, ", "))
+	}
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": 0, "new": added})
 	}
@@ -424,6 +474,65 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	spent := spentS(st.OpeningStarted)
 	step(ctx, logger, "Budget", "the opening used %.0fs of its %.0fs share; %.0fs of the question left, of which %.0fs is the finale's (research room %.0fs).",
 		spent, spent+max(0, st.openingLeftS()), st.RemainingS(), finaleShareS(st.RemainingS()), researchRoomS(st.RemainingS()))
+}
+
+// scanBudgetS is the scan channel's own slice of a round: a keyword recall with containment as the
+// match, bounded so a slow index cannot spend the round on it.
+const scanBudgetS = 15.0
+
+// openingLogHead bounds how many ranked ids the opening's log line names: enough to see the order, not
+// the whole union.
+const openingLogHead = 8
+
+// scanDeclaredProbes runs the scan channel for whatever the plan declared, admits its windows and
+// returns them in front of the ranking.
+//
+// It returns the number of NEW passages admitted, the scan's chunk ids in rank order (the head the
+// session should look at first) and the scan's own coverage line for the log.
+func scanDeclaredProbes(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) (int, []string, string) {
+	if st == nil || st.KB == nil {
+		return 0, nil, ""
+	}
+	terms := runtime.DeclaredProbes(st.SlotTable)
+	if len(terms) == 0 {
+		return 0, nil, ""
+	}
+	acts := runtime.DeclaredActWords(st.SlotTable)
+	res := runtime.ScanMatchAny(ctx, deps.Search, terms, acts, nil, 0)
+	line := res.Line()
+	st.KB.NoteScanLine(line)
+	st.KB.NoteScanWindows(res.Windows)
+	if len(res.Windows) == 0 {
+		step(ctx, logger, "Prefetch", "scan: %s", line)
+		return 0, nil, line
+	}
+	// The windows are snippets of passages the corpus carries: admit them so the session can cite them
+	// (their ids become handles through the pool), and keep their order as the head of the delivery.
+	added := 0
+	ids := make([]string, 0, len(res.Windows))
+	for _, w := range res.Windows {
+		if w.ChunkID == "" {
+			continue
+		}
+		ids = append(ids, w.ChunkID)
+		if c := st.KB.ChunkByID(w.ChunkID); c != nil {
+			continue // already pooled
+		}
+		// The FULL passage goes into the pool, the WINDOW is what the scan delivers: the pool is what
+		// the session may read later (list_chunks), and a window pooled as if it were the passage would
+		// leave the rest of that document unreachable at exactly the place a match was found.
+		admit := w.Full
+		if admit == nil {
+			admit = map[string]any{
+				"chunk_id": w.ChunkID, "content": w.Text, "content_with_weight": w.Text, "doc_id": w.DocID,
+			}
+		}
+		st.KB.Admit(func(p *runtime.PoolAdmitter) { p.Add(admit) })
+		added++
+	}
+	step(ctx, logger, "Prefetch", "scan: %s (documents with the most hits: %s)",
+		line, strings.Join(res.Docs, ", "))
+	return added, ids, line
 }
 
 // spentS is how long ago a phase started, zero when it never did.
@@ -537,6 +646,14 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
 	defer cancel()
 
+	// The scan runs BEFORE each round, not only before the first: the model's own findings from round 1
+	// are in the table by now, and the plan's declared probes are re-asked with what the round learned.
+	// Gated on the plan declaring member probes (see scanDeclaredProbes), so a single-value question
+	// never pays for it. Its budget is its own small slice, taken from the round's clock.
+	scanCtx, cancelScan := context.WithTimeout(callCtx, time.Duration(scanBudgetS*float64(time.Second)))
+	scanDeclaredProbes(runtime.Nested(scanCtx), deps, st, logger)
+	cancelScan()
+
 	res := RunSlotResearchPass(callCtx, ctx, deps.sessionDeps(), st.Question, st, t)
 	if res == nil {
 		// "Nothing to do" is still a ROUND, and the round's growth fact belongs to
@@ -570,9 +687,9 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	// wrote — and the registry its [ID:n] markers index into — are recorded on the pool, where
 	// the terminal composition (which runs outside the graph) can read them.
 	if st.KB != nil {
+		recordSessionEvidence(st.KB, res.EvidenceRefs)
 		if ans := strings.TrimSpace(st.CollectedAnswer); ans != "" {
 			st.KB.SessionAnswer = ans
-			st.KB.SessionEvidenceRefs = res.EvidenceRefs
 			// The fallback composition reads PreSummary as "the research findings". The round
 			// used to render a slot draft for the reviewer to read; with no reviewer, the
 			// findings ARE the answer the session wrote.
@@ -883,12 +1000,6 @@ func composedRecord(kb *runtime.Kbinfos) string {
 		return ""
 	}
 	record := strings.TrimSpace(kb.Record)
-	if ledger := probeLedger(kb); ledger != "" {
-		if record != "" {
-			record += "\n"
-		}
-		record += ledger
-	}
 	if kb.SufficiencyUnchecked() {
 		// The review that judges completeness never produced a verdict (see graph_sca), so the count
 		// is what the evidence supports rather than a checked total.
@@ -897,170 +1008,8 @@ func composedRecord(kb *runtime.Kbinfos) string {
 	return record
 }
 
-// ledgerNonNameMax bounds the "NOT names" line: enough that the run's probing stays visible on
-// the record, few enough that the terms nobody may use do not crowd out the ones they may.
-const ledgerNonNameMax = 10
-
-// probeNameRunes bounds what a probed term can be if it is to pass as a name. The corpus's names
-// are short (华雄, 程远志, 太史慈) and a longer term is a phrase a session built rather than a name
 // it found (荥阳太守王植, 令左右推出斩之).
 const probeNameRunes = 5
-
-// probeLedgerTerms splits the reached terms into the ones that can be a name and the ones that
-// cannot: an act word names the deed, so does a term carrying one, a term with a separator, a space
-// or too many runes is a query, and the actor's own forms are not elements of what he did. What is
-// name-shaped is left to judgement, which is what the section is for.
-func probeLedgerTerms(kb *runtime.Kbinfos, reached []runtime.ReachedTerm) (named []runtime.ReachedTerm, others []string) {
-	// The planner's declaration (the deed's act words, the actor's own forms) is gone with the
-	// coverage engine, so the filter keeps the SHAPE test alone — length, separators, an embedded
-	// space — which is the half that never guessed anything about the question.
-	var acts, actors []string
-	for _, rt := range reached {
-		if probeNameShaped(rt.Term, acts, actors) {
-			named = append(named, rt)
-			continue
-		}
-		others = append(others, rt.Term)
-	}
-	return named, others
-}
-
-// probeNameShaped reports whether a probed term is shaped like a name (see probeLedgerTerms).
-func probeNameShaped(term string, acts, actors []string) bool {
-	t := strings.TrimSpace(term)
-	if t == "" || utf8.RuneCountInString(t) > probeNameRunes {
-		return false
-	}
-	for _, r := range t {
-		if unicode.IsSpace(r) || unicode.IsDigit(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
-			return false
-		}
-	}
-	lowered := strings.ToLower(t)
-	// An act word is rejected even when it is one rune and only contained: a name never carries the
-	// verb of the deed.
-	for _, act := range acts {
-		if act = strings.ToLower(strings.TrimSpace(act)); act != "" && strings.Contains(lowered, act) {
-			return false
-		}
-	}
-	// The actor's forms go through the same predicate as the member set (runtime.IsActorForm).
-	return !runtime.IsActorForm(t, actors)
-}
-
-// probeLedger renders the names the research PROBED — the terms the model itself
-// asked the corpus about, with what came back.
-//
-// It exists because the slots are the model's own bookkeeping and the ledger is
-// the framework's: a run can probe twenty-four terms, get a passage for each, and
-// record eleven of them in a slot, and then the answer is composed from the
-// eleven while the other thirteen exist only inside the pool. Measured
-// (fixrecall2, 2026-09-15): `members=0 reached=24` at the last turn, eleven names
-// in the final record, and 车胄 / 管亥 both proven present by the run's own probes
-// (`carry: 车胄(7) 管亥(3)`) yet absent from the answer — which meanwhile anchored
-// on the model's own PRIOR, delivered through a slot nobody could verify.
-//
-// The wording keeps the two lists apart on purpose. "Reached" is a fact about the
-// corpus; "belongs in the answer" is a judgement the answer still has to make.
-// And a term that was probed with nothing back is a fact about the QUERY — the
-// distinction the whole loop depends on, since reading it as absence is what
-// stops an enumeration short.
-func probeLedger(kb *runtime.Kbinfos) string {
-	if kb == nil {
-		return ""
-	}
-	var b strings.Builder
-	if reached := kb.ReachedTerms(); len(reached) > 0 {
-		// Per-member quotes are for a SET answer, which is the only answer that has
-		// to point at a passage per item. On a value direction they would be prompt
-		// tokens bought for nothing, so the quotes ride the same shape gate as the
-		// rest of the set machinery (the direction declares itself once, see
-		// Kbinfos.MarkSetDirection). The names stay in both cases: they are what the
-		// ledger has always been.
-		quoted := kb.IsSetDirection()
-		named, others := probeLedgerTerms(kb, reached)
-		terms := make([]string, 0, len(named))
-		for _, rt := range named {
-			// The name AND the words that prove it. Without the words the answer has
-			// a list of names and no way to point at a passage for any one of them,
-			// which is what a set answer needs to carry per member: measured
-			// (2026-09-16) an answer that was handed names only reported "21 listed,
-			// four counted but not listed" and cited one evidence RANGE for all of
-			// them, instead of one citation per member.
-			if quoted && len(terms) < ledgerQuoteMembers {
-				if quote := ledgerQuote(kb, rt.ChunkID, rt.Term); quote != "" {
-					terms = append(terms, fmt.Sprintf("%s — %s", rt.Term, quote))
-					continue
-				}
-			}
-			terms = append(terms, rt.Term)
-		}
-		if len(terms) > 0 {
-			fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded; the words behind each name are its evidence, and a member without words is a member nobody can point at): %s",
-				strings.Join(terms, "；"))
-		}
-		if len(others) > 0 {
-			if b.Len() > 0 {
-				b.WriteString("\n")
-			}
-			if len(others) > ledgerNonNameMax {
-				others = append(others[:ledgerNonNameMax], "…")
-			}
-			fmt.Fprintf(&b, "Probed, NOT names (the act words and query-shaped terms this run also asked about — listed so its own probing is visible on the record; do NOT list them as members): %s",
-				strings.Join(others, "；"))
-		}
-	}
-	if absent := kb.ProbedAbsentTerms(); len(absent) > 0 {
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		fmt.Fprintf(&b, "Probed with NOTHING back (a fact about the query, not about the corpus — re-word it or change the angle; this is not \"absent\"): %s",
-			strings.Join(absent, "、"))
-	}
-	return b.String()
-}
-
-// ledgerQuoteRunes bounds one member's quoted evidence, and ledgerQuoteMembers
-// how many members carry a quote. Both are bounded because the ledger is part of
-// the ANSWER prompt: a couple of dozen members at a few dozen runes each is the
-// most a record may spend on evidence before it crowds out the question.
-const (
-	ledgerQuoteRunes   = 40
-	ledgerQuoteMembers = 24
-)
-
-// ledgerQuote is the words behind one reached term: a short window of the pool
-// chunk that carries it, in the reading order of that chunk.
-//
-// The ledger names the members; this is what lets an answer show, member by
-// member, the passage each one rests on — and lets a reader see which member has
-// no words behind it at all.
-func ledgerQuote(kb *runtime.Kbinfos, chunkID, term string) string {
-	c := kb.ChunkByID(chunkID)
-	if c == nil {
-		return ""
-	}
-	text := runtime.ChunkTextOf(c)
-	if text == "" {
-		return ""
-	}
-	runes := []rune(text)
-	start := 0
-	if at := strings.Index(text, term); at > 0 {
-		if r := utf8.RuneCountInString(text[:at]) - ledgerQuoteRunes/3; r > 0 {
-			start = r
-		}
-	}
-	end := min(start+ledgerQuoteRunes, len(runes))
-	if end-start < ledgerQuoteRunes && end == len(runes) {
-		start = max(0, end-ledgerQuoteRunes)
-	}
-	q := strings.TrimSpace(strings.ReplaceAll(string(runes[start:end]), "\n", " "))
-	if q == "" {
-		return ""
-	}
-	return "“" + q + "”"
-}
 
 // recordSource names which block the answer prompt carried, so a log reader can
 // tell "the model had a slot record" from "the model had a prose summary" without
@@ -1782,103 +1731,71 @@ const answerTargetContract = "Answer Target Contract:\n" +
 	"Use bridge entities only as clues, and verify any proposed answer against " +
 	"the evidence. In EXTREME-SELECTION questions (shortest/longest/smallest/" +
 	"largest/most/least/最), compare the alternatives in the evidence and name " +
-	"the EXTREME one rather than the most common or first-listed.\n"
+	"the EXTREME one rather than the most common or first-listed. " +
+	"When the question asks HOW MANY members of a set (how many people X killed, " +
+	"which awards Y won, who were the holders of Z), the LIST is the answer: name " +
+	"every member the evidence supports, cite the passage behind each one, and give " +
+	"the total at the end. A bare number is not an answer, and a member with no " +
+	"passage behind it is left out rather than guessed.\n"
 
-// withCitedChunks puts the passage behind every enumerated item FIRST, then the top-scoring
-// remainder. An enumerated answer cites one passage per element, and those passages are in the pool
-// but not necessarily among the few that score highest: a sixteen-member table whose answer could
-// name only three of them was reading the same six blocks as any other question.
+// recordSessionEvidence copies the session's evidence registry onto the pool: the list of passages
+// the session was SHOWN ([ID:n]), which is what the answer stage resolves its markers against.
 //
-// Members first also means a token budget that truncates can only drop the scored extras, never an
-// element's own passage (see KBPrompt, which stops at the budget).
-func withCitedChunks(ranked []map[string]any, kb *runtime.Kbinfos, cap int) []map[string]any {
+// It is recorded whether or not the session wrote an answer, and an empty list never CLEARS what an
+// earlier round recorded — the registry describes the run, and a session that read nothing has
+// nothing to say about it.
+//
+// It used to be assigned inside the "the session answered" branch of ragAgentNode, so a round that
+// read forty passages and wrote no answer left the pool with no registry at all (measured
+// 2026-09-20, 三国/关羽: 44 passages read, 0 patches, 0 answers — and the answer came back with no
+// citation for a single member).
+func recordSessionEvidence(kb *runtime.Kbinfos, refs []string) {
+	if kb == nil || len(refs) == 0 {
+		return
+	}
+	// MERGE, never replace: the registry is the run's, and a round's answer may cite what an earlier
+	// round showed — replacing it with the last session's list left those markers pointing into
+	// another round's passages (measured 2026-09-20 三国/关羽: an answer citing [ID:45] with a
+	// registry of 8, every anchored member "->(not-published)"). The session starts from this list
+	// (see loadEvidenceRefs), so a merge of its own list is a no-op and the new ids are the round's
+	// own additions.
+	kb.PublishEvidence(refs)
+}
+
+// evidenceOrder puts the passages the run has actually READ first — in the order it read them — then
+// the opening's ranked head, then the rest by score.
+//
+// It is the ANSWER stage's evidence budget, and it is mechanical on purpose: the passages a run paid a
+// tool call for are the ones its answer may cite, and "what the run read" needs no judgement about
+// what those passages mean (see the note on SessionRecord in runtime/session_state_line.go). It used to
+// put the passages behind a RUNTIME-DERIVED member list first — a ledger built by reading names out of
+// the model's queries and substring-matching them against the slots — which is the inference this
+// design removes: a passage the model never saw and never noted is not the run's evidence.
+func evidenceOrder(ranked []map[string]any, kb *runtime.Kbinfos, cap int) []map[string]any {
 	if kb == nil || len(ranked) == 0 {
 		return ranked
 	}
-	cited := make([]map[string]any, 0, len(ranked))
+	material := append(kb.ReadIDs(), kb.Opening()...)
+	out := make([]map[string]any, 0, len(ranked))
 	used := map[string]bool{}
-	for _, id := range kb.CitedChunks() {
+	for _, id := range material {
 		if c := kb.ChunkByID(id); c != nil && !used[id] {
 			used[id] = true
-			cited = append(cited, c)
+			out = append(out, c)
 		}
 	}
+	head := len(out)
 	for _, c := range ranked {
-		if len(cited) >= len(kb.CitedChunks())+cap {
+		if head > 0 && len(out) >= head+cap {
 			break
 		}
 		if id := runtime.ChunkIDOf(c); id != "" && used[id] {
 			continue
 		}
-		cited = append(cited, c)
+		out = append(out, c)
 	}
-	if len(cited) == 0 {
+	if len(out) == 0 {
 		return ranked
-	}
-	return cited
-}
-
-// compactAnchored renders each anchored member's block from the quote the naming node matched it
-// to, leaving every other chunk as it is. The block is what the budget is spent on, so whole
-// passages put only the first handful of members inside the render — and a member outside it has
-// no block number the model could cite. The quote carries the same words the record already
-// states, so no evidence is lost: the passage keeps its place in the pool and in the reference.
-func compactAnchored(chunks []map[string]any, kb *runtime.Kbinfos) []map[string]any {
-	if kb == nil {
-		return chunks
-	}
-	quotes := map[string]string{}
-	for _, ref := range kb.AnchoredRefs() {
-		if ref.ChunkID == "" || ref.Quote == "" {
-			continue
-		}
-		if _, dup := quotes[ref.ChunkID]; !dup {
-			quotes[ref.ChunkID] = ref.Quote
-		}
-	}
-	if len(quotes) == 0 {
-		return chunks
-	}
-	out := make([]map[string]any, 0, len(chunks))
-	for _, c := range chunks {
-		q, ok := quotes[runtime.ChunkIDOf(c)]
-		if !ok {
-			out = append(out, c)
-			continue
-		}
-		cp := make(map[string]any, len(c)+1)
-		for k, v := range c {
-			cp[k] = v
-		}
-		cp["content"] = q
-		out = append(out, cp)
-	}
-	return out
-}
-
-// anchoredPoolEntries rebuilds a pool record for every enumerated member whose passage is NOT in
-// the pool, from the quote the naming node took from that passage.
-//
-// The citation chain is: marker number → position in the published list → the pool entry that id
-// resolves to. A member whose passage is gone therefore cannot be cited at all — the marker is
-// dropped (citePoolIdx answers -1) or opens nothing. Rebuilding the record from the member's own
-// quote keeps that chain whole, and the content it opens is exactly the text the answer states.
-func anchoredPoolEntries(kb *runtime.Kbinfos) []map[string]any {
-	if kb == nil {
-		return nil
-	}
-	var out []map[string]any
-	for _, r := range kb.AnchoredRefs() {
-		id := strings.TrimSpace(r.ChunkID)
-		quote := strings.TrimSpace(r.Quote)
-		if id == "" || quote == "" || kb.ChunkByID(id) != nil {
-			continue
-		}
-		out = append(out, map[string]any{
-			"chunk_id":            id,
-			"content":             quote,
-			"content_with_weight": quote,
-		})
 	}
 	return out
 }
@@ -1907,31 +1824,13 @@ func appendMissingIDs(ids, extra []string) []string {
 func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question string, partial, noEvidence bool) answerPrompt {
 	chunks := []map[string]any{}
 	if kb != nil {
-		// An enumerated member whose passage is no longer in the pool is rebuilt from the quote the
-		// naming node took from it BEFORE anything is rendered or published: the marker's number
-		// indexes the published list and the client opens the pool entry behind it, so a member
-		// whose passage was evicted (the pool cap, or selectEvidence narrowing to another call)
-		// would otherwise lose its citation in the chat pipeline (citePoolIdx answers -1 and the
-		// marker is dropped).
-		if extra := anchoredPoolEntries(kb); len(extra) > 0 {
-			kb.Admit(func(p *runtime.PoolAdmitter) {
-				for _, c := range extra {
-					p.Add(c)
-				}
-			})
-		}
 		chunks = kb.Chunks
 	}
 	ranked := rankByScore(chunks)
-	citeChunks := withCitedChunks(ranked, kb, citeChunkCap)
+	citeChunks := evidenceOrder(ranked, kb, citeChunkCap)
 	if len(citeChunks) == 0 {
 		citeChunks = chunks
 	}
-	// An anchored member's block is rendered from its QUOTE: the budget is spent per block, so a
-	// whole ~1200-char passage per member fits only the first handful of them, and every member
-	// past that one is a member neither the model nor the answer can cite. The quote is the same
-	// words the record states, and the passage itself stays in the pool and in the reference.
-	citeChunks = compactAnchored(citeChunks, kb)
 	maxTokens := d.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = evidenceBudgetTokens
@@ -1957,13 +1856,12 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// (runtime.CiteAnchoredMembers).
 	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
 	if kb != nil {
-		// Only ids the POOL still holds are appended: the chat pipeline resolves a marker by
-		// looking its chunk up in the pool, and a member whose passage is gone would publish a
-		// nil reference entry — the marker is then dropped and the line loses its citation
-		// entirely. A member the pool no longer holds must lose its citation, not break the one
-		// the user can open.
-		present := make([]string, 0, len(kb.CitedChunks()))
-		for _, id := range kb.CitedChunks() {
+		// The published list is the rendered blocks plus the passages the run READ that did not render a
+		// block (the budget admits only the first few whole chunks), so a marker the answer writes for a
+		// passage it read resolves even when that passage holds no block. Only ids the POOL still holds
+		// are appended: a gone passage would publish a nil reference entry, which drops the marker.
+		present := make([]string, 0, len(kb.ReadIDs()))
+		for _, id := range kb.ReadIDs() {
 			if kb.ChunkByID(id) != nil {
 				present = append(present, id)
 			}

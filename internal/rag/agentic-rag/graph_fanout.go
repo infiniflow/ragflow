@@ -18,6 +18,7 @@ package agentic_rag
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 
@@ -61,13 +62,19 @@ import (
 // hit from an earlier one.
 //
 // Returns the number of NEW snippets admitted to the pool.
-func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN int) int {
+// FanoutSearch runs the opening's per-clue retrieval and admits what it finds.
+//
+// It returns how many passages were NEW to the pool, and the RANKED UNION of the legs' results as
+// chunk ids (see rankOpening): the second value is the opening's product — the ordered preview list
+// the session is handed (o_1) — and it is why the legs' depth is not wasted. Returning only the
+// count left the rank order to be re-derived, a second time, by whoever looked at the pool.
+func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN int) (int, []string) {
 	if len(queries) == 0 || st.KB == nil {
-		return 0
+		return 0, nil
 	}
 	sd := deps.Search
 	if sd.Backend == nil {
-		return 0
+		return 0, nil
 	}
 
 	// Dedup against what kbinfos ALREADY holds. There is no room to compute and no early
@@ -90,8 +97,10 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		}
 	}
 	if len(qs) == 0 {
-		return 0
+		return 0, nil
 	}
+	// topN bounds what the CLAIM channel recalls per query (below) and nothing else: the raw
+	// channels' width is their own (fanoutBM25TopN / fanoutHybridTopN).
 	capPerQuery := topN
 	if capPerQuery < 1 {
 		capPerQuery = 1
@@ -111,17 +120,13 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	// Results are written BY INDEX, so the admission order below is the query order whatever the
 	// schedule does — that order is a contract: every fan-out's exact channel is admitted
 	// before any fan-out's semantic channel.
-	type fanoutPair struct {
-		exact    []map[string]any
-		semantic []map[string]any
-	}
 	pairs := make([]fanoutPair, len(qs))
 	var wg sync.WaitGroup
 	for i, q := range qs {
 		wg.Add(1)
 		go func(i int, q string) {
 			defer wg.Done()
-			exact, semantic := fanoutSearchQuery(ctx, sd, q, capPerQuery)
+			exact, semantic := fanoutSearchQuery(ctx, sd, q)
 			pairs[i] = fanoutPair{exact: exact, semantic: semantic}
 		}(i, q)
 	}
@@ -162,7 +167,7 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	for _, q := range qs {
 		select {
 		case <-ctx.Done():
-			return 0
+			return 0, nil
 		default:
 		}
 		if !runtime.DatasetHasCompilation(ctx, sd) {
@@ -224,6 +229,12 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			}
 		}
 	}
+	// The RANKED UNION, computed BEFORE admission order matters (the pool keeps insertion order,
+	// which is a contract for the citation list; the ranking is the opening's product and is
+	// independent of it). Claims lead because they are verbatim-bearing and compact — the same
+	// reason channel 0 admits them first.
+	ranking := rankOpening(qs, pairs, channel0)
+
 	// Channel A across every fan-out first, then channel B.
 	for _, p := range pairs {
 		admit(p.exact)
@@ -231,12 +242,67 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	for _, p := range pairs {
 		admit(p.semantic)
 	}
-	return added
+	return added, ranking
 }
+
+// fanoutPair is one clue's two channels, written BY INDEX by the parallel legs (see FanoutSearch).
+type fanoutPair struct {
+	exact    []map[string]any
+	semantic []map[string]any
+}
+
+// rankOpening fuses the opening's channels into ONE ranked list of chunk ids: reciprocal rank
+// fusion over (clue × channel), claims first.
+//
+// RRF, not a score comparison, because the legs' scores are not comparable — a BM25 score, a vector
+// similarity and a claim's fused rank live on different scales, and the codebase already fuses by
+// reciprocal rank elsewhere (see the claim rows' q_<dim>_vec). The exact (keyword) channel is
+// weighted above the semantic one: it is the deliberate surface probe, and its hits carry the
+// corpus's own wording.
+//
+// This is the opening's o_1: the order the session is handed, and the order that decides which
+// passages it reads first when its clock only affords a couple of calls.
+func rankOpening(queries []string, pairs []fanoutPair, claims [][]map[string]any) []string {
+	scores := make(map[string]float64)
+	order := make([]string, 0, 64)
+	add := func(list []map[string]any, weight float64) {
+		for rank, c := range list {
+			id := runtime.ChunkIDOf(c)
+			if id == "" {
+				continue
+			}
+			if _, seen := scores[id]; !seen {
+				order = append(order, id)
+			}
+			scores[id] += weight / (openingRrfK + float64(rank+1))
+		}
+	}
+	for _, batch := range claims {
+		add(batch, claimChannelWeight)
+	}
+	for _, p := range pairs {
+		add(p.exact, exactChannelWeight)
+	}
+	for _, p := range pairs {
+		add(p.semantic, semanticChannelWeight)
+	}
+	// Stable sort by fused score, ties keeping first-seen order (clue order, then channel, then the
+	// leg's own ranking) so the delivery is reproducible.
+	sort.SliceStable(order, func(i, j int) bool { return scores[order[i]] > scores[order[j]] })
+	return order
+}
+
+// The fusion weights: the keyword channel is the deliberate probe and outranks the semantic
+// complement; a claim row is a verbatim, compact statement of the same text and leads both.
+const (
+	claimChannelWeight    = 3.0
+	exactChannelWeight    = 2.0
+	semanticChannelWeight = 1.0
+)
 
 // fanoutSearchQuery runs one fan-out's two channels. It only retrieves; the
 // caller admits the results.
-func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, capPerQuery int) (exact, semantic []map[string]any) {
+func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string) (exact, semantic []map[string]any) {
 	terms := runtime.QueryToTerms(fq)
 	keyed := runtime.FanoutKeyedTerms(terms)
 	termList := keyed
@@ -256,9 +322,10 @@ func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, ca
 			runtime.NarrowContext{Before: 0, After: 1},
 			fanoutNarrowMaxOutPerChunk, fanoutNarrowMaxOutTotal)
 		exact = res.Kept
-		if len(exact) > capPerQuery {
-			exact = exact[:capPerQuery]
-		}
+		// NO per-query cut here any more. `exact[:capPerQuery]` was the opening's own ceiling: the
+		// legs RECALLED wide and the caller then kept the first eight passages of each clue, so the
+		// union that got ranked was three clues wide and eight deep — measured 2026-09-20 (三国),
+		// the candidates the session could ever reach, before it searched for anything.
 	}
 
 	// Channel B — semantic bypass: HybridSearch gives the vector leg weight 0.3 whenever an

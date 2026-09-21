@@ -1363,16 +1363,22 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		}
 		// Deliver it through the sink so a streaming client still receives the answer the same
 		// way it receives a composed one (in one piece: the session's text is already complete).
+		//
+		// What is delivered is resp.Answer — the text useSessionAnswer just built, prose plus the
+		// numbered evidence the run rendered — not the raw session text. Delivering the raw text
+		// showed the reader the session's own numbers, which the delivered answer had already
+		// dropped (measured 2026-09-21, 三国/关羽: the streamed draft carried [ID:93] beside a
+		// sentence that is not there, while the answer the client ended up with carried none of it).
 		if deps.AnswerSink != nil {
 			deps.AnswerSink.reset()
-			deps.AnswerSink.deliver(ans, false)
+			deps.AnswerSink.deliver(resp.Answer, false)
 		}
 		log := logger
 		if log == nil {
 			log = _LOG
 		}
 		log.Printf("[Agentic RAG] Using the answer the research session wrote (%d character(s)); %d passage(s) in the citation registry.",
-			utf8.RuneCountInString(ans), len(kb.CiteChunkIDs))
+			utf8.RuneCountInString(resp.Answer), len(kb.CiteChunkIDs))
 		return
 	}
 	if why := sessionAnswerBlocked(kb, false); why != "" {

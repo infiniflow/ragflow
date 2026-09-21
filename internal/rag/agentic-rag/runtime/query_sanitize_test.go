@@ -49,6 +49,16 @@ func TestSanitizeRetrievalQueryUnwrapsTheSeedBlock(t *testing.T) {
 		t.Errorf("numbered clue → %q, want %q", got, want)
 	}
 
+	// A label that carries its INSTRUCTION after it is still a label. Match by prefix, or the
+	// instruction becomes the content line and retrieval searches its own words: measured
+	// 2026-09-20 (三国), `[BM25 search] Searching by keyword for "probe"` and asked-nothing-back=10
+	// "Clues、to、cover、turn…" from one copied block.
+	labelWithInstruction := "Clues to cover (turn each into your OWN SHORT probe query — a few words; " +
+		"never pass this block or a whole clue list as a query):\n- 关羽 斩 名单"
+	if got, want := SanitizeRetrievalQuery(labelWithInstruction), "关羽 斩 名单"; got != want {
+		t.Errorf("labelled clue block → %q, want the first clue (%q)", got, want)
+	}
+
 	// An oversized single line is a paragraph, not a query: it is capped rather than sent whole.
 	long := strings.Repeat("关", maxRetrievalQueryRunes+80)
 	if got := SanitizeRetrievalQuery(long); utf8.RuneCountInString(got) != maxRetrievalQueryRunes {

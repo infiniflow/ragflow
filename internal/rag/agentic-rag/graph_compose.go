@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -216,10 +218,20 @@ const (
 	// evidencePoolQuota: claim pseudo-chunk
 	// cap across the whole first prefetch.
 	evidencePoolQuota = 24
-	// rawSnippetQuota: the raw-chunk
-	// admission budget inside the fan-out, so chunk channels cannot crowd out
-	// the denser evidence rows.
-	rawSnippetQuota = 30
+	// rawSnippetQuota: the raw-chunk admission budget inside the fan-out, so chunk channels
+	// cannot crowd out the denser evidence rows.
+	//
+	// The pool has NO ceiling (see runtime/kbinfos.go) and nothing renders it whole (the session's seed
+	// and the closing composition are both capped), so this number never bought prompt budget — it only
+	// decided how much of the opening's recall reached the pool, and the pool is what the session can
+	// still reach once its own calls are spent.
+	//
+	// 400, because the opening's product is its RANKED UNION and this budget may not be the smaller of
+	// the two: measured 2026-09-20 (三国/关羽) 11 clues produced a union of 542 passages and a pool of 120,
+	// so the session could reach a fifth of what the opening had already found — at 30 (the number
+	// before this) it admitted the first thirty passages its legs returned and dropped the rest, which is
+	// exactly where an enumeration's late members live.
+	rawSnippetQuota = 400
 	// citeChunkCap caps chunks rendered as citation reference.
 	citeChunkCap = 6
 	// answerTimeoutS bounds the answer-composition call.
@@ -347,12 +359,52 @@ func sessionAnswerBlocked(kb *runtime.Kbinfos, abstain bool) string {
 	return ""
 }
 
-// useSessionAnswer installs the session's answer and its evidence registry on the pool and the
-// response: kb.CiteChunkIDs is what the chat pipeline resolves the answer's [ID:n] markers
-// against, so it must be the registry the session numbered against, verbatim.
+// citationIndexRE matches a citation marker the model wrote, capturing whatever it put inside.
+var citationIndexRE = regexp.MustCompile(`(\s*)\[ID[:：]\s*([^\]]*?)\s*\]`)
+
+// useSessionAnswer installs the session's answer with the handles the model cited, RENUMBERED COMPACTLY.
+//
+// The model cites with the handles the run printed beside its evidence ([ID:k] — the seed's numbering,
+// which runs over everything the scan retrieved, 265 of them in one 三国/关羽 run). Those numbers belong
+// to the RETRIEVAL, not to the answer: an answer that rests on sixteen passages should not carry
+// [ID:265] in its prose. So the code does one mechanical thing — the first passage the ANSWER cites
+// becomes [ID:0], the next passage it has not cited yet [ID:1], and so on — and kb.CiteChunkIDs is that
+// list, in that order, which is the list the client resolves the markers against.
+//
+// Nothing is matched, inferred or repaired. The model says which passage each claim rests on (that is
+// what the handle it wrote IS), and the code drops only what cannot resolve: a marker that is not a
+// handle at all (a chunk id copied out of a tool result, measured 2026-09-21) and a number that names no
+// passage this run published. An answer that cites nothing gets no citations.
 func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
 	if kb != nil {
-		kb.CiteChunkIDs = append([]string(nil), kb.SessionEvidenceRefs...)
+		refs := kb.SessionEvidenceRefs
+		var cited []string
+		compact := map[string]int{}
+		ans = citationIndexRE.ReplaceAllStringFunc(ans, func(m string) string {
+			sub := citationIndexRE.FindStringSubmatch(m)
+			if len(sub) < 3 {
+				return ""
+			}
+			space := sub[1]
+			n, err := strconv.Atoi(strings.TrimSpace(sub[2]))
+			if err != nil || n < 0 || n >= len(refs) {
+				// Not a handle this run published: a chunk id, a figure, a number that names nothing.
+				return ""
+			}
+			id := refs[n]
+			k, seen := compact[id]
+			if !seen {
+				k = len(cited)
+				compact[id] = k
+				cited = append(cited, id)
+			}
+			return space + fmt.Sprintf("[ID:%d]", k)
+		})
+		if len(cited) > 0 {
+			kb.CiteChunkIDs = cited
+		} else {
+			kb.CiteChunkIDs = append([]string(nil), refs...)
+		}
 	}
 	if resp != nil {
 		resp.Answer = ans
@@ -454,7 +506,7 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 		logger.Printf("[Composing the answer] composition failed: %v", err)
 		return AnswerResult{Answer: answerErrorFallback, Failed: true}
 	}
-	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
+	answer := cleanAnswer(reply.Content)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}
 }
@@ -604,51 +656,9 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	if reply == nil {
 		return AnswerResult{Answer: "", Failed: true}, errors.New("streaming composition returned no reply")
 	}
-	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
+	answer := cleanAnswer(reply.Content)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}, nil
-}
-
-// citeAnchoredMembers attaches the citation of every enumerated member the answer states without
-// one (see runtime.CiteAnchoredMembers). Nil-safe: a run that enumerated nothing, or whose members
-// never reached the published evidence list, comes back unchanged.
-func citeAnchoredMembers(answer string, kb *runtime.Kbinfos) string {
-	if kb == nil {
-		return answer
-	}
-	refs := kb.AnchoredRefs()
-	// textOf lets the step verify a citation against the passage it would open: a marker is
-	// written only for a passage that actually contains the words the answer quotes.
-	textOf := func(id string) string {
-		if c := kb.ChunkByID(id); c != nil {
-			return runtime.ChunkTextOf(c)
-		}
-		return ""
-	}
-	out, overridden := runtime.CitedAnchoredMembers(answer, refs, kb.CiteChunkIDs, textOf)
-	if len(refs) > 0 {
-		// One line per run that says which member was given which marker, and which passage that
-		// marker holds: "the citation opens a passage that does not state this member" is only
-		// answerable from this pairing, and without it a marker and its passage look the same
-		// whether or not they belong together.
-		pos := map[string]int{}
-		for i, id := range kb.CiteChunkIDs {
-			if _, dup := pos[id]; !dup {
-				pos[id] = i
-			}
-		}
-		pairs := make([]string, 0, len(refs))
-		for _, r := range refs {
-			if i, ok := pos[strings.TrimSpace(r.ChunkID)]; ok {
-				pairs = append(pairs, fmt.Sprintf("%s->%d(%s)", r.Name, i, r.ChunkID))
-				continue
-			}
-			pairs = append(pairs, fmt.Sprintf("%s->(not-published)", r.Name))
-		}
-		_LOG.Printf("[Citation] anchored %d member(s), rewrote %d line(s); %s",
-			len(refs), overridden, strings.Join(pairs, " "))
-	}
-	return out
 }
 
 // composeSystem builds the system prompt, applying the precedence rules.

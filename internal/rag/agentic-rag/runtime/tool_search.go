@@ -25,12 +25,42 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service/nlp"
 )
+
+// The retrieval attempt's own bounds: one attempt may take at most this much of the leg's clock,
+// floored so a nearly-spent clock still gets a real attempt (see runSearch's retry).
+const (
+	searchAttemptMaxS = 20.0
+	searchAttemptMinS = 5.0
+)
+
+// searchAttemptBudget is how long ONE retrieval attempt may take: a fixed slice, or half of what the
+// caller's context has left when that is smaller — never the whole of it, because the retry needs room
+// and the leg's clock is the question's.
+func searchAttemptBudget(ctx context.Context) time.Duration {
+	room := searchAttemptMaxS
+	if dl, ok := ctx.Deadline(); ok {
+		if left := time.Until(dl).Seconds(); left/2 < room {
+			room = left / 2
+		}
+	}
+	if room < searchAttemptMinS {
+		room = searchAttemptMinS
+	}
+	return time.Duration(room * float64(time.Second))
+}
+
+// compiledExpansionTimeout bounds the compiled-expansion enrichment (see runSearch step 7). It is a
+// wall on an OPTIONAL step that runs after the leg already has its chunks, so it is short: a dead
+// search backend may cost this and no more. It is a var so a test can hold the whole leg to it
+// without waiting the production number out.
+var compiledExpansionTimeout = 8 * time.Second
 
 // Search tools: the retrieval legs plus the narrowing that runs on top.
 //
@@ -732,8 +762,16 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// from a question whose whole work is coverage. One retry costs one round trip on the
 	// failure path only, and it is a retry of the same request (no re-planning, nothing
 	// cached, nothing narrowed yet).
-	retrieve := func() ([]map[string]any, error) {
-		return deps.Backend.Retrieve(ctx, RetrieveRequest{
+	// attemptCtx bounds ONE attempt: the retry below exists because upstreams fail transiently, and a
+	// first attempt that consumes the leg's whole clock makes the retry pointless while the leg still
+	// reports a failure. Measured 2026-09-20 (三国/关羽): the embedder stalled, the first attempt spent 56
+	// SECONDS of a 75s tool wall, the retry died immediately on `context deadline exceeded`, and the
+	// session's round was gone — the answer it salvaged could name one member of sixteen. Two bounded
+	// attempts beat one unbounded one.
+	retrieve := func(disableVector bool) ([]map[string]any, error) {
+		attemptCtx, cancelAttempt := context.WithTimeout(ctx, searchAttemptBudget(ctx))
+		defer cancelAttempt()
+		return deps.Backend.Retrieve(attemptCtx, RetrieveRequest{
 			Query:                 effectiveQuery,
 			DatasetIDs:            targetIDs,
 			DocScope:              docScope,
@@ -745,18 +783,21 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 			// adapter's keyword-weight inversion does NOT apply to this field.
 			// DisableVectorLeg is the hard switch: no dense leg at all.
 			VectorSimilarityWeight: &opts.weight,
-			DisableVectorLeg:       opts.disableVector,
+			DisableVectorLeg:       opts.disableVector || disableVector,
 			TenantID:               deps.TenantID,
 			MetaDataFilter:         deps.MetaDataFilter,
 			RankFeature:            rankFeature,
 			ExcludeCompiled:        opts.excludeCompiled,
 		})
 	}
-	chunks, err := retrieve()
+	chunks, err := retrieve(false)
 	if err != nil {
-		// Go-only line: the retriever's failure is reported here instead of propagating.
-		logger.Printf("[%s] retrieval failed: %v — retrying once.", opts.logLabel, err)
-		chunks, err = retrieve()
+		// The retry DEGRADES instead of repeating: a disabled dense leg is the one difference that makes
+		// the second attempt worth its time when the embedder is the thing that is down, and the sparse
+		// leg is where the query's own words are. A failed leg used to return nil — so the passage the
+		// keyword half had already matched was discarded with the vector half's failure.
+		logger.Printf("[%s] retrieval failed: %v — retrying once WITHOUT the dense leg.", opts.logLabel, err)
+		chunks, err = retrieve(true)
 	}
 	if err != nil {
 		logger.Printf("[%s] retrieval failed twice: %v", opts.logLabel, err)
@@ -793,11 +834,21 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	chunks = NarrowOrKeep(ctx, chunks, p.Keywords, opts.narrowLabel, logger)
 
 	// 7. Compiled expansion.
+	//
+	// It is an ENRICHMENT of chunks the leg already has, so it gets its own small slice of the clock
+	// rather than the leg's whole context: measured 2026-09-20 (三国/关羽), a dead Elasticsearch sent
+	// this step's per-index queries into failure one after another and the search_chunks call took
+	// 68 SECONDS — a third of the question, spent on an optional enrichment — after which the
+	// session's own answer call lost its race. Bounded, the same failure costs seconds and the leg
+	// returns what it retrieved.
 	if p.UseCompiled && len(chunks) > 0 && deps.Expand != nil {
 		logger.Printf("[%s] Compiled expansion enabled — enriching with page_index/tree/KG navigation.", opts.logLabel)
-		if err := deps.Expand.Expand(ctx, deps.KB, p.Question, p.Keywords, docScope); err != nil {
-			logger.Printf("[%s] compiled expansion failed: %v", opts.logLabel, err)
+		expStarted := time.Now()
+		expCtx, cancelExp := context.WithTimeout(ctx, compiledExpansionTimeout)
+		if err := deps.Expand.Expand(expCtx, deps.KB, p.Question, p.Keywords, docScope); err != nil {
+			logger.Printf("[%s] compiled expansion failed after %.1fs: %v", opts.logLabel, time.Since(expStarted).Seconds(), err)
 		}
+		cancelExp()
 	}
 
 	// What the leg FOUND, reported once, on every path (see reportSearchResult).
@@ -994,22 +1045,10 @@ func retrieveGrepCandidates(
 		}
 		perTerm = append(perTerm, chunks)
 		aggs = append(aggs, docAggs...)
-		// A term searched ON ITS OWN is the caller's probe of ONE individual, so
-		// a passage that carries it is a confirmed member with its evidence —
-		// recorded as such, because the round needs the members (and the passages
-		// behind them), not just the number of chunks it holds.
-		//
-		// Except when the caller IS the runtime: the completeness pass searches the
-		// actor and the act words, which are not names and must not enter the record's
-		// to-do list (see SearchParams.SkipReachLedger).
-		if !bp.SkipReachLedger {
-			for _, c := range chunks {
-				if strings.Contains(strings.ToLower(ChunkTextOf(c)), strings.ToLower(term)) {
-					deps.KB.RecordReachedTerm(term, ChunkIDOf(c))
-					break
-				}
-			}
-		}
+		// What a term searched on its own FOUND is the passages it returned: they are in the pool and
+		// in the caller's result, which is where the model reads them. Whether a passage that carries a
+		// name makes that name a member of anything is the model's judgement, not this loop's — the run
+		// keeps no reach ledger of its own (see the note on SessionRecord in session_state_line.go).
 	}
 
 	seen := make(map[string]bool)
@@ -1045,52 +1084,6 @@ func retrieveGrepCandidates(
 // ProbeSeatTopN bounds how many candidates one term's seat search takes before
 // the window is picked: a seat exists to carry the name, not to rank it.
 const ProbeSeatTopN = 3
-
-// TermSeat runs ONE cheap keyword search for a single named term and returns the
-// passage that carries it, narrowed to that term's own window, or (nil, false)
-// when nothing reached it.
-//
-// This is the retrieval unit an enumeration needs, and it is deliberately not a
-// query SYNTAX: the caller's terms may arrive as an alternation ("A|B|C"), as a
-// space-separated list inside one string, or as a list of query strings, and the
-// seat is the same thing in all three cases. What it replaces is asking for
-// several individuals at once: one ranked search hands its seats to the passages
-// that match MANY of the named terms, so the rarest name — the reason the call
-// was made — is the one that loses: most queries in a call are cut by the per-query cap,
-// and the candidates that did come back were flattened to one hit each, so the rarest names
-// are missing from an answer whose retrieval had returned tens of candidates per query.
-//
-// The term alone is the query, on the keyword leg only: no vector leg, no
-// compiled expansion, no model call — a few hundred milliseconds, which is what
-// lets the caller afford one per named term.
-//
-// The boolean is the OTHER half of the answer: false means this corpus reached
-// nothing for that term, which is a fact about the corpus the run must keep
-// (Kbinfos.RecordProbedAbsent) rather than a failed lookup to retry.
-func TermSeat(ctx context.Context, deps SearchDeps, base SearchParams, term string) ([]map[string]any, bool) {
-	term = strings.TrimSpace(term)
-	if term == "" {
-		return nil, false
-	}
-	sub := base
-	sub.Question = term
-	sub.Keywords = term
-	sub.TopN = ProbeSeatTopN
-	sub.UseCompiled = false
-	chunks, _ := BM25Search(ctx, deps, sub)
-	if len(chunks) == 0 {
-		return nil, false
-	}
-	res := NarrowByTerms(chunks, []string{term}, nil, term,
-		NarrowContext{Before: 1, After: 0}, GrepOutCharsPerChunk, GrepOutTotalChars)
-	if len(res.Kept) > 0 {
-		return res.Kept[:1], true
-	}
-	// The keyword leg returned candidates that do not carry the term: on a
-	// keyword leg that is the corpus answering "not here", so the seat is empty
-	// rather than filled with the nearest passages.
-	return nil, false
-}
 
 // GrepSearch: a keyword-first locate that runs the bm25 leg and then narrows the prose
 // candidates to the term-grep window (regex locate + short line-context).

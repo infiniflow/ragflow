@@ -37,215 +37,37 @@ import (
 // written by the session that read the passages (see routeResearch and the answer contract in
 // runtime/action_session.go), so there is no second rendering for it to agree or disagree with.
 
-// RenderSlotRecord renders the slot table for the ANSWER prompt.
+// RenderSlotRecord renders the run's own record for the ANSWER prompt: the values the model itself
+// wrote into the table, verbatim, and the session's own draft answer labelled for what it is.
 //
-// It is deliberately NOT RenderSlotDraft. The draft exists for the SCA, which
-// verifies a candidate against the passages that produced it, so it carries the
-// machine fields that make that verification possible — the candidate strength,
-// the terminal type, the evidence ids. Handing those to the answer model is a
-// different act with a different failure mode: composing with the draft as
-// "Research Summary (primary evidence)" produces an answer that quotes the
-// bookkeeping verbatim, machine fields and all.
-//
-// So the answer sees the FACTS the research settled — which slot holds what —
-// with no strength, no evidence ids, no clue tails: the evidence ids are already
-// in the evidence block with their citation markers, and the strengths are the
-// runtime's business. The prompt labels the block as the model's own record and
-// tells it not to copy the lines (see answerPromptWithEvidence).
+// It used to reconcile a LIST against a COUNT — "enumerated members across the slots above: N", a
+// "claimed WITHOUT a passage" list, and the warnings that came with them. Every one of those lines was
+// the runtime reading the table's values to decide what counted as a member: a SEMANTIC judgement,
+// made from values whose type the plan chose and whose text is opaque (see the note on SessionRecord in
+// runtime/session_state_line.go). Only the passages can decide between a list and a count, and the
+// answer is the stage that reads them.
 func RenderSlotRecord(slotTable runtime.State, collectedAnswer string) string {
 	var lines []string
-	// Is this record about a SET at all? Everything this function does beyond the
-	// slots themselves — the enumerated size, the count/members warning, the
-	// demotion of the session's own prose — is about reconciling a list with a
-	// count, and a single-value question has neither.
-	//
-	// Rendered ungated, the enumerated line and the prose demotion appear on questions
-	// whose answer is one date or one number, where a "count" computed from a single
-	// value's text is meaningless: one name cut at its separators reads as several
-	// members, and the session's own draft answer is then demoted below a line that does
-	// not apply to it.
-	// The test is what the TABLE HOLDS, not what the planner typed it as: a table with members
-	// in it states its size and demotes a session's prose, while a table whose slots hold values
-	// (one name, one date, one number, one phrase) does neither. Reading the declaration instead
-	// — count / set / list — was the shape half of runtime.Coverage, and it is gone with the
-	// coverage engine: a type word is a label the plan chose, not a fact about the answer, and it
-	// could not tell an enumeration from a count of events.
-	//
-	// The size line additionally needs at least one member to be worth printing, and a member can
-	// only come from a slot that HOLDS members: the waterfall whose name was cut at its separators
-	// is a TEXT slot, contributes no members, and is never counted.
-	// MORE THAN ONE member: one name is a VALUE that happens to be stored as an item, and it is not a
-	// list to reconcile with a count. (The branch that removed the type-word gate learned the same
-	// thing from the other side — a single member was read as evidence of a set and the record then
-	// told a one-name answer to count its members.)
-	enumerating := len(runtime.ItemValues(&slotTable)) > 1
-	if !enumerating && collectedAnswer != "" {
-		// A value record leads with the session's own answer, exactly as it did
-		// before any of this existed (see the note on the demotion below for why the
-		// SET case is different).
-		lines = append(lines, "Candidate answer: "+collectedAnswer)
-		lines = append(lines, "")
-	}
 	for _, v := range slotTable.State {
 		vtype := v.Type
 		if vtype == "" {
 			vtype = "entity"
 		}
-		switch {
-		case memberLine(v) != "":
-			lines = append(lines, fmt.Sprintf("- slot %d [%s]: %s", v.ID, vtype, memberLine(v)))
-		case v.Candidate == nil || *v.Candidate == "":
-			lines = append(lines, fmt.Sprintf("- slot %d [%s]: NOT RESOLVED", v.ID, vtype))
-		default:
+		if v.Candidate != nil && strings.TrimSpace(*v.Candidate) != "" {
 			lines = append(lines, fmt.Sprintf("- slot %d [%s]: %s", v.ID, vtype, *v.Candidate))
+		} else {
+			lines = append(lines, fmt.Sprintf("- slot %d [%s]: NOT RESOLVED", v.ID, vtype))
 		}
-		// Claims that lost the slot comparison (see MergeSlotPatch). They are not
-		// the slot's value, but they are not nothing either: a session produced
-		// them from the same corpus, and a name only in an alternate is a name the
-		// answer has to account for.
+		// Claims that lost the slot comparison (see MergeSlotPatch). They are not the slot's value,
+		// but they are not nothing either: a session produced them from the same corpus.
 		for _, alt := range alternateCandidatesOf(v) {
 			lines = append(lines, "    alternate (claimed by another session, not adopted): "+truncateRunes(alt, 400))
 		}
 	}
-	// The size of the set the slots above ENUMERATE — a fact the answer can take a
-	// number from without trusting anybody's prose.
-	//
-	// A count slot is written by whichever session last touched it, and that
-	// candidate can be a sentence ("约 14 人（华雄、程远志…）"), a stale number, or
-	// one session's claim written before the other sessions' findings were merged.
-	// The members are here in the table either way, so their union is the number
-	// the record can stand behind.
-	if n := enumeratedSize(slotTable); enumerating && n > 0 {
-		lines = append(lines, fmt.Sprintf("- enumerated members across the slots above: %d", n))
-		// A set answer is only as good as what it can point at, member by member. Handed a
-		// list of names and no per-member evidence, an answer counts members it cannot cite
-		// and cites one range for all of them. The citation contract already forbids ranges;
-		// this states it where a set answer is assembled, together with the rule that keeps a
-		// count honest — a member nobody can point at a passage is not counted.
-		lines = append(lines, "State the count and the members TOGETHER: every member you list carries the words behind it (quoted above, or its own [ID:n]) — never one range for the list — and a member you cannot point at a passage for is left out of both the list and the count.")
-		// The names the number above leaves out are listed, so the answer can tell a complete list
-		// from one that is short by a claim nobody could quote.
-		if claims := runtime.UnanchoredItems(&slotTable); len(claims) > 0 {
-			lines = append(lines, fmt.Sprintf(
-				"- claimed WITHOUT a passage in hand (NOT in the %d above — the count may be short by up to %d): %s. Each one is a name somebody asserted and no passage in hand states: find the words that put it in the answer, or leave it out of both the list and the count.",
-				n, len(claims), strings.Join(claims, "、")))
-		}
-		// A count larger than the members it counts is a claim about members that are NOT in
-		// the record, and the answer has to be told that rather than left to reconcile it:
-		// left alone it explains the gap as "more members whose details the material does not
-		// list" — members that never existed.
-		//
-		// The note STATES the disagreement; it does not order which number to take. An order
-		// was tried and reverted: told to take the number from the enumerated members, the
-		// answer took it even when that number had been computed over the wrong slots. A count
-		// can be an over-claim and a list can be incomplete; only the passages decide between
-		// them, and the answer is the stage that reads them.
-		for _, v := range slotTable.State {
-			// A DECLARED number (slots.KindCount / KindRange) compared with the members
-			// above. Text claims no number, so prose can no longer masquerade as a
-			// count here (or as a member list on the other side of the comparison).
-			claimed, ok := v.Typed().Number()
-			if !ok || claimed == n {
-				continue
-			}
-			lines = append(lines, fmt.Sprintf(
-				"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — the count and the members listed disagree. Reconcile them against the evidence before answering: a count larger than the members that are listed is not evidence of members, and a list is only as complete as the passages behind it.",
-				v.ID, v.Type, claimed, n))
-		}
-		// The same disagreement from the other side: a record that enumerates a set and records NO
-		// number at all. The count the question asked for is either missing or sitting as prose in
-		// a slot, and the record then shows a list with nothing to count it by — which is how 14
-		// became an answer to a table that enumerated 16.
-		//
-		// The trigger is the VALUE-level fact (no slot carries a declared number), NOT the planner's
-		// word for a slot: a slot the planner typed "count" but whose session filled with the members
-		// themselves is a slot doing exactly what it was asked, and scolding it by its label is the
-		// kind of type-reading this design removes.
-		if !recordsANumber(slotTable) {
-			lines = append(lines, fmt.Sprintf(
-				"- NOTE: no slot records a number while the slots above enumerate %d — if the question asks for a count, state the count the evidence supports (the members and their words), never one taken from an unchecked claim.",
-				n))
-		}
-	}
-	// A session's own draft answer goes LAST and is labelled for what it is.
-	//
-	// It used to lead the record, and the answer copied it: whatever number a session wrote
-	// in its own prose became the number the answer reported, even when the slots above
-	// enumerated a different one. The prose is one session's recollection, written before the
-	// other sessions' findings were merged into the table above; it is a claim to reconcile
-	// with the members, not the record.
-	//
-	// On a VALUE record there are no members to reconcile against — the prose is the
-	// only candidate answer the record has, so it leads the record instead (see the
-	// top of this function), which is also what every run before the demotion scored
-	// on.
-	if collectedAnswer != "" && enumerating {
-		lines = append(lines, "")
-		// The draft is not a member LIST — copying its prose is how a fifteen-member answer
-		// came out of a seventeen-member record — but the PASSAGES it quotes are evidence
-		// like any other, and a name those passages attribute to the actor is a member even
-		// even when no slot above lists it. A record can enumerate far fewer members than its
-		// own draft quotes the text for, and an answer told that "the members stand" then drops
-		// every one of them. The evidence was in hand; the rule threw it away. So the draft is
-		// demoted as a SOURCE
-		// of members and promoted as evidence: its quotations are the arbiter, and neither
-		// the slots nor the draft decides on its own.
-		lines = append(lines, "One session's own draft answer (UNVERIFIED — written before the other sessions were merged. Its PROSE is not a member list: do not copy its count or its wording. Its QUOTATIONS are evidence like any other: a name those passages attribute to the actor is a member even when no slot above lists it, and a name whose passage attributes the deed to someone else is not. Reconcile the draft with the slots — with the quotations as the arbiter, not either list — and include every member the evidence supports): "+collectedAnswer)
+	if strings.TrimSpace(collectedAnswer) != "" {
+		lines = append(lines, "One session's own draft answer (UNVERIFIED — written before the other sessions were merged. Its PROSE is not the record: reconcile it against the slots above and the passages in evidence, and answer from the evidence): "+collectedAnswer)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// enumeratedSize is how many distinct items the table can point at (runtime.AnchoredItems): one
-// source spells one item several ways, and a set counts entities, not spellings.
-func enumeratedSize(table runtime.State) int { return len(runtime.AnchoredItems(&table)) }
-
-// BuildSlotTable: decompose the question into
-// a slot table, seeding it with the planner's fan-outs.
-//
-// Returns (root, firstQueries) — never an empty root: on failure it degrades to
-// one "aspect" slot per fan-out (or a single "answer" slot for the raw
-// question), so the research pass always has something to work on.
-func BuildSlotTable(ctx context.Context, deps runtime.SessionDeps, question string, fanouts []string, deadlineLeft float64) (runtime.State, []string) {
-	root, firstQueries, err := buildSlotTableFrom(ctx, deps, question, fanouts, deadlineLeft)
-	if err != nil {
-		_LOG.Printf("[SlotTable] initialize_state failed; building from fanouts: %v", err)
-		// _build_slot_table — the exception path keeps the FULL fan-out list as
-		// first_queries; the [:3] cap below belongs to the empty-root path only.
-		if len(fanouts) > 0 {
-			firstQueries = fanouts
-		} else {
-			firstQueries = []string{question}
-		}
-	}
-	if len(root.State) == 0 {
-		queries := fanouts
-		if len(queries) == 0 {
-			queries = []string{question}
-		}
-		vars := make([]runtime.Variable, 0, 4)
-		for i, q := range queries {
-			if i >= 4 {
-				break
-			}
-			vars = append(vars, runtime.Variable{
-				ID:            i,
-				Type:          "aspect",
-				QuestionClues: []string{truncateRunes(q, slotFallbackClueChars)},
-			})
-		}
-		root = runtime.NewState(vars, 0, nil)
-		if len(firstQueries) == 0 {
-			firstQueries = queries
-			if len(firstQueries) > 3 {
-				firstQueries = firstQueries[:3]
-			}
-		}
-	}
-	_LOG.Printf("[SlotTable] built %d slot(s): %s", len(root.State), root.Brief())
-	if len(firstQueries) == 0 {
-		firstQueries = []string{question}
-	}
-	return root, firstQueries
 }
 
 // The batched slot-fill pass used to live here: it clustered the slots that had retrieved
@@ -357,6 +179,55 @@ func PrefillSlotsFromEvidence(slotTable *runtime.State, kb *runtime.Kbinfos) int
 	return filled
 }
 
+// BuildSlotTable: decompose the question into
+// a slot table, seeding it with the planner's fan-outs.
+//
+// Returns (root, firstQueries) — never an empty root: on failure it degrades to
+// one "aspect" slot per fan-out (or a single "answer" slot for the raw
+// question), so the research pass always has something to work on.
+func BuildSlotTable(ctx context.Context, deps runtime.SessionDeps, question string, fanouts []string, deadlineLeft float64) (runtime.State, []string) {
+	root, firstQueries, err := buildSlotTableFrom(ctx, deps, question, fanouts, deadlineLeft)
+	if err != nil {
+		_LOG.Printf("[SlotTable] initialize_state failed; building from fanouts: %v", err)
+		// _build_slot_table — the exception path keeps the FULL fan-out list as
+		// first_queries; the [:3] cap below belongs to the empty-root path only.
+		if len(fanouts) > 0 {
+			firstQueries = fanouts
+		} else {
+			firstQueries = []string{question}
+		}
+	}
+	if len(root.State) == 0 {
+		queries := fanouts
+		if len(queries) == 0 {
+			queries = []string{question}
+		}
+		vars := make([]runtime.Variable, 0, 4)
+		for i, q := range queries {
+			if i >= 4 {
+				break
+			}
+			vars = append(vars, runtime.Variable{
+				ID:            i,
+				Type:          "aspect",
+				QuestionClues: []string{truncateRunes(q, slotFallbackClueChars)},
+			})
+		}
+		root = runtime.NewState(vars, 0, nil)
+		if len(firstQueries) == 0 {
+			firstQueries = queries
+			if len(firstQueries) > 3 {
+				firstQueries = firstQueries[:3]
+			}
+		}
+	}
+	_LOG.Printf("[SlotTable] built %d slot(s): %s", len(root.State), root.Brief())
+	if len(firstQueries) == 0 {
+		firstQueries = []string{question}
+	}
+	return root, firstQueries
+}
+
 // RunSlotResearchPass: drive ONE research round.
 //
 // The round is ONE session — the researcher AND the answerer — seeded with the question, the
@@ -431,12 +302,18 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	}
 	dirText := strings.TrimSpace(question)
 	if len(st.Plan) > 0 {
-		// The block is what to COVER, and it is addressed to the reader, not to the retriever:
-		// the instruction below says so out loud because a model that copies this block into
-		// `retrieve`'s query turns one call into searches for "Clues", "to" and "cover"
-		// (measured 2026-09-20: ~10 such legs in one 三国 round). Retrieval also sanitizes the
-		// block if it arrives anyway (see runtime.SanitizeRetrievalQuery).
-		dirText += "\n\nClues to cover (turn each into your OWN SHORT probe query — a few words; never pass this block or a whole clue list as a query):"
+		// The block is what to COVER, addressed to the reader — and the heading is a PURE label on
+		// its own line.
+		//
+		// It used to carry the instruction in the same line ("Clues to cover (turn each into your
+		// OWN SHORT probe query — a few words; never pass this block…):"), which made the label
+		// unmatchable as a heading and the INSTRUCTION the first content line: a session that
+		// copied the block into `retrieve` handed retrieval the instruction, which then searched
+		// its own words and recorded them as terms asked and absent (measured 2026-09-20 三国:
+		// `[BM25 search] Searching by keyword for "probe"`, and asked-nothing-back=10
+		// "Clues、to、cover、turn…"). The instruction lives in the session's playbook now
+		// (action_run.md), where it costs no query.
+		dirText += "\n\nClues to cover:"
 		for _, c := range st.Plan {
 			if c = strings.TrimSpace(c); c != "" {
 				dirText += "\n- " + c
@@ -597,17 +474,6 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 			"discovered_clues": append([]string(nil), clues...),
 		})
 	}
-
-	// The passages the round's ITEMS rest on go to the pool's citation registry, so the closing
-	// composition can put them IN FRONT of the answer (see runtime.Kbinfos.NoteCitedChunks and
-	// withCitedChunks).
-	//
-	// This call lived in the coverage engine, and the engine's removal deleted it with everything
-	// else — which is how a question whose record held twelve members with the line behind each came
-	// back with nine names and NO citations at all: the registry stayed empty, so the composition
-	// rendered only the top-ranked passages and the passages that actually state the answers were
-	// never shown to the model. Measured 2026-09-20: 9 of 23 answers carried zero [ID:n] markers.
-	noteCitedItems(st.KB, &slotTable)
 
 	record := RenderSlotRecord(slotTable, collected)
 	_LOG.Printf("[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%v",
@@ -775,8 +641,8 @@ func MergeSlotPatch(base, branch runtime.State) *runtime.State {
 			// the method AND the enumerated windows on the first pass and only the method
 			// afterwards, so the recovery round — the one the routing opened because the record
 			// was still short — runs with the enumeration switched off.
-			Terms:   append([]string(nil), v.Terms...),
-			Subject: v.Subject,
+			Terms:    append([]string(nil), v.Terms...),
+			Subjects: v.Subjects,
 		})
 	}
 	if !changed {
@@ -842,19 +708,6 @@ func itemQuote(quote string) string {
 //
 // What replaces it is a STATEMENT the record makes about itself (see RenderSlotRecord): the set is
 // enumerated, and if no slot records a number then the record says so instead of inventing one.
-
-// noteCitedItems hands the passages behind the round's items to the pool's citation registry.
-//
-// It is its own function because the round is not the only thing that has to be right about it: the
-// consumer (withCitedChunks) puts these passages IN FRONT of the answer, and a registry nobody
-// writes is indistinguishable from a question whose items rest on nothing — which is how 9 of 23
-// answers came back with zero [ID:n] markers after the writer was deleted with the coverage engine.
-func noteCitedItems(kb *runtime.Kbinfos, table *runtime.State) {
-	if kb == nil || table == nil {
-		return
-	}
-	kb.NoteCitedChunks(runtime.AnchoredItemChunks(table))
-}
 
 // recordsANumber reports whether any slot holds a DECLARED number (see slots.KindCount /
 // slots.KindRange). It reads the value, never the planner's word for the slot.
