@@ -235,8 +235,8 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 }
 
 // TestDecorateAnswer_LeavesCanonicalMarkers covers P0: the decorator
-// passes canonical [ID:N] markers through unchanged when there are
-// no chunks to cite (so insertCitations is skipped).
+// passes canonical [ID:N] markers through unchanged when quoting is enabled
+// and there are no chunks to cite (so insertCitations is skipped).
 func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
@@ -248,7 +248,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -262,14 +262,14 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 }
 
 // TestDecorateAnswer_RepairNotRunWhenNoQuote covers P0.10: when
-// quote=false, the citation-repair branch is gated off and the
-// answer is preserved verbatim.
+// quote=false, citation markers are removed without rewriting ordinary
+// bracketed numbers.
 func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
 		t.Context(),
-		"see (ID: 12) for details",
+		"<think>Checking[ID:0]##0$$</think>see (ID: 12)[ID:0]##1$$ in [2024] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
 		[]string{"q"},
@@ -283,8 +283,8 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 		nil,
 		false,
 	)
-	if result.Answer != "see (ID: 12) for details" {
-		t.Errorf("quote=false must not repair, got %q", result.Answer)
+	if result.Answer != "<think>Checking</think>see  in [2024] for details" {
+		t.Errorf("quote=false citation cleanup = %q", result.Answer)
 	}
 }
 
@@ -649,7 +649,7 @@ func TestBuildSQLReference_Scalar(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "42" {
 		t.Errorf("buildSQLReference scalar answer = %q, want %q", ans, "42")
@@ -676,7 +676,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "select id, name from t",
 		rows,
-		"sys", "elasticsearch", nil, nil,
+		"sys", "elasticsearch", nil, nil, true,
 	)
 	// No source columns → empty chunks/doc_aggs.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
@@ -789,6 +789,23 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	chunk := chunks[0]
 	if _, has := chunk["vector"]; has {
 		t.Errorf("vector field should be stripped from reference chunks, got %+v", chunk)
+	}
+}
+
+func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kb := map[string]interface{}{
+		"chunks":   []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Source"}},
+	}
+	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
+		nil, 0, false, nil, "", nil, "", nil, true)
+	if result.Reference == nil || len(result.Reference) != 0 {
+		t.Fatalf("disabled citations must explicitly clear references: %#v", result.Reference)
+	}
+	if result.Answer != "Answer" {
+		t.Fatalf("answer changed: %q", result.Answer)
 	}
 }
 
@@ -1405,7 +1422,7 @@ func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "", nil,
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "No results." {
 		t.Errorf("ans = %q, want %q", ans, "No results.")
@@ -1427,7 +1444,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	if !strings.Contains(ans, "Source|") {
 		t.Errorf("expected Source column in answer, got:\n%s", ans)
@@ -1448,6 +1465,17 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 		if cm["dataset_id"] != "kb_a" {
 			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
 		}
+	}
+
+	ans, ref = s.buildSQLReference(
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		rows, "", "elasticsearch", kbs, nil, false,
+	)
+	if strings.Contains(ans, "Source|") || strings.Contains(ans, "##0$$") {
+		t.Errorf("quote=false leaked SQL citations in answer:\n%s", ans)
+	}
+	if len(ref) != 0 {
+		t.Errorf("quote=false reference = %#v, want empty", ref)
 	}
 }
 
@@ -1475,7 +1503,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	ans, ref := s.buildSQLReference(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	// Multi-cell aggregate → renders as a table, not a scalar.
 	if !strings.Contains(ans, "|42|") {
@@ -1498,7 +1526,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select title from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
 		t.Errorf("expected table data in answer, got:\n%s", ans)
@@ -1526,7 +1554,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", nil, fieldMap,
+		rows, "", "elasticsearch", nil, fieldMap, true,
 	)
 	if !strings.Contains(ans, "|My Title|") {
 		t.Errorf("expected translated column name, got:\n%s", ans)
@@ -1545,7 +1573,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if strings.Contains(ans, "T13:24:55") {
 		t.Errorf("expected ISO timestamp stripped, got:\n%s", ans)
@@ -1864,7 +1892,7 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, nil)
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, nil, true)
 	if res.Reference == nil {
 		t.Fatal("a cited answer must carry a reference")
 	}
@@ -1960,6 +1988,7 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 		kbinfos,
 		map[string][]string{"0": {"c9"}},
 		nil,
+		true,
 	)
 	if strings.Contains(res.Answer, "[ID:Slot") {
 		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
@@ -1978,6 +2007,114 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
+	}
+}
+
+func TestAsyncChatHarnessQuote(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	previousHarness := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = previousHarness })
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		req.AnswerSink("Research[ID:", true)
+		req.AnswerSink("0] done", true)
+		for _, delta := range []string{"Answer[", "ID:0", "] end"} {
+			req.AnswerSink(delta, false)
+		}
+		return HarnessResult{
+			Answer:  "Answer[ID:0] end",
+			Chunks:  []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+			DocAggs: []map[string]interface{}{{"doc_id": "d1", "doc_name": "Source"}},
+		}, nil
+	}
+	for _, tt := range []struct {
+		name            string
+		config, request any
+		wantQuote       bool
+	}{
+		{"default enabled", nil, nil, true},
+		{"chat disabled", false, true, false},
+		{"request disabled", true, false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			chat := dialForTest("glm-4-flash@ZHIPU-AI")
+			chat.KBIDs = entity.JSONSlice{"kb-1"}
+			chat.PromptConfig["system"] = "Answer using {knowledge}"
+			chat.PromptConfig["quote"] = tt.config
+			results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+				[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+				map[string]interface{}{"reasoning": 1, "quote": tt.request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var streamed, reasoning strings.Builder
+			var final AsyncChatResult
+			want := "Answer end"
+			if tt.wantQuote {
+				want = "Answer[ID:0] end"
+			}
+			for result := range results {
+				reasoning.WriteString(result.Reasoning)
+				if result.Final {
+					final = result
+				} else {
+					streamed.WriteString(result.Answer)
+					if !strings.HasPrefix(want, streamed.String()) {
+						t.Fatalf("stream leaked citation text: %q", streamed.String())
+					}
+				}
+			}
+			if !final.Final || final.Answer != want || streamed.String() != want {
+				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
+			}
+			if (len(final.Reference) > 0) != tt.wantQuote {
+				t.Fatalf("references=%#v, quote=%v", final.Reference, tt.wantQuote)
+			}
+			if !tt.wantQuote && (final.Reference == nil || strings.Contains(reasoning.String(), "[ID:")) {
+				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
+			}
+		})
+	}
+}
+
+func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	chat.KBIDs = entity.JSONSlice{"kb-1"}
+	chat.PromptConfig["system"] = "Answer using {knowledge}"
+	chat.PromptConfig["empty_response"] = "Nothing found."
+	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+		map[string]interface{}{"quote": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var final AsyncChatResult
+	for result := range results {
+		if result.Final {
+			final = result
+		}
+	}
+	if !final.Final || final.Answer != "Nothing found." {
+		t.Fatalf("final=%+v, want empty-response result", final)
+	}
+	if final.Reference == nil || len(final.Reference) != 0 {
+		t.Fatalf("quote=false reference = %#v, want explicit empty object", final.Reference)
 	}
 }
 
@@ -2061,7 +2198,7 @@ func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil)
+	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil, true)
 	if res.Reference != nil {
 		t.Fatalf("uncited answer must not carry a reference, got %#v", res.Reference)
 	}
@@ -2085,7 +2222,7 @@ func TestDecorateHarnessAnswerCitesThinkBlock(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("<think>Supported by [ID:0].</think>小狼的颜色是灰色的。", kbinfos, nil, []string{"c1"})
+	res := s.decorateHarnessAnswer(" thinkingSupported by [ID:0]. response小狼的颜色是灰色的。", kbinfos, nil, []string{"c1"}, true)
 	if res.Reference == nil {
 		t.Fatal("a think-block citation must carry a reference")
 	}
@@ -2115,7 +2252,7 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:0]。", kbinfos, nil, []string{"c1"})
+	res := s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:0]。", kbinfos, nil, []string{"c1"}, true)
 	if !strings.Contains(res.Answer, "[ID:0]") {
 		t.Fatalf("the marker is the client's index and must survive, got %q", res.Answer)
 	}
@@ -2129,7 +2266,7 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 
 	// The old numbering (a 1-based position) names no entry in a one-passage
 	// reference, so it must be dropped rather than shipped as a dead marker.
-	res = s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:1]。", kbinfos, nil, []string{"c1"})
+	res = s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:1]。", kbinfos, nil, []string{"c1"}, true)
 	if strings.Contains(res.Answer, "[ID:1]") {
 		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
 	}
@@ -2163,6 +2300,7 @@ func TestDecorateHarnessAnswerOrdersReferenceByRenderedOrder(t *testing.T) {
 		kbinfos,
 		nil,
 		[]string{"c3", "c1"},
+		true,
 	)
 	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
 	if len(chunks) != 3 {
@@ -2203,6 +2341,7 @@ func TestDecorateHarnessAnswerDropsOnlyCanonicalMarkers(t *testing.T) {
 		kbinfos,
 		nil,
 		[]string{"c1"},
+		true,
 	)
 	if !strings.Contains(res.Answer, "[2024]") {
 		t.Errorf("prose brackets must survive, got %q", res.Answer)
@@ -2239,6 +2378,7 @@ func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
 		kbinfos,
 		nil,
 		[]string{"c1", "gone", "c3"},
+		true,
 	)
 	if !strings.Contains(res.Answer, "[ID:2]") {
 		t.Fatalf("a marker past the unknown block must survive, got %q", res.Answer)

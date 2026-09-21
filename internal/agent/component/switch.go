@@ -353,10 +353,10 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 
 	// "empty" / "not empty" don't read `right`.
 	if op == "empty" {
-		return isEmptyValue(leftValue(left, state)), nil
+		return isEmptyValue(leftValueForEmpty(left, state)), nil
 	}
 	if op == "not empty" {
-		return !isEmptyValue(leftValue(left, state)), nil
+		return !isEmptyValue(leftValueForEmpty(left, state)), nil
 	}
 
 	right := clause["right"]
@@ -435,6 +435,21 @@ func leftValue(left string, state *runtime.CanvasState) any {
 		return left
 	}
 	return resolved
+}
+
+func leftValueForEmpty(left string, state *runtime.CanvasState) any {
+	if !runtime.VarRefPattern.MatchString(left) {
+		return left
+	}
+	match := runtime.VarRefPattern.FindStringSubmatch(left)
+	if len(match) < 2 {
+		return left
+	}
+	value, err := state.GetVar(match[1])
+	if err != nil {
+		return left
+	}
+	return value
 }
 
 // equalValues compares two any values with a forgiving type coercion

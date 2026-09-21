@@ -218,6 +218,36 @@ func TestCodeExec_ResultExtractsArtifacts(t *testing.T) {
 	}
 }
 
+// TestCodeExec_ResultExtractsArtifactsFromProviderShape pins the
+// extractor against the shape the sandbox providers actually store:
+// collectArtifacts (local.go / ssh.go / self_managed.go) returns
+// []map[string]any, and the extractor must surface that directly as
+// `_ARTIFACTS` in the tool envelope instead of dropping it (the
+// []any assertion alone silently lost every sandbox artifact).
+func TestCodeExec_ResultExtractsArtifactsFromProviderShape(t *testing.T) {
+	t.Parallel()
+
+	// The sandbox providers (local.go / ssh.go / self_managed.go)
+	// store Metadata["artifacts"] as []map[string]any; the extractor
+	// must surface that shape instead of dropping it. The []any
+	// assertion alone silently lost every sandbox artifact.
+	got := extractArtifactList(map[string]any{
+		"artifacts": []map[string]any{
+			{"name": "simple_plot.png", "mime_type": "image/png", "size": 20365, "content_b64": "aGVsbG8="},
+			{"name": "data.csv", "mime_type": "text/csv", "size": 12, "content_b64": "YQpi"},
+		},
+	}, "artifacts")
+	if len(got) != 2 {
+		t.Fatalf("extractArtifactList len = %d, want 2", len(got))
+	}
+	if got[0]["name"] != "simple_plot.png" {
+		t.Errorf("got[0][name] = %v, want simple_plot.png", got[0]["name"])
+	}
+	if got[1]["name"] != "data.csv" {
+		t.Errorf("got[1][name] = %v, want data.csv", got[1]["name"])
+	}
+}
+
 // TestCodeExec_ResultDropsBadArtifactShape ensures the extractor
 // silently drops entries that aren't map[string]any, and entries
 // without a URL or uploadable payload, rather than aborting the run.

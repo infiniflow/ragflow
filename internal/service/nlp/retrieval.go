@@ -1034,12 +1034,18 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 		return chunks
 	}
 
-	// Group child chunks by mom_id
+	// Group child chunks by parent identity and document. The document scope is
+	// required both for new parent IDs and for safe fallback when reading legacy
+	// rows that used hash(mom) without document scope.
 	type childChunk struct {
 		chunk map[string]interface{}
+	}
+	type parentKey struct {
+		momID string
+		docID string
 		kbID  string
 	}
-	momChunks := make(map[string][]childChunk)
+	momChunks := make(map[parentKey][]childChunk)
 	remainingChunks := make([]map[string]interface{}, 0, len(chunks))
 
 	for _, ck := range chunks {
@@ -1049,7 +1055,13 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			continue
 		}
 		kbID, _ := ck["kb_id"].(string)
-		momChunks[momID] = append(momChunks[momID], childChunk{chunk: ck, kbID: kbID})
+		docID, _ := ck["doc_id"].(string)
+		if docID == "" {
+			remainingChunks = append(remainingChunks, ck)
+			continue
+		}
+		key := parentKey{momID: momID, docID: docID, kbID: kbID}
+		momChunks[key] = append(momChunks[key], childChunk{chunk: ck})
 	}
 
 	if len(momChunks) == 0 {
@@ -1059,26 +1071,32 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 
 	// Fetch parent chunks and aggregate
 	vectorSize := 1024
-	for momID, childList := range momChunks {
-		kbIDs := make([]string, 0, len(childList))
-		for _, c := range childList {
-			if c.kbID != "" {
-				kbIDs = append(kbIDs, c.kbID)
-			}
-		}
-		if len(kbIDs) == 0 {
-			kbIDs = append(kbIDs, "")
-		}
-
-		parent, err := docEngine.GetChunk(ctx, indexNames[0], momID, kbIDs)
+	for key, childList := range momChunks {
+		momID := key.momID
+		parentResult, err := docEngine.Search(ctx, &types.SearchRequest{
+			IndexNames:         []string{indexNames[0]},
+			KbIDs:              []string{key.kbID},
+			Limit:              1,
+			IncludeUnavailable: true,
+			Filter: map[string]interface{}{
+				"id":     momID,
+				"doc_id": key.docID,
+			},
+		})
 		if err != nil {
 			common.Warn("Failed to get parent chunk", zap.String("momID", momID), zap.Error(err))
+			for _, child := range childList {
+				remainingChunks = append(remainingChunks, child.chunk)
+			}
 			continue
 		}
-		parentMap, ok := parent.(map[string]interface{})
-		if !ok {
+		if parentResult == nil || len(parentResult.Chunks) == 0 {
+			for _, child := range childList {
+				remainingChunks = append(remainingChunks, child.chunk)
+			}
 			continue
 		}
+		parentMap := parentResult.Chunks[0]
 
 		// Calculate average similarity
 		simBuf := make([]float64, 0, len(childList))

@@ -409,6 +409,15 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
+		// Either the chat setting or the request can disable citations. Resolve
+		// this once before any retrieval path can return early.
+		quote := true
+		if v, ok := kwargs["quote"].(bool); ok {
+			quote = v
+		}
+		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+			quote = quote && promptConfigQuote
+		}
 		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
@@ -421,11 +430,6 @@ func (s *ChatPipelineService) AsyncChat(
 		if len(fieldMap) > 0 && chatModel != nil && len(kbs) > 0 {
 			common.Info("Phase 6: Use SQL to retrieval")
 			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
-			quote := true
-			if v, ok := promptConfig["quote"].(bool); ok {
-				quote = v
-			}
-
 			ans, sqlErr := s.useSQL(
 				ctx, chat, kbs, questions[len(questions)-1], chatModel, fieldMap, quote,
 			)
@@ -693,16 +697,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			if useReasoning && chatModel != nil && len(kbs) > 0 {
-				// Reasoning chat (level 1..4): drive the agentic-RAG harness at
-				// the corresponding mode, mirroring Python's dialog_service →
-				// RAGTools → harness/*.
-				//
-				// The harness 'rag' tool composes the final cited answer itself
-				// (terminal tool, mirroring Python). When it returns a non-empty
-				// Answer we emit that answer directly (decorated per Python's
-				// decorate_answer: references resolved, prompt empty) and stop —
-				// there is no second-generation pass in Phase 10/11. Otherwise
-				// we keep its evidence as kbinfos and fall through.
+				// The harness collects evidence and composes the answer for
+				// reasoning levels 1..4. Apply citation visibility to its stream
+				// and final answer. If no answer is returned, keep the evidence
+				// and continue through the regular generation path.
 				thinkingMode := harnessModeForLevel(reasoningLevel)
 				question := strings.Join(questions, " ")
 				// Stream the answer as the harness composes it (Python
@@ -735,16 +733,17 @@ func (s *ChatPipelineService) AsyncChat(
 				// Engine progress (B) is pushed from concurrent research-slot
 				// goroutines while the final compose runs on the main goroutine, so
 				// serialize the think-framing state machine and the out<-send.
+				var answerFilter, reasoningFilter citationStreamFilter
 				var sinkMu sync.Mutex
+				send := func(ev AsyncChatResult) {
+					select {
+					case out <- ev:
+					case <-ctx.Done():
+					}
+				}
 				sink := func(delta string, isThink bool) {
 					sinkMu.Lock()
 					defer sinkMu.Unlock()
-					send := func(ev AsyncChatResult) {
-						select {
-						case out <- ev:
-						case <-ctx.Done():
-						}
-					}
 					if isThink {
 						if answerStreamed {
 							// Never reopen a thought block after the answer: drop the
@@ -760,6 +759,9 @@ func (s *ChatPipelineService) AsyncChat(
 								StartToThink: true,
 							})
 						}
+						if !quote {
+							delta = reasoningFilter.write(delta)
+						}
 						if delta != "" {
 							send(AsyncChatResult{
 								Reasoning: delta,
@@ -771,6 +773,9 @@ func (s *ChatPipelineService) AsyncChat(
 						return
 					}
 					if harnessThinking {
+						if text := reasoningFilter.flush(); text != "" {
+							send(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
 						harnessThinking = false
 						send(AsyncChatResult{
 							Reference:  map[string]interface{}{},
@@ -781,6 +786,11 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					if delta != "" {
 						answerStreamed = true
+					}
+					if !quote {
+						delta = answerFilter.write(delta)
+					}
+					if delta != "" {
 						send(AsyncChatResult{
 							Answer:    delta,
 							Reference: map[string]interface{}{},
@@ -836,6 +846,11 @@ func (s *ChatPipelineService) AsyncChat(
 				// EndToThink after the Phase 10/11 answer or the Final below.
 				// No-op when no block is open.
 				sink("", false)
+				sinkMu.Lock()
+				if text := answerFilter.flush(); text != "" {
+					send(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+				}
+				sinkMu.Unlock()
 				if hErr != nil {
 					common.Warn("harness retrieval failed", zap.Error(hErr))
 				} else {
@@ -843,7 +858,7 @@ func (s *ChatPipelineService) AsyncChat(
 					if harnessAnswer != "" {
 						common.Info("harness produced final cited answer; short-circuiting",
 							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs)
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs, quote)
 						final.Final = true
 						out <- final
 						return
@@ -1031,13 +1046,17 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
+				finalReference := kbinfos
+				if !quote {
+					finalReference = map[string]interface{}{}
+				}
 				out <- AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
 				}
 				out <- AsyncChatResult{
 					Answer:      emptyResp,
-					Reference:   kbinfos,
+					Reference:   finalReference,
 					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
@@ -1075,13 +1094,6 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Build citation prompt if quoting is enabled.
 		prompt4citation := ""
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
 		if len(knowledges) > 0 && quote {
 			// Python's citation_prompt() (generator.py:226) renders
 			// citation_prompt.md — the full rules with examples, which the agent
@@ -1253,6 +1265,34 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
+			var answerFilter, reasoningFilter citationStreamFilter
+			emit := func(result AsyncChatResult) {
+				if !result.Final && result.Answer != "" {
+					result.AudioBinary = s.synthesizeTTS(ctx, ttsModel, result.Answer)
+				}
+				out <- result
+			}
+			send := func(result AsyncChatResult) {
+				if !quote {
+					// Flush before a boundary so buffered text stays in its section.
+					if result.StartToThink || result.EndToThink || result.Final {
+						if text := reasoningFilter.flush(); text != "" {
+							emit(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
+						if text := answerFilter.flush(); text != "" {
+							emit(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
+					}
+					if !result.Final && (result.Answer != "" || result.Reasoning != "") {
+						result.Answer = answerFilter.write(result.Answer)
+						result.Reasoning = reasoningFilter.write(result.Reasoning)
+						if result.Answer == "" && result.Reasoning == "" {
+							return
+						}
+					}
+				}
+				emit(result)
+			}
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1271,48 +1311,47 @@ func (s *ChatPipelineService) AsyncChat(
 
 						if text == "<think>" {
 							inThink = true
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
-							}
+							})
 							return nil
 						}
 						if text == "</think>" {
 							inThink = false
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
-							}
+							})
 							return nil
 						}
 						if inThink {
 							// Reasoning text — route to Reasoning field so
 							// the SSE handler maps it to
 							// `delta.reasoning_content`.
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Reasoning:   text,
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
-							}
+							})
 						} else {
 							// Regular answer content
-							out <- AsyncChatResult{
-								Answer:      text,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ctx, ttsModel, text),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}
+							send(AsyncChatResult{
+								Answer:    text,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							})
 						}
 						return nil
 					})
@@ -1322,26 +1361,25 @@ func (s *ChatPipelineService) AsyncChat(
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
-								out <- AsyncChatResult{
+								send(AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
 									AudioBinary:  nil,
 									CreatedAt:    float64(time.Now().Unix()),
 									Final:        false,
 									StartToThink: true,
-								}
+								})
 							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+									send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									})
 								}
 							}
 						}
@@ -1350,35 +1388,33 @@ func (s *ChatPipelineService) AsyncChat(
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
-										out <- AsyncChatResult{
-											Answer:      d.Value,
-											Reference:   map[string]interface{}{},
-											AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-											CreatedAt:   float64(time.Now().Unix()),
-											Final:       false,
-										}
+										send(AsyncChatResult{
+											Answer:    d.Value,
+											Reference: map[string]interface{}{},
+											CreatedAt: float64(time.Now().Unix()),
+											Final:     false,
+										})
 									}
 								}
-								out <- AsyncChatResult{
+								send(AsyncChatResult{
 									Answer:      "",
 									Reference:   map[string]interface{}{},
 									AudioBinary: nil,
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 									EndToThink:  true,
-								}
+								})
 							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+									send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									})
 								}
 							}
 						}
@@ -1387,10 +1423,10 @@ func (s *ChatPipelineService) AsyncChat(
 				)
 			}
 			if driverErr != nil {
-				out <- AsyncChatResult{
+				send(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 
@@ -1401,36 +1437,35 @@ func (s *ChatPipelineService) AsyncChat(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					out <- AsyncChatResult{
+					send(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
-					}
+					})
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					out <- AsyncChatResult{
-						Answer:      d.Value,
-						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-						CreatedAt:   float64(time.Now().Unix()),
-						Final:       false,
-					}
+					send(AsyncChatResult{
+						Answer:    d.Value,
+						Reference: map[string]interface{}{},
+						CreatedAt: float64(time.Now().Unix()),
+						Final:     false,
+					})
 				}
 			}
 			// Close reasoning if the stream ended while still in reasoning mode
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				out <- AsyncChatResult{
+				send(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
-				}
+				})
 			}
 
 			// Decorate and yield the final answer.
@@ -1443,7 +1478,7 @@ func (s *ChatPipelineService) AsyncChat(
 			final.Final = true
 			final.AudioBinary = nil
 			timer.Exit(common.PhaseGenerateAnswer)
-			out <- final
+			send(final)
 		} else {
 			// Non-streaming: get the answer synchronously.
 			var answer string
@@ -3072,6 +3107,10 @@ func (s *ChatPipelineService) decorateAnswer(
 			ans = strings.TrimSpace(parts[1])
 		}
 	}
+	if !quote {
+		think = stripCitations(think)
+		ans = stripCitations(ans)
+	}
 
 	var citationIdx map[int]struct{}
 	var refs map[string]interface{}
@@ -3178,10 +3217,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		}
 	}
 
-	// Build refs only when the answer contains a citation that resolves to a
-	// chunk. Retrieved evidence without a citation must not be exposed as a
-	// document reference.
-	if hasKnowledges && len(citationIdx) > 0 {
+	// Include sources only when citations are enabled and at least one citation
+	// actually resolves to a chunk, stripping chunk vectors. Retrieved evidence
+	// without a citation must not be exposed as a document reference.
+	if hasKnowledges && quote && len(citationIdx) > 0 {
 		refs = make(map[string]interface{})
 		for k, v := range kbinfos {
 			refs[k] = v
@@ -3200,6 +3239,8 @@ func (s *ChatPipelineService) decorateAnswer(
 			}
 			refs["chunks"] = chunksFormat(newChunks)
 		}
+	} else if !quote {
+		refs = map[string]interface{}{}
 	}
 
 	// Check for invalid API key errors (outside knowledges guard).
@@ -3276,13 +3317,13 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 }
 
-// decorateHarnessAnswer mirrors Python's rag_agent decorate_answer used on the
-// reasoning>=1 path (dialog_service.py:2092-2137). The harness 'rag' tool
-// already composed the final answer WITH its own [ID:N] citations, so — unlike
-// decorateAnswer for the native async_chat path — we never run insert_citations
-// here. We only resolve the existing markers, repair bad formats, filter
-// doc_aggs to the cited docs, and build the reference from the harness citation
-// pool (chunks stripped of their vectors). Prompt stays empty, matching Python.
+// decorateHarnessAnswer formats the reasoning chat's final answer. The harness
+// 'rag' tool already composed the answer WITH its own [ID:N] citations, so —
+// unlike decorateAnswer for the native async_chat path — we never run
+// insert_citations here. We only resolve the existing markers, repair bad
+// formats, filter doc_aggs to the cited docs, and build the reference from the
+// harness citation pool (chunks stripped of their vectors). Prompt stays empty,
+// matching Python.
 //
 // The answer's [ID:n] markers index the evidence list the compose rendered for
 // the model — harness.Kbinfos.CiteChunkIDs, passed in as citeChunkIDs. That list
@@ -3297,17 +3338,29 @@ func (s *ChatPipelineService) decorateAnswer(
 // returned whenever the pool is non-empty, so an answer the model composed without
 // markers still carries its sources.
 //
-// Precondition for marker n to open passage n: the rendered blocks resolve to pool
-// chunks in order. A block whose id the pool does not know keeps its slot — an empty
-// entry the reference carries — so the later blocks keep their numbers; its own
-// citations are dropped, since the user could not open them.
-func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string) AsyncChatResult {
+// When quote is false the citations are removed entirely and the reference is
+// cleared (see stripCitations).
+func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string, quote bool) AsyncChatResult {
 	think := ""
 	ans := answer
 	if strings.Contains(answer, "</think>") {
 		if parts := strings.Split(answer, "</think>"); len(parts) == 2 {
 			think = parts[0] + "</think>"
 			ans = strings.TrimSpace(parts[1])
+		}
+	}
+
+	// Invalid-key hint (dialog_service.py:2134-2135).
+	if strings.Contains(strings.ToLower(ans), "invalid key") ||
+		strings.Contains(strings.ToLower(ans), "invalid api") {
+		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+	}
+
+	if !quote {
+		return AsyncChatResult{
+			Answer:    stripCitations(think + ans),
+			Reference: map[string]interface{}{},
+			CreatedAt: float64(time.Now().Unix()),
 		}
 	}
 
@@ -3409,12 +3462,6 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		// reference and the shared chunks stay intact.
 		ref["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
 		refs = ref
-	}
-
-	// Invalid-key hint (dialog_service.py:2134-2135).
-	if strings.Contains(strings.ToLower(ans), "invalid key") ||
-		strings.Contains(strings.ToLower(ans), "invalid api") {
-		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
 	}
 
 	return AsyncChatResult{
@@ -3770,23 +3817,6 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
-//
-// StructuredQuery is the exported narrow entrypoint for the agentic-search
-// structured_query tool: translate a natural-language question to SQL over the
-// given tabular KBs and return the answer + reference chunks. It forwards to the
-// internal useSQL with quote=false (the agent tool returns the answer directly,
-// not a cited natural-language response).
-func (s *ChatPipelineService) StructuredQuery(
-	ctx context.Context,
-	chat *entity.Chat,
-	kbs []*entity.Knowledgebase,
-	question string,
-	chatModel *modelModule.ChatModel,
-	fieldMap map[string]interface{},
-) (ans map[string]interface{}, err error) {
-	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
-}
-
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -3888,7 +3918,7 @@ func (s *ChatPipelineService) useSQL(
 	// repair doesn't yield source columns, fall through to the
 	// best-effort answer (matches Python's `returning best-effort
 	// answer` log at line 1221).
-	if !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
+	if quote && !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
 		common.Debug("SQL retrieval: result missing source columns; attempting repair",
 			zap.String("sql", sqlText))
 		expectedCol := expectedDocNameColumn(engineName)
@@ -3924,7 +3954,7 @@ func (s *ChatPipelineService) useSQL(
 	// and best-effort empty refs.
 	answerStr, ref := s.buildSQLReference(
 		ctx, docEngine, tableName, sqlText, rows,
-		sysPrompt, engineName, kbs, fieldMap,
+		sysPrompt, engineName, kbs, fieldMap, quote,
 	)
 	return map[string]interface{}{
 		"answer":    answerStr,
@@ -4638,8 +4668,12 @@ func (s *ChatPipelineService) buildSQLReference(
 	sysPrompt, engineName string,
 	kbs []*entity.Knowledgebase,
 	fieldMap map[string]interface{},
+	quote bool,
 ) (string, map[string]interface{}) {
 	if len(rows) == 0 {
+		if !quote {
+			return "No results.", map[string]interface{}{}
+		}
 		return "No results.", map[string]interface{}{
 			"chunks":   []map[string]interface{}{},
 			"doc_aggs": []interface{}{},
@@ -4650,6 +4684,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	// Scalar shortcut — matches the previous renderSQLAnswer behavior.
 	if len(rows) == 1 && len(rows[0]) == 1 {
 		for _, v := range rows[0] {
+			if !quote {
+				return cleanCellValue(v), map[string]interface{}{}
+			}
 			return cleanCellValue(v), map[string]interface{}{
 				"chunks":   []map[string]interface{}{},
 				"doc_aggs": []interface{}{},
@@ -4662,6 +4699,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	docIDIdx, docNameIdx, kbIDIdx, columns := extractSourceColumnIndexes(rows)
 	expectedCol := expectedDocNameColumn(engineName)
 	hasSrc := len(docIDIdx) > 0 && len(docNameIdx) > 0
+	showSource := quote && hasSrc
 
 	// Build the set of "display column" indices (everything except
 	// doc_id, docnm*, kb_id*). Python uses set subtraction at
@@ -4690,13 +4728,13 @@ func (s *ChatPipelineService) buildSQLReference(
 		header.WriteString(mapColumnName(columns[i], fieldMap))
 		header.WriteString("|")
 	}
-	if hasSrc {
+	if showSource {
 		header.WriteString("Source|")
 	}
 
 	// --- Separator (Python L1285) ---
 	sep := strings.Repeat("|------", len(displayCols)) + "|"
-	if hasSrc {
+	if showSource {
 		sep += "------|"
 	}
 
@@ -4709,7 +4747,7 @@ func (s *ChatPipelineService) buildSQLReference(
 			cells.WriteString(cleanCellValue(r[columns[i]]))
 			cells.WriteString("|")
 		}
-		if hasSrc {
+		if showSource {
 			cells.WriteString(fmt.Sprintf(" ##%d$$|", rowIdx))
 		}
 		// Skip rows that are entirely empty/whitespace (Python's
@@ -4722,6 +4760,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	rowsJoined := stripISOTimestamps(strings.Join(bodyRows, "\n"))
 
 	answer := strings.Join([]string{header.String(), sep, rowsJoined}, "\n")
+	if !quote {
+		return answer, map[string]interface{}{}
+	}
 
 	// --- Reference: chunks + doc_aggs ---
 	ref := map[string]interface{}{

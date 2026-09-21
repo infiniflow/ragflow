@@ -169,6 +169,12 @@ func buildUserFillUpResumeOutput(cpnID string, inputSpec map[string]any, data an
 	}
 	if len(fields) == 1 {
 		for name := range fields {
+			if values, ok := data.(map[string]any); ok {
+				if value, exists := values[name]; exists {
+					out[name] = value
+					return out
+				}
+			}
 			out[name] = data
 		}
 		return out

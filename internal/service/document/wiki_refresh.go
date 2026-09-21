@@ -102,17 +102,18 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 	return ids, nil
 }
 
-func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, datasetID, documentID string) ([]string, error) {
+func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, datasetID, documentID string, includeUnavailable bool) ([]string, error) {
 	ids := make([]string, 0)
 	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
 		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 		result, err := s.docEngine.Search(searchCtx, &enginetypes.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        sourceChunkAvailabilityBatchSize,
-			SelectFields: []string{"id", "compile_kwd"},
-			Filter:       map[string]any{"doc_id": []string{documentID}},
+			IndexNames:         []string{indexName},
+			KbIDs:              []string{datasetID},
+			Offset:             offset,
+			Limit:              sourceChunkAvailabilityBatchSize,
+			SelectFields:       []string{"id", "compile_kwd"},
+			Filter:             map[string]any{"doc_id": []string{documentID}},
+			IncludeUnavailable: includeUnavailable,
 		})
 		cancel()
 		if err != nil {
@@ -141,7 +142,10 @@ func (s *DocumentService) deleteSourceChunks(ctx context.Context, tenantID, data
 		return nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	ids, err := s.loadSourceChunkIDs(ctx, indexName, datasetID, documentID)
+	// Reparse is the migration boundary for parent-child IDs. Include hidden
+	// parent rows so old hash(mom) rows are removed with their children before
+	// new document-scoped rows are written.
+	ids, err := s.loadSourceChunkIDs(ctx, indexName, datasetID, documentID, true)
 	if err != nil || len(ids) == 0 {
 		return err
 	}
