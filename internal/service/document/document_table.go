@@ -49,18 +49,7 @@ func (s *DocumentService) SaveDocumentTableColumns(ctx context.Context, docID st
 		if doc.ParserConfig == nil {
 			doc.ParserConfig = entity.JSONMap{}
 		}
-		seen := make(map[string]struct{}, len(newNames))
-		names := make([]string, 0, len(newNames))
-		for _, n := range newNames {
-			// Keep the name as the parser wrote it: it is the key both the role
-			// lookup and chunk_data use, so trimming or dropping a blank one
-			// would orphan that column's role (rag/app/table.py:590-595).
-			if _, ok := seen[n]; !ok {
-				seen[n] = struct{}{}
-				names = append(names, n)
-			}
-		}
-
+		names, seen := dedupeTableColumnNames(newNames)
 		doc.ParserConfig["table_column_names"] = names
 		doc.ParserConfig["table_column_roles"] = filterTableColumnRoles(doc.ParserConfig["table_column_roles"], seen)
 		return tx.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_config", doc.ParserConfig).Error
@@ -83,16 +72,7 @@ func (s *DocumentService) SaveKBTableState(ctx context.Context, kbID string, nam
 		return nil
 	}
 
-	columns := make([]string, 0, len(names))
-	seen := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		// Same rule as the document's own copy: the published schema must name
-		// the columns exactly as the run indexed them.
-		if _, ok := seen[n]; !ok {
-			seen[n] = struct{}{}
-			columns = append(columns, n)
-		}
-	}
+	columns, _ := dedupeTableColumnNames(names)
 
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var kb entity.Knowledgebase
@@ -115,6 +95,24 @@ func (s *DocumentService) SaveKBTableState(ctx context.Context, kbID string, nam
 	})
 }
 
+// dedupeTableColumnNames keeps the first occurrence of every discovered name and
+// returns it in the shape parser_config stores column lists in — []interface{},
+// the shape a DB round trip yields — together with the set of surviving names.
+// A name is kept exactly as the parser wrote it: it is the key both the role
+// lookup and chunk_data are addressed by, so trimming or dropping a blank one
+// would orphan that column's role (rag/app/table.py:590-595).
+func dedupeTableColumnNames(newNames []string) ([]interface{}, map[string]struct{}) {
+	seen := make(map[string]struct{}, len(newNames))
+	names := make([]interface{}, 0, len(newNames))
+	for _, n := range newNames {
+		if _, ok := seen[n]; !ok {
+			seen[n] = struct{}{}
+			names = append(names, n)
+		}
+	}
+	return names, seen
+}
+
 // filterTableColumnRoles keeps only the roles whose column survives a file's own
 // schema, so a role configured against another file's column cannot reach
 // ingestion through this document's config. A value that is not a role map — the
@@ -122,18 +120,10 @@ func (s *DocumentService) SaveKBTableState(ctx context.Context, kbID string, nam
 // resolver reads as "no column carries a role".
 func filterTableColumnRoles(raw any, columns map[string]struct{}) map[string]interface{} {
 	filtered := make(map[string]interface{})
-	switch roles := raw.(type) {
-	case map[string]interface{}:
-		for column, role := range roles {
-			if _, exists := columns[column]; exists {
-				filtered[column] = role
-			}
-		}
-	case map[string]string:
-		for column, role := range roles {
-			if _, exists := columns[column]; exists {
-				filtered[column] = role
-			}
+	roles, _ := raw.(map[string]interface{})
+	for column, role := range roles {
+		if _, exists := columns[column]; exists {
+			filtered[column] = role
 		}
 	}
 	return filtered

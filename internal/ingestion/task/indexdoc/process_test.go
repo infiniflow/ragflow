@@ -521,16 +521,19 @@ func TestResolveTableProfile_RootTier(t *testing.T) {
 	if len(profile.Roles) != 2 {
 		t.Errorf("roles = %#v, want 2", profile.Roles)
 	}
-	if len(profile.Columns) != 2 {
-		t.Errorf("columns = %#v, want 2", profile.Columns)
+	if names := ResolveTableColumnNames(cfg); len(names) != 2 {
+		t.Errorf("names = %#v, want 2", names)
 	}
 }
 
-func TestResolveTableProfile_RootWriterShapes(t *testing.T) {
+// The root keys arrive from parser_config JSON, so every shape this test states
+// is one a JSON round trip yields, and a role the vocabulary does not know
+// classifies as excluded rather than as the default.
+func TestResolveTableProfile_RootVocabulary(t *testing.T) {
 	cfg := map[string]interface{}{
 		"table_column_mode":  "auto",
-		"table_column_roles": map[string]string{"col1": "both", "col2": "Both"},
-		"table_column_names": []string{"col1", "col2"},
+		"table_column_roles": map[string]interface{}{"col1": "both", "col2": "Both"},
+		"table_column_names": []interface{}{"col1", "col2"},
 	}
 	profile := ResolveTableProfile(cfg)
 	if profile == nil {
@@ -543,8 +546,8 @@ func TestResolveTableProfile_RootWriterShapes(t *testing.T) {
 		t.Errorf("roles = %v, want col1 %q and an out-of-vocabulary value %q",
 			got, common.ColumnRoleBoth, common.ColumnRoleNone)
 	}
-	if !reflect.DeepEqual(profile.Columns, []string{"col1", "col2"}) {
-		t.Errorf("columns = %v, want [col1 col2]", profile.Columns)
+	if names := ResolveTableColumnNames(cfg); !reflect.DeepEqual(names, []string{"col1", "col2"}) {
+		t.Errorf("names = %v, want [col1 col2]", names)
 	}
 }
 
@@ -553,8 +556,8 @@ func TestResolveTableProfile_ComponentTier(t *testing.T) {
 		"Parser:B": map[string]interface{}{
 			"spreadsheet": map[string]interface{}{
 				"column_mode":  "manual",
-				"column_roles": map[string]string{"age": "Metadata"},
-				"column_names": []string{"name", "age"},
+				"column_roles": map[string]interface{}{"age": "Metadata"},
+				"column_names": []interface{}{"name", "age"},
 			},
 		},
 		"Parser:A": map[string]interface{}{
@@ -575,8 +578,8 @@ func TestResolveTableProfile_ComponentTier(t *testing.T) {
 	}
 	// The column list is its own axis, so the names the other entry states are
 	// still the published schema.
-	if !reflect.DeepEqual(profile.Columns, []string{"name", "age"}) {
-		t.Errorf("columns = %v, want [name age]", profile.Columns)
+	if names := ResolveTableColumnNames(nested); !reflect.DeepEqual(names, []string{"name", "age"}) {
+		t.Errorf("names = %v, want [name age]", names)
 	}
 }
 
@@ -604,9 +607,6 @@ func TestResolveTableProfile_SkipsEmptySpreadsheetEntry(t *testing.T) {
 	}
 	if len(profile.Roles) != 1 || profile.Roles["age"] != common.ColumnRoleMetadata {
 		t.Errorf("roles = %v, want age=metadata", profile.Roles)
-	}
-	if len(profile.Columns) != 0 {
-		t.Errorf("columns = %v, want none", profile.Columns)
 	}
 
 	// A component that states no mode and no roles leaves no profile at all.
@@ -644,8 +644,8 @@ func TestResolveTableProfile_PublishedSchemaIsNotIntent(t *testing.T) {
 	if len(profile.Roles) != 1 || profile.Roles["age"] != common.ColumnRoleMetadata {
 		t.Errorf("roles = %#v, want age=metadata", profile.Roles)
 	}
-	if !reflect.DeepEqual(profile.Columns, []string{"name", "age"}) {
-		t.Errorf("columns = %v, want the published schema", profile.Columns)
+	if names := ResolveTableColumnNames(cfg); !reflect.DeepEqual(names, []string{"name", "age"}) {
+		t.Errorf("names = %v, want the published schema", names)
 	}
 }
 

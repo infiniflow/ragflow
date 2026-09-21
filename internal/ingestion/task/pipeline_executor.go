@@ -300,7 +300,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 			if s.taskCtx.Doc.KbID != "" && engine.StoresTableChunkData(engine.GetEngineType()) {
 				profile := indexdoc.ResolveTableProfile(parserConfigForTable)
 				if profile == nil {
-					profile = indexdoc.NewTableProfile(common.TableColumnModeAuto)
+					profile = indexdoc.NewAutoTableProfile()
 				}
 				fieldMapUpdates = indexdoc.BuildFieldMap(profile, names)
 				if fieldMapUpdates == nil {
@@ -1295,11 +1295,10 @@ func (s *PipelineExecutor) applyTableColumnOverride(parserConfig map[string]inte
 	// The resolved configuration is per-run state: work on a copy so the task
 	// context's document configuration is never rewritten by a run.
 	parserConfig = cloneParserConfig(parserConfig)
-	parserConfig = injectTableColumnOverride(parserConfig, dsl)
 	if s.taskCtx.KB.ParserConfig != nil {
 		parserConfig = resolveTableColumnSettings(parserConfig, map[string]interface{}(s.taskCtx.KB.ParserConfig))
-		parserConfig = injectTableColumnOverride(parserConfig, dsl)
 	}
+	parserConfig = injectTableColumnOverride(parserConfig, dsl)
 	return parserConfig
 }
 
@@ -1568,18 +1567,5 @@ func tableColumnNamesFromFileMap(raw any) []string {
 	if !ok {
 		return nil
 	}
-	switch names := fileMap["table_column_names"].(type) {
-	case []string:
-		return names
-	case []interface{}:
-		out := make([]string, 0, len(names))
-		for _, n := range names {
-			if s, ok := n.(string); ok && strings.TrimSpace(s) != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
+	return common.NormalizeTableColumnNames(fileMap["table_column_names"])
 }

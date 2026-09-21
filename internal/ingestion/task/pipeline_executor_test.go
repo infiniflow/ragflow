@@ -1774,6 +1774,15 @@ func TestTableColumnNamesFromPayload(t *testing.T) {
 	if got := tableColumnNamesFromPayload(map[string]any{}); len(got) != 0 {
 		t.Errorf("missing file must yield nil, got %v", got)
 	}
+	// A run's in-process output and the same list reloaded from JSON must yield
+	// the same columns, blank ones included: a delimited header may legitimately
+	// name a column "", and that is a column chunk_data is stored under.
+	for _, payload := range []any{[]string{"A", ""}, []interface{}{"A", ""}} {
+		out := map[string]any{"file": map[string]any{"table_column_names": payload}}
+		if got := tableColumnNamesFromPayload(out); len(got) != 2 || got[1] != "" {
+			t.Errorf("%T = %q, want [A \"\"]", payload, got)
+		}
+	}
 }
 
 // The terminal payload of a real run carries no top-level file map: the chunker

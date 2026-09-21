@@ -93,9 +93,7 @@ func TestValidateTableColumnSettings(t *testing.T) {
 		{"legacy vectorize alias", map[string]interface{}{"table_column_roles": map[string]interface{}{"a": "vectorize"}}},
 		{"empty mode means unset", map[string]interface{}{"table_column_mode": ""}},
 		{"nil values", map[string]interface{}{"table_column_mode": nil, "table_column_roles": nil}},
-		{"string-valued roles map", map[string]interface{}{"table_column_roles": map[string]string{"a": "both"}}},
 		{"names list", map[string]interface{}{"table_column_names": []interface{}{"a", "b"}}},
-		{"names as []string", map[string]interface{}{"table_column_names": []string{"a"}}},
 		{"empty names list", map[string]interface{}{"table_column_names": []interface{}{}}},
 		// Python's dict[str, Literal[...]] accepts an empty key; the runtime never
 		// matches it against a real column, so it is not an error.

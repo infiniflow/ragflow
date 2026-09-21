@@ -232,21 +232,13 @@ func processChunkPositions(ck map[string]any) {
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
 	profile := ResolveTableProfile(parserConfig)
 	if profile == nil {
-		profile = NewTableProfile(common.TableColumnModeAuto)
+		profile = NewAutoTableProfile()
 	}
-	cols := profile.Columns
+	cols := ResolveTableColumnNames(parserConfig)
 	if len(cols) == 0 {
 		for _, ck := range chunks {
-			if names, ok := ck["table_column_names"].([]string); ok && len(names) > 0 {
+			if names := common.NormalizeTableColumnNames(ck["table_column_names"]); len(names) > 0 {
 				cols = names
-				break
-			}
-			if names, ok := ck["table_column_names"].([]interface{}); ok && len(names) > 0 {
-				for _, n := range names {
-					if s, ok := n.(string); ok {
-						cols = append(cols, s)
-					}
-				}
 				break
 			}
 		}
@@ -340,12 +332,10 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 	}
 	modeStr, _ := parserConfig["table_column_mode"].(string)
 	roles := parseTableColumnRoles(parserConfig["table_column_roles"])
-	columns := ResolveTableColumnNames(parserConfig)
 	if modeStr != "" || len(roles) > 0 {
 		return &TableProfile{
-			Mode:    common.NormalizeTableColumnMode(modeStr),
-			Roles:   roles,
-			Columns: columns,
+			Mode:  common.NormalizeTableColumnMode(modeStr),
+			Roles: roles,
 		}
 	}
 	for _, cid := range sortedParserComponentIDs(parserConfig) {
@@ -363,9 +353,8 @@ func ResolveTableProfile(parserConfig map[string]interface{}) *TableProfile {
 			continue
 		}
 		return &TableProfile{
-			Mode:    common.NormalizeTableColumnMode(mode),
-			Roles:   ssRoles,
-			Columns: columns,
+			Mode:  common.NormalizeTableColumnMode(mode),
+			Roles: ssRoles,
 		}
 	}
 	return nil
@@ -378,7 +367,7 @@ func ResolveTableColumnNames(parserConfig map[string]interface{}) []string {
 	if parserConfig == nil {
 		return nil
 	}
-	if names := parseTableColumnNames(parserConfig["table_column_names"]); len(names) > 0 {
+	if names := common.NormalizeTableColumnNames(parserConfig["table_column_names"]); len(names) > 0 {
 		return names
 	}
 	for _, cid := range sortedParserComponentIDs(parserConfig) {
@@ -387,7 +376,7 @@ func ResolveTableColumnNames(parserConfig map[string]interface{}) []string {
 		if ss == nil {
 			continue
 		}
-		if names := parseTableColumnNames(ss["column_names"]); len(names) > 0 {
+		if names := common.NormalizeTableColumnNames(ss["column_names"]); len(names) > 0 {
 			return names
 		}
 	}
@@ -396,41 +385,11 @@ func ResolveTableColumnNames(parserConfig map[string]interface{}) []string {
 
 func parseTableColumnRoles(raw any) map[string]common.ColumnRole {
 	switch m := raw.(type) {
-	case map[string]string:
-		out := make(map[string]common.ColumnRole, len(m))
-		for k, v := range m {
-			out[k] = common.NormalizeColumnRole(v)
-		}
-		return out
 	case map[string]interface{}:
 		out := make(map[string]common.ColumnRole, len(m))
 		for k, v := range m {
 			if s, ok := v.(string); ok {
 				out[k] = common.NormalizeColumnRole(s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-func parseTableColumnNames(raw any) []string {
-	if raw == nil {
-		return nil
-	}
-	switch list := raw.(type) {
-	case []string:
-		return list
-	case []interface{}:
-		out := make([]string, 0, len(list))
-		for _, item := range list {
-			// Verbatim, including a blank name: table_column_names carries the
-			// columns as the parser named them, and that exact string is both the
-			// key a role is looked up under and the key chunk_data is stored with
-			// (rag/app/table.py:600-603 writing what :519 built).
-			if s, ok := item.(string); ok {
-				out = append(out, s)
 			}
 		}
 		return out

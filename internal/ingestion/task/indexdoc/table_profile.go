@@ -23,21 +23,24 @@ import (
 )
 
 // TableProfile is the parsed view of the table column configuration a run
-// executes with: the mode, the per-column roles and the discovered column
-// names, as resolved from a dataset's or document's parser_config. The rules
-// derived from it (which columns reach the chunk body, which are addressable
-// through the dataset field_map, which document metadata keys are stripped on
-// reparse) live next to it here, in the layer that applies them.
+// executes with: the mode and the per-column roles, as resolved from a
+// dataset's or document's parser_config. The rules derived from it (which
+// columns reach the chunk body, which are addressable through the dataset
+// field_map, which document metadata keys are stripped on reparse) live next to
+// it here, in the layer that applies them.
+//
+// The discovered column names are not a field: they are resolved on their own by
+// ResolveTableColumnNames, because a run's findings are not a statement of
+// intent and must not decide which configuration level applies.
 type TableProfile struct {
-	Mode    common.TableColumnMode
-	Roles   map[string]common.ColumnRole
-	Columns []string
+	Mode  common.TableColumnMode
+	Roles map[string]common.ColumnRole
 }
 
-// NewTableProfile returns the profile of a configuration that states no column
-// intent: auto mode, where every column carries the "both" role.
-func NewTableProfile(mode common.TableColumnMode) *TableProfile {
-	return &TableProfile{Mode: mode}
+// NewAutoTableProfile returns the profile of a configuration that states no
+// column intent: auto mode, where every column carries the "both" role.
+func NewAutoTableProfile() *TableProfile {
+	return &TableProfile{Mode: common.TableColumnModeAuto}
 }
 
 // ToRolesInterfaceMap returns the column roles as the parser setup shape.
@@ -59,7 +62,7 @@ func (p *TableProfile) ToRolesInterfaceMap() map[string]interface{} {
 // chunk_data, field_map) — the same classification the table parser's row
 // renderer applies (internal/parser/parser/table_row_render.go).
 func roleFor(profile *TableProfile, column string) common.ColumnRole {
-	if profile == nil || !isManualProfile(profile) || profile.Roles == nil {
+	if !isManualProfile(profile) {
 		return common.ColumnRoleBoth
 	}
 	if role, ok := profile.Roles[column]; ok {

@@ -35,7 +35,6 @@ func TestFilterTableColumnRoles(t *testing.T) {
 		want map[string]interface{}
 	}{
 		{"object", map[string]interface{}{"Name": "metadata", "Stale": "both"}, map[string]interface{}{"Name": "metadata"}},
-		{"string map", map[string]string{"City": "indexing", "Stale": "both"}, map[string]interface{}{"City": "indexing"}},
 		{"absent", nil, map[string]interface{}{}},
 		{"not an object", "manual", map[string]interface{}{}},
 	}

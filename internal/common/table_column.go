@@ -92,6 +92,30 @@ func (r ColumnRole) Stored() bool {
 	return r == ColumnRoleMetadata || r == ColumnRoleBoth
 }
 
+// NormalizeTableColumnNames reads a persisted table_column_names value as
+// strings. Both shapes occur because one is written by the same process that
+// reads it: a run's parser output carries the names as a Go []string, while the
+// same key reloaded from parser_config JSON decodes to []interface{}. Every
+// entry is kept verbatim, blank included, because the name is exactly the key
+// the role lookup, chunk_data and the dataset field_map are addressed by
+// (rag/app/table.py:590-595).
+func NormalizeTableColumnNames(raw any) []string {
+	switch names := raw.(type) {
+	case []string:
+		return names
+	case []interface{}:
+		out := make([]string, 0, len(names))
+		for _, name := range names {
+			if s, ok := name.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 // NormalizeTableColumnMode maps a persisted mode onto the vocabulary. Only the
 // exact "manual" selects manual, matching Python's
 // `parser_config.get("table_column_mode") == "manual"`
@@ -154,14 +178,6 @@ func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey, n
 			if err := validateTableColumnRoles(rolesKey, roles); err != nil {
 				return err
 			}
-		case map[string]string:
-			converted := make(map[string]interface{}, len(roles))
-			for column, role := range roles {
-				converted[column] = role
-			}
-			if err := validateTableColumnRoles(rolesKey, converted); err != nil {
-				return err
-			}
 		default:
 			return fmt.Errorf("%s must be an object mapping column name to role", rolesKey)
 		}
@@ -170,9 +186,6 @@ func validateTableColumnKeys(config map[string]interface{}, modeKey, rolesKey, n
 	if raw, ok := config[namesKey]; ok && raw != nil {
 		names, isList := raw.([]interface{})
 		if !isList {
-			if _, isStringList := raw.([]string); isStringList {
-				return nil
-			}
 			return fmt.Errorf("%s must be a list of strings", namesKey)
 		}
 		for _, name := range names {
