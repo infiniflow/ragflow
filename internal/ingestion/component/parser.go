@@ -449,6 +449,15 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		inputs["tenant_id"] = tid
 	}
 
+	// Same pull-back for the run-level (dataset) language: File emits no
+	// lang, and the language consumers below — vision enhancement and the
+	// media dispatch branches — read the local inputs map, so without this
+	// the KB language never reaches them and the prompt language silently
+	// falls back to English.
+	if lang := globals.GlobalOrInput(ctx, inputs, "lang", ""); lang != "" {
+		inputs["lang"] = lang
+	}
+
 	// 2. Resolve the file family from the inputs. When the family
 	//    is known, dispatchParse returns a typed parser payload.
 	//    Otherwise the component stays in text-page mode.

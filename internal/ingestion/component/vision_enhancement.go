@@ -190,7 +190,13 @@ func maybeDispatchVisionEnhancement(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
-	language := resolveVisionLanguage(inputs, "")
+	// Language priority mirrors Python's enhance_media_sections_with_vision
+	// (rag/flow/parser/parser.py:778): the run-level dataset language first
+	// (the Parser pulls it into inputs from Globals), then the family setup's
+	// lang, then English.
+	family := resolveParserFamily(fileType)
+	setup := setups[family]
+	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
 	// 1. Collect target items (images/tables that can be described). A target
 	// may carry an inlined image (docx/markdown, or any pre-inlined source) or,
@@ -229,8 +235,6 @@ func maybeDispatchVisionEnhancement(
 
 	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
 	// default. Mirror Python's vlm_conf["llm_id"] preference.
-	family := resolveParserFamily(fileType)
-	setup := setups[family]
 	modelRef := configuredMediaModelID(setup, family)
 	var driver modelModule.ModelDriver
 	var modelName string
