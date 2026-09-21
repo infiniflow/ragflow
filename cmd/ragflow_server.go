@@ -81,7 +81,6 @@ type serverArgs struct {
 	mode          *string // admin | api | ingestor | syncer
 	helpFlag      bool
 	versionFlag   bool
-	debugLog      bool
 	logLevel      *string
 	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
@@ -262,8 +261,6 @@ func parseArgs() (*serverArgs, error) {
 			args.helpFlag = true
 		case "-v", "--version":
 			args.versionFlag = true
-		case "--debug":
-			args.debugLog = true
 		case "--log-level":
 			if i+1 >= len(os.Args) {
 				return nil, errors.New("--log-level requires a value")
@@ -353,9 +350,6 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	}
 	if args.logLevel != nil {
 		level = *args.logLevel
-	}
-	if args.debugLog {
-		level = "debug"
 	}
 	return level
 }
@@ -450,7 +444,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor and syncer)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
@@ -474,7 +467,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug       	 \tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile          \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
@@ -495,7 +487,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int    \t\t\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\t\t\tInitialize superuser account\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\t\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\t\tShow this help message and exit\n")
@@ -507,7 +498,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
@@ -519,7 +509,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")

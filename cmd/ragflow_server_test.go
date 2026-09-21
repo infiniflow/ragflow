@@ -321,12 +321,15 @@ func TestSelectedLogLevelPrecedence(t *testing.T) {
 		t.Errorf("configured log level = %q, want info", got)
 	}
 
-	args, err = parseArgsForTest(t, "--api", "--log-level", "error", "--debug")
+	args, err = parseArgsForTest(t, "--api", "--log-level", "error")
 	if err != nil {
-		t.Fatalf("parseArgs with --debug error = %v", err)
+		t.Fatalf("parseArgs with --log-level error = %v", err)
 	}
-	if got := selectedLogLevel(args, "info"); got != "debug" {
-		t.Errorf("--debug log level = %q, want debug", got)
+	if got := selectedLogLevel(args, "info"); got != "error" {
+		t.Errorf("--log-level log level = %q, want error", got)
+	}
+	if _, err := parseArgsForTest(t, "--api", "--debug"); err == nil {
+		t.Error("parseArgs(--debug) error = nil, want unknown parameter error")
 	}
 }
 
