@@ -33,7 +33,7 @@ var standardTableRows = [][]string{
 	{"Doc C", "Third document text", "Spain", "Tech", "2024"},
 }
 
-// Case: row bookkeeping columns are dropped before rendering, mirroring
+// Row bookkeeping columns are dropped before rendering, mirroring
 // rag/app/table.py, which deletes them from every frame (:539-541).
 // Keeping them would index the primary key into the chunk text and into
 // chunk_data, and would give the chunk a different id than Python's.
@@ -80,7 +80,7 @@ func TestParity_ReservedColumnsOnlyExactMatch(t *testing.T) {
 	}
 }
 
-// Case: every header is a reserved name — the rows render to nothing, matching
+// When every header is a reserved name the rows render to nothing, matching
 // Python's empty-DataFrame branch (no text fields, no stored fields).
 func TestParity_OnlyReservedColumnsProducesNoItems(t *testing.T) {
 	rows := [][]string{
@@ -94,9 +94,14 @@ func TestParity_OnlyReservedColumnsProducesNoItems(t *testing.T) {
 	}
 }
 
-// Role classification decides both halves of a rendered row: what reaches the
-// chunk body and what reaches chunk_data. Every case is checked on every row, so
-// a role that leaks on one row cannot pass on the next.
+// Role classification decides both halves of a rendered row: the chunk body and
+// chunk_data. Python compares the mode with == "manual" (rag/app/table.py:529),
+// then matches each column's role by exact spelling against ("indexing",
+// "vectorize", "both") and ("metadata", "both"), and defaults to "both" only for
+// a column the roles map does not carry (:626, :629-631). Each case is asserted
+// as a whole row: the body must be exactly the indexed lines in header order and
+// chunk_data exactly the stored columns, so a column that leaks on one surface
+// or vanishes from the other fails.
 func TestParity_RoleClassification(t *testing.T) {
 	all := []string{"Title", "Content", "Country", "Category", "Year"}
 	roleOf := func(role string) map[string]string {
@@ -108,39 +113,53 @@ func TestParity_RoleClassification(t *testing.T) {
 	}
 
 	cases := []struct {
-		name      string
-		mode      string
-		roles     map[string]string
-		inText    []string
-		notInText []string
-		inData    []string
-		notInData []string
+		name  string
+		mode  string
+		roles map[string]string
+		// inText and inData are the columns that reach the body and chunk_data,
+		// in header order.
+		inText []string
+		inData []string
 	}{
-		{"auto keeps every column in both tiers", "auto", nil, all, nil, all, nil},
-		{"manual all indexing", "manual", roleOf("indexing"), all, nil, nil, all},
-		{"manual all metadata", "manual", roleOf("metadata"), nil, all, all, nil},
-		{"manual all both", "manual", roleOf("both"), all, nil, all, nil},
+		{"auto keeps every column in both tiers", "auto", nil, all, all},
+		{"manual all indexing", "manual", roleOf("indexing"), all, nil},
+		{"manual all metadata", "manual", roleOf("metadata"), nil, all},
+		{"manual all both", "manual", roleOf("both"), all, all},
 		{
 			name:   "manual mixed roles",
 			mode:   "manual",
 			roles:  map[string]string{"Title": "both", "Content": "indexing", "Country": "metadata", "Category": "both", "Year": "metadata"},
-			inText: []string{"Title", "Content", "Category"}, notInText: []string{"Country", "Year"},
-			inData: []string{"Title", "Country", "Category", "Year"}, notInData: []string{"Content"},
+			inText: []string{"Title", "Content", "Category"},
+			inData: []string{"Title", "Country", "Category", "Year"},
 		},
 		{
 			name:   "a column the roles map leaves out defaults to both",
 			mode:   "manual",
 			roles:  map[string]string{"Title": "indexing", "Country": "metadata"},
-			inText: []string{"Title", "Content", "Category", "Year"}, notInText: []string{"Country"},
-			inData: []string{"Content", "Country", "Category", "Year"}, notInData: []string{"Title"},
+			inText: []string{"Title", "Content", "Category", "Year"},
+			inData: []string{"Content", "Country", "Category", "Year"},
 		},
 		{
 			name:   "the legacy vectorize alias indexes",
 			mode:   "manual",
 			roles:  map[string]string{"Title": "vectorize", "Country": "metadata", "Category": "both"},
-			inText: []string{"Title", "Content", "Category", "Year"}, notInText: []string{"Country"},
-			inData: []string{"Content", "Country", "Category", "Year"}, notInData: []string{"Title"},
+			inText: []string{"Title", "Content", "Category", "Year"},
+			inData: []string{"Content", "Country", "Category", "Year"},
 		},
+		{
+			name:   "a role of any other spelling excludes the column",
+			mode:   "manual",
+			roles:  map[string]string{"Title": "", "Content": "  indexing  ", "Country": "MetaData", "Category": "both", "Year": "  METADATA  "},
+			inText: []string{"Category"},
+			inData: []string{"Category"},
+		},
+		{
+			name:   "a mode other than manual ignores the roles entirely",
+			mode:   "Manual",
+			roles:  map[string]string{"Title": "metadata", "Country": "metadata", "Year": "metadata"},
+			inText: all, inData: all,
+		},
+		{"a blank mode is auto", "  ", nil, all, all},
 	}
 
 	for _, tc := range cases {
@@ -157,136 +176,31 @@ func TestParity_RoleClassification(t *testing.T) {
 				colOf[col] = i
 			}
 			for row, item := range items {
-				text := item["text"].(string)
-				data, _ := item["chunk_data"].(map[string]any)
 				cell := func(col string) string { return standardTableRows[row+1][colOf[col]] }
+				var lines []string
 				for _, col := range tc.inText {
-					if want := "- " + col + ": " + cell(col); !strings.Contains(text, want) {
-						t.Errorf("row %d: text must index %s as %q, got %q", row, col, want, text)
+					lines = append(lines, "- "+col+": "+cell(col))
+				}
+				var data map[string]any
+				if len(tc.inData) > 0 {
+					data = make(map[string]any, len(tc.inData))
+					for _, col := range tc.inData {
+						data[col] = cell(col)
 					}
 				}
-				for _, col := range tc.notInText {
-					if strings.Contains(text, col) {
-						t.Errorf("row %d: text must not name %s at all, got %q", row, col, text)
-					}
+				text, _ := item["text"].(string)
+				if want := strings.Join(lines, "\n"); text != want {
+					t.Errorf("row %d: text = %q, want %q", row, text, want)
 				}
-				for _, col := range tc.inData {
-					if got, ok := data[col]; !ok || got != cell(col) {
-						t.Errorf("row %d: chunk_data must store %s = %q, got %#v", row, col, cell(col), data)
-					}
-				}
-				for _, col := range tc.notInData {
-					if got, ok := data[col]; ok {
-						t.Errorf("row %d: chunk_data must not store %s = %v", row, col, got)
-					}
-				}
-				if len(data) != len(tc.inData) {
-					t.Errorf("row %d: chunk_data stores %#v, want exactly %v", row, data, tc.inData)
-				}
-				if len(tc.inData) == 0 {
-					if _, exists := item["chunk_data"]; exists {
-						t.Errorf("row %d: a chunk with nothing to store must omit chunk_data, got %#v", row, item["chunk_data"])
-					}
+				if stored, _ := item["chunk_data"].(map[string]any); !reflect.DeepEqual(stored, data) {
+					t.Errorf("row %d: chunk_data = %#v, want %#v", row, stored, data)
 				}
 			}
 		})
 	}
 }
 
-// Case 8: a role shape Python's membership test rejects is excluded, whatever
-// it looks like -- wrong case, wrong padding. The "both" default covers only a
-// column the roles map leaves out.
-func TestParity_Manual_UnknownRoleShapeIsExcluded(t *testing.T) {
-	roles := map[string]string{
-		"Title":    "INDEXING",
-		"Content":  "  indexing  ",
-		"Country":  "MetaData",
-		"Category": "both",
-		"Year":     "  METADATA  ",
-	}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	row0 := items[0]
-	text0 := row0["text"].(string)
-	cd0 := row0["chunk_data"].(map[string]any)
-
-	for _, col := range []string{"Title", "Content", "Country", "Year"} {
-		if strings.Contains(text0, "- "+col+": ") {
-			t.Errorf("%q (role %q) must not reach the chunk body: Python excludes a role it does not match exactly", col, roles[col])
-		}
-		if _, ok := cd0[col]; ok {
-			t.Errorf("%q (role %q) must not reach chunk_data", col, roles[col])
-		}
-	}
-	if !strings.Contains(text0, "- Category: ") {
-		t.Errorf("Category with the exact role \"both\" must stay indexed, got %q", text0)
-	}
-	if _, ok := cd0["Category"]; !ok {
-		t.Errorf("Category with the exact role \"both\" must stay in chunk_data: %v", cd0)
-	}
-}
-
-// Case 8b: the mode is compared exactly, as Python's
-// `parser_config.get("table_column_mode") == "manual"` does (rag/app/table.py:529),
-// so a differently cased mode is auto -- and auto ignores the roles entirely.
-func TestParity_Manual_MisCasedModeIsAuto(t *testing.T) {
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "Manual", map[string]string{"Title": "metadata"}, TableHeaderRuleSpreadsheet)
-	row0 := items[0]
-	text0 := row0["text"].(string)
-	cd0 := row0["chunk_data"].(map[string]any)
-
-	if !strings.Contains(text0, "- Title: ") {
-		t.Errorf("mode %q is not manual, so every column must be indexed, got %q", "Manual", text0)
-	}
-	for _, col := range []string{"Title", "Content", "Country", "Category", "Year"} {
-		if _, ok := cd0[col]; !ok {
-			t.Errorf("%q must be in chunk_data under auto mode: %v", col, cd0)
-		}
-	}
-}
-
-// Case: a column configured with an EMPTY role is excluded, while a column the
-// map leaves out keeps the "both" default. Python's `column_roles.get(col, "both")`
-// (rag/app/table.py:626) tells these apart -- a present-but-empty value matches
-// neither membership test, an omitted key returns the default.
-func TestParity_Manual_PresentEmptyRoleIsExcluded(t *testing.T) {
-	roles := map[string]string{"Title": "", "Content": "metadata"}
-	items, _ := RenderRowsToJSONChunks(standardTableRows, "", "manual", roles, TableHeaderRuleSpreadsheet)
-	text0 := items[0]["text"].(string)
-	cd0 := items[0]["chunk_data"].(map[string]any)
-
-	if strings.Contains(text0, "- Title: ") {
-		t.Errorf(`role "" must exclude Title from the chunk body, got %q`, text0)
-	}
-	if _, ok := cd0["Title"]; ok {
-		t.Errorf(`role "" must exclude Title from chunk_data: %v`, cd0)
-	}
-	if !strings.Contains(text0, "- Country: ") {
-		t.Errorf("a column the map omits must default to both, got %q", text0)
-	}
-	if _, ok := cd0["Country"]; !ok {
-		t.Errorf("a column the map omits must default to both in chunk_data: %v", cd0)
-	}
-	if strings.Contains(text0, "- Content: ") {
-		t.Errorf("a metadata column must not reach the chunk body: %q", text0)
-	}
-	if _, ok := cd0["Content"]; !ok {
-		t.Errorf("a metadata column must be in chunk_data: %v", cd0)
-	}
-}
-
-// Case 9: Blank / whitespace column mode defaults to auto
-func TestParity_BlankMode_DefaultsToAuto(t *testing.T) {
-	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "  ", nil, TableHeaderRuleSpreadsheet)
-	if len(items) != 3 {
-		t.Fatalf("expected 3 items, got %d", len(items))
-	}
-	cd0 := items[0]["chunk_data"].(map[string]any)
-	if len(cd0) != len(headers) {
-		t.Errorf("blank mode should default to auto with all columns in chunk_data, got %d vs %d", len(cd0), len(headers))
-	}
-}
-
-// Case 10: Empty cells in rows. Python skips a cell only when its string form
+// Python skips a cell only when its string form
 // is empty (rag/app/table.py:621) and renders the value as read, so a
 // whitespace-only cell is content: column_data_type converts a text column with
 // str() (:496), which does not strip it either.
@@ -322,7 +236,7 @@ func TestParity_EmptyCells(t *testing.T) {
 	}
 }
 
-// Case 11: deduplicateColumnNames matching Python
+// deduplicateColumnNames numbers a repeated column the way Python does
 func TestParity_DeduplicateColumnNames_Parity(t *testing.T) {
 	cols := []string{"name", "name", "name", "age", "age"}
 	dedup := deduplicateColumnNames(cols)
@@ -340,7 +254,7 @@ func TestParity_DeduplicateColumnNames_Parity(t *testing.T) {
 	}
 }
 
-// Case 12: Empty headers fallback to Column_N
+// An empty header falls back to Column_N
 func TestParity_EmptyHeader_ColumnN(t *testing.T) {
 	rows := [][]string{
 		{"Name", "", "Age", "  "},
@@ -357,7 +271,7 @@ func TestParity_EmptyHeader_ColumnN(t *testing.T) {
 	}
 }
 
-// Case 13: Chinese / Non-ASCII column headers
+// Non-ASCII column headers classify like any other
 func TestParity_ChineseHeaders(t *testing.T) {
 	rows := [][]string{
 		{"姓名", "部门", "城市", "职级"},
@@ -396,7 +310,7 @@ func TestParity_ChineseHeaders(t *testing.T) {
 	}
 }
 
-// Case 14: CSV Parser integration with ColumnMode
+// The CSV parser carries its column mode into the rows it reads
 func TestParity_CSVParser_FullIntegration(t *testing.T) {
 	csvData := []byte("Title,Content,Country,Category,Year\nDoc A,First text,Turkey,Tech,2024\nDoc B,Second text,Greece,Finance,2023\n")
 	p := NewCSVParser()
@@ -429,7 +343,7 @@ func TestParity_CSVParser_FullIntegration(t *testing.T) {
 	}
 }
 
-// Case 15: XLSX Parser multi-sheet and column discovery
+// The XLSX parser names each sheet's columns and tags the rows with them
 func TestParity_XLSXParser_MultiSheet(t *testing.T) {
 	f := excelize.NewFile()
 	defer f.Close()
