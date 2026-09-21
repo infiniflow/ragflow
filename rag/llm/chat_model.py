@@ -617,10 +617,12 @@ class Base(ABC):
         return history
 
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         if not self.tools:
             return await self.async_chat(system, history, gen_conf)
 
-        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -628,8 +630,6 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
-        gen_conf.pop("tools", None)
-        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
