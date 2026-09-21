@@ -798,7 +798,7 @@ func normalizePDFDocType(item map[string]any) {
 	// inlines its cropped image (cgo): it still carries PDF positions, so the
 	// downstream VLM/chunker crop it on demand. Classify it as image whenever
 	// it has positions (the inlined image was only a side effect of cropping).
-	hasMedia := itemHasPositions(item)
+	_, hasMedia := ExtractPDFPositions(item)
 	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
 		// A figure caption keeps its media classification so the downstream
 		// VLM enhancement and on-demand chunker crop it.
@@ -827,16 +827,43 @@ func normalizePDFDocType(item map[string]any) {
 	}
 }
 
-// itemHasPositions reports whether a JSON item carries a usable positions
-// matrix (the on-demand crop source), either under the canonical
-// _pdf_positions key or the legacy positions key.
-func itemHasPositions(item map[string]any) bool {
-	for _, k := range []string{"_pdf_positions", "positions"} {
-		if v, ok := item[k]; ok && v != nil {
-			return true
+// ExtractPDFPositions is the single source of truth for "does this parsed item
+// carry a usable PDF crop region". It returns the non-empty positions matrix
+// (under the canonical _pdf_positions key or the legacy positions key),
+// accepting either the typed [][]any form produced in-process or the
+// JSON-decoded []any form whose elements are themselves []any rows. The bool
+// reports whether a usable matrix was present.
+//
+// The parser (doc-type classification in normalizePDFDocType) and the on-demand
+// croppers (VLM vision_enhancement and the chunker) MUST agree on this
+// contract, so all call sites delegate here instead of re-implementing the
+// check. A loose "non-nil" test previously misclassified items whose positions
+// were empty or not actually a matrix (e.g. an empty []any or a stray scalar),
+// which escaped the figure-caption → image normalization and the crop path.
+func ExtractPDFPositions(item map[string]any) ([][]any, bool) {
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		switch v := item[key].(type) {
+		case [][]any:
+			if len(v) > 0 {
+				return v, true
+			}
+		case []any:
+			out := make([][]any, 0, len(v))
+			ok := true
+			for _, row := range v {
+				r, rOK := row.([]any)
+				if !rOK {
+					ok = false
+					break
+				}
+				out = append(out, r)
+			}
+			if ok && len(out) > 0 {
+				return out, true
+			}
 		}
 	}
-	return false
+	return nil, false
 }
 
 func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {

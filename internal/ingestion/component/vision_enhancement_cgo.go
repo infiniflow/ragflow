@@ -26,6 +26,7 @@ import (
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -74,7 +75,7 @@ func (c *visionPDFCropper) Crop(item map[string]any) (string, error) {
 	if img, _ := item["image"].(string); img != "" {
 		return img, nil
 	}
-	matrix, ok := positionsMatrix(item)
+	matrix, ok := parser.ExtractPDFPositions(item)
 	if !ok {
 		return "", nil
 	}
@@ -156,32 +157,4 @@ func (c *visionPDFCropper) Close() error {
 		return c.engine.Close()
 	}
 	return nil
-}
-
-// positionsMatrix extracts the _pdf_positions / positions matrix from a parsed
-// item in either the typed [][]any form or the JSON-decoded []any form.
-func positionsMatrix(item map[string]any) ([][]any, bool) {
-	for _, key := range []string{"_pdf_positions", "positions"} {
-		switch v := item[key].(type) {
-		case [][]any:
-			if len(v) > 0 {
-				return v, true
-			}
-		case []any:
-			out := make([][]any, 0, len(v))
-			ok := true
-			for _, row := range v {
-				r, rOK := row.([]any)
-				if !rOK {
-					ok = false
-					break
-				}
-				out = append(out, r)
-			}
-			if ok && len(out) > 0 {
-				return out, true
-			}
-		}
-	}
-	return nil, false
 }

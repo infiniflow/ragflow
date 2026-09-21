@@ -165,25 +165,6 @@ type visionImageCropper interface {
 	Close() error
 }
 
-// hasPositions reports whether a parsed item carries a non-empty positions
-// matrix (either the canonical _pdf_positions or the legacy positions key),
-// which the on-demand cropper can use to re-acquire and crop the source PDF.
-func hasPositions(item map[string]any) bool {
-	for _, key := range []string{"_pdf_positions", "positions"} {
-		switch v := item[key].(type) {
-		case [][]any:
-			if len(v) > 0 {
-				return true
-			}
-		case []any:
-			if len(v) > 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
 // descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
 // with non-empty image field).
@@ -229,7 +210,7 @@ func maybeDispatchVisionEnhancement(
 			targets = append(targets, target{idx: i})
 			continue
 		}
-		if hasPositions(item) {
+		if _, ok := parser.ExtractPDFPositions(item); ok {
 			targets = append(targets, target{idx: i})
 		}
 	}
