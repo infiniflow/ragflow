@@ -510,13 +510,13 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 
 		lt := strings.TrimSpace(b.LayoutType)
 		if (zone == "header" && lt == "header") || (zone == "footer" && lt == "footer") {
-			slog.Debug("header_footer: dropped by DLA label", "page", b.PageNumber, "zone", zone, "layoutType", lt, "text", b.Text)
+			slog.Debug("header_footer: dropped by DLA label", "page", b.PageNumber, "zone", zone, "layoutType", lt, "textLen", utf8.RuneCountInString(b.Text))
 			drop[i] = struct{}{}
 			continue
 		}
 
 		if isDeterministicPageNumber(b.Text, zone, allGapBelow[i]) {
-			slog.Debug("header_footer: dropped by page-number pattern", "page", b.PageNumber, "zone", zone, "text", b.Text)
+			slog.Debug("header_footer: dropped by page-number pattern", "page", b.PageNumber, "zone", zone, "textLen", utf8.RuneCountInString(b.Text))
 			drop[i] = struct{}{}
 			continue
 		}
@@ -600,7 +600,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 
 		if reason != "" {
-			slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "text", key.text, "reason", reason, "pages", distinctPages)
+			slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "textLen", utf8.RuneCountInString(key.text), "reason", reason, "pages", distinctPages)
 			for _, m := range metas {
 				drop[m.idx] = struct{}{}
 			}
@@ -613,7 +613,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 {
 			runIndices := findStableConsecutiveRunIndices(metas, 3, 4.0)
 			if len(runIndices) > 0 {
-				slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "text", key.text, "reason", "local_consecutive_run", "boxes", len(runIndices))
+				slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "textLen", utf8.RuneCountInString(key.text), "reason", "local_consecutive_run", "boxes", len(runIndices))
 				for _, idx := range runIndices {
 					drop[idx] = struct{}{}
 				}
