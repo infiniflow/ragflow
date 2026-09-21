@@ -18,6 +18,7 @@ import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
+  initialCompilationValues,
   initialGoExtractorValues,
   initialGeneralChunkerValues,
   initialParserValues,
@@ -26,6 +27,7 @@ import {
   initialTokenizerValues,
 } from '@/pages/agent/constant/pipeline';
 import {
+  transformCompilationParams,
   transformExtractorParams,
   transformGeneralChunkerParams,
   transformParserParams,
@@ -395,6 +397,8 @@ export function transformFormConfigToApi(
       return transformParserParams(config as any);
     case Operator.Extractor:
       return transformExtractorParams(config as any);
+    case Operator.Compiler:
+      return transformCompilationParams(config as Record<string, any>);
     case Operator.Tokenizer:
       return config; // passthrough for Tokenizer
     case Operator.TokenChunker:
@@ -442,6 +446,11 @@ export function normalizeOperatorForm(
     case Operator.Extractor:
       return {
         ...cloneDeep(getInitialExtractorValues()),
+        ...rawForm,
+      };
+    case Operator.Compiler:
+      return {
+        ...cloneDeep(initialCompilationValues),
         ...rawForm,
       };
     case Operator.Tokenizer:

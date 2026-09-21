@@ -387,6 +387,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       welcome: 'Welcome back',
       description: 'Which datasets will you use today?',
       createKnowledgeBase: 'Create dataset',
+      builtInTemplate: 'Built-in template',
+      ingestionPipeline: 'Ingestion pipeline',
       name: 'Name',
       namePlaceholder: 'Please input name.',
       doc: 'Docs',
@@ -494,7 +496,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       artifact: 'Artifact',
       toSkills: 'To skills',
       processingType: 'Processing type',
-      dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipeline: 'Select or switch the parsing mode',
       dataPipelineTitle: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
@@ -513,7 +515,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       completed: 'Completed',
       datasetLog: 'Dataset log',
       created: 'Created',
-      learnMore: 'Built-in pipeline introduction',
+      learnMore: 'View built-in parser details',
       general: 'General',
       chunkMethodTab: 'Chunk method',
       testResults: 'Results',
@@ -559,13 +561,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval when a reranker model is selected. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved. If the vector similarity weight is set to 0, this threshold does not apply.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'This sets the weight of vector similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Run',
@@ -614,7 +616,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       close: 'Close',
       rerankModel: 'Rerank model',
       rerankPlaceholder: 'Select value',
-      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
+      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
@@ -631,9 +633,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
-      autoKeywords: 'Auto-keyword',
+      autoKeywords: 'Number of keywords to extract',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
-      autoQuestions: 'Auto-question',
+      autoQuestions: 'Auto-question number',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
@@ -705,7 +707,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
-      overlappedPercent: 'Overlapped percent(%)',
+      overlappedPercent: 'Overlap(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',
@@ -736,16 +738,18 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipeline: 'Select or switch the parsing mode',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse type',
-      manualSetup: 'Pipeline',
-      builtIn: 'Built-in',
+      parseType: 'Parse mode',
+      manualSetup: 'Custom ingestion pipeline',
+      builtIn: 'Built-in parsing template',
+      noConfigChunkerHint:
+        'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
         'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Dataset name',
@@ -772,6 +776,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
+      checkingEmbedding: 'Checking embedding model compatibility…',
       chunkMethodPlaceholder: 'Please select a chunking method.',
       tableColumnMode: 'Column mode',
       tableColumnModeAuto: 'Auto',
@@ -1076,18 +1081,18 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       datasetUnavailable:
-        'The selected knowledge base is unavailable (deleted or has no chunks), please re-select',
+        'The selected dataset is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
-      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
 **Essential Rules:**
   - Your answer must be derived **solely** from this dataset: {knowledge}.
   - **When information is available**: Summarize the content to give a detailed answer.
-  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
   - **Always consider** the entire conversation history.`,
-      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
       **Essential Rules:**
         - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
@@ -1236,24 +1241,47 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
-      tavilyApiKeyTip:
-        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
-      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       webSearch: 'Web search',
       webSearchProvider: 'Web search provider',
       webSearchProviderTip:
         'Select the service used when Internet search is enabled.',
       webSearchProviderPlaceholder: 'Select a web search provider',
+      webSearchApiKeyRequired:
+        'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
+      // The key field's label. {{provider}} is the provider's BRAND name, which is
+      // deliberately not translated, so this single template covers all nine.
+      webSearchApiKeyLabel: '{{provider}} API Key',
+      // One Tip/Message pair per provider, alphabetical by provider id.
+      braveApiKeyTip:
+        'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
+      braveApiKeyMessage: 'Please enter your Brave Search API Key',
+      exaApiKeyTip:
+        'Required. When Exa is selected, its web results supplement dataset retrieval. A key is needed even on the free tier of 1,000 requests/month.',
+      exaApiKeyMessage: 'Please enter your Exa API Key',
+      firecrawlApiKeyTip:
+        'When Firecrawl is selected, its search results supplement dataset retrieval. Only the search snippets are pulled, not a full page scrape.',
+      firecrawlApiKeyMessage: 'Please enter your Firecrawl API Key',
+      linkupApiKeyTip:
+        'When Linkup is selected, its web results supplement dataset retrieval.',
+      linkupApiKeyMessage: 'Please enter your Linkup API Key',
+      parallelApiKeyTip:
+        'When Parallel is selected, its search excerpts supplement dataset retrieval.',
+      parallelApiKeyMessage: 'Please enter your Parallel API Key',
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
+      tavilyApiKeyTip:
+        'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
+      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       youcomApiKeyTip:
         'Optional. You.com works without a key on its rate-limited endpoint; add a key to lift those limits.',
       youcomApiKeyMessage: 'Optional — leave blank to use the free tier',
-      tavilyApiKeyHelp: 'How to get it?',
+      // Shared anchor text for every provider's "get a key" link (only the href is
+      // provider-specific), so keep it provider-agnostic — do not name a provider.
+      webSearchApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
       crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
@@ -1590,7 +1618,7 @@ Example: Virtual Hosted Style`,
       timeStarted: 'Time started',
       log: 'Log',
       rssDescription:
-        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
+        'Connect to a public RSS or Atom feed and sync feed entries into your dataset.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -2434,7 +2462,7 @@ Example: Virtual Hosted Style`,
       jsonPreview: 'JSON preview',
       processFlow: 'Process flow',
       processFlowComingSoon: 'Process flow preview coming soon',
-      compilationTitleSuffix: "' dataset",
+      compilationTitleSuffix: ' dataset',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -2488,6 +2516,7 @@ Example: Virtual Hosted Style`,
       skillDeleteTitle: 'Delete skill',
       skillDeleteDescription: 'Are you sure you want to delete this skill?',
       navTitle: 'Navigation tree',
+      navLogTitle: 'Navigation tree log',
       navEmpty: 'No navigation nodes',
       navLoadFailed: 'Failed to load the navigation tree',
       navChildLoadFailed: 'Failed to load child nodes',
@@ -3367,9 +3396,6 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
-      documentIds: 'Document IDs',
-      documentIdsTip:
-        'Optional list of document IDs to restrict retrieval scope. Supports upstream variable references.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',
@@ -3478,7 +3504,7 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryMissing:
         'Cannot save: "{{name}}" has no memories selected. Please choose them first',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} dataset retrieval step(s) without a bound knowledge base. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalTemplateMemoryHint:
         'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
@@ -3491,6 +3517,14 @@ This process aggregates variables from multiple branches into a single variable 
       titleChunkerDescription:
         'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
       titleChunker: 'Title Chunker',
+      oneChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      qAChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      tableChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      pageChunkerDescription:
+        'No additional configuration is required for this chunker.',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -3536,8 +3570,8 @@ The Indexer will store the content in the corresponding data structures for the 
       viewResult: 'View result',
       running: 'Running',
       summary: 'Summary',
-      keywords: 'Keywords',
-      questions: 'Questions',
+      keywords: 'Auto keywords',
+      questions: 'Auto-question',
       metadata: 'Metadata',
       fieldName: 'Result destination',
       enableSummary: 'Enable Summary',

@@ -18,16 +18,20 @@ package tool
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/storage"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +49,12 @@ const codeExecToolName = "execute_code"
 const codeExecToolDescription = "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. " +
 	"It receives a piece of code and returns a JSON string. " +
 	"The code must define a main function (Python) or export main (JavaScript); " +
-	"the return value of main is returned as the tool result."
+	"the return value of main is returned as the tool result. " +
+	"To generate charts or files (images, PDFs, CSVs, etc.), save them to the `artifacts/` " +
+	"directory (relative to the working directory); the sandbox automatically collects those " +
+	"files and returns them as artifacts. " +
+	"Example: `plt.savefig('artifacts/chart.png', dpi=150, bbox_inches='tight')`. " +
+	"Supported artifact file types: .png, .jpg, .jpeg, .svg, .pdf, .csv, .json, .html."
 
 // codeExecArgs is the JSON shape the model sends in. The Python
 // tool accepts "lang" + "script"; we also accept "code" as a
@@ -166,7 +175,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		// ReAct loop instead of prompting retries against broken infrastructure.
 		return codeExecStubResult(err.Error()), err
 	}
-	out, mErr := codeExecResultJSON(resp)
+	out, mErr := codeExecResultJSON(ctx, resp)
 	if mErr != nil {
 		return codeExecStubResult(mErr.Error()), mErr
 	}
@@ -182,9 +191,10 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 //     us back" field).
 //   - StructuredResult["actual_type"] → ActualType (Python
 //     `infer_actual_type` surface for downstream Message component).
-//   - Metadata["artifacts"] → Artifacts (the model AND the Message
-//     component's `_ARTIFACTS` collector both consume this; we
-//     surface it as `_ARTIFACTS` to match the Python envelope).
+//   - Metadata["artifacts"] → Artifacts, published to the sandbox
+//     artifact bucket and exposed as `_ARTIFACTS` references
+//     ({name, url, mime_type, size}); the blob payload stays out of
+//     the model-visible envelope.
 //   - Metadata["attachments"] → Attachments (rendered into
 //     downstream Markdown by Message via the same path the Agent
 //     tool artifact Markdown uses).
@@ -193,7 +203,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 // other than map[string]any) are silently dropped with a log
 // warning. This matches the Python tool's "skip on shape mismatch"
 // semantics — better to lose one artifact than to abort the run.
-func codeExecResultJSON(r *SandboxResponse) (string, error) {
+func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error) {
 	if r == nil {
 		return codeExecStubResult("empty response"), nil
 	}
@@ -203,7 +213,7 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		Stderr:   r.Stderr,
 	}
 	if r.Metadata != nil {
-		out.Artifacts = extractArtifactList(r.Metadata, "artifacts")
+		out.Artifacts = publishSandboxArtifacts(ctx, extractArtifactList(r.Metadata, "artifacts"))
 		out.Attachments = extractArtifactList(r.Metadata, "attachments")
 	}
 	hasStructuredResult := false
@@ -240,6 +250,91 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 	return string(b), nil
 }
 
+// publishSandboxArtifacts turns sandbox artifact descriptors into
+// hosted references: each blob is uploaded to the sandbox artifact
+// bucket and the entry keeps only {name, url, mime_type, size}, so
+// raw base64 never enters the model-visible envelope or the final
+// chat message. Entries that cannot be published are dropped — the
+// /api/v1/documents/artifact route only serves uploaded objects.
+func publishSandboxArtifacts(ctx context.Context, artifacts []map[string]any) []map[string]any {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	published := make([]map[string]any, 0, len(artifacts))
+	for _, art := range artifacts {
+		if entry := publishSandboxArtifact(ctx, art); entry != nil {
+			published = append(published, entry)
+		}
+	}
+	if len(published) == 0 {
+		return nil
+	}
+	return published
+}
+
+func publishSandboxArtifact(ctx context.Context, art map[string]any) map[string]any {
+	name, _ := art["name"].(string)
+	if name == "" {
+		return nil
+	}
+	mime, _ := art["mime_type"].(string)
+	if url, _ := art["url"].(string); url != "" {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(url)), "data:") {
+			fmt.Fprintf(os.Stderr, "code_exec: artifact %q carries an inline data: url; dropping\n", name)
+			return nil
+		}
+		return map[string]any{"name": name, "url": url, "mime_type": mime, "size": art["size"]}
+	}
+	contentB64, _ := art["content_b64"].(string)
+	if contentB64 == "" {
+		return nil
+	}
+	storageExt := sandboxArtifactStorageExt(name, mime)
+	if storageExt == "" {
+		fmt.Fprintf(os.Stderr, "code_exec: artifact %q (mime %q) has no servable file type; dropping\n", name, mime)
+		return nil
+	}
+	blob, err := base64.StdEncoding.DecodeString(contentB64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "code_exec: artifact %q is not valid base64: %v; dropping\n", name, err)
+		return nil
+	}
+	impl := storage.GetStorageFactory().GetStorage()
+	if impl == nil {
+		fmt.Fprintf(os.Stderr, "code_exec: storage not initialized; dropping artifact %q\n", name)
+		return nil
+	}
+	storageName := uuid.NewString() + storageExt
+	if err := impl.Put(ctx, common.SandboxArtifactBucket(), storageName, blob); err != nil {
+		fmt.Fprintf(os.Stderr, "code_exec: upload artifact %q: %v; dropping\n", name, err)
+		return nil
+	}
+	return map[string]any{
+		"name":      name,
+		"url":       "/api/v1/documents/artifact/" + storageName,
+		"mime_type": mime,
+		"size":      art["size"],
+	}
+}
+
+// sandboxArtifactStorageExt picks the extension the artifact route
+// serves: the descriptor's own extension when it is servable, else one
+// derived from the MIME type.
+func sandboxArtifactStorageExt(name, mime string) string {
+	if ext := strings.ToLower(filepath.Ext(name)); ext != "" {
+		if _, ok := common.SandboxArtifactContentTypes[ext]; ok {
+			return ext
+		}
+	}
+	m := strings.ToLower(strings.TrimSpace(mime))
+	for ext, contentType := range common.SandboxArtifactContentTypes {
+		if contentType == m {
+			return ext
+		}
+	}
+	return ""
+}
+
 // extractArtifactList pulls a list of dict-shaped entries out of
 // Metadata[key]. Items that aren't map[string]any are dropped with
 // a stderr log line so the operator can see the data loss without
@@ -249,20 +344,28 @@ func extractArtifactList(meta map[string]any, key string) []map[string]any {
 	if !ok {
 		return nil
 	}
-	arr, ok := raw.([]any)
-	if !ok {
+	switch arr := raw.(type) {
+	case []map[string]any:
+		// The sandbox providers decode the JSON array into
+		// []map[string]any (see collectArtifacts in local.go,
+		// ssh.go and self_managed.go), so accept that shape
+		// directly. Without this the tool envelope silently
+		// loses every artifact the sandbox collected.
+		return arr
+	case []any:
+		out := make([]map[string]any, 0, len(arr))
+		for i, item := range arr {
+			m, ok := item.(map[string]any)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "code_exec: %s[%d] is %T, expected map[string]any; dropping\n", key, i, item)
+				continue
+			}
+			out = append(out, m)
+		}
+		return out
+	default:
 		return nil
 	}
-	out := make([]map[string]any, 0, len(arr))
-	for i, item := range arr {
-		m, ok := item.(map[string]any)
-		if !ok {
-			fmt.Fprintf(os.Stderr, "code_exec: %s[%d] is %T, expected map[string]any; dropping\n", key, i, item)
-			continue
-		}
-		out = append(out, m)
-	}
-	return out
 }
 
 func codeExecStubResult(msg string) string {

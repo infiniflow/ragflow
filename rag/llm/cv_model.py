@@ -1456,3 +1456,26 @@ class NewAPICv(GptV4):
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)
+
+
+class CheaperInferenceCV(GptV4):
+    """Cheaper Inference vision adapter.
+
+    The gateway takes image input on the same OpenAI-compatible
+    ``chat/completions`` route it uses for text, so the standard OpenAI client
+    path covers ``describe`` and ``describe_with_prompt`` with nothing
+    overridden. The base URL stays tenant-configurable because the gateway is
+    also reachable through per-account domains.
+    """
+
+    _FACTORY_NAME = "Cheaper Inference"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)

@@ -22,6 +22,8 @@ var llmRuntimeParamKeys = map[string]struct{}{
 	"presence_penalty":        {},
 	"frequency_penalty":       {},
 	"outputs":                 {},
+	"parameter":               {},
+	"thinking":                {},
 	"temperatureEnabled":      {},
 	"topPEnabled":             {},
 	"presencePenaltyEnabled":  {},
@@ -74,10 +76,22 @@ func isExtractorComponent(cpnID, componentName string) bool {
 		strings.HasPrefix(lowerID, "extractor_")
 }
 
+// isCompilerComponent returns true if the component ID indicates a Compiler
+// component, whose LLM-backed runtime parameters follow the same surface as
+// the Extractor's.
+func isCompilerComponent(cpnID string) bool {
+	lowerID := strings.ToLower(cpnID)
+	return strings.HasPrefix(lowerID, "compiler:") ||
+		strings.HasPrefix(lowerID, "compiler_")
+}
+
 // getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
 func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 	if isExtractorComponent(cpnID, "") {
 		return extractorValidParamKeys, true
+	}
+	if isCompilerComponent(cpnID) {
+		return llmRuntimeParamKeys, true
 	}
 	return nil, false
 }
@@ -130,7 +144,7 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 			params = normalizeGeneralComponentParams(params)
 		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
-		if hasDynamic {
+		if isExtractorComponent(key, "") {
 			params = NormalizeExtractorParams(params)
 		}
 		cleaned := make(map[string]any, len(params))
@@ -271,6 +285,43 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 		result[cpnID] = base
 	}
 	return result
+}
+
+// ApplyParentChildChunkerConfig derives runtime children_delimiters from the
+// top-level parent_child setting. parent_child is the sole public source of
+// truth; chunker fields are generated runtime parameters and must not be
+// accepted as an independent dataset setting.
+func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
+	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	componentConfig["parent_child"] = parentChild
+	useParentChild, _ := parentChild["use_parent_child"].(bool)
+	childrenDelimiters := []string{}
+	if useParentChild {
+		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+		}
+	}
+
+	for componentID, value := range componentConfig {
+		if !IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		params["children_delimiters"] = childrenDelimiters
+	}
+}
+
+// IsChunkerComponent reports whether a pipeline component can split parent
+// chunks into children.
+func IsChunkerComponent(componentID string) bool {
+	lowerID := strings.ToLower(componentID)
+	return strings.HasPrefix(lowerID, "generalchunker:") || strings.HasPrefix(lowerID, "tokenchunker:")
 }
 
 // ResolveComponentParamsDefaults takes DSL JSON bytes and returns the

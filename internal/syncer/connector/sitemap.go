@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ const (
 type sitemapFetchFunc func(ctx context.Context, rawURL string) ([]byte, string, error)
 
 // sitemapAssertURLSafe is the SSRF guard, indirected so tests can stub DNS resolution.
-var sitemapAssertURLSafe = utility.AssertURLSafe
+var sitemapAssertURLSafe = common.AssertURLSafe
 
 // SitemapConnector ingests the web pages listed in a sitemap.xml.
 //

@@ -16,6 +16,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 )
@@ -186,6 +187,67 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&[]*entity.User{
+		{ID: "user-1", Nickname: "Owner"},
+		{ID: "user-2", Nickname: "Alpha"},
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	status := "1"
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "ut-1", UserID: "user-1", TenantID: "user-2", Role: "normal", InvitedBy: "user-2", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("seed user tenant: %v", err)
+	}
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-1", Name: "one", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic | dao.MemoryTypeEpisodic | dao.MemoryTypeProcedural, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-2", Name: "two", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-3", Name: "three", TenantID: "user-2", MemoryType: dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	if filters.Total != 3 {
+		t.Fatalf("unexpected owner aggregate: %+v", filters)
+	}
+	if got, want := filters.Filter.Owner, []MemoryFilterOption{
+		{ID: "user-2", Label: "Alpha", Count: 1},
+		{ID: "user-1", Label: "Owner", Count: 2},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("owner filter = %+v, want %+v", got, want)
+	}
+	if got, want := filters.Filter.MemoryType, []MemoryFilterOption{
+		{ID: "raw", Label: "raw", Count: 2},
+		{ID: "semantic", Label: "semantic", Count: 2},
+		{ID: "episodic", Label: "episodic", Count: 1},
+		{ID: "procedural", Label: "procedural", Count: 1},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("memory type filter = %+v, want %+v", got, want)
+	}
+	if got, want := filters.Filter.StorageType, []MemoryFilterOption{
+		{ID: "table", Label: "table", Count: 2},
+		{ID: "graph", Label: "graph", Count: 1},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("storage type filter = %+v, want %+v", got, want)
+	}
+
+	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters refresh: %v", err)
+	}
+	if !reflect.DeepEqual(refreshed, filters) {
+		t.Fatalf("refreshed filters = %+v, want %+v", refreshed, filters)
+	}
 }
 
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
@@ -727,8 +789,16 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	if req == nil {
 		t.Fatal("expected doc engine search request")
 	}
-	if !reflect.DeepEqual(req.IndexNames, []string{"memory_user-1"}) {
-		t.Fatalf("IndexNames = %v, want [memory_user-1]", req.IndexNames)
+	// The per-memory index name gains a `_<memoryID>` suffix on infinity
+	// (see memorySearchIndexNames). The engine type is process-global and set
+	// by sibling integration tests, so make the expectation engine-aware rather
+	// than hard-coding the non-infinity name.
+	wantIndexName := "memory_user-1"
+	if engine.GetEngineType() == "infinity" {
+		wantIndexName = "memory_user-1_mem-owned"
+	}
+	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
+		t.Fatalf("IndexNames = %v, want [%s]", req.IndexNames, wantIndexName)
 	}
 	if len(req.KbIDs) != 0 {
 		t.Fatalf("KbIDs = %v, want empty for memory message search", req.KbIDs)

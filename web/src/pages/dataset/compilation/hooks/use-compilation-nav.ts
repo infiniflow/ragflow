@@ -1,4 +1,10 @@
+import { GenerateType } from '@/constants/knowledge';
 import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
+import {
+  DatasetNavKeys,
   useDeleteDatasetNav,
   useDeleteDatasetNavNode,
   useFetchDatasetNav,
@@ -8,9 +14,13 @@ import { useFetchDocumentStructureGraphById } from '@/hooks/use-document-request
 import { useKnowledgeBaseId } from '@/hooks/use-knowledge-request';
 import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useIsGoBackend } from '@/utils/backend-variant';
+import { useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { trim } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
+
+import { useRunEndEffect } from './use-run-end-effect';
 
 export interface SelectedNavNode {
   parentName: string | null;
@@ -127,6 +137,24 @@ export function useCompilationNav() {
     // drop them so re-expansion refetches under the active filter.
     clearExpandedData();
   }, [activeKeywords, clearExpandedData]);
+
+  const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
+  // Go: the nav tree is a by-product of tree/structure knowledge compilation.
+  // Poll the Tree-scoped scheduler status (kind "raptor" normalizes to "Tree")
+  // so the view can surface compile progress/logs and refresh the tree when a
+  // run ends. Python keeps the read-only behavior (no polling, no log UI).
+  const { data: navRunData } = useTraceRunData(GenerateType.Raptor, isGo);
+  const { status: navStatus } = useGenerateStatus(navRunData);
+
+  const handleCompileRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: DatasetNavKeys.all(kbId) });
+    // Children/structure data cached in local state predates the compile, and
+    // invalidation cannot refetch their inactive queries — drop the maps so
+    // re-expansion fetches fresh data.
+    clearExpandedData();
+  }, [queryClient, kbId, clearExpandedData]);
+  useRunEndEffect(navStatus, handleCompileRunEnd);
 
   const loadChildren = useCallback(
     (name: string) => {
@@ -305,6 +333,8 @@ export function useCompilationNav() {
     selectedNode,
     deleteNavLoading,
     deleteNodeLoading,
+    navRunData,
+    navStatus,
     handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,

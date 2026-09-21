@@ -120,10 +120,12 @@ export default {
         '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
-        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 20，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
+        'RAGFlow 在檢索時會使用加權關鍵詞相似度與加權向量餘弦相似度的組合；選擇重排序模型時，則使用加權關鍵詞相似度與加權重排序分數的組合。此參數設定使用者查詢與文字區塊之間的相似度閾值。相似度分數低於此閾值的文字區塊將從結果中排除。預設閾值為 20，這表示只有混合相似度分數達到 20 或以上的文字區塊才會被檢索。如果向量相似度權重設定為 0，則此閾值不適用。',
       vectorSimilarityWeight: '矢量相似度權重',
       vectorSimilarityWeightTip:
-        '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
+        '此項用於設定混合相似度分數中的向量相似度權重，該權重可套用於向量餘弦相似度或重排序分數。兩個權重的總和必須等於 1.0。',
+      keywordSimilarityWeightTip:
+        '此項用於設定混合相似度分數中的關鍵詞相似度權重。向量與關鍵詞相似度權重的總和必須等於 1.0。',
       testText: '測試文本',
       testTextPlaceholder: '請輸入您的問題！',
       testingLabel: '測試',
@@ -167,7 +169,7 @@ export default {
       cancel: '取消',
       rerankModel: 'rerank模型',
       rerankPlaceholder: '請選擇',
-      rerankTip: `非必選項：若不選擇 rerank 模型，系統將默認採用關鍵詞相似度與向量餘弦相似度相結合的混合查詢方式；如果設定了 rerank 模型，則混合查詢中的向量相似度部分將被 rerank 打分替代。請注意：採用 rerank 模型會非常耗時。如需選用 rerank 模型，建議使用 SaaS 的 rerank 模型服務；如果你傾向使用本地部署的 rerank 模型，請務必確保你使用 docker-compose-gpu.yml 啟動 RAGFlow。`,
+      rerankTip: `非必選項：若不選擇 rerank 模型，系統將默認採用關鍵詞相似度與向量餘弦相似度相結合的混合查詢方式；如果設定了 rerank 模型，則混合查詢中的向量相似度部分將被 rerank 打分替代。請注意：採用 rerank 模型會非常耗時。`,
       topK: 'Top-K',
       topKTip: `與 Rerank 模型配合使用，用於設定傳給 Rerank 模型的文本塊數量。`,
       delimiter: `文字分段標識符`,
@@ -179,9 +181,9 @@ export default {
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建議文字塊大小」設定的大小進行拼裝。在設定文字分段標識符前請確保理解上述文字分段切片機制。',
       html4excel: '表格轉HTML',
       html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
-      autoKeywords: '自動關鍵字',
+      autoKeywords: '自動關鍵字擷取數',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
-      autoQuestions: '自動問題',
+      autoQuestions: '自動問題擷取數',
       autoQuestionsTip: `為了提高排名分數，請使用「系統模型設定」中定義的聊天模型，為每個知識庫區塊提取 N 個問題。 請注意：這會消耗額外的 token。 結果可在區塊列表中查看和編輯。 問題提取錯誤不會阻止分塊過程； 空結果將被添加到原始區塊。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
       setMetaData: '設定元數據',
@@ -229,7 +231,7 @@ export default {
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '建議文本塊大小',
+      chunkTokenNumber: '推薦分塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
         '知識庫採用的默認嵌入模型。一旦知識庫內已經產生了文本塊，更換嵌入模型時，系統將隨機抽取若干 chunk 進行兼容性校驗，使用新嵌入模型重新編碼並計算新舊向量的餘弦相似度，樣本平均相似度需 ≥ 0.9 方可切換。否則，必須刪除知識庫內的所有文本塊後才能更改。',
@@ -364,7 +366,7 @@ export default {
         '在 RAPTOR 中，數據塊會根據它們的語義相似性進行聚類。閾值參數設定了數據塊被分到同一組所需的最小相似度。閾值越高，每個聚類中的數據塊越少；閾值越低，則每個聚類中的數據塊越多。',
       maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
-      pageRank: '頁面排名',
+      pageRank: 'PageRank 權重',
       pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '標籤',
       frequency: '頻次',
@@ -580,10 +582,41 @@ export default {
       reasoning: '推理',
       reasoningTip:
         '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
+      webSearchProvider: '網路搜尋服務',
+      webSearchProviderTip: '選擇啟用聯網搜尋時使用的搜尋服務。',
+      webSearchProviderPlaceholder: '請選擇網路搜尋服務',
+      webSearchApiKeyRequired:
+        '所選服務必須填寫 API Key —— 否則不會發起聯網搜尋，聊天框中也不會出現聯網開關。',
+      // 密鑰輸入框的標籤。{{provider}} 是 provider 的品牌名，故意不翻譯，
+      // 因此一個範本即可涵蓋全部 9 個 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
-      tavilyApiKeyHelp: '如何獲取？',
+      // 每個 provider 一組 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '選擇 Brave Search 後，將使用其搜尋結果補充知識庫檢索。Brave 的所有端點都需要 Key。',
+      braveApiKeyMessage: '請輸入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。選擇 Exa 後，將使用其搜尋結果補充知識庫檢索。即使是每月 1,000 次的免費額度，也仍然需要 Key。',
+      exaApiKeyMessage: '請輸入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '選擇 Firecrawl 後，將使用其搜尋結果補充知識庫檢索。只取搜尋摘要，不抓取整頁。',
+      firecrawlApiKeyMessage: '請輸入你的 Firecrawl API Key',
+      linkupApiKeyTip: '選擇 Linkup 後，將使用其搜尋結果補充知識庫檢索。',
+      linkupApiKeyMessage: '請輸入你的 Linkup API Key',
+      parallelApiKeyTip: '選擇 Parallel 後，將使用其搜尋摘錄補充知識庫檢索。',
+      parallelApiKeyMessage: '請輸入你的 Parallel API Key',
+      queritApiKeyTip:
+        '選擇 Querit 後，將使用 Querit 的網路搜尋結果補充知識庫檢索。',
+      queritApiKeyMessage: '請輸入你的 Querit API Key',
+      serplyApiKeyTip:
+        '選擇 Serply 後，將使用 Serply 的網路搜尋結果補充知識庫檢索。',
+      serplyApiKeyMessage: '請輸入你的 Serply API Key',
+      youcomApiKeyTip:
+        '可選。You.com 在限速端點上無需 API Key 即可使用；填寫 Key 可解除限速。',
+      youcomApiKeyMessage: '可選 —— 留空則使用免費額度',
+      webSearchApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
       showChunkMetadata: '顯示區塊中繼資料',

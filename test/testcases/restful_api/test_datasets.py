@@ -55,6 +55,17 @@ def _expected_chunk_method(chunk_method):
     return chunk_method
 
 
+def _assert_go_pipeline_parser_config(parser_config, chunker_prefix="GeneralChunker:"):
+    assert parser_config
+    assert "File" in parser_config, parser_config
+    assert any(key.startswith("Parser:") for key in parser_config), parser_config
+    assert any(key.startswith(chunker_prefix) for key in parser_config), parser_config
+    assert all(isinstance(params, dict) for params in parser_config.values()), parser_config
+    assert "chunk_token_num" not in parser_config, parser_config
+    assert "raptor" not in parser_config, parser_config
+    assert "graphrag" not in parser_config, parser_config
+
+
 def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
     env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
     if env_engine:
@@ -1315,9 +1326,12 @@ def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, c
     body = res.json()
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
-    assert "raptor" not in parser_config, body
-    assert "graphrag" not in parser_config, body
-    assert parser_config["chunk_token_num"] == 1024, body
+    if IS_GO_PROXY:
+        _assert_go_pipeline_parser_config(parser_config)
+    else:
+        assert "raptor" not in parser_config, body
+        assert "graphrag" not in parser_config, body
+        assert parser_config["chunk_token_num"] == 1024, body
 
 
 @pytest.mark.p3
@@ -1457,7 +1471,7 @@ def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
 )
 def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
     if IS_GO_PROXY:
-        pytest.skip("Go CreateDataset does not accept parser_config")
+        pytest.skip("Go CreateDataset does not accept legacy flat parser_config")
     payload = {"name": name, "parser_config": parser_config}
     res = rest_client.post("/datasets", json=payload)
     assert res.status_code == 200
@@ -1494,9 +1508,12 @@ def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_dataset
     body = res.json()
     assert body["code"] == 0, body
     actual_parser_config = body["data"]["parser_config"]
-    assert "raptor" not in actual_parser_config, body
-    assert "graphrag" not in actual_parser_config, body
-    assert actual_parser_config["chunk_token_num"] == 1024, body
+    if IS_GO_PROXY:
+        _assert_go_pipeline_parser_config(actual_parser_config)
+    else:
+        assert "raptor" not in actual_parser_config, body
+        assert "graphrag" not in actual_parser_config, body
+        assert actual_parser_config["chunk_token_num"] == 1024, body
 
 
 @pytest.mark.p2
@@ -1516,9 +1533,20 @@ def test_dataset_create_parser_config_different_chunk_methods_contract(rest_clie
     body = res.json()
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
-    assert parser_config["chunk_token_num"] == 512, body
-    assert "raptor" not in parser_config, body
-    assert "graphrag" not in parser_config, body
+    if IS_GO_PROXY:
+        chunker_prefix = {
+            "qa": "QAChunker:",
+            "manual": "ManualChunker:",
+            "paper": "TitleChunker:",
+            "book": "TitleChunker:",
+            "laws": "TitleChunker:",
+            "presentation": "PageChunker:",
+        }[chunk_method]
+        _assert_go_pipeline_parser_config(parser_config, chunker_prefix)
+    else:
+        assert parser_config["chunk_token_num"] == 512, body
+        assert "raptor" not in parser_config, body
+        assert "graphrag" not in parser_config, body
 
 
 def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
@@ -1803,8 +1831,11 @@ def test_dataset_create_parser_config_defaults_and_extra_fields_contract(rest_cl
     unset_parser_config = unset_payload["data"]["parser_config"]
     none_parser_config = none_payload["data"]["parser_config"]
     assert empty_parser_config == unset_parser_config == none_parser_config
-    for key in DEFAULT_PARSER_CONFIG:
-        assert key in empty_parser_config, empty_payload
+    if IS_GO_PROXY:
+        _assert_go_pipeline_parser_config(empty_parser_config)
+    else:
+        for key in DEFAULT_PARSER_CONFIG:
+            assert key in empty_parser_config, empty_payload
 
     unsupported_field_payloads = [
         {"name": "id", "id": "id"},

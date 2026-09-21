@@ -34,7 +34,27 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 )
+
+// CallUsage is ONE LLM call's token split inside a run. The aggregate (RunUsage)
+// answers "what did this question cost"; this answers "where did the cost go" —
+// which ReAct iteration, repair turn or auditor pass burned the tokens, and how
+// the input/output mix moved as the context grew.
+type CallUsage struct {
+	// Seq is the 1-based call index within the run.
+	Seq int `json:"seq"`
+	// AtSeconds is the call's start relative to the run sink. Rounded to
+	// milliseconds: enough to order calls, not enough to bloat the artefact.
+	AtSeconds float64 `json:"at_seconds"`
+	// Model is the model the call went to, when the caller knows it (the
+	// explorer, the auditor and the synthesis fallback can use different ones).
+	Model string `json:"model,omitempty"`
+	// PromptTokens / CompletionTokens are the call's input and output split.
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
 
 // Context key types — unexported to prevent direct external access.
 type runUsageKeyType struct{}
@@ -51,11 +71,22 @@ type RunUsage struct {
 	CompletionTokens int
 	TotalTokens      int
 	Calls            int
+	// startedAt anchors CallUsage.AtSeconds; calls keeps one record per LLM
+	// call so a per-question cost can be broken down turn by turn.
+	startedAt time.Time
+	calls     []CallUsage
 }
 
 // Add atomically adds a single LLM call's token counts to the sink.
 // Safe to call concurrently from multiple goroutines.
 func (u *RunUsage) Add(prompt, completion, total int) {
+	u.AddFor("", prompt, completion, total)
+}
+
+// AddFor is Add plus the model that served the call, and records the call's own
+// token split. Callers that know the model (the chat-model wrapper does) get a
+// per-turn breakdown for free; the rest still get a record with an empty model.
+func (u *RunUsage) AddFor(model string, prompt, completion, total int) {
 	if u == nil {
 		return
 	}
@@ -71,6 +102,33 @@ func (u *RunUsage) Add(prompt, completion, total int) {
 		u.TotalTokens += total
 	}
 	u.Calls++
+	at := 0.0
+	if !u.startedAt.IsZero() {
+		at = time.Since(u.startedAt).Seconds()
+	}
+	u.calls = append(u.calls, CallUsage{
+		Seq:              u.Calls,
+		AtSeconds:        float64(int(at*1000)) / 1000,
+		Model:            model,
+		PromptTokens:     prompt,
+		CompletionTokens: completion,
+		TotalTokens:      total,
+	})
+}
+
+// CallSnapshot returns a copy of the per-call records, oldest first.
+func (u *RunUsage) CallSnapshot() []CallUsage {
+	if u == nil {
+		return nil
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if len(u.calls) == 0 {
+		return nil
+	}
+	out := make([]CallUsage, len(u.calls))
+	copy(out, u.calls)
+	return out
 }
 
 // Snapshot returns a copy of the current cumulative counts.
@@ -93,7 +151,7 @@ type RunAttrs struct {
 // WithRunUsage installs a fresh RunUsage sink on ctx. Should be called
 // once at the start of a canvas turn.
 func WithRunUsage(ctx context.Context) context.Context {
-	return context.WithValue(ctx, runUsageKeyType{}, &RunUsage{})
+	return context.WithValue(ctx, runUsageKeyType{}, &RunUsage{startedAt: time.Now()})
 }
 
 // GetRunUsage retrieves the per-run token usage sink from ctx.
@@ -129,11 +187,18 @@ func GetRunAttrs(ctx context.Context) *RunAttrs {
 // active run sink on ctx. Safe to call from anywhere; when no run sink
 // is installed it is a no-op.
 func RecordRunTokenUsage(ctx context.Context, promptTokens, completionTokens, totalTokens int) {
+	RecordRunTokenUsageFor(ctx, "", promptTokens, completionTokens, totalTokens)
+}
+
+// RecordRunTokenUsageFor is RecordRunTokenUsage plus the model that served the
+// call, so the per-call breakdown can attribute tokens to the explorer, the
+// auditor or the synthesis fallback.
+func RecordRunTokenUsageFor(ctx context.Context, model string, promptTokens, completionTokens, totalTokens int) {
 	sink := GetRunUsage(ctx)
 	if sink == nil {
 		return
 	}
-	sink.Add(promptTokens, completionTokens, totalTokens)
+	sink.AddFor(model, promptTokens, completionTokens, totalTokens)
 }
 
 // UsageFromMap extracts a token usage split from a raw API response map.
