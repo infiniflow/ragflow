@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -34,6 +35,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 
@@ -654,8 +656,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
 		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
 		// agentic). It comes from the request kwargs first, then prompt_config.
+		//
+		// Python rag_agent also refuses the agentic loop when the model cannot
+		// call tools, and routes those requests to async_chat.
 		reasoningLevel := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
-		useReasoning := reasoningLevel > 0
+		// The chat model's tool capability rides on the config Phase 2 resolved,
+		// so the guard costs nothing here and judges the model the request
+		// actually runs on.
+		useReasoning := reasoningNeedsAgenticGraph(chat, llmModelConfig, reasoningLevel)
 		common.Info("Phase 9: Retrieval",
 			zap.Bool("has_knowledge_param", hasKnowledgeParam),
 			zap.Int("reasoning_level", reasoningLevel),
@@ -815,7 +823,12 @@ func (s *ChatPipelineService) AsyncChat(
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, thinkSink, harnessSystemPrompt, history)
+				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
+					TopN:                   int(chat.TopN),
+					SimilarityThreshold:    chat.SimilarityThreshold,
+					VectorSimilarityWeight: chat.VectorSimilarityWeight,
+					RerankCandidatesCount:  int(chat.RerankCandidatesCount),
+				}, webSearch, sink, thinkSink, harnessSystemPrompt, history)
 				// The harness streams think-then-answer inside ONE compose call.
 				// Close the block here, once that call (and its trailing
 				// narration line) has returned: a reasoning-only run would
@@ -1052,8 +1065,12 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 		}
 		if systemPrompt != "" {
+			// Python logs characters; a Chinese prompt is ~3x longer in bytes, so
+			// report both to keep the two comparable.
 			common.Info("System prompt built",
-				zap.Int("length", len(systemPrompt)))
+				zap.Int("length", len(systemPrompt)),
+				zap.Int("runes", utf8.RuneCountInString(systemPrompt)),
+				zap.Int("knowledgeRunes", utf8.RuneCountInString(knowledge)))
 		}
 
 		// Build citation prompt if quoting is enabled.
@@ -1066,13 +1083,18 @@ func (s *ChatPipelineService) AsyncChat(
 			quote = quote && promptConfigQuote
 		}
 		if len(knowledges) > 0 && quote {
-			prompt4citation = citationPrompt()
+			// Python's citation_prompt() (generator.py:226) renders
+			// citation_prompt.md — the full rules with examples, which the agent
+			// path already reads from the same embedded copy. The standard path
+			// used a ~380-char paraphrase of it.
+			prompt4citation = ragprompts.CitationPrompt("")
 		}
 
 		if prompt4citation != "" {
 			common.Info("Citation prompt built",
 				zap.Bool("quote", quote),
-				zap.Int("length", len(prompt4citation)))
+				zap.Int("length", len(prompt4citation)),
+				zap.Int("runes", utf8.RuneCountInString(prompt4citation)))
 		}
 
 		// Build the message list: system + cleaned user/assistant messages.
@@ -1148,7 +1170,21 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+		// The citation template joins the prompt only when the request is issued
+		// (prompt+prompt4citation, below), which is after messageFitIn sized the
+		// window — so its tokens are added here by hand. They are deliberately NOT
+		// folded into messageFitIn: the reference implementation trims on the same
+		// budget (dialog_service async_chat: message_fit_in(msg, max_tokens*0.95),
+		// then prompt + prompt4citation), and moving the trim boundary would change
+		// which messages get cut. The completion clamp is where the omission bites:
+		// it derives the completion budget from the room the prompt leaves, so
+		// leaving ~2k tokens of citation instructions out of that sum can hand the
+		// provider a prompt plus completion that overruns the context window.
+		citationTokens := 0
+		if prompt4citation != "" {
+			citationTokens = graph.NumTokensFromString(prompt4citation)
+		}
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount+citationTokens); err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
@@ -1567,7 +1603,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		target, err := s.resolveChatModelTarget(ctx, chat)
+		target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -2088,22 +2124,21 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		}
 		// Probe the default model's enrolled types so a vision-capable
 		// default dispatches as image2text (same rule as the explicit-LLM
-		// branches below).
-		modelRef := target.ModelID
-		if modelRef == "" {
-			modelRef = fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
-		}
-		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelRef)
+		// branches below), and carry the tool capability the resolution
+		// already computed.
+		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelTargetRef(target))
+		cfg["is_tools"] = target.SupportsTools
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
-	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
-	// when the LLM is registered as such, otherwise CHAT.
-	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	modelType := entity.ModelTypeChat
-	if modelTypeStr == "image2text" {
-		modelType = entity.ModelTypeImage2Text
-	}
+	// Branches 1/2: explicit LLM. Resolve the enrolled type first — IMAGE2TEXT
+	// when the LLM is registered as vision-capable, CHAT otherwise — and let the
+	// same resolution report the model's tool capability.
+	//
+	// This mirrors Python, which resolves chat_mdl once in get_models() and then
+	// reads chat_mdl.is_tools off it (dialog_service.py rag_agent): one lookup, and
+	// the model that runs is by construction the model that was judged.
+	modelType := s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
 	if err != nil {
 		return nil, "", "", "", err
@@ -2114,38 +2149,63 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = modelTypeStr
+	cfg["model_type"] = chatModelTypeName(modelType)
+	cfg["is_tools"] = target.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
 }
 
-func (s *ChatPipelineService) resolveChatModelTarget(ctx context.Context, chat *entity.Chat) (*ModelTarget, error) {
-	if chat.LLMID == "" {
-		return s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+// reasoningNeedsAgenticGraph collapses Python rag_agent's two guards: reasoning on
+// and a tool-calling chat model. The loop exists so the outer model can call the
+// bound rag tool — with a model that never emits a tool_call the whole research
+// budget goes to turns that retrieve nothing, so Python routes those requests to
+// async_chat, the regular RAG branch below.
+func reasoningNeedsAgenticGraph(chat *entity.Chat, cfg map[string]interface{}, reasoningLevel int) bool {
+	if chat == nil || reasoningLevel <= 0 {
+		return false
 	}
-
-	modelType := entity.ModelTypeChat
-	if s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID) == "image2text" {
-		modelType = entity.ModelTypeImage2Text
+	if chatConfigSupportsTools(cfg) {
+		return true
 	}
-	return s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
+	common.Info("LLM does not support tool calls; falling back to regular RAG chat",
+		zap.Int("reasoning_level", reasoningLevel))
+	return false
 }
 
-// resolveChatModelType probes the enrolled model types for llmRef and
-// returns "image2text" when the model is vision-capable (enrolled with an
-// image2text / "vision" type), "chat" otherwise. Probe failures are
-// conservative: they yield "chat", which drops image attachments instead
-// of risking a provider-side rejection.
-func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	modelTypes, err := s.ModelProviderSvc.modelSolver().ResolveModelType(ctx, tenantID, llmRef)
-	if err != nil {
-		return "chat"
+// chatConfigSupportsTools mirrors Python's `getattr(chat_mdl, "is_tools", False)`.
+// The flag rides on the resolved model config — getLLMModelConfig copies it off
+// the resolution (resolvedModel.supportsTools) — so this is a field read, exactly
+// like Python's, with no second lookup that could resolve a different model than
+// the one the request runs on. A missing flag means the model was never resolved,
+// which counts as unsupported, the same as Python's default.
+func chatConfigSupportsTools(cfg map[string]interface{}) bool {
+	if cfg == nil {
+		return false
 	}
-	for _, mt := range modelTypes {
-		// ModelType is a bitmask: a model enrolled as chat+image2text
-		// reports a combined value, so test membership, not equality.
-		if mt.Has(entity.ModelTypeImage2Text) {
-			return "image2text"
-		}
+	// Read the value the way the persisted flag is read (extraToolSupport): it is
+	// written as a JSON boolean but has historically also been spelled as a string.
+	switch v := cfg["is_tools"].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	case float64:
+		return v != 0
+	}
+	return false
+}
+
+// resolveChatModelType renders the enrolled type of llmRef as the config's
+// model_type value. Probe failures are conservative: they yield "chat", which
+// drops image attachments instead of risking a provider-side rejection.
+func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
+	return chatModelTypeName(s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, tenantID, llmRef))
+}
+
+// chatModelTypeName renders a resolved model type as the model_type value
+// downstream image-attachment dispatch compares against.
+func chatModelTypeName(modelType entity.ModelType) string {
+	if modelType.Has(entity.ModelTypeImage2Text) {
+		return "image2text"
 	}
 	return "chat"
 }
@@ -2235,7 +2295,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	target, err := s.resolveChatModelTarget(ctx, chat)
+	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
@@ -2809,7 +2869,7 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	target, err := s.resolveChatModelTarget(ctx, chat)
+	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
 	if err != nil {
 		return nil
 	}
@@ -3517,16 +3577,6 @@ func langfuseExtractTimeElapsed(prompt string) string {
 // extractVisibleAnswer mirrors Python's _extract_visible_answer.
 func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 	return ExtractVisibleAnswer(text)
-}
-
-// citationPrompt returns the citation instruction prompt.
-// Mirrors Python's citation_prompt() in rag/prompts/generator.py.
-func citationPrompt() string {
-	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
-		"after each sentence where the information from that chunk is used, " +
-		"where N is the id printed at the start of the evidence block (" +
-		"the blocks are numbered from 0, so the FIRST block is [ID:0]). " +
-		"Cite each source individually ([ID:0][ID:1]); never merge consecutive citations into a range such as [ID:1-3]."
 }
 
 // -----------------------------------------------------------------------
@@ -5007,6 +5057,19 @@ func harnessBoundDatasetNames(kbs []*entity.Knowledgebase) string {
 	return strings.Join(names, ", ")
 }
 
+// HarnessRetrieval is the dialog-level retrieval tuning the chat pipeline hands
+// to the agentic harness. Without it the harness falls back to its package
+// defaults (top_n=12), silently overriding the dialog's configured top_n and
+// making a reasoning run retrieve a different passage set than the standard
+// path — a two-document comparison could come back with one document's chunks
+// filling the whole budget.
+type HarnessRetrieval struct {
+	TopN                   int
+	SimilarityThreshold    float64
+	VectorSimilarityWeight float64
+	RerankCandidatesCount  int
+}
+
 // HarnessRequest carries the minimal inputs the chat pipeline hands to the
 // agentic-RAG harness for evidence collection.
 type HarnessRequest struct {
@@ -5055,6 +5118,9 @@ type HarnessRequest struct {
 	// its own evidence block). Empty when the dialog configures none — Python
 	// then composes without the "# Assistant configuration" block.
 	SystemPrompt string
+	// Retrieval is the dialog's own retrieval tuning, so the harness searches
+	// with the same budget as the standard path.
+	Retrieval HarnessRetrieval
 }
 
 // HarnessResult is the evidence the harness returns, normalized to the map
@@ -5141,7 +5207,7 @@ func harnessThinkSink(ctx context.Context, out chan<- AsyncChatResult) func(Thin
 	}
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, []string, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, retrieval HarnessRetrieval, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, []string, string, error) {
 	if harnessRetriever == nil {
 		return nil, nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
@@ -5166,6 +5232,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 		TextAttachments: textAttachments,
 		WebSearch:       webSearch,
 		SystemPrompt:    dialogSystemPrompt,
+		Retrieval:       retrieval,
 	})
 	if err != nil {
 		return nil, nil, nil, "", err

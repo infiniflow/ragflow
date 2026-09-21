@@ -30,6 +30,7 @@ package agentic_rag
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -184,6 +185,15 @@ type RAGTools struct {
 	// (summarize_document / fetch_full_document)
 	// Nil disables it: the document-level tools report that reading is unavailable.
 	DocChunks runtime.DocChunkLister
+	// MetadataResolver resolves document sets from document metadata. It backs the
+	// metadata_search tool and the pre-search metadata channel
+	// (implemented by internal/service.MetadataService). Nil leaves both unavailable.
+	MetadataResolver runtime.MetadataResolver
+	// DeclaredMetadata reads the metadata fields the datasets DECLARE in their
+	// parser_config, which is what lets the metadata_search catalog describe a field
+	// (its meaning and allowed values) instead of only naming it. Same implementation as
+	// MetadataResolver; nil leaves the catalog with the metadata index alone.
+	DeclaredMetadata runtime.DeclaredMetadataResolver
 	// Outer is the outer-layer chat model that drives the rag_agent react loop
 	// (dialog_service.rag_agent): it binds tools=[rag, summarize_document] with
 	// terminal_tools={"rag"}. When non-nil, Rag runs that outer loop: the model may call
@@ -193,11 +203,6 @@ type RAGTools struct {
 	// When nil, Rag falls back to the direct RunAgenticRAG path, so callers that don't wire
 	// an outer model see unchanged behaviour.
 	Outer *models.ChatModel
-	// OuterSupportsTools gates the outer react loop: when the outer model exists but
-	// cannot emit tool calls, the loop must be skipped (it would otherwise bind tools and,
-	// producing no tool_call, return a retrieval-less direct answer). Callers set it from
-	// ModelProviderService.ResolveModelToolSupport.
-	OuterSupportsTools bool
 	// Cache answers near-identical re-asks from an earlier answer. Rag builds a fresh
 	// per-turn RAGCache when this is nil, so caching is ON by default. To share one cache
 	// across multiple Rag() calls within a single turn (the concurrent tool_call case),
@@ -972,6 +977,8 @@ func searchDepsFor(ctx context.Context, deps RAGTools, req runtime.RunRequest, d
 		DocIDVerifier:     deps.DocIDVerifier,
 		DocChunks:         deps.DocChunks,
 		DocTenantResolver: dbDocTenantResolver{},
+		MetadataResolver:  deps.MetadataResolver,
+		DeclaredMetadata:  deps.DeclaredMetadata,
 		Model:             deps.Model, // the calculate tool writes its expression via the model
 		DocScope:          deps.DocScope,
 		// Python retrieve:614-646 — configuration is the middle precedence
@@ -1053,6 +1060,48 @@ func (dbDocTenantResolver) ResolveDocTenants(ctx context.Context, docIDs []strin
 	return out, nil
 }
 
+// chatModelProbeTimeout bounds the pre-flight completion. An unreachable or
+// out-of-credit provider answers in milliseconds; a slow one must not hold the
+// request before the think block has even opened.
+const chatModelProbeTimeout = 20 * time.Second
+
+// probePrompt is the one-token question the pre-flight sends. It is a constant
+// so the test models recognise the probe without a bare "ping" literal.
+const probePrompt = "ping"
+
+// errProbeTimeout marks a probe that exhausted ITS OWN budget while the request
+// context was still alive — a slow model, not a dead provider.
+var errProbeTimeout = errors.New("chat model pre-flight timed out")
+
+// probeChatModel makes the smallest possible completion to learn whether the
+// run's chat model is usable at all. It is a DETECTION call: the reply is
+// discarded and only its error matters. A nil model reports no error — the
+// existing "no model configured" fallbacks own that case.
+//
+// A probe that only timed out comes back as errProbeTimeout: a slow model is
+// not a dead one, and the caller must not turn a long first token into an
+// outage.
+func probeChatModel(ctx context.Context, deps RAGTools) error {
+	return probeChatModelWithin(ctx, deps, chatModelProbeTimeout)
+}
+
+// probeChatModelWithin is probeChatModel with an injectable budget, so a test
+// can exercise the timeout path without waiting out the real 20s.
+func probeChatModelWithin(ctx context.Context, deps RAGTools, budget time.Duration) error {
+	if deps.Model == nil {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	if _, err := deps.Model.Complete(probeCtx, []schema.Message{*schema.UserMessage(probePrompt)}, nil); err != nil {
+		if ctx.Err() == nil && probeCtx.Err() != nil {
+			return fmt.Errorf("%w after %s: %v", errProbeTimeout, budget, err)
+		}
+		return err
+	}
+	return nil
+}
+
 func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunResponse {
 	logger := deps.Logger
 	if logger == nil {
@@ -1079,6 +1128,44 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	// tool beneath reads it (runtime.StepsFrom) and reports its own step, so the
 	// per-request trace is assembled from the stages that actually run.
 	ctx = runtime.WithSteps(ctx, deps.Steps)
+
+	// LLM pre-flight, before anything is announced. The agentic modes cannot
+	// answer without a working model, and a dead provider used to surface only at
+	// COMPOSE time — after the think block had narrated a research run that could
+	// never finish (measured: MiniMax "insufficient balance" burned seconds of
+	// narration plus a series of degraded-failure lines before the fallback
+	// answer). One minimal call answers "is the provider usable at all"; when it
+	// fails the run reports the provider's own message in the classic
+	// `**ERROR**: …` shape and returns BEFORE reporting a step or starting the
+	// tool, so no think block opens and the user sees what a naive-mode failure
+	// shows.
+	//
+	// It runs ONCE per turn, at the turn's entry: Rag is called once per user turn
+	// (the outer react loop's later `rag` tool calls re-enter the research graph
+	// directly), so there is no second round to re-probe and no per-round state to
+	// keep. It is UNCONDITIONAL: nothing between the request and this call decides
+	// whether the model is checked — a provider that cannot answer must be
+	// reported, never tolerated.
+	//
+	// The probe deliberately runs BEFORE wrapModelForStats: it is a health check,
+	// not a phase's work, so its call is kept out of llm_stats.
+	if spec.Label != "naive" {
+		err := probeChatModel(ctx, deps)
+		if errors.Is(err, errProbeTimeout) {
+			// The probe's own budget ran out, not the provider's answer: let
+			// the run proceed and fail (if it must) on its real budget.
+			logger.Printf("[Agentic RAG] %v; continuing without a pre-flight verdict", err)
+		} else if err != nil {
+			// DEVELOPER LOG ONLY — no step is reported: the whole point is that
+			// the user gets the error instead of a think block narrating work
+			// that cannot happen. No GraphFailed either: that flag means the
+			// research graph itself errored (RunResponse.GraphFailed) and the
+			// graph never started; the pipeline keys on the `**ERROR**:` prefix.
+			logger.Printf("[Agentic RAG] chat model pre-flight failed: %v", err)
+			return &RunResponse{Answer: errorAnswerText(err), Mode: spec}
+		}
+	}
+
 	// The run's logger stays the DEVELOPER log — nothing intercepts it. The
 	// user-visible trace comes from the steps stages report themselves
 	// (deps.Steps), so a diagnostic line can never leak into the think block and
@@ -1086,7 +1173,9 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	//
 	// wraps the chat model in CountingChatModel(chat_mdl.clone,
 	// self.llm_stats). Go wraps the session model's invoker the same way, so
-	// calls made through deps.Model are counted per phase too.
+	// calls made through deps.Model are counted per phase too. The pre-flight
+	// above probes the UNWRAPPED model on purpose, so a health check is never
+	// counted as a phase's work.
 	if wrapped, ok := wrapModelForStats(deps.Model, stats); ok {
 		deps.Model = wrapped
 	}
@@ -1136,7 +1225,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 		deps.Cache = NewRAGCache()
 	}
 
-	if deps.Outer != nil && deps.OuterSupportsTools {
+	if deps.Outer != nil {
 		if deps.AnswerSink != nil {
 			return runOuterReactStream(ctx, deps, req, logger)
 		}
@@ -1206,17 +1295,17 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	deps.Finalize = compose
 
 	// Say why this run goes straight to the research graph — DEVELOPER LOG ONLY.
-	// The decision is recorded where it is taken (the outer branch above did not
-	// fire, and no cache hit short-circuited), because a capability probe that fails
-	// closed is otherwise invisible: nothing in the run says whether the outer model
-	// was absent or merely reported no tool support.
+	// Only one reason remains: no outer model was wired (the outer branch above did
+	// not fire, and no cache hit short-circuited). Whether the request's chat model
+	// can call tools at all is decided before this call, by the caller that picks
+	// between the agentic path and the regular chat.
 	//
 	// It stays out of the think block on purpose: it describes the runtime' wiring,
 	// not the question or the research, and a reader gets one of these on every run
 	// in a deployment without an outer loop. The reader-visible trace simply has no
 	// "[Tool loop]" section in that configuration, which is the honest shape — the
 	// section exists when a loop ran.
-	logger.Printf("[Agentic RAG] %s", outerLoopAbsentLine(deps))
+	logger.Printf("[Agentic RAG] No outer model is wired, so this run has no outer tool loop.")
 
 	RunAgenticRAG(ctx, deps, req, searchDeps, kb, resp, logger, spec)
 
@@ -1340,8 +1429,13 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 				return
 			}
 			// A partially streamed answer must not be sent twice: tell the sink
-			// to drop what it already forwarded and fall back to one shot.
-			logger.Printf("[Agentic RAG] streaming compose failed (%v); falling back to a single call", err)
+			// to drop what it already forwarded and fall back to one shot. The
+			// think block reports the provider's own error (bounded): on a dead
+			// provider this is the first failure a user would otherwise never
+			// see, and the one-shot retry below fails the same way.
+			runtime.StepsFrom(ctx).StageLineDetail(logger, "Agentic RAG",
+				"Streaming generation failed; falling back to a single call: "+providerErrorSummary(err),
+				fmt.Sprintf("streaming compose failed (%v); falling back to a single call", err))
 			deps.AnswerSink.reset()
 		}
 	}
@@ -1359,7 +1453,11 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		// composed text itself predates the flag.
 		resp.Partial = true
 	}
-	if deps.AnswerSink != nil {
+	// A FAILED compose is a terminal message, not a stream: the pipeline carries
+	// it in the final result, exactly how the classic path delivers its own
+	// `**ERROR**: …` answer. Streaming it here as well made the client show the
+	// text twice — once as an answer delta, once in the final.
+	if deps.AnswerSink != nil && !res.Failed {
 		deps.AnswerSink.deliver(res.Answer, false)
 	}
 }
@@ -1464,8 +1562,14 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req runtime.RunReques
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "rag",
-				"description": "Run the full agentic research graph over the configured datasets and return a cited answer.",
+				"name": "rag",
+				"description": "Run the full agentic research graph over the configured datasets and return a cited answer. " +
+					"WHEN TO CALL: every question whose answer must come from the knowledge base — a fact, an enumeration, " +
+					"a count, \"which documents ...\", a date or updated-time range, a comparison, a multi-hop relation, " +
+					"or anything that needs citations. " +
+					"DO NOT CALL: only for pure chit-chat or a rewriting task that cannot need the datasets. " +
+					"You MUST call this before answering a knowledge-base question: the dataset names and your own prior " +
+					"knowledge are not evidence, and answering without it is a wrong answer even when it reads well.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -1481,14 +1585,18 @@ func prepareOuterReact(ctx context.Context, deps RAGTools, req runtime.RunReques
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "summarize_document",
-				"description": "Read an entire document by id into the evidence set and return a short summary the model can answer from.",
+				"name": "summarize_document",
+				"description": "Read an entire document by id into the evidence set and return a short summary the model can answer from. " +
+					"WHEN TO CALL: only when you ALREADY hold a doc_id — returned by an earlier `rag` call, or given by the user. " +
+					"DO NOT CALL: when you have no doc_id, or the question asks WHICH documents exist, or it needs several " +
+					"documents compared or aggregated — that is the `rag` tool's job. This tool cannot find a document: " +
+					"called without a real doc_id it only returns an error and wastes a round.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"doc_id": map[string]any{
 							"type":        "string",
-							"description": "The document id to read.",
+							"description": "The document id to read — one you already hold from a prior `rag` result or from the user.",
 						},
 					},
 					"required": []string{"doc_id"},
@@ -1813,22 +1921,6 @@ func outerLoopEndLine(ragCalls int, answered bool) string {
 	default:
 		return "The rag tool produced the final answer, done."
 	}
-}
-
-// outerLoopAbsentLine says why a run has NO "[Tool loop]" section — which is the
-// normal shape of a deployment that never wires an outer model, and the shape of a
-// tool-incapable one.
-//
-// It is reported to the DEVELOPER LOG only (see the call site in Rag). The two cases
-// are kept apart because they are different situations: a model that merely failed
-// to report its tool capability looks identical to one that has none (the probe
-// fails closed in cmd/ragflow_server.go), so this line is what tells an operator
-// which of the two they are looking at.
-func outerLoopAbsentLine(deps RAGTools) string {
-	if deps.Outer == nil {
-		return "No outer model is wired, so this run has no outer tool loop."
-	}
-	return "The outer model cannot call tools, so this run has no outer tool loop."
 }
 
 // outerReactSession implements models.ToolCallSession for the outer react loop.
@@ -2330,9 +2422,11 @@ func runSingleSession(ctx context.Context, deps RAGTools, req runtime.RunRequest
 			ThinkingMode: resp.Mode.Label,
 			// Provider gate: without a wired provider the tool is hidden rather than
 			// advertised dead.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields (see NewAgenticLoop).
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		},
 		Model:   deps.Model,
 		Prompts: deps.Prompts,

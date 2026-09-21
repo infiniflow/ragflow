@@ -561,13 +561,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval when a reranker model is selected. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved. If the vector similarity weight is set to 0, this threshold does not apply.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'This sets the weight of vector similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Run',
@@ -616,7 +616,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       close: 'Close',
       rerankModel: 'Rerank model',
       rerankPlaceholder: 'Select value',
-      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
+      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
@@ -738,7 +738,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipeline: 'Select or switch the parsing mode',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
@@ -748,6 +748,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parseType: 'Parse mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      noConfigChunkerHint:
+        'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
         'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Dataset name',
@@ -774,6 +776,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
+      checkingEmbedding: 'Checking embedding model compatibility…',
       chunkMethodPlaceholder: 'Please select a chunking method.',
       tableColumnMode: 'Column mode',
       tableColumnModeAuto: 'Auto',
@@ -1078,18 +1081,18 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       datasetUnavailable:
-        'The selected knowledge base is unavailable (deleted or has no chunks), please re-select',
+        'The selected dataset is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
-      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
 **Essential Rules:**
   - Your answer must be derived **solely** from this dataset: {knowledge}.
   - **When information is available**: Summarize the content to give a detailed answer.
-  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
   - **Always consider** the entire conversation history.`,
-      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
       **Essential Rules:**
         - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
@@ -1615,7 +1618,7 @@ Example: Virtual Hosted Style`,
       timeStarted: 'Time started',
       log: 'Log',
       rssDescription:
-        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
+        'Connect to a public RSS or Atom feed and sync feed entries into your dataset.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -2459,7 +2462,7 @@ Example: Virtual Hosted Style`,
       jsonPreview: 'JSON preview',
       processFlow: 'Process flow',
       processFlowComingSoon: 'Process flow preview coming soon',
-      compilationTitleSuffix: "' dataset",
+      compilationTitleSuffix: ' dataset',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -3501,7 +3504,7 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryMissing:
         'Cannot save: "{{name}}" has no memories selected. Please choose them first',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} dataset retrieval step(s) without a bound knowledge base. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalTemplateMemoryHint:
         'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
@@ -3514,6 +3517,14 @@ This process aggregates variables from multiple branches into a single variable 
       titleChunkerDescription:
         'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
       titleChunker: 'Title Chunker',
+      oneChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      qAChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      tableChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      pageChunkerDescription:
+        'No additional configuration is required for this chunker.',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"ragflow/internal/tokenizer"
@@ -144,5 +145,51 @@ func TestKbPrompt_AllFit(t *testing.T) {
 	result := KbPrompt(chunks, 1000)
 	if !contains(result, "ID: 0") || !contains(result, "ID: 1") {
 		t.Error("both chunks should fit under generous limit")
+	}
+}
+
+// TestKBPromptRendersPythonBlockShape pins the block shape to Python's
+// _kb_block() (rag/prompts/generator.py:140): ID, Title, URL, metadata lines and
+// Content, with embedded newlines in the single-line fields collapsed to spaces.
+func TestKBPromptRendersPythonBlockShape(t *testing.T) {
+	svc := &ChatPipelineService{}
+	chunks := []map[string]interface{}{
+		{
+			"id":                  "a",
+			"docnm_kwd":           "规范.docx",
+			"content_with_weight": "正文",
+		},
+		{
+			"id":                  "b",
+			"docnm_kwd":           "多行\n标题.docx",
+			"url":                 "https://example.com/x\n",
+			"document_metadata":   map[string]interface{}{"author": "a\nb"},
+			"content_with_weight": "第二块",
+		},
+	}
+
+	blocks := svc.kbPrompt(map[string]interface{}{"chunks": chunks}, 8000)
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(blocks))
+	}
+
+	if want := "\nID: 0\n├── Title: 规范.docx\n└── Content:\n正文"; blocks[0] != want {
+		t.Errorf("block 0 = %q, want %q", blocks[0], want)
+	}
+
+	second := blocks[1]
+	for _, want := range []string{
+		"\nID: 1\n",
+		"├── Title: 多行 标题.docx\n",
+		"├── URL: https://example.com/x \n",
+		"├── author: a b\n",
+		"└── Content:\n第二块",
+	} {
+		if !strings.Contains(second, want) {
+			t.Errorf("block 1 = %q, missing %q", second, want)
+		}
+	}
+	if strings.Contains(second, "\n标题.docx") || strings.Contains(second, "a\nb") {
+		t.Errorf("block 1 kept raw newlines in a single-line field: %q", second)
 	}
 }

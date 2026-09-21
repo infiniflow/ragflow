@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -70,7 +71,7 @@ func parseWithTCADP(
 			"MarkdownImageResponseType": markdownImageResponseType,
 		},
 	}
-	resp, err := models.PostJSONRequest(ctx, models.NewDriverHTTPClient(false),
+	resp, err := models.PostJSONRequest(ctx, common.GetSSRFHTTPClient(),
 		strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
@@ -86,7 +87,7 @@ func parseWithTCADP(
 	var payload struct {
 		DocumentRecognizeResultURL string `json:"DocumentRecognizeResultUrl"`
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err = json.Unmarshal(raw, &payload); err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP decode submit: %w", err)}
 	}
 	if payload.DocumentRecognizeResultURL == "" {
@@ -100,7 +101,7 @@ func parseWithTCADP(
 	if auth := bearer(apiKey); auth != "" {
 		downloadReq.Header.Set("Authorization", auth)
 	}
-	downloadResp, err := models.NewDriverHTTPClient(false).Do(downloadReq)
+	downloadResp, err := common.GetSSRFHTTPClient().Do(downloadReq)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download: %w", err)}
 	}

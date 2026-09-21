@@ -74,7 +74,6 @@ type PipelineExecutor struct {
 	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink     pipelinepkg.ProgressSink
-	requireResume    bool // when true, the pipeline run passes WithRequireResume
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -178,14 +177,6 @@ func (s *PipelineExecutor) WithRunPipelineFunc(f func(ctx context.Context, dsl s
 // unset, the pipeline runs DB-independent (progress events are dropped).
 func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *PipelineExecutor {
 	s.progressSink = sink
-	return s
-}
-
-// WithRequireResume makes the pipeline refuse to start when no checkpoint
-// store is resolvable (Redis down or not configured). Production ingestion
-// sets this; tests skip it so they can exercise runPlain without Redis.
-func (s *PipelineExecutor) WithRequireResume() *PipelineExecutor {
-	s.requireResume = true
 	return s
 }
 
@@ -443,57 +434,21 @@ func (s *PipelineExecutor) terminalDuration(start time.Time) float64 {
 // component-scoped Extractor node's modular metadata config. Legacy flat
 // fields (enable_metadata / metadata_config / built_in_metadata at either the
 // top level or on the node) are intentionally not supported.
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
+//
+// The config lookup and the field-list normalisation live in common (see
+// ExtractorMetadataConfig / MetadataRawFieldList) so the ingestion pipeline and the agentic
+// metadata catalog read the very same shape.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
-	var extractorKeys []string
-	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
-			extractorKeys = append(extractorKeys, k)
-		}
+	metaObj, ok := common.ExtractorMetadataConfig(parserConfig)
+	if !ok {
+		return nil, false
 	}
-	sort.Strings(extractorKeys)
-
-	for _, k := range extractorKeys {
-		nodeRaw := parserConfig[k]
-		if node, ok := nodeRaw.(map[string]any); ok {
-			if metaObj, ok := node["metadata"].(map[string]any); ok {
-				arr := metadataFieldSlice(metaObj["built_in_metadata"])
-				return arr, parserConfigBool(metaObj["enabled"])
-			}
-		}
-	}
-	return nil, false
-}
-
-// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
-// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
-// construction) into a []any.
-func metadataFieldSlice(value any) []any {
-	if list, ok := value.([]any); ok {
-		return list
-	}
-	if list, ok := value.([]map[string]any); ok {
-		out := make([]any, 0, len(list))
-		for _, item := range list {
-			out = append(out, item)
-		}
-		return out
-	}
-	return nil
-}
-
-// parserConfigBool coerces a parser_config boolean-like value (bool / number)
-// to bool, mirroring the frontend's enable_metadata handling.
-func parserConfigBool(v any) bool {
-	switch typed := v.(type) {
-	case bool:
-		return typed
-	case float64:
-		return typed > 0
-	case int:
-		return typed > 0
-	}
-	return false
+	return common.MetadataRawFieldList(metaObj["built_in_metadata"]), common.ParserConfigBool(metaObj["enabled"])
 }
 
 func docNameValue(name *string) string {
