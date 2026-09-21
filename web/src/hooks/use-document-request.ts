@@ -35,7 +35,10 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
-import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
+import {
+  isDocumentProcessing,
+  isDocumentStopping,
+} from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import { buildDocumentIngestPayload } from '@/services/document-ingest-adapter';
 import kbService, {
@@ -64,6 +67,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams } from 'react-router';
 import {
+  getCancelRequestInterval,
+  markCancelRequested,
+  observeStoppingDocuments,
+} from './cancel-stop-loss';
+import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
@@ -86,6 +94,35 @@ export const enum DocumentStructureApiAction {
 }
 
 const documentIngestInFlight = new Map<string, Promise<unknown>>();
+
+const sendDocumentIngest = (
+  params: {
+    documentIds: string[];
+    run: number;
+    option?: { delete: boolean; apply_kb: boolean };
+  },
+  request: () => Promise<unknown>,
+) => {
+  const key = JSON.stringify({
+    documentIds: [...params.documentIds].sort(),
+    run: params.run,
+    option: params.option || null,
+  });
+  const existingRequest = documentIngestInFlight.get(key);
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  const inFlight = request();
+  documentIngestInFlight.set(key, inFlight);
+  const clearRequest = () => {
+    if (documentIngestInFlight.get(key) === inFlight) {
+      documentIngestInFlight.delete(key);
+    }
+  };
+  void inFlight.then(clearRequest, clearRequest);
+  return inFlight;
+};
 
 export const DocumentStructureKeys = {
   graph: (datasetId: string, documentId: string) =>
@@ -186,6 +223,7 @@ export const useFetchDocumentList = (loop = true) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
@@ -197,12 +235,22 @@ export const useFetchDocumentList = (loop = true) => {
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
     initialData: { docs: [], total: 0, has_active_tasks: false },
-    refetchInterval: (query) =>
-      loop &&
-      (query.state.data?.has_active_tasks ||
-        !!query.state.data?.docs.some(isDocumentProcessing))
-        ? 5000
-        : false,
+    refetchInterval: (query) => {
+      if (!loop) return false;
+      const current = query.state.data;
+      if (!current) return false;
+      const stoppingIds = current.docs
+        .filter(isDocumentStopping)
+        .map((doc) => doc.id);
+      if (stoppingIds.length > 0) {
+        return getCancelRequestInterval(stoppingIds);
+      }
+      if (current.has_active_tasks || current.docs.some(isDocumentProcessing)) {
+        return 5000;
+      }
+      return false;
+    },
+    refetchIntervalInBackground: true,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
@@ -260,6 +308,32 @@ export const useFetchDocumentList = (loop = true) => {
       queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
     });
   }, [data.docs, queryClient]);
+
+  // Stop-loss: observe the documents currently stopping on every poll. This
+  // starts the window for cancels first seen here, prunes trackers for ids
+  // that left the stopping state, and re-sends one cancel request for the
+  // overdue ones.
+  useEffect(() => {
+    if (!isGo) {
+      return;
+    }
+    const overdueIds = observeStoppingDocuments(
+      data.docs.filter(isDocumentStopping).map((doc) => doc.id),
+    );
+    if (overdueIds.length === 0) {
+      return;
+    }
+    void sendDocumentIngest({ documentIds: overdueIds, run: 2 }, () =>
+      kbService.documentIngest(
+        buildDocumentIngestPayload({ documentIds: overdueIds, run: 2 }),
+      ),
+    ).then(
+      () => {
+        queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+      },
+      () => {},
+    );
+  }, [data.docs, isGo, queryClient]);
 
   return {
     loading,
@@ -440,8 +514,38 @@ export const useRunDocument = () => {
             ),
           };
         });
+      } else if (run === 2) {
+        // Optimistic STOPPING so the row locks immediately; a fast poll then
+        // picks up the real status. Stage timestamps in the same pass so the
+        // list's stop-loss can downgrade the interval and retry an overdue
+        // cancel exactly once.
+        if (isGo) {
+          markCancelRequested(documentIds);
+        }
+        const documentIdSet = new Set(documentIds);
+        queryClient.setQueriesData<{
+          docs: IDocumentInfo[];
+          total: number;
+        }>({ queryKey: DocumentKeys.all() }, (current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            docs: current.docs.map((doc) =>
+              documentIdSet.has(doc.id)
+                ? {
+                    ...doc,
+                    ...(isGo
+                      ? { ingestion_status: IngestionTaskStatus.STOPPING }
+                      : { run: RunningStatus.CANCEL }),
+                  }
+                : doc,
+            ),
+          };
+        });
       }
-      if (run !== 1) {
+      if (run !== 1 && run !== 2) {
         queryClient.invalidateQueries({
           queryKey: DocumentKeys.all(),
         });
@@ -481,27 +585,7 @@ export const useRunDocument = () => {
       documentIds: string[];
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
-    }) => {
-      const key = JSON.stringify({
-        documentIds: [...params.documentIds].sort(),
-        run: params.run,
-        option: params.option || null,
-      });
-      const existingRequest = documentIngestInFlight.get(key);
-      if (existingRequest) {
-        return existingRequest;
-      }
-
-      const request = mutateAsync(params);
-      documentIngestInFlight.set(key, request);
-      const clearRequest = () => {
-        if (documentIngestInFlight.get(key) === request) {
-          documentIngestInFlight.delete(key);
-        }
-      };
-      void request.then(clearRequest, clearRequest);
-      return request;
-    },
+    }) => sendDocumentIngest(params, () => mutateAsync(params)),
     [mutateAsync],
   );
 
