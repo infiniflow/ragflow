@@ -23,7 +23,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids
-from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human, memory_type_names, order_facet_options
+from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human, memory_type_names, order_facet_options, order_owner_options
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
@@ -308,7 +308,7 @@ async def list_memory_filters():
         storage_type.setdefault(item, {"id": item, "label": item, "count": 0})["count"] += 1
     return {
         "filter": {
-            "owner": list(owner.values()),
+            "owner": order_owner_options(owner),
             "memory_type": order_facet_options(memory_type, memory_type_names()),
             "storage_type": order_facet_options(storage_type, ("table", "graph")),
         },

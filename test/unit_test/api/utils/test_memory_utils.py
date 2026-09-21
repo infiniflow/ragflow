@@ -15,7 +15,7 @@
 #
 import pytest
 
-from api.utils.memory_utils import memory_type_names, order_facet_options
+from api.utils.memory_utils import memory_type_names, order_facet_options, order_owner_options
 
 
 def _option_ids(options):
@@ -48,3 +48,14 @@ def test_facet_options_append_unknown_values_after_canonical_ones():
     }
 
     assert _option_ids(order_facet_options(counts, ("table", "graph"))) == ["table", "graph", "vector"]
+
+
+@pytest.mark.p1
+def test_owner_options_sort_by_label_case_insensitively_then_id():
+    counts = {
+        "tenant-2": {"id": "tenant-2", "label": "Zeta", "count": 1},
+        "tenant-1": {"id": "tenant-1", "label": "owner", "count": 3},
+        "tenant-3": {"id": "tenant-3", "label": "Owner", "count": 2},
+    }
+
+    assert _option_ids(order_owner_options(counts)) == ["tenant-1", "tenant-3", "tenant-2"]

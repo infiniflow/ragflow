@@ -56,6 +56,10 @@ def order_facet_options(counts: dict, canonical_order) -> List[dict]:
     return ordered
 
 
+def order_owner_options(counts: dict) -> List[dict]:
+    return sorted(counts.values(), key=lambda option: (option["label"].lower(), option["id"]))
+
+
 def calculate_memory_type(memory_type_name_list: List[str]) -> int:
     memory_type = 0
     type_value_map = {mem_type.name.lower(): mem_type.value for mem_type in MemoryType}
