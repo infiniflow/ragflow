@@ -34,7 +34,10 @@ import {
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
 import { pickByBackend } from '@/utils/backend-variant';
-import { resolveTableColumnSettings } from '@/utils/table-column-settings';
+import {
+  resolveTableColumnSettings,
+  spreadsheetSetups,
+} from '@/utils/table-column-settings';
 import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -429,16 +432,9 @@ export function transformFormConfigToApi(
 export function persistTableColumnSettings(
   transformedConfig: Record<string, any>,
 ): Record<string, any> {
-  for (const [operatorId, config] of Object.entries(transformedConfig)) {
-    if (getOperatorType(operatorId) !== Operator.Parser) {
-      continue;
-    }
-    // A parser's API-format config carries each file family's setup at the top
-    // level, keyed by file format.
-    const spreadsheet = (config as Record<string, any>)?.[FileType.Spreadsheet];
-    if (!spreadsheet || typeof spreadsheet !== 'object') {
-      continue;
-    }
+  // The same ordered list the resolver reads, so a canvas with more than one
+  // Parser saves the intent of the node it displays.
+  for (const spreadsheet of spreadsheetSetups(transformedConfig)) {
     if (spreadsheet.column_mode) {
       transformedConfig.table_column_mode = spreadsheet.column_mode;
     }

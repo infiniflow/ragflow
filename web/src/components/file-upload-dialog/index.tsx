@@ -55,7 +55,6 @@ function buildUploadFormSchema(t: TFunction) {
       )
       .min(1, { message: t('fileManager.pleaseUploadAtLeastOneFile') }),
     tableColumnMode: z.enum(['auto', 'manual']).optional(),
-    tableColumnNames: z.array(z.string()).optional(),
     tableColumnNamesByFile: z.array(z.array(z.string())).optional(),
     tableColumnRoles: z
       .record(z.enum(['indexing', 'metadata', 'both']))
@@ -68,6 +67,17 @@ function buildUploadFormSchema(t: TFunction) {
 export type UploadFormSchemaType = z.infer<
   ReturnType<typeof buildUploadFormSchema>
 >;
+
+function sameTableColumnRoles(
+  a: TableColumnSettings['roles'],
+  b: TableColumnSettings['roles'],
+): boolean {
+  const aKeys = Object.keys(a);
+  return (
+    aKeys.length === Object.keys(b).length &&
+    aKeys.every((key) => a[key] === b[key])
+  );
+}
 
 const UploadFormId = 'UploadFormId';
 
@@ -97,7 +107,6 @@ function UploadForm({
     defaultValues: {
       parseOnCreation: false,
       fileList: [],
-      tableColumnNames: [],
       tableColumnNamesByFile: [],
       tableColumnRoles: {},
     },
@@ -119,7 +128,6 @@ function UploadForm({
       const version = ++extractionVersion.current;
       if (!isTableParser || !files || files.length === 0) {
         setExtractedColumns([]);
-        form.setValue('tableColumnNames', []);
         form.setValue('tableColumnNamesByFile', []);
         return;
       }
@@ -141,7 +149,6 @@ function UploadForm({
         return;
       }
       setExtractedColumns(columns);
-      form.setValue('tableColumnNames', columns);
       form.setValue('tableColumnNamesByFile', columnsByFile);
     },
     [form, isTableParser],
@@ -158,17 +165,24 @@ function UploadForm({
     form.setValue('tableColumnRoles', updated);
   };
 
-  // Sync column roles to form when columns are extracted
+  // A manual selection covers every column the current file list has: seed the
+  // ones just discovered and drop the ones a changed list removed. The equality
+  // guard is what lets this effect name the roles it reads — without it, writing
+  // a fresh object would re-trigger itself forever.
   useEffect(() => {
-    if (columnMode === 'manual' && extractedColumns.length > 0) {
-      const roles: TableColumnSettings['roles'] = {};
-      extractedColumns.forEach((col) => {
-        roles[col] = columnRoles[col] || 'both';
-      });
-      setColumnRoles(roles);
-      form.setValue('tableColumnRoles', roles);
+    if (columnMode !== 'manual' || extractedColumns.length === 0) {
+      return;
     }
-  }, [extractedColumns, columnMode]); // oxlint-disable-line react/exhaustive-deps
+    const seeded: TableColumnSettings['roles'] = {};
+    extractedColumns.forEach((col) => {
+      seeded[col] = columnRoles[col] ?? 'both';
+    });
+    if (sameTableColumnRoles(seeded, columnRoles)) {
+      return;
+    }
+    setColumnRoles(seeded);
+    form.setValue('tableColumnRoles', seeded);
+  }, [extractedColumns, columnMode, columnRoles, form]);
 
   const showColumnConfig = isTableParser && extractedColumns.length > 0;
 

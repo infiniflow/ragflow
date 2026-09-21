@@ -32,7 +32,6 @@ export const useHandleUploadDocument = () => {
         fileList,
         parseOnCreation,
         tableColumnMode,
-        tableColumnNames,
         tableColumnNamesByFile,
         tableColumnRoles,
       }: UploadFormSchemaType,
@@ -41,7 +40,6 @@ export const useHandleUploadDocument = () => {
       // Build parser_config if column settings are configured
       const parserConfig = buildTableUploadParserConfig(fileList, {
         tableColumnMode,
-        tableColumnNames,
         tableColumnNamesByFile,
         tableColumnRoles,
       });

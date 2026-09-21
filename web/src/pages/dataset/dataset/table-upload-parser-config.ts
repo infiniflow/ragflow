@@ -3,10 +3,7 @@ import { isTableFile } from '@/utils/table-column-extract';
 
 type TableColumnUploadValues = Pick<
   UploadFormSchemaType,
-  | 'tableColumnMode'
-  | 'tableColumnNames'
-  | 'tableColumnNamesByFile'
-  | 'tableColumnRoles'
+  'tableColumnMode' | 'tableColumnNamesByFile' | 'tableColumnRoles'
 >;
 
 // Builds the parser_config that carries the table column settings into the
@@ -18,7 +15,10 @@ type TableColumnUploadValues = Pick<
 // tableDocumentConfigForFile), and the multipart body preserves this list's
 // order. The array therefore stays aligned with the full file list — non-table
 // files keep an empty placeholder rather than being compacted out, which would
-// shift every later entry onto the wrong document.
+// shift every later entry onto the wrong document. That per-file entry is also
+// the only copy of a document's column names this request carries: the backend
+// writes each document's root table_column_names from it, so a single root list
+// of the union across files would be overwritten anyway.
 //
 // table_column_mode / table_column_roles are sent ONLY when the user chose them
 // in the dialog. A root-level key makes the root level authoritative for that
@@ -30,7 +30,6 @@ export function buildTableUploadParserConfig(
   fileList: UploadFormSchemaType['fileList'],
   {
     tableColumnMode,
-    tableColumnNames,
     tableColumnNamesByFile,
     tableColumnRoles,
   }: TableColumnUploadValues,
@@ -44,9 +43,6 @@ export function buildTableUploadParserConfig(
   }
 
   const parserConfig: Record<string, any> = {};
-  if (tableColumnNames?.length) {
-    parserConfig.table_column_names = tableColumnNames;
-  }
   if (Array.isArray(tableColumnNamesByFile)) {
     const byFile = fileList.map((_, index) => {
       const columns = tableColumnNamesByFile[index];

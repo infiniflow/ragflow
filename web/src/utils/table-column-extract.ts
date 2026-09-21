@@ -17,6 +17,14 @@
 import { probeTableColumns } from '@/services/knowledge-service';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { getExtension } from './document-util';
+
+// The two file families the table chunk method reads, split the way its pipeline
+// is configured: the built-in table template takes xls/xlsx/csv/tsv through a
+// spreadsheet block and txt through a text one
+// (internal/ingestion/pipeline/template/ingestion_pipeline_table.json).
+const DELIMITED_TABLE_EXTENSIONS = ['csv', 'tsv', 'txt'];
+const SPREADSHEET_TABLE_EXTENSIONS = ['xlsx', 'xls'];
 
 /**
  * Extracts column headers from a CSV, TSV, or Excel file.
@@ -36,13 +44,13 @@ export async function extractTableColumns(file: File): Promise<string[]> {
     // user acted on: the local parse below answers the same question.
   }
 
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const ext = getExtension(file.name);
 
-  if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
+  if (DELIMITED_TABLE_EXTENSIONS.includes(ext)) {
     return extractCsvColumns(file, ext !== 'csv');
   }
 
-  if (['xlsx', 'xls'].includes(ext)) {
+  if (SPREADSHEET_TABLE_EXTENSIONS.includes(ext)) {
     return extractExcelColumns(file);
   }
 
@@ -168,12 +176,15 @@ function tableColumnHeaderNames(
 }
 
 /**
- * Check if a file is a table file: every format the Go table parser reads, which
- * is also what the schema probe accepts. Python serves this set only through the
- * Go path: its own canvas parser reads no column mode and it exposes no probe
- * endpoint.
+ * Check if a file is a table file: every format the table chunk method reads,
+ * which is what decides whether the upload dialog offers column settings. The
+ * server schema probe covers most of this set and declines the rest — binary xls
+ * among them — and every declined format is answered by the local parse above.
  */
 export function isTableFile(file: File): boolean {
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  return ['csv', 'tsv', 'txt', 'xlsx', 'xls'].includes(ext);
+  const ext = getExtension(file.name);
+  return (
+    DELIMITED_TABLE_EXTENSIONS.includes(ext) ||
+    SPREADSHEET_TABLE_EXTENSIONS.includes(ext)
+  );
 }

@@ -9,7 +9,6 @@ const pdfFile = (name = 'report.pdf') =>
 
 const baseValues = {
   tableColumnMode: 'manual' as const,
-  tableColumnNames: ['a', 'b', 'c'],
   tableColumnNamesByFile: [] as string[][],
   tableColumnRoles: { a: 'indexing' as const },
 };
@@ -30,12 +29,22 @@ describe('buildTableUploadParserConfig', () => {
 
     expect(config).toEqual({
       table_column_mode: 'manual',
-      table_column_names: ['a', 'b', 'c'],
       table_column_names_by_file: [[], ['a', 'b'], ['c']],
       table_column_roles: { a: 'indexing' },
     });
     expect(config?.table_column_names_by_file[1]).toEqual(['a', 'b']);
     expect(config?.table_column_names_by_file[2]).toEqual(['c']);
+  });
+
+  // A document's own root list is written by the backend from its per-file
+  // entry; the union across a mixed upload would only be overwritten.
+  it('never sends a root column list', () => {
+    const config = buildTableUploadParserConfig([csvFile(), xlsxFile()], {
+      ...baseValues,
+      tableColumnNamesByFile: [['a', 'b'], ['c']],
+    });
+
+    expect(config).not.toHaveProperty('table_column_names');
   });
 
   it('pads a short per-file list so later files do not shift', () => {
@@ -69,7 +78,6 @@ describe('buildTableUploadParserConfig', () => {
   it('omits per-file and role keys when only the mode is set', () => {
     const config = buildTableUploadParserConfig([csvFile()], {
       tableColumnMode: 'auto',
-      tableColumnNames: [],
       tableColumnNamesByFile: [[], []],
       tableColumnRoles: {},
     });
@@ -84,13 +92,11 @@ describe('buildTableUploadParserConfig', () => {
   it('does not pin a mode the user never chose', () => {
     const config = buildTableUploadParserConfig([csvFile(), xlsxFile()], {
       tableColumnMode: undefined,
-      tableColumnNames: ['a', 'b'],
       tableColumnNamesByFile: [['a', 'b'], ['c']],
       tableColumnRoles: {},
     });
 
     expect(config).toEqual({
-      table_column_names: ['a', 'b'],
       table_column_names_by_file: [['a', 'b'], ['c']],
     });
     expect(config).not.toHaveProperty('table_column_mode');
@@ -100,14 +106,12 @@ describe('buildTableUploadParserConfig', () => {
   it('does not send role keys outside manual mode', () => {
     const config = buildTableUploadParserConfig([csvFile()], {
       tableColumnMode: 'auto',
-      tableColumnNames: ['a'],
       tableColumnNamesByFile: [['a']],
       tableColumnRoles: { a: 'metadata' },
     });
 
     expect(config).toEqual({
       table_column_mode: 'auto',
-      table_column_names: ['a'],
       table_column_names_by_file: [['a']],
     });
   });

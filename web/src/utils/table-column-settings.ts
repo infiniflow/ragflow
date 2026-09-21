@@ -85,8 +85,12 @@ function storedNames(raw: unknown): string[] {
 // spreadsheetSetups returns, in ascending component-id order, the spreadsheet
 // parameter blocks a canvas or parser dialog saved under a `Parser:<id>` key —
 // the shape the backend reads at internal/ingestion/task/indexdoc,
-// ResolveTableProfile.
-function spreadsheetSetups(config: Record<string, any>): Record<string, any>[] {
+// ResolveTableProfile. Both reading a stored profile and copying a dialog's
+// intent out of one walk this same list, so a canvas with more than one Parser
+// resolves to the same node on both sides.
+export function spreadsheetSetups(
+  config: Record<string, any>,
+): Record<string, any>[] {
   return Object.keys(config)
     .filter((key) => key.startsWith('Parser:'))
     .sort()

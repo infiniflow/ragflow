@@ -6,6 +6,7 @@ import {
   transformFormConfigToApi,
   transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
+import { resolveTableColumnSettings } from '@/utils/table-column-settings';
 
 let mockIsGoBackend = true;
 jest.mock('@/utils/backend-runtime', () => ({
@@ -377,6 +378,34 @@ describe('persistTableColumnSettings', () => {
         spreadsheet: { column_names: ['col_a'], output_format: 'markdown' },
       },
       'Tokenizer:SomeNode': { fields: 'text' },
+    });
+  });
+
+  // A canvas can carry more than one Parser. The resolver reads them in
+  // component-id order, so the writer has to lift that same node — walking
+  // Object.entries would follow insertion order and could save a different
+  // node's intent than the dialog displayed.
+  it('lifts the node the resolver reads', () => {
+    const config = () => ({
+      'Parser:Zebra': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_roles: { z: 'metadata' },
+        },
+      },
+      'Parser:Apple': { spreadsheet: { column_mode: 'auto' } },
+    });
+
+    expect(resolveTableColumnSettings(config()).mode).toBe('auto');
+    expect(persistTableColumnSettings(config())).toEqual({
+      'Parser:Zebra': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_roles: { z: 'metadata' },
+        },
+      },
+      'Parser:Apple': { spreadsheet: { column_mode: 'auto' } },
+      table_column_mode: 'auto',
     });
   });
 });
