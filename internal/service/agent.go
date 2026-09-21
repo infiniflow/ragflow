@@ -2256,16 +2256,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
-		if content, ok := assistantOutput["content"].(string); ok && content != "" {
-			answer = content
-		}
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
 		runtime.FinalizeAgentMessage(ctx2)
 		messageEventsEmitted := runtime.AgentMessageEventsEmittedRun(ctx2)
 		messageEventsSuppressed := runtime.AgentMessageEventsSuppressedRun(ctx2)
-		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed || answer != ""
+		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -2323,7 +2320,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"content":      answer,
 					"outputs":      workflowOutputs(answer, downloads, attachment),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
@@ -2387,7 +2383,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"content":      answer,
 			"outputs":      workflowOutputs(answer, downloads, attachment),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,

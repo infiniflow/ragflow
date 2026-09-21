@@ -306,7 +306,7 @@ func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
 	})
 
 	opt, future := react.WithMessageFuture()
-	emitDone := emitAgentModelStreams(ctx, future, false)
+	emitDone := emitAgentModelStreams(ctx, future)
 
 	streamCh := make(chan *schema.StreamReader[*schema.Message], 1)
 	errCh := make(chan error, 1)
