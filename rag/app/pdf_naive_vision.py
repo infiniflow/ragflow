@@ -17,6 +17,11 @@
 
 from __future__ import annotations
 
+from rag.flow.parser.pdf_chunk_metadata import (
+    apply_document_vertical_coords as _apply_document_vertical_coords,
+    apply_document_vertical_coords_to_bboxes,
+)
+
 
 def naive_deepdoc_vision_available(tenant_id, parser_config=None) -> bool:
     """Return whether tenant VLM config (explicit or default) can run figure enhancement."""
@@ -49,47 +54,6 @@ def _bbox_positions_for_naive_tables(box):
         except (TypeError, ValueError):
             continue
     return positions
-
-
-def _apply_document_vertical_coords(box, page_cum_height):
-    """Convert page-local top/bottom from pdfplumber into DeepDOC cumulative coordinates."""
-    if not box.get("_embedded_supplement"):
-        return box
-    pn = box.get("page_number")
-    if pn is None or page_cum_height is None:
-        return box
-    try:
-        idx = int(pn) - 1
-    except (TypeError, ValueError):
-        return box
-    if idx < 0 or idx >= len(page_cum_height) - 1:
-        return box
-    offset = float(page_cum_height[idx])
-    updated = dict(box)
-    for key in ("top", "bottom"):
-        if updated.get(key) is not None:
-            updated[key] = float(updated[key]) + offset
-    positions = []
-    for pos in updated.get("positions") or []:
-        if not isinstance(pos, (list, tuple)) or len(pos) < 5:
-            positions.append(pos)
-            continue
-        try:
-            positions.append(
-                [
-                    pos[0],
-                    pos[1],
-                    pos[2],
-                    int(float(pos[3]) + offset),
-                    int(float(pos[4]) + offset),
-                ]
-            )
-        except (TypeError, ValueError):
-            positions.append(pos)
-    if positions:
-        updated["positions"] = positions
-    updated.pop("_embedded_supplement", None)
-    return updated
 
 
 def _position_tuple_key(positions):
@@ -207,21 +171,27 @@ def enhance_naive_deepdoc_pdf_media(
     if not naive_deepdoc_vision_available(tenant_id, parser_config):
         return sections, tables
 
-    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
     from rag.flow.parser.pdf_chunk_metadata import supplement_deepdoc_bboxes_with_embedded_images
     from rag.flow.parser.utils import enhance_media_sections_with_vision
 
     vlm_conf = parser_config.get("vlm")
 
     zoomin = 3
-    bbox_parser = RAGFlowPdfParser()
-    bboxes = bbox_parser.parse_into_bboxes(
-        binary,
-        callback=callback,
-        zoomin=zoomin,
-        from_page=from_page,
-        to_page=to_page,
-    )
+    bbox_parser = pdf_parser
+    if getattr(bbox_parser, "boxes", None) and getattr(bbox_parser, "page_images", None):
+        bboxes = bbox_parser.bboxes_for_vision_enhancement(zoomin=zoomin, callback=callback)
+    else:
+        from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+
+        if not hasattr(bbox_parser, "parse_into_bboxes"):
+            bbox_parser = RAGFlowPdfParser()
+        bboxes = bbox_parser.parse_into_bboxes(
+            binary,
+            callback=callback,
+            zoomin=zoomin,
+            from_page=from_page,
+            to_page=to_page,
+        )
     bboxes = supplement_deepdoc_bboxes_with_embedded_images(
         binary,
         bboxes,
@@ -229,7 +199,7 @@ def enhance_naive_deepdoc_pdf_media(
         to_page=to_page,
     )
     page_cum_height = getattr(bbox_parser, "page_cum_height", None)
-    bboxes = [_apply_document_vertical_coords(box, page_cum_height) for box in bboxes]
+    bboxes = apply_document_vertical_coords_to_bboxes(bboxes, page_cum_height)
 
     for box in bboxes:
         if box.get("image") is not None:

@@ -156,8 +156,7 @@ func isVisionEnhancementAllowed(fileType utility.FileType) bool {
 }
 
 // maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
-// descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
-// with non-empty image field).
+// descriptions when an item carries a non-empty image field (any doc_type_kwd).
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,

@@ -180,31 +180,28 @@ def enhance_media_sections_with_vision(
     except Exception:
         return sections
 
-    for item in sections:
-        if item.get("image") is None:
-            continue
+    image_items = [item for item in sections if item.get("image") is not None]
+    if not image_items:
+        return sections
 
+    figures_data = [((item["image"], [""]), [(0, 0, 0, 0, 0)]) for item in image_items]
+    try:
+        parsed = VisionFigureParser(
+            vision_model=vision_model,
+            figures_data=figures_data,
+            context_size=0,
+            lang=lang,
+        )(callback=callback)
+    except Exception:
+        return sections
+
+    if not parsed:
+        return sections
+
+    for item, result in zip(image_items, parsed):
         text = item.get("text") or ""
-        try:
-            parsed = VisionFigureParser(
-                vision_model=vision_model,
-                figures_data=[((item["image"], [""]), [(0, 0, 0, 0, 0)])],
-                context_size=0,
-                lang=lang,
-            )(callback=callback)
-        except Exception:
-            continue
-
-        if not parsed:
-            continue
-
-        # VisionFigureParser returns [((image, text_or_text_list), positions), ...].
-        first_result = parsed[0]
-        # first_result[0] is the (image, parsed_text) tuple.
-        image_and_text = first_result[0]
-        # image_and_text[1] is the parsed text content.
+        image_and_text = result[0]
         parsed_text = str(image_and_text[1] or "").strip()
-
         if parsed_text:
             item["text"] = f"{text}\n{parsed_text}" if text else parsed_text
 

@@ -221,6 +221,51 @@ def supplement_deepdoc_bboxes_with_embedded_images(
     return merged + supplemented
 
 
+def apply_document_vertical_coords(box, page_cum_height):
+    """Convert page-local top/bottom from pdfplumber into DeepDOC cumulative coordinates."""
+    if not box.get("_embedded_supplement"):
+        return box
+    pn = box.get("page_number")
+    if pn is None or page_cum_height is None:
+        return box
+    try:
+        idx = int(pn) - 1
+    except (TypeError, ValueError):
+        return box
+    if idx < 0 or idx >= len(page_cum_height) - 1:
+        return box
+    offset = float(page_cum_height[idx])
+    updated = dict(box)
+    for key in ("top", "bottom"):
+        if updated.get(key) is not None:
+            updated[key] = float(updated[key]) + offset
+    positions = []
+    for pos in updated.get("positions") or []:
+        if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+            positions.append(pos)
+            continue
+        try:
+            positions.append(
+                [
+                    pos[0],
+                    pos[1],
+                    pos[2],
+                    int(float(pos[3]) + offset),
+                    int(float(pos[4]) + offset),
+                ]
+            )
+        except (TypeError, ValueError):
+            positions.append(pos)
+    if positions:
+        updated["positions"] = positions
+    updated.pop("_embedded_supplement", None)
+    return updated
+
+
+def apply_document_vertical_coords_to_bboxes(bboxes, page_cum_height):
+    return [apply_document_vertical_coords(box, page_cum_height) for box in (bboxes or [])]
+
+
 def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):
     text_boxes = [box for box in bboxes if box.get("layout_type") == "text" and all(box.get(key) is not None for key in ["x0", "x1", "page_number"])]
     if not text_boxes or not pdf_parser.page_images:

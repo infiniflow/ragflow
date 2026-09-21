@@ -129,6 +129,22 @@ def test_supplement_appends_only_missing_embedded_images(monkeypatch):
 
 
 @pytest.mark.p1
+def test_apply_document_vertical_coords_to_bboxes_offsets_supplemented_only(monkeypatch):
+    module = _load_pdf_chunk_metadata(monkeypatch)
+    deepdoc_box = {"page_number": 2, "top": 50.0, "bottom": 60.0, "text": "body"}
+    supplemented = {
+        "page_number": 2,
+        "top": 10.0,
+        "bottom": 20.0,
+        "_embedded_supplement": True,
+    }
+    page_cum_height = [0, 100, 250]
+    out = module.apply_document_vertical_coords_to_bboxes([deepdoc_box, supplemented], page_cum_height)
+    assert out[0]["top"] == 50.0
+    assert out[1]["top"] == 110.0
+
+
+@pytest.mark.p1
 def test_enhance_media_runs_for_title_block_with_image(monkeypatch):
     utils_path = REPO_ROOT / "rag/flow/parser/utils.py"
     for package_name in (

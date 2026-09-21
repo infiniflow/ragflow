@@ -50,6 +50,7 @@ from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import (
+    apply_document_vertical_coords_to_bboxes,
     extract_pdf_positions,
     normalize_pdf_items_metadata,
     reorder_multi_column_bboxes,
@@ -381,6 +382,7 @@ class Parser(ProcessBase):
             pdf_parser = RAGFlowPdfParser()
             bboxes = pdf_parser.parse_into_bboxes(blob, callback=self.callback)
             bboxes = supplement_deepdoc_bboxes_with_embedded_images(blob, bboxes)
+            bboxes = apply_document_vertical_coords_to_bboxes(bboxes, getattr(pdf_parser, "page_cum_height", None))
             if conf.get("enable_multi_column"):
                 bboxes = reorder_multi_column_bboxes(pdf_parser, bboxes)
 

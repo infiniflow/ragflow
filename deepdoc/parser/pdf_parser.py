@@ -1830,6 +1830,20 @@ class RAGFlowPdfParser:
         if callback:
             callback(0.92, "Text merged ({:.2f}s)".format(timer() - start))
 
+        return self._finalize_parsed_bboxes_for_json(zoomin, callback)
+
+    def bboxes_for_vision_enhancement(self, zoomin=3, callback=None):
+        """Build vision-ready bboxes from in-memory DeepDOC state without re-loading the PDF."""
+        if not self.boxes or not self.page_images:
+            return []
+        original_boxes = self.boxes
+        try:
+            self.boxes = deepcopy(original_boxes)
+            return self._finalize_parsed_bboxes_for_json(zoomin, callback)
+        finally:
+            self.boxes = original_boxes
+
+    def _finalize_parsed_bboxes_for_json(self, zoomin=3, callback=None):
         start = timer()
         tbls, figs = self._extract_table_figure(True, zoomin, True, True, True)
 
