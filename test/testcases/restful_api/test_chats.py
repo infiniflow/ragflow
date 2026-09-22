@@ -1555,13 +1555,8 @@ def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_docume
         if expected_code == 0:
             actual_llm_id = body["data"]["llm_id"]
             tenant_llm_id = body["data"].get("tenant_llm_id")
-            if expected_llm_id == "glm-4-flash@CI@ZHIPU-AI":
-                if tenant_llm_id:
-                    assert actual_llm_id == tenant_llm_id, (scenario_name, body)
-                else:
-                    assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, body)
-            else:
-                assert actual_llm_id == expected_llm_id, (scenario_name, body)
+            assert actual_llm_id == expected_llm_id, (scenario_name, body)
+            assert isinstance(tenant_llm_id, str) and re.fullmatch(r"[0-9a-f]{32}", tenant_llm_id), (scenario_name, body)
             assert body["data"]["llm_setting"] == expected_llm_setting, (scenario_name, body)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
@@ -1842,13 +1837,8 @@ def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_docume
             assert get_payload["data"]["name"] == updated_name, (scenario_name, get_payload)
             actual_llm_id = get_payload["data"]["llm_id"]
             tenant_llm_id = get_payload["data"].get("tenant_llm_id")
-            if expected_llm_id == "glm-4-flash@CI@ZHIPU-AI":
-                if tenant_llm_id:
-                    assert actual_llm_id == tenant_llm_id, (scenario_name, get_payload)
-                else:
-                    assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, get_payload)
-            else:
-                assert actual_llm_id == expected_llm_id, (scenario_name, get_payload)
+            assert actual_llm_id == expected_llm_id, (scenario_name, get_payload)
+            assert isinstance(tenant_llm_id, str) and re.fullmatch(r"[0-9a-f]{32}", tenant_llm_id), (scenario_name, get_payload)
             assert get_payload["data"]["llm_setting"] == expected_llm_setting, (scenario_name, get_payload)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
