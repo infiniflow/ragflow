@@ -486,10 +486,10 @@ func (m termMatcher) matches(text string) bool {
 	}
 }
 
-// IsStopword reports whether w is one of the shared stopwords.
+// isStopword reports whether w is one of the shared stopwords.
 //
 // The fan-out needs it because the same set filters candidate terms.
-func IsStopword(w string) bool {
+func isStopword(w string) bool {
 	_, ok := memoryStopwords[w]
 	return ok
 }

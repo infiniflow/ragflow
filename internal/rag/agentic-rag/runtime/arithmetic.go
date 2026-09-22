@@ -46,7 +46,7 @@ import (
 //
 // Public interface
 //
-//	Compute(expression) -> (rendered, error)     evaluate one expression safely.
+//	compute(expression) -> (rendered, error)     evaluate one expression safely.
 //	ComputeFromFacts(question, facts, fitBudget) -> *ComputedFact | nil
 //	    ask the model whether the question asks for a derivable number; if so,
 //	    write the expression, evaluate it, return a structured result.
@@ -61,11 +61,11 @@ const (
 	maxPowExponent = 64
 )
 
-// Compute evaluates an LLM-written arithmetic expression.
+// compute evaluates an LLM-written arithmetic expression.
 // Returns (rendered, error); exactly one of the two is non-empty. Every
 // rejection is a normal outcome — the caller simply carries on without the
 // computed evidence.
-func Compute(expression string) (string, string) {
+func compute(expression string) (string, string) {
 	expr := strings.TrimSpace(expression)
 	if expr == "" {
 		return "", "empty expression"
@@ -1397,7 +1397,7 @@ func parseISODate(s string) (time.Time, error) {
 }
 
 // ComputeFromFacts decides whether the question asks for a derivable number and, if so,
-// computes it. The evaluator side of this lives above (Compute / the parser); the two
+// computes it. The evaluator side of this lives above (compute / the parser); the two
 // together form the compute tool.
 
 // ComputeSystem is the compute prompt. It is inlined (rather than loaded from rag/prompts)
@@ -1554,7 +1554,7 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 		}
 	}
 
-	value, problem := Compute(expression)
+	value, problem := compute(expression)
 	if problem != "" {
 		_LOG.Printf("[Compute] refused %q — %s", trunc(expression, 120), problem)
 		return nil

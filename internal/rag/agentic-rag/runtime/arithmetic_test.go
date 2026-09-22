@@ -54,13 +54,13 @@ func TestComputeBasicArithmetic(t *testing.T) {
 		{"1 if 2 > 1 else 0", "1"}, // ternary
 	}
 	for _, c := range cases {
-		got, err := Compute(c.expr)
+		got, err := compute(c.expr)
 		if err != "" {
-			t.Errorf("Compute(%q) refused: %s", c.expr, err)
+			t.Errorf("compute(%q) refused: %s", c.expr, err)
 			continue
 		}
 		if got != c.want {
-			t.Errorf("Compute(%q) = %q, want %q", c.expr, got, c.want)
+			t.Errorf("compute(%q) = %q, want %q", c.expr, got, c.want)
 		}
 	}
 }
@@ -77,16 +77,16 @@ func TestComputeHelperFunctions(t *testing.T) {
 		{`sorted([3, 1, 2])[0]`, ""},                      // subscripts refused (see below)
 	}
 	for _, c := range cases {
-		got, err := Compute(c.expr)
+		got, err := compute(c.expr)
 		if c.want == "" {
 			continue // asserted separately in the refusal tests
 		}
 		if err != "" {
-			t.Errorf("Compute(%q) refused: %s", c.expr, err)
+			t.Errorf("compute(%q) refused: %s", c.expr, err)
 			continue
 		}
 		if got != c.want {
-			t.Errorf("Compute(%q) = %q, want %q", c.expr, got, c.want)
+			t.Errorf("compute(%q) = %q, want %q", c.expr, got, c.want)
 		}
 	}
 }
@@ -126,9 +126,9 @@ func TestComputeRefusesUnsafeExpressions(t *testing.T) {
 		{"None", "does not parse"},
 	}
 	for _, c := range cases {
-		got, err := Compute(c.expr)
+		got, err := compute(c.expr)
 		if err == "" {
-			t.Errorf("Compute(%q) = %q, want a refusal", c.expr, got)
+			t.Errorf("compute(%q) = %q, want a refusal", c.expr, got)
 			continue
 		}
 		// The exact wording differs by rejection path (a parse failure vs. a
@@ -138,7 +138,7 @@ func TestComputeRefusesUnsafeExpressions(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(err, c.wantSubstr) {
-			t.Errorf("Compute(%q) error = %q, want it to contain %q", c.expr, err, c.wantSubstr)
+			t.Errorf("compute(%q) error = %q, want it to contain %q", c.expr, err, c.wantSubstr)
 		}
 	}
 }
@@ -148,11 +148,11 @@ func TestComputeRefusesUnsafeExpressions(t *testing.T) {
 // into a normal refusal rather than crashing the request.
 func TestComputeRecoversFromHelperTypeErrors(t *testing.T) {
 	for _, expr := range []string{`letters(123)`, `digit_sum(1.5)`} {
-		got, err := Compute(expr)
+		got, err := compute(expr)
 		if err == "" {
-			t.Errorf("Compute(%q) = %q, want a refusal", expr, got)
+			t.Errorf("compute(%q) = %q, want a refusal", expr, got)
 		} else if !strings.Contains(err, "failed to evaluate") {
-			t.Errorf("Compute(%q) err = %q, want an evaluation failure", expr, err)
+			t.Errorf("compute(%q) err = %q, want an evaluation failure", expr, err)
 		}
 	}
 }
@@ -167,22 +167,22 @@ func TestComputeRejectionsAreNeverValues(t *testing.T) {
 		`x = 1`, `import os`, `None`, `1;2`,
 	}
 	for _, expr := range unsafe {
-		got, err := Compute(expr)
+		got, err := compute(expr)
 		if err == "" {
-			t.Errorf("SECURITY: Compute(%q) = %q — must be refused", expr, got)
+			t.Errorf("SECURITY: compute(%q) = %q — must be refused", expr, got)
 		}
 	}
 }
 
 func TestComputeRefusesEmptyAndOversized(t *testing.T) {
-	if _, err := Compute(""); err != "empty expression" {
+	if _, err := compute(""); err != "empty expression" {
 		t.Errorf("empty: err = %q", err)
 	}
-	if _, err := Compute("   "); err != "empty expression" {
+	if _, err := compute("   "); err != "empty expression" {
 		t.Errorf("blank: err = %q", err)
 	}
 	long := strings.Repeat("1+", computeMaxChars)
-	if _, err := Compute(long); !strings.Contains(err, "longer than") {
+	if _, err := compute(long); !strings.Contains(err, "longer than") {
 		t.Errorf("oversized: err = %q", err)
 	}
 }
@@ -190,8 +190,8 @@ func TestComputeRefusesEmptyAndOversized(t *testing.T) {
 func TestComputeRefusesNonNumericResult(t *testing.T) {
 	// A call whose result is not a number must be refused, not rendered.
 	for _, expr := range []string{`sorted([3, 1, 2])`, `min("b", "a")`, `max("b", "a")`} {
-		if got, err := Compute(expr); err == "" {
-			t.Errorf("Compute(%q) = %q, want a refusal (result is not a number)", expr, got)
+		if got, err := compute(expr); err == "" {
+			t.Errorf("compute(%q) = %q, want a refusal (result is not a number)", expr, got)
 		}
 	}
 }
@@ -210,22 +210,22 @@ func TestComputeBuiltinStringArgs(t *testing.T) {
 		{`float("  1e3  ")`, "1000"},
 	}
 	for _, c := range accept {
-		if got, err := Compute(c.expr); err != "" || got != c.want {
-			t.Errorf("Compute(%q) = %q, err=%q; want %q", c.expr, got, err, c.want)
+		if got, err := compute(c.expr); err != "" || got != c.want {
+			t.Errorf("compute(%q) = %q, err=%q; want %q", c.expr, got, err, c.want)
 		}
 	}
 	// These are hard failures and must be refused.
 	for _, expr := range []string{`int("1.5")`, `float("abc")`, `int("0x10")`} {
-		if got, err := Compute(expr); err == "" {
-			t.Errorf("Compute(%q) = %q, want a refusal", expr, got)
+		if got, err := compute(expr); err == "" {
+			t.Errorf("compute(%q) = %q, want a refusal", expr, got)
 		}
 	}
 }
 
 func TestComputeRefusesDivisionByZero(t *testing.T) {
 	for _, expr := range []string{"1 / 0", "1 // 0", "1 % 0"} {
-		if _, err := Compute(expr); err == "" || !strings.Contains(err, "zero") {
-			t.Errorf("Compute(%q) err = %q, want a division-by-zero refusal", expr, err)
+		if _, err := compute(expr); err == "" || !strings.Contains(err, "zero") {
+			t.Errorf("compute(%q) err = %q, want a division-by-zero refusal", expr, err)
 		}
 	}
 }
@@ -244,8 +244,8 @@ func TestComputeComparisonChains(t *testing.T) {
 		"1 <= 1 <= 2", "3 == 3 == 3", "3 == 3 == 4", "5 > 4 > 3 > 2 > 1", "3 > 2",
 	}
 	for _, expr := range rejected {
-		if got, err := Compute(expr); err == "" {
-			t.Errorf("Compute(%q) = %q, want rejection (bool is not a number)", expr, got)
+		if got, err := compute(expr); err == "" {
+			t.Errorf("compute(%q) = %q, want rejection (bool is not a number)", expr, got)
 		}
 	}
 	numeric := []struct {
@@ -260,8 +260,8 @@ func TestComputeComparisonChains(t *testing.T) {
 		{"int(1 < 2 < 3 and 4 < 5)", "1"},
 	}
 	for _, c := range numeric {
-		if got, err := Compute(c.expr); err != "" || got != c.want {
-			t.Errorf("Compute(%q) = %q, err=%q; want %q", c.expr, got, err, c.want)
+		if got, err := compute(c.expr); err != "" || got != c.want {
+			t.Errorf("compute(%q) = %q, err=%q; want %q", c.expr, got, err, c.want)
 		}
 	}
 }
@@ -269,10 +269,10 @@ func TestComputeComparisonChains(t *testing.T) {
 func TestComputeRejectsTrailingInput(t *testing.T) {
 	// Everything after the expression must be consumed, or `1 + 1; rm -rf` style
 	// smuggling would parse.
-	if _, err := Compute("1 + 1 2"); err == "" {
+	if _, err := compute("1 + 1 2"); err == "" {
 		t.Error("trailing input must be refused")
 	}
-	if _, err := Compute("1 + 1)"); err == "" {
+	if _, err := compute("1 + 1)"); err == "" {
 		t.Error("unbalanced paren must be refused")
 	}
 }
@@ -350,8 +350,8 @@ func TestComputeSetLiteralDedups(t *testing.T) {
 		{`max({2,2,9})`, "9"},
 	}
 	for _, c := range cases {
-		if got, err := Compute(c.expr); err != "" || got != c.want {
-			t.Errorf("Compute(%q) = %q, err=%q; want %q", c.expr, got, err, c.want)
+		if got, err := compute(c.expr); err != "" || got != c.want {
+			t.Errorf("compute(%q) = %q, err=%q; want %q", c.expr, got, err, c.want)
 		}
 	}
 }
@@ -460,23 +460,23 @@ func TestComputeTupleLiterals(t *testing.T) {
 		{`letters(("Ada", "Lovelace"))`, "11"},
 	}
 	for _, c := range cases {
-		got, err := Compute(c.expr)
+		got, err := compute(c.expr)
 		if err != "" {
-			t.Errorf("Compute(%q) refused: %s", c.expr, err)
+			t.Errorf("compute(%q) refused: %s", c.expr, err)
 			continue
 		}
 		if got != c.want {
-			t.Errorf("Compute(%q) = %q, want %q", c.expr, got, c.want)
+			t.Errorf("compute(%q) = %q, want %q", c.expr, got, c.want)
 		}
 	}
 	// A bare top-level tuple is not a number and must be refused (a tuple result fails the
 	// numeric-type check).
-	if _, err := Compute("(1, 2, 3)"); err == "" {
-		t.Error("Compute(\"(1, 2, 3)\") returned a value, want a refusal")
+	if _, err := compute("(1, 2, 3)"); err == "" {
+		t.Error("compute(\"(1, 2, 3)\") returned a value, want a refusal")
 	}
 	// Parenthesised expressions (no comma) stay scalar, not a one-tuple.
-	if got, err := Compute("(1 + 2) * 4"); err != "" || got != "12" {
-		t.Errorf("Compute(\"(1 + 2) * 4\") = %q, %q; want \"12\"", got, err)
+	if got, err := compute("(1 + 2) * 4"); err != "" || got != "12" {
+		t.Errorf("compute(\"(1 + 2) * 4\") = %q, %q; want \"12\"", got, err)
 	}
 }
 

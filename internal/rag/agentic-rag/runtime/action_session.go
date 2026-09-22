@@ -423,15 +423,13 @@ func toFloat(v any) (float64, bool) {
 	case int64:
 		return float64(n), true
 	case string:
-		return ParseFloat(n)
+		return parseFloat(n)
 	}
 	return 0, false
 }
 
-// ParseFloat parses a float64 from a string, tolerating surrounding
-// whitespace. Exported for the orchestrator package, whose SCA verdict
-// coercion needs the same lenient parsing.
-func ParseFloat(s string) (float64, bool) {
+// parseFloat parses a float64 from a string, tolerating surrounding whitespace. It is the lenient arm of toFloat (numeric strings pass) and stays package-private: nothing outside this package coerces strings to floats.
+func parseFloat(s string) (float64, bool) {
 	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	if err != nil {
 		return 0, false
@@ -1314,8 +1312,8 @@ var ToolMap = map[string]ToolSpec{
 	"web_search":         webSearchToolSpec,
 }
 
-// ToolMapNames are the registered tool names, sorted for deterministic output.
-func ToolMapNames() []string {
+// toolMapNames are the registered tool names, sorted for deterministic output.
+func toolMapNames() []string {
 	names := make([]string, 0, len(ToolMap))
 	for n := range ToolMap {
 		names = append(names, n)
@@ -1477,17 +1475,6 @@ type ToolOutcome struct {
 	// along and is reported with the step. It is NEVER put in Payload: the model
 	// sees the status note, not the infrastructure detail.
 	Diagnostic string
-}
-
-// NewToolOutcome builds an OK outcome with an empty metric map.
-func NewToolOutcome(payload []any, evidenceIDs []string) ToolOutcome {
-	return ToolOutcome{
-		Payload:     payload,
-		EvidenceIDs: evidenceIDs,
-		Status:      StatusOK,
-		Reason:      ReasonNone,
-		Metrics:     map[string]any{},
-	}
 }
 
 // ReasonStatus maps a ToolOutcome reason to the Status it implies.
@@ -2339,7 +2326,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		if c.Unknown {
 			hint := fmt.Sprintf(
 				"'%s' is not a tool. State patches and final answers are plain TEXT in your reply body, wrapped in <state>...</state> or <answer>...</answer> XML tags — do not emit them as tool calls. Available tools: %s.",
-				c.Name, strings.Join(ToolMapNames(), ", "))
+				c.Name, strings.Join(toolMapNames(), ", "))
 			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{"kind": "error", "note": hint}}))
 			continue
 		}
@@ -3729,7 +3716,7 @@ type NavRule struct {
 // Every rung used to hand `nav.Direction` verbatim to its tool, so the retrieval the ladder runs on
 // the session's behalf searched the seed's own scaffolding. Measured 2026-09-20 (三国/关羽): one
 // prefix leg issued keyword searches for "Clues", "to" and "cover" beside the question — the exact
-// tokenization the tool path has guarded against since SanitizeRetrievalQuery exists, unapplied here
+// tokenization the tool path has guarded against since sanitizeRetrievalQuery exists, unapplied here
 // because this call is CODE's and sanitizing was only wired into the model's calls.
 //
 // The direction's first content line IS the question (see graph_slots.go where it is assembled), so
@@ -3738,7 +3725,7 @@ func navQuery(nav *NavContext) string {
 	if nav == nil {
 		return ""
 	}
-	if q := SanitizeRetrievalQuery(nav.Direction); q != "" {
+	if q := sanitizeRetrievalQuery(nav.Direction); q != "" {
 		return q
 	}
 	return strings.TrimSpace(nav.Direction)

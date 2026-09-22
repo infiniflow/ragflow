@@ -44,13 +44,9 @@ const (
 	EvidenceQuoteChars = 400
 )
 
-// claimRowTypes lists the entity_type_kwd values the agentic claim search matches:
-// ("claim",) for every compile kind (page_index's pre-rename fact/conclusion spellings are
-// not searched — a recompile retypes them).
-var _ = []string{"claim", "fact", "conclusion"} // legacy spellings, API-side only
-
 // claimRowTypes lists the entity_type_kwd values that carry a claim: every compiler writes
-// "claim" now; the legacy spellings keep pre-rename rows visible.
+// "claim" now, and page_index's pre-rename fact/conclusion spellings are not searched — a
+// recompile retypes them, so a row still carrying one is not visible here.
 var claimRowTypes = []string{"claim"}
 
 // compilationKwds: the compile_kwd values

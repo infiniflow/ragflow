@@ -38,7 +38,7 @@ var queryHeadings = []string{
 	"account for the record",
 }
 
-// SanitizeRetrievalQuery turns something that is not a query into one.
+// sanitizeRetrievalQuery turns something that is not a query into one.
 //
 // Reviewed 2026-09-20: the research session is seeded with the question, the plan's clues under
 // "Clues to cover:" and the review's gaps under "A gap still to close:". A model that copies that
@@ -51,7 +51,7 @@ var queryHeadings = []string{
 // lines, and keeps the first content line — for the seed that is the QUESTION, which is a sound
 // probe. It does not decide WHICH clue matters: that stays the model's call, and a model that sends
 // a proper short single-line query is unaffected, because such a query passes through unchanged.
-func SanitizeRetrievalQuery(q string) string {
+func sanitizeRetrievalQuery(q string) string {
 	q = strings.TrimSpace(q)
 	if q == "" {
 		return ""

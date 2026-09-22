@@ -562,7 +562,7 @@ func FanoutKeyedTerms(terms []string) []string {
 		digits := isAllDigits(t)
 		// The stopword set is lowercase while the terms themselves keep their case, so
 		// "The" must be dropped like "the".
-		if (utf8.RuneCountInString(t) >= 3 && !IsStopword(strings.ToLower(t)) && !digits) ||
+		if (utf8.RuneCountInString(t) >= 3 && !isStopword(strings.ToLower(t)) && !digits) ||
 			(utf8.RuneCountInString(t) >= 4 && digits) {
 			out = append(out, t)
 		}
@@ -685,9 +685,9 @@ func searchLogger(deps SearchDeps) *log.Logger {
 func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts searchOpts) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
 	// Every retrieval leg goes through here, so this is where a query that is not a query becomes
-	// one (see SanitizeRetrievalQuery): the session's seed is a BLOCK, and a model that hands the
+	// one (see sanitizeRetrievalQuery): the session's seed is a BLOCK, and a model that hands the
 	// block back turns one call into a fistful of single-word searches.
-	p.Question = SanitizeRetrievalQuery(p.Question)
+	p.Question = sanitizeRetrievalQuery(p.Question)
 	// An explicit argument wins, then the caller's configuration, then this package's own
 	// defaults.
 	topN := p.TopN
@@ -1491,7 +1491,7 @@ const ProbeSeatTopN = 3
 //     evidence is never dropped (enumeration / multi-hop must not lose candidates).
 func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
-	query := SanitizeRetrievalQuery(p.Question)
+	query := sanitizeRetrievalQuery(p.Question)
 	// Python logs the locate line BEFORE extracting the terms and before the
 	// empty-query bail-out (search.py:grep_search).
 	//
