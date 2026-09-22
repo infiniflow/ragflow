@@ -151,7 +151,7 @@ export function EditMcpDialog({
           >
             {t('common.save')}
           </ButtonLoading>
-        </DialogFooter>
+        </div>
       }
     >
       <EditMcpForm
