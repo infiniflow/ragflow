@@ -10,49 +10,48 @@ sidebar_custom_props: {
 
 # Database Schema and Migration
 
-Sync schemas and migrate data using official RAGFlow scripts.
+For a manually started Go backend, run database migration as a standalone step before starting any server process:
 
----
+```bash
+./bin/ragflow_server --migrate
+```
 
-RAGFlow handles schema updates and migrations automatically at startup. However, for high-volume environments like Kubernetes, massive datasets can cause initialization to exceed 10 minutes, potentially triggering container timeouts or health check failures. To avoid this, you can disable the built-in auto-initialization and manually run these provided scripts to complete database upgrades before launching the service:
+The command loads the same database configuration as the Go server, applies schema and data changes, then exits. Use `-f` or `--config` to select a configuration file when needed. Do not combine `--migrate` with `--admin`, `--api`, `--ingestor`, or `--syncer`. Allow enough time for data backfills and schema changes on large databases.
 
-- [mysql_migration.py](#mysql_migrationpy): Migrates data between MySQL tables.
-- [db_schema_sync.py](#db_schema_syncpy): Syncs database schemas and manages changes using peewee-migrate.
+The migration process does not start a server mode or initialize the document engine, Redis/Kvrocks, object storage, or the message queue. It needs access to the configured metadata database and local configuration files. Run it where `conf/models` is available: database initialization loads the model provider definitions from that relative path and fails if the directory cannot be read. The model data migration also tries to read `conf/llm_factories.json`; if the file is absent or unreadable, that input is skipped. Keep the matching configuration files with the new binary.
 
-## Mysql_migration.py
+## Where migrations are defined
 
-The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/mysql_migration.py) script is a specialized tool for re-organizing RAGFlow’s model-related data. It transitions data from older unified tables into a modern, multi-table structure to support advanced model management.
+Go migration logic lives in `internal/dao/`. `database.go` runs the migration sequence: manual changes in `migration.go` and related files, GORM `AutoMigrate` for the Go entities in `internal/entity/`, and the conversation history backfill. Model provider data migration is in `model_migration.go`; its version handling is in `migration_version.go`. These are Go source files, not a directory of generated, numbered SQL migration files.
 
-### Key Functions
+The standalone command runs the full sequence. Ordinary server startup connects to the database and may create or update a limited set of runtime tables, but does not run the full manual and data migration sequence. Do not rely on server startup to perform an upgrade.
 
-- **Sequential migration**: Moves data through three distinct stages—Provider, Instance, and Model—to maintain database integrity and satisfy dependencies.
-- **Flexible setup**: Connects to MySQL using either a YAML configuration file or direct command-line arguments.
-- **Execution control**: Offers three specific modes: dry-run (preview), table-only (structural setup), and execute (full data move).
-- **Automated mapping**: Generates unique IDs and handles complex joins between legacy records and new table structures.
-- **Batch logging**: Processes records in sets of 100 and provides a final summary of total duration and row counts.
+## Database version and startup check
 
-### When to Use
+The Go migration marker is stored in `system_settings` under the fixed key `mysql_migration.database.version`. The key name is retained for database compatibility and does not select another migration implementation. The Go implementation writes `v0.26.0` after the base tenant-model step and `v0.27.2` after the follow-up model-data step. When the stored version is below `v1.0.0-rc1.dev1`, the conversation-history migration writes that value after it completes, even if the old history columns or rows are absent and no data needs copying. A step already covered by the stored version is skipped. The last completed step therefore determines the value that remains in the row. This marker is **not** a complete version number for every table or schema change. A missing or unparseable marker does not prove that the database is up to date.
 
-- **Version upgrades**: Essential when moving to RAGFlow v0.25 or later to ensure your models are correctly categorized in the new schema.
-- **Data normalization**: Necessary when consolidating multiple API keys or LLM providers into the updated system format.
-- **Kubernetes deployments**: Useful for setting up the database structure independently using the `--create-table-only` flag before main services start.
-- **Migration verification**: Used in dry-run mode to identify any legacy records that still need to be moved to the new tables.
+Each Go server process compares its code version with this marker after database initialization. That initialization may already have updated runtime tables, indexes, or built-in templates before the check runs. The comparison uses the release-number portion of each version; development suffixes are not used to establish ordering. If the database version is newer, startup fails with `Refusing to start: database was migrated by a newer version`. If the marker is absent or the versions cannot be compared, this downgrade check does not block startup. The check does not apply pending migrations, and the standalone `--migrate` command does not run the downgrade check. Verify the binary and target database before invoking it.
 
-## Db_schema_sync.py
+## Upgrade procedure
 
-The [db_schema_sync.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/db_schema_sync.py) script is a synchronization utility that ensures your MySQL database structure matches the Peewee ORM models defined in the RAGFlow source code.
+1. Back up the metadata database and verify that you can restore it. See [Backup and Migration](./backup_and_migration.md).
+2. Stop or drain all Go server processes that use the database.
+3. Deploy the new Go binary and its matching configuration. For a manually started deployment, run `./bin/ragflow_server --migrate` against the target database and wait for it to exit before starting servers. In a deployment with multiple replicas, coordinate a single migration job and wait for it to finish before starting the replicas. The Go-only Docker entrypoint runs this command before its enabled Go server modes; account for that behavior when planning a separate migration job.
+4. Start `--admin` first, then `--api` and `--ingestor`; start `--syncer` if file synchronization is enabled.
 
-### Key Functions
+Check the migration logs as well as the exit status before starting services. Some schema conflicts are logged and skipped, and built-in template seeding failures are logged as warnings; a successful exit alone does not verify every schema change or template row. The migration command can be rerun after a failure, but do not assume every database DDL operation is transactional. Check the error and database state before retrying. The Go backend has no supported automatic rollback command or generated reverse migration. To return to an older release, restore a compatible database backup along with the older binary.
 
-- **Change detection**: Compares Python model definitions in `api/db/db_models.py` against the live database to identify new tables, added fields, or type mismatches.
-- **Migration generation**: Automatically creates Python migration files (containing `migrate()` and `rollback()` logic) in version-specific directories (e.g., `tools/migrate/v0_27_2/`).
-- **Schema auditing**: Provides a `--diff` command to view structural discrepancies without applying changes.
-- **Execution management**: Applies pending migrations to the database to bring it up to date with the current software version.
-- **Safety controls**: Prevents accidental data loss by requiring an explicit `--drop` flag to generate `DROP COLUMN` statements for removed fields.
+## Development mode
 
-### When to Use
+`RAGFLOW_DEV_MODE=true` disables only the code-versus-database downgrade check for Go server processes. It does not run migrations, reverse schema changes, or make an older binary compatible with a newer database. This is especially relevant to development builds: the conversation-history migration records `v1.0.0-rc1.dev1` even when the checkout still reports a `v0.27.x` release. Use it only for a development database in that situation. Set it for each affected server process; keep it unset in production.
 
-- **Version upgrades**: When moving to a new version of RAGFlow that introduces structural database changes.
-- **Development**: When modifying `db_models.py` and needing to update your local database without manual SQL.
-- **CI/CD pipelines**: To automatically prepare or apply database updates during deployment.
-- **Troubleshooting**: When the application fails due to "Unknown column" or "Table not found" errors, indicating a desynchronized schema.
+## Database support
+
+| Metadata database | Go migration behavior |
+| --- | --- |
+| MySQL | Uses the GORM MySQL driver and runs the Go migration sequence. |
+| OceanBase | Supported through its MySQL-compatible protocol with `DB_TYPE=oceanbase`; the Go DAO still uses the MySQL driver. Test the migration with your OceanBase version and back up first. |
+| PostgreSQL | The Go metadata database configuration and DAO do not provide a PostgreSQL migration path. Do not run this command against PostgreSQL. |
+| GaussDB | The Go migration path does not support GaussDB. The Go Docker entrypoint skips migrations for `DB_TYPE=gaussdb` or `gauss`; that skip does not make Go database migration or startup support available. |
+
+This table concerns the **metadata database**, not the document search engine. Configuring OceanBase as a document engine does not by itself change where metadata migrations run.
