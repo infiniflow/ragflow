@@ -56,6 +56,22 @@ func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
 		"isabel wood co-lead ross feldner bob musil bird watch wonder program")
 }
 
+func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
+	// Only AND/OR/NOT are operators, and only in upper case: a folded "or" is a
+	// term clause, which re-bases minimum_should_match and turns a 94-hit search
+	// into a 32-hit one (see lowerCaseQueryText).
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: `(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("MES"^0.7)`,
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		`(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("mes"^0.7)`)
+}
+
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
 	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
 		t.Fatalf("init logger: %v", err)

@@ -653,11 +653,19 @@ class Base(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
+                        content = response.choices[0].message.content
+                        if not content or not content.strip():
+                            if not ans.strip():
+                                return (
+                                    (f"{ERROR_PREFIX}: {LLMErrorCode.ERROR_MODEL} - Model returned an empty final answer without tool calls (finish_reason={response.choices[0].finish_reason})."),
+                                    tk_count,
+                                )
+                            content = ""
                         _reasoning = getattr(response.choices[0].message, "reasoning_content", None) or getattr(response.choices[0].message, "reasoning", None)
                         if _reasoning:
                             ans += "<think>" + _reasoning + "</think>"
 
-                        ans += response.choices[0].message.content
+                        ans += content
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
 

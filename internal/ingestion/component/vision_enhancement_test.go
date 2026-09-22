@@ -171,6 +171,68 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 	}
 }
 
+// TestVisionEnhancement_LanguagePriority pins the prompt-language chain:
+// run-level dataset language (inputs) > family setup lang > English. The
+// setup fallback is what makes the DSL's pdf.lang effective, mirroring
+// Python's conf.get("lang") in parser.py:778.
+func TestVisionEnhancement_LanguagePriority(t *testing.T) {
+	tests := []struct {
+		name   string
+		inputs map[string]any
+		setups map[string]schema.ParserSetup
+		want   string
+	}{
+		{
+			name:   "dataset language wins over setup lang",
+			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			want:   "Japanese",
+		},
+		{
+			name:   "setup lang used when inputs carry no lang",
+			inputs: map[string]any{"tenant_id": "t1"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			want:   "Chinese",
+		},
+		{
+			name:   "english when neither is set",
+			inputs: map[string]any{"tenant_id": "t1"},
+			setups: nil,
+			want:   "English",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedLanguage string
+			swapVisionGlobals(t, fakeResolver, (&visionEnhanceCaptureInvoker{}).invoke,
+				func(language string) (string, error) {
+					capturedLanguage = language
+					return "describe the figure in " + language, nil
+				})
+
+			dispatched := parser.ParseResult{
+				OutputFormat: "json",
+				JSON: []map[string]any{
+					{"text": "", "image": "aGVsbG8taW1hZ2U=", "doc_type_kwd": "image"},
+				},
+			}
+
+			_, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs, tc.setups)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want true")
+			}
+			if capturedLanguage != tc.want {
+				t.Errorf("figure prompt language = %q, want %q", capturedLanguage, tc.want)
+			}
+		})
+	}
+}
+
 func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 	called := false
 	swapVisionGlobals(t,
@@ -414,7 +476,8 @@ func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
 }
 
 // TestVisionEnhancement_PlainTextResponseNotTruncated verifies that a plain-text
-// (no fences) VLM response is returned verbatim — cleanMarkdownBlock must not truncate it.
+// (no fences) VLM response is returned verbatim — common.CleanMarkdownBlock
+// must not truncate it.
 func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
 	plain := "A pipeline diagram showing three stages."
 	swapVisionGlobals(t, fakeResolver,
@@ -647,7 +710,10 @@ func TestExtractVisionAnswer_CleansMarkdownBlock(t *testing.T) {
 	}
 }
 
-func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
+// TestExtractVisionAnswer_EdgeCases drives the shared
+// common.CleanMarkdownBlock through the vision-answer path; the cleanup
+// function itself is pinned in common.TestCleanMarkdownBlock.
+func TestExtractVisionAnswer_EdgeCases(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
@@ -732,10 +798,6 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := cleanMarkdownBlock(tc.input)
-			if got != tc.want {
-				t.Errorf("cleanMarkdownBlock(%q) = %q, want %q", tc.input, got, tc.want)
-			}
 			resp := &modelModule.ChatResponse{Answer: &tc.input}
 			if got := extractVisionAnswer(resp); got != tc.want {
 				t.Errorf("extractVisionAnswer(%q) = %q, want %q", tc.input, got, tc.want)

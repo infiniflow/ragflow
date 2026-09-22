@@ -560,7 +560,7 @@ build_go() {
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
-        cmd/ragflow_server.go
+        cmd/ragflow_server.go cmd/deepdoc_server_ee.go
     set +x
 
 

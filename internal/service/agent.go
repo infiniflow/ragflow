@@ -1865,6 +1865,17 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	return out, nil
 }
 
+// runReleasedAgent runs the most recently published version of a canvas.
+// Public agent runs keep using RunAgent's editable/latest-version behavior;
+// this path is reserved for the agentbot release=true contract.
+func (s *AgentService) runReleasedAgent(ctx context.Context, userID, canvasID, sessionID string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	version, err := s.versionDAO.GetLatestReleased(ctx, dao.DB, canvasID)
+	if err != nil {
+		return nil, fmt.Errorf("load latest released version for canvas %q: %w", canvasID, err)
+	}
+	return s.RunAgent(ctx, userID, canvasID, sessionID, version.ID, userInput, files)
+}
+
 // validateAgentChatModels rejects stale Agent model references before saving or
 // execution. Agent components always invoke a chat model; model-free canvases
 // contain no Agent component and pass through.
@@ -2331,6 +2342,28 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				emit("workflow_finished", string(wfData))
 
 				s.markRunSucceeded(ctx2, runID)
+				return state, nil
+			}
+			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
+				visibleAnswer := answer
+				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
+					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					visibleAnswer = failureText
+				}
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
+					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
+				}
+				if shouldEmitMessage {
+					meData, _ := json.Marshal(canvas.MessageEndEvent{
+						Attachment: attachment,
+						Reference:  referencePayload,
+					})
+					emit("message_end", string(meData))
+				}
+				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
@@ -2836,6 +2869,23 @@ func tenantIDFromRoot(root map[string]any) string {
 		return s
 	}
 	return ""
+}
+
+// deferredAgentStreamFailureText returns the user-facing failure text the
+// Message component recorded when its deferred consumption of an Agent
+// stream failed. Python surfaces that same text through the failing node's
+// outputs into the chat stream instead of aborting the SSE conversation
+// with an error frame, so the run handler keeps it in the message flow.
+// Cancellation and timeouts stay run-level errors.
+func deferredAgentStreamFailureText(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ""
+	}
+	var deferred *runtime.DeferredStreamError
+	if !errors.As(err, &deferred) {
+		return ""
+	}
+	return strings.TrimSpace(deferred.FailureText())
 }
 
 func shouldTreatAsCompletedLoopRun(err error, answer string) bool {

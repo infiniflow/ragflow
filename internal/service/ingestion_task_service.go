@@ -1063,9 +1063,3 @@ func (s *IngestionTaskService) truncateIngestionEventMessage(message string) str
 	}
 	return marker
 }
-
-// AggregateTaskProgressByPipelineLogID returns component progress for one
-// immutable ingestion run.
-func (s *IngestionTaskService) AggregateTaskProgressByPipelineLogID(ctx context.Context, pipelineLogID string, total int) (*dao.TaskProgress, error) {
-	return s.ingestionTaskLogDAO.AggregateProgressByPipelineLogID(ctx, dao.DB, pipelineLogID, total)
-}

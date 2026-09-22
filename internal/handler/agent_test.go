@@ -1002,10 +1002,10 @@ func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DerivesUserInputFromInputs covers the wait-for-user
-// resume path used by the front-end: the follow-up submit posts `inputs`
-// instead of a top-level `query`. The handler must lift the nested field value
-// and pass it through as the resumed user input.
+// TestAgentChatCompletions_DerivesUserInputFromInputs covers the form-submit
+// path used by the front-end: named inputs must keep their field names even
+// when only one field is present, so Begin can distinguish an explicit update
+// from ordinary conversational query text.
 func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1021,8 +1021,32 @@ func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
-	if captured != "a b c d e" {
-		t.Errorf("userInput = %#v, want %q (nested inputs.value)", captured, "a b c d e")
+	got, ok := captured.(map[string]any)
+	if !ok || got["text"] != "a b c d e" {
+		t.Errorf("userInput = %#v, want named text input", captured)
+	}
+}
+
+func TestAgentChatCompletions_MissingOptionalInputValueIsNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","inputs":{"a":{"name":"a","type":"line","optional":true}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	h := &AgentHandler{chatRunner: &captureChatRunner{captured: &captured}}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok {
+		t.Fatalf("userInput type = %T, want map[string]any", captured)
+	}
+	if value, exists := got["a"]; !exists || value != nil {
+		t.Fatalf("userInput[a] = %#v, exists=%v, want nil", value, exists)
 	}
 }
 

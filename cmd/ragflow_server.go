@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,7 +39,6 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/mcp"
 	"ragflow/internal/rag/agentic-rag"
 	agenticruntime "ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/router"
@@ -77,25 +77,19 @@ import (
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer
+	mode          *string // admin | api | ingestor | syncer | deepdoc
 	helpFlag      bool
 	versionFlag   bool
-	debugLog      bool
+	logLevel      *string
 	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
-	adminHost     *string // Used by api, ingestor, syncer for heartbeat
-	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
+	adminHost     *string // Used by api, ingestor, syncer, deepdoc for heartbeat
+	adminPort     *int    // Used by api, ingestor, syncer, deepdoc for heartbeat, "ip:port"
 	name          *string // server name
-	mcpEnabled    bool
-	mcpHost       string
-	mcpPort       int
-	mcpMode       string
-	mcpAPIKey     string
-	mcpSSE        bool
-	mcpStreamable bool
-	mcpJSON       bool
+	enablePProf   bool    // enable pprof
+
 }
 
 // engineDocEngine is the small slice of the engine surface the doc-chunk pager
@@ -187,14 +181,7 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req agenticruntime.DocChu
 }
 
 func parseArgs() (*serverArgs, error) {
-	args := &serverArgs{
-		mcpHost:       "127.0.0.1",
-		mcpPort:       9382,
-		mcpMode:       "self-host",
-		mcpSSE:        true,
-		mcpStreamable: true,
-		mcpJSON:       true,
-	}
+	args := &serverArgs{}
 
 	var serverMode string
 	var configPath string
@@ -202,24 +189,15 @@ func parseArgs() (*serverArgs, error) {
 		arg := os.Args[i]
 		if key, value, ok := strings.Cut(arg, "="); ok {
 			switch key {
-			case "--mcp-host":
-				args.mcpHost = value
-				continue
-			case "--mcp-port":
-				port, err := parsePort(value, "MCP")
-				if err != nil {
+			case "--log-level":
+				if err := validateLogLevel(value); err != nil {
 					return nil, err
 				}
-				args.mcpPort = port
-				continue
-			case "--mcp-mode":
-				args.mcpMode = value
-				continue
-			case "--mcp-host-api-key":
-				args.mcpAPIKey = value
+				args.logLevel = &value
 				continue
 			}
 		}
+
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
@@ -232,29 +210,26 @@ func parseArgs() (*serverArgs, error) {
 		case "--api":
 			serverMode = "api"
 			args.mode = &serverMode
-		case "--enable-mcpserver":
-			args.mcpEnabled = true
-		case "--transport-sse-enabled":
-			args.mcpSSE = true
-		case "--no-transport-sse-enabled":
-			args.mcpSSE = false
-		case "--transport-streamable-http-enabled":
-			args.mcpStreamable = true
-		case "--no-transport-streamable-http-enabled":
-			args.mcpStreamable = false
-		case "--json-response":
-			args.mcpJSON = true
-		case "--no-json-response":
-			args.mcpJSON = false
 		case "--syncer":
 			serverMode = "syncer"
+			args.mode = &serverMode
+		case "--deepdoc":
+			serverMode = "deepdoc"
 			args.mode = &serverMode
 		case "-h", "--help":
 			args.helpFlag = true
 		case "-v", "--version":
 			args.versionFlag = true
-		case "--debug":
-			args.debugLog = true
+		case "--log-level":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--log-level requires a value")
+			}
+			i++
+			level := os.Args[i]
+			if err := validateLogLevel(level); err != nil {
+				return nil, err
+			}
+			args.logLevel = &level
 		case "-f", "--config":
 			if i+1 >= len(os.Args) {
 				return nil, fmt.Errorf("%s requires a value", arg)
@@ -299,115 +274,69 @@ func parseArgs() (*serverArgs, error) {
 			}
 			i++
 			args.name = &os.Args[i]
+		case "--profile":
+			args.enablePProf = true
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
 
-	if err := applyMCPEnv(args); err != nil {
-		return nil, err
-	}
-	if err := validateMCPArgs(args); err != nil {
-		return nil, err
-	}
 	if args.migrateDB && args.mode != nil {
 		return nil, errors.New("--migrate cannot be combined with a server mode")
 	}
 	return args, nil
 }
 
-func applyMCPEnv(args *serverArgs) error {
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST"); ok {
-		args.mcpHost = value
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_PORT"); ok {
-		port, err := parsePort(value, "MCP")
-		if err != nil {
-			return err
-		}
-		args.mcpPort = port
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_LAUNCH_MODE"); ok {
-		args.mcpMode = value
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST_API_KEY"); ok {
-		args.mcpAPIKey = value
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_ENABLED"); ok {
-		args.mcpEnabled = parseMCPBool(value)
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED"); ok {
-		args.mcpSSE = parseMCPBool(value)
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED"); ok {
-		args.mcpStreamable = parseMCPBool(value)
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_JSON_RESPONSE"); ok {
-		args.mcpJSON = parseMCPBool(value)
-	}
-	return nil
-}
-
-func validateMCPArgs(args *serverArgs) error {
-	if args.mcpMode != "self-host" && args.mcpMode != "host" {
-		return fmt.Errorf("invalid MCP mode: %s", args.mcpMode)
-	}
-	if !args.mcpStreamable && args.mcpJSON {
-		args.mcpJSON = false
-	}
-	if !args.mcpSSE && !args.mcpStreamable {
-		args.mcpStreamable = true
-	}
-	if args.mcpEnabled && args.mcpMode == "self-host" && args.mcpAPIKey == "" {
-		return errors.New("--mcp-host-api-key is required when --mcp-mode=self-host")
-	}
-	return nil
-}
-
-func parseMCPBool(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
+func validateLogLevel(level string) error {
+	switch level {
+	case "debug", "info", "warn", "error":
+		return nil
 	default:
-		return false
+		return fmt.Errorf("invalid --log-level %q: must be debug, info, warn, or error", level)
 	}
 }
 
-func parsePort(value, name string) (int, error) {
-	port, err := strconv.Atoi(value)
-	if err != nil || port <= 0 || port > 65535 {
-		return 0, fmt.Errorf("invalid %s port: %s", name, value)
+func selectedLogLevel(args *serverArgs, configured string) string {
+	level := configured
+	if level == "" {
+		level = "warn"
 	}
-	return port, nil
+	if args.logLevel != nil {
+		level = *args.logLevel
+	}
+	return level
 }
 
-// registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
-// fallback used when no external DeepDoc HTTP service is configured. It is
-// compiled into the server built with -tags cgo, which statically links the
-// ONNX Runtime backend (libonnxruntime.a); the unit-test tier builds without
-// cgo and stays free of the onnxruntime dependency.
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
-		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
+		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n")
+		fmt.Fprintf(os.Stderr, "  --deepdoc      \tRun as DeepDoc server\n\n")
 		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
 		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
-		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -f, --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
+		fmt.Fprintln(os.Stderr, "MCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
 		fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --syncer --help' for syncer options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --deepdoc --help' for DeepDoc server options.\n", os.Args[0])
 	case *args.mode == "api":
 		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
@@ -415,8 +344,10 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug       	 \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile          \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
+		fmt.Fprintln(os.Stderr, "\nMCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
 	case *args.mode == "admin":
 		fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
@@ -425,7 +356,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int    \t\t\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\t\t\tInitialize superuser account\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\t\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\t\tShow this help message and exit\n")
 	case *args.mode == "ingestor":
 		fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
@@ -435,7 +367,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	case *args.mode == "syncer":
 		fmt.Fprintf(os.Stderr, "Usage: %s --syncer [OPTIONS]\n\n", os.Args[0])
@@ -445,7 +378,19 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+	case *args.mode == "deepdoc":
+		fmt.Fprintf(os.Stderr, "Usage: %s --deepdoc [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	}
 }
@@ -494,10 +439,7 @@ func main() {
 	}
 	logFileName = fmt.Sprintf("%s.log", serverName)
 
-	logLevel := "info"
-	if arguments.debugLog {
-		logLevel = "debug"
-	}
+	logLevel := selectedLogLevel(arguments, "")
 
 	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
 	// is not known yet, so a file here would be an orphaned log (e.g.
@@ -557,6 +499,11 @@ func main() {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
+	case "deepdoc":
+		if serverName == "" {
+			uuid := utility.GenerateUUID()
+			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
+		}
 	default:
 		err = errors.New(*arguments.mode)
 		common.Error("invalid server mode", err)
@@ -571,15 +518,8 @@ func main() {
 
 	logConfig := globalConfig.GetLogConfig()
 
-	// Reinitialize logger with configured level if different
-	logLevel = logConfig.Level
-	if logLevel == "" {
-		logLevel = "info"
-	}
-
-	if arguments.debugLog {
-		logLevel = "debug"
-	}
+	// Reinitialize logger with the configured level and CLI overrides.
+	logLevel = selectedLogLevel(arguments, logConfig.Level)
 
 	globalConfig.SetLogLevel(logLevel)
 
@@ -610,6 +550,16 @@ func main() {
 	// Print all configuration settings
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
+
+	// Start pprof server if requested
+	if arguments.enablePProf {
+		go func() {
+			common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
+			if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
+				common.Error("pprof server failed", pprofErr)
+			}
+		}()
+	}
 
 	// Initialize database
 	if err = dao.InitDB(ctx, false); err != nil {
@@ -678,6 +628,11 @@ func main() {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
+	case "deepdoc":
+		if err = runDeepDoc(ctx, arguments); err != nil {
+			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
@@ -743,10 +698,7 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 		return fmt.Errorf("initialize local variables: %w", err)
 	}
 
-	logLevel := "info"
-	if args.debugLog {
-		logLevel = "debug"
-	}
+	logLevel := selectedLogLevel(args, "")
 	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
 		return fmt.Errorf("initialize logger: %w", err)
 	}
@@ -762,12 +714,7 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 	globalConfig := server.GetConfig()
 	server.SetServerName(serverName)
 	logConfig := globalConfig.GetLogConfig()
-	if logConfig.Level != "" {
-		logLevel = logConfig.Level
-	}
-	if args.debugLog {
-		logLevel = "debug"
-	}
+	logLevel = selectedLogLevel(args, logConfig.Level)
 	globalConfig.SetLogLevel(logLevel)
 
 	common.SyncLog()
@@ -1084,7 +1031,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	if err := startServer(ctx, args); err != nil {
+	if err := startServer(ctx); err != nil {
 		return err
 	}
 
@@ -1093,7 +1040,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func startServer(ctx context.Context, args *serverArgs) error {
+func startServer(ctx context.Context) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1187,33 +1134,24 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// "gpt-4o"), i.e. Python chat_mdl.llm_name. It is the gen_json reply-cache
 		// key's model component; empty disables that cache.
 		resolvedModelName := ""
-		if req.ModelID != "" {
-			if target, mErr := modelSolver.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); mErr == nil {
-				if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
-					// MaxLength mirrors Python LLMBundle.max_length (the model's
-					// context window in tokens); message-fitting nodes (calculate,
-					// structure_qa) use it as their chat.FitMessages budget.
-					model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
-					resolvedModelName = target.ModelName
-					// Reuse the same resolved driver/name/api as the invoker so
-					// the outer loop and the inner tool calls share one model.
-					outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
-				}
-			} else {
-				common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
+		// The resolution goes through the same entry point the pipeline's own
+		// capability probe uses, so the model decided there is the model wired
+		// here: req.ModelID may be empty (a dialog without an llm_id), and both
+		// layers must then fall back to the tenant default rather than resolving
+		// nothing here and judging capability there.
+		if target, mErr := modelProviderService.ResolveChatModelTarget(ctx, req.TenantID, req.ModelID); mErr == nil {
+			if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
+				// MaxLength mirrors Python LLMBundle.max_length (the model's
+				// context window in tokens); message-fitting nodes (calculate,
+				// structure_qa) use it as their chat.FitMessages budget.
+				model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
+				resolvedModelName = target.ModelName
+				// Reuse the same resolved driver/name/api as the invoker so
+				// the outer loop and the inner tool calls share one model.
+				outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 			}
-		}
-
-		// OuterSupportsTools mirrors Python `if not chat_mdl.is_tools`: gate the
-		// outer react loop on the model's tool-calling capability, not mere
-		// existence of an outer model. A model that can't emit tool_calls must fall
-		// back to the direct graph (Python async_chat) rather than bind tools and
-		// return a retrieval-less direct answer.
-		outerSupportsTools := false
-		if req.ModelID != "" {
-			if ts, tsErr := modelProviderService.ResolveModelToolSupport(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID); tsErr == nil {
-				outerSupportsTools = ts
-			}
+		} else {
+			common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
 		}
 
 		// Load the KB objects (mirroring Python RAGTools' self.kbs via
@@ -1240,10 +1178,25 @@ func startServer(ctx context.Context, args *serverArgs) error {
 		// is what hybrid_search applies to its vector leg (search.py:143), so
 		// getting it wrong silently degrades search_chunks to keyword-only.
 		hasEmbedder := hasEmbedderFor(kbs)
+		// Retrieval tuning mirrors the dialog's own settings, so the agentic
+		// searches run with the same budget as the standard path. Without it the
+		// harness falls back to its package defaults (top_n=12) and the dialog's
+		// configured top_n is silently ignored.
+		//
+		// The runtime carries the KEYWORD leg's weight and derives the vector leg
+		// as its complement (runtime.resolveKeywordsSimilarityWeight, and the
+		// RetrieveRequest contract: 0.7 hybrid / 0.0 vector-only / 1.0
+		// keyword-only). The dialog configures the VECTOR weight, so it is inverted
+		// here; the dialog's default 0.3 therefore yields the runtime's own 0.7.
+		keywordsWeight := 1 - req.Retrieval.VectorSimilarityWeight
 		deps := agentic_rag.RAGTools{
-			Model:     model,
-			ModelName: resolvedModelName,
-			Outer:     outerModel,
+			Model:                    model,
+			ModelName:                resolvedModelName,
+			Outer:                    outerModel,
+			TopN:                     req.Retrieval.TopN,
+			SimilarityThreshold:      req.Retrieval.SimilarityThreshold,
+			KeywordsSimilarityWeight: &keywordsWeight,
+			RerankCandidatesCount:    req.Retrieval.RerankCandidatesCount,
 			// OriginalQuestion mirrors Python RAGTools(original_user_question=...):
 			// the user's own, unrewritten question as received from the chat
 			// layer. The outer model's `rag(question=...)` argument is
@@ -1251,14 +1204,20 @@ func startServer(ctx context.Context, args *serverArgs) error {
 			// first hop; resolveEffectiveQuestion (agentic_rag.py:865) prefers
 			// this original over that rewrite when both describe the same turn.
 			OriginalQuestion: req.Question,
-			// OuterSupportsTools gates the outer react loop on tool capability
-			// (Python is_tools); false → fall back to direct RunAgenticRAG.
-			OuterSupportsTools: outerSupportsTools,
 			// DocScope mirrors Python RAGTools(doc_scope=...): the narrowed doc_ids
 			// (chat-level doc_ids + meta_data_filter) restrict every agentic
 			// retrieval to the user-selected documents instead of the whole kb.
 			DocScope:      req.DocIDs,
 			DocIDVerifier: agentic_rag.NewDocIDLookup(),
+			// MetadataResolver backs the metadata_search tool and the pre-search
+			// metadata channel (Python DocMetadataService push-down + meta_filter
+			// fallback). metadataService already carries the doc engine and the DAO
+			// the metadata index reads need.
+			MetadataResolver: metadataService,
+			// DeclaredMetadata lets the metadata_search catalog describe each field
+			// (meaning + allowed values) from the dataset's own parser_config, not just
+			// name it. Same service: it also carries the KB DAO that read needs.
+			DeclaredMetadata: metadataService,
 			// DocChunks pages one document's chunks in reading order off the
 			// chunk index (Python retriever.chunk_list), backing the
 			// document-level tools (summarize_document / fetch_full_document).
@@ -1388,17 +1347,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	// MCP server endpoint — exposes RAGFlow capabilities as MCP tools
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
-	mcpServerHandler := handler.NewMCPServerHandler(
-		func(ctx context.Context, userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderBy, desc)
-		},
-		func(ctx context.Context, userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderBy, desc)
-		},
-		func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
-			return handler.MCPRetrieval(ctx, datasetsService, userID, req)
-		},
-	)
+	mcpServerHandler := handler.NewMCPServerHandler(datasetsService, chatService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Kvrocks-backed run infrastructure
@@ -1587,41 +1536,16 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	var mcpSrv *http.Server
 	var mcpCloser interface{ Close() error }
 	var mcpListener net.Listener
-	if args != nil && args.mcpEnabled {
-		resolveUser := func(ctx context.Context, authorization string) (string, error) {
-			if args.mcpMode == "self-host" {
-				authorization = args.mcpAPIKey
-			}
-			user, err := authHandler.ResolveMCPUser(ctx, authorization)
-			if err != nil {
-				return "", err
-			}
-			return user.ID, nil
+	mcpConfig := apiServerConfig.MCP
+	if mcpConfig.Enabled {
+		mcpHandler, err := mcpServerHandler.NewStandalone(ctx, authHandler, mcpConfig)
+		if err != nil {
+			return err
 		}
-		if args.mcpMode == "self-host" {
-			authCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			_, err := resolveUser(authCtx, "")
-			cancel()
-			if err != nil {
-				return errors.New("invalid configured MCP API key")
-			}
-		}
-		mcpHandler := handler.NewStandaloneMCPHandler(
-			resolveUser,
-			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-				return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderby, desc)
-			},
-			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-				return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderby, desc)
-			},
-			func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
-				return handler.MCPRetrieval(ctx, datasetsService, userID, req)
-			},
-			mcp.Options{SSE: args.mcpSSE, StreamableHTTP: args.mcpStreamable, JSONResponse: args.mcpJSON},
-		)
+
 		mcpCloser = mcpHandler
 		defer mcpHandler.Close()
-		mcpAddr := fmt.Sprintf("%s:%d", args.mcpHost, args.mcpPort)
+		mcpAddr := net.JoinHostPort(strings.Trim(mcpConfig.Host, "[]"), strconv.Itoa(mcpConfig.Port))
 		mcpListener, err = net.Listen("tcp", mcpAddr)
 		if err != nil {
 			return fmt.Errorf("listen MCP server on %s: %w", mcpAddr, err)
