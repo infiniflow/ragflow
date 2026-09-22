@@ -171,6 +171,7 @@ DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
 DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
 DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
 DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
+DOC_ENGINE_VASTBASE = DOC_ENGINE.lower() == "vastbase"
 
 
 docStoreConn = None
@@ -214,6 +215,7 @@ OS = {}
 GCS = {}
 GAUSSDB = {}
 SERENEDB = {}
+VB = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
 DOC_BULK_SIZE: int = 32

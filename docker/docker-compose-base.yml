@@ -121,6 +121,30 @@ services:
       retries: 120
     restart: unless-stopped
 
+  vastbase:
+    profiles:
+      - vastbase
+    image: ${VB_IMAGE}
+    env_file: .env
+    environment:
+      - VB_PASSWORD=${VB_PASSWORD}
+      - VB_USERNAME=${VB_USERNAME}
+      - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+      - VB_META_DBNAME=${VB_META_DBNAME:-rag_flow}
+    ports:
+      - ${VB_PORT:-5432}:5432
+    volumes:
+      - vastbase_data:/home/vastbase/data
+      - ./vastbase/init:/docker-entrypoint-initdb.d
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "vsql -c 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
   oceanbase:
     profiles:
       - oceanbase
@@ -488,6 +512,8 @@ volumes:
   osdata01:
     driver: local
   infinity_data:
+    driver: local
+  vastbase_data:
     driver: local
   serenedb_data:
     driver: local
