@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestQAChunker_Registered(t *testing.T) {
@@ -445,5 +446,60 @@ func TestQAChunkerSpreadsheetRowIRTreatsFirstRowAsQAData(t *testing.T) {
 	}
 	if got, _ := chunks[1]["text"].(string); got != "Question: A-100\tAnswer: paid" {
 		t.Fatalf("second-row QA = %q", got)
+	}
+}
+
+// TestQAChunker_PlainTablePayloadNotSwallowed: a doc_type:"table" item whose
+// payload is plain delimited text (the shape of a PDF table item) used to
+// enter the HTML table extractor, find no <tr>, and lose every pair silently.
+// Routing on what the row walker can read sends it to the text extractor
+// instead.
+func TestQAChunker_PlainTablePayloadNotSwallowed(t *testing.T) {
+	items := []schema.ChunkDoc{
+		{Text: "what is it\tit is a thing\nwho comes\tbob", DocType: "table"},
+	}
+	pairs := extractQAJSON(items, "")
+	if len(pairs) != 2 {
+		t.Fatalf("got %d pairs, want 2 (plain payload under a table label must still yield pairs)", len(pairs))
+	}
+	if pairs[0].Question != "what is it" || pairs[0].Answer != "it is a thing" {
+		t.Errorf("pair0 = %q/%q", pairs[0].Question, pairs[0].Answer)
+	}
+}
+
+// TestQAChunker_TextLabelledHTMLTableReadAsTable documents the accepted
+// non-monotonic side of payload routing: a text-labelled block that
+// genuinely holds table markup is now read as a table.
+func TestQAChunker_TextLabelledHTMLTableReadAsTable(t *testing.T) {
+	items := []schema.ChunkDoc{
+		{Text: "<table><tr><td>q1</td><td>a1</td></tr><tr><td>q2</td><td>a2</td></tr></table>", DocType: "text"},
+	}
+	pairs := extractQAJSON(items, "")
+	if len(pairs) != 2 {
+		t.Fatalf("got %d pairs, want 2", len(pairs))
+	}
+	if pairs[1].Question != "q2" || pairs[1].Answer != "a2" {
+		t.Errorf("pair1 = %q/%q", pairs[1].Question, pairs[1].Answer)
+	}
+}
+
+// TestQAChunker_RowlessTableTextStaysProse: text that merely opens with
+// "<table" — a table element without rows, or a "<tableau>" token — must
+// stay on the prose path. The table extractor would find nothing to pair
+// there, so routing it by prefix alone would silently turn readable text
+// into zero pairs.
+func TestQAChunker_RowlessTableTextStaysProse(t *testing.T) {
+	items := []schema.ChunkDoc{
+		{Text: "<table><caption>schema</caption></table>\nwhat is it\tit is a thing", DocType: "table"},
+		{Text: "<tableau>\nwhat is it\tit is a thing", DocType: "table"},
+	}
+	pairs := extractQAJSON(items, "")
+	if len(pairs) != 2 {
+		t.Fatalf("got %d pairs, want one from each item via the prose path", len(pairs))
+	}
+	for i, pair := range pairs {
+		if pair.Question != "what is it" || pair.Answer != "it is a thing" {
+			t.Errorf("pair%d = %q/%q", i, pair.Question, pair.Answer)
+		}
 	}
 }
