@@ -21,7 +21,7 @@ import (
 	"ragflow/internal/common"
 )
 
-func runDeepDoc(ctx context.Context, args *serverArgs) error {
+func runDeepDoc(ctx context.Context, serverName string, args *serverArgs) error {
 	common.Info("DeepDoc server is not implemented")
 	return nil
 }
