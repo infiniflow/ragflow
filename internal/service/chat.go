@@ -21,13 +21,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 )
 
 var DefaultRerankModels = map[string]struct{}{
@@ -943,6 +945,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	updates := filterRESTChatUpdates(req)
+	normalizeRESTChatNumericUpdates(updates)
 	if value, ok := updates["name"]; ok {
 		name := value.(string)
 		currentName := ""
@@ -964,10 +967,10 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 
 	if len(updates) > 0 {
 		if err = s.chatDAO.UpdateByID(ctx, dao.DB, chatID, updates); err != nil {
-			if patch {
-				return nil, errors.New("failed to update chat")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errors.New("chat not found")
 			}
-			return nil, errors.New("chat not found")
+			return nil, errors.New("failed to update chat")
 		}
 	}
 
@@ -1125,6 +1128,19 @@ func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
 		updates[field] = value
 	}
 	return updates
+}
+
+func normalizeRESTChatNumericUpdates(updates map[string]interface{}) {
+	for _, field := range []string{"similarity_threshold", "vector_similarity_weight"} {
+		if value, ok := updates[field]; ok {
+			updates[field] = floatFromValue(value)
+		}
+	}
+	for _, field := range []string{"top_n", "rerank_candidates_count", "top_k"} {
+		if value, ok := updates[field]; ok {
+			updates[field] = int64FromValue(value)
+		}
+	}
 }
 
 func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSONMap {
