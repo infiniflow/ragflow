@@ -309,13 +309,13 @@ func TestApplyMetaDataFilter_SkipsFilteringOnIncompleteValueSpace(t *testing.T) 
 				filter["semi_auto"] = []interface{}{"phase"}
 			}
 
-			docIDs, noMatches := ApplyMetaDataFilter(t.Context(), filter, metas, "which phase?", chatModel, []string{"doc-1"}, []string{"kb-1"})
+			docIDs := ApplyMetaDataFilter(t.Context(), filter, metas, "which phase?", chatModel, []string{"doc-1"}, []string{"kb-1"})
 
 			if driver.calls != 0 {
 				t.Errorf("the model was asked to pick from a partial value space (%d calls)", driver.calls)
 			}
-			if docIDs != nil || !noMatches {
-				t.Errorf("got (%v, %v), want (nil, true) so retrieval answers from the whole corpus", docIDs, noMatches)
+			if docIDs != nil {
+				t.Errorf("got %v, want nil (no metadata narrowing) so retrieval keeps the caller's scope", docIDs)
 			}
 		})
 	}
@@ -450,13 +450,16 @@ func TestApplyMetaDataFilter_OversizedValueSpaceLeavesTheSearchUnscoped(t *testi
 				filter["semi_auto"] = []interface{}{"project"}
 			}
 
-			docIDs, noMatches := ApplyMetaDataFilter(t.Context(), filter, common.MetaData{}, "which project?", chatModel, []string{"doc-1"}, []string{"kb-1"})
+			docIDs := ApplyMetaDataFilter(t.Context(), filter, common.MetaData{}, "which project?", chatModel, []string{"doc-1"}, []string{"kb-1"})
 
 			if driver.calls != 0 {
 				t.Errorf("the model was asked to pick from a prompt that does not fit (%d calls)", driver.calls)
 			}
-			if docIDs != nil || !noMatches {
-				t.Errorf("got (%v, %v), want (nil, true) so retrieval answers from the whole corpus", docIDs, noMatches)
+			if docIDs != nil {
+				t.Errorf("got %v, want nil (no metadata narrowing), not a scope that matches nothing", docIDs)
+			}
+			if len(docIDs) == 1 && docIDs[0] == NoMatchDocIDSentinel {
+				t.Errorf("a refused value space must not degrade to the no-match sentinel")
 			}
 		})
 	}

@@ -87,7 +87,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	question := req.Question
 	datasetIDs := req.DatasetIDs
 	metadataFilter := req.MetadataFilter
-	hasMetadataCondition := req.MetadataCondition != nil
 	if req.MetadataCondition != nil {
 		manual := make([]interface{}, 0)
 		if conditions, ok := req.MetadataCondition["conditions"].([]interface{}); ok {
@@ -246,8 +245,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
 		}
-		filteredDocIDs, filterReturnedEmpty := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
-		docIDs = selectMetadataFilteredDocIDs(docIDs, filteredDocIDs, hasMetadataCondition, filterReturnedEmpty)
+		// nil means the metadata filter produced no scope at all (Python's
+		// None), so the request keeps the document scope it came with.
+		if filteredDocIDs := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs); filteredDocIDs != nil {
+			docIDs = filteredDocIDs
+		}
 	}
 
 	// Apply cross_languages and keyword extraction
@@ -362,11 +364,4 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
-}
-
-func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition, filterReturnedEmpty bool) []string {
-	if hasMetadataCondition || !filterReturnedEmpty {
-		return filteredDocIDs
-	}
-	return currentDocIDs
 }

@@ -71,7 +71,7 @@ func (e *Enhancer) FilterDocuments(
 	if err != nil {
 		return nil, err
 	}
-	docIDs, noMatches := service.ApplyMetaDataFilter(
+	docIDs := service.ApplyMetaDataFilter(
 		ctx,
 		filter,
 		metadata,
@@ -80,8 +80,14 @@ func (e *Enhancer) FilterDocuments(
 		baseDocIDs,
 		kbIDs,
 	)
-	if noMatches {
-		return []string{service.NoMatchDocIDSentinel}, nil
+	// nil means the metadata could not narrow the search -- an auto/semi_auto
+	// filter that produced no conditions, or one refused because the value space
+	// did not fit the model's context. The scope the caller already asked for
+	// still applies; it is the only thing that does. Turning this into the
+	// no-match sentinel would send "-999" down as the document scope and return
+	// zero chunks, which is not what the filter said.
+	if docIDs == nil {
+		return baseDocIDs, nil
 	}
 	return docIDs, nil
 }

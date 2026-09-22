@@ -621,7 +621,7 @@ func (s *ChatPipelineService) AsyncChat(
 					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 				}
 				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
+					if filtered := ApplyMetaDataFilter(
 						ctx,
 						*chat.MetaDataFilter,
 						flattedMeta,
