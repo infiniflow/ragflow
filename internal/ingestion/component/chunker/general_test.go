@@ -24,11 +24,13 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -164,10 +166,10 @@ func TestGeneralStrategyForFileType(t *testing.T) {
 }
 
 func TestGeneralChunkerLogsUnknownFileTypeFallback(t *testing.T) {
-	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+	core, logs := observer.New(zap.DebugLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
 
 	component, err := NewGeneralChunker(nil)
 	if err != nil {
@@ -182,11 +184,11 @@ func TestGeneralChunkerLogsUnknownFileTypeFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke unknown file type: %v", err)
 	}
-	if !strings.Contains(logs.String(), "unknown file_type") {
-		t.Fatalf("logs = %q, want unknown file_type fallback diagnostic", logs.String())
+	if logs.FilterMessage("GeneralChunker: unknown file_type; using text fallback").Len() != 1 {
+		t.Fatalf("logs = %v, want unknown file_type fallback diagnostic", logs.All())
 	}
 
-	logs.Reset()
+	logs.TakeAll()
 	_, err = component.Invoke(t.Context(), nil, map[string]any{
 		"name":          "document.txt",
 		"file_type":     "txt",
@@ -196,8 +198,8 @@ func TestGeneralChunkerLogsUnknownFileTypeFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke canonical text file type: %v", err)
 	}
-	if strings.Contains(logs.String(), "unknown file_type") {
-		t.Fatalf("canonical text fallback emitted unknown-file diagnostic: %q", logs.String())
+	if logs.FilterMessage("GeneralChunker: unknown file_type; using text fallback").Len() != 0 {
+		t.Fatalf("canonical text fallback emitted unknown-file diagnostic: %v", logs.All())
 	}
 }
 
@@ -866,9 +868,12 @@ func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
 	}
 
 	const wantText = "before<table><tr><td>A</td></tr></table>after"
+	// The table chunk is selected by the STORED type column: ck_type is chunker
+	// bookkeeping and the index boundary strips it (it has no chunk-store
+	// column, and a strict engine rejects the whole insert over one).
 	var table map[string]any
 	for _, ck := range chunks {
-		if ck["ck_type"] == "table" {
+		if ck["doc_type_kwd"] == "table" {
 			table = ck
 			break
 		}

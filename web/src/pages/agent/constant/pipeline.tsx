@@ -424,6 +424,7 @@ export function getInitialExtractorValues() {
 }
 
 export const initialCompilationValues = {
+  ...initialLlmBaseValues,
   compilation_template_group_id: '',
   llm_id: '',
   outputs: {
@@ -432,6 +433,10 @@ export const initialCompilationValues = {
 };
 
 export const NoDebugOperatorsList = [Operator.File];
+
+// Chunker operators available on the Go pipeline canvas. GeneralChunker is a
+// legacy Python operator and is deliberately excluded.
+export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
 export const SingleOperators = [
   Operator.Tokenizer,

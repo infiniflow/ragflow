@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"time"
 
@@ -230,7 +230,7 @@ func (s *SystemService) getDatabaseStatus(ctx context.Context) ComponentStatus {
 
 func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 	startedAt := time.Now()
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return ComponentStatus{
 			"status":  "red",
@@ -254,7 +254,7 @@ func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 
 func (s *SystemService) getTaskExecutorHeartbeats(ctx context.Context) map[string][]interface{} {
 	heartbeatsByExecutor := map[string][]interface{}{}
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return heartbeatsByExecutor
 	}
@@ -328,7 +328,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 	}
 
 	redisOK, redisMeta := timedHealthCheck(func() error {
-		redisClient := redis.Get()
+		redisClient := kvrocks.Get()
 		if redisClient == nil || !redisClient.Health(ctx) {
 			return fmt.Errorf("redis is not healthy")
 		}
@@ -406,7 +406,7 @@ func (s *SystemService) ListAllVariables(ctx context.Context) ([]map[string]inte
 		return nil, err
 	}
 
-	return common.FormatSystemSettings(settings), nil
+	return entity.FormatSystemSettings(settings), nil
 }
 
 func (s *SystemService) ShowVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
@@ -424,7 +424,7 @@ func (s *SystemService) ShowVariable(ctx context.Context, varName string) ([]map
 			return nil, fmt.Errorf("can't get setting: %s", varName)
 		}
 	}
-	return common.FormatSystemSettings(settings), nil
+	return entity.FormatSystemSettings(settings), nil
 }
 
 // SetVariable set variable
@@ -438,7 +438,7 @@ func (s *SystemService) SetVariable(ctx context.Context, varName, varValue strin
 
 	if len(settings) == 1 {
 		setting := &settings[0]
-		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
+		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
 		setting.Value = varValue
@@ -447,14 +447,14 @@ func (s *SystemService) SetVariable(ctx context.Context, varName, varValue strin
 		return fmt.Errorf("can't update more than 1 setting: %s", varName)
 	}
 
-	dataType := common.InferSystemSettingDataType(varName)
+	dataType := entity.InferSystemSettingDataType(varName)
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
 		DataType: dataType,
 	}
-	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
+	if err = entity.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
 	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)

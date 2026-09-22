@@ -75,6 +75,30 @@ func NewUserFacingError(message string) error {
 	return &UserFacingError{Err: fmt.Errorf("%s", message)}
 }
 
+// DeferredStreamError marks a failure recorded while a Message component
+// consumed an Agent's deferred stream. Text holds the user-facing failure
+// (the Agent's `_ERROR` output); Err holds the underlying cause when the
+// stream itself failed to open, so cancellation keeps propagating. The run
+// handler surfaces FailureText in the chat message flow instead of an
+// error frame; match with errors.As.
+type DeferredStreamError struct {
+	Text string
+	Err  error
+}
+
+func (e *DeferredStreamError) Error() string {
+	return "Message: consume deferred Agent stream: " + e.FailureText()
+}
+
+func (e *DeferredStreamError) Unwrap() error { return e.Err }
+
+func (e *DeferredStreamError) FailureText() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return e.Text
+}
+
 // ParamError wraps a parameter validation failure with the field name
 // for clearer error messages to the user.
 type ParamError struct {

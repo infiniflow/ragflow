@@ -87,6 +87,12 @@ const SERVICE_TYPE_FILTER_OPTIONS = [
   { value: 'message_queue', label: 'message_queue' },
 ];
 
+const AdminServiceKeys = {
+  list: () => ['admin/listServices'] as const,
+  detail: (id: number | string | undefined) =>
+    ['admin/serviceDetails', id] as const,
+};
+
 function AdminServiceStatus() {
   const { t } = useTranslation();
   const [extraInfoModalOpen, setExtraInfoModalOpen] = useState(false);
@@ -95,15 +101,14 @@ function AdminServiceStatus() {
     useState<AdminService.ListServicesItem | null>(null);
 
   const { data: servicesList } = useQuery({
-    queryKey: ['admin/listServices'],
-    queryFn: async () => (await listServices()).data.data,
+    queryKey: AdminServiceKeys.list(),
+    queryFn: listServices,
     retry: false,
   });
 
   const { data: serviceDetails, error: serviceDetailsError } = useQuery({
-    queryKey: ['admin/serviceDetails', itemToMakeAction?.id],
-    queryFn: async () =>
-      (await showServiceDetails(itemToMakeAction!?.id)).data.data,
+    queryKey: AdminServiceKeys.detail(itemToMakeAction?.id),
+    queryFn: () => showServiceDetails(itemToMakeAction!.id),
     enabled: !!(itemToMakeAction && detailModalOpen),
     retry: false,
   });

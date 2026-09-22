@@ -2,17 +2,10 @@ import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { Operator } from './constant';
 import {
   generateNodeNamesWithIncreasingIndex,
-  getEmptyMessageNodeNames,
   isEmptyMessageContent,
+  receiveMessageError,
   transformTokenChunkerParams,
 } from './utils';
-
-const createMessageNode = (name: string, content: unknown) => ({
-  id: `${Operator.Message}:${name}`,
-  type: 'ragNode',
-  position: { x: 0, y: 0 },
-  data: { label: Operator.Message, name, form: { content } },
-});
 
 describe('transformTokenChunkerParams', () => {
   it('keeps overlapped_percent and delimiters when delimiter_mode is one', () => {
@@ -52,6 +45,25 @@ describe('transformTokenChunkerParams', () => {
   });
 });
 
+describe('receiveMessageError', () => {
+  it('accepts successful SSE events without an application code', () => {
+    expect(
+      receiveMessageError({
+        response: { status: 200 },
+        data: { event: 'workflow_finished' },
+      }),
+    ).toBe(false);
+  });
+  it('rejects application errors returned with HTTP 200', () => {
+    expect(
+      receiveMessageError({ response: { status: 200 }, data: { code: 102 } }),
+    ).toBe(true);
+    expect(
+      receiveMessageError({ response: { status: 200 }, data: { code: 0 } }),
+    ).toBe(false);
+  });
+});
+
 describe('Message component content validation', () => {
   describe('isEmptyMessageContent', () => {
     it('treats missing, non-array and blank-only content as empty', () => {
@@ -68,23 +80,6 @@ describe('Message component content validation', () => {
       expect(isEmptyMessageContent(['hi'])).toBe(false);
       expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(true);
       expect(isEmptyMessageContent(['  text  '])).toBe(false);
-    });
-  });
-
-  describe('getEmptyMessageNodeNames', () => {
-    it('flags only Message nodes whose content is empty', () => {
-      const nodes = [
-        createMessageNode('回复消息_0', ['']),
-        createMessageNode('回复消息_1', ['ok']),
-        {
-          id: `${Operator.Agent}:x`,
-          type: 'ragNode',
-          position: { x: 0, y: 0 },
-          data: { label: Operator.Agent, name: '智能体_0', form: {} },
-        },
-      ];
-
-      expect(getEmptyMessageNodeNames(nodes as any)).toEqual(['回复消息_0']);
     });
   });
 });

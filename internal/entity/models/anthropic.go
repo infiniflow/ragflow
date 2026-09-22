@@ -41,7 +41,7 @@ func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *Anthropi
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 			// Anthropic authenticates with the "x-api-key" header instead
 			// of the default "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {

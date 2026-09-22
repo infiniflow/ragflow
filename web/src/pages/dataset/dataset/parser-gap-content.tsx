@@ -1,18 +1,21 @@
 import type { TFunction } from 'i18next';
 import type { ReactNode } from 'react';
 import { ParserGapReason, ParserModelKind } from './constant';
-import type { FileParserGap } from './utils';
+import { pickByGapKind, type FileParserGap } from './utils';
 
 /**
  * Builds the body of the parser-gap modals (upload warning, parse-click
  * error). Strings are resolved with the caller's `t` because the static Modal
  * API renders content in a separate React root without the app providers.
+ * The hint follows the gap kind: missing models point to adding the model,
+ * unsupported types to reselecting the parse method.
  */
 export function buildParserGapModalContent(
   t: TFunction,
   gaps: FileParserGap[],
-  hintKey: string,
+  hintKeys: { missingModel: string; unsupportedType: string },
 ): ReactNode {
+  const hintKey = pickByGapKind(gaps, hintKeys);
   return (
     <div className="space-y-2">
       <ul className="list-disc pl-4 space-y-1">

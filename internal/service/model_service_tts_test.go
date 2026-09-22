@@ -93,16 +93,15 @@ func TestAudioSpeech_PartialNamesRejected(t *testing.T) {
 	}
 }
 
-// TestGetTenantDefaultModelByType_NilTTSPointer verifies the tenant
+// TestResolveDefaultModelConfig_NilTTSPointer verifies the tenant
 // default-model resolution is nil-safe when the tts_id column is NULL
 // (the reporter's configuration: every default set except TTS).
-func TestGetTenantDefaultModelByType_NilTTSPointer(t *testing.T) {
+func TestResolveDefaultModelConfig_NilTTSPointer(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-2", nil)
 
-	svc := NewModelProviderService()
-	_, _, _, _, err := svc.GetTenantDefaultModelByType(t.Context(), "tenant-2", entity.ModelTypeTTS)
+	_, err := NewModelSolver().ResolveDefaultModelConfig(t.Context(), "tenant-2", entity.ModelTypeTTS)
 	if err == nil {
 		t.Fatal("expected error for nil tts_id, got nil")
 	}
