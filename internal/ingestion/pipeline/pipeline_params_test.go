@@ -3,6 +3,7 @@ package pipeline
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -960,5 +961,87 @@ func TestCleanComponentParams_AcceptsOperatorFormParams(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("expected at least one builtin template component matched by operatorFormParamKeys")
+	}
+}
+
+// componentParamWhitelistExemptions lists the builtin template component names
+// that intentionally have no entry in componentParamSchemaKeys, with the reason.
+// The inventory test below fails on any component that is neither derived nor
+// exempt, so a renamed or newly added component cannot silently lose its
+// whitelist coverage.
+var componentParamWhitelistExemptions = map[string]string{
+	"File":           "no user-editable params",
+	"Parser":         "accepted keys are the DSL's file families",
+	"GeneralChunker": "param struct lives in the chunker package without json tags; template keys + the delimiters exception cover it",
+	"QAChunker":      "no operator form; param struct is not in the schema package",
+	"OneChunker":     "no user-editable params",
+	"PageChunker":    "no user-editable params",
+	"TableChunker":   "no user-editable params",
+	"Extractor":      "covered by the cpnID-prefixed dynamic whitelist",
+	"Compiler":       "covered by the cpnID-prefixed dynamic whitelist",
+}
+
+// TestBuiltinTemplateComponentsHaveWhitelistCoverage pins the component-name
+// inventory of the builtin templates: every name must either derive its param
+// whitelist from a schema (componentParamSchemaKeys) or be exempted above. It
+// guards the operator-form test against becoming a no-op: that test matches by
+// component name, so a rename would otherwise silently skip it.
+func TestBuiltinTemplateComponentsHaveWhitelistCoverage(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	seen := make(map[string]string)
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			continue
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			seen[s.ComponentName] = ref
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("expected builtin templates to contain components")
+	}
+	for name, ref := range seen {
+		if _, ok := componentParamSchemaKeys[strings.ToLower(name)]; ok {
+			continue
+		}
+		if _, ok := componentParamWhitelistExemptions[name]; ok {
+			continue
+		}
+		t.Errorf("component %q (template %q) is neither schema-derived nor exempt: add it to componentParamSchemaKeys or exempt it with a reason", name, ref)
+	}
+}
+
+// TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys keeps the union
+// honest: a key the component schema does not declare is still dropped.
+func TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
+	dslJSON := titleFamilyDSL(t)
+	raw := map[string]any{
+		"TitleChunker:StaleSnapshot": map[string]any{
+			"chunk_token_cap_typo": 256,
+			"method":               "hierarchy",
+		},
+	}
+	result := CleanComponentParams(dslJSON, raw)
+	params, ok := result["TitleChunker:StaleSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TitleChunker params to survive, got %#v", result)
+	}
+	if _, ok := params["chunk_token_cap_typo"]; ok {
+		t.Errorf("unknown key must still be dropped, got %#v", params)
+	}
+	if _, ok := params["method"]; !ok {
+		t.Errorf("declared key must survive, got %#v", params)
 	}
 }

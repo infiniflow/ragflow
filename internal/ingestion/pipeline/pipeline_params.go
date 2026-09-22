@@ -51,7 +51,11 @@ var extractorValidParamKeys = func() map[string]struct{} {
 // (GeneralChunker, QAChunker) stay out of this table; Extractor and Compiler
 // keep their cpnID-prefixed dynamic whitelists.
 var componentParamSchemaKeys = map[string]map[string]struct{}{
-	"titlechunker":  extractJSONTags(schema.TitleChunkerParam{}),
+	"titlechunker": extractJSONTags(schema.TitleChunkerParam{}),
+	// ManualChunker reuses TitleChunkerParam. It pins method=group and is exempt
+	// from the token cap, so method, chunk_token_cap and include_heading_content
+	// (hierarchy-only) are accepted here but ignored by the component — the
+	// operator form omits them for the same reason.
 	"manualchunker": extractJSONTags(schema.TitleChunkerParam{}),
 	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
 	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
@@ -115,9 +119,11 @@ func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 
 // CleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
 // Keys containing ':' are treated as component IDs; they are kept only when both
-// the cpnID AND the param name exist in the DSL schema or the component's dynamic
-// parameter schema (e.g. Extractor modular features). Keys without ':' (legacy
-// flat fields) are dropped with a warning.
+// the cpnID AND the param name exist in one of the accepted-key sources: the DSL
+// schema (the params the template bakes), the schema-derived per-component table
+// (componentParamSchemaKeys), or the component's dynamic parameter schema (e.g.
+// Extractor modular features). Keys without ':' (legacy flat fields) are dropped
+// with a warning.
 func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
 	schemas, err := ExtractAllComponentParams(dslJSON)
 	if err != nil {
