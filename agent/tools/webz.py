@@ -126,7 +126,10 @@ class WebzSearch(ToolBase, ABC):
                     logging.info("WebzSearch: cancelled after request")
                     return
 
-                posts = data.get("posts") or []
+                if not isinstance(data, dict):
+                    data = {}
+                raw_posts = data.get("posts")
+                posts = [p for p in raw_posts if isinstance(p, dict)] if isinstance(raw_posts, list) else []
                 results = posts[:self._param.top_n]
 
                 self._retrieve_chunks(
