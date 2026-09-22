@@ -1009,8 +1009,12 @@ func TestGeneralChunkerPDFSplitsLargeTableWithHeaders(t *testing.T) {
 		if !strings.HasPrefix(text, "<table>") || !strings.HasSuffix(text, "</table>") {
 			t.Errorf("table chunk %d text is not valid table HTML: %q", i, text)
 		}
-		if !strings.Contains(text, "<caption>Financial Summary</caption>") {
-			t.Errorf("table chunk %d missing caption: %q", i, text)
+		if i == 0 {
+			if !strings.Contains(text, "<caption>Financial Summary</caption>") {
+				t.Errorf("first table chunk missing caption: %q", text)
+			}
+		} else if strings.Contains(text, "<caption>") {
+			t.Errorf("table chunk %d must not repeat the caption: %q", i, text)
 		}
 		if !strings.Contains(text, "<tr><th>Year</th><th>Revenue</th><th>Profit</th></tr>") {
 			t.Errorf("table chunk %d missing table headers: %q", i, text)
@@ -1126,6 +1130,53 @@ func TestSplitLargeHTMLTablePrefixOnlyInFirstChunk(t *testing.T) {
 		}
 		if !strings.Contains(p, "<th>") {
 			t.Errorf("chunk %d lost the repeated header row", i+1)
+		}
+	}
+}
+
+// TestSplitLargeHTMLTable_SparseBannerRowNotRepeated verifies the 江西-style
+// shape: a real header row, then a TSR-promoted sparse section banner
+// rendered with <th>, then data rows. Only the real header may be replicated
+// into every chunk; the banner and the caption appear exactly once.
+func TestSplitLargeHTMLTable_SparseBannerRowNotRepeated(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<table><caption>Price information summary for all cities in the month of February long caption</caption>")
+	b.WriteString("<tr><th>No</th><th>Name</th><th>Price</th></tr>")
+	b.WriteString("<tr><th></th><th>Category A</th><th></th><th></th></tr>")
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&b, "<tr><td>%d</td><td>item-%d</td><td>%d.5</td></tr>", i, i, i)
+	}
+	b.WriteString("</table>")
+
+	parts := splitLargeHTMLTable(b.String(), 64)
+	if len(parts) < 3 {
+		t.Fatalf("expected the table to split into >=3 chunks, got %d", len(parts))
+	}
+	bannerCount := 0
+	for i, p := range parts {
+		if !strings.HasPrefix(p, "<table>") || !strings.HasSuffix(p, "</table>") {
+			t.Errorf("chunk %d is not valid table HTML: %.80s", i, p)
+		}
+		if !strings.Contains(p, "<tr><th>No</th><th>Name</th><th>Price</th></tr>") {
+			t.Errorf("chunk %d lost the header row", i)
+		}
+		if strings.Contains(p, "Category A") {
+			bannerCount++
+			if i != 0 {
+				t.Errorf("sparse banner repeated into chunk %d", i)
+			}
+		}
+		if strings.Contains(p, "<caption>") && i != 0 {
+			t.Errorf("caption repeated into chunk %d", i)
+		}
+	}
+	if bannerCount != 1 {
+		t.Fatalf("banner appeared %d times, want exactly 1", bannerCount)
+	}
+	joined := strings.Join(parts, "")
+	for i := 0; i < 40; i++ {
+		if c := strings.Count(joined, fmt.Sprintf("<td>%d</td>", i)); c != 1 {
+			t.Errorf("data row %d present %d times, want exactly 1", i, c)
 		}
 	}
 }

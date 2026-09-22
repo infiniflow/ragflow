@@ -1033,10 +1033,33 @@ func generalUnitTokens(unit schema.ChunkDoc) int {
 
 var trRegex = regexp.MustCompile(`(?is)<tr\b[^>]*>.*?</tr>`)
 
+var (
+	trCellRegex = regexp.MustCompile(`(?is)<t[hd]\b[^>]*>(.*?)</t[hd]>`)
+	htmlTagRe   = regexp.MustCompile(`<[^>]*>`)
+)
+
+// rowMostlyNonEmpty reports whether at least half of a <tr>'s cells carry
+// visible text. Used to tell a real column-header row apart from a sparse
+// TSR-promoted section banner that happens to be rendered with <th> cells.
+func rowMostlyNonEmpty(row string) bool {
+	cells := trCellRegex.FindAllStringSubmatch(row, -1)
+	if len(cells) == 0 {
+		return false
+	}
+	nonEmpty := 0
+	for _, m := range cells {
+		if strings.TrimSpace(htmlTagRe.ReplaceAllString(m[1], "")) != "" {
+			nonEmpty++
+		}
+	}
+	return nonEmpty*2 >= len(cells)
+}
+
 // splitTableUnit splits an oversized HTML table ChunkDoc into multiple smaller
 // table ChunkDocs if its token count exceeds maxTokens. Each resulting chunk
-// preserves the table wrapper, caption (if present), and table header rows,
-// preventing downstream embedding truncation and data loss.
+// preserves the table wrapper and table header rows; the caption is emitted
+// on the first chunk only, preventing downstream embedding truncation and
+// data loss.
 func splitTableUnit(unit schema.ChunkDoc, maxTokens int) []schema.ChunkDoc {
 	// Normalize on every return path: DOCX table units can arrive with an
 	// empty CKType, and unsplittable/small tables must not regress to the
@@ -1060,7 +1083,8 @@ func splitTableUnit(unit schema.ChunkDoc, maxTokens int) []schema.ChunkDoc {
 }
 
 // splitLargeHTMLTable splits an HTML table into sub-tables that fit within maxTokens,
-// replicating the caption and header row(s) in each sub-table.
+// replicating the header row(s) in each sub-table. The caption and any text
+// before the table appear only in the first sub-table.
 //
 // Known limitation: rows are matched with a non-greedy <tr>...</tr> regex, so
 // a table whose cells embed a nested <table> would split at the inner row
@@ -1103,13 +1127,23 @@ func splitLargeHTMLTable(text string, maxTokens int) []string {
 	}
 
 	// Determine header rows vs data rows.
+	//
+	// The repeated-chunk header is the LEADING run of <th> rows, except that
+	// rows after the first must also be mostly non-empty: TSR promotes
+	// in-table section banners ("一、阀门类" on 2 of 16 columns in a price
+	// list) to <th> as well, and repeating such a banner in every chunk
+	// attaches the FIRST category's label to rows of all other categories.
+	// A sparse banner instead stays a data row and keeps its original
+	// position, appearing exactly once.
 	headerEnd := 0
 	for i, r := range rows {
-		if strings.Contains(strings.ToLower(r), "<th") {
-			headerEnd = i + 1
-		} else {
+		if !strings.Contains(strings.ToLower(r), "<th") {
 			break
 		}
+		if i > 0 && !rowMostlyNonEmpty(r) {
+			break
+		}
+		headerEnd = i + 1
 	}
 	if headerEnd == 0 || headerEnd >= len(rows) {
 		headerEnd = 1
@@ -1117,16 +1151,22 @@ func splitLargeHTMLTable(text string, maxTokens int) []string {
 	headerRows := rows[:headerEnd]
 	dataRows := rows[headerEnd:]
 
-	baseHeader := tableOpenTag + captionHTML + strings.Join(headerRows, "")
+	// The caption describes the WHOLE table and is often long; it belongs to
+	// the table's position like the prefix does — the first chunk carries it,
+	// every chunk carries the (short) header rows for column context.
+	baseHeader := tableOpenTag + strings.Join(headerRows, "")
+	firstHeader := tableOpenTag + captionHTML + strings.Join(headerRows, "")
 	prefixTokens := tokenizeStr(prefix)
+	captionTokens := tokenizeStr(captionHTML)
 	baseTokens := tokenizeStr(baseHeader + "</table>")
 
-	// prefix (text before the table, e.g. a short Markdown heading) belongs to
-	// the table's position in the document: repeat only the table wrapper,
-	// caption and header rows in every chunk, and prepend prefix to the first.
+	// prefix (text before the table, e.g. a short Markdown heading) and the
+	// caption belong to the table's position in the document: repeat only the
+	// table wrapper and header rows in every chunk, prefix + caption on the
+	// first.
 	var chunks []string
 	var currentDataRows []string
-	currentTokens := baseTokens + prefixTokens
+	currentTokens := baseTokens + prefixTokens + captionTokens
 	firstChunk := true
 
 	flush := func() {
@@ -1136,9 +1176,11 @@ func splitLargeHTMLTable(text string, maxTokens int) []string {
 		var b strings.Builder
 		if firstChunk {
 			b.WriteString(prefix)
+			b.WriteString(firstHeader)
 			firstChunk = false
+		} else {
+			b.WriteString(baseHeader)
 		}
-		b.WriteString(baseHeader)
 		for _, dr := range currentDataRows {
 			b.WriteString(dr)
 		}
