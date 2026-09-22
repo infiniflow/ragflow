@@ -1050,7 +1050,9 @@ func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	return task.Status == common.STOPPING
 }
 
-// pollCancel ticks periodically (default 500ms) to check the cancel flag. When cancelCheck
+const pollCancelInterval = 500 * time.Millisecond
+
+// pollCancel ticks every pollCancelInterval to check the cancel flag. When cancelCheck
 // returns true it cancels the per-task context, which causes the pipeline's
 // next ctx.Err() check to abort and runTask to record progress=-1. The
 // goroutine exits when done is closed (executeTask returns).
@@ -1085,7 +1087,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 		}
 	}
 
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(pollCancelInterval)
 	defer ticker.Stop()
 	for {
 		select {
