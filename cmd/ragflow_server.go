@@ -81,7 +81,7 @@ type serverArgs struct {
 	mode          *string // admin | api | ingestor | syncer
 	helpFlag      bool
 	versionFlag   bool
-	debugLog      bool
+	logLevel      *string
 	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
@@ -204,6 +204,12 @@ func parseArgs() (*serverArgs, error) {
 		arg := os.Args[i]
 		if key, value, ok := strings.Cut(arg, "="); ok {
 			switch key {
+			case "--log-level":
+				if err := validateLogLevel(value); err != nil {
+					return nil, err
+				}
+				args.logLevel = &value
+				continue
 			case "--mcp-host":
 				args.mcpHost = value
 				continue
@@ -255,8 +261,16 @@ func parseArgs() (*serverArgs, error) {
 			args.helpFlag = true
 		case "-v", "--version":
 			args.versionFlag = true
-		case "--debug":
-			args.debugLog = true
+		case "--log-level":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--log-level requires a value")
+			}
+			i++
+			level := os.Args[i]
+			if err := validateLogLevel(level); err != nil {
+				return nil, err
+			}
+			args.logLevel = &level
 		case "-f", "--config":
 			if i+1 >= len(os.Args) {
 				return nil, fmt.Errorf("%s requires a value", arg)
@@ -318,6 +332,26 @@ func parseArgs() (*serverArgs, error) {
 		return nil, errors.New("--migrate cannot be combined with a server mode")
 	}
 	return args, nil
+}
+
+func validateLogLevel(level string) error {
+	switch level {
+	case "debug", "info", "warn", "error":
+		return nil
+	default:
+		return fmt.Errorf("invalid --log-level %q: must be debug, info, warn, or error", level)
+	}
+}
+
+func selectedLogLevel(args *serverArgs, configured string) string {
+	level := configured
+	if level == "" {
+		level = "warn"
+	}
+	if args.logLevel != nil {
+		level = *args.logLevel
+	}
+	return level
 }
 
 func applyMCPEnv(args *serverArgs) error {
@@ -410,7 +444,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor and syncer)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
 		fmt.Fprintf(os.Stderr, "API MCP options:\n")
@@ -433,7 +467,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug       	 \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile          \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
 		fmt.Fprintf(os.Stderr, "\nMCP options:\n")
@@ -453,7 +487,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int    \t\t\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\t\t\tInitialize superuser account\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\t\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\t\tShow this help message and exit\n")
 	case *args.mode == "ingestor":
@@ -464,7 +498,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	case *args.mode == "syncer":
@@ -475,7 +509,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	}
@@ -525,10 +559,7 @@ func main() {
 	}
 	logFileName = fmt.Sprintf("%s.log", serverName)
 
-	logLevel := "info"
-	if arguments.debugLog {
-		logLevel = "debug"
-	}
+	logLevel := selectedLogLevel(arguments, "")
 
 	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
 	// is not known yet, so a file here would be an orphaned log (e.g.
@@ -602,15 +633,8 @@ func main() {
 
 	logConfig := globalConfig.GetLogConfig()
 
-	// Reinitialize logger with configured level if different
-	logLevel = logConfig.Level
-	if logLevel == "" {
-		logLevel = "info"
-	}
-
-	if arguments.debugLog {
-		logLevel = "debug"
-	}
+	// Reinitialize logger with the configured level and CLI overrides.
+	logLevel = selectedLogLevel(arguments, logConfig.Level)
 
 	globalConfig.SetLogLevel(logLevel)
 
@@ -784,10 +808,7 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 		return fmt.Errorf("initialize local variables: %w", err)
 	}
 
-	logLevel := "info"
-	if args.debugLog {
-		logLevel = "debug"
-	}
+	logLevel := selectedLogLevel(args, "")
 	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
 		return fmt.Errorf("initialize logger: %w", err)
 	}
@@ -803,12 +824,7 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 	globalConfig := server.GetConfig()
 	server.SetServerName(serverName)
 	logConfig := globalConfig.GetLogConfig()
-	if logConfig.Level != "" {
-		logLevel = logConfig.Level
-	}
-	if args.debugLog {
-		logLevel = "debug"
-	}
+	logLevel = selectedLogLevel(args, logConfig.Level)
 	globalConfig.SetLogLevel(logLevel)
 
 	common.SyncLog()
