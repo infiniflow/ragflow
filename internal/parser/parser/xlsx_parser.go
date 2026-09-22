@@ -29,7 +29,6 @@ type XLSXParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -61,9 +60,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["html4excel"].(bool); ok {
-		p.HTML4Excel = v
-	}
+	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -115,7 +112,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	items, warnings, sheets, err := parseXLSXBytes(data, p.HTML4Excel)
+	items, warnings, sheets, err := parseXLSXBytes(data)
 	if err == nil {
 		return xlsxParseResult(filename, items, warnings, sheets)
 	}
@@ -127,7 +124,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, p.HTML4Excel)
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
 	}
@@ -135,7 +132,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return xlsxParseResult(filename, items, warnings, sheets)
 }
 
-func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, int, error) {
+func parseXLSXBytes(data []byte) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
@@ -160,8 +157,6 @@ func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, i
 		}
 		// One wire shape for every spreadsheet sheet: segmented HTML tables
 		// with row-aligned positions, images interleaved at their anchors.
-		// html4excel no longer selects a second builder; it is retired as a
-		// no-op option (deprecation warning lands separately).
 		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images)...)
 		warnings = append(warnings, imageWarnings...)
 	}

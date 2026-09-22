@@ -258,9 +258,10 @@ func numericItemInt(value any) (int, bool) {
 }
 
 // deprecatedChunkRows reports the removed parser-side chunking option. Row
-// boundaries are now emitted as structured IR and the selected chunker owns
-// token-budget merging; silently accepting chunk_rows would make an existing
-// configuration look effective when it is not.
+// segmentation is now owned by the parser's semantic segments and the
+// selected chunker owns token-budget splitting; silently accepting
+// chunk_rows would make an existing configuration look effective when it is
+// not.
 func deprecatedChunkRows(setup map[string]any, parserName string) {
 	raw, exists := setup["chunk_rows"]
 	if !exists {
@@ -274,6 +275,17 @@ func deprecatedChunkRows(setup map[string]any, parserName string) {
 	}
 	common.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker",
 		zap.String("parser", parserName), zap.Int("chunk_rows", rows))
+}
+
+// deprecatedHTML4Excel reports the retired html4excel option. Both
+// spreadsheet builders collapsed into the segmented-HTML wire, so the flag
+// selects nothing anymore. Only an enabled flag warns: false is the default
+// every parser config carries, and warning there would be noise.
+func deprecatedHTML4Excel(setup map[string]any, parserName string) {
+	if enabled, ok := setup["html4excel"].(bool); ok && enabled {
+		common.Warn("spreadsheet parser ignored deprecated html4excel; spreadsheet tables are always emitted as segmented HTML",
+			zap.String("parser", parserName))
+	}
 }
 
 // extractXLSXImages returns the floating and in-cell images anchored to a
