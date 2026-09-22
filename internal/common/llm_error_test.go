@@ -155,3 +155,35 @@ func TestUserMessageRefinesProviderJSONBody(t *testing.T) {
 		t.Errorf("UserMessage must not leak the raw JSON body: %s", msg)
 	}
 }
+
+func TestUserSummaryVersusUserMessage(t *testing.T) {
+	le := NewLLMProviderError("anthropic", "claude-x", errors.New(`API error: 503: {"error":{"message":"No available channel for model claude-x"}}`))
+
+	summary := le.UserSummary()
+	if !strings.Contains(summary, `LLM call to "claude-x@anthropic" failed: API error: 503: No available channel`) {
+		t.Errorf("summary = %q", summary)
+	}
+	if strings.Contains(summary, "not RAGFlow") {
+		t.Errorf("summary must stay factual, no guidance: %q", summary)
+	}
+
+	msg := le.UserMessage()
+	if !strings.HasPrefix(msg, summary) || !strings.Contains(msg, "This error was returned by your model service, not RAGFlow") {
+		t.Errorf("UserMessage must equal summary + guidance once: %q", msg)
+	}
+	if n := strings.Count(msg, "not RAGFlow"); n != 1 {
+		t.Errorf("guidance repeated %d times: %q", n, msg)
+	}
+}
+
+func TestUserMessagePunctuationJoinsCleanly(t *testing.T) {
+	// Provider messages commonly end with a period; no ".." may appear.
+	le := NewLLMProviderError("openai", "gpt", errors.New("Incorrect API key provided."))
+	msg := le.UserMessage()
+	if strings.Contains(msg, "..") {
+		t.Errorf("double period in user message: %q", msg)
+	}
+	if !strings.Contains(msg, "Incorrect API key provided. This error") {
+		t.Errorf("period-ending reason must join with a single space: %q", msg)
+	}
+}

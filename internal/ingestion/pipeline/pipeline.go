@@ -344,11 +344,11 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			msg = componentName + " Done"
 		case runtime.PhaseError:
 			if ev.Err != nil {
-				// Same rendering rule as the terminal task-failure detail:
-				// model-attributed failures show the user-facing message,
-				// everything else keeps the raw chain.
+				// Step lines carry the fact (which model failed and why);
+				// the user-facing guidance appears once, in the terminal
+				// task detail. Non-LLM failures keep the raw chain here.
 				if llmErr, ok := common.AsLLMError(ev.Err); ok {
-					msg = componentName + ": " + llmErr.UserMessage()
+					msg = componentName + ": " + llmErr.UserSummary()
 				} else {
 					msg = componentName + ": " + ev.Err.Error()
 				}

@@ -74,10 +74,11 @@ func (e *LLMError) Error() string {
 
 func (e *LLMError) Unwrap() error { return e.Err }
 
-// UserMessage renders the short, self-attributing line shown in the
-// task detail on the front end. The full error chain stays in the
-// server-side logs.
-func (e *LLMError) UserMessage() string {
+// UserSummary renders the factual part of the attribution — which model
+// failed and why — without the trailing guidance sentence. The per-stage
+// step log uses it so the guidance appears once, in the terminal task
+// detail (UserMessage), instead of repeating on every line.
+func (e *LLMError) UserSummary() string {
 	model := e.Model
 	if model == "" {
 		model = "unknown"
@@ -93,10 +94,25 @@ func (e *LLMError) UserMessage() string {
 	}
 	switch e.Kind {
 	case LLMErrorConfig:
-		return fmt.Sprintf("Chat model %q is not usable: %s. Please check the model configuration in Model Providers settings — this is a model setup issue, not a RAGFlow error.", label, reason)
+		return fmt.Sprintf("Chat model %q is not usable: %s", label, reason)
 	default:
-		return fmt.Sprintf("LLM call to %q failed: %s. This error was returned by your model service, not RAGFlow — please check the model's API key, quota and service status, then retry.", label, reason)
+		return fmt.Sprintf("LLM call to %q failed: %s", label, reason)
 	}
+}
+
+// UserMessage renders the short, self-attributing line shown in the
+// task detail on the front end. The full error chain stays in the
+// server-side logs.
+func (e *LLMError) UserMessage() string {
+	advice := "This error was returned by your model service, not RAGFlow — please check the model's API key, quota and service status, then retry."
+	if e.Kind == LLMErrorConfig {
+		advice = "Please check the model configuration in Model Providers settings — this is a model setup issue, not a RAGFlow error."
+	}
+	summary := e.UserSummary()
+	if strings.HasSuffix(summary, ".") {
+		return summary + " " + advice
+	}
+	return summary + ". " + advice
 }
 
 // userStatusRES matches the HTTP status formats produced by the model
