@@ -93,6 +93,7 @@ async def create_connector():
     """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
+
         def _parse_frequency(value):
             if isinstance(value, bool) or isinstance(value, float) and not value.is_integer():
                 raise ValueError(f"not an integer: {value!r}")
