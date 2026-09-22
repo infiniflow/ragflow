@@ -91,6 +91,10 @@ def _merge_tool_call_delta(tool_calls, tool_call):
     current.function.arguments += tool_call.function.arguments or ""
 
 
+def _tool_error_text(err):
+    return f"Tool call failed: {type(err).__name__}"
+
+
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
 # also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
@@ -697,7 +701,7 @@ class Base(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
@@ -863,7 +867,7 @@ class Base(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
                     tcs = [tc for tc in final_tool_calls.values() if tc.function.name]
                     if not tcs:
@@ -2666,7 +2670,7 @@ class LiteLLMBase(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
@@ -2841,7 +2845,7 @@ class LiteLLMBase(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
                     tcs = [tc for tc in final_tool_calls.values() if tc.function.name]
                     if not tcs:

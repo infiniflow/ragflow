@@ -130,6 +130,8 @@ async def test_streaming_round_limit_forces_tool_free_final_answer():
     text = "".join(event for event in events if isinstance(event, str))
     assert "NEDOSTATOK PODKLADOV" in text
     assert "Exceed max rounds" not in text
+    assert "Tool call failed: AssertionError" in text
+    assert "unknown tool" not in text
     assert len(model.async_client.requests) == 2
     assert "tools" in model.async_client.requests[0]
     assert "tools" not in model.async_client.requests[1]
