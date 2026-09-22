@@ -113,6 +113,13 @@ func TestValidateDatasetEmbeddingModels(t *testing.T) {
 	})
 }
 
+func TestValidateLoadedDatasetsRejectsMissing(t *testing.T) {
+	err := validateLoadedDatasets([]string{"kb-1", "kb-2"}, []*entity.Knowledgebase{{ID: "kb-1"}})
+	if err == nil || !strings.Contains(err.Error(), `dataset "kb-2" was not found`) {
+		t.Fatalf("validateLoadedDatasets error = %v, want missing kb-2", err)
+	}
+}
+
 // TestBaseModelNameMirrorsPython pins knowledgebase_service.py:33:
 // rsplit("@", 2)[0] — the model name, with @instance@provider stripped.
 func TestBaseModelNameMirrorsPython(t *testing.T) {
