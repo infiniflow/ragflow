@@ -8,13 +8,16 @@ import (
 	"errors"
 	"image"
 	"image/png"
-	"log/slog"
 	"reflect"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -322,29 +325,32 @@ func TestParser_RunPageWorkers_CancellationHonored(t *testing.T) {
 // text, or ctx.Err()) must not produce one warning per page — it keeps a debug
 // trail instead; a failure raised on a live context still warns.
 func TestReportPageInferenceFailure_CancelledContextStaysAtDebug(t *testing.T) {
-	prev := slog.Default()
-	defer slog.SetDefault(prev)
-	var buf bytes.Buffer
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	prevLogger := common.Logger
+	defer func() { common.Logger = prevLogger }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	common.Logger = zap.New(core)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	reportPageInferenceFailure(ctx, "DLA failed", 7,
 		errors.New("Error running network: Exiting due to terminate flag being set to true."))
-	out := buf.String()
-	if strings.Contains(out, "level=WARN") {
-		t.Fatalf("cancelled page inference failure was warned: %q", out)
+	entries := logs.TakeAll()
+	if len(entries) != 1 || entries[0].Level != zapcore.DebugLevel ||
+		entries[0].Message != "DLA failed" {
+		t.Fatalf("cancelled page inference failure left no debug trail: %+v", entries)
 	}
-	if !strings.Contains(out, "level=DEBUG") || !strings.Contains(out, "page=7") {
-		t.Fatalf("cancelled page inference failure left no debug trail: %q", out)
+	if got := entries[0].ContextMap()["page"]; got != int64(7) {
+		t.Fatalf("debug entry lost the page number: %v", got)
 	}
 
-	buf.Reset()
 	reportPageInferenceFailure(context.Background(), "DLA failed", 7, errors.New("output shape mismatch"))
-	out = buf.String()
-	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "msg=\"DLA failed\"") ||
-		!strings.Contains(out, "page=7") {
-		t.Fatalf("live page inference failure was not warned: %q", out)
+	entries = logs.TakeAll()
+	if len(entries) != 1 || entries[0].Level != zapcore.WarnLevel ||
+		entries[0].Message != "DLA failed" {
+		t.Fatalf("live page inference failure was not warned: %+v", entries)
+	}
+	if got := entries[0].ContextMap()["page"]; got != int64(7) {
+		t.Fatalf("warning lost the page number: %v", got)
 	}
 }
 

@@ -3,10 +3,12 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"runtime"
 	"sync"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/utility"
 )
@@ -178,10 +180,10 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 // warning once per page; any other failure keeps its per-page warning.
 func reportPageInferenceFailure(ctx context.Context, msg string, page int, err error) {
 	if ctx.Err() != nil {
-		slog.Debug(msg, "page", page, "err", err)
+		common.Debug(msg, zap.Int("page", page), zap.Error(err))
 		return
 	}
-	slog.Warn(msg, "page", page, "err", err)
+	common.Warn(msg, zap.Int("page", page), zap.Error(err))
 }
 
 // inferTSR invokes TSR for a single cropped table region.
