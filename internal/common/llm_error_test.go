@@ -95,3 +95,63 @@ func TestLLMErrorTextKeepsCause(t *testing.T) {
 		t.Errorf("Error() must carry attribution fields: %q", text)
 	}
 }
+
+func TestRefineReason(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+		dont string
+	}{
+		{
+			name: "nested error.message",
+			in:   `API request failed with status 402: {"error":{"message":"Insufficient Balance","type":"billing_error"}}`,
+			want: "API request failed with status 402: Insufficient Balance",
+			dont: "billing_error",
+		},
+		{
+			name: "body suffix",
+			in:   `anthropic messages API error: 503 Service Unavailable, body: {"error":{"code":"model_not_found","message":"No available channel for model claude-haiku under group auto (distributor)","type":"new_api_error"}}`,
+			want: "503 Service Unavailable: No available channel for model claude-haiku under group auto (distributor)",
+			dont: "new_api_error",
+		},
+		{
+			name: "top-level message",
+			in:   `bad request: {"message":"model id not found"}`,
+			want: "bad request: model id not found",
+			dont: "{",
+		},
+		{
+			name: "unparseable json unchanged",
+			in:   `failed: {"error":{"message":"truncated`,
+			want: `failed: {"error":{"message":"truncated`,
+		},
+		{
+			name: "json without message unchanged",
+			in:   `failed: {"error":{"code":"rate_limited"}}`,
+			want: `failed: {"error":{"code":"rate_limited"}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := refineReason(tc.in)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("refineReason(%q) = %q, want to contain %q", tc.in, got, tc.want)
+			}
+			if tc.dont != "" && strings.Contains(got, tc.dont) {
+				t.Errorf("refineReason(%q) = %q, want NOT to contain %q", tc.in, got, tc.dont)
+			}
+		})
+	}
+}
+
+func TestUserMessageRefinesProviderJSONBody(t *testing.T) {
+	raw := errors.New(`API request failed with status 503: {"error":{"message":"No available channel for model x","type":"upstream_error"}}`)
+	msg := NewLLMProviderError("anthropic", "claude-x", raw).UserMessage()
+	if !strings.Contains(msg, "No available channel for model x") {
+		t.Errorf("UserMessage must surface the nested provider message: %s", msg)
+	}
+	if strings.Contains(msg, "upstream_error") || strings.Contains(msg, `{"error"`) {
+		t.Errorf("UserMessage must not leak the raw JSON body: %s", msg)
+	}
+}
