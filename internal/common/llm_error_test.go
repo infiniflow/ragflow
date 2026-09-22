@@ -207,13 +207,25 @@ func TestUserMessagePunctuationJoinsCleanly(t *testing.T) {
 }
 
 func TestTruncateForUserRedactsCredentials(t *testing.T) {
-	in := `API request failed with status 401: invalid api-key: sk-abc123XYZ provided (authorization: Bearer xyz secret=whatever)`
+	in := `API request failed with status 401: invalid api-key: sk-abc123XYZ provided (authorization: Bearer tok-9f8e7d6c secret=whatever)`
 	got := truncateForUser(in)
-	if strings.Contains(got, "sk-abc123XYZ") || strings.Contains(got, "Bearer xyz") || strings.Contains(got, "secret=whatever") {
-		t.Errorf("credential values must be redacted: %q", got)
+	for _, leaked := range []string{"sk-abc123XYZ", "tok-9f8e7d6c", "whatever"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("credential value %q must be redacted: %q", leaked, got)
+		}
 	}
 	if !strings.Contains(got, "[REDACTED]") {
 		t.Errorf("expected redaction marker: %q", got)
+	}
+	if strings.Contains(got, "Bearer ") {
+		t.Errorf("authorization scheme-token pair must be redacted whole, not only the scheme: %q", got)
+	}
+}
+
+func TestRedactCredentialsBasicScheme(t *testing.T) {
+	got := RedactCredentials("auth failed: Authorization: Basic dXNlcjpwYXNz")
+	if strings.Contains(got, "dXNlcjpwYXNz") {
+		t.Errorf("basic auth token must be redacted: %q", got)
 	}
 }
 

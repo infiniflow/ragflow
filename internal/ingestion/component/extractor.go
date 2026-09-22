@@ -1316,10 +1316,11 @@ var nonRetryableStatusRE = regexp.MustCompile(`\b(?:400|401|403|404|405|422)\b`)
 // retrying. The production chat invoker returns *common.LLMError:
 // configuration failures (missing model/driver) before any API
 // call, and provider failures carrying the HTTP status parsed at
-// the call boundary. A recognized status decides retry directly;
-// context cancellation/deadline is terminal. Errors without a typed
-// status (test stubs, third-party invokers) fall back to the
-// lightweight message heuristic. Anything unrecognized defaults to
+// the call boundary. A typed status decides directly (429/408/5xx
+// retry, other 4xx terminal); context cancellation/deadline is
+// terminal. Errors without a typed status (test stubs,
+// third-party invokers) fall back to the lightweight message
+// heuristic. Anything unrecognized defaults to
 // retryable so genuinely transient 5xx / 429 / network blips keep
 // retrying (matching the prior blind-retry behavior).
 func isRetryableLLMError(err error) bool {
@@ -1330,16 +1331,16 @@ func isRetryableLLMError(err error) bool {
 		return false
 	}
 	if le, ok := common.AsLLMError(err); ok && le.StatusCode > 0 {
-		switch {
-		case le.StatusCode == 429 || le.StatusCode >= 500:
+		// A typed status decides directly: 429, the transient 408, and 5xx
+		// keep retrying; every other 4xx is a provider rejection no retry
+		// can fix (402 balance, 413 too large, ...). Untyped errors fall
+		// through to the message heuristic below.
+		if le.StatusCode == 408 || le.StatusCode == 429 || le.StatusCode >= 500 {
 			return true
-		case nonRetryableStatusRE.MatchString(strconv.Itoa(le.StatusCode)):
+		}
+		if le.StatusCode >= 400 && le.StatusCode < 500 {
 			return false
 		}
-		// A typed status outside the retryable set and outside the
-		// historically non-retryable enumeration (408/409/425/499, ...)
-		// falls through to the message heuristic, preserving the prior
-		// default-retry behavior for unrecognized statuses.
 	}
 	msg := strings.ToLower(err.Error())
 	for _, s := range []string{

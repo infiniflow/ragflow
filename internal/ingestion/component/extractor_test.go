@@ -2331,6 +2331,8 @@ func TestIsRetryableLLMError_TypedStatus(t *testing.T) {
 	}{
 		{"typed 429 retryable", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 429: slow down")), true},
 		{"typed unenumerated 408 keeps legacy retryable default", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 408: request timeout")), true},
+		{"typed 402 balance terminal", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 402: insufficient balance")), false},
+		{"typed 413 payload terminal", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 413: request entity too large")), false},
 		{"typed 503 retryable", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 503")), true},
 		{"typed 401 terminal", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 401: bad key")), false},
 		{"typed 404 terminal", common.NewLLMProviderError("p", "m", errors.New("status code: 404, model not found")), false},

@@ -522,9 +522,10 @@ func dispatchMinerUPDF(
 		var baseURLErr error
 		baseURL, baseURLErr = resolveMinerUBaseURL(driver, apiConfig)
 		if baseURLErr != nil {
-			// Surfaced because a silent empty base URL degrades apiURL to a
-			// relative "/file_parse" request that fails far from the cause.
-			common.Warn("parser: MinerU base URL unresolved: " + baseURLErr.Error())
+			// Fail fast: continuing with an empty base URL would POST to the
+			// relative "/file_parse" and surface a protocol error far from
+			// the actual cause.
+			return parser.ParseResult{}, fmt.Errorf("parser: resolve MinerU base URL: %w", baseURLErr)
 		}
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"

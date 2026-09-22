@@ -163,6 +163,12 @@ func truncateForUser(s string) string {
 	return s
 }
 
+// errorAuthorizationRE matches scheme-prefixed authorization values
+// ("authorization: Bearer <token>") whose token part the generic assignment
+// pattern would miss: that pattern stops at the first whitespace and would
+// redact only the scheme word.
+var errorAuthorizationRE = regexp.MustCompile(`(?i)(authorization)\s*["']?\s*[:=]\s*["']?(?:bearer|basic)\s+[^,\s}"']+`)
+
 // errorCredentialRE matches credential-valued assignments ("api-key: sk-...",
 // "password=...", ...) keeping the field name so readers see what was hidden.
 var errorCredentialRE = regexp.MustCompile(`(?i)(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?[^,\s}"']+`)
@@ -172,7 +178,11 @@ var errorAPIKeyRE = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]+`)
 
 // RedactCredentials removes credential-shaped values from text before it is
 // surfaced to users (provider errors routinely echo request URLs and keys).
+// The scheme-prefixed authorization pattern runs first so Bearer/Basic tokens
+// (which the generic pattern would cut at the scheme's trailing space) are
+// removed whole.
 func RedactCredentials(s string) string {
+	s = errorAuthorizationRE.ReplaceAllString(s, "$1=[REDACTED]")
 	s = errorCredentialRE.ReplaceAllString(s, "$1=[REDACTED]")
 	return errorAPIKeyRE.ReplaceAllString(s, "[REDACTED]")
 }
