@@ -207,14 +207,15 @@ func validateLogLevel(level string) error {
 }
 
 func selectedLogLevel(args *serverArgs, configured string) string {
-	level := configured
-	if level == "" {
-		level = "warn"
-	}
 	if args.logLevel != nil {
-		level = *args.logLevel
+		return *args.logLevel
 	}
-	return level
+
+	if configured == "" {
+		return "info"
+	}
+
+	return configured
 }
 
 func printHelp(args *serverArgs) {
@@ -299,7 +300,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	}
@@ -340,21 +340,18 @@ func main() {
 	}
 
 	// Temporary logger initialization
-	var logFileName string
 	var serverName string
 	if arguments.name != nil {
 		serverName = *arguments.name
 	} else {
 		serverName = fmt.Sprintf("%s_server", *arguments.mode)
 	}
-	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := selectedLogLevel(arguments, "")
+	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+		logLevel = "info"
+	}
 
-	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
-	// is not known yet, so a file here would be an orphaned log (e.g.
-	// logs/api_server.log next to the real logs/api_server_9384.log); the
-	// real file sink is attached by the post-config re-initialization below.
 	if err = common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
@@ -422,30 +419,6 @@ func main() {
 
 	// set server name and log file path
 	server.SetServerName(serverName)
-
-	// rename log filename
-	logFileName = fmt.Sprintf("%s.log", serverName)
-
-	logConfig := globalConfig.GetLogConfig()
-
-	// Reinitialize logger with the configured level and CLI overrides.
-	logLevel = selectedLogLevel(arguments, logConfig.Level)
-
-	globalConfig.SetLogLevel(logLevel)
-
-	fileOut := common.FileOutput{
-		Filename:   logFileName,
-		Path:       logConfig.Path,
-		MaxSize:    logConfig.MaxSize,
-		MaxBackups: logConfig.MaxBackups,
-		MaxAge:     logConfig.MaxAge,
-		Compress:   logConfig.Compress,
-	}
-
-	common.SyncLog()
-	if err = common.InitLogger(logLevel, fileOut, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
 
 	// Wire the in-process DeepDoc backend only after the REAL file-backed
 	// logger exists: its registration lines (and the Fatal abort on a missing
@@ -519,33 +492,60 @@ func main() {
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(ctx, arguments); err != nil {
+		if err = runAPI(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(ctx, arguments); err != nil {
+		if err = runAdmin(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
-		if err = runIngestor(ctx, cancel, arguments); err != nil {
+		if err = runIngestor(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
-		if err = runSyncer(ctx, cancel, arguments); err != nil {
+		if err = runSyncer(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
 	case "deepdoc":
-		if err = runDeepDoc(ctx, arguments); err != nil {
+		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
+	}
+}
+
+func setLogger(serverName string, arguments *serverArgs) {
+	// log filename
+	logFileName := fmt.Sprintf("%s.log", serverName)
+
+	globalConfig := server.GetConfig()
+	logConfig := globalConfig.GetLogConfig()
+
+	// Reinitialize logger with the configured level and CLI overrides.
+	logLevel := selectedLogLevel(arguments, logConfig.Level)
+
+	globalConfig.SetLogLevel(logLevel)
+
+	fileOut := common.FileOutput{
+		Filename:   logFileName,
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 }
 
@@ -647,7 +647,7 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func runAdmin(ctx context.Context, args *serverArgs) error {
+func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -710,6 +710,9 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
+	// Set log level
+	setLogger(serverName, args)
+
 	// Start HTTP server in a goroutine
 	go func() {
 		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
@@ -768,7 +771,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 	return heartbeatReporter
 }
 
-func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName string, args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -838,6 +841,9 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
+	// Set log level
+	setLogger(serverName, args)
+
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
@@ -869,7 +875,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	return nil
 }
 
-func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string, args *serverArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
 	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
@@ -888,6 +894,9 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
+
+	// Set log level
+	setLogger(serverName, args)
 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
@@ -915,7 +924,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 	return nil
 }
 
-func runAPI(ctx context.Context, args *serverArgs) error {
+func runAPI(ctx context.Context, serverName string, args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
@@ -941,7 +950,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	if err := startServer(ctx); err != nil {
+	if err := startServer(ctx, serverName, args); err != nil {
 		return err
 	}
 
@@ -950,7 +959,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func startServer(ctx context.Context) error {
+func startServer(ctx context.Context, serverName string, arguments *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1274,18 +1283,22 @@ func startServer(ctx context.Context) error {
 		}()
 	}
 
+	common.Info(
+		"\n        ____   ___    ______ ______ __\n" +
+			"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
+			"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
+			"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
+			"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
+	)
+	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
+
+	// Set log level
+	setLogger(serverName, arguments)
+
 	// Start server in a goroutine
 	go func() {
-		common.Info(
-			"\n        ____   ___    ______ ______ __\n" +
-				"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
-				"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
-				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
-				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
-		)
-		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
-		serve("API", srv, apiListener)
+		serve(serverName, srv, apiListener)
 	}()
 
 	// Start heartbeat reporter to admin server
@@ -1313,15 +1326,15 @@ func startServer(ctx context.Context) error {
 	defer shutdownCancel()
 
 	if mcpCloser != nil {
-		if err := mcpCloser.Close(); err != nil {
+		if err = mcpCloser.Close(); err != nil {
 			common.Warn("Failed to close MCP handler", zap.Error(err))
 		}
 	}
-	if err := shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
+	if err = shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
 		return err
 	}
 	if mcpSrv != nil {
-		if err := shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
+		if err = shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
 			return err
 		}
 	}
