@@ -80,6 +80,18 @@ _html_spec.loader.exec_module(_html_mod)
 RAGFlowHtmlParser = _html_mod.RAGFlowHtmlParser
 
 
+@pytest.mark.parametrize("cell", ["&lt;sku&gt;", "&amp;lt;", "A &amp; B"])
+def test_table_text_preserves_html_entities(cell):
+    source = f"<table><tr><td>{cell}</td></tr></table>"
+
+    sections = RAGFlowHtmlParser.parser_txt(source, chunk_token_num=512)
+
+    assert len(sections) == 1
+    parsed = BeautifulSoup(sections[0], "html.parser")
+    assert parsed.get_text() == BeautifulSoup(source, "html.parser").get_text()
+    assert parsed.td.find() is None
+
+
 class _FakeTokenizer:
     """Deterministic stand-in for rag.nlp.rag_tokenizer.
 
