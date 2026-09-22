@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -389,6 +390,7 @@ func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []p
 		return boxes
 	}
 	rescued := lyt.CharsToBoxes(unmatched, pg, false)
+	added := 0
 	for _, rb := range rescued {
 		if strings.TrimSpace(rb.Text) == "" {
 			continue
@@ -406,7 +408,11 @@ func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []p
 		}
 		if !dup {
 			boxes = append(boxes, rb)
+			added++
 		}
+	}
+	if added > 0 {
+		slog.Debug("rescueUnmatchedChars", "page", pg, "unmatchedChars", len(unmatched), "rescuedBoxes", added)
 	}
 	return boxes
 }

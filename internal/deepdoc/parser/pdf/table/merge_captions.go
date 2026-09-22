@@ -35,6 +35,52 @@ func captionSep(text string) string {
 	return ""
 }
 
+// dedupCaptions drops caption texts that are contained in (or equal to)
+// another caption, checking containment in BOTH directions: a caption already
+// covered by a surviving one is dropped, and a caption that covers earlier
+// ones replaces them, so "Table 1" plus "Table 1 Results" keeps only the
+// longer text. Blanks are trimmed away; survivors keep first-appearance order.
+func dedupCaptions(captions []string) []string {
+	var seen []string
+	for _, c := range captions {
+		t := strings.TrimSpace(c)
+		if t == "" {
+			continue
+		}
+		contained := false
+		for _, s := range seen {
+			if strings.Contains(s, t) {
+				contained = true
+				break
+			}
+		}
+		if contained {
+			continue
+		}
+		kept := seen[:0:0]
+		for _, s := range seen {
+			if !strings.Contains(t, s) {
+				kept = append(kept, s)
+			}
+		}
+		seen = append(kept, t)
+	}
+	return seen
+}
+
+// mergeCaptionTexts joins raw (unescaped) caption texts after dedupCaptions
+// normalization, separating survivors with the language-aware captionSep.
+func mergeCaptionTexts(captions ...string) string {
+	var b strings.Builder
+	for _, t := range dedupCaptions(captions) {
+		if b.Len() > 0 {
+			b.WriteString(captionSep(t))
+		}
+		b.WriteString(t)
+	}
+	return b.String()
+}
+
 func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
 	// Group caption texts by the target section index they attach to, so
@@ -315,36 +361,8 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 // target has no <table> tag the <caption> is prepended so the text is at least
 // preserved.
 func injectCaption(table *pdf.Section, captions []string) {
-	var seen []string
-	for _, c := range captions {
-		t := strings.TrimSpace(c)
-		if t == "" {
-			continue
-		}
-		// Containment is checked in both directions: an existing caption
-		// that already covers t (equal or longer) drops t; a t that covers
-		// existing captions replaces them, so "Table 1" followed by
-		// "Table 1 Results" yields just the longer text.
-		contained := false
-		for _, s := range seen {
-			if strings.Contains(s, t) {
-				contained = true
-				break
-			}
-		}
-		if contained {
-			continue
-		}
-		kept := seen[:0:0]
-		for _, s := range seen {
-			if !strings.Contains(t, s) {
-				kept = append(kept, s)
-			}
-		}
-		seen = append(kept, t)
-	}
 	var b strings.Builder
-	for _, t := range seen {
+	for _, t := range dedupCaptions(captions) {
 		if b.Len() > 0 {
 			b.WriteString(captionSep(t))
 		}

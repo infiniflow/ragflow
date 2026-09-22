@@ -996,3 +996,27 @@ func TestExtractTableAndReplace_NoReMergeAfterPageAbsoluteRejection(t *testing.T
 		t.Errorf("ExtractTableAndReplace re-merged the page-absolute-rejected tables: got %d table boxes, want 2 (the two pages-4/5 tables must stay separate)", got)
 	}
 }
+
+// TestBoxOverlapsPosition_PageMatch guards the cross-page bleed fix: identical
+// coordinates on different pages must NOT overlap, while a box's Pages span or
+// a page-less position still matches on geometry.
+func TestBoxOverlapsPosition_PageMatch(t *testing.T) {
+	pos := pdf.Position{PageNumbers: []int{4}, Left: 0, Right: 100, Top: 0, Bottom: 100}
+
+	samePage := pdf.TextBox{X0: 10, X1: 50, Top: 10, Bottom: 50, PageNumber: 4}
+	if !boxOverlapsPosition(samePage, pos) {
+		t.Error("box on the position's page with overlapping geometry must match")
+	}
+	otherPage := pdf.TextBox{X0: 10, X1: 50, Top: 10, Bottom: 50, PageNumber: 5}
+	if boxOverlapsPosition(otherPage, pos) {
+		t.Error("same coordinates on a different page must not match (cross-page bleed)")
+	}
+	multiPage := pdf.TextBox{X0: 10, X1: 50, Top: 10, Bottom: 50, PageNumber: 2, Pages: []int{2, 4}}
+	if !boxOverlapsPosition(multiPage, pos) {
+		t.Error("box whose Pages span includes the position page must match")
+	}
+	noPagePos := pdf.Position{Left: 0, Right: 100, Top: 0, Bottom: 100}
+	if !boxOverlapsPosition(otherPage, noPagePos) {
+		t.Error("position without page numbers must fall back to geometry only")
+	}
+}

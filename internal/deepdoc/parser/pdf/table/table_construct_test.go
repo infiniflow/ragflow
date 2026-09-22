@@ -940,6 +940,9 @@ func TestRemoveColumn(t *testing.T) {
 	}
 }
 
+// TestCleanupOrphanColumns_PreservesSparseColumnsWithNormalGaps verifies a
+// single-cell column wider than maxOrphanMergeGap from its neighbors is a
+// legitimate sparse column and is preserved, not force-merged.
 func TestCleanupOrphanColumns_PreservesSparseColumnsWithNormalGaps(t *testing.T) {
 	// A 4-row table with 3 columns where column 1 has a single note in row 2.
 	// The gap between column 0 and column 1 is 50pt (> maxOrphanMergeGap = 25pt).
@@ -959,6 +962,9 @@ func TestCleanupOrphanColumns_PreservesSparseColumnsWithNormalGaps(t *testing.T)
 	}
 }
 
+// TestCleanupOrphanRows_PreservesSparseRowsWithNormalGaps verifies a lone-cell
+// row separated from its neighbors by more than maxOrphanMergeGap (a subtotal
+// or category row) is preserved instead of merged into an adjacent row.
 func TestCleanupOrphanRows_PreservesSparseRowsWithNormalGaps(t *testing.T) {
 	// A 4-column table where row 2 is a category title spanning row with 1 cell.
 	// The vertical gap between row 1 and row 2 is 40pt (> maxOrphanMergeGap = 25pt).

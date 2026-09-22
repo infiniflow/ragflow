@@ -1,6 +1,7 @@
 package table
 
 import (
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -144,15 +145,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
 			contGrids = append(contGrids, tables[jt.idx].Grid)
 			if tables[jt.idx].Caption != "" {
-				if anchor.Caption == "" {
-					anchor.Caption = tables[jt.idx].Caption
-				} else if !strings.Contains(anchor.Caption, tables[jt.idx].Caption) {
-					if strings.Contains(tables[jt.idx].Caption, anchor.Caption) {
-						anchor.Caption = tables[jt.idx].Caption
-					} else {
-						anchor.Caption += captionSep(tables[jt.idx].Caption) + tables[jt.idx].Caption
-					}
-				}
+				anchor.Caption = mergeCaptionTexts(anchor.Caption, tables[jt.idx].Caption)
 			}
 			merged[jt.idx] = true
 			anchorPg = bpg
@@ -161,82 +154,8 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		}
 		// Rebuild the merged Grid from the per-page grids so ConstructTable
 		// emits rows from every merged page, not just the stale anchor
-		// (page-0) grid. Only when the anchor already had a Grid (the
-		// production path); Grid-less tables fall back to the cells path
-		// and must be left untouched to avoid regression.
-		//
-		// The anchor and continuation pages form ONE logical table, but TSR
-		// can detect a slightly different number of columns per page (or even
-		// per row within a page). A non-uniform grid must NOT cause the
-		// continuation rows to be dropped — doing so silently deletes an
-		// entire continuation page from the output.
-		//
-		// Stack the unpadded per-page grids first, so the zero-coordinate
-		// padding cells never enter the Y-shift math in stackGrids /
-		// gridYExtent, then align the rebuilt grid to a shared column model.
-		// When every page's grid detected the same number of columns, index
-		// i is the same logical column on every page and short rows are
-		// padded by index. When TSR missed a separator on some pages only
-		// (e.g. a materials price list where pages 5/11 detect 16 columns
-		// but the rest detect 15 because one vertical line went
-		// undetected), index padding shifts every cell after the missed
-		// column one position left and prices land under the wrong headers;
-		// there the cells are re-mapped onto the widest grid's columns by X
-		// overlap instead. Both paths keep the grid uniform (CalSpans /
-		// CleanupOrphanColumns / RowsToHTML never see a jagged grid) while
-		// preserving every row.
-		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
-			allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)
-			uniCols := 0
-			for _, g := range allGrids {
-				for _, row := range g {
-					if len(row) > uniCols {
-						uniCols = len(row)
-					}
-				}
-			}
-			keep := true
-			for _, g := range allGrids {
-				if len(g) == 0 {
-					// Degenerate grid with no rows: degrade to anchor-only so
-					// we don't build a malformed grid.
-					keep = false
-					break
-				}
-			}
-			if keep {
-				// Stack the unpadded grids first so the padded zero-coordinate
-				// cells stay out of the Y-shift calculation, then align the
-				// rebuilt grid to the shared column model.
-				if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
-					if gridsHaveUniformWidth(allGrids) {
-						anchor.Grid = padGridCols(rebuilt, uniCols)
-					} else if cols := canonicalColumns(widestGrid(allGrids)); len(cols) >= 2 {
-						anchor.Grid = alignGridColsByX(rebuilt, cols)
-					} else {
-						anchor.Grid = padGridCols(rebuilt, uniCols)
-					}
-				}
-			}
-			// Re-run the post-GroupCells cleanup that processOneTable would
-			// otherwise have applied per-page: stackGrids rebuilds the grid
-			// from raw (un-cleaned) per-page cells, so the empty / orphan
-			// cleanup done inside ConstructTable never runs on the merged
-			// grid. Without it, an extra "table row" detected next to a
-			// "table projected row header" on a cross-page continuation
-			// page (e.g. 13_crosspage_table.pdf page 2 y0=885) leaks into
-			// the merged grid as a row of empty cells, inflating
-			// item.Grid and breaking gridSim against Python's box.R
-			// grouping which never produces such a row. See
-			// table_construct.go dropAllEmptyRows for the matching
-			// per-page fix.
-			if len(anchor.Grid) > 0 && HasText(anchor.Grid) {
-				anchor.Grid = DropAllEmptyRows(anchor.Grid)
-				anchor.Grid = CleanupOrphanColumns(anchor.Grid)
-				anchor.Grid = CleanupOrphanRows(anchor.Grid)
-				anchor.Rows = RowsToStrings(anchor.Grid)
-			}
-		}
+		// (page-0) grid.
+		rebuildMergedGrid(&anchor, contGrids)
 		result = append(result, anchor)
 	}
 	// Append unprocessed tables (those with empty Positions) so they
@@ -247,6 +166,87 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		}
 	}
 	return result
+}
+
+// rebuildMergedGrid rebuilds anchor.Grid from its own per-page grid plus the
+// continuation pages' grids (contGrids). Only when the anchor already had a
+// Grid (the production path); Grid-less tables fall back to the cells path
+// and must be left untouched to avoid regression.
+//
+// The anchor and continuation pages form ONE logical table, but TSR
+// can detect a slightly different number of columns per page (or even
+// per row within a page). A non-uniform grid must NOT cause the
+// continuation rows to be dropped — doing so silently deletes an
+// entire continuation page from the output.
+//
+// Stack the unpadded per-page grids first, so the zero-coordinate
+// padding cells never enter the Y-shift math in stackGrids /
+// gridYExtent, then align the rebuilt grid to a shared column model.
+// When every page's grid detected the same number of columns, index
+// i is the same logical column on every page and short rows are
+// padded by index. When TSR missed a separator on some pages only
+// (e.g. a materials price list where pages 5/11 detect 16 columns
+// but the rest detect 15 because one vertical line went
+// undetected), index padding shifts every cell after the missed
+// column one position left and prices land under the wrong headers;
+// there the cells are re-mapped onto the widest grid's columns by X
+// overlap instead. Both paths keep the grid uniform (CalSpans /
+// CleanupOrphanColumns / RowsToHTML never see a jagged grid) while
+// preserving every row.
+func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
+	if len(anchor.Grid) == 0 || len(contGrids) == 0 {
+		return
+	}
+	allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)
+	uniCols := 0
+	for _, g := range allGrids {
+		if w := gridMaxWidth(g); w > uniCols {
+			uniCols = w
+		}
+	}
+	keep := true
+	for _, g := range allGrids {
+		if len(g) == 0 {
+			// Degenerate grid with no rows: degrade to anchor-only so
+			// we don't build a malformed grid.
+			keep = false
+			break
+		}
+	}
+	if keep {
+		// Stack the unpadded grids first so the padded zero-coordinate
+		// cells stay out of the Y-shift calculation, then align the
+		// rebuilt grid to the shared column model.
+		if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
+			if gridsHaveUniformWidth(allGrids) {
+				anchor.Grid = padGridCols(rebuilt, uniCols)
+			} else if cols := canonicalColumns(widestGrid(allGrids)); len(cols) >= 2 {
+				slog.Debug("rebuildMergedGrid: per-page column counts differ, aligning by X",
+					"maxCols", uniCols, "canonicalCols", len(cols), "rows", len(rebuilt))
+				anchor.Grid = alignGridColsByX(rebuilt, cols)
+			} else {
+				anchor.Grid = padGridCols(rebuilt, uniCols)
+			}
+		}
+	}
+	// Re-run the post-GroupCells cleanup that processOneTable would
+	// otherwise have applied per-page: stackGrids rebuilds the grid
+	// from raw (un-cleaned) per-page cells, so the empty / orphan
+	// cleanup done inside ConstructTable never runs on the merged
+	// grid. Without it, an extra "table row" detected next to a
+	// "table projected row header" on a cross-page continuation
+	// page (e.g. 13_crosspage_table.pdf page 2 y0=885) leaks into
+	// the merged grid as a row of empty cells, inflating
+	// item.Grid and breaking gridSim against Python's box.R
+	// grouping which never produces such a row. See
+	// table_construct.go dropAllEmptyRows for the matching
+	// per-page fix.
+	if len(anchor.Grid) > 0 && HasText(anchor.Grid) {
+		anchor.Grid = DropAllEmptyRows(anchor.Grid)
+		anchor.Grid = CleanupOrphanColumns(anchor.Grid)
+		anchor.Grid = CleanupOrphanRows(anchor.Grid)
+		anchor.Rows = RowsToStrings(anchor.Grid)
+	}
 }
 
 // maxBottomOnPage returns the largest Bottom among the table's positions that
@@ -281,11 +281,12 @@ func maxBottomOnPage(positions []pdf.Position, pg int) float64 {
 func stackGrids(grids ...[][]pdf.TSRCell) [][]pdf.TSRCell {
 	var out [][]pdf.TSRCell
 	prevMaxY := 0.0
-	for _, g := range grids {
+	for gi, g := range grids {
 		if len(g) == 0 {
 			continue
 		}
 		if len(out) > 0 && len(g) > 1 && isRepeatedHeader(out[0], g[0]) {
+			slog.Debug("stackGrids: stripped repeated header row", "grid", gi, "cells", len(g[0]))
 			g = g[1:]
 		}
 		minY, maxY := gridYExtent(g)
@@ -367,7 +368,7 @@ func gridYExtent(g [][]pdf.TSRCell) (minY, maxY float64) {
 // padGridCols returns a copy of grid with every row extended to width uniCols
 // by appending zero-valued cells. Grids shorter than uniCols keep their
 // existing cells at the same column indices — valid only when every page's
-// grid detected the same columns (see MergeTablesAcrossPages for the
+// grid detected the same columns (see rebuildMergedGrid for the
 // mismatched-column path). Rows are never added or removed, so no content is
 // lost when per-row column counts differ.
 func padGridCols(grid [][]pdf.TSRCell, uniCols int) [][]pdf.TSRCell {

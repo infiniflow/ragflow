@@ -1061,6 +1061,11 @@ func splitTableUnit(unit schema.ChunkDoc, maxTokens int) []schema.ChunkDoc {
 
 // splitLargeHTMLTable splits an HTML table into sub-tables that fit within maxTokens,
 // replicating the caption and header row(s) in each sub-table.
+//
+// Known limitation: rows are matched with a non-greedy <tr>...</tr> regex, so
+// a table whose cells embed a nested <table> would split at the inner row
+// boundaries and can emit malformed chunks. The PDF/DOCX/Markdown generators
+// in this pipeline never emit nested tables; this edge is knowingly accepted.
 func splitLargeHTMLTable(text string, maxTokens int) []string {
 	lower := strings.ToLower(text)
 	startIdx := strings.Index(lower, "<table")

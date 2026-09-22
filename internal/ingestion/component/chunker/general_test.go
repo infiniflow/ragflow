@@ -956,6 +956,9 @@ func TestGeneralChunkerPDFAttachesOutlineOnce(t *testing.T) {
 	}
 }
 
+// TestGeneralChunkerPDFSplitsLargeTableWithHeaders verifies an oversized PDF
+// table chunk is split into multiple valid sub-table chunks that each retain
+// the caption and header rows while no data row is lost.
 func TestGeneralChunkerPDFSplitsLargeTableWithHeaders(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("<table><caption>Financial Summary</caption>")
@@ -1025,6 +1028,8 @@ func TestGeneralChunkerPDFSplitsLargeTableWithHeaders(t *testing.T) {
 	}
 }
 
+// TestGeneralChunkerPDFKeepsSmallTableIntact verifies a table chunk within the
+// token budget is emitted unsplit and byte-identical.
 func TestGeneralChunkerPDFKeepsSmallTableIntact(t *testing.T) {
 	tableHTML := "<table><tr><th>Col1</th><th>Col2</th></tr><tr><td>Val1</td><td>Val2</td></tr></table>"
 	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
@@ -1051,6 +1056,8 @@ func TestGeneralChunkerPDFKeepsSmallTableIntact(t *testing.T) {
 	}
 }
 
+// TestSplitLargeHTMLTable_NoTH_TreatsFirstRowAsHeader verifies a table without
+// <th> cells replicates its first row as the header in every split chunk.
 func TestSplitLargeHTMLTable_NoTH_TreatsFirstRowAsHeader(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("<table>")

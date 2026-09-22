@@ -634,6 +634,9 @@ func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	MarkNoMergeTables([]pdf.TextBox{}, []pdf.TableItem{})
 }
 
+// TestMatchTableRegions_DeduplicatesOverlappingRegions verifies that a
+// low-confidence sub-table detection nested in a higher-confidence table
+// region is dropped before matching, so one table yields one region.
 func TestMatchTableRegions_DeduplicatesOverlappingRegions(t *testing.T) {
 	regions := []pdf.DLARegion{
 		// Large table covering [0, 0, 1000, 1000] with high confidence
