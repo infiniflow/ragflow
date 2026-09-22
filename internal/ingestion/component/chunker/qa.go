@@ -212,15 +212,21 @@ func isCSV(name string) bool {
 // HTML / spreadsheet QA extraction
 // ---------------------------------------------------------------------------
 
-// extractQATable turns table markup into Q&A pairs: the first two non-empty
-// cells of a row become the question and the answer. strictPairs is the CSV
-// contract (Python qa.py:365) and requires a row to have exactly two cells
-// instead of taking the first two.
+// extractQATable turns table markup into Q&A pairs. It is the payload
+// wrapper: the JSON dispatch routes on the same walker, so both paths share
+// qaPairsFromRows.
 func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
-	rows := htmltable.TableRows(htmlStr)
+	return qaPairsFromRows(htmltable.TableRows(htmlStr), strictPairs)
+}
+
+// qaPairsFromRows builds the pairs of one table: the first two non-empty
+// cells of a row become the question and the answer. strictPairs is the CSV
+// contract (Python qa.py:365) and requires a row to have exactly two cells
+// instead of taking the first two.
+func qaPairsFromRows(rows [][]string, strictPairs bool) []qaPair {
 	pairs := make([]qaPair, 0, len(rows))
 	for _, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
@@ -456,10 +462,21 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			if txt == "" {
 				continue
 			}
-			// Non-spreadsheet table items may still carry HTML markup. Keep
-			// the HTML fallback for parsers that do not expose typed cells.
-			if itemDocType(item) == "table" {
-				tmp = extractQATable(txt, strictCSV)
+			// Route on what the row walker can read, not on the type label. A
+			// doc_type:"table" item whose payload is not markup — a PDF table
+			// item, for instance — used to enter the table extractor, find no
+			// rows, and silently lose every pair; conversely a text-labelled
+			// block holding real table markup is read as a table. IsTableHTML is
+			// only the cheap candidate filter: the walker's result decides, so
+			// nothing it can read is denied, and a block that merely opens with
+			// "<table" text (no row) stays on the prose path instead of silently
+			// pairing nothing.
+			var rows [][]string
+			if htmltable.IsTableHTML(txt) {
+				rows = htmltable.TableRows(txt)
+			}
+			if len(rows) > 0 {
+				tmp = qaPairsFromRows(rows, strictCSV)
 			} else {
 				tmp = extractQAText(txt)
 			}
