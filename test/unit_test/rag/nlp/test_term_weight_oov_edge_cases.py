@@ -45,7 +45,7 @@ class TestAlphabeticOovFrequencyEdgeCases:
     def test_returns_none_for_cjk_characters(self):
         """CJK terms are not alphabetic OOV and return None."""
         assert _alphabetic_oov_frequency("北京") is None
-        assert _alphabeticoov_frequency("東京") is None
+        assert _alphabetic_oov_frequency("東京") is None
 
     def test_returns_none_for_digits_only(self):
         """Pure digit strings have no alphabetic content."""
@@ -59,59 +59,59 @@ class TestAlphabeticOovFrequencyEdgeCases:
     def test_returns_none_for_mixed_alphanumeric(self):
         """Mixed alphanumeric terms are rejected."""
         assert _alphabetic_oov_frequency("abc123") is None
-        assert _alphabeticoov_frequency("v2") is None
+        assert _alphabetic_oov_frequency("v2") is None
 
     def test_returns_none_for_underscore_separator(self):
         """Underscores are not valid separators."""
-        assert _alphabeticoov_frequency("hello_world") is None
+        assert _alphabetic_oov_frequency("hello_world") is None
 
     def test_hyphen_is_valid_separator(self):
         """Hyphens are preserved as valid separators."""
-        assert _alphabeticoov_frequency("hospital-equipment") == 10
-        assert _alphabeticoov_frequency("self-contained") == 10
+        assert _alphabetic_oov_frequency("hospital-equipment") == 10
+        assert _alphabetic_oov_frequency("self-contained") == 10
 
     def test_space_is_valid_separator(self):
         """Spaces are preserved as valid separators."""
-        result = _alphabeticoov_frequency("hospital equipment")
+        result = _alphabetic_oov_frequency("hospital equipment")
         assert result is not None
         assert result >= 10
 
     def test_dots_are_valid_separators(self):
         """Dots/periods are preserved as valid separators."""
-        assert _alphabeticoov_frequency("...") is None
-        assert _alphabeticoov_frequency("a.b.c") is not None
+        assert _alphabetic_oov_frequency("...") is None
+        assert _alphabetic_oov_frequency("a.b.c") is not None
 
     def test_accented_latin_characters_counted(self):
         """Accented Latin characters are counted as alphabetic."""
-        result = _alphabeticoov_frequency("café")
+        result = _alphabetic_oov_frequency("café")
         assert result is not None
         assert result == 212
 
     def test_uppercase_latin_characters_counted(self):
         """Uppercase Latin characters are counted as alphabetic."""
-        result = _alphabeticoov_frequency("CAFÉ")
+        result = _alphabetic_oov_frequency("CAFÉ")
         assert result is not None
         assert result == 212
 
     def test_greek_characters_counted(self):
         """Greek characters are counted as alphabetic."""
-        result = _alphabeticoov_frequency("κόσμος")
+        result = _alphabetic_oov_frequency("κόσμος")
         assert result is not None
         assert result == 106
 
     def test_cyrillic_characters_counted(self):
         """Cyrillic characters are counted as alphabetic."""
-        result = _alphabeticoov_frequency("привет")
+        result = _alphabetic_oov_frequency("привет")
         assert result is not None
         assert result == 106
 
     def test_frequency_ordering_longer_is_lower(self):
         """Longer words always get lower or equal frequency than shorter ones."""
-        freq_short = _alphabeticoov_frequency("cat")
-        freq_medium = _alphabeticoov_frequency("laptop")
-        freq_long = _alphabeticoov_frequency("equipment")
+        freq_short = _alphabetic_oov_frequency("cat")
+        freq_medium = _alphabetic_oov_frequency("laptop")
+        freq_long = _alphabetic_oov_frequency("equipment")
         assert freq_short > freq_medium > freq_long
 
     def test_single_non_ascii_alpha_rejected(self):
         """A single non-Latin/Greek/Cyrillic alpha character returns None."""
-        assert _alphabeticoov_frequency("京") is None
+        assert _alphabetic_oov_frequency("京") is None
