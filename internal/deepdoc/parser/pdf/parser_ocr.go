@@ -16,7 +16,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
-			slog.Warn(logLabel+" OCR detect failed", "page", pageNum, "err", err)
+			reportPageInferenceFailure(ctx, logLabel+" OCR detect failed", pageNum, err)
 		}
 		return nil
 	}
@@ -111,7 +111,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		case berr != nil:
 			// A batch error must not abort the whole page: the canonical
 			// per-crop path below still produces correct results.
-			slog.Warn(logLabel+" OCR batch recognize failed; falling back to per-crop", "page", pageNum, "err", berr)
+			reportPageInferenceFailure(ctx, logLabel+" OCR batch recognize failed; falling back to per-crop", pageNum, berr)
 		case len(batch) != len(cropAcc):
 			// Defensive: a count mismatch (or a nil result) would corrupt the
 			// per-box indexing further down. Fall back to per-crop instead of
@@ -134,7 +134,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
 		texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
 		if rerr != nil {
-			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", rerr)
+			reportPageInferenceFailure(recCtx, logLabel+" OCR recognize failed", pageNum, rerr)
 			return nil
 		}
 		allTexts[ci] = texts
@@ -581,7 +581,7 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		if p.docSupportsBatchOCR(doc) {
 			batch, berr := p.inferOCRRecognizeBatch(ctx, doc, crops)
 			if berr != nil {
-				slog.Warn("ocr merge: batch recognize failed", "page", pageNum, "err", berr)
+				reportPageInferenceFailure(ctx, "ocr merge: batch recognize failed", pageNum, berr)
 				return nil
 			}
 			allTexts = batch
@@ -594,7 +594,7 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 				recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, jobs[ci].srcIdx)
 				texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
 				if rerr != nil {
-					slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", rerr)
+					reportPageInferenceFailure(recCtx, "ocr merge: recognize failed", pageNum, rerr)
 					continue
 				}
 				allTexts[ci] = texts
