@@ -207,13 +207,19 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 	keep := true
 	for _, g := range allGrids {
 		if len(g) == 0 {
-			// Degenerate grid with no rows: degrade to anchor-only so
-			// we don't build a malformed grid.
+			// Degenerate grid with no rows: drop the whole merged grid so
+			// ConstructTable rebuilds from the merged Cells (the anchor-only
+			// grid would render page 0 and silently omit the continuation
+			// pages' cells). A nil Grid is the package's signal for the
+			// cells fallback path.
 			keep = false
 			break
 		}
 	}
-	if keep {
+	if !keep {
+		anchor.Grid = nil
+		anchor.Rows = nil
+	} else {
 		// Stack the unpadded grids first so the padded zero-coordinate
 		// cells stay out of the Y-shift calculation, then align the
 		// rebuilt grid to the shared column model.
@@ -404,21 +410,22 @@ func shiftGridY(g [][]pdf.TSRCell, dy float64) [][]pdf.TSRCell {
 	return out
 }
 
-// gridsHaveUniformWidth reports whether every grid detected the same maximum
-// number of columns, the case where index-based column alignment is correct.
+// gridsHaveUniformWidth reports whether every ROW of every grid has the same
+// number of columns — the case where index-based column alignment is correct.
+// Production page grids are TSR-row cross products so their rows are naturally
+// equal-width; the per-row check (rather than a per-page max) keeps the
+// guarantee honest if a grid ever arrives jagged: a row narrower than its
+// page's max means a locally missed separator, whose cells must go through
+// X-based alignment instead of index padding.
 func gridsHaveUniformWidth(grids [][][]pdf.TSRCell) bool {
 	w := -1
 	for _, g := range grids {
-		cur := 0
 		for _, row := range g {
-			if len(row) > cur {
-				cur = len(row)
+			if w < 0 {
+				w = len(row)
+			} else if len(row) != w {
+				return false
 			}
-		}
-		if w < 0 {
-			w = cur
-		} else if cur != w {
-			return false
 		}
 	}
 	return true

@@ -145,3 +145,16 @@ func TestInjectCaption_SubsumingCaptions(t *testing.T) {
 		t.Errorf("reverse-order caption = %q, want %q", rev.Text, want)
 	}
 }
+
+func TestDedupCaptions_ReplacementKeepsPositionOfFirstReplaced(t *testing.T) {
+	got := dedupCaptions([]string{"Table 1", "Notes", "Table 1 Results"})
+	want := []string{"Table 1 Results", "Notes"}
+	if len(got) != len(want) {
+		t.Fatalf("dedupCaptions = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("dedupCaptions = %v, want %v (replacement must take the position of the first caption it replaces)", got, want)
+		}
+	}
+}

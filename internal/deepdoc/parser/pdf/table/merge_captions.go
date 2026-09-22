@@ -39,7 +39,9 @@ func captionSep(text string) string {
 // another caption, checking containment in BOTH directions: a caption already
 // covered by a surviving one is dropped, and a caption that covers earlier
 // ones replaces them, so "Table 1" plus "Table 1 Results" keeps only the
-// longer text. Blanks are trimmed away; survivors keep first-appearance order.
+// longer text. Blanks are trimmed away; survivors keep first-appearance order,
+// and a replacing caption takes the position of the FIRST caption it replaces
+// so the merged text stays in reading order.
 func dedupCaptions(captions []string) []string {
 	var seen []string
 	for _, c := range captions {
@@ -57,13 +59,22 @@ func dedupCaptions(captions []string) []string {
 		if contained {
 			continue
 		}
-		kept := seen[:0:0]
+		kept := make([]string, 0, len(seen)+1)
+		replaced := false
 		for _, s := range seen {
-			if !strings.Contains(t, s) {
-				kept = append(kept, s)
+			if strings.Contains(t, s) {
+				if !replaced {
+					kept = append(kept, t)
+					replaced = true
+				}
+				continue
 			}
+			kept = append(kept, s)
 		}
-		seen = append(kept, t)
+		if !replaced {
+			kept = append(kept, t)
+		}
+		seen = kept
 	}
 	return seen
 }

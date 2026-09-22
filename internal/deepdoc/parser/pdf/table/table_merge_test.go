@@ -737,3 +737,107 @@ func TestMergeTablesAcrossPages_MisalignedColumnsAlignByX(t *testing.T) {
 		t.Errorf("规格 value must align to anchor column 2 by X, got %q at cols [%q %q]", g[2][2].Text, g[2][0].Text, g[2][1].Text)
 	}
 }
+
+// TestRebuildMergedGrid_EmptyContinuationGridFallsBackToCells verifies that a
+// degenerate continuation grid (no rows, but its Cells were merged into the
+// anchor by MergeTablesAcrossPages) clears the anchor grid instead of leaving
+// a stale page-0-only grid: ConstructTable then rebuilds rows from the FULL
+// merged cell set rather than omitting the continuation cells.
+func TestRebuildMergedGrid_EmptyContinuationGridFallsBackToCells(t *testing.T) {
+	anchor := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "a"},
+			{X0: 100, Y0: 0, X1: 200, Y1: 30, Text: "b"},
+		}},
+		Rows: [][]string{{"a", "b"}},
+	}
+	emptyCont := [][]pdf.TSRCell{}
+	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{emptyCont})
+	if anchor.Grid != nil {
+		t.Errorf("stale anchor grid must be cleared for the cells fallback, got %d rows", len(anchor.Grid))
+	}
+	if anchor.Rows != nil {
+		t.Errorf("stale anchor Rows must be cleared alongside Grid, got %v", anchor.Rows)
+	}
+}
+
+// TestGridsHaveUniformWidth pins the per-ROW uniformity guarantee that gates
+// index padding: a row narrower than its page's maximum signals a locally
+// missed separator, and index padding would shift its values left under the
+// wrong headers.
+func TestGridsHaveUniformWidth(t *testing.T) {
+	row := func(n int) []pdf.TSRCell {
+		r := make([]pdf.TSRCell, n)
+		for i := range r {
+			r[i] = pdf.TSRCell{X0: float64(i) * 100, X1: float64(i)*100 + 100, Y1: 30}
+		}
+		return r
+	}
+	cases := []struct {
+		name  string
+		grids [][][]pdf.TSRCell
+		want  bool
+	}{
+		{"all rows equal across pages", [][][]pdf.TSRCell{{row(2), row(2)}, {row(2)}}, true},
+		{"per-page column counts differ", [][][]pdf.TSRCell{{row(2), row(2)}, {row(3)}}, false},
+		{"jagged row within one page (same max width)", [][][]pdf.TSRCell{{row(2), row(1)}}, false},
+	}
+	for _, tc := range cases {
+		if got := gridsHaveUniformWidth(tc.grids); got != tc.want {
+			t.Errorf("%s: gridsHaveUniformWidth = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX covers the mixed
+// continuation page shape: same maximum row width as the anchor, but one row
+// missing an interior separator. Index padding would keep that row's trailing
+// cells left-shifted; the grid must instead go through X-based alignment so
+// every value lands under the anchor column its X range overlaps.
+func TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX(t *testing.T) {
+	grid := func(rows [][]string) [][]pdf.TSRCell {
+		g := make([][]pdf.TSRCell, len(rows))
+		for r, rowTexts := range rows {
+			g[r] = make([]pdf.TSRCell, len(rowTexts))
+			for c := range rowTexts {
+				g[r][c] = pdf.TSRCell{
+					X0: float64(c) * 100, Y0: float64(r) * 30,
+					X1: float64(c)*100 + 100, Y1: float64(r)*30 + 30,
+					Text: rowTexts[c],
+				}
+			}
+		}
+		return g
+	}
+	anchorGrid := grid([][]string{{"a", "b"}, {"c", "d"}})
+	// Continuation: one full-width row, one row whose separator between the
+	// two columns was missed — its second cell physically spans column 1 only
+	// from X=100, so X alignment must place "z" in column 1, while index
+	// padding of the jagged shape must never be trusted.
+	contGrid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "e"},
+			{X0: 100, Y0: 0, X1: 200, Y1: 30, Text: "f"},
+		},
+		{
+			{X0: 0, Y0: 30, X1: 100, Y1: 60, Text: "y"},
+			{X0: 100, Y0: 30, X1: 200, Y1: 60, Text: "z"},
+		},
+	}
+	// Make contGrid jagged (missed separator merges col 0+1 into one wide cell).
+	contGrid[1] = []pdf.TSRCell{{X0: 0, Y0: 30, X1: 200, Y1: 60, Text: "y"}}
+	anchor := pdf.TableItem{Grid: anchorGrid}
+	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{contGrid})
+	if len(anchor.Grid) != 4 {
+		t.Fatalf("merged grid must keep every row, got %d", len(anchor.Grid))
+	}
+	if len(anchor.Grid[3]) != 2 {
+		t.Fatalf("X alignment must normalize every row to the canonical 2 columns, got %d cells", len(anchor.Grid[3]))
+	}
+	if anchor.Grid[3][0].Text != "y" {
+		t.Errorf("wide merged cell must map to its best-overlap column 0, got %q", anchor.Grid[3][0].Text)
+	}
+	if anchor.Grid[3][1].Text != "" {
+		t.Errorf("column 1 must stay empty for the merged cell (no invented data), got %q", anchor.Grid[3][1].Text)
+	}
+}
