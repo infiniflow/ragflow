@@ -700,8 +700,10 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 			if jobErr := ctx.Err(); jobErr != nil {
 				return jobErr
 			}
-			var embeds []models.EmbeddingData
-			embeds, jobErr := mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
+			// Embed inside the model's window: compile products include the summaries
+			// and entity descriptions that feed the nav index, and an over-window input
+			// is a hard 400/20015 that fails the whole batch instead of being trimmed.
+			embeds, jobErr := mdl.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: batchTexts}, config, nil)
 			if jobErr != nil {
 				return fmt.Errorf("knowledge_compiler: embed: %w", jobErr)
 			}

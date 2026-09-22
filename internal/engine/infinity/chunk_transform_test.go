@@ -43,6 +43,8 @@ func TestTransformChunkFields_IngestionShape(t *testing.T) {
 		"important_kwd":        []interface{}{"k1"},
 		"page_num_int":         int(1),
 		"position_int":         int(2),
+		"mom_id":               "parent-1",
+		"available_int":        int(0),
 	}
 
 	got := transformChunkFields(chunk, nil)
@@ -58,6 +60,8 @@ func TestTransformChunkFields_IngestionShape(t *testing.T) {
 		"important_keywords":   "k1",
 		"page_num_int":         int(1),
 		"position_int":         int(2),
+		"mom_id":               "parent-1",
+		"available_int":        int(0),
 	}
 
 	for k, wv := range want {

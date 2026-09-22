@@ -73,7 +73,7 @@ func NewXunFeiModel(baseURL map[string]string, urlSuffix URLSuffix) *XunFeiModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 			// The Spark HTTP API authenticates with the credential bundle's
 			// spark_api_password, not the raw stored key.
 			authHeader: func(cfg *APIConfig) (string, string) {

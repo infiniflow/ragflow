@@ -185,17 +185,6 @@ var (
 	ErrPreviewFileEmpty = errors.New("preview file empty")
 )
 
-var artifactContentTypes = map[string]string{
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".svg":  "image/svg+xml",
-	".pdf":  "application/pdf",
-	".csv":  "text/csv",
-	".json": "application/json",
-	".html": "text/html",
-}
-
 var artifactForceAttachmentExtensions = map[string]struct{}{
 	".htm":   {},
 	".html":  {},

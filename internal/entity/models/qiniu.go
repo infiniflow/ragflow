@@ -35,7 +35,7 @@ func NewQiniuModel(baseURL map[string]string, urlSuffix URLSuffix) *QiniuModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }

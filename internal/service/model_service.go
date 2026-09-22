@@ -3546,7 +3546,7 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 		if !allowed {
 			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
 		}
-		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}
@@ -3577,7 +3577,7 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 		if modelObj.Status != "active" {
 			return false, fmt.Errorf("model %q is disabled", modelRef)
 		}
-		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
@@ -3589,15 +3589,62 @@ func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tena
 	return catalogToolSupport(providerName, pureModelName), nil
 }
 
-// toolSupportFromTenantModel returns the is_tools flag persisted on a tenant
-// model's extra JSON when present, otherwise the provider catalog's declaration
-// for that model. Mirrors Python's model_extra.get("is_tools", is_tool).
-func toolSupportFromTenantModel(extra, providerName, modelName string) bool {
+// ResolveChatModelTarget resolves the chat model a request will run on: the
+// caller's reference when it has one, the tenant default otherwise — a dialog
+// without an llm_id still runs on the default (dialog_service get_models).
+// Shared by the capability probe and the agentic wiring so the two cannot resolve
+// different models for one request.
+func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenantID, modelRef string) (*ModelTarget, error) {
+	if m == nil {
+		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
+	}
+	solver := m.modelSolver()
+	if strings.TrimSpace(modelRef) == "" {
+		return solver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+	}
+	// Resolve the enrolled type first: a reference enrolled only as image-to-text
+	// is a valid chat-pipeline input (its driver answers chat requests), and
+	// resolving it as chat would fail the type check outright.
+	return solver.ResolveModelConfig(ctx, tenantID, solver.ResolveChatModelType(ctx, tenantID, modelRef), modelRef)
+}
+
+// modelTargetRef renders a resolved model as the lookups' reference: its
+// tenant_model id, or the composite "model@instance@provider" form.
+func modelTargetRef(target *ModelTarget) string {
+	if target == nil {
+		return ""
+	}
+	if target.ModelID != "" {
+		return target.ModelID
+	}
+	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
+}
+
+// toolSupportFromEnrollment applies the capability precedence the rest of the
+// service uses: the is_tools flag persisted on the enrolled model, then the flag
+// carried by the instance credential payload, then the provider catalog's
+// declaration for the model.
+//
+// Python's precedence has the same shape — model_extra.get("is_tools", is_tool),
+// where is_tool comes out of the instance api_key payload — with the catalog as
+// our last resort, because a tenant may enrol a model the catalog does not
+// describe at all.
+func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
 	if ts, ok := extraToolSupport(extra); ok {
+		return ts
+	}
+	// The instance credential can be a JSON object carrying the key together with
+	// capability flags; extraToolSupport reads is_tools out of either blob and
+	// reports "absent" for a plain credential string.
+	if ts, ok := extraToolSupport(instanceAPIKey); ok {
 		return ts
 	}
 	return catalogToolSupport(providerName, modelName)
 }
+
+// The tool-calling verdict is no longer memoized: it is computed while the model
+// is resolved (see resolvedModel.supportsTools) and travels with the resolution,
+// so there is no second lookup to amortize.
 
 // tenantCanReachProviderTenant reports whether userID owns the provider's tenant
 // or is a joined member of it. Mirrors Python's tenant_model_service

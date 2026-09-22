@@ -69,11 +69,11 @@ type PipelineExecutor struct {
 	canvasID    string
 	docBulkSize int
 
-	indexWriter     *chunkIndexWriter
-	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
-	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
-	progressSink    pipelinepkg.ProgressSink
-	requireResume   bool // when true, the pipeline run passes WithRequireResume
+	indexWriter      *chunkIndexWriter
+	deleteChunksFunc DeleteChunksFunc
+	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
+	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
+	progressSink     pipelinepkg.ProgressSink
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -139,17 +139,29 @@ func NewPipelineExecutor(
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
 		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
+		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
+			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
+		},
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
 	return svc, nil
 }
 
+// DeleteChunksFunc removes partially written rows after a failed index write.
+type DeleteChunksFunc func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error)
+
 func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	s.indexWriter.insertFunc = f
 	return s
 }
 
+// WithDeleteChunksFunc replaces index-write compensation. It is used by the
+// in-memory pipeline tests; production uses the configured document engine.
+func (s *PipelineExecutor) WithDeleteChunksFunc(f DeleteChunksFunc) *PipelineExecutor {
+	s.deleteChunksFunc = f
+	return s
+}
 func (s *PipelineExecutor) WithLoadDSLFunc(f func(ctx context.Context, canvasID string) (string, string, error)) *PipelineExecutor {
 	s.loadDSLFunc = f
 	return s
@@ -165,14 +177,6 @@ func (s *PipelineExecutor) WithRunPipelineFunc(f func(ctx context.Context, dsl s
 // unset, the pipeline runs DB-independent (progress events are dropped).
 func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *PipelineExecutor {
 	s.progressSink = sink
-	return s
-}
-
-// WithRequireResume makes the pipeline refuse to start when no checkpoint
-// store is resolvable (Redis down or not configured). Production ingestion
-// sets this; tests skip it so they can exercise runPlain without Redis.
-func (s *PipelineExecutor) WithRequireResume() *PipelineExecutor {
-	s.requireResume = true
 	return s
 }
 
@@ -267,6 +271,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
+	parentChunks := indexdoc.MaterializeParentChunks(s.taskCtx.Doc.KbID, chunks)
 
 	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {
@@ -304,8 +309,12 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
-	if err := s.indexWriter.Write(ctx, chunks); err != nil {
-		return nil, err
+	indexChunks := append(chunks, parentChunks...)
+	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
+		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
+			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
+		}
+		return nil, fmt.Errorf("write chunks: %w", err)
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err
@@ -372,6 +381,37 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}, nil
 }
 
+func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunks []map[string]any) error {
+	if s.deleteChunksFunc == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(chunks))
+	seen := make(map[string]struct{}, len(chunks))
+	for _, chunk := range chunks {
+		id, _ := chunk["id"].(string)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	_, err := s.deleteChunksFunc(
+		cleanupCtx,
+		map[string]any{"id": ids, "kb_id": s.taskCtx.Doc.KbID},
+		s.indexWriter.baseName,
+		s.taskCtx.Doc.KbID,
+	)
+	return err
+}
+
 // terminalDuration measures the run from the document's process_begin_at —
 // the anchor PrepareValidatedRun stamped before the run and the one every
 // mid-run progress-sink duration write uses — so the terminal value applied
@@ -394,57 +434,21 @@ func (s *PipelineExecutor) terminalDuration(start time.Time) float64 {
 // component-scoped Extractor node's modular metadata config. Legacy flat
 // fields (enable_metadata / metadata_config / built_in_metadata at either the
 // top level or on the node) are intentionally not supported.
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
+//
+// The config lookup and the field-list normalisation live in common (see
+// ExtractorMetadataConfig / MetadataRawFieldList) so the ingestion pipeline and the agentic
+// metadata catalog read the very same shape.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
-	var extractorKeys []string
-	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
-			extractorKeys = append(extractorKeys, k)
-		}
+	metaObj, ok := common.ExtractorMetadataConfig(parserConfig)
+	if !ok {
+		return nil, false
 	}
-	sort.Strings(extractorKeys)
-
-	for _, k := range extractorKeys {
-		nodeRaw := parserConfig[k]
-		if node, ok := nodeRaw.(map[string]any); ok {
-			if metaObj, ok := node["metadata"].(map[string]any); ok {
-				arr := metadataFieldSlice(metaObj["built_in_metadata"])
-				return arr, parserConfigBool(metaObj["enabled"])
-			}
-		}
-	}
-	return nil, false
-}
-
-// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
-// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
-// construction) into a []any.
-func metadataFieldSlice(value any) []any {
-	if list, ok := value.([]any); ok {
-		return list
-	}
-	if list, ok := value.([]map[string]any); ok {
-		out := make([]any, 0, len(list))
-		for _, item := range list {
-			out = append(out, item)
-		}
-		return out
-	}
-	return nil
-}
-
-// parserConfigBool coerces a parser_config boolean-like value (bool / number)
-// to bool, mirroring the frontend's enable_metadata handling.
-func parserConfigBool(v any) bool {
-	switch typed := v.(type) {
-	case bool:
-		return typed
-	case float64:
-		return typed > 0
-	case int:
-		return typed > 0
-	}
-	return false
+	return common.MetadataRawFieldList(metaObj["built_in_metadata"]), common.ParserConfigBool(metaObj["enabled"])
 }
 
 func docNameValue(name *string) string {

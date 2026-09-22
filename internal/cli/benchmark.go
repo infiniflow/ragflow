@@ -34,7 +34,7 @@ type BenchmarkResult struct {
 }
 
 // RunBenchmark runs a benchmark with the given concurrency and iterations
-func (c *CLI) RunBenchmark(cmd *Command) (ResponseIf, error) {
+func (c *CLI) RunBenchmark(commandCount int, cmd *Command) (ResponseIf, error) {
 	concurrency, ok := cmd.Params["concurrency"].(int)
 	if !ok {
 		concurrency = 1
@@ -84,15 +84,7 @@ func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*Benchmark
 	}
 
 	// Check if command supports native benchmark (iterations > 1)
-	if iterations > 1 {
-		result, err := c.ExecuteCommand(nestedCmd)
-		// convert result to BenchmarkResponse
-		benchmarkResponse := result.(*BenchmarkResponse)
-		benchmarkResponse.Concurrency = 1
-		return benchmarkResponse, err
-	}
-
-	result, err := c.ExecuteCommand(nestedCmd)
+	result, err := c.ExecuteCommand(iterations, nestedCmd)
 	if err != nil {
 		fmt.Printf("fail to execute: %s", commandType)
 		return nil, err
@@ -172,21 +164,22 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 		go func(idx int) {
 			defer wg.Done()
 
-			// Create a new client for each goroutine to avoid race conditions
-			workerClient, err := NewCLIWithConfig(nil)
-			if err != nil {
-				fmt.Printf("fail to create worker client: %s", err)
-				return
-			}
-			workerClient.AdminServerClient = c.AdminServerClient
-			workerClient.APIServerClientMap = c.APIServerClientMap
+			//// Create a new client for each goroutine to avoid race conditions
+			//workerClient, err := NewCLIWithConfig(Arguments)
+			//if err != nil {
+			//	fmt.Printf("fail to create worker client: %s", err)
+			//	return
+			//}
+			//workerClient.AdminServerClient = c.AdminServerClient
+			//workerClient.APIServerClientMap = c.APIServerClientMap
 
 			// Execute benchmark silently (no output)
-			responseList := workerClient.executeBenchmarkSilent(nestedCmd, iterations)
+			//responseList := workerClient.executeBenchmarkSilent(nestedCmd, iterations)
+			benchmarkResponse, _ := c.runBenchmarkSingle(iterations, nestedCmd)
 
 			results[idx] = map[string]interface{}{
 				"duration":      0.0,
-				"response_list": responseList,
+				"response_list": benchmarkResponse,
 			}
 		}(i)
 	}
@@ -196,27 +189,24 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 
 	totalDuration := endTime.Sub(startTime).Seconds()
 	successCount := 0
-	commandType := nestedCmd.Type
+	failureCount := 0
 
 	for _, result := range results {
 		if result == nil {
 			continue
 		}
-		responseList, _ := result["response_list"].([]*Response)
-		for _, resp := range responseList {
-			if isSuccess(resp, commandType) {
-				successCount++
-			}
-		}
+		res, _ := result["response_list"].(*BenchmarkResponse)
+		successCount += res.SuccessCount
+		failureCount += res.FailureCount
 	}
 
-	totalCommands := iterations * concurrency
+	//totalCommands := iterations * concurrency
 
 	var benchmarkResponse BenchmarkResponse
 	benchmarkResponse.Duration = totalDuration
 	benchmarkResponse.Code = 0
 	benchmarkResponse.SuccessCount = successCount
-	benchmarkResponse.FailureCount = totalCommands - successCount
+	benchmarkResponse.FailureCount = failureCount
 	benchmarkResponse.Concurrency = concurrency
 
 	return &benchmarkResponse, nil
@@ -234,12 +224,12 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 
 		switch cmd.Type {
 		case "ping":
-			resp, err = httpClient.Request("GET", "/system/ping", "web", nil, nil)
+			resp, err = httpClient.Request(1, "GET", "/system/ping", "web", nil, nil)
 		case "list_user_datasets":
-			resp, err = httpClient.Request("POST", "/kb/list", "web", nil, nil)
+			resp, err = httpClient.Request(1, "POST", "/kb/list", "web", nil, nil)
 		case "api_list_datasets":
 			userName, _ := cmd.Params["user_name"].(string)
-			resp, err = httpClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
+			resp, err = httpClient.Request(1, "GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
 		case "search_on_datasets":
 			question, _ := cmd.Params["question"].(string)
 			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)
@@ -249,7 +239,7 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 				"similarity_threshold":     0.2,
 				"vector_similarity_weight": 0.3,
 			}
-			resp, err = httpClient.Request("POST", "/datasets/search", "web", nil, payload)
+			resp, err = httpClient.Request(1, "POST", "/datasets/search", "web", nil, payload)
 		default:
 			// For other commands, we would need to add specific handling
 			// For now, mark as failed
