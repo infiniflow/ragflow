@@ -139,3 +139,36 @@ def test_switch_ordering_operator_still_compares_numerically_and_textually():
     assert cpn.process_operator(5, ">", "3") is True
     assert cpn.process_operator("5", "<", 9) is True
     assert cpn.process_operator("abc", ">", "abd") is False
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "operator, variable, value, expected_branch",
+    [
+        # "empty"/"not empty" ignore the comparison value, so a "" value (or any
+        # unparseable one) must not turn the match into a non-match.
+        ("not empty", 5, "", "case_target"),
+        ("not empty", 0, "", "else_target"),
+        ("empty", 0, "", "case_target"),
+        ("empty", 5, "", "else_target"),
+        ("not empty", None, "", "else_target"),
+    ],
+)
+def test_switch_value_independent_operators_skip_numeric_coercion(operator, variable, value, expected_branch):
+    """Numeric coercion of the comparison value must not affect operators that
+    ignore it (#19994)."""
+    param = SwitchParam()
+    param.conditions = [
+        {
+            "logical_operator": "and",
+            "items": [{"cpn_id": "score", "operator": operator, "value": value}],
+            "to": ["case_target"],
+        }
+    ]
+    param.end_cpn_ids = ["else_target"]
+
+    cpn = _switch(param, {"score": variable})
+    cpn._invoke()
+
+    assert cpn.output("_next") == [expected_branch]
+    assert cpn.output("next") == [expected_branch]

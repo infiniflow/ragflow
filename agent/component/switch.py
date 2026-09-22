@@ -75,7 +75,10 @@ class Switch(ComponentBase, ABC):
                 cpn_v = self._canvas.get_variable_value(item["cpn_id"])
                 self.set_input_value(item["cpn_id"], cpn_v)
                 operatee = item.get("value", "")
-                if isinstance(cpn_v, numbers.Number):
+                # "empty"/"not empty" ignore the comparison value, so they must
+                # be dispatched before the numeric coercion (their value may
+                # legitimately be ""). All other operators use the value.
+                if item["operator"] not in ("empty", "not empty") and isinstance(cpn_v, numbers.Number):
                     try:
                         operatee = float(operatee)
                     except (TypeError, ValueError):
