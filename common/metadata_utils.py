@@ -20,6 +20,34 @@ from typing import Any, Callable, Dict
 import json_repair
 
 
+def normalize_doc_id_filter(doc_ids) -> list[str] | None:
+    """Normalize a requested document filter for ``Dealer.retrieval(doc_ids=...)``.
+
+    ``Dealer.get_filters`` only emits a ``doc_id`` condition when ``doc_ids is
+    not None``, so ``None`` means "no document filter" while ``[]`` means "filter
+    on an empty set of documents". The latter is never what a caller wants: the
+    document stores either drop the predicate (widening the search back to the
+    whole dataset) or reject it outright.
+
+    Empty ids are dropped, because they are an artifact of splitting a
+    comma-separated request field (``"doc-1,".split(",")``) rather than a
+    selection. A filter holding nothing but empty ids therefore collapses to
+    ``None``, which reads as "nothing was selected".
+
+    Ids that merely *look* unusable are kept: ``"  "`` is a non-empty id that
+    simply matches no document, and dropping it would turn a request scoped to
+    one document into a search across the whole dataset.
+    """
+    if not doc_ids:
+        return None
+    kept = [doc_id for doc_id in doc_ids if doc_id]
+    dropped = len(doc_ids) - len(kept)
+    if dropped:
+        # Counts only — document ids are caller data and never logged.
+        logging.debug("normalize_doc_id_filter dropped %d empty id(s) of %d requested", dropped, len(doc_ids))
+    return kept or None
+
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
