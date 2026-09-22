@@ -1115,7 +1115,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if req.DatasetIDs == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`dataset_ids` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dataset_ids` is required.")
 		return
 	}
 
