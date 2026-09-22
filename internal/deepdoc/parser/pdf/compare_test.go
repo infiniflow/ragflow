@@ -16,6 +16,7 @@ import (
 // no generation, no CGO/DeepDoc dependency.  Use PY_OCR_SUFFIX to override
 // the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
+	restoreLoggerGlobals(t)
 	level := "info"
 	switch common.GetEnv(common.EnvBatchLogLevel) {
 	case "debug":

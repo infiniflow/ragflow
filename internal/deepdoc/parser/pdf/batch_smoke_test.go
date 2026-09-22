@@ -38,7 +38,7 @@ import (
 //
 // For read-only comparison, see compare_test.go (no CGO needed).
 func TestBatchResults(t *testing.T) {
-	setupLogger()
+	setupLogger(t)
 
 	pdfDir := filepath.Join("testdata", "real_pdfs")
 	all := listRealPDFs(t, pdfDir)
@@ -63,7 +63,8 @@ func TestBatchResults(t *testing.T) {
 
 // ── helpers ─────────────────────────────────────────────────────────
 
-func setupLogger() {
+func setupLogger(t *testing.T) {
+	restoreLoggerGlobals(t)
 	level := "info"
 	switch common.GetEnv(common.EnvBatchLogLevel) {
 	case "debug":
