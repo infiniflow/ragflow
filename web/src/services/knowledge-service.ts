@@ -358,10 +358,15 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list.
-export const listDatasetByIds = (ids: string[]) =>
+// in the first page of the paginated list. `ownerTenantId` scopes the lookup
+// to the canvas owner's tenant when viewing a shared canvas.
+export const listDatasetByIds = (ids: string[], ownerTenantId?: string) =>
   request.get(api.kbList, {
-    params: { ids: ids.join(','), page_size: ids.length },
+    params: {
+      ids: ids.join(','),
+      page_size: ids.length,
+      ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+    },
   });
 
 export const datasetFilter = () => request.get(api.datasetFilter);

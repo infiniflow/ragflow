@@ -539,10 +539,49 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	if parentChild != nil {
 		next["parent_child"] = parentChild
 	}
-	// The persisted top-level setting is authoritative. Re-derive the
-	// chunker's runtime delimiter after every config merge so parser/pipeline
-	// switches cannot retain parent_child without retaining its behavior.
+	requestedChildren := make(map[string]interface{})
+	for componentID, value := range incoming {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		if requested, ok := value.(map[string]interface{}); ok {
+			if enabled, provided := requested["enable_children"].(bool); provided && !enabled {
+				requestedChildren[componentID] = []string{}
+			} else if _, provided := requested["children_delimiters"]; provided {
+				if params, ok := next[componentID].(map[string]interface{}); ok {
+					requestedChildren[componentID] = params["children_delimiters"]
+				}
+			}
+		}
+	}
+	// Re-derive delimiters from parent_child, then keep explicit chunker edits
+	// (or an existing chunker setting on a partial update) over that fallback.
 	pipelinepkg.ApplyParentChildChunkerConfig(next, map[string]interface{}(next))
+	_, parentChildUpdated := incoming["parent_child"]
+	for componentID, value := range next {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if delimiters, provided := requestedChildren[componentID]; provided {
+			params["children_delimiters"] = delimiters
+			continue
+		}
+		if parentChildUpdated {
+			continue
+		}
+		if previous, ok := existing[componentID].(map[string]interface{}); ok {
+			if delimiters, present := previous["children_delimiters"]; present {
+				params["children_delimiters"] = delimiters
+			}
+			if enabled, present := previous["enable_children"]; present {
+				params["enable_children"] = enabled
+			}
+		}
+	}
 	return next
 }
 

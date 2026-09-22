@@ -755,11 +755,6 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 			body:    `{"content":"chunk body","important_keywords":{}}`,
 			wantMsg: "`important_keywords` is required to be a list",
 		},
-		{
-			name:    "tag kwd element type",
-			body:    `{"content":"chunk body","tag_kwd":[1]}`,
-			wantMsg: "`tag_kwd` must be a list of strings",
-		},
 	}
 
 	for _, tt := range tests {

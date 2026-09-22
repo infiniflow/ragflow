@@ -1275,3 +1275,12 @@ func (h *Handler) PingEngine(c *gin.Context) {
 
 	common.SuccessNoMessage(c, "SUCCESS")
 }
+
+func (h *Handler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
+}

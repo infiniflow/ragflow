@@ -631,6 +631,14 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowAPI()
 	case TokenLog:
 		return p.parseAPIShowLogCommands()
+	case TokenHardware:
+		return p.parseAPIShowHardware()
+	case TokenCores:
+		return p.parseAPIShowCores()
+	case TokenMemory:
+		return p.parseAPIShowMemory()
+	case TokenConcurrency:
+		return p.parseAPIShowConcurrency()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -883,6 +891,58 @@ func (p *Parser) parseShowLogLevel() (*Command, error) {
 	p.nextToken() // consume LEVEL
 
 	cmd := NewCommand("api_show_log_level")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW HARDWARE
+func (p *Parser) parseAPIShowHardware() (*Command, error) {
+	p.nextToken() // consume HARDWARE
+	cmd := NewCommand("api_show_hardware")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW CORES
+func (p *Parser) parseAPIShowCores() (*Command, error) {
+	p.nextToken() // consume CORES
+	cmd := NewCommand("api_show_cores")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW MEMORY
+func (p *Parser) parseAPIShowMemory() (*Command, error) {
+	p.nextToken() // consume MEMORY
+	cmd := NewCommand("api_show_memory")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW CONCURRENCY
+func (p *Parser) parseAPIShowConcurrency() (*Command, error) {
+	p.nextToken() // consume CONCURRENCY
+	cmd := NewCommand("api_show_concurrency")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -1916,6 +1976,12 @@ func (p *Parser) parseAPISetCommands() (*Command, error) {
 		return p.parseAPISetLog()
 	case TokenMetadata:
 		return p.parseDevSetMeta()
+	case TokenCores:
+		return p.parseAPISetCores()
+	case TokenMemory:
+		return p.parseAPISetMemory()
+	case TokenConcurrency:
+		return p.parseAPISetConcurrency()
 	default:
 		return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 	}
@@ -2063,6 +2129,70 @@ func (p *Parser) parseAPISetLogLevel() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// SET CORES 4;
+func (p *Parser) parseAPISetCores() (*Command, error) {
+	p.nextToken() // consume CORES
+
+	cmd := NewCommand("api_set_cores")
+
+	// Parse cores
+	cores, err := p.parseNumber()
+	if err != nil {
+		return nil, fmt.Errorf("expected cores: %w", err)
+	}
+	cmd.Params["cores"] = cores
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SET MEMORY 4;
+func (p *Parser) parseAPISetMemory() (*Command, error) {
+	p.nextToken() // consume MEMORY
+
+	cmd := NewCommand("api_set_memory")
+	// Parse memory size
+	memorySize, err := p.parseNumber()
+	if err != nil {
+		return nil, fmt.Errorf("expected memory size: %w", err)
+	}
+	cmd.Params["memory_size"] = memorySize
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SET CONCURRENCY 4;
+func (p *Parser) parseAPISetConcurrency() (*Command, error) {
+	p.nextToken() // consume CONCURRENCY
+
+	cmd := NewCommand("api_set_concurrency")
+	// Parse concurrency
+	concurrency, err := p.parseNumber()
+	if err != nil {
+		return nil, fmt.Errorf("expected concurrency: %w", err)
+	}
+	cmd.Params["concurrency"] = concurrency
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 
@@ -3653,8 +3783,6 @@ func (p *Parser) parseAPIRemove() (*Command, error) {
 		return p.parseAPIRemoveTask()
 
 	// Dev commands
-	case TokenTag:
-		return p.parseDevRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseDevRemoveChunk()
 	default:

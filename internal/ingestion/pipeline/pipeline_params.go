@@ -119,6 +119,9 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		if s.ComponentName == "GeneralChunker" {
 			keys["delimiters"] = struct{}{}
 		}
+		if IsChunkerComponent(s.CpnID) {
+			keys["enable_children"] = struct{}{}
+		}
 		validCPNs[s.CpnID] = keys
 		componentNames[s.CpnID] = s.ComponentName
 	}
@@ -288,9 +291,8 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the
-// top-level parent_child setting. parent_child is the sole public source of
-// truth; chunker fields are generated runtime parameters and must not be
-// accepted as an independent dataset setting.
+// top-level parent_child setting. Callers with component-scoped chunker edits
+// apply those edits after this mapping.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
 	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
 	if !ok {

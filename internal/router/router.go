@@ -350,9 +350,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
-				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
-				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
-				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
@@ -692,6 +689,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 					// delete key /api/v1/system/keys/:key DELETE
 					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
+
+				system.GET("/hardware", r.systemHandler.GetHardwareInfo)
+
+				system.GET("/cores", r.systemHandler.GetCores)
+				system.PUT("/cores", r.systemHandler.SetCores)
+				system.GET("/memory", r.systemHandler.GetMemory)
+				system.PUT("/memory", r.systemHandler.SetMemory)
+				system.GET("/concurrency", r.systemHandler.GetConcurrency)
+				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
 			}
 
 			// Document routes
