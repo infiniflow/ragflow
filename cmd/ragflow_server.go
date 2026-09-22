@@ -950,7 +950,7 @@ func runAPI(ctx context.Context, serverName string, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	if err := startServer(ctx, serverName); err != nil {
+	if err := startServer(ctx, serverName, args); err != nil {
 		return err
 	}
 
@@ -959,7 +959,7 @@ func runAPI(ctx context.Context, serverName string, args *serverArgs) error {
 	return nil
 }
 
-func startServer(ctx context.Context, serverName string) error {
+func startServer(ctx context.Context, serverName string, arguments *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1292,6 +1292,9 @@ func startServer(ctx context.Context, serverName string) error {
 	)
 	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
+
+	// Set log level
+	setLogger(serverName, arguments)
 
 	// Start server in a goroutine
 	go func() {
