@@ -520,7 +520,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			if errors.As(validateErr, &identityErr) {
 				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
 				if e.markFailed(e.ctx, task.ID) {
-					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason))
+					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("[ERROR] Task rejected: invalid run identity (%s).", identityErr.Reason))
 					e.ackHandle(hb, handle, taskMessage.TaskID)
 				} else {
 					e.nackHandle(hb, handle, taskMessage.TaskID)
@@ -856,7 +856,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			e.markTerminalProgress(task)
 			ok := e.markFailed(ctx, task.ID)
 			if ok {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "[ERROR] Task timed out.")
 			}
 			return ok
 		}
@@ -992,7 +992,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
 				e.markFailed(ctx, taskID)
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("[ERROR] Task panicked: %v", r))
 			}()
 			terminal = false
 		}
@@ -1275,12 +1275,13 @@ func (e *Ingestor) publishPendingCompileEvent(ctx context.Context, task *entity.
 // a self-attributing one-liner from the model provider / configuration
 // side; the raw internal error chain stays in server-side logs only, so
 // users never have to parse RAGFlow-internal wrapping to learn their model
-// call failed.
+// call failed. The [ERROR] prefix drives the front end's red styling for
+// failure lines (process-log-modal replaceText contract).
 func taskFailureDetail(err error) string {
 	if llmErr, ok := common.AsLLMError(err); ok {
-		return llmErr.UserMessage()
+		return "[ERROR] " + llmErr.UserMessage()
 	}
-	return fmt.Sprintf("Task failed: %v", err)
+	return fmt.Sprintf("[ERROR] Task failed: %v", err)
 }
 
 func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {

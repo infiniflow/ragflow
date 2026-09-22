@@ -343,17 +343,17 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		case runtime.PhaseExit:
 			msg = componentName + " Done"
 		case runtime.PhaseError:
+			// [ERROR] drives the front end's red styling; LLM-attributed
+			// failures carry the fact-only summary (guidance lives in the
+			// terminal detail), everything else keeps the raw chain.
 			if ev.Err != nil {
-				// Step lines carry the fact (which model failed and why);
-				// the user-facing guidance appears once, in the terminal
-				// task detail. Non-LLM failures keep the raw chain here.
 				if llmErr, ok := common.AsLLMError(ev.Err); ok {
-					msg = componentName + ": " + llmErr.UserSummary()
+					msg = "[ERROR] " + componentName + ": " + llmErr.UserSummary()
 				} else {
-					msg = componentName + ": " + ev.Err.Error()
+					msg = "[ERROR] " + componentName + ": " + ev.Err.Error()
 				}
 			} else {
-				msg = componentName + " Error"
+				msg = "[ERROR] " + componentName + " Error"
 			}
 		}
 		// Surface every component lifecycle event as a structured log line so

@@ -22,6 +22,9 @@ func TestTaskFailureDetailLLMAttribution(t *testing.T) {
 				fmt.Errorf("failed after 3 retries: %w", provider))))
 
 	got := taskFailureDetail(chain)
+	if !strings.HasPrefix(got, "[ERROR] ") {
+		t.Fatalf("failure detail must carry the [ERROR] prefix the front end uses for red styling, got %q", got)
+	}
 	if !strings.Contains(got, "deepseek") || !strings.Contains(got, "insufficient balance") {
 		t.Fatalf("detail must name model + provider reason, got %q", got)
 	}
@@ -40,7 +43,7 @@ func TestTaskFailureDetailLLMAttribution(t *testing.T) {
 func TestTaskFailureDetailInternalUnchanged(t *testing.T) {
 	internal := errors.New("extractor: chunk text is empty")
 	got := taskFailureDetail(fmt.Errorf("pipeline: run canvas workflow: %w", internal))
-	if got != `Task failed: pipeline: run canvas workflow: extractor: chunk text is empty` {
-		t.Fatalf("non-LLM errors must keep the full chain verbatim, got %q", got)
+	if got != `[ERROR] Task failed: pipeline: run canvas workflow: extractor: chunk text is empty` {
+		t.Fatalf("non-LLM errors must keep the full chain verbatim behind the [ERROR] prefix, got %q", got)
 	}
 }
