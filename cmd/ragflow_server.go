@@ -1323,15 +1323,15 @@ func startServer(ctx context.Context, serverName string) error {
 	defer shutdownCancel()
 
 	if mcpCloser != nil {
-		if err := mcpCloser.Close(); err != nil {
+		if err = mcpCloser.Close(); err != nil {
 			common.Warn("Failed to close MCP handler", zap.Error(err))
 		}
 	}
-	if err := shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
+	if err = shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
 		return err
 	}
 	if mcpSrv != nil {
-		if err := shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
+		if err = shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
 			return err
 		}
 	}
