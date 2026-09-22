@@ -130,11 +130,12 @@ type Ingestor struct {
 	// may replace it to verify lifecycle behavior without a database or broker.
 	reconcileMemoryTasks func(ctx context.Context) error
 
-	// cancelCheck is polled periodically (every 3s) during task execution.
-	// When it returns true the task's context is cancelled, which causes the
-	// pipeline to stop at the next ctx.Err() check. Defaults to a Redis
-	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
-	// override this to simulate cancel without Redis.
+	// cancelCheck is polled periodically (pollCancelInterval) during task
+	// execution. When it returns true the task's context is cancelled, which
+	// causes the pipeline to stop at the next ctx.Err() check. Defaults to a
+	// Redis cancel-flag lookup that mirrors Python's has_canceled(), with a
+	// DB fallback when Redis is unavailable. Tests may override this to
+	// simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
 }
 
@@ -1049,10 +1050,17 @@ func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	return task.Status == common.STOPPING
 }
 
-// pollCancel ticks every 3s to check the cancel flag. When cancelCheck
+const pollCancelInterval = 500 * time.Millisecond
+
+// pollCancel ticks every pollCancelInterval to check the cancel flag. When cancelCheck
 // returns true it cancels the per-task context, which causes the pipeline's
 // next ctx.Err() check to abort and runTask to record progress=-1. The
 // goroutine exits when done is closed (executeTask returns).
+//
+// Cost note: without Redis in the deployment, every tick falls through to the
+// DB fallback in defaultCancelCheck — two GetTask reads per second per running
+// task. That is the accepted trade-off for fast cancel detection; with Redis
+// configured the hot path is a single EXISTS lookup.
 func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-chan struct{}) {
 	// checkOnce runs cancelCheck in a goroutine so the caller can select
 	// between the result and the done signal. This prevents a blocked
@@ -1079,7 +1087,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 		}
 	}
 
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(pollCancelInterval)
 	defer ticker.Stop()
 	for {
 		select {

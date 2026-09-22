@@ -1387,7 +1387,7 @@ func (c *CLI) AdminShowUserCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("failed to show user: %w", err)
 	}
 
-	return HandleCommonDataResponse(resp, "show user")
+	return HandleCommonResponse(resp, "show user")
 }
 
 // AdminShowRoleCommand show role command (admin mode only)

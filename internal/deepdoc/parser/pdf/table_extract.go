@@ -80,7 +80,7 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	regions, err := p.inferDLA(ctx, docAnalyzer, pageImg)
 	if err != nil {
-		slog.Warn("DLA failed", "page", pg, "err", err)
+		reportPageInferenceFailure(ctx, "DLA failed", pg, err)
 		return pageBoxes, nil, nil
 	}
 	dlaRegions = []pdf.DLAPageRegions{{Page: pg, Regions: regions}}
@@ -135,7 +135,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	tsrCtx = context.WithValue(tsrCtx, cropOffYKey, cropOffY)
 	cells, tsrErr := p.inferTSR(tsrCtx, tb, tsrImg)
 	if tsrErr != nil {
-		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
+		reportPageInferenceFailure(tsrCtx, "TSR failed", pageNum, tsrErr)
 	}
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {

@@ -6,6 +6,9 @@ import (
 	"runtime"
 	"sync"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/utility"
 )
@@ -167,6 +170,20 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 		return nil, nil
 	}
 	return doc.DLA(ctx, pageImg)
+}
+
+// reportPageInferenceFailure logs one page-local inference failure (DLA, TSR or
+// OCR). A failure raised while the parse context is cancelled is the stop path,
+// not a fault: cancelling terminates every in-flight ONNX Run, and the native
+// session answers with the runtime's terminate-flag error (or ctx.Err()), which
+// carries no context.Canceled to match on. Those pages log at debug instead of
+// warning once per page; any other failure keeps its per-page warning.
+func reportPageInferenceFailure(ctx context.Context, msg string, page int, err error) {
+	if ctx.Err() != nil {
+		common.Debug(msg, zap.Int("page", page), zap.Error(err))
+		return
+	}
+	common.Warn(msg, zap.Int("page", page), zap.Error(err))
 }
 
 // inferTSR invokes TSR for a single cropped table region.
