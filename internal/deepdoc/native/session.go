@@ -9,14 +9,16 @@ package native
 // DeepDoc ONNX we port fits this shape). CPU-only by design.
 //
 // The ONNX Runtime environment is process-global: InitORT sets the shared
-// library and initializes it exactly once. Sessions only own their tensors and
-// the advanced-session handle, so running several tasks in one process (or one
-// task per CLI invocation) never double-initializes or prematurely tears down
-// the shared environment.
+// library and initializes it exactly once. A session owns only its
+// DynamicAdvancedSession handle (input/output tensors are allocated per Run and
+// freed afterwards), so running several tasks in one process (or one task per
+// CLI invocation) never double-initializes or prematurely tears down the
+// shared environment.
 
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	ort "github.com/infiniflow/onnxruntime_go"
@@ -76,41 +78,168 @@ func InitORT() error {
 func Initialized() bool { return ortReady }
 
 // session loads one ONNX model and runs single-input/single-output inference.
+// It is a DynamicAdvancedSession: it owns no input/output tensors. Every Run
+// allocates fresh input/output tensors and frees them afterwards (see Run), so
+// a pooled session's steady-state native memory is just its weights plus ORT's
+// plan cache — never the pinned in/out buffers that previously dominated the
+// ~14 GB of native memory across the rec/det/DLA/TSR pools.
 type session struct {
 	inName  string
 	outName string
-	outSize int64
-	sess    *ort.AdvancedSession
-	in      *ort.Tensor[float32]
-	out     *ort.Tensor[float32]
+	inShape []int64
+	sess    *ort.DynamicAdvancedSession
 	// poisoned is set when a Run is cancelled/terminated via context. ONNX
 	// Runtime does not guarantee a session is reusable after a forced
 	// termination, so the pool must Destroy rather than re-Put it.
 	poisoned bool
 }
 
-// NewSession opens modelPath. inShape/outShape describe the fixed tensor
-// dimensions; outSize is the total element count of the output tensor. The
-// session runs intraOpThreads intra-op threads (see the constant): one thread
-// per Run, with the process-wide ceiling owned by the inference budget the
-// process owner registers (see inference_limit.go). InitORT must have been
-// called first.
-func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64) (*session, error) {
-	in := make([]float32, prod(inShape))
-	out := make([]float32, prod(outShape))
-	inT, err := ort.NewTensor(ort.NewShape(inShape...), in)
+// weightSet is a process-wide cached copy of one model's constant initializers
+// (its weights). Every pooled session of the same modelPath injects these
+// shared buffers into its SessionOptions so the weight buffers live in memory
+// exactly once, instead of each of the ~220 live rec/det/DLA/TSR sessions
+// deserializing its own independent copy. The SharedInitializers (and the
+// malloc'd buffers they wrap) are owned here and must outlive every session
+// that references them; they are never Destroy'd until process exit, which is
+// safe because the DeepDoc models are fixed for the life of the process.
+type weightSet struct {
+	names []string
+	vals  []*ort.SharedInitializer
+}
+
+var (
+	// weightMu guards weightCache. Extraction is cheap but must not race.
+	weightMu    sync.Mutex
+	weightCache = map[string]*weightSet{}
+)
+
+// sharedWeights extracts the constant initializers from modelPath once and
+// caches them keyed by model path. Each subsequent call for the same model
+// returns the cached buffers, so every pooled session of that model shares a
+// single copy of its weights. Extraction uses a throwaway AdvancedSession (the
+// only onnxruntime_go type exposing the GetInitializer* API); the session is
+// Destroy'd right after extraction, leaving the SharedInitializers (user-owned
+// malloc'd copies) alive in the cache. Returns (nil, nil) when the model has no
+// initializers worth sharing.
+func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*weightSet, error) {
+	weightMu.Lock()
+	defer weightMu.Unlock()
+	if ws, ok := weightCache[modelPath]; ok {
+		return ws, nil
+	}
+	// Throwaway extraction session: the weights live in the graph, not in any
+	// input/output tensor, so we only need valid in/out tensors to load the
+	// model. We never Run it, so the output tensor's shape is irrelevant.
+	inT, err := ort.NewTensor(ort.NewShape(inShape...), make([]float32, prod(inShape)))
+	if err != nil {
+		return nil, fmt.Errorf("allocate extraction input for %s: %w", modelPath, err)
+	}
+	defer inT.Destroy()
+	outT, err := ort.NewTensor(ort.NewShape(1), []float32{0})
+	if err != nil {
+		return nil, fmt.Errorf("allocate extraction output for %s: %w", modelPath, err)
+	}
+	defer outT.Destroy()
+	ext, err := ort.NewAdvancedSession(modelPath,
+		[]string{inName}, []string{outName},
+		[]ort.Value{inT}, []ort.Value{outT}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("open extraction session for %s: %w", modelPath, err)
+	}
+	defer ext.Destroy()
+
+	count, err := ext.GetInitializerCount()
+	if err != nil {
+		return nil, fmt.Errorf("initializer count for %s: %w", modelPath, err)
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	ws := &weightSet{
+		names: make([]string, 0, count),
+		vals:  make([]*ort.SharedInitializer, 0, count),
+	}
+	for i := 0; i < count; i++ {
+		name, err := ext.GetInitializerName(i)
+		if err != nil {
+			return nil, fmt.Errorf("initializer name %d for %s: %w", i, modelPath, err)
+		}
+		val, err := ext.GetInitializer(name)
+		if err != nil {
+			return nil, fmt.Errorf("get initializer %q for %s: %w", name, modelPath, err)
+		}
+		ws.names = append(ws.names, name)
+		ws.vals = append(ws.vals, val)
+	}
+	weightCache[modelPath] = ws
+	return ws, nil
+}
+
+// NewSession opens modelPath. inShape describes the fixed input tensor
+// dimensions; output tensors are allocated per Run (their shape is
+// model-determined, so no outShape argument is needed). The session runs
+// intraOpThreads intra-op threads (see the constant): one thread per Run, with
+// the process-wide ceiling owned by the inference budget the process owner
+// registers (see inference_limit.go). Input/output tensors are allocated and
+// freed on every Run (see session.Run), so a pooled session holds only its
+// weights in steady state. Weight sharing is applied transparently: the model's
+// constant initializers are extracted once per modelPath and injected into the
+// session options, so every session of the same model shares a single copy of
+// the weight buffers. InitORT must have been called first.
+func NewSession(modelPath, inName string, inShape []int64, outName string) (*session, error) {
+	weights, werr := sharedWeights(modelPath, inName, inShape, outName)
+	if werr != nil {
+		// Degrade gracefully: a model still loads and runs correctly without
+		// sharing; it just deserializes its own weight copy.
+		log.Printf("deepdoc/native: weight sharing unavailable for %s: %v",
+			modelPath, werr)
+		weights = nil
+	}
+	return newRawSession(modelPath, inName, inShape, outName, weights)
+}
+
+// newRawSession opens modelPath with no weight sharing unless weights != nil,
+// in which case each shared initializer is injected into the session options
+// before the model is loaded. The session is a DynamicAdvancedSession: it owns
+// no input/output tensors. Every Run allocates fresh input/output tensors and
+// frees them afterwards (see session.Run), so a pooled session's steady-state
+// native memory is just its weights plus ORT's plan cache — never the pinned
+// in/out buffers. It is the single point where the ORT running session is
+// created; sharedWeights funnels its one-shot extraction source through a
+// separate AdvancedSession (the only type exposing GetInitializer*).
+func newRawSession(modelPath, inName string, inShape []int64, outName string, weights *weightSet) (*session, error) {
+	opts, err := newSessionOptions(weights)
 	if err != nil {
 		return nil, err
 	}
-	outT, err := ort.NewTensor(ort.NewShape(outShape...), out)
+	// The C session copies these options (including the shared-initializer
+	// references) at creation time, so the options handle can be released once
+	// the session is built. The shared weight buffers themselves are owned by
+	// the process-wide weightCache and outlive every session, so releasing opts
+	// here does not free them.
+	defer opts.Destroy()
+	sess, err := ort.NewDynamicAdvancedSession(modelPath,
+		[]string{inName}, []string{outName}, opts)
 	if err != nil {
-		inT.Destroy()
 		return nil, err
 	}
+	return &session{
+		inName: inName, outName: outName,
+		inShape: inShape,
+		sess:    sess,
+	}, nil
+}
+
+// newSessionOptions builds the SessionOptions shared by every running session:
+// one intra-op thread (so each Run costs exactly one CPU thread — see the
+// intraOpThreads constant and inference_limit.go) and the BFC arena disabled
+// (idle sessions then keep only their weights; activation tensors are allocated
+// per Run and freed after). When weights != nil, each shared initializer is
+// injected so the model's constant buffers live in memory a single time across
+// every pooled session of the same model.
+func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	opts, err := ort.NewSessionOptions()
 	if err != nil {
-		inT.Destroy()
-		outT.Destroy()
 		return nil, err
 	}
 	// One intra-op thread per session: the session's Runs then cost one thread
@@ -118,35 +247,56 @@ func NewSession(modelPath, inName string, inShape []int64, outName string, outSh
 	// concurrent Runs the caller admits (see the intraOpThreads constant).
 	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
 		opts.Destroy()
-		inT.Destroy()
-		outT.Destroy()
 		return nil, err
 	}
-	sess, err := ort.NewAdvancedSession(modelPath,
-		[]string{inName}, []string{outName},
-		[]ort.Value{inT}, []ort.Value{outT}, opts)
-	if err != nil {
+	// Disable the BFC memory arena for this session. The arena pre-reserves a
+	// native block per session and never shrinks it, so every pooled (often
+	// idle) session hoards one. Across the rec/det/DLA/TSR pools (~220 live
+	// sessions while parsing a large PDF) this dominated the ~14 GB of native
+	// memory seen at the ~20 GB OOM peak. With the arena off, idle sessions keep
+	// only their weights; activation tensors are allocated directly and freed
+	// after each Run.
+	if err := opts.SetCpuMemArena(false); err != nil {
 		opts.Destroy()
-		inT.Destroy()
-		outT.Destroy()
 		return nil, err
 	}
-	return &session{
-		inName: inName, outName: outName,
-		outSize: prod(outShape),
-		sess:    sess, in: inT, out: outT,
-	}, nil
+	if weights != nil {
+		for i, v := range weights.vals {
+			if err := opts.AddInitializer(weights.names[i], v); err != nil {
+				opts.Destroy()
+				return nil, fmt.Errorf("inject shared initializer %q: %w",
+					weights.names[i], err)
+			}
+		}
+	}
+	return opts, nil
 }
 
-// Run copies input into the input tensor, executes, and returns the output
-// tensor contents. ctx bounds the inference: if it is cancelled while Run is
-// in flight, the underlying ONNX Runtime call is terminated via RunOptions.
-// A terminated session is left in an indeterminate state, so it is marked
-// poisoned and the pool destroys it instead of reusing it.
+// checkOutputLength fails fast when a model emits an unexpectedly sized output
+// tensor. The previous pinned-output design got this check for free: ORT errored
+// when the bound output tensor's shape mismatched the model. The dynamic design
+// allocates the output per Run (nil output, ORT allocates), so ORT no longer
+// validates the shape; without this guard, postprocessing (dlaPostprocess
+// indexes 300*6, tsrPostprocess indexes 11*8400, RunDet fills rh*rw) panics or
+// silently misreads a truncated output instead of returning a clean error.
+func checkOutputLength(model string, got, want int) error {
+	if got != want {
+		return fmt.Errorf("%s model output length %d, expected %d", model, got, want)
+	}
+	return nil
+}
+
+// Run allocates a fresh input tensor, executes with an auto-allocated (dynamic)
+// output, and returns the output data. Both tensors are destroyed before
+// returning; out is a fresh copy the caller owns. ctx bounds the inference: if
+// it is cancelled while Run is in flight, the underlying ONNX Runtime call is
+// terminated via RunOptions. A terminated session is left in an indeterminate
+// state, so it is marked poisoned and the pool destroys it instead of reusing
+// it.
 func (s *session) Run(ctx context.Context, input []float32) ([]float32, error) {
-	if len(input) != len(s.in.GetData()) {
-		return nil, fmt.Errorf("session %s: input len %d != tensor len %d",
-			s.outName, len(input), len(s.in.GetData()))
+	if len(input) != int(prod(s.inShape)) {
+		return nil, fmt.Errorf("session %s: input len %d != expected %d",
+			s.outName, len(input), int(prod(s.inShape)))
 	}
 	opts, err := ort.NewRunOptions()
 	if err != nil {
@@ -165,29 +315,46 @@ func (s *session) Run(ctx context.Context, input []float32) ([]float32, error) {
 		}
 	}()
 
-	copy(s.in.GetData(), input)
-	if err := s.sess.RunWithOptions(opts); err != nil {
+	// Allocate a fresh input tensor for this Run and free it right after the
+	// call. The output is passed as nil so ORT allocates it; we copy the data
+	// out and free the returned Value. This keeps each pooled session's
+	// steady-state native memory to just its weights (plus ORT's plan cache)
+	// instead of pinning fixed in/out buffers that previously dominated the
+	// ~14 GB of native memory seen across the rec/det/DLA/TSR pools.
+	inT, err := ort.NewTensor(ort.NewShape(s.inShape...), input)
+	if err != nil {
+		return nil, err
+	}
+	defer inT.Destroy()
+	outputs := []ort.Value{nil}
+	if err := s.sess.RunWithOptions([]ort.Value{inT}, outputs, opts); err != nil {
 		if ctx.Err() != nil {
 			s.poisoned = true
 		}
 		return nil, err
 	}
-	out := make([]float32, s.outSize)
-	copy(out, s.out.GetData())
+	outVal := outputs[0]
+	if outVal == nil {
+		return nil, fmt.Errorf("session %s: nil output tensor", s.outName)
+	}
+	defer outVal.Destroy()
+	outT, ok := outVal.(*ort.Tensor[float32])
+	if !ok {
+		return nil, fmt.Errorf("session %s: unexpected output value type %T",
+			s.outName, outVal)
+	}
+	out := make([]float32, len(outT.GetData()))
+	copy(out, outT.GetData())
 	return out, nil
 }
 
-// Destroy releases the tensors and advanced-session handle. It does NOT touch
-// the process-global environment.
+// Destroy releases the dynamic advanced-session handle. Input/output tensors
+// are no longer owned by the session (they are allocated per Run and freed
+// there), so there is nothing else to release here. It does NOT touch the
+// process-global environment.
 func (s *session) Destroy() {
 	if s.sess != nil {
 		s.sess.Destroy()
-	}
-	if s.in != nil {
-		s.in.Destroy()
-	}
-	if s.out != nil {
-		s.out.Destroy()
 	}
 }
 

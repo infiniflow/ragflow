@@ -59,9 +59,10 @@ _SCA_CLAIMS_CONTEXT_MAX = 48000
 # the SCA can verify a draft against real retrieved text without a token blow-up.
 _SCA_EVIDENCE_ANCHOR_CHARS = 300
 # Table-structured chunks get their FULL text as the evidence anchor (bounded
-# only by _SCA_CLAIMS_CONTEXT_MAX): hint-token windowing is unreliable for
-# tables (the draft rarely contains the row's entity names), and truncating from
-# the head hides the answer rows that sit mid/late-table (Q86 rank-19 row).
+# only by _SCA_CLAIMS_CONTEXT_MAX), serialized to Markdown by _bounded_excerpt:
+# hint-token windowing is unreliable for tables (the draft rarely contains the
+# row's entity names), and truncating from the head hides the answer rows that
+# sit mid/late-table (Q86 rank-19 row).
 _SCA_EVIDENCE_TABLE_CHARS = None  # None = keep the whole chunk text
 
 
@@ -141,12 +142,24 @@ def _bounded_excerpt(text: str, hints: str, max_chars: int = 300) -> str:
     overall budget): hint-token windowing fails for tables because the draft
     rarely contains the row's entity names, and head-truncation hides answer
     rows in the mid/late table. Plain text keeps the bounded window.
+
+    A table is also SERIALIZED to a Markdown view before it is handed over, using
+    the same renderer as the action-session view and the final answer path. The
+    SCA is a plain LLM call: raw ``<table>/<td>`` markup makes it parse cells
+    itself (the gap Q673 showed on the answer path), and the same table costs
+    ~61% as much in HTML as it does in Markdown. ``table_view_or_raw`` never
+    prunes rows (a row can carry the answer mid-table), so the SCA still sees the
+    complete row set — just in a readable form. No-op for non-tables.
     """
     text = str(text or "").strip()
     if not text:
         return ""
     if _is_table_text(text):
-        return text
+        # Imported lazily so this module keeps no import-time dependency on the
+        # tools package (the other three render call sites do the same).
+        from rag.advanced_rag.harness.tools.table_view import table_view_or_raw
+
+        return table_view_or_raw(text)
     max_chars = max(80, int(max_chars))
     hint_tokens = [t for t in re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{3,}", str(hints or ""))]
     lower = text.lower()
@@ -197,7 +210,8 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
             continue
         block = f"Claim {cid} (draft):\n{rpt}"
         # Evidence anchor: first line of each cited snippet (guards the draft).
-        # Table chunks contribute their FULL text (see _bounded_excerpt).
+        # Table chunks contribute their FULL text as a Markdown view (see
+        # _bounded_excerpt).
         if eids:
             anchors: list[str] = []
             for eid in eids:

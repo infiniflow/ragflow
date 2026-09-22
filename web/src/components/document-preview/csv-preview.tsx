@@ -42,8 +42,8 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
   const [data, setData] = useState<CSVData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const tableRef = useRef<HTMLDivElement>(null);
-  const [contentWidth, setContentWidth] = useState<number>(0);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [naturalWidth, setNaturalWidth] = useState(0);
 
   /**
    * Parse CSV text into headers and data rows using PapaParse.
@@ -99,6 +99,53 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
   const [containerHeight, setContainerHeight] = useState(0);
   const rowHeight = 36;
 
+  // The true column count of the table: ragged rows may have more or fewer
+  // cells than the header, so the "last column" is data-driven, not the
+  // header length.
+  const maxCols = useMemo(
+    () =>
+      data
+        ? Math.max(data.headers.length, ...data.rows.map((row) => row.length))
+        : 0,
+    [data],
+  );
+
+  // Approximate rendered text width per glyph: fullwidth glyphs (CJK, kana,
+  // etc.) are ~1em in the font, narrow ones (latin, digits) ~0.55em. Used to
+  // pick the widest-looking cell per column for the measurement table below.
+  const glyphScore = useCallback((cell: string) => {
+    let width = 0;
+    for (const ch of cell) {
+      width += (ch.codePointAt(0) ?? 0) > 0x2e7f ? 1 : 0.55;
+    }
+    return width;
+  }, []);
+
+  // Widest cell per column (by glyph width), consumed by the hidden
+  // measurement table below. Only rows in the virtualized window are ever
+  // rendered, so the measurement table (always rendered) is what keeps the
+  // wrapper's min-width independent of the current scroll position.
+  const longestCells = useMemo(() => {
+    if (!data) return [];
+    const longest: string[] = [];
+    const bestScores: number[] = [];
+    const consider = (cell: string | undefined, index: number) => {
+      if (!cell) return;
+      const score = glyphScore(cell);
+      if (bestScores[index] === undefined || score > bestScores[index]) {
+        longest[index] = cell;
+        bestScores[index] = score;
+      }
+    };
+    data.headers.forEach((header, index) => consider(header, index));
+    data.rows.forEach((row) => {
+      for (let index = 0; index < row.length; index++) {
+        consider(row[index], index);
+      }
+    });
+    return longest;
+  }, [data, glyphScore]);
+
   // Recalculate container height on resize and track scroll position
   useEffect(() => {
     const el = containerRef.current;
@@ -110,13 +157,15 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
     return () => ro.disconnect();
   }, []);
 
-  // Measure the natural width of the table (header + data determine column
-  // widths together via table layout) so the container can be sized to match.
-  // This ensures horizontal scroll reaches the last column.
+  // Measure the table's natural width from the hidden measurement table,
+  // which always renders the widest cell of every column regardless of the
+  // virtualized row window. A definite pixel min-width (instead of
+  // min-w-max) keeps the width stable while scrolling and never triggers the
+  // max-content/percentage-column circular sizing browsers can blow up on.
   useEffect(() => {
-    const el = tableRef.current;
+    const el = measureRef.current;
     if (!el) return;
-    const update = () => setContentWidth(el.offsetWidth);
+    const update = () => setNaturalWidth(el.offsetWidth);
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
@@ -148,31 +197,42 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
           <Spin />
         </div>
       ) : data ? (
-        /* Border lives on the inner wrapper (inline-block, content-sized)
-           rather than the scroll container. When the CSV has only a few
-           rows, the bordered box wraps just the rendered table instead
-           of enclosing a tall empty area that visually reads as
-           "truncated". The wrapper still honors contentWidth for the
-           horizontal-scroll reach. */
+        /* Border lives on the inner wrapper rather than the scroll
+           container. When the CSV has only a few rows, the bordered box
+           wraps just the rendered table instead of enclosing a tall empty
+           area that visually reads as "truncated". naturalWidth (measured
+           from the hidden measurement table below) keeps the wrapper as
+           wide as the table's natural width so horizontal scroll still
+           reaches the last column; when the table is narrower than the
+           container it fills the container, and the last column
+           (width: 100% in table auto layout) absorbs the leftover width. */
         <div
-          style={{ width: contentWidth || undefined }}
-          className={classNames(
-            'inline-block align-top bg-background-paper border border-border-normal rounded-md',
-            contentWidth ? '' : 'w-fit',
-          )}
+          style={{ minWidth: naturalWidth || undefined }}
+          className="w-full bg-background-paper border border-border-normal rounded-md"
         >
-          <div ref={tableRef} className="table w-fit">
-            {/* Sticky header row */}
+          <div className="table w-full">
+            {/* Sticky header row — padded with empty cells up to maxCols so
+                the stretch column exists even where ragged data rows are
+                shorter than the table's true last column. Ragged rows are
+                padded with empty cells below so their bottom borders reach
+                the true last column too. */}
             <div className="table-row-group">
               <div className="table-row sticky top-0 z-10 bg-bg-canvas">
-                {data.headers.map((header, index) => (
-                  <div
-                    key={`header-${index}`}
-                    className="table-cell px-6 py-3 text-left text-sm font-medium text-text-primary whitespace-nowrap border-b border-border-normal"
-                  >
-                    {header}
-                  </div>
-                ))}
+                {Array.from({ length: maxCols }, (_, index) => {
+                  const isPadded = index >= data.headers.length;
+                  return (
+                    <div
+                      key={`header-${index}`}
+                      className={classNames(
+                        'table-cell px-6 py-3 text-left text-sm whitespace-nowrap border-b border-border-normal',
+                        !isPadded && 'font-medium text-text-primary',
+                        index === maxCols - 1 && 'w-full',
+                      )}
+                    >
+                      {isPadded ? null : data.headers[index]}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             {/* Data rows with virtual scroll padding */}
@@ -183,7 +243,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                   className="table-row"
                   style={{ height: startIdx * rowHeight }}
                 >
-                  <div className="table-cell border-b border-border-normal" />
+                  <div className="table-cell border-b border-border-normal" style={{ width: naturalWidth || undefined }} />
                 </div>
               )}
               {data.rows.slice(startIdx, endIdx).map((row, i) => {
@@ -196,10 +256,28 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                     {row.map((cell, cellIndex) => (
                       <div
                         key={`cell-${actualIndex}-${cellIndex}`}
-                        className="table-cell px-6 py-2 whitespace-nowrap text-sm text-text-secondary border-b border-border-normal overflow-hidden text-ellipsis"
+                        className={classNames(
+                          'table-cell px-6 py-2 whitespace-nowrap text-sm text-text-secondary overflow-hidden text-ellipsis border-b border-border-normal',
+                          cellIndex === maxCols - 1 && 'w-full',
+                        )}
                         style={{ height: rowHeight }}
                       >
                         {cell || '-'}
+                      </div>
+                    ))}
+                    {/* Empty cells to complete ragged rows so the row's full-width
+                        bottom border is drawn by the last padding cell instead
+                        of disappearing through gaps between shorter rows. */}
+                    {Array.from({ length: maxCols - row.length }, (_, padIdx) => (
+                      <div
+                        key={`pad-${actualIndex}-${padIdx}`}
+                        className={classNames(
+                          'table-cell border-b border-border-normal',
+                          padIdx === maxCols - row.length - 1 && 'w-full',
+                        )}
+                        style={{ height: rowHeight }}
+                      >
+                        {''}
                       </div>
                     ))}
                   </div>
@@ -211,9 +289,31 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                   className="table-row"
                   style={{ height: (data.rows.length - endIdx) * rowHeight }}
                 >
-                  <div className="table-cell border-b border-border-normal" />
+                  <div className="table-cell border-b border-border-normal" style={{ width: naturalWidth || undefined }} />
                 </div>
               )}
+            </div>
+          </div>
+          {/* Absolutely-positioned measurement table: always renders the widest
+              cell of every column (regardless of the virtualized row
+              window) and its offsetWidth is read back into naturalWidth.
+              Invisible and out of flow so it never paints or scrolls. */}
+          <div
+            ref={measureRef}
+            className="absolute top-0 left-0 invisible pointer-events-none"
+            aria-hidden="true"
+          >
+            <div className="table w-fit">
+              <div className="table-row">
+                {longestCells.map((cell, index) => (
+                  <div
+                    key={`measure-${index}`}
+                    className="table-cell px-6 text-sm whitespace-nowrap"
+                  >
+                    {cell}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -38,7 +38,7 @@ func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -120,7 +120,7 @@ func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messa
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion.

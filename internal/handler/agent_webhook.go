@@ -68,7 +68,7 @@ import (
 	"net/http"
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
-	rediscli "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
@@ -820,7 +820,7 @@ const (
 // appendWebhookTrace appends a single RunEvent to the per-canvas trace
 // key in Redis. Each event is recorded as {"ts": <float>, "event": <type>, ...}.
 func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent) {
-	rdb := rediscli.Get()
+	rdb := kvrocks.Get()
 	if rdb == nil || rdb.GetClient() == nil {
 		return
 	}

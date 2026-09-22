@@ -14,11 +14,17 @@ import (
 
 // PipelineMetrics records diagnostic counts at each pipeline stage.
 type PipelineMetrics struct {
-	BoxesInitial   int
-	BoxesTextMerge int
-	BoxesVertMerge int
-	BoxesFinal     int
-	TablesCount    int
+	BoxesInitial int
+	// BoxesTOCRemoved / BoxesHeaderFooterRemoved count the boxes dropped by the
+	// optional box-level content removal passes, so the box budget can be
+	// reconciled: BoxesInitial - BoxesTOCRemoved - BoxesHeaderFooterRemoved >=
+	// BoxesTextMerge.
+	BoxesTOCRemoved          int
+	BoxesHeaderFooterRemoved int
+	BoxesTextMerge           int
+	BoxesVertMerge           int
+	BoxesFinal               int
+	TablesCount              int
 }
 
 // ParseResult encapsulates all outputs from a single Parse() call.
@@ -237,6 +243,26 @@ type ParserConfig struct {
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
 	Pages [][]int
+	// RemoveTOC enables box-level table-of-contents page removal in
+	// Parser.buildLayout. Detection relies on leader-dot boxes and per-box
+	// geometry that are destroyed by the later TextMerge pass, so it is gated
+	// onto the box-level pipeline there rather than the section-level
+	// post-process.
+	RemoveTOC bool
+	// RemoveHeaderFooter enables box-level running header / footer removal in
+	// Parser.buildLayout. It operates on intact box geometry (page zones and
+	// cross-page text repetition) before TextMerge can fold a header box into
+	// a body section.
+	RemoveHeaderFooter bool
+	// OnPageDone, when set, is called as each page finishes, from the worker
+	// that parsed it — not after every page has been submitted — so the first
+	// report arrives with the first completed page on any document size (done
+	// counts completed pages, in completion order; total is the number of
+	// pages to process). Calls are ordered and serialized but run on page
+	// workers, so the callback must be fast and non-blocking. It lets callers
+	// surface parse progress without the parser knowing about any progress
+	// sink; nil disables the callback at zero cost.
+	OnPageDone func(done, total int)
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.

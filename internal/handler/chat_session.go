@@ -247,7 +247,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	if streamMode {
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -276,6 +276,13 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			return true
 		})
 	} else {
+		// The non-stream path computes the whole answer before its first
+		// (and only) write. Agentic runs can take minutes — well past the
+		// server's http.Server.WriteTimeout, which starts when the request
+		// headers are read and is not reset by later writes. Clear the write
+		// deadline so the final JSON write is not aborted with
+		// "write tcp ... i/o timeout" after a long agent run.
+		clearResponseWriteDeadline(c)
 		var result map[string]interface{}
 		result, err = h.chatSessionService.ChatCompletions(
 			c.Request.Context(), userID,

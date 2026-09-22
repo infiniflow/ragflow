@@ -128,33 +128,34 @@ func (m *MinioStorage) Health(ctx context.Context) bool {
 func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
 
-	var err error
+	var lastErr error
 
 	for i := 0; i < 3; i++ {
-		var exists bool
 		// Ensure bucket exists
 		if m.bucket == "" {
-			exists, err = m.client.BucketExists(ctx, bucket)
+			exists, err := m.client.BucketExists(ctx, bucket)
 			if err != nil {
+				lastErr = err
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
 				common.Warn("Failed to check bucket existence", zap.String("bucket", bucket), zap.Error(err))
 				m.reconnect()
-				if err = sleepOrAbort(ctx, time.Second); err != nil {
-					return err
+				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+					return sleepErr
 				}
 				continue
 			}
 			if !exists {
-				if err = m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+				if err := m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+					lastErr = err
 					if ctxErr := ctx.Err(); ctxErr != nil {
 						return ctxErr
 					}
 					common.Warn("Failed to create bucket", zap.String("bucket", bucket), zap.Error(err))
 					m.reconnect()
-					if err = sleepOrAbort(ctx, time.Second); err != nil {
-						return err
+					if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+						return sleepErr
 					}
 					continue
 				}
@@ -162,15 +163,17 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 		}
 
 		reader := bytes.NewReader(binary)
-		_, err = m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
+		_, err := m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
 		if err != nil {
+			const warnMessage = "Failed to put object"
+			lastErr = fmt.Errorf("%s: %w", warnMessage, err)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
-			common.Warn("Failed to put object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			common.Warn(warnMessage, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return sleepErr
 			}
 			continue
 		}
@@ -178,7 +181,7 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 		return nil
 	}
 
-	return err
+	return lastErr
 }
 
 // Get retrieves an object from MinIO
@@ -325,6 +328,13 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	if m.bucket != "" {
 		actualBucket = m.bucket
 	}
+	exists, err := m.client.BucketExists(ctx, actualBucket)
+	if err != nil {
+		return fmt.Errorf("failed to check bucket %s: %w", actualBucket, err)
+	}
+	if !exists {
+		return nil
+	}
 
 	// Build prefix for single-bucket mode
 	prefix := ""
@@ -335,25 +345,49 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 		prefix += fmt.Sprintf("%s/", origBucket)
 	}
 
-	// List and delete objects with prefix
+	// Include versions and delete markers so versioned buckets can be emptied.
+	removeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	objectsCh := make(chan minio.ObjectInfo)
+	listErrCh := make(chan error, 1)
 
 	go func() {
 		defer close(objectsCh)
-		for obj := range m.client.ListObjects(ctx, actualBucket, minio.ListObjectsOptions{
-			Prefix:    prefix,
-			Recursive: true,
+		defer close(listErrCh)
+		for obj := range m.client.ListObjects(removeCtx, actualBucket, minio.ListObjectsOptions{
+			Prefix:       prefix,
+			Recursive:    true,
+			WithVersions: true,
 		}) {
 			if obj.Err != nil {
 				common.Warn("Failed to list objects", zap.Error(obj.Err))
+				listErrCh <- obj.Err
 				return
 			}
-			objectsCh <- obj
+			select {
+			case objectsCh <- obj:
+			case <-removeCtx.Done():
+				return
+			}
 		}
 	}()
 
-	for err := range m.client.RemoveObjects(ctx, actualBucket, objectsCh, minio.RemoveObjectsOptions{}) {
-		common.Warn(fmt.Sprintf("Failed to remove object, key: %s", err.ObjectName), zap.Error(err.Err))
+	var removeErr error
+	for objErr := range m.client.RemoveObjects(removeCtx, actualBucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		common.Warn(fmt.Sprintf("Failed to remove object, key: %s", objErr.ObjectName), zap.Error(objErr.Err))
+		if removeErr == nil {
+			removeErr = fmt.Errorf("failed to remove object %s: %w", objErr.ObjectName, objErr.Err)
+		}
+	}
+	cancel()
+	if removeErr != nil {
+		return removeErr
+	}
+	if err := <-listErrCh; err != nil {
+		return fmt.Errorf("failed to list objects in bucket %s: %w", actualBucket, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Only remove the actual bucket if not in single-bucket mode

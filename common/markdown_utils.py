@@ -20,6 +20,11 @@ from typing import Any
 
 from markdownify import MarkdownConverter
 
+# A run of backslashes that is not itself escaped, followed by the pipe it would
+# otherwise escape. Matching the run is what keeps a cell's own backslash from
+# consuming the escape that is added.
+_TABLE_CELL_PIPE = re.compile(r"(?<!\\)(\\*)\|")
+
 # A bare Markdown link destination ends at the first whitespace and at an
 # unbalanced closing parenthesis, and an angle bracket would close it early.
 _NEEDS_ANGLE_BRACKETS = re.compile(r"[\s()<>]")
@@ -48,6 +53,16 @@ _WHITESPACE_ONLY_PRESERVING_TAGS = frozenset(
         "u",
     }
 )
+
+
+def _escape_table_cell(text: str) -> str:
+    """Escape the pipes in a table cell so the cell cannot add a column.
+
+    A Markdown table row is split on every unescaped pipe, so a cell holding one
+    -- a part number, a shell command, a regex alternation -- pushes the rest of
+    the row into columns the header does not have.
+    """
+    return _TABLE_CELL_PIPE.sub(lambda match: match.group(1) * 2 + r"\|", text)
 
 
 def _format_destination(url: str) -> str:
@@ -81,6 +96,12 @@ class _WhitespacePreservingConverter(MarkdownConverter):
             return convert_fn(el, text, *args, **kwargs)
 
         return _keep_whitespace_only
+
+    def convert_td(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
+        return super().convert_td(el, _escape_table_cell(text), *args, **kwargs)
+
+    def convert_th(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
+        return super().convert_th(el, _escape_table_cell(text), *args, **kwargs)
 
     def convert_a(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
         href = el.get("href")

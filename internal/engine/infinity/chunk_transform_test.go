@@ -43,6 +43,8 @@ func TestTransformChunkFields_IngestionShape(t *testing.T) {
 		"important_kwd":        []interface{}{"k1"},
 		"page_num_int":         int(1),
 		"position_int":         int(2),
+		"mom_id":               "parent-1",
+		"available_int":        int(0),
 	}
 
 	got := transformChunkFields(chunk, nil)
@@ -58,6 +60,8 @@ func TestTransformChunkFields_IngestionShape(t *testing.T) {
 		"important_keywords":   "k1",
 		"page_num_int":         int(1),
 		"position_int":         int(2),
+		"mom_id":               "parent-1",
+		"available_int":        int(0),
 	}
 
 	for k, wv := range want {
@@ -76,5 +80,66 @@ func TestTransformChunkFields_IngestionShape(t *testing.T) {
 		if _, ok := got[leaked]; ok {
 			t.Errorf("transform leaked ingestion-only field %q into Infinity doc", leaked)
 		}
+	}
+}
+
+// TestTransformChunkFieldsHexEncodesNativeIntSlices pins the Go-native slice
+// shapes the ingestion pipeline produces: AddPositions emits []int / [][]int
+// (internal/ingestion/task/indexdoc/position.go), and the Infinity columns are
+// VARCHAR holding the hex form. Left unconverted, Infinity rejects the insert
+// with "Not support to convert Tensor(int64,5) to Varchar" (3049).
+func TestTransformChunkFieldsHexEncodesNativeIntSlices(t *testing.T) {
+	chunk := map[string]interface{}{
+		"position_int": [][]int{{1, 10, 20, 30, 40}},
+		"page_num_int": []int{1},
+		"top_int":      []int{30},
+	}
+
+	got := transformChunkFields(chunk, nil)
+
+	// Python: "_".join(f"{num:08x}" for num in flattened positions).
+	if want := "00000001_0000000a_00000014_0000001e_00000028"; got["position_int"] != want {
+		t.Errorf("position_int = %v, want %v", got["position_int"], want)
+	}
+	if want := "00000001"; got["page_num_int"] != want {
+		t.Errorf("page_num_int = %v, want %v", got["page_num_int"], want)
+	}
+	if want := "0000001e"; got["top_int"] != want {
+		t.Errorf("top_int = %v, want %v", got["top_int"], want)
+	}
+}
+
+// TestTransformChunkFieldsHexEncodesJSONPositionShape keeps the decoded-JSON
+// shape working: numbers arrive as float64 inside []interface{} rows.
+func TestTransformChunkFieldsHexEncodesJSONPositionShape(t *testing.T) {
+	chunk := map[string]interface{}{
+		"position_int": []interface{}{[]interface{}{float64(1), float64(10), float64(20), float64(30), float64(40)}},
+		"page_num_int": []interface{}{float64(1)},
+	}
+
+	got := transformChunkFields(chunk, nil)
+
+	if want := "00000001_0000000a_00000014_0000001e_00000028"; got["position_int"] != want {
+		t.Errorf("position_int = %v, want %v", got["position_int"], want)
+	}
+	if want := "00000001"; got["page_num_int"] != want {
+		t.Errorf("page_num_int = %v, want %v", got["page_num_int"], want)
+	}
+}
+
+// TestTransformChunkFieldsJoinsNativeKeywordSlice pins the other Go-native slice
+// the ingestion hands over: important_kwd is a plain []string (SplitKeywords /
+// the extractor / the tokenizer), and Python joins it with "," while counting
+// the empty entries (infinity_conn.py:528-535).
+func TestTransformChunkFieldsJoinsNativeKeywordSlice(t *testing.T) {
+	got := transformChunkFields(map[string]interface{}{
+		"important_kwd": []string{"alpha", "", "beta"},
+	}, nil)
+
+	if want := "alpha,beta"; got["important_keywords"] != want {
+		t.Errorf("important_keywords = %v, want %v", got["important_keywords"], want)
+	}
+	if got["important_kwd_empty_count"] != 1 {
+		t.Errorf("important_kwd_empty_count = %v, want 1", got["important_kwd_empty_count"])
 	}
 }

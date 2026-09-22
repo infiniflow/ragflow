@@ -103,6 +103,12 @@ def test_self_hosted_needs_base_url_not_token(monkeypatch):
     _clear_env(monkeypatch)
     module = _load_paddleocr_parser(monkeypatch)
 
+    # The connectivity probe must not depend on something actually listening:
+    # any HTTP response (a stubbed 404 here) already counts as reachable.
+    probe = Mock()
+    probe.status_code = 404
+    monkeypatch.setattr(module.requests, "get", Mock(return_value=probe))
+
     # A self-hosted deployment usually runs unauthenticated, so the token must
     # not be required; its address must be.
     ok, reason = module.PaddleOCRParser(base_url="http://127.0.0.1:8080").check_installation()
@@ -123,6 +129,12 @@ def test_hosted_still_requires_token(monkeypatch):
     ok, reason = module.PaddleOCRParser().check_installation()
     assert ok is False
     assert "Access token" in reason
+
+    # The token check probes the jobs endpoint; stub it so the suite never
+    # reaches the real hosted service (a valid token yields a non-401/403).
+    probe = Mock()
+    probe.status_code = 422
+    monkeypatch.setattr(module.requests, "post", Mock(return_value=probe))
 
     ok, _ = module.PaddleOCRParser(access_token="tok").check_installation()
     assert ok is True

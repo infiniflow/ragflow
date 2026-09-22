@@ -1,3 +1,4 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -8,10 +9,9 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { SwitchLogicOperator } from '@/constants/agent';
+import { CanvasSwitchOperators, SwitchLogicOperator } from '@/constants/agent';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { useBuildSwitchLogicOperatorOptions } from '@/hooks/logic-hooks/use-build-options';
 import { cn } from '@/lib/utils';
@@ -77,8 +77,7 @@ type VariableWithPathProps = {
 function VariableWithPath({ name }: VariableWithPathProps) {
   const { t: translate } = useTranslation();
   const form = useFormContext();
-  const fullValue: string =
-    useWatch({ control: form.control, name }) ?? '';
+  const fullValue: string = useWatch({ control: form.control, name }) ?? '';
 
   const { base, suffix } = useMemo(
     () => splitBaseAndPath(fullValue),
@@ -143,7 +142,9 @@ function ConditionCards({
 }: ConditionCardsProps) {
   const form = useFormContext();
 
-  const switchOperatorOptions = useBuildSwitchOperatorOptions();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions(
+    CanvasSwitchOperators,
+  );
 
   const name = `${parentName}.${ItemKey}`;
 
@@ -184,9 +185,7 @@ function ConditionCards({
                   render={() => (
                     <FormItem className="flex-1 min-w-0">
                       <FormControl>
-                        <VariableWithPath
-                          name={`${name}.${index}.cpn_id`}
-                        />
+                        <VariableWithPath name={`${name}.${index}.cpn_id`} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -200,7 +199,7 @@ function ConditionCards({
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <RAGFlowSelect
+                          <SelectWithSearch
                             {...field}
                             options={switchOperatorOptions}
                             onlyShowSelectedIcon
@@ -249,7 +248,9 @@ function ConditionCards({
 function SwitchForm({ node }: IOperatorForm) {
   const { t } = useTranslation();
   const values = useValues(node);
-  const switchOperatorOptions = useBuildSwitchOperatorOptions();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions(
+    CanvasSwitchOperators,
+  );
 
   const FormSchema = z.object({
     conditions: z.array(
@@ -319,7 +320,7 @@ function SwitchForm({ node }: IOperatorForm) {
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>
-                            <RAGFlowSelect
+                            <SelectWithSearch
                               {...field}
                               options={switchLogicOperatorOptions}
                             />

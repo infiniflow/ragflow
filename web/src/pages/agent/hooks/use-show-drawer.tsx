@@ -22,15 +22,14 @@ export const useShowFormDrawer = () => {
     showModal: showFormDrawer,
   } = useSetModalState();
 
-  const handleShow = useCallback(
-    (e: React.MouseEvent<Element>, nodeId: string) => {
-      const toolId = (e.target as HTMLElement).dataset.toolId;
-      const tool = (e.target as HTMLElement).dataset.tool;
-
-      // TODO: Operator type judgment should be used
+  // Event-free variant for programmatic callers (e.g. the canvas checklist):
+  // same guards as handleShow — Tool nodes need a tool id to know which tool
+  // form to render, and LoopStart/ExitLoop have no form at all.
+  const showFormDrawerById = useCallback(
+    (nodeId: string, toolId?: string) => {
       const operatorType = getOperatorTypeFromId(nodeId);
       if (
-        (operatorType === Operator.Tool && !tool) ||
+        (operatorType === Operator.Tool && !toolId) ||
         [Operator.LoopStart, Operator.ExitLoop].includes(
           operatorType as Operator,
         )
@@ -38,17 +37,27 @@ export const useShowFormDrawer = () => {
         return;
       }
       setClickedNodeId(nodeId);
-      // Guess this could gracefully handle the case where the tool id is not provided?
-      setClickedToolId(toolId || tool);
+      setClickedToolId(toolId);
       showFormDrawer();
     },
     [getOperatorTypeFromId, setClickedNodeId, setClickedToolId, showFormDrawer],
+  );
+
+  const handleShow = useCallback(
+    (e: React.MouseEvent<Element>, nodeId: string) => {
+      const toolId = (e.target as HTMLElement).dataset.toolId;
+      const tool = (e.target as HTMLElement).dataset.tool;
+
+      showFormDrawerById(nodeId, toolId || tool);
+    },
+    [showFormDrawerById],
   );
 
   return {
     formDrawerVisible,
     hideFormDrawer,
     showFormDrawer: handleShow,
+    showFormDrawerById,
     clickedNode: getNode(clickNodeId),
   };
 };
@@ -96,8 +105,13 @@ export function useShowDrawer({
     showSingleDebugDrawer,
     hideSingleDebugDrawer,
   } = useShowSingleDebugDrawer();
-  const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
-    useShowFormDrawer();
+  const {
+    formDrawerVisible,
+    hideFormDrawer,
+    showFormDrawer,
+    showFormDrawerById,
+    clickedNode,
+  } = useShowFormDrawer();
   const inputs = useGetBeginNodeDataInputs();
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
@@ -173,6 +187,7 @@ export function useShowDrawer({
     hideSingleDebugDrawer,
     formDrawerVisible,
     showFormDrawer,
+    showFormDrawerById,
     clickedNode,
     onNodeClick,
     hideFormDrawer,

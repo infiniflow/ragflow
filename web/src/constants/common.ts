@@ -164,6 +164,25 @@ export const Images = [
   'ico',
 ];
 
+export const AudioExtensions = [
+  'mp3',
+  'wav',
+  'wave',
+  'aac',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'wma',
+  'aiff',
+  'aif',
+  'au',
+  'midi',
+  'opus',
+  'ape',
+  'amr',
+];
+
 // Without FileViewer
 export const ExceptiveType = [
   'xlsx',

@@ -69,7 +69,8 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 	seenVariants := make(map[string]struct{})
 	seenTaskTypes := make(map[string]struct{})
 	for offset := 0; ; offset += 1000 {
-		result, err := s.docEngine.Search(ctx, &types.SearchRequest{
+		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(searchCtx, &types.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{datasetID},
 			Offset:       offset,
@@ -77,6 +78,7 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 			SelectFields: []string{"compile_kwd", "compilation_template_kind_kwd"},
 			Filter:       map[string]any{"doc_id": []string{documentID}},
 		})
+		cancel()
 		if err != nil {
 			return nil, nil, err
 		}

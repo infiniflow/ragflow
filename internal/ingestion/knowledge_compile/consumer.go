@@ -775,14 +775,15 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		}
 	}
 
-	// A0-4 dispatch: route tree/structure products to the dataset-navigation tree
-	// (NavService.UpsertDoc), and keep wiki (and only wiki) products on the
-	// existing dataset-level merge path below. This is the per-variant dispatch
-	// the plan requires: tree and structure both produce a nav by-product (B2),
-	// so both upsert their summary into the cross-document nav tree; wiki products
-	// continue to the page-specific evidence merge.
+	// Route Tree and PageIndex products to the dataset-navigation tree. Wiki,
+	// Graph, Timeline, and Mindmap products have no navigation projection.
 	navIn := navInputFromProducts(kb, incoming)
 	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.40, "merging_navigation", fmt.Sprintf("Merging navigation products: %d", len(navIn)))
+	if docsWithoutNav := completedDocsWithoutNavInput(completed, navIn); len(docsWithoutNav) > 0 {
+		if err := c.removeNavLocked(ctx, tenant, kb, token, docsWithoutNav); err != nil {
+			return err
+		}
+	}
 	if len(navIn) > 0 {
 		ns := nav.GetNavService()
 		if ns == nil {
@@ -1171,6 +1172,20 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	return nil
 }
 
+func completedDocsWithoutNavInput(completed []BacklogEntry, inputs []nav.UpsertDocInput) []string {
+	withNav := make(map[string]struct{}, len(inputs))
+	for _, input := range inputs {
+		withNav[input.DocID] = struct{}{}
+	}
+	withoutNav := make([]string, 0, len(completed))
+	for _, entry := range completed {
+		if _, ok := withNav[entry.DocID]; !ok {
+			withoutNav = append(withoutNav, entry.DocID)
+		}
+	}
+	return uniqueSortedStrings(withoutNav)
+}
+
 func copyMeta(input map[string]any) map[string]any {
 	output := make(map[string]any, len(input)+2)
 	for key, value := range input {
@@ -1451,17 +1466,15 @@ func productsForVariants(products []kccommon.Product, variants []string) []kccom
 	return out
 }
 
-// navInputFromProducts extracts the dataset-navigation upsert inputs for the
-// tree and structure products in a batch (B2: nav trigger is tree || structure).
+// navInputFromProducts extracts the dataset-navigation upsert inputs for tree
+// and PageIndex products in a batch.
 // Summary extraction matches the component's by-product hooks:
 //   - tree: the root product (Meta.kind=="root") carries the document summary in
 //     Content and its vector in Vector.
-//   - structure: the graph product (Meta.kind=="graph") carries the graph JSON in
-//     Content; its entity descriptions are folded into a document-level summary
-//     via pageIndexSummary.
+//   - PageIndex: entity descriptions are folded into a document-level summary.
 //
 // Each document contributes at most one nav input, keyed by DocID, so a doc that
-// yields several tree/structure products upserts once. NavService embeds the
+// yields several tree/PageIndex products upserts once. NavService embeds the
 // summary itself when Embedd is empty, so the consumer needs no embedder.
 func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDocInput {
 	type acc struct {
@@ -1486,11 +1499,9 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 			a.treeSummary = p.Content
 			a.treeEmbedd = p.Vector
 		case kccommon.VariantStructure:
-			// Python's page_index path rebuilds the doc graph from the stored
-			// entity rows and folds their descriptions into the nav summary
-			// (runner.py rebuild_structure_graph_json + _page_index_graph_summary).
-			// The graph blob product (Meta.kind=="graph") is gone from the
-			// storage model, so fold directly from the entity rows.
+			if p.Kind != "page_index" {
+				continue
+			}
 			if kind, _ := p.Meta["kind"].(string); kind != "entity" {
 				continue
 			}
@@ -1789,7 +1800,7 @@ func appendUnique(dst, values []string) []string {
 	return dst
 }
 
-// upsertNavLocked places the batch's tree/structure summaries into the dataset
+// upsertNavLocked places the batch's Tree/PageIndex summaries into the dataset
 // navigation tree under the per-dataset write/rebuild lock, with the claim-token
 // check inside the lock (B7: nav writes are claim-fenced like any other
 // destructive write so a stale worker cannot repopulate a rebuilt tree).

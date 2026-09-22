@@ -117,6 +117,31 @@ python3 ragflow_deps/download_go_deps.py
 > `pyproject.toml` is versioned independently and is intentionally not part of
 > this check.
 
+> **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
+> **link cache**, because a silently-stale `.a` is easy to miss:
+> - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
+>   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the published
+>   `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar — the same source of
+>   truth the download scripts use. If they differ (the archive was re-issued
+>   under the same tag/asset name, or an older download is present) the build
+>   fails fast with `Error: ONNX Runtime archive ... is stale`, printing the
+>   expected/actual sha256 and the exact refresh command
+>   (`rm -f <zip>` + `uv run python3 ragflow_deps/download_go_deps.py`). CI seeds
+>   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
+>   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   ORT only through the OrtApi function-pointer table
+>   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
+>   successfully and only crashes at runtime — not at link time.
+> - The link passes `CGO_LDFLAGS` a version-stamped path
+>   `onnxruntime/static_lib/v<ver>-<sha256:0:16>/libonnxruntime.a`. Go's build
+>   cache keys `CGO_LDFLAGS` as a string and does NOT hash the referenced `.a`,
+>   so swapping the `.a` in place (same path, re-issued under the same name)
+>   would otherwise silently reuse a stale linked binary. Stamping the path with
+>   the archive's sha256 changes the flag string whenever the content changes →
+>   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
+>   re-run `uv run python3 ragflow_deps/download_go_deps.py` (or `download_deps.py`)
+>   so the stamp moves; a plain `go clean -cache` also forces it.
+
 ### 1.5 Build RAGFlow
 
 - Build binary
@@ -201,19 +226,44 @@ missing from the model directory.
 docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
 ```
 
+- Point the host-run Go binaries at Kvrocks. Kvrocks is published on
+  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; the Go
+  deployment disables the Valkey/Redis service so there is no clash). Export these
+  before running `./bin/ragflow_server ...` on the host, or load them from
+  `docker/.env-go`:
+```bash
+export KVROCKS_HOST=127.0.0.1
+export KVROCKS_PORT=6379
+```
+  In docker the Go services override these to `kvrocks:6379` automatically
+  (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
+  process fails fast with `failed to connect to Kvrocks`.
+
 
 - Start RAGFlow
-Note: admin server must be started first; otherwise, api server will encounter errors when sending heartbeats.
+Note: Database migrations must complete before starting any server mode.
+After migration, start the admin server before the API and ingestor servers;
+otherwise, they will encounter errors when sending heartbeats.
+
+```bash
+# Run database migrations (standalone action; does not start a server)
+./bin/ragflow_server --migrate
+```
+`--migrate` writes the database version marker that server modes check on
+startup, and a development branch regularly records a version for a release
+that has not been tagged yet — a build from a `v0.27.x` commit that writes
+`v1.0.0-rc1.dev1` refuses to start afterwards, because the recorded version
+looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
+such a checkout: it turns the "code version must not be older than the database
+version" guard off. Leave it off in production.
+
 
 ```bash
 # Start admin server
 ./bin/ragflow_server --admin
 ```
 
-```bash
-# Run database migrations (standalone action; does not start a server)
-./bin/ragflow_server --migrate
-```
+
 
 ```bash
 # Start RAGFlow server
@@ -662,11 +712,6 @@ RAGFlow(api/default)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
 - Update a chunk's content
 ```
 RAGFlow(api/default)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
-```
-
-- Remove tags from a dataset
-```
-RAGFlow(api/default)> REMOVE TAGS 'tag1', 'tag2' FROM DATASET 'test'
 ```
 
 - Remove specific chunks from a document

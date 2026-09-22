@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // CropSectionImage crops region(s) from rendered page images based on a
@@ -18,13 +21,13 @@ import (
 // Python: pdf_parser.py:1802 RAGFlowPdfParser.crop()
 func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom float64) string {
 	if len(decodedImages) == 0 {
-		slog.Warn("cropSectionImage: no page images available, skipping image generation")
+		common.Warn("cropSectionImage: no page images available, skipping image generation")
 		return ""
 	}
 
 	positions := ExtractPositions(posTag)
 	if len(positions) == 0 {
-		slog.Warn("cropSectionImage: empty position list in tag", "posTag", posTag[:min(80, len(posTag))])
+		common.Warn("cropSectionImage: empty position list in tag", zap.String("posTag", posTag[:min(80, len(posTag))]))
 		return ""
 	}
 
@@ -43,7 +46,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 		}
 	}
 	if len(valid) == 0 {
-		slog.Warn("cropSectionImage: no valid positions after filtering, skipping crop")
+		common.Warn("cropSectionImage: no valid positions after filtering, skipping crop")
 		return ""
 	}
 
@@ -143,7 +146,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 
 		pageImg, ok := decodedImages[pn0]
 		if !ok {
-			slog.Warn("cropSectionImage: page image not found", "page", pn0)
+			common.Warn("cropSectionImage: page image not found", zap.Int("page", pn0))
 			return ""
 		}
 		pageH := float64(pageImg.Bounds().Dy())
@@ -166,7 +169,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 			}
 			pageImg2, ok := decodedImages[pn]
 			if !ok {
-				slog.Warn("cropSectionImage: page image not found for subsequent page", "page", pn)
+				common.Warn("cropSectionImage: page image not found for subsequent page", zap.Int("page", pn))
 				return ""
 			}
 			pageH2 := float64(pageImg2.Bounds().Dy())
@@ -234,7 +237,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 
 	data, err := EncodePNG(stitched)
 	if err != nil {
-		slog.Warn("cropSectionImage: PNG encode failed", "err", err)
+		common.Warn("cropSectionImage: PNG encode failed", zap.Error(err))
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(data)
@@ -370,8 +373,8 @@ func cropDLAPage(img image.Image, dlaRegions []pdf.DLAPageRegions,
 		if cropped, err := CropImageRegion(img, regions[bestIdx]); err == nil {
 			return cropped
 		} else {
-			slog.Warn("cropSectionByDLA: cropImageRegion failed, falling back to bbox",
-				"page", pn, "err", err)
+			common.Warn("cropSectionByDLA: cropImageRegion failed, falling back to bbox",
+				zap.Int("page", pn), zap.Error(err))
 		}
 	}
 	// Fallback: crop the section bbox on this page (FastCrop clamps to bounds).
@@ -432,7 +435,7 @@ func stitchVerticalImages(imgs []image.Image, gap int) string {
 
 	data, err := EncodePNG(stitched)
 	if err != nil {
-		slog.Warn("cropSectionByDLA: PNG encode failed", "err", err)
+		common.Warn("cropSectionByDLA: PNG encode failed", zap.Error(err))
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(data)
