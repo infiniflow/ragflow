@@ -3496,25 +3496,6 @@ type AddModelRequest struct {
 	Extra        map[string]interface{} `json:"extra"`
 }
 
-// ResolveChatModelTarget resolves the chat model a request will run on: the
-// caller's reference when it has one, the tenant default otherwise — a dialog
-// without an llm_id still runs on the default (dialog_service get_models).
-// Shared by the capability probe and the agentic wiring so the two cannot resolve
-// different models for one request.
-func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenantID, modelRef string) (*ModelTarget, error) {
-	if m == nil {
-		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
-	}
-	solver := m.modelSolver()
-	if strings.TrimSpace(modelRef) == "" {
-		return solver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
-	}
-	// Resolve the enrolled type first: a reference enrolled only as image-to-text
-	// is a valid chat-pipeline input (its driver answers chat requests), and
-	// resolving it as chat would fail the type check outright.
-	return solver.ResolveModelConfig(ctx, tenantID, solver.ResolveChatModelType(ctx, tenantID, modelRef), modelRef)
-}
-
 // modelTargetRef renders a resolved model as the lookups' reference: its
 // tenant_model id, or the composite "model@instance@provider" form.
 func modelTargetRef(target *ModelTarget) string {
