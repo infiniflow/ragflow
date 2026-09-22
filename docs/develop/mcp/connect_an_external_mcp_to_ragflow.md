@@ -43,14 +43,12 @@ RAGFlow does not directly connect to MCP servers that use `stdio`. To use a `std
 4. Click **Add MCP**.
 5. Configure the MCP server.
 
-| Field       | Description                                              | Example                     |
-| ----------- | -------------------------------------------------------- | --------------------------- |
-| Name        | A custom name used to identify the MCP server in RAGFlow | `Local file tools`          |
-| URL         | The complete MCP endpoint                                | `https://example.com/mcp`   |
-| Server type | The transport provided by the MCP server                 | `streamable-http`           |
-| Description | Optional description of the MCP server                   | `Read and manage files`     |
-| Headers     | HTTP headers required by the MCP server                  | `Authorization: Bearer xxx` |
-| Variables   | Variables required by the MCP server configuration       | Depends on the MCP server   |
+| Field | Description | Example |
+| --- | --- | --- |
+| Name | A name containing letters, numbers, underscores, or hyphens (up to 64 characters) | `local_file_tools` |
+| URL | The complete MCP endpoint | `https://example.com/mcp` |
+| Server type | The transport provided by the MCP server | `streamable-http` |
+| Authorization Token | Optional token sent as `Authorization: Bearer <token>` | The server's token |
 
 The **Server type** must match the transport exposed by the MCP server:
 
@@ -64,7 +62,7 @@ or:
 sse
 ```
 
-If the MCP server does not require authentication, leave **Headers** empty.
+If the MCP server does not require authentication, leave **Authorization Token** empty. The manual form does not expose arbitrary headers, variables, or a description field. For another authentication scheme or custom headers, use a JSON import with a string-to-string `headers` object, as shown in [Connect external MCP tools](./connect_external_mcp_servers.md).
 
 Make sure that the path in **URL** matches the endpoint actually exposed by the MCP server. For example, a Streamable HTTP server commonly uses `/mcp`, while an SSE server commonly uses `/sse`.
 
@@ -87,13 +85,7 @@ Other URL schemes, including `stdio://`, are not supported for MCP server connec
 
 ### Public address validation
 
-By default, RAGFlow allows an MCP server URL only when **all IP addresses resolved from its hostname are publicly routable addresses**.
-
-With the default configuration:
-
-```text
-ALLOW_ANY_HOST=0
-```
+RAGFlow allows an MCP server URL only when **all IP addresses resolved from its hostname are publicly routable addresses**.
 
 RAGFlow rejects URLs that resolve to loopback, private, link-local, reserved, or other non-public addresses.
 
@@ -137,23 +129,6 @@ If you see this error, check DNS resolution from the environment where the RAGFl
 
 The error does not necessarily indicate that the MCP server URL, transport type, or authentication configuration is incorrect.
 
-## Connect to a local or private MCP server
+## Local and private addresses
 
-For trusted local development or testing environments, you can allow RAGFlow to connect to MCP servers running on localhost, a private network, or a Docker network.
-
-In `docker/.env`, set:
-
-```text
-ALLOW_ANY_HOST=1
-```
-
-Then fully restart the RAGFlow backend services so that the new environment setting takes effect.
-
-For example:
-
-```bash
-docker compose down
-docker compose up -d
-```
-
-When `ALLOW_ANY_HOST=1`, RAGFlow skips the public-address validation described above.
+The current Go MCP client rejects loopback, private, and Docker-network addresses. `ALLOW_ANY_HOST` does not disable this validation. Use an endpoint whose DNS resolves only to publicly routable addresses; connecting directly to a local or private MCP server is not supported by this path.
