@@ -1373,6 +1373,10 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if importantKeywords == nil {
 		importantKeywords = []string{}
 	}
+	tagKwd := req.TagKwd
+	if tagKwd == nil {
+		tagKwd = []string{}
+	}
 
 	chunkData := map[string]interface{}{
 		"id":                   chunkID,
@@ -1388,6 +1392,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"kb_id":                req.DatasetID,
 		"docnm_kwd":            docName,
 		"doc_id":               req.DocumentID,
+	}
+	if req.TagKwd != nil {
+		chunkData["tag_kwd"] = req.TagKwd
 	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
@@ -1448,6 +1455,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"document":           docName,
 		"important_keywords": importantKeywords,
 		"questions":          questionKwd,
+		"tag_kwd":            tagKwd,
 		"dataset_id":         req.DatasetID,
 		"create_timestamp":   chunkData["create_timestamp_flt"],
 		"create_time":        chunkData["create_time"],

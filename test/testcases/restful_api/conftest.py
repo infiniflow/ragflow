@@ -48,14 +48,6 @@ GO_ONLY_SKIPS = {
         # Chunk add requires an embedding model call; document update/delete
         # touches ES/Infinity indices that are only created during parsing.
         # Without a working Go ingestion pipeline, these indices never exist.
-        "test_chunk_add_keyword_question_and_tag_contract",
-        "test_chunk_add_repeated_and_deleted_document_contract",
-        "test_chunk_concurrent_add_contract",
-        "test_documents_update_patch_and_delete",
-        "test_documents_update_name_contract",
-        "test_documents_update_meta_fields_contract",
-        "test_documents_metadata_batch_update_contract",
-        "test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dataset",
         "test_chat_list_concurrent_and_dataset_delete_contract",
         "test_chat_create_dataset_ids_contract",
         "test_chat_create_llm_contract",

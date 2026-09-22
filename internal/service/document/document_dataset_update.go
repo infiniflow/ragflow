@@ -371,7 +371,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 
 	if strings.ToLower(filepath.Ext(newName)) != strings.ToLower(filepath.Ext(oldName)) {
-		return common.CodeArgumentError, errors.New("the extension of file can't be changed")
+		return common.CodeArgumentError, errors.New("The extension of file can't be changed")
 	}
 
 	docs, err := s.documentDAO.GetByNameAndKBID(ctx, dao.DB, newName, doc.KbID)
@@ -380,7 +380,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 	for _, d := range docs {
 		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return common.CodeDataError, errors.New("duplicated document name in the same dataset")
+		return common.CodeDataError, errors.New("Duplicated document name in the same dataset.")
 		}
 	}
 

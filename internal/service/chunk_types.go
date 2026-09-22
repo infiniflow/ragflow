@@ -73,6 +73,7 @@ type AddChunkRequest struct {
 	Content           string      `json:"content"`
 	ImportantKeywords []string    `json:"important_keywords,omitempty"`
 	Questions         []string    `json:"questions,omitempty"`
+	TagKwd            []string    `json:"tag_kwd,omitempty"`
 	TagFeas           interface{} `json:"tag_feas,omitempty"`
 	ImageBase64       *string     `json:"image_base64,omitempty"`
 }
