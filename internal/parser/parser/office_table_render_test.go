@@ -1,7 +1,9 @@
 package parser
 
 import (
+	"html"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -146,6 +148,159 @@ func TestXLSXParserPreservesSheetOrderAndIdentity(t *testing.T) {
 	if _, ok := first["table_id"]; ok {
 		t.Errorf("table_id must not be emitted on segmented table items")
 	}
+}
+
+// TestXLSXParserEmitsHeaderOnlySegment: a sheet with no data rows still
+// emits its header as the only searchable representation of the column
+// schema — one segment whose markup holds the single <tr> of <th> cells.
+func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Amount")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "headers.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one header-only segment", len(res.JSON))
+	}
+	item := res.JSON[0]
+	wantText := "<table><caption>Sheet1</caption>\n" +
+		"<tr><th>Name</th><th>Amount</th></tr>\n" +
+		"</table>\n"
+	if item["text"] != wantText {
+		t.Fatalf("text = %q, want %q", item["text"], wantText)
+	}
+	positions, _ := item["positions"].([][]float64)
+	if len(positions) != 1 || !reflect.DeepEqual(positions[0], []float64{1, 1, 1, 1, 2}) {
+		t.Fatalf("positions = %v, want the header tuple only", positions)
+	}
+}
+
+// TestBuildSheetItemsEscapesCellText: cell text carrying markup characters is
+// escaped in the wire and reads back byte-identical from the markup, so
+// user content can never become markup.
+func TestBuildSheetItemsEscapesCellText(t *testing.T) {
+	const tricky = `<b>bold</b> & "quoted" > 1`
+	items := buildSheetItems([][]string{{"Name"}, {tricky}}, "Sheet1", 1, 1, nil, nil)
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want one segment", len(items))
+	}
+	text, _ := items[0]["text"].(string)
+	if strings.Contains(text, "<b>") || !strings.Contains(text, "&lt;b&gt;") {
+		t.Fatalf("cell text was not escaped: %q", text)
+	}
+	rows := markupRows(t, text)
+	if len(rows) != 2 || rows[1][0] != tricky {
+		t.Fatalf("round trip = %#v, want %q back", rows, tricky)
+	}
+}
+
+// TestXLSXParserImageAnchorsSplitSegments pins the segmentation semantics: an
+// image anchored between rows ends the current segment at its anchor, every
+// segment repeats the header row, and a data row sharing the anchor's row is
+// ordered by column — cells at or left of the anchor column stay in front of
+// the image, cells to its right follow it.
+func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+	build := func(t *testing.T, fillRow4 func(*excelize.File)) []map[string]any {
+		t.Helper()
+		data := newTestXLSX(t, func(f *excelize.File) {
+			mustSetCell(t, f, "Sheet1", "A1", "Name")
+			mustSetCell(t, f, "Sheet1", "B1", "Value")
+			// Every non-anchor row carries two columns so the header
+			// detector never sees row 4 as the only wide row.
+			for row, value := range map[int]string{2: "row2", 3: "row3", 5: "row5", 6: "row6"} {
+				mustSetCell(t, f, "Sheet1", cellAxis(row, 1), value)
+				mustSetCell(t, f, "Sheet1", cellAxis(row, 2), "x")
+			}
+			fillRow4(f)
+			if err := f.AddPictureFromBytes("Sheet1", "A4", &excelize.Picture{
+				Extension: ".png",
+				File:      mustDecodeBase64(t, pngBase64),
+				Format:    &excelize.GraphicOptions{AltText: "fig"},
+			}); err != nil {
+				t.Fatalf("AddPictureFromBytes: %v", err)
+			}
+		})
+		p, _ := NewXLSXParser("")
+		res := p.ParseWithResult(t.Context(), "anchors.xlsx", data)
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult: %v", res.Err)
+		}
+		return res.JSON
+	}
+
+	assertSegments := func(t *testing.T, items []map[string]any, wantFirst, wantSecond []string) {
+		t.Helper()
+		if len(items) != 3 {
+			t.Fatalf("items = %d, want table, image, table", len(items))
+		}
+		if items[1]["doc_type_kwd"] != "image" || items[1]["row_start"] != 4 {
+			t.Fatalf("image item = %#v", items[1])
+		}
+		for segIdx, want := range [][]string{wantFirst, wantSecond} {
+			item := items[segIdx*2]
+			text, _ := item["text"].(string)
+			rows := markupRows(t, text)
+			if len(rows) != len(want)+1 {
+				t.Fatalf("segment %d rows = %d, want header plus %d", segIdx, len(rows), len(want))
+			}
+			if rows[0][0] != "Name" {
+				t.Errorf("segment %d lost the replicated header: %#v", segIdx, rows[0])
+			}
+			for i, value := range want {
+				found := false
+				for _, cell := range rows[i+1] {
+					if cell == value {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("segment %d row %d = %#v, want %q in it", segIdx, i, rows[i+1], value)
+				}
+			}
+			positions, _ := item["positions"].([][]float64)
+			if len(positions) != len(rows) {
+				t.Errorf("segment %d positions = %d, want one tuple per <tr> (%d)", segIdx, len(positions), len(rows))
+			}
+		}
+	}
+
+	t.Run("row at the anchor cell stays in front", func(t *testing.T) {
+		items := build(t, func(f *excelize.File) {
+			mustSetCell(t, f, "Sheet1", "A4", "row4")
+			mustSetCell(t, f, "Sheet1", "B4", "x")
+		})
+		assertSegments(t, items, []string{"row2", "row3", "row4"}, []string{"row5", "row6"})
+	})
+
+	t.Run("row right of the anchor cell follows the image", func(t *testing.T) {
+		items := build(t, func(f *excelize.File) { mustSetCell(t, f, "Sheet1", "B4", "row4") })
+		assertSegments(t, items, []string{"row2", "row3"}, []string{"row4", "row5", "row6"})
+	})
+}
+
+// markupRows extracts the cell texts of every <tr> in rendered spreadsheet
+// markup, unescaped. It is a deliberately minimal test-local reader: these
+// tests assert the parser's rendered output, so the markup itself is the
+// contract under test.
+func markupRows(t *testing.T, markup string) [][]string {
+	t.Helper()
+	rowRe := regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
+	cellRe := regexp.MustCompile(`(?s)<t[hd]>(.*?)</t[hd]>`)
+	var rows [][]string
+	for _, row := range rowRe.FindAllStringSubmatch(markup, -1) {
+		var cells []string
+		for _, cell := range cellRe.FindAllStringSubmatch(row[1], -1) {
+			cells = append(cells, html.UnescapeString(cell[1]))
+		}
+		rows = append(rows, cells)
+	}
+	return rows
 }
 
 func spreadsheetText(res ParseResult) string {
