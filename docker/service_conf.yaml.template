@@ -53,6 +53,13 @@ serenedb:
   user: '${SERENEDB_USER:-postgres}'
   password: '${SERENEDB_PASSWORD:-infini_rag_flow}'
   db_name: '${SERENEDB_DBNAME:-postgres}'
+vb:
+  host: '${VB_HOST:-vastbase}'
+  port: ${VB_PORT:-5432}
+  user: '${VB_USERNAME:-ragflow}'
+  password: '${VB_PASSWORD:-infini_rag_flow}'
+  db_name: '${VB_VEC_DBNAME:-ragflow}'
+  dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
   config:

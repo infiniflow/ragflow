@@ -495,7 +495,7 @@ class DocMetadataService:
 
             logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
 
-            if settings.DOC_ENGINE_GAUSSDB:
+            if settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_VASTBASE:
                 if not settings.docStoreConn.index_exist(index_name, kb_id):
                     result = settings.docStoreConn.create_doc_meta_idx(index_name)
                     if result is False:
@@ -512,7 +512,12 @@ class DocMetadataService:
                 return True
 
             # For Elasticsearch, use efficient partial update
-            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE and not settings.DOC_ENGINE_SERENEDB:
+            if (
+                not settings.DOC_ENGINE_INFINITY
+                and not settings.DOC_ENGINE_OCEANBASE
+                and not settings.DOC_ENGINE_SERENEDB
+                and not settings.DOC_ENGINE_VASTBASE
+            ):
                 # Check if index exists first
                 index_exists = settings.docStoreConn.index_exist(index_name, "")
                 if not index_exists:
@@ -906,7 +911,7 @@ class DocMetadataService:
 
         if settings.DOC_ENGINE_INFINITY:
             return cls._filter_doc_ids_by_metadata_infinity(index_name, kb_ids, filters, logic)
-        elif settings.DOC_ENGINE_GAUSSDB:
+        elif settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_VASTBASE:
             return cls._filter_doc_ids_by_metadata_gaussdb(index_name, kb_ids, filters, logic, limit)
         else:
             return cls._filter_doc_ids_by_metadata_es(index_name, kb_ids, filters, logic, limit)

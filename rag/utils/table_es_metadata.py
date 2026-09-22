@@ -210,12 +210,19 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
                 e,
                 exc_info=True,
             )
-    sql_doc_engine = settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB
+    sql_doc_engine = (
+        settings.DOC_ENGINE_INFINITY
+        or settings.DOC_ENGINE_OCEANBASE
+        or settings.DOC_ENGINE_GAUSSDB
+        or settings.DOC_ENGINE_SERENEDB
+        or settings.DOC_ENGINE_VASTBASE
+    )
     if not fm and not sql_doc_engine:
         logging.debug(f"[TABLE_META_DEBUG] field_map empty on task snapshot — will use ES key probe on chunk dicts; kb_parser_config keys={list((task.get('kb_parser_config') or {}).keys())}")
     logging.debug(
         f"[TABLE_META_DEBUG] meta_cols={meta_cols}, field_map entries={len(fm)}, infinity={settings.DOC_ENGINE_INFINITY}, "
-        f"oceanbase={settings.DOC_ENGINE_OCEANBASE}, gaussdb={settings.DOC_ENGINE_GAUSSDB}, serenedb={settings.DOC_ENGINE_SERENEDB}"
+        f"oceanbase={settings.DOC_ENGINE_OCEANBASE}, gaussdb={settings.DOC_ENGINE_GAUSSDB}, "
+        f"serenedb={settings.DOC_ENGINE_SERENEDB}, vastbase={settings.DOC_ENGINE_VASTBASE}"
     )
     sample_ck = next((c for c in chunks if isinstance(c, dict)), None)
     if sample_ck:

@@ -219,6 +219,15 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
   - `schema`: Optional schema used by the DocEngine. Defaults to `public`.
   - RAGFlow does not start or manage GaussDB; set `DOC_ENGINE=gaussdb` only after preparing a GaussDB instance.
 
+- `vb` (when `DOC_ENGINE=vastbase`)
+  - `host`: The hostname of the Vastbase instance (vector / doc store database).
+  - `port`: The Vastbase port. Defaults to `5432`.
+  - `user`: The username for Vastbase.
+  - `password`: The password for Vastbase.
+  - `db_name`: The database used for chunk and message storage. Defaults to `ragflow`.
+  - `dbcompatibility`: Vastbase SQL compatibility mode (`B` or `PG`). Defaults to `B`.
+  - Enable the optional `vastbase` Compose profile and set `VB_IMAGE` to your licensed Vastbase image, or point `VB_HOST` at an external server.
+
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.
   - `secret_key`: The secret access key used to authenticate requests to the OSS service.

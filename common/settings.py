@@ -47,6 +47,7 @@ import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
 import memory.utils.gaussdb_conn as memory_gaussdb_conn
+import memory.utils.vastbase_conn as memory_vastbase_conn
 
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
@@ -171,6 +172,7 @@ DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
 DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
 DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
 DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
+DOC_ENGINE_VASTBASE = DOC_ENGINE.lower() == "vastbase"
 
 
 docStoreConn = None
@@ -214,6 +216,7 @@ OS = {}
 GCS = {}
 GAUSSDB = {}
 SERENEDB = {}
+VB = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
 DOC_BULK_SIZE: int = 32
@@ -396,12 +399,13 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_GAUSSDB, DOC_ENGINE_SERENEDB, docStoreConn, ES, OB, OS, INFINITY, GAUSSDB, SERENEDB
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_GAUSSDB, DOC_ENGINE_SERENEDB, DOC_ENGINE_VASTBASE, docStoreConn, ES, OB, OS, INFINITY, GAUSSDB, SERENEDB, VB
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
     DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
     DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
+    DOC_ENGINE_VASTBASE = DOC_ENGINE.lower() == "vastbase"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -427,6 +431,12 @@ def init_settings():
         from rag.utils import serenedb_conn
 
         docStoreConn = serenedb_conn.SereneDBConnection()
+    elif lower_case_doc_engine == "vastbase":
+        VB = get_base_config("vb", {})
+        # Imported lazily so psycopg2/Vastbase is only touched when selected.
+        from rag.utils import vastbase_conn
+
+        docStoreConn = vastbase_conn.VBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
@@ -445,6 +455,8 @@ def init_settings():
         # same GaussDB configuration and shares the lazy connection pool with
         # docStoreConn, but keeps its own table layout and query semantics.
         msgStoreConn = memory_gaussdb_conn.GaussDBMemoryConnection()
+    elif lower_case_doc_engine == "vastbase":
+        msgStoreConn = memory_vastbase_conn.VBConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:

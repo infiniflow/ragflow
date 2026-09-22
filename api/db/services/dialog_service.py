@@ -71,7 +71,7 @@ async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
     search results) keep whatever placeholder they were given. Other
     backends still carry vectors in the chunk, so we skip the round-trip.
     """
-    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB or settings.DOC_ENGINE_VASTBASE:
         return
     if not chunks:
         return
@@ -1022,7 +1022,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         doc_engine = "infinity"
     elif settings.DOC_ENGINE_OCEANBASE:
         doc_engine = "oceanbase"
-    elif settings.DOC_ENGINE_GAUSSDB:
+    elif settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_VASTBASE:
         doc_engine = "gaussdb"
     else:
         doc_engine = "es"
