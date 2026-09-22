@@ -106,6 +106,9 @@ func (f *FlexibleTime) parse(value string) {
 		}
 	}
 	if strings.TrimSpace(original) != "" {
+		// Keep the stdlib logger here: internal/common imports this package
+		// (system_settings.go), so routing this site through common would be an
+		// import cycle.
 		log.Printf("flexible_time: cannot parse %q as time, falling back to zero time", original)
 	}
 	*f = FlexibleTime{}
