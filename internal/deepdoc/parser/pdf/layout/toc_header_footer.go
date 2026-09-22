@@ -357,6 +357,20 @@ const (
 	// pages, total top-edge span across the run within 4pt.
 	seqMinRun = 3
 	seqMaxDy  = 4.0
+	// promoCompanionMaxRunes bounds the length of a margin line that may be
+	// learned as a running-header ad companion of a dropped site-promo box.
+	// A piracy header is a short slogan, so anything longer is treated as body
+	// text and never learned.
+	promoCompanionMaxRunes = 24
+	// minCompanionPages is how many distinct pages must carry the same band
+	// peer of a dropped site-promo box before that peer's text is treated as a
+	// running-header ad and propagated to every page. Requiring several pages
+	// keeps a one-off line that merely shares a page with an ad intact.
+	minCompanionPages = 3
+	// minSeriesSamples is the number of gap-backed page numbers needed to fit
+	// the value = page - offset line before isolated tight-band numbers are
+	// dropped against it. Fewer samples cannot pin a unique offset safely.
+	minSeriesSamples = 5
 )
 
 var (
@@ -544,6 +558,72 @@ func isSitePromo(text string) bool {
 		return false
 	}
 	return sitePromoPattern.MatchString(t)
+}
+
+// bandOf reports which expanded margin band ("header"/"footer") a box sits in,
+// or "" when it is outside both. It uses the same zone bounds the site-promo
+// tier applies, so a box learned as an ad companion and a box later matched
+// against it are judged by one rule.
+func bandOf(b pdf.TextBox, pageHeight float64) string {
+	switch {
+	case b.Bottom <= pageHeight*headerMaxZoneRatio:
+		return "header"
+	case b.Top >= pageHeight*footerMinZoneRatio:
+		return "footer"
+	}
+	return ""
+}
+
+// promoSpot is the page and band where a site-promo box was dropped, recorded
+// so the companion pass can harvest its in-band peers as running-header ads.
+type promoSpot struct {
+	page int
+	band string
+}
+
+// fitPageNumberSeries returns the offset c shared by the bulk of the
+// document's gap-separated decimal page numbers, i.e. value = page - c. Once
+// that line is established with enough support, an isolated number sitting too
+// tight under body text to clear the geometric zone gate is still part of the
+// same series and can be dropped against it. Roman-numeral front matter is
+// excluded (parseDecimalValue only), and the fit takes the dominant offset
+// rather than requiring every sample to agree, so a few stray in-zone integers
+// never disable the rule.
+func fitPageNumberSeries(boxes []pdf.TextBox, pageHeights map[int]float64, gapAbove, gapBelow map[int]float64, numPages int) (int, bool) {
+	ceiling := pageNumberCeiling(numPages)
+	offsetCount := make(map[int]int, 16)
+	for i := range boxes {
+		b := boxes[i]
+		if isNonTextLayout(b.LayoutType) {
+			continue
+		}
+		h, ok := pageHeights[b.PageNumber]
+		if !ok || h <= 0 {
+			continue
+		}
+		if classifyZone(b, h, gapAbove[i], gapBelow[i]) == "" {
+			continue
+		}
+		val, ok := parseDecimalValue(strings.TrimSpace(b.Text))
+		if !ok || val > ceiling {
+			continue
+		}
+		off := b.PageNumber - val
+		if off < 0 {
+			continue
+		}
+		offsetCount[off]++
+	}
+	bestOff, bestN := 0, 0
+	for off, n := range offsetCount {
+		if n > bestN {
+			bestOff, bestN = off, n
+		}
+	}
+	if bestN < minSeriesSamples {
+		return 0, false
+	}
+	return bestOff, true
 }
 
 // isDeterministicPageNumber reports whether text is unambiguously a page number.
@@ -753,6 +833,9 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 
 	numPages := len(pageHeights)
 	drop := make(map[int]struct{}, len(boxes))
+	// promoSpots records where a site-promo box was dropped in Tier 1 so the
+	// companion pass can learn its band peers' text as running-header ads.
+	var promoSpots []promoSpot
 
 	// Tier 1: Deterministic page numbers & DLA semantic tags.
 	for i := range boxes {
@@ -772,6 +855,11 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if isSitePromo(b.Text) && (b.Bottom <= h*headerMaxZoneRatio || b.Top >= h*footerMinZoneRatio) {
 			slog.Debug("header_footer: dropped by site promo", "page", b.PageNumber, "textLen", utf8.RuneCountInString(b.Text))
 			drop[i] = struct{}{}
+			if b.Bottom <= h*headerMaxZoneRatio {
+				promoSpots = append(promoSpots, promoSpot{page: b.PageNumber, band: "header"})
+			} else {
+				promoSpots = append(promoSpots, promoSpot{page: b.PageNumber, band: "footer"})
+			}
 			continue
 		}
 
@@ -800,6 +888,93 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 		slog.Debug("header_footer: removal completed (short document)", "total_boxes", len(boxes), "dropped_boxes", len(drop))
 		return applyDrop(boxes, drop)
+	}
+
+	// Promo-companion propagation. A fixed slogan that shares a margin band with
+	// a dropped site-promo box is part of the same advertisement: piracy PDFs
+	// often render the URL line separately from (or omit it on some pages of) a
+	// header like "site handle  download more books free". Harvest the in-band,
+	// non-title, short peers of every dropped promo, then drop every band box
+	// whose normalized text was harvested on at least minCompanionPages pages.
+	// The page-count floor and the title/non-text guards keep body text that
+	// merely shares a page with an ad from ever being captured.
+	companionPages := make(map[string]map[int]bool)
+	for _, sp := range promoSpots {
+		h := pageHeights[sp.page]
+		for _, j := range perPage[sp.page] {
+			if _, dropped := drop[j]; dropped {
+				continue
+			}
+			b := boxes[j]
+			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
+				continue
+			}
+			if bandOf(b, h) != sp.band {
+				continue
+			}
+			norm := normalizeRunningText(b.Text)
+			if norm == "" || utf8.RuneCountInString(norm) > promoCompanionMaxRunes {
+				continue
+			}
+			if companionPages[norm] == nil {
+				companionPages[norm] = make(map[int]bool)
+			}
+			companionPages[norm][sp.page] = true
+		}
+	}
+	for norm, pages := range companionPages {
+		if len(pages) < minCompanionPages {
+			continue
+		}
+		for i := range boxes {
+			if _, dropped := drop[i]; dropped {
+				continue
+			}
+			b := boxes[i]
+			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
+				continue
+			}
+			h, ok := pageHeights[b.PageNumber]
+			if !ok || h <= 0 {
+				continue
+			}
+			if bandOf(b, h) != "" && normalizeRunningText(b.Text) == norm {
+				slog.Debug("header_footer: dropped by promo companion", "page", b.PageNumber, "zone", bandOf(b, h), "textLen", utf8.RuneCountInString(b.Text))
+				drop[i] = struct{}{}
+			}
+		}
+	}
+
+	// Tight-band page numbers. When the gap-separated page numbers all satisfy
+	// value = page - offset, an isolated number sitting too tight under body
+	// text to clear the geometric gate is still part of that series; drop it
+	// against the fitted offset. Only decimal numbers are matched, so a genuine
+	// value that breaks the line never disables or misfires the rule.
+	if offset, ok := fitPageNumberSeries(boxes, pageHeights, allGapAbove, allGapBelow, numPages); ok {
+		for i := range boxes {
+			if _, dropped := drop[i]; dropped {
+				continue
+			}
+			b := boxes[i]
+			if isNonTextLayout(b.LayoutType) {
+				continue
+			}
+			h, ok := pageHeights[b.PageNumber]
+			if !ok || h <= 0 {
+				continue
+			}
+			if classifyZone(b, h, allGapAbove[i], allGapBelow[i]) != "" {
+				continue
+			}
+			if b.Top < h*seqBandBottomRatio && b.Bottom > h*seqBandTopRatio {
+				continue
+			}
+			val, ok := parseDecimalValue(strings.TrimSpace(b.Text))
+			if ok && val >= 0 && val == b.PageNumber-offset {
+				slog.Debug("header_footer: dropped by page-number series fit", "page", b.PageNumber, "value", val, "offset", offset)
+				drop[i] = struct{}{}
+			}
+		}
 	}
 
 	// Tier 2: Dual-Track Recurrence Engine.

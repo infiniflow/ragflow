@@ -1445,3 +1445,198 @@ func TestRemoveHeaderFooterBoxes_BodyUrlKept(t *testing.T) {
 		t.Fatalf("body URLs must be preserved, got %d", len(got))
 	}
 }
+
+// TestRemoveHeaderFooterBoxes_DropsPromoCompanion verifies that a fixed slogan
+// riding in the same margin band as a dropped site-promo ad is learned from the
+// pages where they co-occur and propagated to every page, so the ad is gone
+// even where its URL line was never detected.
+func TestRemoveHeaderFooterBoxes_DropsPromoCompanion(t *testing.T) {
+	pageHeight := 842.0 // header band: bottom <= 117.9; body starts well below.
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight}
+	const slogan = "木瓜树  更多的书籍免费下载"
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ { // pages 0,1,2: ad URL + slogan companion
+		boxes = append(boxes,
+			tb("http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52),
+			tb(slogan, pg, 60, 300, 60, 72),
+			tb(fmt.Sprintf("Substantive body content of page %d.", pg), pg, 72, 450, 200, 700),
+		)
+	}
+	// page 3 carries only the slogan line, no URL.
+	boxes = append(boxes,
+		tb(slogan, 3, 60, 300, 60, 72),
+		tb("Substantive body content of page 3.", 3, 72, 450, 200, 700),
+	)
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") {
+			t.Fatalf("site promo survived: %q", b.Text)
+		}
+		if strings.Contains(b.Text, "木瓜树") {
+			t.Fatalf("promo companion slogan survived: %q", b.Text)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_PromoCompanionKeepsTitle verifies a LayoutType
+// "title" line that merely shares the header band with an ad is never harvested
+// as a companion, so legitimate running section titles survive.
+func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsTitle(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	titles := []string{"[图甲]", "[图乙]", "[图丙]"} // unique per page: no recurrence to lean on
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes,
+			tb("http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52),
+			pdf.TextBox{Text: titles[pg], PageNumber: pg, X0: 60, X1: 200, Top: 60, Bottom: 72, LayoutType: "title"},
+			tb(fmt.Sprintf("Body content of page %d here.", pg), pg, 72, 450, 200, 700),
+		)
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	seenTitle := 0
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") {
+			t.Fatalf("site promo survived: %q", b.Text)
+		}
+		if strings.HasPrefix(b.Text, "[图") {
+			seenTitle++
+		}
+	}
+	if seenTitle != 3 {
+		t.Fatalf("all 3 title lines must survive as companions excluded, got %d", seenTitle)
+	}
+	if len(got) != 6 {
+		t.Fatalf("expected 3 titles + 3 bodies, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_PromoCompanionKeepsRarePeer verifies a short
+// non-title band peer that co-occurs with the ad on only one page is not
+// harvested — the page-count floor stops one-off neighbours.
+func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsRarePeer(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	const slogan = "木瓜树  更多的书籍免费下载"
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes,
+			tb("http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52),
+			tb(slogan, pg, 60, 300, 60, 72),
+			tb(fmt.Sprintf("Body content of page %d here.", pg), pg, 72, 450, 200, 700),
+		)
+	}
+	// A short slogan-like peer present only on page 0, next to its ad.
+	boxes = append(boxes, tb("扫码加入读书群", 0, 60, 300, 80, 92))
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var keptRare int
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") || strings.Contains(b.Text, "木瓜树") {
+			t.Fatalf("promo/slogan survived: %q", b.Text)
+		}
+		if b.Text == "扫码加入读书群" {
+			keptRare++
+		}
+	}
+	if keptRare != 1 {
+		t.Fatalf("rare single-page peer must survive, got %d", keptRare)
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 3 bodies + 1 rare peer, got %d", len(got))
+	}
+}
+
+// seriesPages builds the trusted, gap-separated page-number footers for the
+// series-fit tests: value = page - 5, sitting at the base footer line with a
+// body box far above so Tier 1 drops them (and the fit counts them).
+func seriesPages(heights map[int]float64) []pdf.TextBox {
+	var boxes []pdf.TextBox
+	for pg := 5; pg <= 9; pg++ {
+		heights[pg] = 842.0
+		boxes = append(boxes,
+			tb(fmt.Sprintf("Body on page %d ends high up.", pg), pg, 72, 500, 100, 690),
+			tb(fmt.Sprintf("%d", pg-5), pg, 400, 420, 770, 782), // value=page-5, base footer zone
+		)
+	}
+	return boxes
+}
+
+// TestRemoveHeaderFooterBoxes_DropsSeriesPageNumberLeak verifies that once the
+// document's page numbers fit value = page - offset, an isolated number sitting
+// tight in the wide band (zone rejected, no +1 run) is dropped against the fit.
+func TestRemoveHeaderFooterBoxes_DropsSeriesPageNumberLeak(t *testing.T) {
+	heights := map[int]float64{}
+	boxes := seriesPages(heights)
+	// page 10 tight number, value 5 (=10-5): body ends 6pt above, below base line.
+	heights[10] = 842.0
+	boxes = append(boxes,
+		tb("Body on page 10 runs low.", 10, 72, 500, 100, 674),
+		tb("5", 10, 400, 420, 680, 692),
+	)
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if b.PageNumber == 10 && b.Text == "5" {
+			t.Fatalf("tight series page number leaked through")
+		}
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_SeriesProtectsOffSeriesNumber verifies the fit is
+// conservative: a tight band number that breaks value = page - offset survives,
+// and with too few samples the rule never arms.
+func TestRemoveHeaderFooterBoxes_SeriesProtectsOffSeriesNumber(t *testing.T) {
+	t.Run("off_series", func(t *testing.T) {
+		heights := map[int]float64{}
+		boxes := seriesPages(heights)
+		heights[10] = 842.0
+		boxes = append(boxes,
+			tb("Body on page 10 runs low.", 10, 72, 500, 100, 674),
+			tb("9", 10, 400, 420, 680, 692), // 9 != 10-5
+		)
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		found := false
+		for _, b := range got {
+			if b.PageNumber == 10 && b.Text == "9" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("off-series tight number must be preserved")
+		}
+	})
+	t.Run("too_few_samples", func(t *testing.T) {
+		// Only pages 5,6,7 (3 samples < minSeriesSamples=5): the tight number
+		// on page 8 matching page-5 must NOT be dropped.
+		heights := map[int]float64{}
+		var boxes []pdf.TextBox
+		for pg := 5; pg <= 7; pg++ {
+			heights[pg] = 842.0
+			boxes = append(boxes,
+				tb(fmt.Sprintf("Body on page %d.", pg), pg, 72, 500, 100, 690),
+				tb(fmt.Sprintf("%d", pg-5), pg, 400, 420, 770, 782),
+			)
+		}
+		heights[8] = 842.0
+		boxes = append(boxes,
+			tb("Body on page 8 runs low.", 8, 72, 500, 100, 674),
+			tb("3", 8, 400, 420, 680, 692),
+		)
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		found := false
+		for _, b := range got {
+			if b.PageNumber == 8 && b.Text == "3" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("with too few samples the series rule must stay off")
+		}
+	})
+}
