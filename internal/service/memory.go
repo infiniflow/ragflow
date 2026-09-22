@@ -918,7 +918,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 
 	// TODO: Delete associated message index - Implementation pending MessageService
 	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
-		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
+		if err := s.docEngine.DropChunkStore(ctx, MemoryIndexName(memory.TenantID), memoryID); err != nil {
 			return fmt.Errorf("delete memory messages: %w", err)
 		}
 	}
@@ -960,7 +960,7 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	condition := map[string]interface{}{
 		"id": messageDocID,
 	}
-	indexName := memoryIndexName(memory.TenantID)
+	indexName := MemoryIndexName(memory.TenantID)
 
 	if err = s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
@@ -1093,7 +1093,7 @@ func (s *MemoryService) UpdateMessageStatus(ctx context.Context, userID, memoryI
 	condition := map[string]interface{}{
 		"id": messageDocID,
 	}
-	indexName := memoryIndexName(memory.TenantID)
+	indexName := MemoryIndexName(memory.TenantID)
 	if err = s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
 			return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
@@ -1117,7 +1117,7 @@ func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID 
 		return nil, errors.New("message store is not initialized")
 	}
 
-	indexName := memoryIndexName(memory.TenantID)
+	indexName := MemoryIndexName(memory.TenantID)
 	docID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	res, err := s.docEngine.GetChunk(ctx, indexName, docID, []string{memoryID})
 	if err != nil {
@@ -1419,7 +1419,8 @@ func memoryMessageSelectFields() []string {
 	}
 }
 
-func memoryIndexName(tenantID string) string {
+// MemoryIndexName returns the message index shared by a tenant's memories.
+func MemoryIndexName(tenantID string) string {
 	prefix := strings.TrimSpace(common.GetEnv(common.EnvESIndexPrefix))
 	if prefix == "" {
 		return fmt.Sprintf("memory_%s", tenantID)
@@ -1434,7 +1435,7 @@ func memorySearchIndexNames(memories []*entity.Memory) []string {
 		if memory == nil {
 			continue
 		}
-		indexName := memoryIndexName(memory.TenantID)
+		indexName := MemoryIndexName(memory.TenantID)
 		if engine.GetEngineType() == "infinity" {
 			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
 		}
