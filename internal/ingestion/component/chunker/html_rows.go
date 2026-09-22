@@ -26,8 +26,16 @@ import (
 // HTML table row extraction (shared by the Table, QA and General chunkers)
 // ---------------------------------------------------------------------------
 
-// tableRows walks the parsed HTML and returns the <td>/<th> text of every
-// <tr>, in document order.
+// tableRows returns every row's cell text, header rows included.
+func tableRows(htmlStr string) [][]string {
+	rows, _ := tableRowsWithHeader(htmlStr)
+	return rows
+}
+
+// tableRowsWithHeader returns every row's cell text in document order, plus
+// the number of leading header rows. A row counts as a header row when any of
+// its cells is a <th>. When no row uses <th> at all the first row is treated
+// as the header — the convention spreadsheet and markup tables are read with.
 //
 // The markup is parsed into a tree rather than matched with a regex because
 // this input is not guaranteed to be well formed: seven parsers render table
@@ -37,7 +45,7 @@ import (
 // early — that row keeps its own cells, with the nested table's text folded
 // into the cell holding it — and a row or cell missing its closing tag is
 // recovered rather than dropped.
-func tableRows(htmlStr string) [][]string {
+func tableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 	// A <tr> outside a <table> is discarded by the HTML5 "in body" insertion
 	// mode, so a bare row fragment would yield nothing. Give the parser the
 	// table context it needs instead of dropping the rows silently.
@@ -47,9 +55,9 @@ func tableRows(htmlStr string) [][]string {
 	}
 	doc, err := html.Parse(strings.NewReader(htmlStr))
 	if err != nil {
-		return nil
+		return nil, 0
 	}
-	var rows [][]string
+	var headerFlags []bool
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		// An inert subtree is parsed but never rendered. <template> puts its
@@ -61,8 +69,12 @@ func tableRows(htmlStr string) [][]string {
 		}
 		if isHTMLElement(n, "tr") {
 			var cells []string
+			anyTh := false
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
+					if isHTMLElement(c, "th") {
+						anyTh = true
+					}
 					cells = append(cells, cellText(c))
 				}
 			}
@@ -70,6 +82,7 @@ func tableRows(htmlStr string) [][]string {
 			// the nested table's text, so its rows must not be reported a
 			// second time as rows of the enclosing table.
 			rows = append(rows, cells)
+			headerFlags = append(headerFlags, anyTh)
 			return
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -77,7 +90,23 @@ func tableRows(htmlStr string) [][]string {
 		}
 	}
 	walk(doc)
-	return rows
+	for len(headerFlags) > headerCount && headerFlags[headerCount] {
+		headerCount++
+	}
+	if len(rows) > 0 && headerCount == 0 {
+		headerCount = 1
+	}
+	return rows, headerCount
+}
+
+// isTableHTML is the cheap candidate filter for table-vs-prose routing: text
+// that opens an outer <table> element, or a bare-row fragment holding <tr>.
+// It only narrows the candidates — the caller decides on tableRows' result —
+// so a block that merely opens with "<table" text and holds no row stays on
+// the prose path instead of silently pairing nothing.
+func isTableHTML(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.HasPrefix(strings.TrimSpace(lower), "<table") || strings.Contains(lower, "<tr")
 }
 
 // cellText returns the visible text of a table cell. The parser hands text
