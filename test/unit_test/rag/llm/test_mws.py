@@ -511,6 +511,10 @@ async def test_mws_bound_tool_stream_normalizes_existing_tool_history():
             [{"role": "assistant", "content": {"invalid": True}, "tool_calls": [{"id": "call_123"}]}],
             "assistant message content must be a string",
         ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": {"id": "call_123"}}],
+            "assistant message tool_calls must be a list",
+        ),
         ([{"role": "tool", "content": "result"}], "requires tool_call_id"),
         (
             [{"role": "tool", "tool_call_id": "call_123", "content": None}],
