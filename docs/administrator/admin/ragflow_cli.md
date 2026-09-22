@@ -25,6 +25,8 @@ Start the Admin Service before the API server, ingestors, and syncers:
 ./bin/ragflow_server --admin --init-superuser
 ```
 
+If this creates the first superuser, its email is `admin@ragflow.io` and its initial password is `admin`. Change that password immediately after the first login. The option does not reset an existing superuser's password.
+
 Then start the CLI in Admin mode. It connects to `127.0.0.1:9383` by default:
 
 ```bash
@@ -37,21 +39,22 @@ To connect to another Admin Service, pass a `host:port` value:
 ./bin/ragflow-cli --admin --host 192.0.2.10:9383
 ```
 
-You can also provide administrator credentials when starting the CLI:
+To log in when starting the CLI, provide the administrator email address and enter the password at the prompt:
 
 ```bash
 ./bin/ragflow-cli --admin \
   --host 127.0.0.1:9383 \
-  --user admin@ragflow.io \
-  --password '<password>'
+  --user admin@ragflow.io
 ```
+
+Avoid passing a real password with `--password`: command-line arguments can be visible to other local processes and may be retained in shell history. If you used the initial password, change it after logging in with `ALTER USER PASSWORD 'admin@ragflow.io' '<new_password>';`.
 
 | Option | Description |
 | --- | --- |
 | `--admin`, `-admin` | Start in Admin mode. |
 | `-h`, `--host <host:port>` | Admin Service address. The default is `127.0.0.1:9383`. |
 | `-u`, `--user <email>` | Administrator email address. |
-| `-p`, `--password <password>` | Administrator password. |
+| `-p`, `--password <password>` | Administrator password. Prefer the interactive prompt to avoid exposing it in command-line arguments. |
 | `-k`, `--key <path>` | Key file used by the client. |
 | `-o`, `--output <format>` | Output format: `table`, `plain`, or `json`. |
 | `-v`, `--verbose` | Enable verbose output. |
@@ -66,7 +69,7 @@ You can also provide administrator credentials when starting the CLI:
 - Keep the quotation marks around string values.
 - End SQL-like commands with a semicolon (`;`).
 - `RAGFlow(admin)>` is the interactive prompt. Enter only the command after the prompt.
-- Unless otherwise stated, the commands below require an authenticated administrator session.
+- Commands that access protected Admin resources require an authenticated administrator session. `LOGIN ADMIN`, `PING`, `SHOW VERSION`, `SHOW CURRENT`, `SHOW ADMIN SERVER`, `LIST API SERVER`, `SHOW API SERVER`, and meta-commands do not require an existing login.
 
 ### 1. Session and server commands
 
