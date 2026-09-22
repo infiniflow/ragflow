@@ -35,11 +35,12 @@ runs against the pre-built data. Cleanup happens automatically at module teardow
 import logging
 import os
 import sys
-import pytest
-import requests
 import tempfile
 import time
 import uuid
+
+import pytest
+import requests
 
 # Logging setup
 # Default is silent. Set LOG_LEVEL=INFO locally to see logger.info() messages.
@@ -282,7 +283,7 @@ def _upload_and_parse(rest_client, dataset_id, text, filename="doc.txt"):
         if doc_res.status_code != 200:
             return False
         docs = doc_res.json()["data"]["docs"]
-        return bool(docs) and docs[0].get("run") == "DONE"
+        return bool(docs) and docs[0].get("ingestion_status") == "COMPLETED"
 
     check_parsed()
     return doc_id

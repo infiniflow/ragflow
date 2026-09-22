@@ -1159,7 +1159,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": "DeepDOC"
             },
-            "run": "UNSTART",
+            "ingestion_status": "UNSTART",
             "size": 17966,
             "thumbnail": "",
             "type": "doc"
@@ -1264,7 +1264,7 @@ Success:
     "location": "large.md",
     "source_type": "local",
     "status": "1",
-    "run": "DONE",
+    "ingestion_status": "COMPLETED",
     "dataset_id": "5f546a1ad4a611f0af9c71de94a988ef",
 
     "chunk_method": "naive",
@@ -1374,7 +1374,7 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&ingestion_status={ingestion_status}&metadata_condition={json}`
 
 Lists documents in a specified dataset.
 
@@ -1383,7 +1383,7 @@ To retrieve a specific document's settings and metadata, pass its document ID in
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&ingestion_status={ingestion_status}&metadata_condition={json}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -1422,18 +1422,16 @@ curl --request GET \
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
 - `suffix`: (*Filter parameter*), `array[string]`
   Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
-- `run`: (*Filter parameter*), `array[string]`
-  Filter by document processing status. Supports numeric, text, and mixed formats:
-  - Numeric format: `["0", "1", "2", "3", "4", "5"]`
-  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL, SCHEDULE]`
-  - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
-  - Status mapping:
-    - `0` / `UNSTART`: Document not yet processed
-    - `1` / `RUNNING`: Document is currently being processed
-    - `2` / `CANCEL`: Document processing was canceled
-    - `3` / `DONE`: Document processing completed successfully
-    - `4` / `FAIL`: Document processing failed
-    - `5` / `SCHEDULE`: Document is scheduled and waiting to be processed
+- `ingestion_status`: (*Filter parameter*), `array[string]`
+  Filter by the document ingestion lifecycle status. Supported values are:
+  - `UNSTART`: No ingestion task has been created.
+  - `CREATED`: The ingestion task has been created.
+  - `SCHEDULED`: The ingestion task is waiting to run.
+  - `RUNNING`: The document is being ingested.
+  - `STOPPING`: A stop request is being processed.
+  - `COMPLETED`: Ingestion completed successfully.
+  - `FAILED`: Ingestion failed.
+  - `STOPPED`: Ingestion was stopped.
   Defaults to all statuses.
 - `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
   Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
@@ -1447,7 +1445,7 @@ curl --request GET \
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&ingestion_status=COMPLETED&page=1&page_size=10' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -1489,7 +1487,7 @@ Success:
                 "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
-                "run": "UNSTART",
+                "ingestion_status": "UNSTART",
                 "size": 7,
                 "source_type": "local",
                 "status": "1",
@@ -1948,7 +1946,7 @@ Success:
             "process_duration": 0.54213,
             "progress": 0.0,
             "progress_msg": "Task dispatched...",
-            "run": "2",
+            "ingestion_status": "STOPPED",
             "size": 17966,
             "source_type": "local",
             "status": "1",
