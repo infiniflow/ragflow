@@ -174,7 +174,7 @@ func TestDeliverBlockSpendsOneBoundOnTheWholeBlock(t *testing.T) {
 			len([]rune(got)), StageChars(StageDraft))
 	}
 	if !strings.HasPrefix(got, "Born: 1961") {
-		t.Errorf("DeliverBlock = %q…, want the block's own opening", truncateRunes(got, 20))
+		t.Errorf("DeliverBlock = %q…, want the block's own opening", TruncateRunes(got, 20))
 	}
 	if same := DeliverBlock(StageDraft, "short"); same != "short" {
 		t.Errorf("DeliverBlock(short) = %q, want it unchanged", same)

@@ -311,7 +311,7 @@ func ExtractFanoutFilters(ctx context.Context, deps RAGTools, fanouts []string) 
 		// condition-lists are the COMMON, correct answer to a question that names no metadata
 		// value; a non-empty reply here means the guards rejected something.) Newlines are
 		// flattened so the reply stays one log line.
-		flat := strings.ReplaceAll(truncateRunes(reply.Content, 300), "\n", " ")
+		flat := strings.ReplaceAll(runtime.TruncateRunes(reply.Content, 300), "\n", " ")
 		_LOG.Printf("[Prefetch] metadata channel produced no usable condition; reply was: %s", flat)
 		return nil
 	}

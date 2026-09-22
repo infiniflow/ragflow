@@ -126,7 +126,7 @@ func Deliverable(text, direction string, charBudget int) string {
 			kept = append(kept, l.text)
 		}
 	}
-	return truncateRunes(strings.Join(kept, "\n"), charBudget)
+	return TruncateRunes(strings.Join(kept, "\n"), charBudget)
 }
 
 // FlattenLine folds a text into ONE line: runs of whitespace become a single space and the ends are
@@ -287,5 +287,5 @@ func DeliverBlock(stage Stage, text string) string {
 	if b.MaxChars <= 0 {
 		return text
 	}
-	return truncateRunes(text, b.MaxChars)
+	return TruncateRunes(text, b.MaxChars)
 }

@@ -74,7 +74,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 		if i > 0 {
 			ev.WriteString("\n")
 		}
-		fmt.Fprintf(&ev, "[%d] %s", i+1, truncateRunes(runtime.ChunkTextOf(chunks[i]), draftChunkChars))
+		fmt.Fprintf(&ev, "[%d] %s", i+1, runtime.TruncateRunes(runtime.ChunkTextOf(chunks[i]), draftChunkChars))
 	}
 	evidence := ev.String()
 	if evidence == "" {
@@ -84,7 +84,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	// no model -> the raw evidence, capped at 4000.
 	mdl := deps.Model // the innermost chat model.
 	if mdl == nil {
-		return truncateRunes(evidence, draftFallbackChars)
+		return runtime.TruncateRunes(evidence, draftFallbackChars)
 	}
 
 	// The design injects the latest research_feedback as a "focus", but that state field is
@@ -117,7 +117,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 		// a failed composition degrades to the raw evidence
 		// (capped at 4000, unlike the composed draft's 6000).
 		_LOG.Printf("[Draft] fallback composition failed; using snippet text: %v", err)
-		return truncateRunes(evidence, draftFallbackChars)
+		return runtime.TruncateRunes(evidence, draftFallbackChars)
 	}
 	answer := ""
 	if reply != nil {
@@ -128,7 +128,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	}
 	// (ans or evidence)[:6000] — the draft's block bound comes from the delivery table (see
 	// runtime.StageDraft), so it is the same number the rest of the run reads.
-	return truncateRunes(answer, runtime.StageChars(runtime.StageDraft))
+	return runtime.TruncateRunes(answer, runtime.StageChars(runtime.StageDraft))
 }
 
 // NaiveRAG: answer with one retrieve pass
@@ -592,15 +592,15 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)
 
 	// 3. Call the model.
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))
 	defer cancel()
 
 	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
 		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
-		truncateRunes(record, 3000))
+		runtime.TruncateRunes(record, 3000))
 
 	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
-		trunc(question, 160), len(preSummary), len(prompt.user), truncateRunes(preSummary, 3000))
+		trunc(question, 160), len(preSummary), len(prompt.user), runtime.TruncateRunes(preSummary, 3000))
 
 	// The composed prompt is fitted ONCE before the call, bounded by the smaller of the
 	// model's window and the evidence budget: msg[0] is the system turn, msg[-1] the user
@@ -749,9 +749,9 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	record := composedRecord(kb)
 	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
 		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
-		truncateRunes(record, 3000))
+		runtime.TruncateRunes(record, 3000))
 
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))
 	defer cancel()
 
 	// Same prompt fit as the one-shot path: composition runs once and streams from the
@@ -913,7 +913,7 @@ func ComposeNaiveAnswer(ctx context.Context, deps AnswerDeps, chunks []map[strin
 		return AnswerResult{Answer: fallback, Failed: true}
 	}
 
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))
 	defer cancel()
 
 	// message_fit_in(form_message(system, user), max_length).

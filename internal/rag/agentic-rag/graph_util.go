@@ -38,10 +38,10 @@ import (
 // It was written three times (the SCA view, the draft's ordering, the citation
 // reference) before it lived here.
 func similarityOrScore(c map[string]any) float64 {
-	if v, ok := toFloat(c["similarity"]); ok && v != 0 {
+	if v, ok := runtime.ToFloat(c["similarity"]); ok && v != 0 {
 		return v
 	}
-	if v, ok := toFloat(c["score"]); ok && v != 0 {
+	if v, ok := runtime.ToFloat(c["score"]); ok && v != 0 {
 		return v
 	}
 	return 0.0
@@ -74,18 +74,6 @@ func queryToTerms(q string) []string {
 		out = append(out, t)
 	}
 	return out
-}
-
-// truncateRunes caps a string to n runes without breaking multi-byte chars.
-func truncateRunes(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
 }
 
 // dedupe preserves order and drops empty / repeated entries.
@@ -137,43 +125,11 @@ func asSliceOfAny(v any) []any {
 	}
 }
 
-// toIntStrict parses an int-like value (JSON numbers arrive as float64).
-func toIntStrict(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
-	case string:
-		var n int
-		if _, err := fmt.Sscanf(x, "%d", &n); err == nil {
-			return n, true
-		}
-	}
-	return 0, false
-}
-
-// toFloat parses a numeric value.
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case string:
-		var f float64
-		if _, err := fmt.Sscanf(x, "%f", &f); err == nil {
-			return f, true
-		}
-	}
-	return 0, false
-}
-
 // anyString reads a string field from a chunk-like map.
+//
+// Deliberately WIDER than runtime's anyString, which answers "" for a non-string: this one
+// stringifies, because the graph-side callers read merged chunk maps where a field can arrive as a
+// number. The two are NOT merged for that reason — a shared name would hide the difference.
 func anyString(v any) string {
 	switch x := v.(type) {
 	case nil:
@@ -192,7 +148,7 @@ func truncateEach(in []string, n int) []string {
 	}
 	out := make([]string, len(in))
 	for i, s := range in {
-		out[i] = truncateRunes(s, n)
+		out[i] = runtime.TruncateRunes(s, n)
 	}
 	return out
 }

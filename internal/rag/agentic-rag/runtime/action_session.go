@@ -329,7 +329,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 			changed = true
 		}
 		if raw, has := pv["candidate_strength"]; has && raw != nil {
-			if f, ok := toFloat(raw); ok {
+			if f, ok := ToFloat(raw); ok {
 				v := math.Min(math.Max(f, 0.0), 1.0)
 				nv.CandidateStrength = &v
 				changed = true
@@ -343,7 +343,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 					tail = tail[len(tail)-4:]
 				}
 				for _, c := range tail {
-					nv.DiscoveredClues = append(nv.DiscoveredClues, truncateRunes(fmt.Sprint(c), 160))
+					nv.DiscoveredClues = append(nv.DiscoveredClues, TruncateRunes(fmt.Sprint(c), 160))
 				}
 				changed = true
 			}
@@ -361,12 +361,18 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 	return &out
 }
 
-// truncateRunes cuts s to at most n characters (runes, not bytes).
-func truncateRunes(s string, n int) string {
-	if len([]rune(s)) <= n {
+// TruncateRunes cuts s to at most n characters (runes, not bytes). A non-positive n yields the
+// empty string rather than a panic: the two copies this replaces disagreed on that case, and the
+// stricter one won.
+func TruncateRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return string([]rune(s)[:n])
+	return string(r[:n])
 }
 
 // toInt coerces a JSON-decoded value to int. Handles float64 (the default for
@@ -410,7 +416,7 @@ func toIntStrict(v any) (int, bool) {
 }
 
 // toFloat coerces a JSON-decoded value to float64.
-func toFloat(v any) (float64, bool) {
+func ToFloat(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
 		return n, true
@@ -2416,7 +2422,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			if cut < 0 {
 				cut = 0
 			}
-			payload = truncateRunes(payload, keep) + fmt.Sprintf(
+			payload = TruncateRunes(payload, keep) + fmt.Sprintf(
 				"\n[… TRUNCATED: %d more code point(s) of this tool result were NOT shown. The tool "+
 					"returned MORE than you see — ask it for the next page with its own argument "+
 					"(list_chunks takes doc_id + offset), or narrow the query. Do not conclude the "+
@@ -4118,7 +4124,7 @@ func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID stri
 				}
 			}
 			if len(hints) > 0 {
-				nav.NavHint = truncateRunes(strings.Join(hints, " "), navHintChars)
+				nav.NavHint = TruncateRunes(strings.Join(hints, " "), navHintChars)
 			}
 		}
 		out.EvidenceIDs = append(out.EvidenceIDs, oc.EvidenceIDs...)
@@ -4149,7 +4155,7 @@ func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, 
 	// rune-based too; a byte cut would hit CJK payloads ~3x early AND could
 	// split a UTF-8 sequence, corrupting the JSON tool response.
 	if maxChars > 0 && utf8.RuneCountInString(payload) > maxChars {
-		payload = truncateRunes(payload, max(maxChars, 800))
+		payload = TruncateRunes(payload, max(maxChars, 800))
 	}
 	e.Messages = append(e.Messages,
 		*schema.AssistantMessage("", []schema.ToolCall{{
@@ -4520,7 +4526,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 
 	// The graph loop is bounded by the turn budget and the deadline; the context
 	// carries the wall-clock so a stalled provider cannot outlive the request.
-	runCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(budgetLeft))
+	runCtx, cancel := context.WithTimeout(ctx, DeadlineToDuration(budgetLeft))
 	defer cancel()
 
 	// Deterministic navigation prefix: run the ladder IN CODE and seed the
@@ -4775,7 +4781,7 @@ func initChat(ctx context.Context, deps SessionDeps, system, user string, tmo fl
 		_LOG.Printf("[Action Session:init] timed out (%ds)", int(tmo))
 		return ""
 	}
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(tmo))
+	callCtx, cancel := context.WithTimeout(ctx, DeadlineToDuration(tmo))
 	defer cancel()
 	reply, err := deps.Model.Complete(callCtx, []schema.Message{
 		*schema.SystemMessage(system),
@@ -4923,7 +4929,7 @@ func loadOptionalPrompt(p PromptLoader, name string) string {
 // deadlineToDuration converts a seconds budget to a context deadline.
 // A non-positive budget falls back to the default session timeout so a caller
 // that omits it does not produce an already-expired context.
-func deadlineToDuration(seconds float64) time.Duration {
+func DeadlineToDuration(seconds float64) time.Duration {
 	if seconds <= 0 {
 		seconds = actionTimeoutS
 	}
@@ -5010,7 +5016,7 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 		if len(nums) == 0 {
 			continue
 		}
-		line := fmt.Sprintf("[ID:%d] %s | doc %s\n", nums[0], truncateRunes(text, scanWindowRunes), w.DocID)
+		line := fmt.Sprintf("[ID:%d] %s | doc %s\n", nums[0], TruncateRunes(text, scanWindowRunes), w.DocID)
 		if chars+len([]rune(line)) > budget {
 			break
 		}
@@ -5085,7 +5091,7 @@ func renderOpening(kb *Kbinfos, direction string, declaredSubjects int) string {
 			continue
 		}
 		fmt.Fprintf(&b, "[ID:%d] %s | doc %s\n", nums[0], text, DocIDOf(c))
-		_LOG.Printf("[Action Session] opening preview %d: %s", shown, truncateRunes(text, 200))
+		_LOG.Printf("[Action Session] opening preview %d: %s", shown, TruncateRunes(text, 200))
 		shown++
 	}
 	if shown == 0 {

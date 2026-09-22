@@ -882,7 +882,7 @@ func (e *compiledExpander) expandClaimNeighborStrategy(ctx context.Context, sc c
 		seen[cid] = true
 		out = append(out, map[string]any{
 			"chunk_id":            cid,
-			"content_with_weight": truncateRunes(content, 1200),
+			"content_with_weight": TruncateRunes(content, 1200),
 			"doc_id":              rowDoc,
 			"source_chunk_ids":    srcIDs,
 			"similarity":          similarity,

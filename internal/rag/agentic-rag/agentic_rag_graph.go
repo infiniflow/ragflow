@@ -759,7 +759,7 @@ func entityTitlePrefetch(ctx context.Context, deps RAGTools, st *AgenticState, l
 			if sample == "" {
 				sample = fmt.Sprintf("chunk=%s table=%v head=%q", runtime.ChunkIDOf(page[0]),
 					strings.Contains(strings.ToLower(runtime.ChunkTextOf(page[0])), "<table"),
-					truncateRunes(runtime.ChunkTextOf(page[0]), 80))
+					runtime.TruncateRunes(runtime.ChunkTextOf(page[0]), 80))
 			}
 			read++
 			st.KB.Admit(func(p *runtime.PoolAdmitter) {
@@ -1939,7 +1939,7 @@ func providerErrorSummary(err error) string {
 	if err == nil {
 		return ""
 	}
-	return truncateRunes(runtime.FlattenLine(err.Error()), providerErrorSummaryMax)
+	return runtime.TruncateRunes(runtime.FlattenLine(err.Error()), providerErrorSummaryMax)
 }
 
 // errorAnswerText renders a provider failure as the ANSWER, in the shape the

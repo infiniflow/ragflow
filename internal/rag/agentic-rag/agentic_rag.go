@@ -353,7 +353,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// derived from it so the call is both attributed and bounded.
 	defer done()
 
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(formalizeTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(formalizeTimeoutS))
 	defer cancel()
 
 	// Fit the prompt to the model's context window.

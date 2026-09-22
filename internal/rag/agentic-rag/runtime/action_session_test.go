@@ -1624,7 +1624,7 @@ func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
 
 	digest := extractRelevantEvidence(kb, "关羽杀了多少有姓名的人物", 4)
 	if !strings.Contains(digest, "砍杨龄于马下") {
-		t.Fatalf("digest = %q…, want the clause that names the member (cap %d)", truncateRunes(digest, 120),
+		t.Fatalf("digest = %q…, want the clause that names the member (cap %d)", TruncateRunes(digest, 120),
 			stageBudgets[StageDigest].MaxCharsPerItem)
 	}
 	if got := len([]rune(digest)); got > stageBudgets[StageDigest].MaxCharsPerItem+64 {

@@ -734,7 +734,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		// half — handing the retriever invalid UTF-8 — and, for CJK, stop at ~133
 		// characters, silently dropping two thirds of the expansion terms the fan-out leg
 		// weighs on.
-		effectiveQuery = truncateRunes(strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery)), maxEffectiveQueryChars)
+		effectiveQuery = TruncateRunes(strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery)), maxEffectiveQueryChars)
 	} else if strings.TrimSpace(p.Keywords) != "" {
 		effectiveQuery = strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.Keywords))
 	} else {
@@ -1756,7 +1756,7 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			// points (plain slice, no ellipsis).
 			content := r
 			if !IsTableChunk(c) {
-				content = truncateRunes(content, 1200)
+				content = TruncateRunes(content, 1200)
 			}
 			payload = append(payload, map[string]any{"id": chunkID, "content": content})
 		}

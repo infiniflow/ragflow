@@ -267,8 +267,8 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 
 	// There is NO term-count cap — only the keywordMaxChars (400) hard cap on the final joined
 	// strings: only the character cap is applied, never a per-term limit.
-	query = truncateRunes(query, keywordMaxChars)
-	keywords = truncateRunes(keywords, keywordMaxChars)
+	query = TruncateRunes(query, keywordMaxChars)
+	keywords = TruncateRunes(keywords, keywordMaxChars)
 
 	_LOG.Printf("[Keywords] entity x%d: %s | aliases: %s | fact-type: %s | qualifiers x%d: %s",
 		keywordEntityRepeat, joinOrDash(aspects["entity"]), joinOrDash(aspects["aliases"]),

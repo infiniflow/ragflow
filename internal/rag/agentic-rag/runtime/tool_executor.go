@@ -495,7 +495,7 @@ func capForThink(s string) string {
 	if utf8.RuneCountInString(s) <= ThinkLabelMaxRunes {
 		return s
 	}
-	return truncateRunes(s, ThinkLabelMaxRunes) + "…"
+	return TruncateRunes(s, ThinkLabelMaxRunes) + "…"
 }
 
 // documentSuffix renders " from N document(s)" for the distinct doc ids a
@@ -1805,7 +1805,7 @@ func passageContent(c map[string]any) string {
 	if IsTableChunk(c) {
 		return TableViewOrRaw(ChunkTextOf(c))
 	}
-	return truncateRunes(ChunkTextOf(c), 1200)
+	return TruncateRunes(ChunkTextOf(c), 1200)
 }
 
 // PublishReferences writes the accumulated evidence into the canvas state so the

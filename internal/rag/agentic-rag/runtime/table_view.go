@@ -234,7 +234,7 @@ func renderOneTable(table *html.Node) string {
 	if omitted > 0 {
 		out = append(out, fmt.Sprintf("... (%d more row(s) omitted)", omitted))
 	}
-	return truncateRunes(strings.Join(out, "\n"), tableViewMaxCharsPerTable)
+	return TruncateRunes(strings.Join(out, "\n"), tableViewMaxCharsPerTable)
 }
 
 // tableRowObject renders one row as its JSON object — or as plain text when the row is a single

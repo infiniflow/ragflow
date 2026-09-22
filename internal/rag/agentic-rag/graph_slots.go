@@ -61,7 +61,7 @@ func RenderSlotRecord(slotTable runtime.State, collectedAnswer string) string {
 		// Claims that lost the slot comparison (see MergeSlotPatch). They are not the slot's value,
 		// but they are not nothing either: a session produced them from the same corpus.
 		for _, alt := range alternateCandidatesOf(v) {
-			lines = append(lines, "    alternate (claimed by another session, not adopted): "+truncateRunes(alt, 400))
+			lines = append(lines, "    alternate (claimed by another session, not adopted): "+runtime.TruncateRunes(alt, 400))
 		}
 	}
 	if strings.TrimSpace(collectedAnswer) != "" {
@@ -170,7 +170,7 @@ func PrefillSlotsFromEvidence(slotTable *runtime.State, kb *runtime.Kbinfos) int
 			continue
 		}
 		// candidate = name[:400], strength = coverage.
-		cand := truncateRunes(name, 400)
+		cand := runtime.TruncateRunes(name, 400)
 		v.Candidate = &cand
 		strength := bestCov
 		v.CandidateStrength = &strength
@@ -210,7 +210,7 @@ func BuildSlotTable(ctx context.Context, deps runtime.SessionDeps, question stri
 			vars = append(vars, runtime.Variable{
 				ID:            i,
 				Type:          "aspect",
-				QuestionClues: []string{truncateRunes(q, slotFallbackClueChars)},
+				QuestionClues: []string{runtime.TruncateRunes(q, slotFallbackClueChars)},
 			})
 		}
 		root = runtime.NewState(vars, 0, nil)
@@ -429,14 +429,14 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		// "-  (round N: …)" row for those sessions.
 		q := ""
 		if r.FoundAnswer != nil {
-			q = truncateRunes(*r.FoundAnswer, 80)
+			q = runtime.TruncateRunes(*r.FoundAnswer, 80)
 		} else {
 			// No answer: the row shows what this session was ASKED to research, which is
 			// the query of the pair (query, outcome). It used to be a langchain-style repr
 			// of the session's messages, and that repr is a CONSTANT in production: every
 			// session's history opens with the same system prompt, so its first 80 runes —
 			// a message header, not a query — went into every row of every question.
-			q = truncateRunes(item.direction, 80)
+			q = runtime.TruncateRunes(item.direction, 80)
 		}
 		// "bound" is the evidence THIS session retrieved (the number the row can
 		// stand behind); "new" would be a lie here: sessions run concurrently and
@@ -521,7 +521,7 @@ func logSessionPatch(directionSlot int, before, after, patch runtime.State) {
 		bv := before.ByID(pv.ID)
 		base := "(empty)"
 		if bv != nil && bv.Candidate != nil && *bv.Candidate != "" {
-			base = fmt.Sprintf("%q (%.2f)", truncateRunes(*bv.Candidate, 80), strengthOf(*bv))
+			base = fmt.Sprintf("%q (%.2f)", runtime.TruncateRunes(*bv.Candidate, 80), strengthOf(*bv))
 		}
 		// THREE outcomes, because the fold has three: the patch's text IS the slot's
 		// value; the slot CHANGED without keeping this text verbatim (a union — member
@@ -538,7 +538,7 @@ func logSessionPatch(directionSlot int, before, after, patch runtime.State) {
 			}
 		}
 		_LOG.Printf("[SlotResearch] patch (direction slot %d) → slot %d: %q (%.2f); base was %s; result: %s",
-			directionSlot, pv.ID, truncateRunes(*pv.Candidate, 120), strengthOf(pv), base, result)
+			directionSlot, pv.ID, runtime.TruncateRunes(*pv.Candidate, 120), strengthOf(pv), base, result)
 	}
 }
 
@@ -692,7 +692,7 @@ func itemQuote(quote string) string {
 	if quote = strings.TrimSpace(quote); quote == "" {
 		return ""
 	}
-	return " “" + truncateRunes(quote, itemQuoteMaxRunes) + "”"
+	return " “" + runtime.TruncateRunes(quote, itemQuoteMaxRunes) + "”"
 }
 
 // The count RECONCILIATION used to live here: `syncCountSlots` overwrote every number-claiming

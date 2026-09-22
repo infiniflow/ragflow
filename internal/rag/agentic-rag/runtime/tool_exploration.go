@@ -236,7 +236,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 	for _, c := range chunks {
 		snippet = append(snippet, map[string]any{
 			"id":      ChunkIDOf(c),
-			"content": truncateRunes(ChunkTextOf(c), graphExplorePassageChars),
+			"content": TruncateRunes(ChunkTextOf(c), graphExplorePassageChars),
 		})
 	}
 	// No EvidenceIDs and no pool merge: the loaded passages are not admitted to kbinfos.

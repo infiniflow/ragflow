@@ -79,10 +79,10 @@ func sanitizeRetrievalQuery(q string) string {
 		if strings.HasSuffix(ln, ":") && utf8.RuneCountInString(ln) <= 40 {
 			continue
 		}
-		return truncateRunes(ln, maxRetrievalQueryRunes)
+		return TruncateRunes(ln, maxRetrievalQueryRunes)
 	}
 	// Nothing content-like: keep the original, capped, rather than searching nothing.
-	return truncateRunes(strings.ReplaceAll(strings.ReplaceAll(q, "\n", " "), "\r", " "), maxRetrievalQueryRunes)
+	return TruncateRunes(strings.ReplaceAll(strings.ReplaceAll(q, "\n", " "), "\r", " "), maxRetrievalQueryRunes)
 }
 
 // trimQueryMarker strips a list marker ("- ", "• ", "3. ") and the surrounding space, so the

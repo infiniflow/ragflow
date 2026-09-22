@@ -347,11 +347,11 @@ func ClaimPseudoChunks(claims []*ClaimHit) []map[string]interface{} {
 		}
 		if c.Quote != "" {
 			// The cap counts CODE POINTS.
-			quote := truncateRunes(c.Quote, EvidenceQuoteChars)
+			quote := TruncateRunes(c.Quote, EvidenceQuoteChars)
 			content += "\nEvidence (verbatim): \"" + quote + "\""
 		}
 		// The content cap counts CODE POINTS, not bytes.
-		content = truncateRunes(content, 1200)
+		content = TruncateRunes(content, 1200)
 		out = append(out, map[string]interface{}{
 			"chunk_id":            cid,
 			"content_with_weight": content,
@@ -395,11 +395,11 @@ func ClaimPrefetch(ctx context.Context, deps SearchDeps, query string, seen map[
 		}
 		if c.Quote != "" {
 			// The cap counts CODE POINTS.
-			quote := truncateRunes(c.Quote, ClaimEvidenceChars)
+			quote := TruncateRunes(c.Quote, ClaimEvidenceChars)
 			content += fmt.Sprintf("\nEvidence (verbatim): %q", quote)
 		}
 		// The content cap counts CODE POINTS, not bytes.
-		content = truncateRunes(content, 1200)
+		content = TruncateRunes(content, 1200)
 		docID := c.DocID
 		payload = append(payload, map[string]any{"id": cid, "content": content, "doc_id": docID})
 		ids = append(ids, cid)
@@ -664,11 +664,11 @@ func publishClaimHits(deps SearchDeps, hits []DocClaimHit, docID string) int {
 			}
 			if quote := docClaimQuote(h); quote != "" {
 				// The cap counts CODE POINTS.
-				quote := truncateRunes(docClaimQuote(h), ClaimEvidenceChars)
+				quote := TruncateRunes(docClaimQuote(h), ClaimEvidenceChars)
 				content += "\nEvidence (verbatim): \"" + quote + "\""
 			}
 			// The content cap counts CODE POINTS.
-			content = truncateRunes(content, 1200)
+			content = TruncateRunes(content, 1200)
 			src := []string{}
 			if h.ChunkID != "" {
 				src = []string{h.ChunkID}
