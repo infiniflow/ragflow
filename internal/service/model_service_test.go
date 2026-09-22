@@ -936,12 +936,10 @@ func TestSplitRightAnchoredModelName(t *testing.T) {
 	}
 }
 
-// TestModelProviderServiceResolveModelToolSupportValidatesTenantModelRefs pins
-// the validation Python's get_model_config_by_id performs before model_extra is
-// read (tenant_model_service.py:324-347): a disabled model, a model not enrolled
-// as the requested type, and a model whose provider the caller's tenant cannot
-// reach must not produce a definitive tool-support answer.
-func TestModelProviderServiceResolveModelToolSupportValidatesTenantModelRefs(t *testing.T) {
+// TestModelSolverResolveModelConfigReportsToolSupport verifies that the
+// resolved target carries tool support and invalid references fail during the
+// same resolution.
+func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	activeStatus := "1"
@@ -963,12 +961,13 @@ func TestModelProviderServiceResolveModelToolSupportValidatesTenantModelRefs(t *
 	}
 
 	svc := NewModelProviderService()
+	solver := svc.modelSolver()
 	ctx := t.Context()
 
 	// A reference that passes validation still reads the persisted flag.
-	got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-active")
-	if err != nil || !got {
-		t.Fatalf("active chat model = (%v, %v), want (true, nil)", got, err)
+	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-active")
+	if err != nil || target == nil || !target.SupportsTools {
+		t.Fatalf("active chat model = (%v, %v), want tool support", target, err)
 	}
 
 	for _, tc := range []struct {
@@ -979,23 +978,23 @@ func TestModelProviderServiceResolveModelToolSupportValidatesTenantModelRefs(t *
 		{"not enrolled as chat", "model-embedding"},
 		{"provider owned by another tenant", "model-foreign"},
 	} {
-		got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, tc.modelID)
+		target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, tc.modelID)
 		if err == nil {
 			t.Errorf("%s: err = nil, want a validation error", tc.name)
 		}
-		if got {
+		if target != nil && target.SupportsTools {
 			t.Errorf("%s: tool support = true, want false", tc.name)
 		}
 	}
 }
 
-// TestModelProviderServiceResolveModelToolSupportPrefersTenantFlag covers the
+// TestModelSolverResolveModelConfigPrefersTenantToolFlag covers the
 // composite "<model>@<instance>@<provider>" reference shape (chat.llm_id and the
 // harness ModelID accept both a UUID and a composite ref): the flag persisted on
 // the tenant_model row must beat the provider catalog in both directions,
 // mirroring Python's model_extra.get("is_tools", is_tool), and a disabled row
 // must be rejected instead of falling back to the catalog.
-func TestModelProviderServiceResolveModelToolSupportPrefersTenantFlag(t *testing.T) {
+func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	catalog := dao.GetModelProviderManager().FindProvider("OpenAI")
 	if catalog == nil {
 		t.Skip("OpenAI catalog is unavailable")
@@ -1038,36 +1037,34 @@ func TestModelProviderServiceResolveModelToolSupportPrefersTenantFlag(t *testing
 	}
 
 	svc := NewModelProviderService()
+	solver := svc.modelSolver()
 	ctx := t.Context()
 
-	got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"@default@OpenAI")
+	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-capable model: err = %v", err)
 	}
-	if got {
+	if target.SupportsTools {
 		t.Errorf("tool support = true, want false: the tenant_model flag must win over the catalog")
 	}
 
-	got, err = svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, toolsOff+"@default@OpenAI")
+	target, err = solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOff+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-incapable model: err = %v", err)
 	}
-	if !got {
+	if !target.SupportsTools {
 		t.Errorf("tool support = false, want true: the tenant_model flag must win over the catalog")
 	}
 
-	got, err = svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
-	if err == nil || got {
-		t.Errorf("disabled model = (%v, %v), want (false, error)", got, err)
+	target, err = solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
+	if err == nil || (target != nil && target.SupportsTools) {
+		t.Errorf("disabled model = (%v, %v), want (false, error)", target, err)
 	}
 }
 
-// TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure pins the
-// distinction between an intentional not-found fallback and a real lookup
-// failure: a database error must surface as an error instead of falling through
-// to a successful (false, nil) answer, which callers read as "this model has no
-// tool support".
-func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *testing.T) {
+// TestModelSolverResolveModelConfigPropagatesLookupFailure verifies that model
+// resolution surfaces database failures instead of returning a partial target.
+func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	activeStatus := "1"
@@ -1084,9 +1081,10 @@ func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *t
 	}
 
 	svc := NewModelProviderService()
+	solver := svc.modelSolver()
 	ctx := t.Context()
-	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err != nil || !got {
-		t.Fatalf("baseline = (%v, %v), want (true, nil)", got, err)
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
+		t.Fatalf("baseline = (%v, %v), want tool support", target, err)
 	}
 
 	// Drop the provider table: the lookup now fails with a database error
@@ -1096,20 +1094,20 @@ func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *t
 		t.Fatalf("failed to drop provider table: %v", err)
 	}
 	// Composite refs resolve the provider row directly.
-	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
-		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", got)
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
+		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 	// The UUID path too.
-	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
-		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", got)
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 
 	// A failing tenant_model lookup must propagate as well.
 	if err := db.Migrator().DropTable(&entity.TenantModel{}); err != nil {
 		t.Fatalf("failed to drop model table: %v", err)
 	}
-	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
-		t.Errorf("model lookup failure = (%v, nil), want a propagated error", got)
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+		t.Errorf("model lookup failure = (%v, nil), want a propagated error", target)
 	}
 }
 

@@ -375,6 +375,48 @@ export function collectCanvasIssues({
     connectedNodeIds.add(edge.target);
   }
 
+  // Orphan = outside the Begin node's connected component. Edges alone are not
+  // enough: a group of nodes wired to each other (e.g. Agent -> Agent_1) has
+  // incident edges yet is unreachable from Begin. Iteration/Loop children are
+  // only linked to their container by `parentId` — outer edges terminate at the
+  // container — so containment counts as connectivity too. The graph is walked
+  // undirected: any component detached from Begin, single node or a group, is
+  // orphan regardless of edge direction.
+  const neighbors = new Map<string, string[]>();
+  const link = (a?: string, b?: string) => {
+    if (!a || !b || a === b) {
+      return;
+    }
+    if (!neighbors.has(a)) {
+      neighbors.set(a, []);
+    }
+    neighbors.get(a)!.push(b);
+    if (!neighbors.has(b)) {
+      neighbors.set(b, []);
+    }
+    neighbors.get(b)!.push(a);
+  };
+  for (const edge of edges) {
+    link(edge.source, edge.target);
+  }
+  for (const node of nodes) {
+    link(node.id, node.parentId);
+  }
+  let beginComponentIds: Set<string> | undefined;
+  if (beginNode) {
+    beginComponentIds = new Set([beginNode.id]);
+    const stack = [beginNode.id];
+    while (stack.length) {
+      const current = stack.pop()!;
+      for (const next of neighbors.get(current) ?? []) {
+        if (!beginComponentIds.has(next)) {
+          beginComponentIds.add(next);
+          stack.push(next);
+        }
+      }
+    }
+  }
+
   const ctx: ReferenceValidationContext = {
     nodeMap,
     edges,
@@ -397,7 +439,8 @@ export function collectCanvasIssues({
     if (
       label &&
       !OrphanExemptOperators.includes(label) &&
-      !connectedNodeIds.has(node.id)
+      (beginComponentIds ? !beginComponentIds.has(node.id)
+        : !connectedNodeIds.has(node.id))
     ) {
       issues.push({
         ...target,
