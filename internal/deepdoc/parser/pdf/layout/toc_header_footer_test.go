@@ -1305,6 +1305,44 @@ func TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved(t *testing.T) {
 	})
 }
 
+// TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard verifies the sequence
+// track bounds TOTAL Y span across a chain, not just each hop: per-hop drift
+// that accumulates past seqMaxDy must not remove the run, while a chain whose
+// full span stays inside the threshold still does.
+func TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard(t *testing.T) {
+	pageHeight := 842.0
+	footerAt := func(pg int, numText string, top float64) []pdf.TextBox {
+		return []pdf.TextBox{
+			tb(fmt.Sprintf("Body paragraph on page %d with a little extra length to stay unique.", pg), pg, 72, 500, 100, 674),
+			tb(numText, pg, 400, 420, top, top+11), // Top 680-ish: wide band, zone stays empty (gap 6pt, above 724.1 line only)
+		}
+	}
+	t.Run("accumulating_drift_preserved", func(t *testing.T) {
+		heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+		var boxes []pdf.TextBox
+		tops := []float64{680, 684, 688} // each hop 4pt, total span 8pt > seqMaxDy
+		for pg, top := range tops {
+			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 6 {
+			t.Fatalf("chain drifting 8pt in total must be preserved, got %d kept boxes", len(got))
+		}
+	})
+	t.Run("within_span_removed", func(t *testing.T) {
+		heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+		var boxes []pdf.TextBox
+		tops := []float64{680, 681.5, 683} // total span 3pt <= seqMaxDy
+		for pg, top := range tops {
+			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 3 {
+			t.Fatalf("chain within total-drift span must be removed, got %d kept boxes", len(got))
+		}
+	})
+}
+
 // TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved verifies that a
 // stepping year sequence in the footer band ("2024","2025","2026") is protected
 // by the page-count ceiling even though it would otherwise satisfy the +1 chain.
@@ -1397,4 +1435,3 @@ func TestRemoveHeaderFooterBoxes_BodyUrlKept(t *testing.T) {
 		t.Fatalf("body URLs must be preserved, got %d", len(got))
 	}
 }
-

@@ -354,7 +354,7 @@ const (
 	seqBandTopRatio    = 0.20
 	seqBandBottomRatio = 0.80
 	// seqMinRun / seqMaxDy mirror the locality track: at least 3 consecutive
-	// pages, vertical drift within 4pt.
+	// pages, total top-edge span across the run within 4pt.
 	seqMinRun = 3
 	seqMaxDy  = 4.0
 )
@@ -633,8 +633,10 @@ func collectPageNumberCandidates(boxes []pdf.TextBox, pageHeights map[int]float6
 
 // findPageNumberSequenceDrops returns the indices of candidates that take part
 // in a run of at least seqMinRun consecutive pages whose bare numbers step by
-// exactly one (up or down) within seqMaxDy of vertical drift. Such a run is a
-// page-number series on sequence evidence alone — enough to remove tight
+// exactly one (up or down) while the run's total top-edge span stays within
+// seqMaxDy — the same full-window criterion the locality track applies, so a
+// per-hop check never lets drift accumulate past the threshold. Such a run is
+// a page-number series on sequence evidence alone — enough to remove tight
 // footers the geometric zone gate rejected; isolated or non-stepping numbers
 // are left alone.
 func findPageNumberSequenceDrops(cands []pageNumCand) []int {
@@ -657,20 +659,33 @@ func findPageNumberSequenceDrops(cands []pageNumCand) []int {
 			n := len(group)
 			dp := make([]int, n)
 			prev := make([]int, n)
+			minTop := make([]float64, n)
+			maxTop := make([]float64, n)
 			for i := range group {
 				dp[i], prev[i] = 1, -1
+				minTop[i], maxTop[i] = group[i].top, group[i].top
 			}
 			for i := 0; i < n; i++ {
 				for j := 0; j < i; j++ {
 					if group[j].page != group[i].page-1 || group[j].value != group[i].value-dir {
 						continue
 					}
-					if group[j].top-group[i].top > seqMaxDy || group[i].top-group[j].top > seqMaxDy {
+					newMin, newMax := minTop[j], maxTop[j]
+					if group[i].top < newMin {
+						newMin = group[i].top
+					}
+					if group[i].top > newMax {
+						newMax = group[i].top
+					}
+					if newMax-newMin > seqMaxDy {
 						continue
 					}
-					if dp[j]+1 > dp[i] {
+					// Among equal-length chains prefer the tighter Y span, so a
+					// wide early detour cannot block a later legal extension.
+					if dp[j]+1 > dp[i] || (dp[j]+1 == dp[i] && newMax-newMin < maxTop[i]-minTop[i]) {
 						dp[i] = dp[j] + 1
 						prev[i] = j
+						minTop[i], maxTop[i] = newMin, newMax
 					}
 				}
 			}
