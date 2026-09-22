@@ -17,6 +17,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"ragflow/internal/common"
@@ -38,8 +39,6 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 		{"config only", 6, "", nil, 6},
 		{"env overrides config", 6, "8", nil, 8},
 		{"cli overrides env and config", 6, "8", intPtr(12), 12},
-		{"cli zero does not override", 6, "8", intPtr(0), 8},
-		{"cli negative does not override", 6, "", intPtr(-3), 6},
 		{"env invalid falls back to config", 6, "notanint", nil, 6},
 		{"env only", 0, "9", nil, 9},
 	}
@@ -57,3 +56,47 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 }
 
 func intPtr(n int) *int { return &n }
+
+// TestParseArgsDeepDocInferenceConcurrency pins the contract that the CLI parser
+// rejects a non-positive or non-integer --deepdoc-inference-concurrency up front
+// (both the "--flag=value" and "--flag value" forms), and accepts a positive
+// value. Because the parser guarantees a positive value, resolveDeepDocInference
+// Concurrency can trust the parsed pointer and needs no extra >0 guard.
+func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		want    int
+	}{
+		{"equals zero", []string{"prog", "--deepdoc-inference-concurrency=0"}, true, 0},
+		{"equals negative", []string{"prog", "--deepdoc-inference-concurrency=-3"}, true, 0},
+		{"equals nonint", []string{"prog", "--deepdoc-inference-concurrency=abc"}, true, 0},
+		{"space zero", []string{"prog", "--deepdoc-inference-concurrency", "0"}, true, 0},
+		{"space negative", []string{"prog", "--deepdoc-inference-concurrency", "-3"}, true, 0},
+		{"space nonint", []string{"prog", "--deepdoc-inference-concurrency", "abc"}, true, 0},
+		{"equals positive", []string{"prog", "--deepdoc-inference-concurrency=12"}, false, 12},
+		{"space positive", []string{"prog", "--deepdoc-inference-concurrency", "12"}, false, 12},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			old := os.Args
+			defer func() { os.Args = old }()
+			os.Args = tc.args
+
+			got, err := parseArgs()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseArgs() = nil error, want rejection for %v", tc.args)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseArgs() error = %v, want nil for %v", err, tc.args)
+			}
+			if got.deepdocInferenceConcurrency == nil || *got.deepdocInferenceConcurrency != tc.want {
+				t.Fatalf("deepdocInferenceConcurrency = %v, want %d for %v", got.deepdocInferenceConcurrency, tc.want, tc.args)
+			}
+		})
+	}
+}

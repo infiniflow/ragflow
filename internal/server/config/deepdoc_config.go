@@ -29,11 +29,15 @@ type DeepDocConfig struct {
 	InferenceConcurrency int `mapstructure:"inference_concurrency"`
 }
 
-// ParseDeepDocConfig populates DeepDocConfig from the viper instance. The
-// deepdoc.inference_concurrency YAML key is overridden by the environment
-// variable RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY (viper's AutomaticEnv, set in
-// server.Init). The CLI flag --deepdoc-inference-concurrency takes precedence
-// over both and is applied later in the server boot path.
+// ParseDeepDocConfig populates DeepDocConfig from the viper instance. It reads
+// only the deepdoc.inference_concurrency YAML key (default 4). The environment
+// variable RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY does NOT override it here:
+// v.Sub("deepdoc") does not inherit viper's AutomaticEnv settings (env prefix,
+// replacer, AutomaticEnv are all dropped by Sub), so the env override would be
+// missed if applied only through viper. The env override is therefore resolved
+// later in the server boot path by cmd.resolveDeepDocInferenceConcurrency via
+// os.Getenv, which also applies the --deepdoc-inference-concurrency CLI flag
+// (highest precedence) over both.
 func (c *Config) ParseDeepDocConfig(v *viper.Viper) error {
 	c.deepdoc.InferenceConcurrency = 4
 	if sub := v.Sub("deepdoc"); sub != nil && sub.IsSet("inference_concurrency") {

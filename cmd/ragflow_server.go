@@ -256,7 +256,10 @@ func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
 			val = n
 		}
 	}
-	if args.deepdocInferenceConcurrency != nil && *args.deepdocInferenceConcurrency > 0 {
+	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
+	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
+	// value is already positive; no extra >0 guard is needed here.
+	if args.deepdocInferenceConcurrency != nil {
 		val = *args.deepdocInferenceConcurrency
 	}
 	return val

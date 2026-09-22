@@ -17,7 +17,10 @@
 package config
 
 import (
+	"strings"
 	"testing"
+
+	"ragflow/internal/common"
 
 	"github.com/spf13/viper"
 )
@@ -45,5 +48,30 @@ func TestParseDeepDocConfigReadsYAML(t *testing.T) {
 	}
 	if got := c.GetDeepDocConfig().InferenceConcurrency; got != 6 {
 		t.Fatalf("inference concurrency = %d, want 6", got)
+	}
+}
+
+// TestParseDeepDocConfigIgnoresEnvVar pins the provenance of the env override:
+// ParseDeepDocConfig reads ONLY the deepdoc.inference_concurrency YAML key and
+// does not apply the RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY environment variable.
+// This holds even with viper's AutomaticEnv configured exactly as server.Init
+// does, because v.Sub("deepdoc") does not inherit the parent's env (prefix /
+// replacer / AutomaticEnv). The env override is resolved later in the server
+// boot path by cmd.resolveDeepDocInferenceConcurrency (via os.Getenv), so the
+// configured value returned here must stay at the YAML/default value.
+func TestParseDeepDocConfigIgnoresEnvVar(t *testing.T) {
+	t.Setenv(common.EnvDeepDocInferenceConcurrency, "9")
+
+	v := viper.New()
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	c := &Config{}
+	if err := c.ParseDeepDocConfig(v); err != nil {
+		t.Fatalf("ParseDeepDocConfig: %v", err)
+	}
+	if got := c.GetDeepDocConfig().InferenceConcurrency; got != 4 {
+		t.Fatalf("inference concurrency with only env set = %d, want default 4 (env must not be applied here)", got)
 	}
 }
