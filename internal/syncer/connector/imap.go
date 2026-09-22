@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	netmail "net/mail"
 	"os"
@@ -41,8 +40,10 @@ import (
 	// Register the charset decoder so text/* parts in non-UTF-8 charsets
 	// (e.g. ISO-8859-1, Windows-1252) are decoded to UTF-8 on read.
 	_ "github.com/emersion/go-message/charset"
+	"go.uber.org/zap"
 	xhtml "golang.org/x/net/html"
 
+	"ragflow/internal/common"
 	"ragflow/internal/utility"
 )
 
@@ -205,7 +206,7 @@ func (s *imapSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		emailDoc, attachments, err := parseIMAPMessage(raw, s.connector.sizeThreshold)
 		if err != nil {
-			log.Printf("imap: skip message seq %d in mailbox %q: %v", seq, s.currentMailbox, err)
+			common.Warn("imap: skip message", zap.Uint64("seq", seq), zap.String("mailbox", s.currentMailbox), zap.Error(err))
 			continue
 		}
 		if !s.inWindow(emailDoc.UpdatedAt) {

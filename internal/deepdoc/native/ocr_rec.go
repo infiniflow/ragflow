@@ -302,14 +302,18 @@ type recSession struct {
 	poisoned bool
 }
 
-func newRecSession(modelPath, inName string, inShape []int64, outName string) (*recSession, error) {
-	opts, err := newSessionOptions()
+func newRecSession(modelPath, inName string, inShape []int64, outName string, weights *weightSet) (*recSession, error) {
+	// Build the same options as NewSession: one intra-op thread, BFC arena
+	// disabled, and the shared initializers injected when weights != nil. See
+	// newSessionOptions in session.go for the rationale. Reusing it keeps the
+	// rec pool's session configuration in lockstep with the det/DLA/TSR pool.
+	opts, err := newSessionOptions(weights)
 	if err != nil {
 		return nil, err
 	}
-	// See NewSession: the C session does not take ownership of opts, so release
-	// it once the session is built. newSessionOptions centralizes the
-	// intra-op-thread and arena settings shared with NewSession.
+	// The C session copies these options at creation time, so the options handle
+	// can be released once the session is built. The shared weight buffers are
+	// owned by the process-wide weightCache and outlive every session.
 	defer opts.Destroy()
 	sess, err := ort.NewDynamicAdvancedSession(modelPath,
 		[]string{inName}, []string{outName}, opts)

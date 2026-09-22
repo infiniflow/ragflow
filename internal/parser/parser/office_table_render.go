@@ -20,13 +20,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
@@ -270,10 +272,12 @@ func deprecatedChunkRows(setup map[string]any, parserName string) {
 	}
 	rows, ok := numericItemInt(raw)
 	if !ok {
-		slog.Warn("spreadsheet parser ignored invalid chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", raw)
+		common.Warn("spreadsheet parser ignored invalid chunk_rows; configure row merging on the chunker",
+			zap.String("parser", parserName), zap.Any("chunk_rows", raw))
 		return
 	}
-	slog.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", rows)
+	common.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker",
+		zap.String("parser", parserName), zap.Int("chunk_rows", rows))
 }
 
 // extractXLSXImages returns the floating and in-cell images anchored to a

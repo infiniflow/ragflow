@@ -41,6 +41,18 @@ func TestDeferredAgentStreamFailureText(t *testing.T) {
 	}
 }
 
+func TestCanvasInvokeErrorForUnmatchedSwitch(t *testing.T) {
+	got := canvasInvokeError(errors.New("[GraphRunError] no tasks to execute, last completed nodes: [Switch:Route]"))
+	if got.Error() != "canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches" {
+		t.Fatalf("got %q", got)
+	}
+
+	original := errors.New("[GraphRunError] no tasks to execute, last completed nodes: [Message:Done]")
+	if got := canvasInvokeError(original); !errors.Is(got, original) {
+		t.Fatalf("generic graph error lost its cause: %v", got)
+	}
+}
+
 // An Agent whose chat model is unavailable fails through its `_ERROR`
 // output; the downstream Message records the failure while consuming the
 // deferred stream. The run must keep that failure text in the chat message
