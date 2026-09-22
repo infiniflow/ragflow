@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/png"
 	"reflect"
-	"runtime"
 	"sync"
 	"testing"
 
@@ -103,12 +102,20 @@ func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
 }
 
 // TestDeepDocConcurrencyShare pins the process budget rule: DeepDoc inference
-// may have floor(80% of the CPUs available to the process) Runs in flight.
+// may have at most DeepDocConcurrency() Runs in flight, and that budget is the
+// configurable value (default 4) set at server start, not derived from
+// GOMAXPROCS.
 func TestDeepDocConcurrencyShare(t *testing.T) {
-	want := int(deepdocInferenceCPUShare * float64(runtime.GOMAXPROCS(0)))
-	if got := DeepDocConcurrency(); got != max(1, want) {
-		t.Fatalf("got %d concurrent Runs, want %d (GOMAXPROCS=%d)",
-			got, max(1, want), runtime.GOMAXPROCS(0))
+	orig := DeepDocConcurrency()
+	t.Cleanup(func() { SetDeepDocConcurrency(orig) })
+
+	SetDeepDocConcurrency(4)
+	if got := DeepDocConcurrency(); got != 4 {
+		t.Fatalf("default DeepDocConcurrency() = %d, want 4", got)
+	}
+	SetDeepDocConcurrency(11)
+	if got := DeepDocConcurrency(); got != 11 {
+		t.Fatalf("DeepDocConcurrency() = %d, want 11 after SetDeepDocConcurrency(11)", got)
 	}
 }
 

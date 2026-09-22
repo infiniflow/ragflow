@@ -33,6 +33,7 @@ package native
 
 import (
 	"context"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -283,6 +284,14 @@ var recSessions = newSessionPool[recKey, *recSession](recMaxShapePools, recShape
 func getRecSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*recSession, func(), error) {
 	key := recKeyOf(modelPath, inName, inShape, outName)
 	return recSessions.Get(ctx, key, func() (*recSession, error) {
-		return newRecSession(modelPath, inName, inShape, outName)
+		// Weight sharing is best-effort: a failure here degrades to a normal
+		// (non-shared) session rather than breaking OCR-rec entirely.
+		weights, werr := sharedWeights(modelPath, inName, inShape, outName)
+		if werr != nil {
+			log.Printf("deepdoc/native: rec weight sharing unavailable for %s: %v",
+				modelPath, werr)
+			weights = nil
+		}
+		return newRecSession(modelPath, inName, inShape, outName, weights)
 	})
 }

@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"log/slog"
 	"math"
+	"sort"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-	"sort"
-	"strings"
 )
 
 // recBatchNum is the maximum number of crops recognized in one ONNX Run. It
@@ -115,9 +118,12 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 	}
 	// Recognize all crops aligned to Python: sort by aspect ratio and chunk
 	// into sub-batches of at most recBatchNum, each padded to its local max
-	// width. The fallback stamps the detect-box index so a replay DocAnalyzer
-	// routes each per-crop recognition back to the Python-dumped text for the
-	// same box; the production analyzer ignores the key.
+	// width. ocrRecognizeBatchAligned is built on top of the upstream batch
+	// API (docSupportsBatchOCR / inferOCRRecognizeBatch); it falls back to the
+	// per-crop canonical path for any sub-batch that fails. The fallback stamps
+	// the detect-box index so a replay DocAnalyzer routes each per-crop
+	// recognition back to the Python-dumped text for the same box; the
+	// production analyzer ignores the key.
 	allTexts := p.ocrRecognizeBatchAligned(ctx, doc, pageNum, cropAcc, func(ci int, c image.Image) ([]pdf.OCRText, error) {
 		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
 		return p.ocrRecognizeWithRotation(recCtx, doc, c)
@@ -346,7 +352,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
-	slog.Debug("ocrMergeChars detect", "page", pageNum, "boxes", len(ocrDetectBoxes))
+	common.Debug("ocrMergeChars detect", zap.Int("page", pageNum), zap.Int("boxes", len(ocrDetectBoxes)))
 
 	// The caller multiplies the returned boxes back by this scale to crop the
 	// original render, so passing the render zoom keeps the round trip exact
@@ -698,6 +704,6 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 			filtered = append(filtered, tb)
 		}
 	}
-	slog.Debug("ocrMergeChars result", "page", pageNum, "boxes", len(filtered))
+	common.Debug("ocrMergeChars result", zap.Int("page", pageNum), zap.Int("boxes", len(filtered)))
 	return filtered
 }

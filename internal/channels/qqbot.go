@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -34,8 +33,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -143,7 +144,7 @@ func (c *qqBotChannel) Start(ctx context.Context) error {
 		c.mu.Unlock()
 		close(done)
 	}()
-	log.Printf("[qqbot:%s] starting gateway client", c.account.AccountID)
+	common.Info("qqbot: starting gateway client", zap.String("account_id", c.account.AccountID))
 	return nil
 }
 
@@ -210,7 +211,7 @@ func (c *qqBotChannel) run(ctx context.Context) {
 			}
 		}
 		if err != nil && ctx.Err() == nil {
-			log.Printf("[qqbot:%s] gateway loop error: %v", c.account.AccountID, err)
+			common.Error("qqbot: gateway loop error", err, zap.String("account_id", c.account.AccountID))
 		}
 		if !waitForContext(ctx, qqBotReconnectDelay) {
 			return
@@ -224,7 +225,7 @@ func (c *qqBotChannel) runGatewaySession(ctx context.Context, gatewayURL string,
 		return err
 	}
 	defer conn.Close()
-	log.Printf("[qqbot:%s] connected to gateway", c.account.AccountID)
+	common.Info("qqbot: connected to gateway", zap.String("account_id", c.account.AccountID))
 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -247,7 +248,7 @@ func (c *qqBotChannel) runGatewaySession(ctx context.Context, gatewayURL string,
 		}
 		var payload qqBotGatewayPayload
 		if err := json.Unmarshal(data, &payload); err != nil {
-			log.Printf("[qqbot:%s] invalid gateway payload: %.200s", c.account.AccountID, data)
+			common.Warn("qqbot: invalid gateway payload", zap.String("account_id", c.account.AccountID), zap.String("payload", fmt.Sprintf("%.200s", data)))
 			continue
 		}
 		if payload.Sequence != nil {
@@ -285,7 +286,7 @@ func (c *qqBotChannel) runGatewaySession(ctx context.Context, gatewayURL string,
 			return fmt.Errorf("invalid gateway session (can_resume=%t)", canResume)
 		case 0:
 			if err := c.handleDispatch(ctx, payload.Type, payload.Data); err != nil {
-				log.Printf("[qqbot:%s] ignored invalid %s event: %v", c.account.AccountID, payload.Type, err)
+				common.Warn("qqbot: ignored invalid event", zap.String("account_id", c.account.AccountID), zap.String("event_type", payload.Type), zap.Error(err))
 			}
 		}
 	}
@@ -306,7 +307,7 @@ func (c *qqBotChannel) runHeartbeat(ctx context.Context, conn *websocket.Conn, i
 		case <-ticker.C:
 			payload := map[string]any{"op": 1, "d": c.currentSequence()}
 			if err := c.writeJSON(conn, payload); err != nil {
-				log.Printf("[qqbot:%s] heartbeat failed: %v", c.account.AccountID, err)
+				common.Error("qqbot: heartbeat failed", err, zap.String("account_id", c.account.AccountID))
 				_ = conn.Close()
 				return
 			}
@@ -369,11 +370,11 @@ func (c *qqBotChannel) handleDispatch(ctx context.Context, eventType string, dat
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[qqbot:%s] handler panic: %v\n%s", c.account.AccountID, r, debug.Stack())
+					common.Error("qqbot: handler panic", fmt.Errorf("panic: %v", r), zap.String("account_id", c.account.AccountID), zap.String("stack", string(debug.Stack())))
 				}
 			}()
 			if err := handler(ctx, *incoming); err != nil {
-				log.Printf("[qqbot:%s] handler error: %v", c.account.AccountID, err)
+				common.Error("qqbot: handler error", err, zap.String("account_id", c.account.AccountID))
 			}
 		}()
 	}
