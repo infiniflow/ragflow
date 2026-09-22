@@ -315,11 +315,11 @@ func (m *sentencePieceModel) parseNormalizerSpec(raw []byte) error {
 				m.addDummyPrefix = on
 			case 4:
 				m.removeExtraWhitespaces = on
-			case 5:
+			default:
 				m.escapeWhitespaces = on
 			}
 		default:
-			if err := r.skip(wire); err != nil {
+			if err = r.skip(wire); err != nil {
 				return fmt.Errorf("sentencepiece: normalizer_spec: %w", err)
 			}
 		}

@@ -24,7 +24,7 @@ import (
 	"log/slog"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
 	"slices"
 	"sort"

@@ -537,7 +537,6 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 	}
 
 	// Try each tenant to find the chunk
-	var chunk map[string]interface{}
 	for _, tenant := range tenants {
 		// Get kbIDs for this tenant
 		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, tenant.TenantID)
@@ -599,11 +598,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		}
 	}
 
-	if chunk == nil {
-		return nil, fmt.Errorf("chunk not found")
-	}
-
-	return &service.GetChunkResponse{Chunk: chunk}, nil
+	return nil, fmt.Errorf("chunk not found")
 }
 
 const (

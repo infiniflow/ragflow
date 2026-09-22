@@ -33,8 +33,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
-	native "ragflow/internal/deepdoc/native"
-	pdf "ragflow/internal/deepdoc/parser/pdf"
+	"ragflow/internal/deepdoc/native"
+	"ragflow/internal/deepdoc/parser/pdf"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -44,7 +44,7 @@ import (
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
-	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
@@ -680,7 +680,7 @@ func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
-	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every peer.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
 		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
@@ -1190,7 +1190,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
-	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every
 	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
 	// login audit records, so gin's trust-everything default would let any
