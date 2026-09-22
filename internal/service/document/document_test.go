@@ -830,8 +830,16 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	loc := "path/to/blob"
-	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
+	insertTestFile(t, "file-1", "dataset-folder-1", "test.pdf", &loc)
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	store := newFakeUploadStorage()
+	if err := store.Put(t.Context(), "kb-1", loc, []byte("document")); err != nil {
+		t.Fatalf("store document blob: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -852,6 +860,9 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files, got %d", len(files))
+	}
+	if store.ObjExist(ctx, "kb-1", loc) {
+		t.Fatal("document blob should be deleted")
 	}
 }
 
@@ -1884,7 +1895,7 @@ func TestCleanupFileReferences_NoMappings(t *testing.T) {
 	svc := testDocumentService(t)
 	// Should not panic with no f2d mappings
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "no-mappings")
+	svc.cleanupFileReferences(ctx, "no-mappings", "kb-1")
 }
 
 func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
@@ -1897,7 +1908,7 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -1922,7 +1933,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d for doc-1 gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
