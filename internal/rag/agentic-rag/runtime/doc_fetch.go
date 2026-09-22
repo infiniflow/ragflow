@@ -18,6 +18,10 @@ package runtime
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/tokenizer"
@@ -26,6 +30,11 @@ import (
 const (
 	// docFetchPageSize is the 128-chunk page size.
 	docFetchPageSize = 128
+	// docHeadScanChunks is how many chunks of a document's FIRST page HeadChunksOfDocument
+	// inspects before it picks the opening. Reading order is chunk_order_int, and a page also
+	// carries rows without one (compiled tree / navigation nodes), so the smallest-ordered rows
+	// are picked from a page wide enough to hold the document's own opening.
+	docHeadScanChunks = 40
 	// docFetchMaxChunks is the hard 10000-chunk cap.
 	docFetchMaxChunks = 10000
 	// docFetchFallbackTokens bounds the fetch when the caller supplies no model
@@ -93,6 +102,107 @@ func fetchDocumentPage(ctx context.Context, deps SearchDeps, docID string, offse
 		return page, false
 	}
 	return page[:want], true
+}
+
+// HeadChunksOfDocument returns the FIRST `want` chunks of one document, in READING order.
+//
+// It is the reading door into a document the caller ALREADY chose — for a member's own document
+// named by title (see the entity-title channel) this is how its head is read, because the member's
+// fact is a table row there and no ranking reaches it: measured 2026-09-22 on the ten-nominee Oscar
+// question, "Children: 3" sits in chunk_order_int 0 of the Brendan Fraser document, and the chunk's
+// searchable tokens (content_ltks) carry NO "children" at all — the table's cell text is not in any
+// indexed field, so a metadata-scoped hybrid leg can rank that document's references and prose
+// forever and never return its infobox.
+//
+// Reading is bounded by the caller's `want` and by the session's own document guard (unbound
+// dataset, or a document outside the session scope, yields nil).
+func HeadChunksOfDocument(ctx context.Context, deps SearchDeps, docID string, want int) []map[string]any {
+	if want <= 0 {
+		want = 1
+	}
+	// The opening is picked by READING ORDER, and by the fact that a document's TABLE is the part
+	// a question asks about: an infobox or a standings table carries the fields, while the prose
+	// around it carries the narrative. Neither signal alone is enough —
+	//
+	//   - rows with no chunk_order_int at all lead the page (the compiled tree/navigation nodes a
+	//     parser writes), and without a table-first rule the reader returns one of them;
+	//   - a re-parsed copy of the SAME document can carry no order at all (measured 2026-09-22:
+	//     one person, two documents — one ordered with its infobox at order 0, one unordered with
+	//     its infobox somewhere in the middle), so order alone picks "whatever came first", which
+	//     was prose.
+	//
+	// So the table-bearing chunks lead, and the reading order orders them (and everything else)
+	// within its group.
+	page, _ := fetchDocumentPage(ctx, deps, docID, 0, docHeadScanChunks)
+	if len(page) == 0 {
+		return nil
+	}
+	tables := make([]map[string]any, 0, len(page))
+	text := make([]map[string]any, 0, len(page))
+	for _, c := range page {
+		if isTableChunk(c) {
+			tables = append(tables, c)
+			continue
+		}
+		text = append(text, c)
+	}
+	sortChunksByReadingOrder(tables)
+	sortChunksByReadingOrder(text)
+	page = append(tables, text...)
+	if len(page) > want {
+		page = page[:want]
+	}
+	return page
+}
+
+// isTableChunk reports whether a chunk's text carries an HTML table — the shape a document's
+// facts are written in (see RenderTables).
+func isTableChunk(c map[string]any) bool {
+	return strings.Contains(strings.ToLower(ChunkTextOf(c)), "<table")
+}
+
+// sortChunksByReadingOrder sorts in place by chunk_order_int, with the rows that carry none last
+// and their own page order otherwise intact.
+func sortChunksByReadingOrder(chunks []map[string]any) {
+	sort.SliceStable(chunks, func(i, j int) bool {
+		a, aOK := chunkOrderOf(chunks[i])
+		b, bOK := chunkOrderOf(chunks[j])
+		switch {
+		case aOK && bOK:
+			return a < b
+		case aOK:
+			return true
+		case bOK:
+			return false
+		}
+		return false
+	})
+}
+
+// chunkOrderOf reads a chunk's 0-based reading-order index within its document
+// (the engine's chunk_order_int). ok=false means the row carries none — a compiled
+// tree/navigation row rather than a piece of the document's text.
+func chunkOrderOf(c map[string]any) (int, bool) {
+	v, ok := c["chunk_order_int"]
+	if !ok || v == nil {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	}
+	text := strings.TrimSpace(fmt.Sprint(v))
+	if text == "" {
+		return 0, false
+	}
+	if n, err := strconv.Atoi(text); err == nil {
+		return n, true
+	}
+	return 0, false
 }
 
 // fetchFullDocument

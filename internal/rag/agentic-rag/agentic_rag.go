@@ -2343,7 +2343,14 @@ func (s *outerReactSession) publish(call *RunResponse, kb *runtime.Kbinfos) {
 	// Remember this call's own answer + evidence so selectEvidence can restore
 	// the pool the winning answer was composed from.
 	s.calls = append(s.calls, ragCallResult{answer: call.Answer, kb: kb})
-	if s.resp.Answer == "" {
+	// The LAST non-empty answer wins, not the first: a rag call that did not end the loop was
+	// superseded by the one that did, and the terminal call's text is the answer the client
+	// already received. Measured 2026-09-22 (paper-test, two rag calls in one loop): keeping the
+	// FIRST left the outer response holding a 3317-character text with no [ID:n] markers while the
+	// run's own final answer — 1361 characters, whose ids the fallback had just resolved — was
+	// dropped, so the citation step saw zero markers and the user got a cited answer with no
+	// reference list. An empty answer never overwrites a non-empty one.
+	if call.Answer != "" {
 		s.resp.Answer = call.Answer
 	}
 	if s.resp.SCAFeedback == "" {

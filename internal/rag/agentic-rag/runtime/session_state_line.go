@@ -343,7 +343,7 @@ func (s *SessionState) recordVocabulary() map[string]bool {
 // first occurrence of word, so the excerpt carries both the mention and the
 // sentence around it.
 func excerptAround(text, word string, maxRunes int) string {
-	flat := []rune(strings.Join(strings.Fields(text), " "))
+	flat := []rune(FlattenLine(text))
 	at := []rune(word)
 	pos := -1
 	for i := 0; i+len(at) <= len(flat); i++ {

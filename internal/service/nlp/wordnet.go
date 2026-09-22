@@ -92,6 +92,13 @@ type WordNet struct {
 	dataFileCache       map[string]*os.File
 	dataFileCacheOffset map[string]int64
 	fileMutexes         map[string]*sync.Mutex // Mutex for each POS to ensure concurrency safety
+	// cacheMu guards dataFileCache and fileMutexes themselves. Those two maps used to be
+	// read and written without a lock while the retrieval fan-out called the synonym lookup
+	// from several goroutines at once, which crashes the process outright: measured
+	// 2026-09-22, `fatal error: concurrent map writes` in getDataFile on the first fan-out
+	// after a restart. The per-POS mutex above serialises file READS; this one serialises the
+	// registry that hands them out.
+	cacheMu sync.Mutex
 }
 
 // NewWordNet creates a new WordNet instance with the given WordNet directory
@@ -125,6 +132,8 @@ func NewWordNet(wordNetDir string) (*WordNet, error) {
 
 // Close closes all cached file handles
 func (wn *WordNet) Close() {
+	wn.cacheMu.Lock()
+	defer wn.cacheMu.Unlock()
 	for pos, f := range wn.dataFileCache {
 		if mutex, ok := wn.fileMutexes[pos]; ok {
 			mutex.Lock()
@@ -312,6 +321,7 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 		pos = ADJ
 	}
 
+	wn.cacheMu.Lock()
 	// Get or create mutex for this POS
 	mutex, exists := wn.fileMutexes[pos]
 	if !exists {
@@ -320,8 +330,10 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 	}
 
 	if file, ok := wn.dataFileCache[pos]; ok {
+		wn.cacheMu.Unlock()
 		return file, mutex, nil
 	}
+	wn.cacheMu.Unlock()
 
 	suffix, ok := fileMap[pos]
 	if !ok {
@@ -334,6 +346,14 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 		return nil, nil, fmt.Errorf("failed to open %s: %w", filename, err)
 	}
 
+	wn.cacheMu.Lock()
+	defer wn.cacheMu.Unlock()
+	// Another goroutine may have opened the same file while this one was: keep the cached
+	// handle (callers may already hold it) and close ours.
+	if cached, ok := wn.dataFileCache[pos]; ok {
+		_ = file.Close()
+		return cached, mutex, nil
+	}
 	wn.dataFileCache[pos] = file
 	return file, mutex, nil
 }

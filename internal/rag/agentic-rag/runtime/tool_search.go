@@ -1015,13 +1015,19 @@ func metadataTargetIDs(deps SearchDeps) []string {
 	return out
 }
 
-// Metadata-search catalog caps: fields listed, values shown per field, and the rendered
-// block's length in CODE POINTS (a byte cap would cut CJK fields early).
-const (
-	metadataCatalogKeysMax       = 20
-	metadataCatalogSamplesPerKey = 8
-	metadataCatalogRenderMax     = 2000
-)
+// The metadata catalog is rendered in FULL — every offered field, and every value the index
+// holds for it. It used to be capped three ways (20 fields, 8 values per field, 2000 code
+// points), and those caps are what broke the feature: fields are written in sorted order, so
+// a long `author`/`title` sample list spent the budget before `update_time` was ever written,
+// and the block's own closing line then told the model the field it needed did not exist.
+// Measured 2026-09-22 on a 16-document KB: the model reported "the fields are only
+// author/field/file_name/rationale" and refused a question the metadata index could answer.
+// A field list is a completeness contract — a field a filter could have named is worth more
+// than the samples that hid it.
+//
+// For that reason the catalog stage's block bound (deliver.go, StageCatalog) is deliberately NOT
+// applied here: a delivery bound whose effect is to drop fields IS the defect above, so this block
+// is rendered whole.
 
 // metadataCatalogSystemKeys are metadata keys that exist in the doc-metadata index but
 // must never be offered as filters: unique identifiers and benchmark annotations let a
@@ -1072,7 +1078,7 @@ func (c MetadataCatalog) Empty() bool { return len(c.Keys) == 0 }
 // Render builds the seed block. Empty catalogs render as "" so the caller can append
 // unconditionally. Each field carries what is known about it — its declared meaning, the
 // values it accepts, and the values seen in the index — so the model fills a filter instead
-// of guessing. The result is capped at metadataCatalogRenderMax code points.
+// of guessing. Nothing is capped: see the note on the removed caps above.
 func (c MetadataCatalog) Render() string {
 	if c.Empty() {
 		return ""
@@ -1094,7 +1100,7 @@ func (c MetadataCatalog) Render() string {
 		}
 	}
 	b.WriteString("\nFields NOT listed here are unusable as filters — never invent one.")
-	return truncateRunes(b.String(), metadataCatalogRenderMax)
+	return b.String()
 }
 
 // describeMetadataField renders a field's declared meaning and allowed values, shared by
@@ -1132,7 +1138,8 @@ func MetadataCatalogFor(ctx context.Context, deps SearchDeps) MetadataCatalog {
 		Samples: make(map[string][]MetadataSample, len(keys)),
 	}
 	for _, k := range keys {
-		if samples := topMetadataSamples(metas[k], metadataCatalogSamplesPerKey); len(samples) > 0 {
+		// 0 = no cap: the catalog advertises every value the index holds for the field.
+		if samples := topMetadataSamples(metas[k], 0); len(samples) > 0 {
 			cat.Samples[k] = samples
 		}
 	}
@@ -1207,9 +1214,6 @@ func resolveMetadataFields(ctx context.Context, deps SearchDeps) ([]string, comm
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if len(keys) > metadataCatalogKeysMax {
-		keys = keys[:metadataCatalogKeysMax]
-	}
 	if len(declared) == 0 {
 		declared = nil
 	}
@@ -1864,13 +1868,11 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 			}
 			seen[cid] = true
 			evidenceIDs = append(evidenceIDs, cid)
-			// Pool shape: {"id","content"} (no doc_id), with non-table text cut to 1200 code
-			// points (a plain slice, no ellipsis).
-			content := ChunkTextOf(c)
-			if !IsTableChunk(c) {
-				content = truncateRunes(content, 1200)
-			}
-			payload = append(payload, map[string]any{"id": cid, "content": content})
+			// The text comes from the SAME renderer every other tool uses (passageContent): a
+			// table arrives as the rendered field view (one JSON object per row), whole, and plain
+			// text is cut at 1200 code points. The dict stays {id, content} — this path spells its
+			// passages without doc_id by contract (mirrors Python's _admit_evidence(include_doc_id=False)).
+			payload = append(payload, map[string]any{"id": cid, "content": passageContent(c)})
 			if p.Add(c) {
 				newChunks++
 			}
@@ -1930,7 +1932,7 @@ func SearchCacheKey(effectiveQuery string, targetIDs []string, topN int, docScop
 }
 
 func normalizeSpace(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+	return strings.ToLower(FlattenLine(s))
 }
 
 // docInDatasets reports whether docID belongs to the datasets being searched.

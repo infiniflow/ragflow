@@ -475,19 +475,46 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	if skipLegs {
 		step(ctx, logger, "Prefetch", "the opening's share is spent (%.0fs of the question left): the wide legs are skipped and the rest of the clock goes to the research rounds.", st.RemainingS())
 	} else {
-		added, ranking = FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, true)
+		// The ranked legs, through the recall entry point: the channel is NAMED, so what came
+		// back can be ranked by how it was found (see Recall and RecallChannel).
+		legs := Recall(runtime.Nested(callCtx), deps, st, RecallSpec{
+			Channel:     RecallFanout,
+			Queries:     queries,
+			TopN:        FanoutTopN,
+			UseMetadata: true,
+		}, logger)
+		added += legs.Added
+		ranking = append(legs.Head, ranking...)
 	}
 	// The SCAN channel, alongside the ranked legs: the plan's own declared probe terms asked of the
 	// corpus with containment as the match (see runtime.ScanMatchAny). It is gated on the plan
 	// DECLARING member probes — a single-value question declares no act words and never pays for it —
 	// and its hits enter the pool and lead the ranked union, because they are windows a ranking may
 	// have cut (measured 2026-09-20, 三国/关羽: 程远志 ranked 9 with a per-query cap of 8, twice).
-	scanAdded, scanHead, scanLine := scanDeclaredProbes(callCtx, deps, st, logger)
-	added += scanAdded
-	if len(scanHead) > 0 {
-		ranking = append(scanHead, ranking...)
+	scan := Recall(callCtx, deps, st, RecallSpec{Channel: RecallScan}, logger)
+	added += scan.Added
+	if len(scan.Head) > 0 {
+		ranking = append(scan.Head, ranking...)
 	}
-	_ = scanLine
+	_ = scan.Line
+	// The TITLE channel (see entityTitlePrefetch) runs LAST and therefore leads the union: the
+	// members' own documents are the opening's most valuable passages, and the preview the session
+	// is handed is its HEAD — measured 2026-09-22, with the scan's windows in front, all eight
+	// previews were scan windows of prose and not one member's document was ever shown.
+	//
+	// It stays AFTER the concurrent legs: they share the retrieval stack, and a caller running
+	// BESIDE them changes a timing that stack is not yet safe against (observed 2026-09-22, the
+	// first fan-out after a restart: `fatal error: concurrent map writes` in the WordNet lazy
+	// loader). It also runs on a clock of its own: a share already spent on the decomposition must
+	// not silently drop the members (observed the same day: with the context expired with the
+	// share, the same probe came back with nothing).
+	titleCtx, titleCancel := context.WithTimeout(runtime.Nested(ctx), time.Duration(entityTitleBudgetS*float64(time.Second)))
+	title := Recall(titleCtx, deps, st, RecallSpec{Channel: RecallTitle}, logger)
+	titleCancel()
+	added += title.Added
+	if len(title.Head) > 0 {
+		ranking = append(title.Head, ranking...)
+	}
 	// The opening's product: the RANKED union. The session is handed its head (see the seed) — the
 	// first thing it looks at is a ranked preview list rather than an unordered pool.
 	if st.KB != nil {
@@ -577,6 +604,182 @@ func scanDeclaredProbes(ctx context.Context, deps RAGTools, st *AgenticState, lo
 	step(ctx, logger, "Prefetch", "scan: %s (documents with the most hits: %s)",
 		line, strings.Join(res.Docs, ", "))
 	return added, ids, line
+}
+
+// The TITLE channel's constants.
+//
+// entityTitleProbeTopN is how deep the name probe reads before the member's document is known:
+// the doc id comes from ANY of the document's passages surfacing, so the probe only has to reach
+// the document, not the fact inside it.
+const entityTitleProbeTopN = 20
+
+// entityTitleBudgetS is the title channel's own slice of the opening.
+//
+// It is a slice of its own because the channel runs on its own clock (see prefetchNode): the
+// opening's share may already be spent when it runs, and an expired context made the same probe
+// return nothing — the failure mode this budget exists to prevent.
+const entityTitleBudgetS = 25.0
+
+// entityTitleDocsPerSubject bounds how many documents one subject reads: a title may match more
+// than one document (a re-index, or a second dataset), and the member's fact is in each head.
+const entityTitleDocsPerSubject = 2
+
+// entityTitleHeadChunks is how far into one document the channel reads.
+//
+// ONE chunk: the member's fact is the document's FIRST chunk — measured 2026-09-22, chunk_order_int
+// 0 of the Brendan Fraser document carries the infobox row "Children: 3" — and that chunk is
+// UNREACHABLE by ranking: its searchable tokens drop the table's cell text, so "children" appears in
+// no indexed field of it and a metadata-scoped hybrid leg returns the document's references and prose
+// instead. Reading the head in reading order is therefore the only door to a member's fact.
+//
+// One and not more because the opening preview the session is handed is BOUNDED (see
+// renderOpening): a second chunk per member buys prose that would otherwise displace another
+// member's document, and a member not shown is a member the answer cannot carry.
+const entityTitleHeadChunks = 1
+
+// entityTitleMaxSubjects bounds the subjects one opening reads: an enumerated question names a
+// handful (the ten-member case fits), and a runaway list would turn the opening into a crawl.
+const entityTitleMaxSubjects = 16
+
+// entityTitlePrefetch reads ONE document per subject the plan DECLARED, located by TITLE rather
+// than by ranking.
+//
+// Why it exists: an enumerated question ("how many children did all of the winners and nominees
+// have") keeps each member's fact in the member's OWN document — the infobox line of a biography,
+// one chunk in — while the ranked legs answer "which passage best matches the question", which for
+// a set question is the article ABOUT the set (the awards article) and not the ten biographies.
+// Measured 2026-09-22 on the ten-nominee Oscar question: the opening ranked a 1105-passage union
+// out of the awards article, the session read the infobox of only the two biographies that
+// happened to surface, and seven members were never read at all.
+//
+// So each declared subject (see runtime.DeclaredProbes) is resolved against the dataset's own title
+// field and its document HEAD is then read (see runtime.HeadChunksOfDocument) — the member's fact is
+// the first chunk, and it is UNREACHABLE by ranking: the infobox chunk's searchable tokens carry no
+// cell text at all. Beyond the scan channel (which asks where a member is MENTIONED) this asks to
+// READ the member's own document; no ranking had a reason, or a way, to put it first.
+//
+// titleIdentityOf flattens a document title into the words it is made of: lower-cased, every run
+// of non-alphanumeric characters folded into ONE space, so "Brendan_Fraser_386491.md" and
+// "Brendan Fraser" yield the same leading words.
+func titleIdentityOf(s string) string {
+	var b strings.Builder
+	space := true
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			space = false
+			continue
+		}
+		if !space {
+			b.WriteRune(' ')
+			space = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// titleMatchesEntity reports whether a document title NAMES this subject: the title's leading words
+// are the subject's (a biography is filed under the member's own name, plus whatever the source
+// appends — a parenthetical, a file suffix, an id), or the subject is a qualified spelling of the
+// title ("Michelle Williams actress" for "Michelle Williams").
+//
+// A plain substring test is deliberately NOT used: it would accept the member's MENTION inside an
+// article about someone else, and the point of this channel is to read the member's own document.
+func titleMatchesEntity(title, entity string) bool {
+	t := titleIdentityOf(title)
+	e := titleIdentityOf(entity)
+	if t == "" || e == "" {
+		return false
+	}
+	return t == e || strings.HasPrefix(t, e+" ") || strings.HasPrefix(e, t+" ")
+}
+
+// Returns the number of NEW passages admitted and the ids that should lead the ranked union.
+func entityTitlePrefetch(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) (int, []string) {
+	if st == nil || st.KB == nil {
+		return 0, nil
+	}
+	subjects := runtime.DeclaredProbes(st.SlotTable)
+	if len(subjects) == 0 {
+		return 0, nil
+	}
+	if len(subjects) > entityTitleMaxSubjects {
+		subjects = subjects[:entityTitleMaxSubjects]
+	}
+	added := 0
+	head := make([]string, 0, len(subjects))
+	read := 0
+	sample := ""
+	for _, name := range subjects {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		// Locate the member's own document by PROBING the name and keeping the hits whose document
+		// title IS the name. The probe only has to reach the document — any of its passages carries
+		// the doc id — and the title check is what keeps a mention of the member in someone else's
+		// article from becoming "their document".
+		//
+		// The metadata filter that would answer this in one call (`key:title contains "<name>"`)
+		// does NOT reach this dataset's title field: measured 2026-09-22 it returned no document
+		// while the same titles matched the index directly.
+		hits, _ := runtime.HybridSearch(ctx, deps.Search, runtime.SearchParams{
+			Question: name,
+			TopN:     entityTitleProbeTopN,
+		})
+		docIDs := make([]string, 0, entityTitleDocsPerSubject)
+		seen := make(map[string]bool, len(hits))
+		for _, c := range hits {
+			id := runtime.DocIDOf(c)
+			if id == "" || seen[id] || !titleMatchesEntity(runtime.DocTitleOf(c), name) {
+				continue
+			}
+			seen[id] = true
+			docIDs = append(docIDs, id)
+			if len(docIDs) >= entityTitleDocsPerSubject {
+				break
+			}
+		}
+		if len(docIDs) == 0 {
+			// Said out loud and skipped: a subject the corpus holds no document for is a fact the
+			// answer cannot carry, and pretending otherwise would only hide that from the reader.
+			sample := "probe_hits=0"
+			if len(hits) > 0 {
+				sample = fmt.Sprintf("probe_hits=%d first_doc_id=%q first_title=%q fields=%d",
+					len(hits), runtime.DocIDOf(hits[0]), runtime.DocTitleOf(hits[0]), len(hits[0]))
+			}
+			step(ctx, logger, "Prefetch", "entity titles: no document is titled %q (%s)", name, sample)
+			continue
+		}
+		for _, docID := range docIDs {
+			page := runtime.HeadChunksOfDocument(ctx, deps.Search, docID, entityTitleHeadChunks)
+			if len(page) == 0 {
+				continue
+			}
+			if sample == "" {
+				sample = fmt.Sprintf("chunk=%s table=%v head=%q", runtime.ChunkIDOf(page[0]),
+					strings.Contains(strings.ToLower(runtime.ChunkTextOf(page[0])), "<table"),
+					truncateRunes(runtime.ChunkTextOf(page[0]), 80))
+			}
+			read++
+			st.KB.Admit(func(p *runtime.PoolAdmitter) {
+				for _, c := range page {
+					p.Add(c)
+				}
+			})
+			for _, c := range page {
+				if id := runtime.ChunkIDOf(c); id != "" {
+					head = append(head, id)
+				}
+			}
+			added += len(page)
+		}
+	}
+	if added > 0 {
+		step(ctx, logger, "Prefetch", "entity titles: read %s from the head of %d declared subject document(s); first head chunk: %q",
+			runtime.CountOf(added, "passage"), read, sample)
+	}
+	return added, head
 }
 
 // spentS is how long ago a phase started, zero when it never did.
@@ -695,7 +898,7 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	// Gated on the plan declaring member probes (see scanDeclaredProbes), so a single-value question
 	// never pays for it. Its budget is its own small slice, taken from the round's clock.
 	scanCtx, cancelScan := context.WithTimeout(callCtx, time.Duration(scanBudgetS*float64(time.Second)))
-	scanDeclaredProbes(runtime.Nested(scanCtx), deps, st, logger)
+	Recall(runtime.Nested(scanCtx), deps, st, RecallSpec{Channel: RecallScan}, logger)
 	cancelScan()
 
 	res := RunSlotResearchPass(callCtx, ctx, deps.sessionDeps(), st.Question, st, t)
@@ -1175,7 +1378,8 @@ const (
 	EvidenceBatchMinSim    = 0.15
 	EvidenceBatchMinShared = 2
 	EvidenceBatchMaxSlots  = 4
-	EvidenceBatchMaxChars  = 12000
+	// The evidence a batch answer renders is bounded by the ANSWER stage's block bound (see
+	// runtime.StageChars(runtime.StageAnswer)), not by a constant declared here.
 )
 
 // EvidenceBatchPrompt
@@ -1222,8 +1426,9 @@ const (
 	// draftFallbackChars: raw-evidence fallback when no model is available or the
 	// call fails.
 	draftFallbackChars = 4000
-	// draftMaxChars caps the composed draft.
-	draftMaxChars = 6000
+	// The composed draft's cap is NOT a constant here: it is the draft stage's block bound (see
+	// runtime.StageChars(runtime.StageDraft)), so a draft is bounded in the same place as every
+	// other delivery rather than next to whoever composes it.
 )
 
 // containsNonASCII: a question carrying non-ASCII characters is answered in its own
@@ -1734,7 +1939,7 @@ func providerErrorSummary(err error) string {
 	if err == nil {
 		return ""
 	}
-	return truncateRunes(strings.Join(strings.Fields(err.Error()), " "), providerErrorSummaryMax)
+	return truncateRunes(runtime.FlattenLine(err.Error()), providerErrorSummaryMax)
 }
 
 // errorAnswerText renders a provider failure as the ANSWER, in the shape the

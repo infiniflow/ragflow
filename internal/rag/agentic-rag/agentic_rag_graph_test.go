@@ -3608,8 +3608,8 @@ func TestTheOpeningShareIsBoundedAndInsideTheQuestion(t *testing.T) {
 // tension: the answer turn's floor (one slow call may not be raced by the wall) and the research
 // room the round is allowed to spend.
 func TestTheFinaleKeepsItsShareAndTheResearchGetsWhatIsLeft(t *testing.T) {
-	if got := finaleShareS(TotalBudgetS); got != 0.25*TotalBudgetS {
-		t.Errorf("finaleShareS(%v) = %v, want a quarter of the question", TotalBudgetS, got)
+	if want := min(FinaleMaxS, 0.25*TotalBudgetS); finaleShareS(TotalBudgetS) != want {
+		t.Errorf("finaleShareS(%v) = %v, want %v", TotalBudgetS, finaleShareS(TotalBudgetS), want)
 	}
 	if got := finaleShareS(40); got != FinaleMinS {
 		t.Errorf("finaleShareS(40) = %v, want the floor %v (the answer call's own tail)", got, FinaleMinS)
@@ -3887,6 +3887,51 @@ func TestTheAnswerCitesWithTheHandlesTheModelWroteRenumberedCompactly(t *testing
 	useSessionAnswer(kb, bare, "关羽斩将甚多。")
 	if bare.Answer != "关羽斩将甚多。" {
 		t.Errorf("answer = %q, want it unchanged when nothing is cited", bare.Answer)
+	}
+}
+
+// TestAnAnswerThatNamesPassagesByIdsStillGetsCitations pins the fallback (see resolveLooseHandles).
+//
+// A DOCUMENT-LEVEL answer has no passage handle to write — metadata_search returns doc_ids and no
+// passages — so the model writes the id it was given. Measured 2026-09-22, two runs in a row came back
+// with zero citations (raw_markers=[], resolved_blocks=0) while every source the answer named was in
+// the pool: one answer wrote chunk ids out of a tool result, the other wrote `doc <id>`. The fallback
+// resolves both against the pool, and leaves an id the run never published exactly as written.
+func TestAnAnswerThatNamesPassagesByIdsStillGetsCitations(t *testing.T) {
+	kb := &runtime.Kbinfos{}
+	kb.Chunks = []map[string]any{
+		{"chunk_id": "6e9e890eb6d944fda75d71ed5e6f8802", "doc_id": "0ee41271ba9b42e9b73618054fc351c7", "content": "05_网络安全日志审计与电子证据保留规范"},
+		{"chunk_id": "28569a3e11e2490eb16c5bf415391f89", "doc_id": "057f5d7af5d743418e055ddef7b1e867", "content": "06_事件复盘与升级规则"},
+	}
+	kb.SessionEvidenceRefs = []string{"6e9e890eb6d944fda75d71ed5e6f8802", "28569a3e11e2490eb16c5bf415391f89"}
+
+	ans := "1. 日志审计规范（doc 0ee41271ba9b42e9b73618054fc351c7）\n" +
+		"2. 事件升级流程 `28569a3e11e2490eb16c5bf415391f89`\n" +
+		"3. 某篇未发布文档（doc deadbeefdeadbeefdeadbeefdeadbeef）"
+	resp := &RunResponse{}
+	useSessionAnswer(kb, resp, ans)
+
+	lines := strings.Split(resp.Answer, "\n")
+	// The replacement is a BARE [ID:n]: the model's own "doc" wording and its backticks go WITH the
+	// id, because the citation contract has no such form (citation_prompt.md: [ID:i], nothing else).
+	if got := strings.TrimSpace(lines[0]); got != "1. 日志审计规范（[ID:0]）" {
+		t.Errorf("line 1 = %q, want the doc id replaced by a bare citation number", got)
+	}
+	if got := strings.TrimSpace(lines[1]); got != "2. 事件升级流程 [ID:1]" {
+		t.Errorf("line 2 = %q, want the backticked chunk id replaced by a bare citation number", got)
+	}
+	if strings.Contains(resp.Answer, "0ee41271ba9b42e9b73618054fc351c7") ||
+		strings.Contains(resp.Answer, "28569a3e11e2490eb16c5bf415391f89") {
+		t.Errorf("answer = %q, want the resolved ids replaced by numbers, not echoed", resp.Answer)
+	}
+	// An id this run never published is left exactly as the model wrote it — prefix and all.
+	if !strings.Contains(lines[2], "doc deadbeefdeadbeefdeadbeefdeadbeef") {
+		t.Errorf("answer = %q, want an unpublished id left as written", resp.Answer)
+	}
+	// The doc id resolves to the first chunk of that document: the unit the client can open.
+	want := []string{"6e9e890eb6d944fda75d71ed5e6f8802", "28569a3e11e2490eb16c5bf415391f89"}
+	if !reflect.DeepEqual(kb.CiteChunkIDs, want) {
+		t.Errorf("CiteChunkIDs = %v, want %v (the passages the answer names, in answer order)", kb.CiteChunkIDs, want)
 	}
 }
 

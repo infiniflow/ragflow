@@ -859,6 +859,58 @@ func TestListChunksDeepReadsDocStore(t *testing.T) {
 	}
 }
 
+// tableChunksFor serves one table chunk for docID, so a test can pin how THIS path renders a
+// table (the shape contract above must not cost the shared renderer).
+func tableChunksFor(docID, raw string) DocChunkLister {
+	return tableChunksStub{docID: docID, raw: raw}
+}
+
+type tableChunksStub struct {
+	docID string
+	raw   string
+}
+
+func (s tableChunksStub) DocChunks(_ context.Context, req DocChunksRequest) ([]map[string]any, error) {
+	if req.DocID != s.docID || req.Offset > 0 {
+		return nil, nil
+	}
+	return []map[string]any{{
+		"chunk_id": "t0",
+		"doc_id":   s.docID,
+		"content":  s.raw,
+	}}, nil
+}
+
+// TestListChunksTablePassageIsRendered pins the SHARED renderer on the list_chunks path: a table
+// chunk must reach the model as the rendered field view — one JSON object per row, see RenderTables —
+// not as raw <table> markup. This path used to build its own passage dict, which is how an
+// 8275-code-point standings table reached the model as raw HTML and then, cut to its first ~800 code
+// points, read as "only the top four finishers". What the assertion is really about is the ROW SET
+// surviving the render (hence the last row); the notation is the renderer's business.
+func TestListChunksTablePassageIsRendered(t *testing.T) {
+	const raw = `<table><thead><tr><th>Rank</th><th>Player</th><th>Total</th></tr></thead>` +
+		`<tbody><tr><td>1</td><td>Kelly Kulick</td><td>587</td></tr>` +
+		`<tr><td>19</td><td>Mariana Ayala</td><td>501</td></tr></tbody></table>`
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.DocChunks = tableChunksFor("doc-t", raw)
+	ex := &searchExecutor{deps: deps, req: RunRequest{DatasetIDs: []string{"kb1"}, MaxLength: 8192}}
+
+	oc, err := ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-t"})
+	if err != nil {
+		t.Fatalf("list_chunks: %v", err)
+	}
+	if len(oc.Payload) != 1 {
+		t.Fatalf("payload = %d, want 1", len(oc.Payload))
+	}
+	content, _ := oc.Payload[0].(map[string]any)["content"].(string)
+	if strings.Contains(content, "<table") {
+		t.Errorf("table passage still carries raw markup:\n%s", content)
+	}
+	if !strings.Contains(content, `"Player": "Mariana Ayala"`) {
+		t.Errorf("table passage is not the rendered field view carrying its late rows:\n%s", content)
+	}
+}
+
 // TestListChunksPagesThroughADocument pins the paging reader: one call returns ONE PAGE
 // (listChunksMaxOut chunks) and its note says whether the document continues, so a long
 // document is read by advancing the offset rather than by widening the page.
@@ -1793,37 +1845,35 @@ func TestNormalizeMetadataValue(t *testing.T) {
 	}
 }
 
-// TestMetadataSearchOneShotGuardBlocksSecondCall pins the one-shot policy end to end at
-// the tool node: the first call runs, the second within the same session is answered with
-// a nudge and never executed.
-func TestMetadataSearchOneShotGuardBlocksSecondCall(t *testing.T) {
+// TestMetadataSearchSecondFilterRuns pins the ABSENCE of the old one-shot guard: the tool is a
+// document-set SELECTOR, so a question that spans two conditions (two days, two authors) needs
+// one call per condition, and the second filter must reach the executor instead of being nudged
+// away. (Identical calls are still answered from the tool cache — only a NEW filter re-runs.)
+func TestMetadataSearchSecondFilterRuns(t *testing.T) {
 	exec := &ladderExec{emptyFor: map[string]bool{}}
+	dayFilter := func(day string) map[string]any {
+		return map[string]any{"filters": []any{map[string]any{
+			"key": "update_time", "op": "start with", "value": day,
+		}}}
+	}
 	st := &SessionState{
 		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
 		DeadlineLeft: 60,
 		ToolCache:    NewToolCache(),
-		PendingCalls: []ToolCall{{ID: "call-1", Name: "metadata_search"}},
+		PendingCalls: []ToolCall{{ID: "call-1", Name: "metadata_search", Args: dayFilter("2026-09-20")}},
 	}
 	if err := st.toolNode(context.Background()); err != nil {
 		t.Fatalf("toolNode: %v", err)
 	}
-	if len(exec.calls) != 1 || exec.calls[0] != "metadata_search" {
-		t.Fatalf("calls = %v, want the first metadata_search executed", exec.calls)
-	}
-	if !st.MetadataSearchUsed {
-		t.Error("MetadataSearchUsed must be set after the first call")
-	}
-
-	st.PendingCalls = []ToolCall{{ID: "call-2", Name: "metadata_search"}}
+	st.PendingCalls = []ToolCall{{ID: "call-2", Name: "metadata_search", Args: dayFilter("2026-09-21")}}
 	if err := st.toolNode(context.Background()); err != nil {
 		t.Fatalf("toolNode (second turn): %v", err)
 	}
-	if len(exec.calls) != 1 {
-		t.Errorf("calls = %v, want the second metadata_search blocked", exec.calls)
+	if len(exec.calls) != 2 {
+		t.Fatalf("calls = %v, want both filters executed", exec.calls)
 	}
-	last := st.Messages[len(st.Messages)-1]
-	if !strings.Contains(last.Content, "ONE-SHOT") {
-		t.Errorf("second call's tool message = %q, want the one-shot nudge", last.Content)
+	if last := st.Messages[len(st.Messages)-1]; strings.Contains(last.Content, "ONE-SHOT") {
+		t.Errorf("the second filter was nudged away instead of executed: %q", last.Content)
 	}
 }
 
@@ -1840,10 +1890,10 @@ func toolNote(out ToolOutcome) string {
 	return note
 }
 
-// TestPassageFromChunkRendersTablesAsMarkdown pins the action-session table shape: the
-// model sees a Markdown view (same rows, a fraction of the tokens) and never the raw
-// <table>/<td> markup. The chunk in the shared pool stays raw for citation.
-func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
+// TestPassageFromChunkRendersTablesAsLines pins the action-session table shape: the model
+// sees the rendered view (one "key: value" line per row, a fraction of the tokens) and never
+// the raw <table>/<td> markup. The chunk in the shared pool stays raw for citation.
+func TestPassageFromChunkRendersTablesAsLines(t *testing.T) {
 	table := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
 		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
 		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
@@ -1854,7 +1904,7 @@ func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
 	if strings.Contains(content, "<td>") || strings.Contains(content, "<table") {
 		t.Errorf("the model-visible passage still carries raw HTML: %q", content)
 	}
-	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+	for _, want := range []string{`"Rank": "19"`, `"Rider": "Danilo"`, `"Points": "62"`, `"Rank": "20"`} {
 		if !strings.Contains(content, want) {
 			t.Errorf("passage lost %q: %q", want, content)
 		}

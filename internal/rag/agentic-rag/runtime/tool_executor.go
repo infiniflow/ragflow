@@ -1785,23 +1785,27 @@ func toolDocScope(args map[string]any) []string {
 // merge reads it as entry["id"],
 // so a "chunk_id" key silently disables the drill's structure_path attachment.
 func passageFromChunk(c map[string]any) map[string]any {
-	// Table chunks are shown to the model as a Markdown view (key-value for infoboxes,
-	// a full-row pipe table for ranked/result tables) instead of raw <table> markup:
-	// same rows, a fraction of the tokens, and a form the model can aggregate. They
-	// also pass through un-truncated: the 1200-char cap would hide rows mid/late in a
-	// long standings table. The shared pool keeps the RAW chunk for citation.
-	var content string
-	if IsTableChunk(c) {
-		content = TableViewOrRaw(ChunkTextOf(c))
-	} else {
-		// Content is a plain slice at 1200 chars (no trim, no ellipsis).
-		content = truncateRunes(ChunkTextOf(c), 1200)
-	}
 	return map[string]any{
 		"id":      ChunkIDOf(c),
-		"content": content,
+		"content": passageContent(c),
 		"doc_id":  DocIDOf(c),
 	}
+}
+
+// passageContent renders one chunk's model-facing text, and is the SINGLE place that decides how
+// a passage is shown: table chunks as the rendered FIELD view — one JSON object per row, built from
+// the table's columns (`{"Children": "3"}`, `{"Rank": "19", "Rider": "Danilo", "Points": "62"}`);
+// see RenderTables — instead of raw <table> markup — same rows, a fraction of the tokens, and a form
+// the model can aggregate — and un-truncated, because the 1200-char cap would
+// hide rows mid/late in a long standings table. Everything else is a plain slice at 1200 code
+// points (no trim, no ellipsis). Every tool that hands a passage to the model goes through here;
+// list_chunks used to build its own dict, which is how an 8275-code-point standings table reached
+// the model as raw <table> markup. The shared pool keeps the RAW chunk for citation.
+func passageContent(c map[string]any) string {
+	if IsTableChunk(c) {
+		return TableViewOrRaw(ChunkTextOf(c))
+	}
+	return truncateRunes(ChunkTextOf(c), 1200)
 }
 
 // PublishReferences writes the accumulated evidence into the canvas state so the

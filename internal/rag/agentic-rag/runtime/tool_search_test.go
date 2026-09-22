@@ -345,10 +345,10 @@ func TestNarrowContentKeepsNeighboursAndHighlights(t *testing.T) {
 	}
 }
 
-// TestNarrowContentRendersHTMLTablesAsMarkdown pins the table branch: an HTML table is
-// serialized to a Markdown view before the model sees it (raw <table>/<td> markup is the
-// expensive and least readable form), and the row set is not pruned.
-func TestNarrowContentRendersHTMLTablesAsMarkdown(t *testing.T) {
+// TestNarrowContentRendersHTMLTablesAsLines pins the table branch: an HTML table is
+// serialized to its rendered line view before the model sees it (raw <table>/<td> markup is
+// the expensive and least readable form), and the row set is not pruned.
+func TestNarrowContentRendersHTMLTablesAsLines(t *testing.T) {
 	content := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
 		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
 		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
@@ -359,7 +359,7 @@ func TestNarrowContentRendersHTMLTablesAsMarkdown(t *testing.T) {
 	if strings.Contains(got, "<td>") || strings.Contains(got, "<table") {
 		t.Errorf("narrowed table still carries raw HTML: %q", got)
 	}
-	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+	for _, want := range []string{`"Rank": "19"`, "Danilo", `"Points": "62"`, `"Rank": "20"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("narrowed table lost %q: %q", want, got)
 		}
@@ -755,8 +755,11 @@ func TestMetadataCatalogForBuildsSortedKeysWithSamples(t *testing.T) {
 			t.Errorf("render missing %q:\n%s", want, render)
 		}
 	}
-	if n := utf8.RuneCountInString(render); n > metadataCatalogRenderMax {
-		t.Errorf("render = %d runes, cap is %d", n, metadataCatalogRenderMax)
+	// No caps: every offered field must appear, so a filter can name any of them.
+	for _, k := range cat.Keys {
+		if !strings.Contains(render, k) {
+			t.Errorf("render dropped field %q:\n%s", k, render)
+		}
 	}
 }
 

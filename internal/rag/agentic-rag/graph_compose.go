@@ -126,8 +126,9 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	if answer == "" {
 		answer = evidence
 	}
-	// (ans or evidence)[:6000].
-	return truncateRunes(answer, draftMaxChars)
+	// (ans or evidence)[:6000] — the draft's block bound comes from the delivery table (see
+	// runtime.StageDraft), so it is the same number the rest of the run reads.
+	return truncateRunes(answer, runtime.StageChars(runtime.StageDraft))
 }
 
 // NaiveRAG: answer with one retrieve pass
@@ -370,6 +371,93 @@ func sessionAnswerBlocked(kb *runtime.Kbinfos, abstain bool) string {
 // citationIndexRE matches a citation marker the model wrote, capturing whatever it put inside.
 var citationIndexRE = regexp.MustCompile(`(\s*)\[ID[:：]\s*([^\]]*?)\s*\]`)
 
+// looseHandleRE matches a source reference the model may write where a [ID:n] handle belongs: a
+// chunk id (16 hex) or a document id (32 hex) — bare, in backticks, or introduced by "doc" /
+// "document" — which is how a tool result and metadata_search print them (measured 2026-09-22:
+// “ `6e9e890eb6d944fda75d71ed5e6f8802` “ and `doc 0ee41271ba9b42e9b73618054fc351c7`).
+//
+// The optional prefix and the backticks are INSIDE the match on purpose: the replacement has to be a
+// bare [ID:n]. Matching only the id left the model's own wording in place ("（doc [ID:0]）"), and the
+// delivery contract has no such thing as a "doc" citation — only [ID:i] (see citation_prompt.md).
+//
+// The 32-hex alternative comes first so a document id is not read as its own first half, and the
+// boundaries keep a longer hex run from being cut into pieces.
+var looseHandleRE = regexp.MustCompile("(?i)`?\\b(?:documents?|docs?)?\\s*[:：]?\\s*([0-9a-f]{32}|[0-9a-f]{16})\\b`?")
+
+// resolveLooseHandles is the fallback for an answer that cites NOTHING the registry can resolve.
+//
+// Why it exists (measured 2026-09-22, two runs in a row on the same assistant): the contract asks the
+// model to put "the handle of the passage behind a fact" — the [ID:n] a seed block prints, or the ref
+// number a tool result prints — and the model wrote something else instead. The first run answered a
+// comparison question and wrote the raw chunk id out of a tool result (`6e9e890eb6d944fda75d71ed5e6f8802`);
+// the second answered a DOCUMENT-LEVEL question ("which documents were indexed on 2026-09-20") and wrote
+// `doc 0ee41271ba9b42e9b73618054fc351c7` beside a `[来源：metadata_search 结果]` tag. Both are honest
+// source references and both resolved to nothing: the seed's handles cover PASSAGES, while metadata_search
+// returns doc_ids and no passages at all — so a document-level answer has no handle to write, and the user
+// was shown an answer with zero citations (citation markers: {"raw_markers": [], "resolved_blocks": 0}).
+//
+// The ids are therefore matched back against the POOL: a chunk id resolves to itself, a doc id to the
+// first chunk of that document (the unit the client can open). ONLY ids the pool actually holds are
+// accepted — the same rule the [ID:n] path applies, where a marker naming no published passage is
+// dropped — and the id in the text is rewritten to the compact number the client indexes, so the
+// reader gets a citation it can click rather than a uuid it cannot.
+//
+// It runs only when nothing resolved the proper way (see useSessionAnswer): an answer that cites by
+// handle is never touched by it.
+func resolveLooseHandles(kb *runtime.Kbinfos, ans string) (string, []string) {
+	if kb == nil || ans == "" {
+		return ans, nil
+	}
+	chunks := kb.Chunks
+	if len(chunks) == 0 {
+		return ans, nil
+	}
+	byChunkID := make(map[string]map[string]any, len(chunks))
+	byDocID := make(map[string]map[string]any, len(chunks))
+	for _, c := range chunks {
+		if id := runtime.ChunkIDOf(c); id != "" {
+			if _, seen := byChunkID[id]; !seen {
+				byChunkID[id] = c
+			}
+		}
+		if d := runtime.DocIDOf(c); d != "" {
+			if _, seen := byDocID[d]; !seen {
+				byDocID[d] = c
+			}
+		}
+	}
+	cited := make([]string, 0, 4)
+	order := make(map[string]int, 4)
+	out := looseHandleRE.ReplaceAllStringFunc(ans, func(m string) string {
+		sub := looseHandleRE.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		id := strings.ToLower(strings.TrimSpace(sub[1]))
+		c, ok := byChunkID[id]
+		if !ok {
+			c, ok = byDocID[id]
+		}
+		if !ok {
+			// An id this run never published: leave it as the model wrote it. Nothing is dropped
+			// here — this fallback adds citations, it does not remove text.
+			return m
+		}
+		cid := runtime.ChunkIDOf(c)
+		if cid == "" {
+			return m
+		}
+		k, seen := order[cid]
+		if !seen {
+			k = len(cited)
+			order[cid] = k
+			cited = append(cited, cid)
+		}
+		return fmt.Sprintf("[ID:%d]", k)
+	})
+	return out, cited
+}
+
 // useSessionAnswer installs the session's answer with the handles the model cited, RENUMBERED COMPACTLY.
 //
 // The model cites with the handles the run printed beside its evidence ([ID:k] — the seed's numbering,
@@ -379,10 +467,11 @@ var citationIndexRE = regexp.MustCompile(`(\s*)\[ID[:：]\s*([^\]]*?)\s*\]`)
 // becomes [ID:0], the next passage it has not cited yet [ID:1], and so on — and kb.CiteChunkIDs is that
 // list, in that order, which is the list the client resolves the markers against.
 //
-// Nothing is matched, inferred or repaired. The model says which passage each claim rests on (that is
-// what the handle it wrote IS), and the code drops only what cannot resolve: a marker that is not a
-// handle at all (a chunk id copied out of a tool result, measured 2026-09-21) and a number that names no
-// passage this run published. An answer that cites nothing gets no citations.
+// The handle is not inferred from the prose: the model says which passage each claim rests on (that is
+// what the handle it wrote IS), and a marker naming no passage this run published is dropped. ONE
+// fallback runs before an answer is written off — resolveLooseHandles, for the case where the only
+// source references the model could write are chunk ids or doc ids (a document-level question has no
+// passage handle to write). An answer whose references resolve neither way still gets the registry.
 func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
 	if kb != nil {
 		refs := kb.SessionEvidenceRefs
@@ -410,6 +499,18 @@ func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
 		})
 		if len(cited) > 0 {
 			kb.CiteChunkIDs = cited
+		} else if looseAns, loose := resolveLooseHandles(kb, ans); len(loose) > 0 {
+			// Nothing resolved as a handle, but the answer names passages or documents by their own
+			// ids — the shape a document-level question produces (see resolveLooseHandles). Take
+			// them, rather than publish a citation list that no marker in the text points at.
+			//
+			// Said out loud, because this path is otherwise INVISIBLE: the chat pipeline's citation
+			// line reports the markers the model wrote, and on this path it wrote none — so without
+			// this line the run looks like (and used to be) an answer with zero citations.
+			_LOG.Printf("[Citations] no [ID:n] handle resolved; %d id(s) the answer named were "+
+				"resolved against the pool instead (the answer had no handle to write).", len(loose))
+			ans = looseAns
+			kb.CiteChunkIDs = loose
 		} else {
 			kb.CiteChunkIDs = append([]string(nil), refs...)
 		}

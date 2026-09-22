@@ -67,7 +67,7 @@ func RenderStructure(entities, relations []map[string]any) string {
 				continue
 			}
 			typ := strings.TrimSpace(orStr(strAny(e["type"]), "other"))
-			desc := strings.Join(strings.Fields(strAny(e["description"])), " ")
+			desc := FlattenLine(strAny(e["description"]))
 			line := "- " + name + " (" + typ + ")"
 			if desc != "" {
 				line += ": " + desc

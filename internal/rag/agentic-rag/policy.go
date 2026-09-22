@@ -89,13 +89,21 @@ func canOpenRound(remaining float64) bool {
 // arithmetic: opening (planner + prefetch together) / research (every round) / finale (the answer
 // turn plus the composition that may follow it). They sum to less than the budget by construction.
 const (
-	TotalBudgetS = 180.0 // whole-graph wall-clock ceiling per question
+	// TotalBudgetS was 180s. Raised because the provider's planner call can burn 90s on its own
+	// (two 45s deadline-exceeded attempts — measured 2026-09-22 on an FRAMES aggregate question),
+	// and at 180s that ate the opening whole: the prefetch was skipped, the pool started EMPTY and
+	// the research had 50s — one short round, then a refusal. 480s keeps the opening's ALLOWANCE
+	// (a quarter of the question, capped by OpeningMaxS) above one failed planner call, so the
+	// prefetch still gets its pool afterwards. The floor stays 15s: on a nearly-spent question the
+	// opening must stay inside what is left (see TestTheOpeningShareIsBoundedAndInsideTheQuestion).
+	TotalBudgetS = 480.0 // whole-graph wall-clock ceiling per question
 
 	// OpeningMaxS bounds the OPENING AS A WHOLE — planner and prefetch share this deadline rather
 	// than owning one budget each. Measured: the opening's median is 2-9s, and the deep-recall
-	// opening (Stage 3) needs more room than that, so the ceiling is generous while the tail (90s)
-	// that used to starve the research is gone.
-	OpeningMaxS = 45.0
+	// opening (Stage 3) needs more room than that, so the ceiling is generous. It was 45s, which
+	// sat BELOW one failed planner call: a single provider stall starved the pool (see the note on
+	// TotalBudgetS).
+	OpeningMaxS = 120.0
 	OpeningMinS = 15.0
 
 	// FinaleMinS is what the ANSWER turn must still have when the research stops.

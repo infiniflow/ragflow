@@ -1075,7 +1075,7 @@ var (
 		Function: ToolFunction{
 			Name: "metadata_search",
 			Description: `WHEN TO CALL: SELECT the document set by METADATA before searching — call it when the question names explicit entities (a person, a time, a place) or any concrete name a metadata field would carry (a title, a file name, an author, a date), or needs a named subset. Use ONLY the AVAILABLE METADATA fields; prefer 'contains' with a distinctive substring. ` +
-				`CALL AT MOST ONCE PER DIRECTION, then spend the returned doc_ids: list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[ids]). ` +
+				`ONE FILTER PER CALL (two days = two calls), then spend the returned doc_ids: list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[ids]). ` +
 				`DO NOT CALL: nothing names a document/subset; you already hold a doc_id; counting or enumerating. ` +
 				`ARGUMENTS: filters — [{key, value, op}] over the AVAILABLE METADATA fields; op — see enum; logic 'and'|'or'. String ops take ONE keyword, one call per keyword; 'in' takes a list; 'empty' none. Example (one day): [{key: 'update_time', op: 'start with', value: '2026-09-20'}]. ` +
 				`OUTPUT: doc_ids — the handle other tools take — plus each matched document's metadata as CONTEXT ONLY, never an argument to pass on. No passages. ok = selected; miss = nothing matched. ` +
@@ -1533,16 +1533,15 @@ const (
 	// leaves ModeSpec.SnippetsPerQuery unset. The live value is
 	// snippetsPerQueryFor(RunRequest.ThinkingMode).
 	snippetsPerQuery = 4
-	// evidenceDigestChars bounds ONE chunk in the session seed's ALREADY RETRIEVED
-	// digest. It matches what an admitted passage carries (passageFromChunk: 1200), so
-	// the digest never shows a session LESS of a chunk than the same chunk would carry
-	// as a tool result.
+	// The digest's per-chunk length is the ALREADY RETRIEVED stage's allowance (see
+	// DeliverItemText). It matches what an admitted passage carries (passageFromChunk: 1200), so
+	// the digest never shows a session LESS of a chunk than the same chunk would carry as a tool
+	// result.
 	//
-	// The previous 300-code-point cut ended mid-sentence on narrative passages, and the
-	// model — told to answer only from what it was shown — excluded the parties whose clause
-	// fell outside the window: a cap smaller than one sentence truncates exactly the evidence
-	// the answer is built from, even when the passage is in the pool.
-	evidenceDigestChars = 1200
+	// The previous 300-code-point cut ended mid-sentence on narrative passages, and the model —
+	// told to answer only from what it was shown — excluded the parties whose clause fell outside
+	// the window: a cap smaller than one sentence truncates exactly the evidence the answer is
+	// built from, even when the passage is in the pool.
 	// maxToolResponseChars bounds ONE tool payload.
 	maxToolResponseChars = 12000
 	// foldedToolResultChars is the size above which an EARLIER turn's tool result is folded into
@@ -2032,11 +2031,6 @@ type SessionState struct {
 	SearchQueries []string
 	// SkippedDup counts near-duplicate retrievals suppressed so far.
 	SkippedDup int
-	// MetadataSearchUsed is the metadata_search ONE-SHOT: the tool SELECTS a document
-	// set, so a second call within the SAME direction is blocked with a nudge (Python's
-	// _metadata_search_used). It survives across the session's turns but not across
-	// directions — each direction runs its own session.
-	MetadataSearchUsed bool
 	// ToolStrikes counts dataset-level empties per tool.
 	ToolStrikes map[string]int
 	// ToolOutcomes is the audit trail of (name, status, reason, metrics).
@@ -2296,7 +2290,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	evidenceIDs := append([]string(nil), s.RetrievedEvidenceIDs...)
 	budgetChars := s.CtxBudget
 	if budgetChars <= 0 {
-		budgetChars = maxToolResponseChars * 4
+		budgetChars = ctxBudgetFor(ResolveMode(s.Tools))
 	}
 	used := s.ToolChars
 	if s.ToolCache == nil {
@@ -2339,18 +2333,6 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			}}))
 			continue
 		}
-		// metadata_search ONE-SHOT guard: block any 2nd call within this direction.
-		// The tool SELECTS a document set — once the ids are in hand there is nothing a
-		// second call could add, and re-issuing it would burn the direction's turns
-		// re-applying a filter that is already in force.
-		if c.Name == "metadata_search" && s.MetadataSearchUsed {
-			_LOG.Printf("[Action Session] blocking 2nd metadata_search this direction (one-shot guard): %s", RenderToolArgs(c.Args))
-			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
-				"kind": "metadata_search",
-				"note": "metadata_search is a ONE-SHOT metadata selector and was ALREADY used this direction. Spend the doc_ids it returned — list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[...]) — do NOT call metadata_search again this direction.",
-			}}))
-			continue
-		}
 		// Unknown tool name — never execute it; answer with a correction so the
 		// model can recover. Models usually emit the XML protocol tags (state /
 		// answer) as tool names; they belong in the reply body as plain text.
@@ -2383,11 +2365,6 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			seenQueries = append(seenQueries, q)
 		}
 		evidenceIDs = append(evidenceIDs, oc.EvidenceIDs...)
-		if c.Name == "metadata_search" {
-			// Used whatever the status: the guard is about not re-filtering, not about
-			// the filter having matched.
-			s.MetadataSearchUsed = true
-		}
 		chunks := append([]any(nil), oc.Payload...)
 
 		// ── Policy: act on WHAT happened, not just on payload size ──────────
@@ -2428,7 +2405,11 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		markReadState(s.KB, chunks)
 		payload := marshalPassages(chunks)
 		if oc.Note != "" {
-			payload += "\n" + oc.Note
+			// The note carries the tool's own continuation data (list_chunks' hasMore / offset,
+			// a nav hint). It rides at the FRONT: the cut below removes the TAIL, and a
+			// continuation hint that got cut is a session that concludes the corpus is short
+			// instead of asking for the next page (measured 2026-09-22, c1 bowling question).
+			payload = oc.Note + "\n" + payload
 			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, trunc(oc.Note, 280))
 		}
 		// If the session is already heavy, cut this payload proportionally.
@@ -2440,7 +2421,19 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			if keep < 800 {
 				keep = 800
 			}
-			payload = truncateRunes(payload, keep)
+			// The cut is ANNOUNCED. A silent cut is what makes a session report "the corpus
+			// does not say" about a passage it was never shown (measured 2026-09-22: an
+			// 8275-code-point standings table reached the model as its first ~800, and the
+			// answer then said the table "only displayed the top four finishers").
+			cut := utf8.RuneCountInString(payload) - keep
+			if cut < 0 {
+				cut = 0
+			}
+			payload = truncateRunes(payload, keep) + fmt.Sprintf(
+				"\n[… TRUNCATED: %d more code point(s) of this tool result were NOT shown. The tool "+
+					"returned MORE than you see — ask it for the next page with its own argument "+
+					"(list_chunks takes doc_id + offset), or narrow the query. Do not conclude the "+
+					"corpus lacks what was cut.]", cut)
 		}
 		used += utf8.RuneCountInString(payload)
 		s.Messages = appendMessages(s.Messages, *schema.ToolMessage(payload, c.ID))
@@ -2624,11 +2617,6 @@ func (s *SessionState) stampEvidenceRefs(chunks []any) {
 	}
 }
 
-// navPrefixQuoteChars is how much of each prefix-read passage the numbered block shows: enough to
-// tell them apart and to see which part of the document was read, not a second copy of the payload
-// the ladder already put in the history.
-const navPrefixQuoteChars = 200
-
 // seedEvidenceRefs registers passages the SEED showed the model — the opening's ranked previews, the
 // nav prefix's tool payloads — in the run's citation registry, in the order they were shown, and
 // returns one line per passage carrying the handle the model can cite.
@@ -2645,9 +2633,10 @@ const navPrefixQuoteChars = 200
 // the run's rather than restarting: a marker written in round 1 keeps pointing at the passage it was
 // written for after round 2 has shown its own.
 //
-// quoteChars > 0 renders those lines (the prefix path, whose payloads carry no handle yet);
-// 0 registers only (the opening path, whose lines already printed their handle in the seed).
-func (s *SessionState) seedEvidenceRefs(ids []string, quoteChars int) []string {
+// Each line shows as much of its passage as the PREFIX stage allows (see DeliverItemText): enough
+// to tell the passages apart and to see which part of each document was read, not a second copy of
+// the payload the ladder already put in the history.
+func (s *SessionState) seedEvidenceRefs(ids []string) []string {
 	if s == nil || s.KB == nil || len(ids) == 0 {
 		return nil
 	}
@@ -2657,10 +2646,8 @@ func (s *SessionState) seedEvidenceRefs(ids []string, quoteChars int) []string {
 		if !ok {
 			continue
 		}
-		if quoteChars > 0 {
-			text := strings.Join(strings.Fields(ChunkTextOf(c)), " ")
-			lines = append(lines, fmt.Sprintf("[ID:%d] %s", n, truncateRunes(text, quoteChars)))
-		}
+		text := FlattenLine(DeliverItemText(StagePrefix, ChunkTextOf(c), ""))
+		lines = append(lines, fmt.Sprintf("[ID:%d] %s", n, text))
 	}
 	return lines
 }
@@ -4385,9 +4372,41 @@ tried it and the corpus did not answer.
 //
 // Returns an empty Result (no states) when no model is configured or the session fails:
 // the failure is logged and an empty Result returned rather than propagating.
+// ctxBudgetFor is the session's cumulative tool-payload ceiling in CODE POINTS — how much tool
+// output ONE direction may ever show its model.
+//
+// It used to be maxToolResponseChars*4 (48000) for every mode, which is smaller than one page of
+// a Wikipedia document: a session read its way to the table it needed and was cut off before the
+// rows arrived (measured 2026-09-22, c1 bowling question: an 8275-code-point standings table
+// reached the model as its first ~800, and the answer said the table "only displayed the top four
+// finishers"). The ceiling now scales with how much the mode is allowed to read — turns and
+// snippets-per-query are already mode data (see ModeSpec); this is the same dial, in characters.
+func ctxBudgetFor(mode ModeSpec) int {
+	turns := mode.ActionMaxTurns
+	if turns <= 0 {
+		turns = 8
+	}
+	snips := mode.SnippetsPerQuery
+	if snips <= 0 {
+		snips = 6
+	}
+	// medium 8×6 → 6×, high 8×8 → 8×, ultra 10×10 → 12× (clamped); low/naive floor 4× = the old 48000.
+	factor := max(4, min(12, turns*snips/8))
+	return maxToolResponseChars * factor
+}
+
+// sessionDateLine is the one piece of clock context a session cannot infer from the corpus.
+// Without it the model falls back on its own priors: measured 2026-09-22, a session answered
+// "2026-09-21 is in the future — the current system date is 2026-05-22" and refused a question
+// the dataset could answer. Every session seed carries the line.
+func sessionDateLine() string {
+	now := time.Now()
+	return "Today: " + now.Format("2006-01-02") + " (UTC" + now.Format("-07:00") + ")"
+}
+
 func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache *ToolCache, sharedSearchQueries []string) Result {
 	system := loadPrompt(deps.Prompts, "action_run") + answerContract
-	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
+	seedUser := sessionDateLine() + "\n\n" + fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
 	// The SET method is NOT seeded here. It is handed to a session mid-run, on the first batch
 	// the caller writes (see appendBatchProtocol): the signal is the session's OWN writing, and
@@ -4412,8 +4431,10 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 
 	// ALREADY RETRIEVED: surface the evidence already in the shared pool so the model fills
 	// slots from it instead of re-retrieving the same ground. Without this the ReAct loop
-	// repeatedly searches evidence it already holds.
-	if existing := extractRelevantEvidence(deps.KB, direction, 4); existing != "" {
+	// repeatedly searches evidence it already holds. How MANY of them show is the digest stage's
+	// item bound, and how much of each shows is its item allowance (see StageMaxItems /
+	// DeliverItemText) — neither is a count chosen at this call site.
+	if existing := extractRelevantEvidence(deps.KB, direction, StageMaxItems(StageDigest)); existing != "" {
 		seedUser += "\n\nALREADY RETRIEVED (do NOT re-retrieve these — use them to fill slots or identify gaps):\n" + existing
 	}
 
@@ -4425,7 +4446,9 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	// list (the paper's o_1), not the pool's insertion order and not a search of its own. Measured
 	// 2026-09-20 (三国/关羽): the session spent its only two calls searching a sixty-passage pool and
 	// never answered, while the passages its answer needed were reachable but unnamed.
-	if opening := renderOpening(deps.KB); opening != "" {
+	// The opening shows every member the plan declared (see StageMaxItemsFor), so how many previews it
+	// carries comes from the slot table's subjects — the same list the entity-title channel reads.
+	if opening := renderOpening(deps.KB, direction, len(DeclaredProbes(parent))); opening != "" {
 		seedUser += "\n\nOPENING (candidates for this question in RANKED order, best first — these are PREVIEWS: read a passage before you cite or answer from it):\n" + opening
 	}
 
@@ -4487,7 +4510,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// the wall does, or the last call is lost at the boundary.
 		DeadlineLeft:  sessionClock,
 		BudgetS:       sessionClock,
-		CtxBudget:     maxToolResponseChars * 4,
+		CtxBudget:     ctxBudgetFor(ResolveMode(deps.Tools)),
 		ToolChars:     0,
 		ToolCache:     sharedToolCache,
 		SearchQueries: sharedSearchQueries,
@@ -4537,7 +4560,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 			len(prefix.Messages)/2, len(prefix.EvidenceIDs), prefix.PendingRule)
 		// The ladder's payloads print no handle, and nothing registered them: they are the FIRST
 		// passages the model reads, so they are the first it may answer from (see seedEvidenceRefs).
-		if lines := st.seedEvidenceRefs(prefix.EvidenceIDs, navPrefixQuoteChars); len(lines) > 0 {
+		if lines := st.seedEvidenceRefs(prefix.EvidenceIDs); len(lines) > 0 {
 			st.Messages = append(st.Messages, *schema.UserMessage(
 				"NAV PREFIX EVIDENCE — the ladder already read these passages; [ID:n] is the handle to cite each of them:\n- " +
 					strings.Join(lines, "\n- ")))
@@ -4595,7 +4618,7 @@ type InitResult struct {
 // deadlineLeft bounds the decomposition call.
 func InitializeState(ctx context.Context, deps SessionDeps, question string, fanoutHint []string, deadlineLeft float64) InitResult {
 	system := loadPrompt(deps.Prompts, "action_initialize_state")
-	user := "Question: " + question
+	user := sessionDateLine() + "\nQuestion: " + question
 	if len(fanoutHint) > 0 {
 		lines := make([]string, 0, len(fanoutHint))
 		for _, h := range fanoutHint {
@@ -4920,15 +4943,16 @@ func deadlineToDuration(seconds float64) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
-// scanSeedChars bounds the seed's scan material by CHARACTERS — the one bound, rather than a line cap,
-// because the point of the block is that it is the whole delivered material (see renderScanWindows).
+// The seed's scan material is bounded by CHARACTERS — the one bound, rather than a line cap, because
+// the point of the block is that it is the whole delivered material (see renderScanWindows) — and the
+// bound itself is the SCAN stage's block bound (see StageChars(StageScan)), not a constant here.
+//
 // 40000 is about 20-30k tokens of Chinese, the same order as what a WeKnora-style pipeline hands its
 // answerer in one pass. The block is a PAGE, not the pool: a bigger one does not buy members — measured
 // 2026-09-21 00:52, an 80000-character page with the actor channel in front of it produced a FIVE-member
 // answer, because the round costing nothing but reading is the same round that has nothing left to
 // search with. The actor channel's coverage lives in the pool (every window it reached is citable), and
 // the page shows the head of the act-word ranking, which is where the deed's sentences are.
-const scanSeedChars = 40000
 
 // scanSeedBlockEnabled gates the SCAN WINDOWS block in the session's seed.
 //
@@ -4955,7 +4979,7 @@ const scanWindowRunes = 240
 
 // renderScanWindows renders the scan's delivered windows as the enumeration material the session starts
 // from: one line per window, each with the citation handle of the passage it came from, bounded by
-// CHARACTERS (scanSeedChars) and by max lines when a caller asks for one (max <= 0: no line cap, which
+// CHARACTERS (the scan stage's block bound, see StageChars) and by max lines when a caller asks for one (max <= 0: no line cap, which
 // is what production passes). Every window it shows is PUBLISHED, so the answer can cite what it read.
 //
 // COMPLETE by construction, and that is the point. The block used to render thirty lines and say "…and
@@ -4980,13 +5004,14 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 	var b strings.Builder
 	b.WriteString("SCAN WINDOWS (the run's own declared probes matched these passages; each line is the " +
 		"sentence around the match — the material to enumerate from):\n")
+	budget := StageChars(StageScan)
 	shown, chars, repeated := 0, 0, 0
 	seen := map[string]bool{}
 	for _, w := range windows {
 		if max > 0 && shown >= max {
 			break
 		}
-		text := strings.Join(strings.Fields(w.Text), " ")
+		text := FlattenLine(w.Text)
 		if text == "" {
 			continue
 		}
@@ -4999,7 +5024,7 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 			continue
 		}
 		line := fmt.Sprintf("[ID:%d] %s | doc %s\n", nums[0], truncateRunes(text, scanWindowRunes), w.DocID)
-		if chars+len([]rune(line)) > scanSeedChars {
+		if chars+len([]rune(line)) > budget {
 			break
 		}
 		seen[text] = true
@@ -5012,7 +5037,7 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 	}
 	if rest := len(windows) - shown - repeated; rest > 0 {
 		fmt.Fprintf(&b, "…and %d more window(s) in the evidence pool (this block is bounded by %d "+
-			"characters); read on with list_chunks on the documents above.\n", rest, scanSeedChars)
+			"characters); read on with list_chunks on the documents above.\n", rest, budget)
 	}
 	return b.String()
 }
@@ -5021,14 +5046,11 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 // digest the model can read without re-retrieving. Chunks are ranked by the number of
 // direction tokens they contain, then the top maxChunks are surfaced so the seed prompt
 // stays bounded.
-// openingPreviewMax and openingPreviewChars bound the opening list the session is handed: eight
-// previews of one sentence each. It is the head of the ranked union, and it is a PREVIEW list — the
-// passages behind it are in the pool and the session reads the ones it needs (see the read/preview
-// rule in the playbook).
-const (
-	openingPreviewMax   = 8
-	openingPreviewChars = 300
-)
+//
+// How much of the opening reaches the model has TWO halves and neither is decided here: the LENGTH
+// of a preview is the stage's item allowance (see DeliverItemText) and the NUMBER of previews is the
+// stage's item bound (see StageMaxItems). They used to be a constant pair — an item allowance and a
+// separate count of 8 — kept in step by hand at this call site.
 
 // renderOpening renders the opening's ranked union as a bounded, ranked preview list, publishing each
 // preview it shows into the run's citation registry (see Kbinfos.PublishEvidence).
@@ -5037,11 +5059,15 @@ const (
 // calls, the order decides what the session reads first. Nothing is filtered — the rest of the
 // opening's passages stay in the pool and reachable through the tools.
 //
+// How MANY it shows is the opening stage's item bound raised to the number of entities the plan
+// declared (see StageMaxItemsFor and declaredSubjects): on an enumerated question the preview list is
+// the members themselves, and a member past the bound is a member no answer can name.
+//
 // Each line carries the citation handle of its passage, taken from the registry the answer's markers
 // are resolved against: a preview the model may answer from must be citable, and the handle it prints
 // must be the number the registry holds — the seed is rendered before the session exists, so the pool
 // is the only place that can hand out both.
-func renderOpening(kb *Kbinfos) string {
+func renderOpening(kb *Kbinfos, direction string, declaredSubjects int) string {
 	if kb == nil {
 		return ""
 	}
@@ -5051,15 +5077,19 @@ func renderOpening(kb *Kbinfos) string {
 	}
 	var b strings.Builder
 	shown := 0
+	limit := StageMaxItemsFor(StageOpening, declaredSubjects)
 	for _, id := range ids {
-		if shown >= openingPreviewMax {
+		if shown >= limit {
 			break
 		}
 		c := kb.ChunkByID(id)
 		if c == nil {
 			continue
 		}
-		text := strings.Join(strings.Fields(ChunkTextOf(c)), " ")
+		// The preview is one line per candidate, so the chosen lines are folded to a single
+		// line: what the stage's allowance buys is WHICH lines (see Deliverable), not how they
+		// wrap.
+		text := FlattenLine(DeliverItemText(StageOpening, ChunkTextOf(c), direction))
 		if text == "" {
 			continue
 		}
@@ -5067,8 +5097,8 @@ func renderOpening(kb *Kbinfos) string {
 		if len(nums) == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "[ID:%d] %s | doc %s\n", nums[0],
-			truncateRunes(text, openingPreviewChars), DocIDOf(c))
+		fmt.Fprintf(&b, "[ID:%d] %s | doc %s\n", nums[0], text, DocIDOf(c))
+		_LOG.Printf("[Action Session] opening preview %d: %s", shown, truncateRunes(text, 200))
 		shown++
 	}
 	if shown == 0 {
@@ -5119,15 +5149,13 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 
 	var b strings.Builder
 	for _, c := range ranked {
-		content := strings.TrimSpace(ChunkTextOf(c))
+		// One line per chunk, showing the same kind of view the opening preview shows (see
+		// DeliverItemText): the LINES that answer the direction, in the chunk's own order,
+		// rather than its first N characters.
+		content := FlattenLine(DeliverItemText(StageDigest, ChunkTextOf(c), direction))
 		if content == "" {
 			continue
 		}
-		// Cap each chunk at evidenceDigestChars and flatten newlines so the digest
-		// stays single-line per chunk. The cap is evidenceDigestChars, which is sized to hold a
-		// whole sentence (see the constant).
-		content = truncateRunes(content, evidenceDigestChars)
-		content = strings.ReplaceAll(content, "\n", " ")
 		// "[cid] text" so the model can cite the chunk id.
 		b.WriteString("[")
 		b.WriteString(ChunkIDOf(c))

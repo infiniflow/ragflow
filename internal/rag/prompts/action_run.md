@@ -105,7 +105,9 @@ Each tool returns a status. Act on it:
 | `redundant` | Every hit was already in your evidence | Stop re-searching; emit a `<state>` patch with what you have |
 | `error` | Infrastructure / provider failure | Switch tools; do not retry the same call |
 
-Special case — `metadata_search` (at most ONCE per direction):
-- `ok` → it selected documents and returned their `doc_ids` (no passages). Spend them now: `list_chunks(doc_id)` / `navigate_structure(doc_id, query)` / `retrieve(query, doc_scope=[ids])`; do NOT call `metadata_search` again this direction.
+Special case — `metadata_search` (ONE FILTER PER CALL):
+- **A time or document-attribute condition belongs here, not to keywords.** When the direction is a day ("documents updated or indexed on 2026-09-21"), an author, a title or a file name, no passage carries those words — a keyword query for them always comes back empty. Filter on the dataset's own field instead (one day: `[{key: 'update_time', op: 'start with', value: '2026-09-21'}]`; the fields are listed under AVAILABLE METADATA), then read the documents the filter selected.
+- A date earlier than the `Today:` line of your seed is an ordinary past fact and the question naming it is answerable — do not treat it as "in the future".
+- `ok` → it selected documents and returned their `doc_ids` (no passages). Spend them now: `list_chunks(doc_id)` / `navigate_structure(doc_id, query)` / `retrieve(query, doc_scope=[ids])`. A direction that spans TWO conditions (two days, two authors) takes one call per condition — the second filter is a NEW call, not a repeat.
 - `miss` / `empty` → nothing matched the filter; drop it (or retry once with a field/value from `AVAILABLE METADATA`) and fall back to `search_chunks` / `navigate_tree`. A call naming no usable field is answered with the dataset's real fields — do not repeat the same key.
 - `poor` → the filter was too narrow; widen it once, or abandon it for plain retrieval.

@@ -100,7 +100,7 @@ Any category may be empty.`
 // normKeyword: normalise a term for cross-category
 // dedup (lowercase, whitespace-collapsed).
 func normKeyword(s string) string {
-	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
+	return FlattenLine(strings.ToLower(s))
 }
 
 // parseAspects: parse the LLM's JSON into one

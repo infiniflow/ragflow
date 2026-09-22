@@ -39,6 +39,39 @@ func (e *ladderExec) Execute(_ context.Context, name string, _ map[string]any) (
 	}, nil
 }
 
+// bigPayloadExec answers every tool with one oversized passage, so the session's cumulative
+// tool-payload budget is what decides how much of it the model ever sees.
+type bigPayloadExec struct{ size int }
+
+func (e *bigPayloadExec) Execute(_ context.Context, name string, _ map[string]any) (ToolOutcome, error) {
+	return ToolOutcome{
+		Status:  StatusOK,
+		Payload: []any{map[string]any{"kind": name, "chunk_id": "c1", "content": strings.Repeat("字", e.size)}},
+	}, nil
+}
+
+// TestToolPayloadCutIsAnnounced pins the truncation notice: when a tool result does not fit the
+// session's cumulative budget, what the model receives must SAY how much was withheld and how to
+// ask for the rest. A silent cut is what let an 8275-code-point standings table reach the model as
+// its first ~800, after which the answer reported the table had only the top four finishers.
+func TestToolPayloadCutIsAnnounced(t *testing.T) {
+	exec := &bigPayloadExec{size: 5000}
+	st := &SessionState{
+		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
+		DeadlineLeft: 60,
+		ToolCache:    NewToolCache(),
+		CtxBudget:    1200, // smaller than one passage: forces the cut
+		PendingCalls: []ToolCall{{ID: "call-1", Name: "search_chunks", Args: map[string]any{"query": "x"}}},
+	}
+	if err := st.toolNode(context.Background()); err != nil {
+		t.Fatalf("toolNode: %v", err)
+	}
+	last := st.Messages[len(st.Messages)-1]
+	if !strings.Contains(last.Content, "TRUNCATED") {
+		t.Errorf("a cut tool result is not announced:\n%.200s", last.Content)
+	}
+}
+
 // TestConsumeExchangeUsesIdPrefix pins the id-prefix tagging: the prefix and the
 // in-session ladder fallback share rule ids, so their tool_call ids must be tagged
 // differently ("nav_<rule>" vs "ladder_<rule>") or the provider rejects the history as a
@@ -1591,13 +1624,15 @@ func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
 
 	digest := extractRelevantEvidence(kb, "关羽杀了多少有姓名的人物", 4)
 	if !strings.Contains(digest, "砍杨龄于马下") {
-		t.Fatalf("digest = %q…, want the clause that names the member (cap %d)", truncateRunes(digest, 120), evidenceDigestChars)
+		t.Fatalf("digest = %q…, want the clause that names the member (cap %d)", truncateRunes(digest, 120),
+			stageBudgets[StageDigest].MaxCharsPerItem)
 	}
-	if got := len([]rune(digest)); got > evidenceDigestChars+64 {
+	if got := len([]rune(digest)); got > stageBudgets[StageDigest].MaxCharsPerItem+64 {
 		t.Errorf("digest = %d runes, want no more than one capped chunk plus its id", got)
 	}
-	if evidenceDigestChars < 1200 {
-		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries", evidenceDigestChars)
+	if stageBudgets[StageDigest].MaxCharsPerItem < 1200 {
+		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries",
+			stageBudgets[StageDigest].MaxCharsPerItem)
 	}
 }
 
@@ -1788,7 +1823,7 @@ func TestTheOpeningIsHandedToTheSessionInRankOrder(t *testing.T) {
 	}}
 	kb.NoteOpening([]string{"c-b", "c-a"})
 
-	got := renderOpening(kb)
+	got := renderOpening(kb, "", 0)
 	lines := strings.Split(strings.TrimSpace(got), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("opening rendered %d line(s), want 2:\n%s", len(lines), got)
@@ -1818,31 +1853,47 @@ func TestTheOpeningIsHandedToTheSessionInRankOrder(t *testing.T) {
 	// not take a handle with it; an empty opening renders nothing at all.
 	kb.NoteOpening([]string{"c-gone", "c-a"})
 	// c-a keeps the number it was published with, and the missing id takes no number at all.
-	again := renderOpening(kb)
+	again := renderOpening(kb, "", 0)
 	if !strings.Contains(again, "云长提华雄") || strings.Contains(again, "c-gone") {
 		t.Errorf("renderOpening = %q, want only the chunk the pool holds", again)
 	}
 	if !strings.Contains(again, "[ID:1]") || strings.Count(again, "[ID:") != 1 {
 		t.Errorf("renderOpening = %q, want c-a's published handle and no other line", again)
 	}
-	if got := renderOpening(&Kbinfos{}); got != "" {
+	if got := renderOpening(&Kbinfos{}, "", 0); got != "" {
 		t.Errorf("an empty opening rendered %q", got)
 	}
 
 	// The list is BOUNDED: the head of the ranking is what the session pays for.
 	big := &Kbinfos{}
 	var ids []string
-	for i := 0; i < openingPreviewMax+5; i++ {
+	for i := 0; i < StageMaxItems(StageOpening)+5; i++ {
 		id := fmt.Sprintf("c-%02d", i)
 		big.Chunks = append(big.Chunks, map[string]any{"chunk_id": id, "doc_id": "d1", "content": "text " + id})
 		ids = append(ids, id)
 	}
 	big.NoteOpening(ids)
-	if got := strings.Count(renderOpening(big), "\n"); got != openingPreviewMax {
-		t.Errorf("opening rendered %d preview(s), want the cap %d", got, openingPreviewMax)
+	if got := strings.Count(renderOpening(big, "", 0), "\n"); got != StageMaxItems(StageOpening) {
+		t.Errorf("opening rendered %d preview(s), want the cap %d", got, StageMaxItems(StageOpening))
 	}
-	if len(big.SessionEvidenceRefs) != openingPreviewMax {
-		t.Errorf("opening published %d passage(s), want the cap %d", len(big.SessionEvidenceRefs), openingPreviewMax)
+	if len(big.SessionEvidenceRefs) != StageMaxItems(StageOpening) {
+		t.Errorf("opening published %d passage(s), want the cap %d", len(big.SessionEvidenceRefs), StageMaxItems(StageOpening))
+	}
+
+	// A DECLARED set raises that bound: an enumerated question has to show every member the plan
+	// named, and those members sit in the ranking past the stage's own number (measured 2026-09-22,
+	// the ten Oscar nominees: eight previews, two members never shown, no child count for either).
+	declared := StageMaxItems(StageOpening) + 4
+	wide := &Kbinfos{}
+	var wideIDs []string
+	for i := 0; i < declared+3; i++ {
+		id := fmt.Sprintf("w-%02d", i)
+		wide.Chunks = append(wide.Chunks, map[string]any{"chunk_id": id, "doc_id": "d1", "content": "text " + id})
+		wideIDs = append(wideIDs, id)
+	}
+	wide.NoteOpening(wideIDs)
+	if got := strings.Count(renderOpening(wide, "", declared), "\n"); got != declared {
+		t.Errorf("opening rendered %d preview(s) for a declared set of %d, want the declared count", got, declared)
 	}
 }
 
@@ -1870,7 +1921,7 @@ func TestWhatTheSeedShowedIsInTheCitationRegistry(t *testing.T) {
 		t.Fatalf("EvidenceRefs = %v, want the run's registry (%v)", st.EvidenceRefs, want)
 	}
 	// The prefix's passages come next, and their lines carry the number the registry holds.
-	lines := st.seedEvidenceRefs([]string{"c-prefix"}, navPrefixQuoteChars)
+	lines := st.seedEvidenceRefs([]string{"c-prefix"})
 	if len(lines) != 1 || !strings.Contains(lines[0], "[ID:1]") || !strings.Contains(lines[0], "斩于马下") {
 		t.Fatalf("prefix lines = %v, want [ID:1] with the passage's words", lines)
 	}
@@ -1889,11 +1940,11 @@ func TestWhatTheSeedShowedIsInTheCitationRegistry(t *testing.T) {
 		t.Fatalf("after the round's merge the registry = %v, want %v", kb.SessionEvidenceRefs, want)
 	}
 	// A document id (navigate_tree's evidence) is not a passage and gets no handle.
-	if lines := st.seedEvidenceRefs([]string{"doc-abc"}, navPrefixQuoteChars); len(lines) != 0 {
+	if lines := st.seedEvidenceRefs([]string{"doc-abc"}); len(lines) != 0 {
 		t.Errorf("a doc id was numbered: %v", lines)
 	}
 	// Re-registering the same passage keeps its number, so a citation written earlier still resolves.
-	st.seedEvidenceRefs([]string{"c-prefix"}, 0)
+	st.seedEvidenceRefs([]string{"c-prefix"})
 	if want := []string{"c-opening", "c-prefix", "c-tool"}; !reflect.DeepEqual(st.EvidenceRefs, want) {
 		t.Fatalf("EvidenceRefs = %v after a repeat, want %v", st.EvidenceRefs, want)
 	}
