@@ -118,13 +118,13 @@ func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, va
 }
 
 // PublishDeleted records a doc_deleted event the same way (Publish handles the
-// append + notify pairing). taskTypes identifies the document-level artifacts
-// that were removed before the event was published.
-func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, taskTypes []string) error {
+// append + notify pairing). variants and taskTypes identify the document-level
+// artifacts that were removed before the event was published.
+func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil, taskTypes)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), variants, taskTypes)
 }
 
 // PublishEnabled records that a document with compiled products became

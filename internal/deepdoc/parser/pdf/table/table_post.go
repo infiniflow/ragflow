@@ -1,10 +1,12 @@
 package table
 
 import (
-	"log/slog"
 	"math"
 	"sort"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -153,7 +155,8 @@ func buildTableHTMLs(boxes []pdf.TextBox, tables []pdf.TableItem) map[int]string
 				}
 			}
 		}
-		slog.Debug("extractTableAndReplace constructTable", "table", ti, "cells", len(pageGlobalCells), "boxes", len(tableBoxes))
+		common.Debug("extractTableAndReplace constructTable",
+			zap.Int("table", ti), zap.Int("cells", len(pageGlobalCells)), zap.Int("boxes", len(tableBoxes)))
 		htmls[ti] = ConstructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
 	}
 	return htmls

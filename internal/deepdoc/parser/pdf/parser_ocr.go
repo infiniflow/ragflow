@@ -3,13 +3,16 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
+	"sort"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-	"sort"
-	"strings"
 )
 
 func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string, zoom float64) []pdf.TextBox {
@@ -116,7 +119,8 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 			// Defensive: a count mismatch (or a nil result) would corrupt the
 			// per-box indexing further down. Fall back to per-crop instead of
 			// indexing out of range.
-			slog.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop", "page", pageNum, "got", len(batch), "want", len(cropAcc))
+			common.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop",
+				zap.Int("page", pageNum), zap.Int("got", len(batch)), zap.Int("want", len(cropAcc)))
 		default:
 			allTexts = batch
 		}
@@ -260,7 +264,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
-	slog.Debug("ocrMergeChars detect", "page", pageNum, "boxes", len(ocrDetectBoxes))
+	common.Debug("ocrMergeChars detect", zap.Int("page", pageNum), zap.Int("boxes", len(ocrDetectBoxes)))
 
 	// The caller multiplies the returned boxes back by this scale to crop the
 	// original render, so passing the render zoom keeps the round trip exact
@@ -625,6 +629,6 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 			filtered = append(filtered, tb)
 		}
 	}
-	slog.Debug("ocrMergeChars result", "page", pageNum, "boxes", len(filtered))
+	common.Debug("ocrMergeChars result", zap.Int("page", pageNum), zap.Int("boxes", len(filtered)))
 	return filtered
 }

@@ -407,6 +407,33 @@ func TestWorkflowOutputs_WithAttachment(t *testing.T) {
 	}
 }
 
+func TestWorkflowOutputsFromTerminalUsesMessageContent(t *testing.T) {
+	output := map[string]any{
+		"content":   "****\nvisible answer\n++++",
+		"downloads": []any{},
+	}
+	if got := workflowOutputsFromTerminal(output); got != "****\nvisible answer\n++++" {
+		t.Fatalf("workflowOutputsFromTerminal = %#v, want complete Message content", got)
+	}
+}
+
+func TestPartialAssistantOutputExcludesMessagePresentation(t *testing.T) {
+	state := canvas.NewCanvasState("run-history", "session-history")
+	appendAssistantHistory(state, partialAssistantOutput("model answer", nil, nil))
+
+	history := state.SnapshotHistory()
+	if len(history) != 1 {
+		t.Fatalf("history length = %d, want 1", len(history))
+	}
+	if history[0]["content"] != "model answer" {
+		t.Fatalf("history content = %#v, want raw Agent answer", history[0]["content"])
+	}
+	payload, _ := history[0]["payload"].(map[string]any)
+	if _, ok := payload["downloads"]; ok {
+		t.Fatalf("history payload unexpectedly contains Message presentation fields: %#v", payload)
+	}
+}
+
 // TestGetVersion_Success verifies getting a specific version by ID.
 func TestGetVersion_Success(t *testing.T) {
 	testDB := setupServiceTestDB(t)

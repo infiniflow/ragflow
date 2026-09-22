@@ -2216,8 +2216,9 @@ func chatConfigSupportsTools(cfg map[string]interface{}) bool {
 	if cfg == nil {
 		return false
 	}
-	// Read the value the way the persisted flag is read (extraToolSupport): it is
-	// written as a JSON boolean but has historically also been spelled as a string.
+	// Read the resolved capability as a boolean. ModelSolver accepts the
+	// persisted JSON boolean and the historical string representation before it
+	// stores the result on ModelTarget.
 	switch v := cfg["is_tools"].(type) {
 	case bool:
 		return v

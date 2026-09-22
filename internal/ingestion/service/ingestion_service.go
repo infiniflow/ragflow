@@ -70,12 +70,14 @@ type Ingestor struct {
 	memoryReconcileBatchSize int
 
 	// Runtime state
-	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
-	tasksMu       sync.RWMutex
-	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
-	activeLeases  map[*Heartbeat]*activeLease
-	leasesMu      sync.Mutex
-	stopLeases    atomic.Bool
+	currentTasks         map[string]struct{} // set of task IDs currently claimed by a worker
+	tasksMu              sync.RWMutex
+	pendingCompileEvents map[string]pendingDocumentCompileEvent
+	compileEventsMu      sync.Mutex
+	activeWorkers        atomic.Int32 // number of worker goroutines currently in workerLoop
+	activeLeases         map[*Heartbeat]*activeLease
+	leasesMu             sync.Mutex
+	stopLeases           atomic.Bool
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
@@ -148,6 +150,12 @@ type activeLease struct {
 	abandoned atomic.Bool
 }
 
+type pendingDocumentCompileEvent struct {
+	tenantID  string
+	variants  []string
+	taskTypes []string
+}
+
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
@@ -166,6 +174,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
 		currentTasks:             make(map[string]struct{}),
+		pendingCompileEvents:     make(map[string]pendingDocumentCompileEvent),
 		activeLeases:             make(map[*Heartbeat]*activeLease),
 		workerQueue:              make(chan *worker, maxConcurrency),
 		ShutdownCh:               make(chan struct{}, 1),
@@ -828,6 +837,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
+		e.clearPendingCompileEvent(task.ID)
 		if errors.Is(err, context.Canceled) {
 			if e.ctx.Err() != nil || e.dispatchCtx.Err() != nil {
 				common.Info(fmt.Sprintf("Task %s pipeline interrupted by ingestor shutdown, leaving for redelivery", task.ID))
@@ -863,6 +873,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return false
 	}
 	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
+	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
 	return true
@@ -1214,8 +1225,48 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if err != nil {
 		return err
 	}
+	e.stagePendingCompileEvent(ingestionTask.ID, docTaskCtx.Tenant.ID, result)
 	e.docState.apply(ctx, result)
 	return nil
+}
+
+func (e *Ingestor) stagePendingCompileEvent(taskID, tenantID string, result *taskpkg.PipelineResult) {
+	if taskID == "" {
+		return
+	}
+	e.compileEventsMu.Lock()
+	defer e.compileEventsMu.Unlock()
+	if result == nil || len(result.CompiledVariants) == 0 {
+		delete(e.pendingCompileEvents, taskID)
+		return
+	}
+	e.pendingCompileEvents[taskID] = pendingDocumentCompileEvent{
+		tenantID:  tenantID,
+		variants:  append([]string(nil), result.CompiledVariants...),
+		taskTypes: append([]string(nil), result.CompiledTaskTypes...),
+	}
+}
+
+func (e *Ingestor) clearPendingCompileEvent(taskID string) {
+	e.compileEventsMu.Lock()
+	delete(e.pendingCompileEvents, taskID)
+	e.compileEventsMu.Unlock()
+}
+
+func (e *Ingestor) publishPendingCompileEvent(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil {
+		return
+	}
+	e.compileEventsMu.Lock()
+	event, ok := e.pendingCompileEvents[task.ID]
+	delete(e.pendingCompileEvents, task.ID)
+	e.compileEventsMu.Unlock()
+	if !ok || len(event.variants) == 0 {
+		return
+	}
+	if err := knowledge_compile.PublishCompleted(ctx, event.tenantID, task.DatasetID, task.DocumentID, event.variants, event.taskTypes); err != nil {
+		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", task.DocumentID, err))
+	}
 }
 
 func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {

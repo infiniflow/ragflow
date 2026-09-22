@@ -31,12 +31,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 )
@@ -211,7 +212,7 @@ func (c *PaddleOCRClient) submitJob(binary []byte, filename string, deadline tim
 	if jobID == "" {
 		return "", fmt.Errorf("no jobId in submit response")
 	}
-	slog.Info("paddleocr: job submitted", "jobId", jobID)
+	common.Info("paddleocr: job submitted", zap.String("jobId", jobID))
 	return jobID, nil
 }
 
@@ -271,7 +272,7 @@ func (c *PaddleOCRClient) pollJob(jobID string, deadline time.Time) (map[string]
 
 		switch state {
 		case "done":
-			slog.Info("paddleocr: job done", "jobId", jobID)
+			common.Info("paddleocr: job done", zap.String("jobId", jobID))
 			// Return full data so caller can extract resultJsonUrl
 			var fullData map[string]any
 			json.Unmarshal(bodyBytes, &fullData)

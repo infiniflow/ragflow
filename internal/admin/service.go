@@ -1210,7 +1210,7 @@ func (s *Service) GetVariable(ctx context.Context, varName string) ([]map[string
 			return nil, NewAdminException("Can't get setting: " + varName)
 		}
 	}
-	return common.FormatSystemSettings(settings), nil
+	return entity.FormatSystemSettings(settings), nil
 }
 
 // ListAllVariables list all variables
@@ -1221,7 +1221,7 @@ func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{
 		return nil, err
 	}
 
-	return common.FormatSystemSettings(settings), nil
+	return entity.FormatSystemSettings(settings), nil
 }
 
 // SetVariable set variable
@@ -1239,7 +1239,7 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
-		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
+		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
 		setting.Value = varValue
@@ -1248,14 +1248,14 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
 
-	dataType := common.InferSystemSettingDataType(varName)
+	dataType := entity.InferSystemSettingDataType(varName)
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
 		DataType: dataType,
 	}
-	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
+	if err = entity.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
 	return s.systemSettingsDAO.Create(ctx, db, newSetting)
