@@ -34,7 +34,7 @@ func parseArgsForTest(t *testing.T, argv ...string) (*serverArgs, error) {
 	return parseArgs()
 }
 
-func TestParseArgsMigrateIsStandalone(t *testing.T) {
+func TestParseArgsMigrateSelectsMode(t *testing.T) {
 	args, err := parseArgsForTest(t, "--migrate")
 	if err != nil {
 		t.Fatalf("parseArgs(--migrate) error = %v", err)
@@ -42,8 +42,8 @@ func TestParseArgsMigrateIsStandalone(t *testing.T) {
 	if !args.migrateDB {
 		t.Fatal("migrateDB = false, want true")
 	}
-	if args.mode != nil {
-		t.Fatalf("mode = %q, want nil: --migrate must not select a server mode", *args.mode)
+	if args.mode == nil || *args.mode != "migrate" {
+		t.Fatalf("mode = %v, want migrate", args.mode)
 	}
 }
 
