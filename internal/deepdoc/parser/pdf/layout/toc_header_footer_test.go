@@ -1027,9 +1027,10 @@ func TestRemoveHeaderFooterBoxes_ChineseSlashGong(t *testing.T) {
 	}
 }
 
-// TestHasStableConsecutiveRun_SlidingWindow tests sliding window behavior in hasStableConsecutiveRun,
-// specifically verifying that initial outliers do not block subsequent qualifying runs.
-func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
+// TestFindStableConsecutiveRunIndices_SlidingWindow tests sliding window behavior in
+// findStableConsecutiveRunIndices, specifically verifying that initial outliers do
+// not block subsequent qualifying runs.
+func TestFindStableConsecutiveRunIndices_SlidingWindow(t *testing.T) {
 	// Case 1: Outlier at page 1 (top 30), stable run at pages 2, 3, 4 (top 40)
 	metas1 := []boxMeta{
 		{page: 1, top: 30},
@@ -1037,8 +1038,8 @@ func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
 		{page: 3, top: 40},
 		{page: 4, top: 40},
 	}
-	if !hasStableConsecutiveRun(metas1, 3, 4.0) {
-		t.Errorf("expected true for pages 2..4 stable run despite page 1 outlier")
+	if len(findStableConsecutiveRunIndices(metas1, 3, 4.0)) == 0 {
+		t.Errorf("expected pages 2..4 stable run despite page 1 outlier")
 	}
 
 	// Case 2: Stable run at pages 1, 2, 3 (top 40), outlier at page 4 (top 30)
@@ -1048,8 +1049,8 @@ func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
 		{page: 3, top: 40},
 		{page: 4, top: 30},
 	}
-	if !hasStableConsecutiveRun(metas2, 3, 4.0) {
-		t.Errorf("expected true for pages 1..3 stable run")
+	if len(findStableConsecutiveRunIndices(metas2, 3, 4.0)) == 0 {
+		t.Errorf("expected pages 1..3 stable run")
 	}
 
 	// Case 3: Divergent tops across all pages (no 3 consecutive pages within 4.0)
@@ -1059,8 +1060,8 @@ func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
 		{page: 3, top: 50},
 		{page: 4, top: 70},
 	}
-	if hasStableConsecutiveRun(metas3, 3, 4.0) {
-		t.Errorf("expected false for divergent tops")
+	if len(findStableConsecutiveRunIndices(metas3, 3, 4.0)) != 0 {
+		t.Errorf("expected no run for divergent tops")
 	}
 
 	// Case 4: Page gap breaks consecutive run
@@ -1070,8 +1071,8 @@ func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
 		{page: 4, top: 40},
 		{page: 5, top: 40},
 	}
-	if hasStableConsecutiveRun(metas4, 3, 4.0) {
-		t.Errorf("expected false when no consecutive run reaches minRun=3")
+	if len(findStableConsecutiveRunIndices(metas4, 3, 4.0)) != 0 {
+		t.Errorf("expected no run when no consecutive run reaches minRun=3")
 	}
 
 	// Case 5: Run after a page gap meets minRun=3
@@ -1082,8 +1083,8 @@ func TestHasStableConsecutiveRun_SlidingWindow(t *testing.T) {
 		{page: 5, top: 40},
 		{page: 6, top: 40},
 	}
-	if !hasStableConsecutiveRun(metas5, 3, 4.0) {
-		t.Errorf("expected true for pages 4..6 run after page gap")
+	if len(findStableConsecutiveRunIndices(metas5, 3, 4.0)) == 0 {
+		t.Errorf("expected pages 4..6 run after page gap")
 	}
 }
 
@@ -1210,4 +1211,229 @@ func TestRemoveHeaderFooterBoxes_FooterYearPreservedOnShortDocument(t *testing.T
 	if len(got) != 3 {
 		t.Fatalf("expected all 3 boxes to be kept, got %d", len(got))
 	}
+}
+
+// tightFooter builds one page for the sequence-track tests: a body line ending
+// at bottom, a bare-number box 5pt under it at Top=755 (below the 757.8 footer
+// line, inside the 0.86 expanded band without its gap) — geometry the zone gate
+// rejects, leaving the +1 sequence as the only evidence.
+func tightFooter(pg int, numText string) []pdf.TextBox {
+	return []pdf.TextBox{
+		tb(fmt.Sprintf("Body paragraph on page %d with a little extra length to stay unique.", pg), pg, 72, 500, 100, 750),
+		tb(numText, pg, 400, 420, 755, 766),
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_TightSequenceFootersRemoved verifies that bare page
+// numbers sitting tight under body text — rejected by both the base footer line
+// and the expanded band's whitespace requirement — are removed by the sequence
+// track when they step by one across consecutive pages.
+func TestRemoveHeaderFooterBoxes_TightSequenceFootersRemoved(t *testing.T) {
+	pageHeight := 842.0
+	t.Run("arabic", func(t *testing.T) {
+		heights := make(map[int]float64, 10)
+		var boxes []pdf.TextBox
+		for pg := 0; pg < 10; pg++ {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tightFooter(pg, fmt.Sprintf("%d", pg+1))...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if _, ok := parseBareNumberValue(b.Text); ok {
+				t.Fatalf("page number %q survived the sequence track", b.Text)
+			}
+		}
+		if len(got) != 10 {
+			t.Fatalf("expected 10 body boxes, got %d", len(got))
+		}
+	})
+	t.Run("roman", func(t *testing.T) {
+		heights := make(map[int]float64, 6)
+		boxes := []pdf.TextBox{}
+		romans := []string{"I", "II", "III", "IV", "V", "VI"}
+		for pg, r := range romans {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tightFooter(pg, r)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if _, ok := parseBareNumberValue(b.Text); ok {
+				t.Fatalf("Roman page number %q survived the sequence track", b.Text)
+			}
+		}
+		if len(got) != 6 {
+			t.Fatalf("expected 6 body boxes, got %d", len(got))
+		}
+	})
+}
+
+// TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved verifies the sequence
+// track's guards: numbers that do not step by one, and runs shorter than 3
+// consecutive pages, are left alone.
+func TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved(t *testing.T) {
+	pageHeight := 842.0
+	t.Run("non_stepping", func(t *testing.T) {
+		heights := make(map[int]float64, 5)
+		var boxes []pdf.TextBox
+		nums := []string{"3", "7", "12", "15", "19"}
+		for pg, n := range nums {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tightFooter(pg, n)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 10 {
+			t.Fatalf("non-stepping numbers must be preserved, got %d kept boxes", len(got))
+		}
+	})
+	t.Run("run_too_short", func(t *testing.T) {
+		// +1 steps exist (1,2 and 4,5) but each chain is broken before length 3.
+		heights := make(map[int]float64, 6)
+		var boxes []pdf.TextBox
+		for pg := 0; pg < 6; pg++ {
+			heights[pg] = pageHeight
+		}
+		boxes = append(boxes, tightFooter(0, "1")...)
+		boxes = append(boxes, tightFooter(1, "2")...)
+		boxes = append(boxes, tightFooter(3, "4")...)
+		boxes = append(boxes, tightFooter(4, "5")...)
+		boxes = append(boxes, tb("Plain body line, no number box on this page.", 2, 72, 500, 100, 750))
+		boxes = append(boxes, tb("Plain body line here too.", 5, 72, 500, 100, 750))
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 10 {
+			t.Fatalf("2-page number chains must be preserved, got %d kept boxes", len(got))
+		}
+	})
+}
+
+// TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved verifies that a
+// stepping year sequence in the footer band ("2024","2025","2026") is protected
+// by the page-count ceiling even though it would otherwise satisfy the +1 chain.
+func TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 3)
+	var boxes []pdf.TextBox
+	years := []string{"2024", "2025", "2026"}
+	for pg, y := range years {
+		heights[pg] = pageHeight
+		boxes = append(boxes, tightFooter(pg, y)...)
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if b.Text == "2024" || b.Text == "2025" || b.Text == "2026" {
+			continue
+		}
+	}
+	if len(got) != 6 {
+		t.Fatalf("year footers exceed the page-number ceiling and must be preserved, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_TightBottomTextHeadingPreserved verifies the wide
+// sequence bands never admit non-numeric text: a repeated section heading 6pt
+// above the page bottom must survive even though its text repeats on every page.
+func TestRemoveHeaderFooterBoxes_TightBottomTextHeadingPreserved(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 4)
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		heights[pg] = pageHeight
+		boxes = append(boxes, tb("Body text filling most of the page above the heading.", pg, 72, 500, 100, 724))
+		boxes = append(boxes, tb("Quarterly Report Summary", pg, 72, 300, 730, 742)) // gapAbove = 6pt, repeats identically
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if b.Text == "Quarterly Report Summary" {
+			continue
+		}
+	}
+	if len(got) != 8 {
+		t.Fatalf("tight repeated text headings must be preserved, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_SitePromoVariantInHeaderRemoved verifies that margin
+// lines advertising a download site are removed even when the wrapper text varies
+// page to page and no recurrence track can see them.
+func TestRemoveHeaderFooterBoxes_SitePromoVariantInHeaderRemoved(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 4)
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		heights[pg] = pageHeight
+		// The body is written out per page; only the promo lines matter.
+		boxes = append(boxes, tb(fmt.Sprintf("Substantive body content of page %d goes here.", pg), pg, 72, 450, 160, 700))
+		if pg < 2 {
+			boxes = append(boxes, tb("更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52))
+		} else {
+			boxes = append(boxes, tb("欢迎访问！http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52))
+		}
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") {
+			t.Fatalf("site promo %q survived despite varying wrappers", b.Text)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_BodyUrlKept verifies the site-promo rule cannot
+// reach into the body: a mid-page URL box and a long prose line containing a
+// URL are both kept.
+func TestRemoveHeaderFooterBoxes_BodyUrlKept(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		// Mid-page short URL: inside no band at all.
+		tb("http://a.cn/x", 0, 72, 130, 400, 415),
+		// > 60 runes: length-capped out even though it starts in the top band.
+		tb("See http://example.com/very/long/path/for/the/annual/errata/annex which continues well beyond sixty runes.", 1, 72, 500, 40, 55),
+		tb("Ordinary body text.", 1, 72, 300, 500, 520),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != 3 {
+		t.Fatalf("body URLs must be preserved, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_DecoratedTightFooterRemoved verifies that decorated
+// page numbers ("- 7 -") no longer need the 18pt whitespace gap in the expanded
+// band, while bare numbers at the same tight position without a sequence do.
+func TestRemoveHeaderFooterBoxes_DecoratedTightFooterRemoved(t *testing.T) {
+	pageHeight := 842.0
+	t.Run("decorated", func(t *testing.T) {
+		heights := make(map[int]float64, 3)
+		var boxes []pdf.TextBox
+		nums := []string{"- 7 -", "- 8 -", "- 9 -"}
+		for pg, n := range nums {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tb(fmt.Sprintf("Body paragraph %d ends flush above the footer.", pg), pg, 72, 500, 100, 724))
+			boxes = append(boxes, tb(n, pg, 400, 440, 730, 742)) // gapAbove = 6pt, Top = 0.867h
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 3 {
+			t.Fatalf("decorated tight footers must be removed, got %d", len(got))
+		}
+	})
+	t.Run("bare_without_sequence", func(t *testing.T) {
+		heights := make(map[int]float64, 3)
+		var boxes []pdf.TextBox
+		nums := []string{"7", "23", "41"}
+		for pg, n := range nums {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tb(fmt.Sprintf("Body paragraph %d ends flush above the footer.", pg), pg, 72, 500, 100, 724))
+			boxes = append(boxes, tb(n, pg, 400, 420, 730, 742))
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if b.Text == "7" || b.Text == "23" || b.Text == "41" {
+				continue
+			}
+		}
+		if len(got) != 6 {
+			t.Fatalf("bare tight numbers without a sequence must be preserved, got %d", len(got))
+		}
+	})
 }

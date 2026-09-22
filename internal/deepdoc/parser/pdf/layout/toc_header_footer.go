@@ -345,6 +345,18 @@ const (
 	// even or odd pages. A 0.40 threshold captures alternating bilateral book headers
 	// while the evenPages >= 3 / oddPages >= 3 count guards against accidental matches.
 	minParityCoverageRatio = 0.40
+	// seqBandTopRatio / seqBandBottomRatio bound the wide bands in which the
+	// sequence-backed page-number track looks for bare numeric / Roman-numeral
+	// boxes. The bands are much looser than the header/footer zones because the
+	// track's evidence is not geometric: only boxes that form an incrementing
+	// run across consecutive pages at a stable Y are removed, which tight body
+	// text cannot fake.
+	seqBandTopRatio    = 0.20
+	seqBandBottomRatio = 0.80
+	// seqMinRun / seqMaxDy mirror the locality track: at least 3 consecutive
+	// pages, vertical drift within 4pt.
+	seqMinRun = 3
+	seqMaxDy  = 4.0
 )
 
 var (
@@ -358,6 +370,22 @@ var (
 
 	// strictBareNumberPattern matches lone Arabic digits or Roman numerals: 1, 23, iv, VII.
 	strictBareNumberPattern = regexp.MustCompile(`(?i)^([0-9０-９]{1,4}|((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v))$`)
+
+	// canonicalRomanPattern accepts the full canonical Roman-numeral grammar
+	// (up to M) so the sequence track can parse page numbers beyond the XXX
+	// range strictBareNumberPattern's header/footer idiom covers. Non-canonical
+	// forms (IIII) are rejected; round-trip validation happens in romanValue.
+	canonicalRomanPattern = regexp.MustCompile(`(?i)^(m{0,3})(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$`)
+
+	// sitePromoPattern matches margin lines that advertise a download site —
+	// a URL core with at most a short non-URL wrapper on either side. Such a
+	// line is a running header/footer regardless of page count: piracy-supply
+	// PDFs change the wrapper text on some pages ("更多的书籍免费下载 http://…",
+	// "欢迎访问！http://…"), so those variants reach no recurrence track, while
+	// the URL itself is deterministic evidence. Only whole-box, length-capped
+	// boxes in the margin bands use it, so body prose containing a URL is never
+	// touched.
+	sitePromoPattern = regexp.MustCompile(`(?i)^.{0,20}(https?://\S+|www\.[\w-]+(\.[\w-]+)+|(forum|bbs|tieba|phpwind)\.[\w-]+\.[a-z]{2,}\S*|\S*fromuid=\S+).{0,20}$`)
 )
 
 // computePageGaps computes for candidate margin boxes on a page:
@@ -416,17 +444,28 @@ func computePageGaps(boxes []pdf.TextBox, indices []int, pageHeight float64) (ma
 }
 
 // classifyZone determines whether a box sits in a header or footer zone.
+//
+// The expanded bands (10%->14% top, 90%->86% bottom) normally require a
+// whitespace gap separating the candidate from body text. A box whose text is
+// an unambiguously decorated page number ("- 7 -", "[7]", "第 7 页") skips the
+// gap requirement: the decoration is deterministic evidence, and Word-derived
+// pages place footers a few points under body text with no gap to find. Bare
+// numbers do NOT skip it — only footnote guards distinguish them, and the
+// sequence track (see collectPageNumberCandidates) handles tight bare numbers.
+// A side effect: "X / Y" fraction-styled lines inside the expanded band can be
+// pulled into the footer zone; they are rare enough to accept.
 func classifyZone(b pdf.TextBox, pageHeight float64, gapAbove, gapBelow float64) string {
 	if b.Bottom <= pageHeight*headerZoneRatio {
 		return "header"
 	}
-	if b.Bottom <= pageHeight*headerMaxZoneRatio && gapBelow >= minWhitespaceGapPt {
+	decorated := strictDecoratedPagePattern.MatchString(strings.TrimSpace(b.Text))
+	if b.Bottom <= pageHeight*headerMaxZoneRatio && (gapBelow >= minWhitespaceGapPt || decorated) {
 		return "header"
 	}
 	if b.Top >= pageHeight*footerZoneRatio {
 		return "footer"
 	}
-	if b.Top >= pageHeight*footerMinZoneRatio && gapAbove >= minWhitespaceGapPt {
+	if b.Top >= pageHeight*footerMinZoneRatio && (gapAbove >= minWhitespaceGapPt || decorated) {
 		return "footer"
 	}
 	return ""
@@ -437,6 +476,84 @@ func classifyZone(b pdf.TextBox, pageHeight float64, gapAbove, gapBelow float64)
 func isNonTextLayout(lt string) bool {
 	lt = strings.TrimSpace(lt)
 	return lt == "table" || lt == "figure" || lt == "equation" || lt == "image"
+}
+
+// parseDecimalValue parses a string of lone ASCII or full-width digits.
+func parseDecimalValue(t string) (int, bool) {
+	if t == "" {
+		return 0, false
+	}
+	val := 0
+	for _, r := range t {
+		switch {
+		case r >= '0' && r <= '9':
+			val = val*10 + int(r-'0')
+		case r >= '０' && r <= '９':
+			val = val*10 + int(r-'０')
+		default:
+			return 0, false
+		}
+	}
+	return val, true
+}
+
+// romanValue parses a canonical Roman numeral (I..MMMCMXCIX) and returns its
+// value. The canonical pattern admits only canonical spellings, so non-canonical
+// forms such as "IIII" are rejected before the subtractive sum is computed.
+func romanValue(t string) (int, bool) {
+	if !canonicalRomanPattern.MatchString(t) {
+		return 0, false
+	}
+	values := map[rune]int{'m': 1000, 'd': 500, 'c': 100, 'l': 50, 'x': 10, 'v': 5, 'i': 1}
+	val := 0
+	prev := 0
+	for _, r := range strings.ToLower(t) {
+		v := values[r]
+		if v == 0 {
+			return 0, false
+		}
+		if v > prev {
+			val += v - 2*prev
+		} else {
+			val += v
+		}
+		prev = v
+	}
+	if val <= 0 {
+		return 0, false
+	}
+	return val, true
+}
+
+// parseBareNumberValue reports the numeric value of a box whose entire text is
+// one bare number: lone digits (ASCII or full-width) or a canonical Roman
+// numeral. "12", "４５", "iv", "XIV" parse; "12.", "- 3 -", "2024." do not.
+func parseBareNumberValue(text string) (int, bool) {
+	t := strings.TrimSpace(text)
+	if v, ok := parseDecimalValue(t); ok {
+		return v, true
+	}
+	return romanValue(t)
+}
+
+// pageNumberCeiling bounds which bare numeric values can be page numbers: a
+// document of N pages never carries page number > N+5, and the floor of 20
+// keeps short documents (years like 2024 on a 2-page footer) protected.
+func pageNumberCeiling(numPages int) int {
+	maxAllowed := numPages + 5
+	if maxAllowed < 20 {
+		maxAllowed = 20
+	}
+	return maxAllowed
+}
+
+// isSitePromo reports whether the whole box text advertises a download site.
+func isSitePromo(text string) bool {
+	t := strings.Join(strings.Fields(text), " ")
+	if t == "" || utf8.RuneCountInString(t) > 60 {
+		return false
+	}
+	return sitePromoPattern.MatchString(t)
 }
 
 // isDeterministicPageNumber reports whether text is unambiguously a page number.
@@ -460,24 +577,8 @@ func isDeterministicPageNumber(text string, zone string, gapAbove, gapBelow floa
 		}
 		// For bare numeric digits, verify the value is within a reasonable range of the document page count.
 		// Protects isolated years (e.g. "2024"), IDs, or footnote indexes on short/medium documents.
-		var val int
-		isDigits := true
-		for _, r := range t {
-			if r >= '0' && r <= '9' {
-				val = val*10 + int(r-'0')
-			} else if r >= '０' && r <= '９' {
-				val = val*10 + int(r-'０')
-			} else {
-				isDigits = false
-				break
-			}
-		}
-		if isDigits && len(t) > 0 {
-			maxAllowed := numPages + 5
-			if maxAllowed < 20 {
-				maxAllowed = 20
-			}
-			if val > maxAllowed {
+		if val, ok := parseDecimalValue(t); ok {
+			if val > pageNumberCeiling(numPages) {
 				return false
 			}
 		}
@@ -497,18 +598,128 @@ type zoneKey struct {
 	text string
 }
 
+// pageNumCand is one bare-number box inside a wide margin band, a candidate
+// for the sequence-backed page-number track.
+type pageNumCand struct {
+	idx   int
+	page  int
+	value int
+	top   float64
+	band  string
+}
+
+// collectPageNumberCandidates gathers boxes whose entire text is one bare
+// number (digits or Roman) sitting in the wide margin bands, bounded by the
+// page-count ceiling. It walks EVERY box, including ones earlier tiers already
+// dropped: the +1 chain must stay contiguous when the gap-backed tiers took
+// the roomy pages and only the tight ones remain to this track.
+func collectPageNumberCandidates(boxes []pdf.TextBox, pageHeights map[int]float64, ceiling int) []pageNumCand {
+	var cands []pageNumCand
+	for i := range boxes {
+		b := boxes[i]
+		if isNonTextLayout(b.LayoutType) {
+			continue
+		}
+		h, ok := pageHeights[b.PageNumber]
+		if !ok || h <= 0 {
+			continue
+		}
+		band := ""
+		switch {
+		case b.Top >= h*seqBandBottomRatio:
+			band = "footer"
+		case b.Bottom <= h*seqBandTopRatio:
+			band = "header"
+		default:
+			continue
+		}
+		val, ok := parseBareNumberValue(b.Text)
+		if !ok || val > ceiling {
+			continue
+		}
+		cands = append(cands, pageNumCand{idx: i, page: b.PageNumber, value: val, top: b.Top, band: band})
+	}
+	return cands
+}
+
+// findPageNumberSequenceDrops returns the indices of candidates that take part
+// in a run of at least seqMinRun consecutive pages whose bare numbers step by
+// exactly one (up or down) within seqMaxDy of vertical drift. Such a run is a
+// page-number series on sequence evidence alone — enough to remove tight
+// footers the geometric zone gate rejected; isolated or non-stepping numbers
+// are left alone.
+func findPageNumberSequenceDrops(cands []pageNumCand) []int {
+	byBand := make(map[string][]pageNumCand, 2)
+	for _, c := range cands {
+		byBand[c.band] = append(byBand[c.band], c)
+	}
+	dropped := make(map[int]bool, len(cands))
+	for _, group := range byBand {
+		if len(group) < seqMinRun {
+			continue
+		}
+		sort.Slice(group, func(i, j int) bool {
+			if group[i].page != group[j].page {
+				return group[i].page < group[j].page
+			}
+			return group[i].top < group[j].top
+		})
+		for _, dir := range []int{1, -1} {
+			n := len(group)
+			dp := make([]int, n)
+			prev := make([]int, n)
+			for i := range group {
+				dp[i], prev[i] = 1, -1
+			}
+			for i := 0; i < n; i++ {
+				for j := 0; j < i; j++ {
+					if group[j].page != group[i].page-1 || group[j].value != group[i].value-dir {
+						continue
+					}
+					if group[j].top-group[i].top > seqMaxDy || group[i].top-group[j].top > seqMaxDy {
+						continue
+					}
+					if dp[j]+1 > dp[i] {
+						dp[i] = dp[j] + 1
+						prev[i] = j
+					}
+				}
+			}
+			for i := 0; i < n; i++ {
+				if dp[i] < seqMinRun {
+					continue
+				}
+				for k := i; k >= 0; k = prev[k] {
+					dropped[group[k].idx] = true
+				}
+			}
+		}
+	}
+	out := make([]int, 0, len(dropped))
+	for idx := range dropped {
+		out = append(out, idx)
+	}
+	return out
+}
+
 // RemoveHeaderFooterBoxes drops boxes that are running headers or footers.
 //
 // It uses a 3D Cascaded Fusion scheme:
 //  1. Tier 1: Deterministic Pattern & Semantic Tagging. Explicit DLA header/footer
-//     tags in margin zones and unambiguously formatted page numbers are removed
-//     immediately (even on 1- or 2-page documents).
+//     tags in margin zones, unambiguously formatted page numbers, and margin
+//     lines advertising a download site are removed immediately (even on 1- or
+//     2-page documents).
 //  2. Tier 2: Dual-Track Recurrence Engine. Evaluates recurrence across:
 //     - Global half-pages threshold ((numPages + 1) / 2).
 //     - Parity partition (even/odd) to eliminate bilateral alternating headers.
 //     - Locality track (consecutive pages with stable Y) to remove chapter-varying headers.
 //  3. Tier 3: Adaptive Whitespace Gap. Automatically extends the candidate zone
-//     from 10% to up to 14% when separated from body content by >= 18pt of blank space.
+//     from 10% to up to 14% when separated from body content by >= 18pt of blank
+//     space (decorated page numbers skip the gap requirement).
+//  4. Sequence track: bare numeric / Roman-numeral boxes in wide margin bands
+//     are removed when they step by one across >= 3 consecutive pages at a
+//     stable Y, catching page numbers that sit too tight under body text for
+//     the geometric gate in any tier above.
 func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.TextBox {
 	if len(pageHeights) == 0 || len(boxes) == 0 {
 		return boxes
@@ -548,6 +759,16 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if !ok || h <= 0 {
 			continue
 		}
+
+		// A URL ad in either outer band is an advertising header/footer on
+		// sight — no whitespace gap and no recurrence required, and this also
+		// fires on documents too short for the recurrence tracks.
+		if isSitePromo(b.Text) && (b.Bottom <= h*headerMaxZoneRatio || b.Top >= h*footerMinZoneRatio) {
+			slog.Debug("header_footer: dropped by site promo", "page", b.PageNumber, "textLen", utf8.RuneCountInString(b.Text))
+			drop[i] = struct{}{}
+			continue
+		}
+
 		zone := classifyZone(b, h, allGapAbove[i], allGapBelow[i])
 		if zone == "" {
 			continue
@@ -665,17 +886,26 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
+	// Sequence-backed page numbers. Word-derived books sit their page numbers
+	// a few points under body text — below the 90% footer line AND below the
+	// expanded band's whitespace requirement — so the geometric gate rejects
+	// them before any tier can see a pattern or count a recurrence. A run of
+	// bare numbers stepping by one across consecutive pages at a stable Y is a
+	// page-number series on sequence evidence alone. This runs after the
+	// recurrence engine so it only adds drops: the recurrence counts, which
+	// include these boxes under their masked key, stay untouched.
+	if seqDrops := findPageNumberSequenceDrops(collectPageNumberCandidates(boxes, pageHeights, pageNumberCeiling(numPages))); len(seqDrops) > 0 {
+		slog.Debug("header_footer: dropped by page-number sequence", "boxes", len(seqDrops))
+		for _, idx := range seqDrops {
+			drop[idx] = struct{}{}
+		}
+	}
+
 	if len(drop) == 0 {
 		return boxes
 	}
 	slog.Debug("header_footer: removal completed", "total_boxes", len(boxes), "dropped_boxes", len(drop))
 	return applyDrop(boxes, drop)
-}
-
-// hasStableConsecutiveRun checks if metas has a run of at least minRun
-// consecutive pages where the top variation is within maxDy.
-func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
-	return len(findStableConsecutiveRunIndices(metas, minRun, maxDy)) > 0
 }
 
 // findStableConsecutiveRunIndices finds all box indices that belong to any qualifying
