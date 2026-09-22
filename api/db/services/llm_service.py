@@ -155,6 +155,21 @@ class LLMBundle(LLM4Tenant):
             return
         self.mdl.bind_tools(toolcall_session, tools)
 
+    def _accumulate_embedding_usage(self, used_tokens: int) -> None:
+        """Running total of real embedding tokens used across this bundle's
+        lifetime (one bundle per request; see get_models()). A single request
+        can call encode_queries (retrieval) and encode (e.g. insert_citations
+        embedding the answer for citation matching) multiple times, and
+        dialog_service.async_chat wants the request's total, not just the
+        last call — unlike last_usage on a chat model, which is deliberately
+        "last call only" (see chat_model.py's Base.last_usage)."""
+        prev = getattr(self, "last_usage", None) or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.last_usage = {
+            "prompt_tokens": prev["prompt_tokens"] + used_tokens,
+            "completion_tokens": 0,
+            "total_tokens": prev["total_tokens"] + used_tokens,
+        }
+
     def encode(self, texts: list):
         if self.langfuse:
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="encode", model=self.model_config["llm_name"], input={"texts": texts})
@@ -202,6 +217,7 @@ class LLMBundle(LLM4Tenant):
             logging.debug("LLMBundle.encode query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
         else:
             logging.info("LLMBundle.encode used_tokens: %d", used_tokens)
+            self._accumulate_embedding_usage(used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -229,6 +245,7 @@ class LLMBundle(LLM4Tenant):
             logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
         else:
             logging.info("LLMBundle.encode_queries used_tokens: %d", used_tokens)
+            self._accumulate_embedding_usage(used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
