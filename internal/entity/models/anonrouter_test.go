@@ -118,7 +118,7 @@ func TestAnonRouterProviderConfig(t *testing.T) {
 	if provider == nil {
 		t.Fatal("AnonRouter provider not found")
 	}
-	if _, ok := provider.ModelDriver.(*AnonRouterModel); !ok {
+	if _, ok := Underlying(provider.ModelDriver).(*AnonRouterModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.AnonRouterModel", provider.ModelDriver)
 	}
 	if got := provider.URL["default"]; got != "https://api.anonrouter.ai/v1" {

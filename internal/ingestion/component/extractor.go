@@ -413,10 +413,10 @@ func getExtractorChatInvoker() extractorChatInvoker {
 // decide whether to retry, route around, or log.
 type einoExtractorChatInvoker struct{}
 
-// Chat implements extractorChatInvoker for the production path. Every
-// error it returns is a *common.LLMError so the task detail can attribute
-// the failure to the tenant's model (provider call) or its configuration
-// (unresolvable target) instead of RAGFlow internals.
+// Chat implements extractorChatInvoker for the production path. Errors it
+// returns itself are *common.LLMError of kind config (unresolvable model
+// target); provider call failures arrive already typed from the driver
+// boundary (see models.WrapProviderChatErrors).
 func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRequest) (*extractorChatResponse, error) {
 	if req.ModelName == "" {
 		return nil, common.NewLLMConfigError(req.Driver, "", errors.New("extractor: chat: model_name is required"))
@@ -454,8 +454,10 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	out, err := wrapper.Generate(ctx, toExtractorEinoMessages(req.Messages))
 	if err != nil {
 		// Log attribution + the raw error; never dump prompt contents here.
+		// The failure is already a *common.LLMError (kind provider) typed at
+		// the driver boundary by models.WrapProviderChatErrors.
 		common.Error(fmt.Sprintf("extractor: chat failed for model %s@%s (%d messages)", modelName, driver, len(req.Messages)), err)
-		return nil, common.NewLLMProviderError(driver, modelName, err)
+		return nil, err
 	}
 	common.Debug(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
 	return &extractorChatResponse{Content: out.Content}, nil

@@ -119,7 +119,7 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	if minerU == nil {
 		t.Fatal("MinerU.Net provider not found")
 	}
-	if _, ok := minerU.ModelDriver.(*MinerUModel); !ok {
+	if _, ok := Underlying(minerU.ModelDriver).(*MinerUModel); !ok {
 		t.Fatalf("MinerU.Net ModelDriver=%T, want *models.MinerUModel", minerU.ModelDriver)
 	}
 	if minerU.Class != "mineru.net" {
@@ -133,7 +133,7 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	if paddleOCR == nil {
 		t.Fatal("PaddleOCR provider not found")
 	}
-	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRModel); !ok {
+	if _, ok := Underlying(paddleOCR.ModelDriver).(*PaddleOCRModel); !ok {
 		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
 	}
 	if paddleOCR.Class != "paddleocr" {
@@ -176,7 +176,7 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	if minerU == nil {
 		t.Fatal("MinerU provider not found")
 	}
-	if _, ok := minerU.ModelDriver.(*MinerULocalModel); !ok {
+	if _, ok := Underlying(minerU.ModelDriver).(*MinerULocalModel); !ok {
 		t.Fatalf("MinerU ModelDriver=%T, want *models.MinerULocalModel", minerU.ModelDriver)
 	}
 	if minerU.URLSuffix.DocumentParse != "file_parse" {
@@ -187,7 +187,7 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	if monkeyOCRv2 == nil {
 		t.Fatal("MonkeyOCRv2 provider not found")
 	}
-	if _, ok := monkeyOCRv2.ModelDriver.(*MonkeyOCRv2Model); !ok {
+	if _, ok := Underlying(monkeyOCRv2.ModelDriver).(*MonkeyOCRv2Model); !ok {
 		t.Fatalf("MonkeyOCRv2 ModelDriver=%T, want *models.MonkeyOCRv2Model", monkeyOCRv2.ModelDriver)
 	}
 	if monkeyOCRv2.URLSuffix.DocumentParse != "parse" {
@@ -198,7 +198,7 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	if paddleOCR == nil {
 		t.Fatal("PaddleOCR.local provider not found")
 	}
-	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRLocalModel); !ok {
+	if _, ok := Underlying(paddleOCR.ModelDriver).(*PaddleOCRLocalModel); !ok {
 		t.Fatalf("PaddleOCR.local ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
@@ -329,7 +329,7 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.URLSuffix.Models != "models" {
 		t.Errorf("models suffix=%q", provider.URLSuffix.Models)
 	}
-	if _, ok := provider.ModelDriver.(*PPIOModel); !ok {
+	if _, ok := Underlying(provider.ModelDriver).(*PPIOModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.PPIOModel", provider.ModelDriver)
 	}
 	if provider.ModelDriver.Name() != "ppio" {
@@ -423,7 +423,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.URLSuffix.Chat != "chat/completions" {
 		t.Errorf("chat suffix=%q", provider.URLSuffix.Chat)
 	}
-	if _, ok := provider.ModelDriver.(*SiliconflowModel); !ok {
+	if _, ok := Underlying(provider.ModelDriver).(*SiliconflowModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.SiliconflowModel", provider.ModelDriver)
 	}
 	if provider.ModelDriver.Name() != "SILICONFLOW" {

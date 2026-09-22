@@ -385,7 +385,7 @@ func defaultVisionChatInvoker(
 	defer cancel()
 	vision := true
 	config := &modelModule.ChatConfig{Vision: &vision}
-	if _, ok := driver.(*modelModule.OllamaModel); ok {
+	if _, ok := modelModule.Underlying(driver).(*modelModule.OllamaModel); ok {
 		thinking := false
 		config.Thinking = &thinking
 	}

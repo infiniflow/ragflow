@@ -36,7 +36,7 @@ func TestGetPreconfiguredDriverReturnsPreBuiltDriver(t *testing.T) {
 	if driver == nil {
 		t.Fatal("GetPreconfiguredDriver returned nil, want non-nil")
 	}
-	if _, ok := driver.(*AliyunModel); !ok {
+	if _, ok := Underlying(driver).(*AliyunModel); !ok {
 		t.Fatalf("GetPreconfiguredDriver returned %T, want *AliyunModel", driver)
 	}
 }
@@ -53,7 +53,7 @@ func TestGetPreconfiguredDriverMatchesRuntimeDriverName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPreconfiguredDriver: %v", err)
 	}
-	if _, ok := driver.(*ZhipuAIModel); !ok {
+	if _, ok := Underlying(driver).(*ZhipuAIModel); !ok {
 		t.Fatalf("GetPreconfiguredDriver returned %T, want *ZhipuAIModel", driver)
 	}
 }
@@ -76,7 +76,7 @@ func TestGetPreconfiguredDriverWithBaseURLOverride(t *testing.T) {
 	}
 
 	// Verify the override took effect by checking GetBaseURL.
-	aliModel, ok := driver.(*AliyunModel)
+	aliModel, ok := Underlying(driver).(*AliyunModel)
 	if !ok {
 		t.Fatalf("GetPreconfiguredDriver returned %T, want *AliyunModel", driver)
 	}
@@ -128,7 +128,7 @@ func TestGetPreconfiguredDriverSuffixTrimmed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPreconfiguredDriver: %v", err)
 	}
-	aliModel, ok := driver.(*AliyunModel)
+	aliModel, ok := Underlying(driver).(*AliyunModel)
 	if !ok {
 		t.Fatalf("expected *AliyunModel, got %T", driver)
 	}

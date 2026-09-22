@@ -69,7 +69,7 @@ func TestApiRouteProviderConfig(t *testing.T) {
 	if provider == nil {
 		t.Fatal("API-Route provider not found")
 	}
-	if _, ok := provider.ModelDriver.(*ApiRouteModel); !ok {
+	if _, ok := Underlying(provider.ModelDriver).(*ApiRouteModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.ApiRouteModel", provider.ModelDriver)
 	}
 }
