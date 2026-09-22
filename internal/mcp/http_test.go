@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -307,4 +308,46 @@ func TestProtocolErrorsAndCancellation(t *testing.T) {
 		t.Fatal("cancellation did not reach service")
 	}
 	<-done
+}
+
+func TestTransportsRejectLoopbackDNSRebinding(t *testing.T) {
+	for _, path := range []string{"/sse", "/messages/", "/mcp"} {
+		for _, tc := range []struct {
+			local, host string
+			blocked     bool
+		}{
+			{"127.0.0.1", "attacker.example", true}, {"::1", "localhost.attacker.example", true},
+			{"127.0.0.1", "localhost:9382", false}, {"::1", "[::1]:9382", false},
+			{"127.0.0.1", "127.0.0.2:9382", false}, {"192.0.2.1", "mcp.example", false},
+		} {
+			t.Run(path+tc.local+tc.host, func(t *testing.T) {
+				called := false
+				h := NewHandler(func(context.Context, string) (string, error) { called = true; return "", fmt.Errorf("no credentials") }, nil, Options{true, true, true})
+				defer h.Close()
+				r := httptest.NewRequest(http.MethodGet, "http://"+tc.host+path, nil)
+				r.Header.Set("Origin", "http://"+tc.host)
+				r = r.WithContext(context.WithValue(r.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP(tc.local), Port: 9382}))
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				want := http.StatusUnauthorized
+				if tc.blocked {
+					want = http.StatusForbidden
+				}
+				if w.Code != want || called == tc.blocked {
+					t.Fatalf("status=%d authorization called=%v; want status=%d", w.Code, called, want)
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkMCPLoopbackRequest(b *testing.B) {
+	h := NewHandler(func(context.Context, string) (string, error) { return "user", nil }, nil, Options{true, true, true})
+	defer h.Close()
+	r := httptest.NewRequest(http.MethodGet, "http://localhost/unknown", nil)
+	r = r.WithContext(context.WithValue(r.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9382}))
+	b.ReportAllocs()
+	for b.Loop() {
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	}
 }
