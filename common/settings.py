@@ -398,12 +398,13 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_GAUSSDB, DOC_ENGINE_SERENEDB, docStoreConn, ES, OB, OS, INFINITY, GAUSSDB, SERENEDB
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_GAUSSDB, DOC_ENGINE_SERENEDB, DOC_ENGINE_VASTBASE, docStoreConn, ES, OB, OS, INFINITY, GAUSSDB, SERENEDB, VB
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
     DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
     DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
+    DOC_ENGINE_VASTBASE = DOC_ENGINE.lower() == "vastbase"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -429,6 +430,11 @@ def init_settings():
         from rag.utils import serenedb_conn
 
         docStoreConn = serenedb_conn.SereneDBConnection()
+    elif lower_case_doc_engine == "vastbase":
+        VB = get_base_config("vb", {})
+        from rag.utils import vastbase_conn
+
+        docStoreConn = vastbase_conn.VBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
