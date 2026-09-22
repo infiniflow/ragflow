@@ -328,6 +328,13 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	if m.bucket != "" {
 		actualBucket = m.bucket
 	}
+	exists, err := m.client.BucketExists(ctx, actualBucket)
+	if err != nil {
+		return fmt.Errorf("failed to check bucket %s: %w", actualBucket, err)
+	}
+	if !exists {
+		return nil
+	}
 
 	// Build prefix for single-bucket mode
 	prefix := ""
@@ -339,24 +346,47 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	}
 
 	// List and delete objects with prefix
+	removeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	objectsCh := make(chan minio.ObjectInfo)
+	listErrCh := make(chan error, 1)
 
 	go func() {
 		defer close(objectsCh)
-		for obj := range m.client.ListObjects(ctx, actualBucket, minio.ListObjectsOptions{
+		defer close(listErrCh)
+		for obj := range m.client.ListObjects(removeCtx, actualBucket, minio.ListObjectsOptions{
 			Prefix:    prefix,
 			Recursive: true,
 		}) {
 			if obj.Err != nil {
 				common.Warn("Failed to list objects", zap.Error(obj.Err))
+				listErrCh <- obj.Err
 				return
 			}
-			objectsCh <- obj
+			select {
+			case objectsCh <- obj:
+			case <-removeCtx.Done():
+				return
+			}
 		}
 	}()
 
-	for err := range m.client.RemoveObjects(ctx, actualBucket, objectsCh, minio.RemoveObjectsOptions{}) {
-		common.Warn(fmt.Sprintf("Failed to remove object, key: %s", err.ObjectName), zap.Error(err.Err))
+	var removeErr error
+	for objErr := range m.client.RemoveObjects(removeCtx, actualBucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		common.Warn(fmt.Sprintf("Failed to remove object, key: %s", objErr.ObjectName), zap.Error(objErr.Err))
+		if removeErr == nil {
+			removeErr = fmt.Errorf("failed to remove object %s: %w", objErr.ObjectName, objErr.Err)
+		}
+	}
+	cancel()
+	if removeErr != nil {
+		return removeErr
+	}
+	if err := <-listErrCh; err != nil {
+		return fmt.Errorf("failed to list objects in bucket %s: %w", actualBucket, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Only remove the actual bucket if not in single-bucket mode
