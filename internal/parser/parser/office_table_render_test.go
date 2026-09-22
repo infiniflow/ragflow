@@ -22,28 +22,34 @@ func TestXLSXParserEmitsSpreadsheetRows(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) != 3 {
-		t.Fatalf("items = %d, want header plus two rows", len(res.JSON))
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one segmented HTML table item", len(res.JSON))
 	}
-	header := res.JSON[0]
-	if header["ck_type"] != "table_header" {
-		t.Fatalf("header ck_type = %v, want table_header", header["ck_type"])
+	item := res.JSON[0]
+	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
+		t.Fatalf("item types = ck_type:%v doc_type:%v", item["ck_type"], item["doc_type_kwd"])
 	}
-	if got, want := header["cells"], []string{"ID", "Status"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("header cells = %#v, want %#v", got, want)
+	text, _ := item["text"].(string)
+	wantText := "<table><caption>Sheet1</caption>\n" +
+		"<tr><th>ID</th><th>Status</th></tr>\n" +
+		"<tr><td>A-100</td><td>paid</td></tr>\n" +
+		"<tr><td>A-101</td><td>pending</td></tr>\n" +
+		"</table>\n"
+	if text != wantText {
+		t.Fatalf("text = %q, want %q", text, wantText)
 	}
-	row := res.JSON[1]
-	if row["ck_type"] != "table_row" || row["doc_type_kwd"] != "text" {
-		t.Fatalf("row types = ck_type:%v doc_type:%v", row["ck_type"], row["doc_type_kwd"])
+	if item["sheet"] != "Sheet1" || item["sheet_index"] != 1 {
+		t.Fatalf("sheet metadata = %#v", item)
 	}
-	if got, want := row["cells"], []string{"A-100", "paid"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("row cells = %#v, want %#v", got, want)
+	positions := item["positions"].([][]float64)
+	if len(positions) != 3 {
+		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
 	}
-	if row["sheet"] != "Sheet1" || row["sheet_index"] != 1 {
-		t.Fatalf("row sheet metadata = %#v", row)
+	if got := positions[1]; !reflect.DeepEqual(got, []float64{1, 2, 2, 1, 2}) {
+		t.Fatalf("row 2 tuple = %v, want [1 2 2 1 2]", got)
 	}
-	if row["row_start"] != 2 || row["row_end"] != 2 || row["col_start"] != 1 || row["col_end"] != 2 {
-		t.Fatalf("row coordinates = %#v", row)
+	if got := positions[2]; !reflect.DeepEqual(got, []float64{1, 3, 3, 1, 2}) {
+		t.Fatalf("row 3 tuple = %v, want [1 3 3 1 2]", got)
 	}
 }
 
@@ -94,12 +100,20 @@ func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) != dataRows+1 {
-		t.Fatalf("items = %d, want one header plus %d data rows", len(res.JSON), dataRows)
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one HTML table item (parser must not pre-split rows)", len(res.JSON))
 	}
-	last := res.JSON[len(res.JSON)-1]
-	if last["ck_type"] != "table_row" || last["row_start"] != dataRows+1 {
-		t.Fatalf("last row = %#v, want source row %d", last, dataRows+1)
+	positions := res.JSON[0]["positions"].([][]float64)
+	if len(positions) != dataRows+1 {
+		t.Fatalf("len(positions) = %d, want one tuple per <tr> (header plus %d rows)", len(positions), dataRows)
+	}
+	last := positions[len(positions)-1]
+	if last[1] != float64(dataRows+1) || last[2] != float64(dataRows+1) {
+		t.Fatalf("last tuple = %v, want source row %d", last, dataRows+1)
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if !strings.Contains(text, "<td>258</td>") {
+		t.Fatalf("last data row missing from markup:\n%s", text)
 	}
 }
 
@@ -119,20 +133,20 @@ func TestXLSXParserPreservesSheetOrderAndIdentity(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) != 4 {
-		t.Fatalf("items = %d, want two headers and two rows", len(res.JSON))
+	if len(res.JSON) != 2 {
+		t.Fatalf("items = %d, want one HTML table per sheet", len(res.JSON))
 	}
-	seen := map[string]map[string]any{}
-	for _, item := range res.JSON {
-		if item["ck_type"] == "table_header" {
-			seen[item["sheet"].(string)] = item
-		}
+	first, second := res.JSON[0], res.JSON[1]
+	if first["sheet"] != "Sheet1" || first["sheet_index"] != 1 {
+		t.Fatalf("first sheet identity = %#v", first)
 	}
-	if first := seen["Sheet1"]; first == nil || first["table_id"] != "sheet-1" || first["sheet_index"] != 1 {
-		t.Fatalf("Sheet1 identity = %#v", first)
+	if second["sheet"] != "Orders" || second["sheet_index"] != 2 {
+		t.Fatalf("second sheet identity = %#v", second)
 	}
-	if second := seen["Orders"]; second == nil || second["table_id"] != "sheet-2" || second["sheet_index"] != 2 {
-		t.Fatalf("Orders identity = %#v", second)
+	// Table grouping collapses into sheet_index; table_id no longer exists
+	// on HTML table items (segmentation is done by the parser itself).
+	if _, ok := first["table_id"]; ok {
+		t.Errorf("table_id must not be emitted on segmented table items")
 	}
 }
 
@@ -145,13 +159,33 @@ func spreadsheetText(res ParseResult) string {
 	return out.String()
 }
 
-func spreadsheetHeaderItem(res ParseResult) map[string]any {
+// spreadsheetHeaderText returns the leading <table> item's header labels
+// joined by "; " — the rendered <th> cells of its first <tr> — or "" when no
+// table item exists.
+func spreadsheetHeaderText(res ParseResult) string {
 	for _, item := range res.JSON {
-		if item["ck_type"] == "table_header" {
-			return item
+		text, _ := item["text"].(string)
+		if !strings.Contains(strings.ToLower(text), "<table") {
+			continue
+		}
+		row := text
+		if i := strings.Index(row, "<tr>"); i >= 0 {
+			row = row[i+len("<tr>"):]
+		}
+		if i := strings.Index(row, "</tr>"); i >= 0 {
+			row = row[:i]
+		}
+		var labels []string
+		for _, cell := range strings.Split(row, "<th>")[1:] {
+			if i := strings.Index(cell, "</th>"); i >= 0 {
+				labels = append(labels, cell[:i])
+			}
+		}
+		if len(labels) > 0 {
+			return strings.Join(labels, "; ")
 		}
 	}
-	return nil
+	return ""
 }
 
 func TestXLSXImageMIMEType(t *testing.T) {
@@ -238,8 +272,9 @@ func mustAddTable(t *testing.T, f *excelize.File, sheet string, table *excelize.
 	}
 }
 
-// TestXLSXParser_HeaderAndCaption asserts the XLSX parser emits a typed header
-// row and data row with the header labels preserved separately from values.
+// TestXLSXParser_HeaderAndCaption asserts the XLSX parser renders the typed
+// header row as <th> cells and data rows as <td> cells inside one captioned
+// table, with header labels never duplicated as values.
 func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Product")
@@ -255,14 +290,14 @@ func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "Product; Price") {
-		t.Fatalf("want header text, got:\n%s", text)
+	if !strings.Contains(text, "<tr><th>Product</th><th>Price</th></tr>") {
+		t.Fatalf("want header row, got:\n%s", text)
 	}
-	if !strings.Contains(text, "Product：Widget; Price：9.99") {
-		t.Fatalf("want row text, got:\n%s", text)
+	if !strings.Contains(text, "<tr><td>Widget</td><td>9.99</td></tr>") {
+		t.Fatalf("want data row, got:\n%s", text)
 	}
-	// The header label must not be duplicated as a value in the row text.
-	if strings.Contains(text, "Product：Product") {
+	// The header label must not be duplicated as a value in any row.
+	if strings.Contains(text, "<td>Product</td>") {
 		t.Fatalf("header value leaked into row text:\n%s", text)
 	}
 }
@@ -291,7 +326,7 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "Sales Report; Sales Report; Sales Report") {
+	if !strings.Contains(text, "<th>Sales Report</th><th>Sales Report</th><th>Sales Report</th>") {
 		t.Fatalf("merged master text not inherited into header cells, got:\n%s", text)
 	}
 }
@@ -313,14 +348,10 @@ func TestDetectHeaderRow_ListObject(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "Name; Age") {
+	if !strings.Contains(spreadsheetText(res), "<th>Name</th><th>Age</th>") {
 		t.Fatalf("want ListObject header row detected, got:\n%s", spreadsheetText(res))
 	}
-	header := spreadsheetHeaderItem(res)
-	if header == nil {
-		t.Fatal("missing table_header item")
-	}
-	if got := header["text"]; got != "Name; Age" {
+	if got := spreadsheetHeaderText(res); got != "Name; Age" {
 		t.Fatalf("header text = %v, want Name; Age", got)
 	}
 }
@@ -344,10 +375,10 @@ func TestDetectHeaderRow_Lightweight(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "Item; Count") {
+	if !strings.Contains(spreadsheetText(res), "<th>Item</th><th>Count</th>") {
 		t.Fatalf("want row-2 header detected, got:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(spreadsheetText(res), "100; 200") {
+	if strings.Contains(spreadsheetText(res), "<th>100</th><th>200</th>") {
 		t.Fatalf("numeric row 1 must not be the header:\n%s", spreadsheetText(res))
 	}
 }
@@ -366,7 +397,7 @@ func TestXLSXParser_CommonCaseNoRegression(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "col_a; col_b") {
+	if !strings.Contains(spreadsheetText(res), "<th>col_a</th><th>col_b</th>") {
 		t.Fatalf("common-case header must be preserved:\n%s", spreadsheetText(res))
 	}
 }
@@ -394,10 +425,10 @@ func TestDetectHeaderRow_BoldSubtotalNotHeader(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "2023; 2024") {
+	if !strings.Contains(spreadsheetText(res), "<th>2023</th><th>2024</th>") {
 		t.Fatalf("numeric row 1 must remain the header:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(spreadsheetText(res), "Total; Summary") {
+	if strings.Contains(spreadsheetText(res), "<th>Total</th><th>Summary</th>") {
 		t.Fatalf("bold subtotal row must not be promoted to header:\n%s", spreadsheetText(res))
 	}
 }
@@ -427,14 +458,10 @@ func TestDetectHeaderRow_StyledHeaderPastFarMerge(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "Name; Desc") {
+	if !strings.Contains(spreadsheetText(res), "<th>Name</th><th>Desc</th>") {
 		t.Fatalf("narrow bold header past far merge must be detected:\n%s", spreadsheetText(res))
 	}
-	header := spreadsheetHeaderItem(res)
-	if header == nil {
-		t.Fatal("missing table_header item")
-	}
-	if got := header["text"]; got != "Name; Desc" {
+	if got := spreadsheetHeaderText(res); got != "Name; Desc" {
 		t.Fatalf("header text = %v, want Name; Desc", got)
 	}
 }
@@ -461,14 +488,10 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "Product; Units") {
+	if !strings.Contains(spreadsheetText(res), "<th>Product</th><th>Units</th>") {
 		t.Fatalf("styled text header over numeric data must be detected:\n%s", spreadsheetText(res))
 	}
-	header := spreadsheetHeaderItem(res)
-	if header == nil {
-		t.Fatal("missing table_header item")
-	}
-	if got := header["text"]; got != "Product; Units" {
+	if got := spreadsheetHeaderText(res); got != "Product; Units" {
 		t.Fatalf("header text = %v, want Product; Units", got)
 	}
 }

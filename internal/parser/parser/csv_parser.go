@@ -142,14 +142,10 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	for i := range dataRows {
 		dataRows[i] = i + 2
 	}
-	var items []map[string]any
-	if p.HTML4Excel {
-		if table := recordsToHTMLTableItem(records, csvSheetName, 1, 1, dataRows); table != nil {
-			items = []map[string]any{table}
-		}
-	} else {
-		items = recordsToSpreadsheetItems(records, csvSheetName, 1, 1, dataRows)
-	}
+	// One wire shape for csv as for xlsx: a single segmented HTML table with
+	// row-aligned positions (csv has no in-cell image anchors). html4excel
+	// no longer selects a second builder.
+	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil)
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{

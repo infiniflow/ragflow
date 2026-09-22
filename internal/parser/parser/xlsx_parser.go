@@ -151,14 +151,6 @@ func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, i
 			return nil, warnings, len(sheets), err
 		}
 		warnings = append(warnings, sheetWarnings...)
-		var sheetItems []map[string]any
-		if html4excel {
-			if table := recordsToHTMLTableItem(records, sheet, sheetIdx+1, headerRow, dataRows); table != nil {
-				sheetItems = []map[string]any{table}
-			}
-		} else {
-			sheetItems = recordsToSpreadsheetItems(records, sheet, sheetIdx+1, headerRow, dataRows)
-		}
 		images, imageWarnings := extractXLSXImages(f, sheet)
 		for _, image := range images {
 			row, _ := numericItemInt(image["row_start"])
@@ -167,9 +159,11 @@ func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, i
 			image["table_id"] = fmt.Sprintf("sheet-%d", sheetIdx+1)
 			image["positions"] = [][]float64{{float64(sheetIdx + 1), float64(row), float64(row), float64(col), float64(col)}}
 		}
-		sheetItems = append(sheetItems, images...)
-		sortSpreadsheetItems(sheetItems)
-		items = append(items, sheetItems...)
+		// One wire shape for every spreadsheet sheet: segmented HTML tables
+		// with row-aligned positions, images interleaved at their anchors.
+		// html4excel no longer selects a second builder; it is retired as a
+		// no-op option (deprecation warning lands separately).
+		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images)...)
 		warnings = append(warnings, imageWarnings...)
 	}
 	return items, warnings, len(sheets), nil
