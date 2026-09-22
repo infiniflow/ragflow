@@ -31,6 +31,7 @@
 # is unaffected by where these files live locally.
 
 import argparse
+import hashlib
 import os
 import shutil
 import sys
@@ -56,7 +57,10 @@ from huggingface_hub import snapshot_download
 # Source of the native static archives: infiniflow/ragflow-build (our own
 # ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
 # account. The release tag is `onnxruntime-v{ORT_VERSION}` and the asset is
-# `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`.
+# `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`. The archive is occasionally
+# re-issued under this SAME tag/asset name with patched content; download_deps.py
+# detects that via a `{asset}.sha256` sidecar and re-downloads/re-extracts, so a
+# stale local copy never silently lingers.
 ORT_VERSION = "1.29.0"
 
 
@@ -73,6 +77,15 @@ def _ort_extracted_dir(version):
 def _ort_normalized_dir(version):
     """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib."""
     return f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+
+
+def _sha256_of(path):
+    """sha256 of a file, streamed in chunks so large archives don't blow memory."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
@@ -213,8 +226,52 @@ if __name__ == "__main__":
         download_url = url[0] if isinstance(url, list) else url
         filename = url[1] if isinstance(url, list) else url.split("/")[-1]
         print(f"Downloading {filename} from {download_url}...")
-        if not os.path.exists(filename):
+
+        # The ONNX Runtime archive is re-issued under the SAME release tag and
+        # asset name whenever its content changes (e.g. the patched build that
+        # exports SessionGetInitializer*). A pure existence check would then
+        # keep a colleague's stale local copy and fail to link onnxruntime_go.
+        # Verify against the published .sha256 sidecar so a re-issued archive
+        # is always re-downloaded and re-extracted. Every other archive keeps
+        # the legacy existence-based skip.
+        is_ort = filename == _ort_asset_name(ORT_VERSION)
+        expected_sha = None
+        if is_ort:
+            sidecar_url = download_url + ".sha256"
+            try:
+                with urllib.request.urlopen(sidecar_url) as resp:
+                    expected_sha = resp.read().decode().split()[0]
+            except Exception as exc:  # noqa: BLE001 - best-effort; fall back to legacy
+                print(f"  WARNING: could not fetch {sidecar_url} ({exc}); skipping checksum for {filename}")
+
+        needs_download = True
+        if os.path.exists(filename):
+            if expected_sha is not None:
+                actual = _sha256_of(filename)
+                if actual == expected_sha:
+                    print(f"  ✓ {filename} checksum matches released {expected_sha}; skipping download")
+                    needs_download = False
+                else:
+                    print(f"  {filename} checksum mismatch (local {actual} != released {expected_sha}); re-downloading")
+            else:
+                needs_download = False
+
+        if needs_download:
             urllib.request.urlretrieve(download_url, filename)
+            if expected_sha is not None:
+                actual = _sha256_of(filename)
+                if actual != expected_sha:
+                    print(f"  ERROR: {filename} checksum mismatch after download (got {actual}, expected {expected_sha})", file=sys.stderr)
+                    sys.exit(1)
+                print(f"  ✓ {filename} checksum verified ({actual})")
+            # Force re-extract below: drop any previously extracted version dir
+            # so the same-named re-issued archive actually refreshes the .a files.
+            if is_ort:
+                native_libs = os.path.expanduser("~/ragflow-native-libs")
+                version_dir = os.path.join(native_libs, "onnxruntime", "static_lib", _ort_normalized_dir(ORT_VERSION))
+                if os.path.isdir(version_dir):
+                    print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
+                    shutil.rmtree(version_dir)
 
     # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.

@@ -15,9 +15,15 @@
 #
 """HTML to Markdown conversion for the ingestion paths."""
 
+import re
 from typing import Any
 
 from markdownify import MarkdownConverter
+
+# A run of backslashes that is not itself escaped, followed by the pipe it would
+# otherwise escape. Matching the run is what keeps a cell's own backslash from
+# consuming the escape that is added.
+_TABLE_CELL_PIPE = re.compile(r"(?<!\\)(\\*)\|")
 
 # Inline tags whose markdownify conversion runs the text through chomp(), which lifts the
 # surrounding whitespace out of the text and then returns an empty string once nothing is
@@ -45,6 +51,16 @@ _WHITESPACE_ONLY_PRESERVING_TAGS = frozenset(
 )
 
 
+def _escape_table_cell(text: str) -> str:
+    """Escape the pipes in a table cell so the cell cannot add a column.
+
+    A Markdown table row is split on every unescaped pipe, so a cell holding one
+    -- a part number, a shell command, a regex alternation -- pushes the rest of
+    the row into columns the header does not have.
+    """
+    return _TABLE_CELL_PIPE.sub(lambda match: match.group(1) * 2 + r"\|", text)
+
+
 class _WhitespacePreservingConverter(MarkdownConverter):
     """Same as markdownify's converter, but a whitespace-only inline element keeps its text."""
 
@@ -60,6 +76,12 @@ class _WhitespacePreservingConverter(MarkdownConverter):
             return convert_fn(el, text, *args, **kwargs)
 
         return _keep_whitespace_only
+
+    def convert_td(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
+        return super().convert_td(el, _escape_table_cell(text), *args, **kwargs)
+
+    def convert_th(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
+        return super().convert_th(el, _escape_table_cell(text), *args, **kwargs)
 
 
 def html_to_markdown(html: str, **options: Any) -> str:

@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -34,7 +37,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
-	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+	// A built-in parser_id is valid without parse_type. parse_type is only
+	// required when selecting a pipeline or explicitly supplied.
+	if req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if err != nil {
 			return nil, common.CodeDataError, err
@@ -99,12 +104,53 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserConfig, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, pipelineID)
-	if cpErr != nil {
-		common.Warn("failed to resolve component params defaults for dataset",
-			zap.String("parserID", parserID), zap.Error(cpErr))
-		parserConfig = entity.JSONMap{}
+	if req.ParserConfig != nil {
+		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 	}
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
+	parserConfig := entity.JSONMap{}
+	if dslErr != nil {
+		common.Warn("failed to load pipeline DSL for building parser_config",
+			zap.String("parserID", parserID), zap.Error(dslErr))
+	} else {
+		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+	}
+
+	// Preserve the public default shape when parser_config is empty. The
+	// parent_child block remains the single source of truth; chunker
+	// children_delimiters are derived below only when it is configured.
+	var parentChild map[string]interface{}
+	if req.ParserConfig != nil {
+		if pc, ok := req.ParserConfig["parent_child"].(map[string]interface{}); ok {
+			parentChild = pc
+		}
+	}
+	if parentChild == nil {
+		parentChild = map[string]interface{}{
+			"use_parent_child":   false,
+			"children_delimiter": "\n",
+		}
+	}
+	parserConfig["parent_child"] = parentChild
+
+	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	if req.ParserConfig != nil {
+		for componentID, value := range req.ParserConfig {
+			if pipelinepkg.IsChunkerComponent(componentID) {
+				parentChildConfig[componentID] = value
+			}
+		}
+	}
+	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
@@ -119,9 +165,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+		target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
-			tenantEmbdID = resolvedID
+			tenantEmbdID = target.ModelID
 		} else {
 			return nil, common.CodeDataError, err
 		}
@@ -289,6 +335,11 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 }
 
 func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb *entity.Knowledgebase) error {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+
 	// Collect document IDs first so engine cleanup can run before the
 	// transaction (engine ops are not transactional).
 	var documents []entity.Document
@@ -300,7 +351,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
 
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
+	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
@@ -343,7 +394,16 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 			return fmt.Errorf("delete dataset error for %s", kb.ID)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Dataset uploads and generated objects are stored under the KB ID.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
+	if err := storageImpl.RemoveBucket(cleanupCtx, kb.ID); err != nil {
+		return fmt.Errorf("dataset %s deleted but storage cleanup failed: %w", kb.ID, err)
+	}
+	return nil
 }
 
 func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
@@ -449,14 +509,24 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		for _, accessibleID := range accessibleIDs {
 			accessible[accessibleID] = struct{}{}
 		}
+		filteredIDs := make([]string, 0, len(ids))
 		deniedIDs := make([]string, 0, len(ids))
 		for _, datasetID := range ids {
-			if _, ok := accessible[datasetID]; !ok {
+			if _, ok := accessible[datasetID]; ok {
+				filteredIDs = append(filteredIDs, datasetID)
+			} else {
 				deniedIDs = append(deniedIDs, datasetID)
 			}
 		}
 		if len(deniedIDs) > 0 {
-			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for datasets: '%s'", userID, strings.Join(deniedIDs, ", "))
+			common.Warn("User lacks permission for datasets",
+				zap.String("user_id", userID),
+				zap.Strings("dataset_ids", deniedIDs),
+			)
+		}
+		ids = filteredIDs
+		if len(ids) == 0 {
+			return []map[string]interface{}{}, 0, common.CodeSuccess, nil
 		}
 	}
 

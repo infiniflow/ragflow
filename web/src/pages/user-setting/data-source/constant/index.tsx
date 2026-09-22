@@ -15,6 +15,7 @@
  */
 
 import { FormFieldType } from '@/components/dynamic-form';
+import { pickByBackend } from '@/utils/backend-variant';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
@@ -58,6 +59,7 @@ export enum DataSourceKey {
   DISCORD = 'discord',
   XQUIK = 'xquik',
   ZENDESK = 'zendesk',
+  ZOTERO = 'zotero',
   WEBDAV = 'webdav',
   AIRTABLE = 'airtable',
   ASANA = 'asana',
@@ -149,6 +151,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ZOTERO]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.SEAFILE]: {
@@ -373,6 +378,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Zendesk',
       description: t(`setting.${DataSourceKey.ZENDESK}Description`),
       icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
+    },
+    [DataSourceKey.ZOTERO]: {
+      name: 'Zotero',
+      description: t(`setting.${DataSourceKey.ZOTERO}Description`),
+      icon: <BookOpen className="text-text-primary" size={22} />,
     },
     [DataSourceKey.SEAFILE]: {
       name: 'SeaFile',
@@ -1486,6 +1496,93 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       ],
     },
   ],
+  [DataSourceKey.ZOTERO]: [
+    {
+      label: t('setting.dataSourceFieldZoteroUserId'),
+      name: 'config.zotero_user_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: '12345678',
+      tooltip: t('setting.zoteroUserIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroApiKey'),
+      name: 'config.credentials.zotero_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.zoteroApiKeyTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroStorageMode'),
+      name: 'config.storage_mode',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        {
+          label: t('setting.dataSourceOptionZoteroCloudStorage'),
+          value: 'zotero_storage',
+        },
+        {
+          label: t('setting.dataSourceOptionZoteroWebdav'),
+          value: 'webdav',
+        },
+      ],
+      tooltip: t('setting.zoteroStorageModeTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldWebdavServerUrl'),
+      name: 'config.webdav_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://webdav.example.com',
+      tooltip: t('setting.zoteroWebdavUrlTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavUrlRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroWebdavUsername'),
+      name: 'config.credentials.webdav_username',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.zoteroWebdavUsernameTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavUsernameRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroWebdavPassword'),
+      name: 'config.credentials.webdav_password',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.zoteroWebdavPasswordTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavPasswordRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '4',
+    },
+  ],
   [DataSourceKey.SEAFILE]: seafileConstant(t),
   [DataSourceKey.MYSQL]: [
     {
@@ -2506,6 +2603,21 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.ZOTERO]: {
+    name: '',
+    source: DataSourceKey.ZOTERO,
+    config: {
+      zotero_user_id: '',
+      storage_mode: 'zotero_storage',
+      webdav_url: '',
+      batch_size: 4,
+      credentials: {
+        zotero_api_key: '',
+        webdav_username: '',
+        webdav_password: '',
+      },
+    },
+  },
   [DataSourceKey.SEAFILE]: {
     name: '',
     source: DataSourceKey.SEAFILE,
@@ -2534,7 +2646,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
-      batch_size: 2,
+      batch_size: pickByBackend({ go: 32, python: 2 }),
       credentials: {
         username: '',
         password: '',
@@ -2553,7 +2665,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
-      batch_size: 2,
+      batch_size: pickByBackend({ go: 32, python: 2 }),
       credentials: {
         username: '',
         password: '',

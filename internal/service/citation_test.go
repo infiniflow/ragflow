@@ -212,11 +212,13 @@ func TestInsertCitationsWithVectors_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatal("expected citations")
 	}
-	if !strings.Contains(answer, "[ID:abc123]") {
-		t.Errorf("answer should contain [ID:abc123]: %q", answer)
+	// Markers carry the chunk's position in `chunks` (the list the caller returns
+	// as the reference), not its chunk id.
+	if !strings.Contains(answer, "[ID:0]") {
+		t.Errorf("answer should contain [ID:0]: %q", answer)
 	}
-	if !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("answer should contain [ID:def456]: %q", answer)
+	if !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("answer should contain [ID:1]: %q", answer)
 	}
 }
 
@@ -231,7 +233,7 @@ func TestApplyCitations(t *testing.T) {
 	chunks := []SourcedChunk{{ID: "c1"}}
 	cites := map[int][]int{0: {0}}
 	answer, cited := applyCitations("Hello world.", []string{"Hello world."}, []int{0}, cites, chunks)
-	if answer != "Hello world. [ID:c1]" {
+	if answer != "Hello world. [ID:0]" {
 		t.Errorf("got %q", answer)
 	}
 	if len(cited) != 1 || cited[0] != 0 {
@@ -261,8 +263,8 @@ func TestInsertCitations_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatalf("expected citations, got none. answer=%q", answer)
 	}
-	if !strings.Contains(answer, "[ID:abc123]") || !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("missing [ID:*] markers: %q", answer)
+	if !strings.Contains(answer, "[ID:0]") || !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("missing positional [ID:*] markers: %q", answer)
 	}
 }
 
@@ -493,11 +495,13 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 		},
 	}
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil)
+	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil, true)
 
 	if strings.Contains(res.Answer, "1-3") {
 		t.Fatalf("final answer still carries the range citation: %q", res.Answer)
 	}
+	// Expanded markers keep the 0-based indexes the client resolves against
+	// reference.chunks.
 	for _, want := range []string{"[ID:1]", "[ID:2]", "[ID:3]"} {
 		if !strings.Contains(res.Answer, want) {
 			t.Fatalf("final answer missing expanded citation %s: %q", want, res.Answer)
@@ -507,5 +511,21 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 	// filtered out of the reference (recall_docs = cited docs).
 	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
 		t.Fatalf("reference doc_aggs = %#v, want the single cited doc", res.Reference["doc_aggs"])
+	}
+}
+
+func TestCitationStreamFilter(t *testing.T) {
+	var filter citationStreamFilter
+	want := "Answer\n## Heading\n[2024][guide](https://example.com) end"
+	got := ""
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)#", "#0", "$", "$\n#", "# Heading\n[2024][guide](https://example.com) end"} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream leaked citation text: %q", got)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer=%q, want %q", got, want)
 	}
 }

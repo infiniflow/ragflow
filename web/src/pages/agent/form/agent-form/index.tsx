@@ -16,12 +16,16 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
-import { Input, NumberInput } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import NumberInputStepper from '@/components/originui/number-input';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateUnavailableValue,
+  useUnavailableModelFormSchema,
+} from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
@@ -34,6 +38,7 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -54,6 +59,7 @@ import {
 import { useGetAgentMCPIds } from './use-get-tools';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
+import NumberInput from '@/components/originui/number-input';
 
 const FormSchema = z.object({
   sys_prompt: z.string(),
@@ -95,6 +101,12 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const ownerTenantId = useOwnerTenantId();
+  const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
+    FormSchema,
+    { ownerTenantId },
+  );
+
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
@@ -110,7 +122,7 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const form = useForm<AgentFormSchemaType>({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
   });
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
@@ -158,20 +170,16 @@ function AgentForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
+  // A persisted model from a shared canvas may be unusable to the current
+  // user — surface the error once the model list has loaded.
+  useRevalidateUnavailableValue(form, modelsFetched, 'llm_id');
+
   return (
     <>
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField></LargeModelFormField>
-          <SliderInputSwitchFormField
-            name="max_tokens"
-            checkName="maxTokensEnabled"
-            label="maxTokens"
-            numberInputClassName="w-24 shrink-0"
-            min={0}
-            max={128000}
-          />
+          <LargeModelFormField ownerTenantId={ownerTenantId} />
           {(mcpIds.length > 0 || hasSubAgentOrTool(edges, node?.id)) && (
             <FormField
               control={form.control}
@@ -180,7 +188,11 @@ function AgentForm({ node }: INextOperatorForm) {
                 <FormItem className="flex-1">
                   <FormLabel>{t('flow.maxRounds')}</FormLabel>
                   <FormControl>
-                    <NumberInput {...field} min={0}></NumberInput>
+                    <NumberInput
+                      {...field}
+                      min={0}
+                      className="w-full"
+                    ></NumberInput>
                   </FormControl>
                 </FormItem>
               )}
@@ -259,7 +271,12 @@ function AgentForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>{t('flow.maxRetries')}</FormLabel>
                     <FormControl>
-                      <NumberInput {...field} max={8} min={0}></NumberInput>
+                      <NumberInput
+                        {...field}
+                        max={8}
+                        min={0}
+                        className="w-full"
+                      ></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
@@ -271,7 +288,12 @@ function AgentForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>{t('flow.delayAfterError')}</FormLabel>
                     <FormControl>
-                      <NumberInput {...field} max={5} step={0.1}></NumberInput>
+                      <NumberInput
+                        {...field}
+                        max={5}
+                        step={0.1}
+                        className="w-full"
+                      ></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
@@ -327,7 +349,6 @@ function AgentForm({ node }: INextOperatorForm) {
               )}
             </section>
           </Collapse>
-
           <Output list={outputList}>
             <RAGFlowFormItem name="showStructuredOutput">
               {(field) => (

@@ -3,30 +3,35 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
+	"sort"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-	"sort"
-	"strings"
 )
 
-func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string) []pdf.TextBox {
+func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string, zoom float64) []pdf.TextBox {
 	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
-			slog.Warn(logLabel+" OCR detect failed", "page", pageNum, "err", err)
+			reportPageInferenceFailure(ctx, logLabel+" OCR detect failed", pageNum, err)
 		}
 		return nil
 	}
 
-	// detectBoxes returns image-pixel coords; ocrMergeChars divides by
-	// pdf.DlaScale before emitting boxes so downstream layout receives
-	// PDF-point coordinates. ocrDetectAndRecognize must match the same
-	// conversion so both OCR paths produce the same coordinate space.
-	imgW := float64(pageImg.Bounds().Dx()) / pdf.DlaScale
-	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
+	// detectBoxes returns image-pixel coords; both OCR paths divide by the zoom
+	// the page was rendered at before emitting boxes so downstream layout
+	// receives PDF-point coordinates — the same units as ParseResult.PageHeight.
+	// That zoom is DlaScale for the default render and the retry zoom after a
+	// per-page re-render, so it cannot be a constant.
+	scale := ocrCoordinateScale(zoom)
+	imgW := float64(pageImg.Bounds().Dx()) / scale
+	imgH := float64(pageImg.Bounds().Dy()) / scale
 
 	// For each box, de-skew via WarpCrop (layer 1) and build the layer-2
 	// rotation candidates: short/wide crops get one candidate at 0 deg; tall
@@ -61,10 +66,10 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 			{X: b.X3, Y: b.Y3},
 		})
 		// Convert detection bounds to PDF-point space (mirrors detectBoxes).
-		px0 := float64(x0) / pdf.DlaScale
-		py0 := float64(y0) / pdf.DlaScale
-		px1 := float64(x1) / pdf.DlaScale
-		py1 := float64(y1) / pdf.DlaScale
+		px0 := float64(x0) / scale
+		py0 := float64(y0) / scale
+		px1 := float64(x1) / scale
+		py1 := float64(y1) / scale
 		if px0 < 0 {
 			px0 = 0
 		}
@@ -109,12 +114,13 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		case berr != nil:
 			// A batch error must not abort the whole page: the canonical
 			// per-crop path below still produces correct results.
-			slog.Warn(logLabel+" OCR batch recognize failed; falling back to per-crop", "page", pageNum, "err", berr)
+			reportPageInferenceFailure(ctx, logLabel+" OCR batch recognize failed; falling back to per-crop", pageNum, berr)
 		case len(batch) != len(cropAcc):
 			// Defensive: a count mismatch (or a nil result) would corrupt the
 			// per-box indexing further down. Fall back to per-crop instead of
 			// indexing out of range.
-			slog.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop", "page", pageNum, "got", len(batch), "want", len(cropAcc))
+			common.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop",
+				zap.Int("page", pageNum), zap.Int("got", len(batch)), zap.Int("want", len(cropAcc)))
 		default:
 			allTexts = batch
 		}
@@ -132,7 +138,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
 		texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
 		if rerr != nil {
-			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", rerr)
+			reportPageInferenceFailure(recCtx, logLabel+" OCR recognize failed", pageNum, rerr)
 			return nil
 		}
 		allTexts[ci] = texts
@@ -231,8 +237,8 @@ type ocrDetectBox struct {
 	srcIdx int
 }
 
-func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
-	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum)
+func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int, zoom float64) []pdf.TextBox {
+	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum, zoom)
 	if err != nil || len(boxes) == 0 {
 		return nil
 	}
@@ -240,14 +246,30 @@ func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars [
 	return p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
 }
 
-func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int) ([]ocrDetectBox, float64, error) {
+// ocrCoordinateScale returns the factor that converts image pixels into PDF
+// points for a page rendered at zoom, falling back to the default DLA scale
+// when the caller supplies none. Detection and recognition must both use it:
+// any other factor leaves the boxes in a scale of their own, and every
+// page-relative comparison downstream — the header/footer zone check in
+// particular — then compares unlike quantities.
+func ocrCoordinateScale(zoom float64) float64 {
+	if zoom > 0 {
+		return zoom
+	}
+	return pdf.DlaScale
+}
+
+func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, zoom float64) ([]ocrDetectBox, float64, error) {
 	ocrDetectBoxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
-	slog.Debug("ocrMergeChars detect", "page", pageNum, "boxes", len(ocrDetectBoxes))
+	common.Debug("ocrMergeChars detect", zap.Int("page", pageNum), zap.Int("boxes", len(ocrDetectBoxes)))
 
-	scale := pdf.DlaScale // 3.0
+	// The caller multiplies the returned boxes back by this scale to crop the
+	// original render, so passing the render zoom keeps the round trip exact
+	// and makes the emitted coordinates PDF points (see ocrDetectAndRecognize).
+	scale := ocrCoordinateScale(zoom)
 	imgBounds := pageImg.Bounds()
 	imgW := float64(imgBounds.Dx()) / scale
 	imgH := float64(imgBounds.Dy()) / scale
@@ -563,7 +585,7 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		if p.docSupportsBatchOCR(doc) {
 			batch, berr := p.inferOCRRecognizeBatch(ctx, doc, crops)
 			if berr != nil {
-				slog.Warn("ocr merge: batch recognize failed", "page", pageNum, "err", berr)
+				reportPageInferenceFailure(ctx, "ocr merge: batch recognize failed", pageNum, berr)
 				return nil
 			}
 			allTexts = batch
@@ -576,7 +598,7 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 				recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, jobs[ci].srcIdx)
 				texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
 				if rerr != nil {
-					slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", rerr)
+					reportPageInferenceFailure(recCtx, "ocr merge: recognize failed", pageNum, rerr)
 					continue
 				}
 				allTexts[ci] = texts
@@ -607,6 +629,6 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 			filtered = append(filtered, tb)
 		}
 	}
-	slog.Debug("ocrMergeChars result", "page", pageNum, "boxes", len(filtered))
+	common.Debug("ocrMergeChars result", zap.Int("page", pageNum), zap.Int("boxes", len(filtered)))
 	return filtered
 }

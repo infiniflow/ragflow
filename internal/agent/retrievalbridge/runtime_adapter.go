@@ -29,22 +29,32 @@ import (
 // RuntimeAdapter exposes the agent tool's NLPRetrievalAdapter (the production
 // hybrid-retrieval backend installed by the server) through the runtime
 // RetrievalService singleton that the agentic-RAG harness reads via
-// harness.RuntimeRetriever. The wrapped tool service is read on every call (not
-// captured at construction) because the server installs it during boot.
+// harness.RuntimeRetriever.
+//
+// The wrapped service is captured at construction, NOT resolved from the runtime
+// singleton on every call: agenttool.SetRetrievalService and
+// runtime.SetRetrievalService write the SAME registry, and the server installs
+// this adapter into it (after installing the NLP adapter). Resolving the target
+// at call time therefore returned this adapter itself, and Search called itself
+// until the stack overflowed on every agentic retrieval.
 //
 // This keeps a single retrieval implementation: the harness and the canvas both
 // search through the same NLPRetrievalAdapter.
-type RuntimeAdapter struct{}
+type RuntimeAdapter struct {
+	svc agenttool.RetrievalService
+}
 
-// NewRuntimeAdapter creates the runtime RetrievalService bridge.
-func NewRuntimeAdapter() *RuntimeAdapter {
-	return &RuntimeAdapter{}
+// NewRuntimeAdapter creates the runtime RetrievalService bridge over svc — the
+// concrete NLPRetrievalAdapter installed at boot. A nil svc makes Search report
+// agenttool.ErrRetrievalServiceMissing, the sentinel the registry itself used.
+func NewRuntimeAdapter(svc agenttool.RetrievalService) *RuntimeAdapter {
+	return &RuntimeAdapter{svc: svc}
 }
 
 // Search forwards a runtime retrieval request to the installed tool service and
 // translates the result back to the runtime chunk shape.
 func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.RetrievalRequest) ([]agentrunt.RetrievalChunk, error) {
-	svc := agenttool.GetRetrievalService()
+	svc := a.svc
 	if svc == nil {
 		return nil, agenttool.ErrRetrievalServiceMissing
 	}
@@ -56,20 +66,12 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 		db = dao.DB
 	}
 	toolReq := agenttool.RetrievalRequest{
-		Query:                 req.Query,
-		DatasetIDs:            req.DatasetIDs,
-		MemoryIDs:             req.MemoryIDs,
-		TopN:                  req.TopN,
-		RerankCandidatesCount: req.RerankCandidatesCount,
-		TopK:                  req.TopK,
-		// VectorSimilarityWeight is the VECTOR weight (Python
-		// vector_similarity_weight) and is forwarded to the nlp layer
-		// UN-inverted. KeywordsSimilarityWeight (canvas semantics, keyword
-		// weight) stays on its own inversion path in nlpRequestFromRetrieval —
-		// conflating the two turned the agentic hybrid leg vector-dominant and
-		// the BM25 legs into pure-vector searches.
-		VectorSimilarityWeight:   req.VectorSimilarityWeight,
-		DisableVectorLeg:         req.DisableVectorLeg,
+		Query:                    req.Query,
+		DatasetIDs:               req.DatasetIDs,
+		MemoryIDs:                req.MemoryIDs,
+		TopN:                     req.TopN,
+		RerankCandidatesCount:    req.RerankCandidatesCount,
+		TopK:                     req.TopK,
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		UseKG:                    req.UseKG,
 		SimilarityThreshold:      req.SimilarityThreshold,
@@ -90,32 +92,24 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	if err != nil {
 		return nil, err
 	}
-	out := make([]agentrunt.RetrievalChunk, 0, len(chunks))
-	for _, c := range chunks {
-		out = append(out, agentrunt.RetrievalChunk{
-			ID:               c.ID,
-			Content:          c.Content,
-			DocumentID:       c.DocumentID,
-			DocumentName:     c.DocumentName,
-			DatasetID:        c.DatasetID,
-			ImageID:          c.ImageID,
-			URL:              c.URL,
-			Positions:        c.Positions,
-			Score:            c.Score,
-			TermSimilarity:   c.TermSimilarity,
-			VectorSimilarity: c.VectorSimilarity,
-			MomID:            c.MomID,
-		})
-	}
-	return out, nil
+	// agenttool.RetrievalChunk is a type ALIAS of agentrunt.RetrievalChunk (single
+	// owner: internal/agent/runtime), so the result already is the runtime slice:
+	// returning it directly is exact. Hand-writing a field-by-field copy here is
+	// how ChunkIndex/PageNum were silently dropped — every field the shared type
+	// gains now flows through without this file having to know about it.
+	return chunks, nil
 }
 
-// rankFeatureOrNil converts a map-valued rank feature into the pointer form the
-// tool request expects, returning nil when empty so a missing feature is
+// rankFeatureOrNil converts a rank feature into the pointer form the tool
+// request expects, returning nil when empty so a missing feature is
 // distinguished from an empty one (Python passes None for "no rank feature").
-func rankFeatureOrNil(m map[string]float64) *map[string]float64 {
-	if len(m) == 0 {
+//
+// Upstream carried the feature as a value map in the runtime request and
+// converted it at this boundary; the request now carries the pointer form
+// directly, so the same invariant is enforced on the pointer instead.
+func rankFeatureOrNil(m *map[string]float64) *map[string]float64 {
+	if m == nil || len(*m) == 0 {
 		return nil
 	}
-	return &m
+	return m
 }

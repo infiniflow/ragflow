@@ -50,6 +50,27 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.ti
     mkdir -p /ragflow/ragflow_deps && \
     cp /tmp/cl100k_base.tiktoken /ragflow/ragflow_deps/cl100k_base.tiktoken
 
+# Embedding tokenizer assets for the Go counters (internal/tokenizer). Same story as
+# the cl100k table above: the deps image carries them and the Go image has to put them
+# where the loaders search (<workdir>/ragflow_deps/huggingface.co/<repo>/<file>). A
+# missing asset FAILS THE BUILD here rather than shipping an image where every tagged
+# model silently counts with the calibrated cl100k estimate. The tokenizer.json files
+# that exist only as cross-check oracles are deliberately not shipped.
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    for asset in \
+        BAAI/bge-m3/sentencepiece.bpe.model \
+        BAAI/bge-large-en-v1.5/vocab.txt \
+        Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
+        intfloat/e5-mistral-7b-instruct/tokenizer.json ; do \
+        if [ -f "/huggingface.co/$asset" ]; then \
+            mkdir -p "/ragflow/ragflow_deps/huggingface.co/$(dirname "$asset")" && \
+            cp "/huggingface.co/$asset" "/ragflow/ragflow_deps/huggingface.co/$asset" ; \
+        else \
+            echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
+            exit 1 ; \
+        fi ; \
+    done
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt

@@ -169,8 +169,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <div className="flex justify-between gap-4 px-4 pt-4">
-        {!isGo && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          {!isGo && (
             <ConfirmDeleteDialog
               title={t('knowledgeCompilation.deleteStructureConfirm', {
                 name: t(ViewModeLabelKeyMap[kind]),
@@ -181,23 +181,23 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
                 <Trash2 />
               </Button>
             </ConfirmDeleteDialog>
-            <CompilationUpdateButton
-              traceData={structureRunData}
-              generateType={generateType}
-              hasChanges={hasChanges}
-              newlyUploaded={newlyUploaded}
-              removed={removed}
-              retryPageCount={retryPageCount}
-              loading={alterationLoading || runLoading}
-              tooltip={t('knowledgeCompilation.updateStructureTooltip', {
-                newlyUploaded,
-                removed,
-                name: t(ViewModeLabelKeyMap[kind]),
-              })}
-              onClick={handleUpdateClick}
-            />
-          </div>
-        )}
+          )}
+          <CompilationUpdateButton
+            traceData={structureRunData}
+            generateType={generateType}
+            hasChanges={hasChanges}
+            newlyUploaded={newlyUploaded}
+            removed={removed}
+            retryPageCount={retryPageCount}
+            loading={alterationLoading || runLoading}
+            tooltip={t('knowledgeCompilation.updateStructureTooltip', {
+              newlyUploaded,
+              removed,
+              name: t(ViewModeLabelKeyMap[kind]),
+            })}
+            onClick={handleUpdateClick}
+          />
+        </div>
         {kind === ViewMode.Graph && (
           <SelectWithSearch
             options={entityOptions}

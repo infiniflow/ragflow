@@ -257,6 +257,10 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 		// model deadlines remain enforced at the model driver.
 		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
+		// Bind the node id into the fraction reporter so the component's
+		// runtime.ReportComponentFraction calls are attributed to this node
+		// without the component knowing its own cpnID.
+		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
@@ -267,20 +271,30 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 			return e
 		})
 		if invokeErr != nil {
-			// Surface the failure as a structured log line. The wrapped error
-			// already carries the full cause chain (e.g. deepseek DNS/timeout),
-			// but without this the failure only showed up as a generic
-			// "Task ... failed" line with no clear cause in the logs.
-			common.Error("canvas: component invoke failed", invokeErr,
-				zap.String("component_id", cpnID),
-				zap.String("component_class", componentClass))
 			switch {
-			case errors.Is(invokeErr, context.DeadlineExceeded):
-				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
 			case errors.Is(invokeErr, context.Canceled):
+				// A user cancel is a normal control path; the authoritative
+				// "Task ... cancelled" line is logged by the service layer, so
+				// keep this at debug to avoid duplicate noise.
+				common.Debug("canvas: component invoke cancelled",
+					zap.String("component_id", cpnID),
+					zap.String("component_class", componentClass))
 				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
+			case errors.Is(invokeErr, context.DeadlineExceeded):
+				common.Error("canvas: component invoke failed", invokeErr,
+					zap.String("component_id", cpnID),
+					zap.String("component_class", componentClass))
+				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
+			default:
+				// Surface the failure as a structured log line. The wrapped error
+				// already carries the full cause chain (e.g. deepseek DNS/timeout),
+				// but without this the failure only showed up as a generic
+				// "Task ... failed" line with no clear cause in the logs.
+				common.Error("canvas: component invoke failed", invokeErr,
+					zap.String("component_id", cpnID),
+					zap.String("component_class", componentClass))
+				return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
 			}
-			return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
 		}
 		if out == nil {
 			out = make(map[string]any, 1)

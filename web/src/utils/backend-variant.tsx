@@ -23,7 +23,7 @@
  * oxlint `no-restricted-imports`); the only other exception is the bootstrap
  * gate in `main.tsx`.
  *
- * Conventions (see web/CLAUDE.md):
+ * Conventions (see web/AGENTS.md):
  * - JSX divergence: dispatch through `<BackendVariant go={...} python={...} />`
  *   at a dispatcher file (page `index.tsx` / form dispatcher), never inline
  *   in business components.

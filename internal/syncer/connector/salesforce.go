@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -29,8 +30,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -364,22 +363,24 @@ func salesforceHostAllowed(host string) bool {
 		strings.HasSuffix(host, ".lightning.force.com")
 }
 
+// salesforceAssertURLSafe validates a Salesforce request URL for SSRF and the
+// approved-host policy, returning the hostname and the IP to pin. Every hop of
+// a Salesforce request (including redirects) must stay on an approved
+// Salesforce host over HTTPS so credentials are only ever transmitted to the
+// intended provider.
+func salesforceAssertURLSafe(rawURL string) (string, net.IP, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
+		return "", nil, fmt.Errorf("Salesforce request URL must use HTTPS on an approved Salesforce host")
+	}
+	return assertConnectorURLSafe(rawURL)
+}
+
 // requestAccessToken performs the OAuth2 client-credentials exchange, validating
 // the token endpoint for SSRF, HTTPS, and the approved Salesforce host policy
 // before any credentials are transmitted.
 func (c *SalesforceConnector) requestAccessToken(ctx context.Context) (salesforceToken, error) {
 	tokenURL := c.instanceBaseURL() + "/services/oauth2/token"
-	hostname, resolvedIP, err := utility.AssertURLSafe(tokenURL)
-	if err != nil {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
-	}
-	if !salesforceHostAllowed(hostname) {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce instance_url is not an approved Salesforce host"}
-	}
-	parsedURL, err := url.Parse(tokenURL)
-	if err != nil || !strings.EqualFold(parsedURL.Scheme, "https") {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce OAuth token endpoint must use HTTPS"}
-	}
 	form := url.Values{
 		"grant_type":    {"client_credentials"},
 		"client_id":     {c.clientID},
@@ -387,13 +388,14 @@ func (c *SalesforceConnector) requestAccessToken(ctx context.Context) (salesforc
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, salesforceRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, salesforceRequestTimeout)
-	resp, err := client.Do(req)
+	resp, err := connectorRequest(requestCtx, connectorRequestOptions{
+		Method:   http.MethodPost,
+		RawURL:   tokenURL,
+		Body:     []byte(form.Encode()),
+		Headers:  map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Timeout:  salesforceRequestTimeout,
+		Validate: salesforceAssertURLSafe,
+	})
 	if err != nil {
 		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
 	}
@@ -510,26 +512,15 @@ func (c *SalesforceConnector) getJSON(ctx context.Context, path string, out any)
 
 // doGet performs one authenticated GET with SSRF protection.
 func (c *SalesforceConnector) doGet(ctx context.Context, apiURL, token string) (int, []byte, error) {
-	parsed, err := url.Parse(apiURL)
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
-		return 0, nil, fmt.Errorf("Salesforce request URL must use HTTPS on an approved Salesforce host")
-	}
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Headers:  map[string]string{"Accept": "application/json", "Authorization": "Bearer " + token},
+		Timeout:  salesforceRequestTimeout,
+		Validate: salesforceAssertURLSafe,
+	})
 	if err != nil {
-		return 0, nil, err
-	}
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, salesforceRequestTimeout)
-	requestCtx, cancel := context.WithTimeout(ctx, salesforceRequestTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return 0, nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, nil, err
+		return 0, nil, connectorUnsafeErr(err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))

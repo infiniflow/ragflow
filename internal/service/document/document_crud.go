@@ -197,27 +197,6 @@ func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string
 	})
 }
 
-// UpdateRunProgress mirrors a pipeline run's live progress into the document
-// row so the document-list endpoint (which reads document.progress/
-// progress_msg) reflects in-flight Go pipeline progress. Best-effort by
-// design; callers log and continue on error.
-func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, progressMsg string) error {
-	updates := map[string]interface{}{
-		"progress":     progress,
-		"progress_msg": progressMsg,
-	}
-	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
-		return err
-	} else if doc != nil && doc.ProcessBeginAt != nil {
-		duration := time.Since(*doc.ProcessBeginAt).Seconds()
-		if duration < 0 {
-			duration = 0
-		}
-		updates["process_duration"] = duration
-	}
-	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
-}
-
 // UpdateRunState mirrors live progress into the document row when
 // the existing progress log cannot be read. It intentionally leaves the log
 // untouched so a later event can retry seeding and append it safely.
@@ -303,21 +282,23 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		return err
 	}
 	if ingestionTask != nil {
-		taskInfo, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID)
-		if err != nil {
+		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
 			return err
 		}
-		// FIXME: need to add logic to delete files in taskInfo
-		common.Warn(fmt.Sprintf("need to delete files from taskInfo: %v", taskInfo))
+		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
+			return err
+		}
 	}
 
-	s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID)
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID); err != nil {
+		return err
+	}
 	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
 
-	cleanupCtx := context.WithoutCancel(ctx)
-	if err = s.cleanupFileReferences(cleanupCtx, docID); err != nil {
+	fileCleanupCtx := context.WithoutCancel(ctx)
+	if err = s.cleanupFileReferences(fileCleanupCtx, docID, doc.KbID); err != nil {
 		return fmt.Errorf("document deleted but file cleanup failed: %w", err)
 	}
 
@@ -334,9 +315,21 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
+	}
+	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
+	if err != nil {
+		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
+	}
+	if ingestionTask != nil {
+		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
+			return err
+		}
+		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, nil); err != nil {
+			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
+		}
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
@@ -352,7 +345,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	// deleted document's contribution in both paths.
 	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, taskTypes); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, variants, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	return nil
@@ -417,17 +410,21 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 
 // deleteDocEngineData removes chunks and metadata from the document engine.
 // No-op when the engine is nil.
-func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) {
+func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) error {
 	if s.docEngine == nil {
-		return
+		return nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
 	if typeErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
 	}
-	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
+	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+	cancel()
+	if delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
+		return fmt.Errorf("delete chunks for document %s: %w", docID, delErr)
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's
 	// source + per-doc compiled chunks are gone. The consumer removes the
@@ -438,12 +435,13 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	// never block the document delete, which already succeeded above.
 	pubCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, taskTypes); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, variants, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
 	}
+	return nil
 }
 
 // deleteDocRecordWithCounters hard-deletes the document row and decrements the
@@ -489,7 +487,7 @@ func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *e
 // the file is a knowledgebase-owned upload (source_type == knowledgebase) and
 // no other document still references the same file_id. Files linked from file
 // management are only unlinked — the file record and blob stay intact.
-func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID string) error {
+func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID, kbID string) error {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if mapErr != nil {
 		common.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
@@ -544,9 +542,10 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
-				rmErr := removeObjectBestEffort(ctx, storageImpl, file.ParentID, *file.Location)
+				// Dataset uploads use the KB ID; ParentID is the file-manager folder.
+				rmErr := removeObjectBestEffort(ctx, storageImpl, kbID, *file.Location)
 				if rmErr != nil {
-					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", kbID, *file.Location, rmErr))
 				}
 			}
 		}

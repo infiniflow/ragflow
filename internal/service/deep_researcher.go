@@ -433,7 +433,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := tavilyDeepResearchHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tavily call: %w", err)

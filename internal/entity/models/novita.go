@@ -39,7 +39,7 @@ func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -80,7 +80,7 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via

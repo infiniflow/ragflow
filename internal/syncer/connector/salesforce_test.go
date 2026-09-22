@@ -23,11 +23,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 func TestNewSalesforceConnectorDefaults(t *testing.T) {
@@ -1020,11 +1019,11 @@ func TestSalesforceHostAllowed(t *testing.T) {
 }
 
 func TestRequestAccessTokenRejectsNonSalesforceHost(t *testing.T) {
-	origLookup := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		return []string{"93.184.216.34"}, nil
 	}
-	t.Cleanup(func() { utility.LookupHost = origLookup })
+	t.Cleanup(func() { common.LookupHost = origLookup })
 
 	connector := &SalesforceConnector{
 		instanceURL:  "https://evil.example.com",
@@ -1039,11 +1038,11 @@ func TestRequestAccessTokenRejectsNonSalesforceHost(t *testing.T) {
 }
 
 func TestRequestAccessTokenRequiresHTTPS(t *testing.T) {
-	origLookup := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		return []string{"93.184.216.34"}, nil
 	}
-	t.Cleanup(func() { utility.LookupHost = origLookup })
+	t.Cleanup(func() { common.LookupHost = origLookup })
 
 	connector := &SalesforceConnector{
 		instanceURL:  "http://acme.my.salesforce.com",
