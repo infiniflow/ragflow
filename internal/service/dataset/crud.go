@@ -140,7 +140,15 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 	parserConfig["parent_child"] = parentChild
 
-	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, map[string]interface{}{"parent_child": parentChild})
+	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	if req.ParserConfig != nil {
+		for componentID, value := range req.ParserConfig {
+			if pipelinepkg.IsChunkerComponent(componentID) {
+				parentChildConfig[componentID] = value
+			}
+		}
+	}
+	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
