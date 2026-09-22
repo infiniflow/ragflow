@@ -651,9 +651,11 @@ func dispatchPaddleOCRPdf(
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.
-// Registered drivers are wrapped by models.WrapProviderChatErrors, which
-// only promotes the ModelDriver method set — capability probes must assert
-// on the underlying driver.
+// The assertion goes through Underlying() so drivers that expose GetBaseURL
+// (directly or via an embedded BaseModel) keep working despite the
+// registration-time chat-error wrapper. Note: today no driver satisfies
+// this interface — MinerU*Model holds BaseModel as a named field — so the
+// probe always fails and the caller's warning is the user-visible signal.
 func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig) (string, error) {
 	type baseURLGetter interface {
 		GetBaseURL(*modelModule.APIConfig) (string, error)

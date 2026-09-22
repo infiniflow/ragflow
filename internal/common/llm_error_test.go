@@ -44,8 +44,8 @@ func TestExtractHTTPStatus(t *testing.T) {
 		if c.msg != "" {
 			err = errors.New(c.msg)
 		}
-		if got := ExtractHTTPStatus(err); got != c.want {
-			t.Errorf("ExtractHTTPStatus(%q) = %d, want %d", c.msg, got, c.want)
+		if got := extractHTTPStatus(err); got != c.want {
+			t.Errorf("extractHTTPStatus(%q) = %d, want %d", c.msg, got, c.want)
 		}
 	}
 }
@@ -77,10 +77,10 @@ func TestLLMErrorUserMessage(t *testing.T) {
 }
 
 func TestTruncateForUser(t *testing.T) {
-	if got := TruncateForUser("line1\n  line2\ttab"); got != "line1 line2 tab" {
+	if got := truncateForUser("line1\n  line2\ttab"); got != "line1 line2 tab" {
 		t.Errorf("whitespace not collapsed: %q", got)
 	}
-	big := TruncateForUser(strings.Repeat("y", maxUserReasonLen+100))
+	big := truncateForUser(strings.Repeat("y", maxUserReasonLen+100))
 	if !strings.HasSuffix(big, "...") || len(big) != maxUserReasonLen+3 {
 		t.Errorf("length cap failed: len=%d", len(big))
 	}
@@ -208,7 +208,7 @@ func TestUserMessagePunctuationJoinsCleanly(t *testing.T) {
 
 func TestTruncateForUserRedactsCredentials(t *testing.T) {
 	in := `API request failed with status 401: invalid api-key: sk-abc123XYZ provided (authorization: Bearer xyz secret=whatever)`
-	got := TruncateForUser(in)
+	got := truncateForUser(in)
 	if strings.Contains(got, "sk-abc123XYZ") || strings.Contains(got, "Bearer xyz") || strings.Contains(got, "secret=whatever") {
 		t.Errorf("credential values must be redacted: %q", got)
 	}
@@ -219,7 +219,7 @@ func TestTruncateForUserRedactsCredentials(t *testing.T) {
 
 func TestTruncateForUserIsRuneSafe(t *testing.T) {
 	in := strings.Repeat("模型服务不可用", 100) // multi-byte runes spanning the cap
-	got := TruncateForUser(in)
+	got := truncateForUser(in)
 	if !utf8.ValidString(got) {
 		t.Errorf("truncated string splits a rune: %q", got)
 	}

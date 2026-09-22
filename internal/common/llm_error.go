@@ -44,7 +44,7 @@ type LLMError struct {
 
 // NewLLMProviderError attributes err to the model service call.
 func NewLLMProviderError(provider, model string, err error) *LLMError {
-	return &LLMError{Kind: LLMErrorProvider, Model: model, Provider: provider, StatusCode: ExtractHTTPStatus(err), Err: err}
+	return &LLMError{Kind: LLMErrorProvider, Model: model, Provider: provider, StatusCode: extractHTTPStatus(err), Err: err}
 }
 
 // NewLLMConfigError attributes err to unusable model configuration.
@@ -87,7 +87,7 @@ func (e *LLMError) UserSummary() string {
 	provider := strings.TrimSpace(e.Provider)
 	reason := "no response"
 	if e.Err != nil {
-		reason = TruncateForUser(refineReason(e.Err.Error()))
+		reason = truncateForUser(refineReason(e.Err.Error()))
 	}
 	label := model
 	if provider != "" {
@@ -125,9 +125,9 @@ var userStatusRES = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bAPI error:?\s*(\d{3})\b`),
 }
 
-// ExtractHTTPStatus parses an embedded HTTP status code out of a provider
+// extractHTTPStatus parses an embedded HTTP status code out of a provider
 // error message. Returns 0 when no status is recognizable.
-func ExtractHTTPStatus(err error) int {
+func extractHTTPStatus(err error) int {
 	if err == nil {
 		return 0
 	}
@@ -146,11 +146,11 @@ func ExtractHTTPStatus(err error) int {
 	return 0
 }
 
-// TruncateForUser collapses whitespace, redacts credential-shaped values and
+// truncateForUser collapses whitespace, redacts credential-shaped values and
 // caps length (never splitting a multi-byte rune) so a provider error body —
 // often JSON/HTML, occasionally echoing request URLs or keys — fits in a
 // single safe, readable detail line.
-func TruncateForUser(s string) string {
+func truncateForUser(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	s = RedactCredentials(s)
 	if len(s) > maxUserReasonLen {
