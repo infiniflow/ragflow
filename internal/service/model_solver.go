@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -45,11 +46,6 @@ type ModelTarget struct {
 	ModelInfo     *modelModule.Model
 	ContextLength int
 	MaxTokens     int
-	// SupportsTools is the resolved model's tool-calling capability, computed
-	// while the model is being resolved (see resolvedModel.supportsTools) so
-	// callers never have to look the model up a second time to read it. Python
-	// carries the same value as the `is_tools` field of the model config it
-	// resolved once, and every consumer reads it from there.
 	SupportsTools bool
 }
 
@@ -260,9 +256,9 @@ type resolvedModel struct {
 	maxTokens      int
 }
 
-// supportsTools reports whether the resolved model can emit tool calls, using the
-// same precedence the standalone probe uses: the flag persisted on the enrolled
-// model, then the instance credential payload, then the provider catalog.
+// supportsTools reports whether the resolved model can emit tool calls. The
+// enrollment flag takes precedence over the instance credential and provider
+// catalog defaults.
 //
 // It is a method on the resolution rather than a separate lookup so that the
 // capability is answered by the row that was just loaded, instead of by a second
@@ -287,6 +283,50 @@ func (m *resolvedModel) supportsTools() bool {
 		instanceAPIKey = *m.apiConfig.ApiKey
 	}
 	return toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName)
+}
+
+func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
+	if supported, ok := extraToolSupport(extra); ok {
+		return supported
+	}
+	if supported, ok := extraToolSupport(instanceAPIKey); ok {
+		return supported
+	}
+	return catalogToolSupport(providerName, modelName)
+}
+
+func extraToolSupport(extra string) (bool, bool) {
+	if strings.TrimSpace(extra) == "" {
+		return false, false
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
+		return false, false
+	}
+	value, ok := fields["is_tools"]
+	if !ok {
+		return false, false
+	}
+	switch value := value.(type) {
+	case bool:
+		return value, true
+	case string:
+		return strings.EqualFold(strings.TrimSpace(value), "true"), true
+	case float64:
+		return value != 0, true
+	default:
+		return false, false
+	}
+}
+
+func catalogToolSupport(providerName, modelName string) bool {
+	providerManager := dao.GetModelProviderManager()
+	provider := providerManager.FindProvider(providerName)
+	if provider == nil {
+		return false
+	}
+	model := providerManager.FindModel(provider, modelName)
+	return model != nil && model.Tools != nil && model.Tools.Support
 }
 
 func (s *ModelSolver) lookupTenantModel(ctx context.Context, tenantID, modelRef string) (*entity.TenantModel, error) {

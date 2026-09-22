@@ -72,14 +72,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
@@ -233,7 +234,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 		// simply skips cropping.
 		engine, engErr := newPDFEngineFromUpstream(ctx, db, upstream)
 		if engErr != nil {
-			slog.Warn("TokenChunker: could not open PDF for on-demand cropping", "err", engErr)
+			common.Warn("TokenChunker: could not open PDF for on-demand cropping", zap.Error(engErr))
 		}
 		if engine != nil {
 			defer engine.Close()
