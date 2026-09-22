@@ -298,7 +298,7 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	}
 
 	fileCleanupCtx := context.WithoutCancel(ctx)
-	if err = s.cleanupFileReferences(fileCleanupCtx, docID); err != nil {
+	if err = s.cleanupFileReferences(fileCleanupCtx, docID, doc.KbID); err != nil {
 		return fmt.Errorf("document deleted but file cleanup failed: %w", err)
 	}
 
@@ -315,7 +315,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
 	}
@@ -345,7 +345,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	// deleted document's contribution in both paths.
 	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, taskTypes); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, variants, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	return nil
@@ -415,7 +415,7 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 		return nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
 	if typeErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
 	}
@@ -435,7 +435,7 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	// never block the document delete, which already succeeded above.
 	pubCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, taskTypes); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, variants, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
@@ -487,7 +487,7 @@ func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *e
 // the file is a knowledgebase-owned upload (source_type == knowledgebase) and
 // no other document still references the same file_id. Files linked from file
 // management are only unlinked — the file record and blob stay intact.
-func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID string) error {
+func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID, kbID string) error {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if mapErr != nil {
 		common.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
@@ -542,9 +542,10 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
-				rmErr := removeObjectBestEffort(ctx, storageImpl, file.ParentID, *file.Location)
+				// Dataset uploads use the KB ID; ParentID is the file-manager folder.
+				rmErr := removeObjectBestEffort(ctx, storageImpl, kbID, *file.Location)
 				if rmErr != nil {
-					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", kbID, *file.Location, rmErr))
 				}
 			}
 		}
