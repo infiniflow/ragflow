@@ -121,9 +121,8 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	}
 }
 
-// renderHeaders applies ${name} substitution to header keys and values using
-// the supplied variables map, mirroring the Template.safe_substitute pass in
-// common/mcp_tool_call_conn.py. Empty keys (after substitution) are dropped.
+// renderHeaders applies Python string.Template.safe_substitute semantics to
+// header keys and values. Empty keys (after substitution) are dropped.
 func renderHeaders(raw map[string]string, vars map[string]string) (map[string]string, error) {
 	rendered := map[string]string{}
 	for k, v := range raw {
@@ -137,40 +136,80 @@ func renderHeaders(raw map[string]string, vars map[string]string) (map[string]st
 	return rendered, nil
 }
 
-// substituteTemplate replaces ${name} occurrences (Python string.Template
-// safe-substitute semantics) with values from vars. Unknown keys are left
-// in place, matching safe_substitute's behavior.
+// substituteTemplate mirrors Python's string.Template.safe_substitute for the
+// identifier forms used by MCP configurations: $name, ${name}, and $$. Values
+// are written directly into the result, so a placeholder in a value is not
+// expanded recursively. Unknown or malformed placeholders are preserved.
 func substituteTemplate(s string, vars map[string]string) string {
-	if vars == nil || !strings.Contains(s, "${") {
+	if !strings.Contains(s, "$") {
 		return s
 	}
 	var b strings.Builder
-	i := 0
-	for i < len(s) {
-		idx := strings.Index(s[i:], "${")
-		if idx == -1 {
-			b.WriteString(s[i:])
-			break
+	for i := 0; i < len(s); {
+		if s[i] != '$' {
+			b.WriteByte(s[i])
+			i++
+			continue
 		}
-		b.WriteString(s[i : i+idx])
-		i += idx + 2
-		end := strings.Index(s[i:], "}")
-		if end == -1 {
-			b.WriteString("${")
-			b.WriteString(s[i:])
-			break
+
+		// A trailing dollar and a dollar followed by a non-template token are
+		// literal dollars under safe_substitute.
+		if i+1 >= len(s) {
+			b.WriteByte('$')
+			i++
+			continue
 		}
-		key := s[i : i+end]
-		i += end + 1
+		if s[i+1] == '$' {
+			b.WriteByte('$')
+			i += 2
+			continue
+		}
+
+		start := i
+		nameStart := i + 1
+		if s[nameStart] == '{' {
+			nameStart++
+		}
+		if nameStart >= len(s) || !templateIdentifierStart(s[nameStart]) {
+			b.WriteByte('$')
+			i++
+			continue
+		}
+
+		nameEnd := nameStart + 1
+		for nameEnd < len(s) && templateIdentifierContinue(s[nameEnd]) {
+			nameEnd++
+		}
+		end := nameEnd
+		if s[i+1] == '{' {
+			if nameEnd >= len(s) || s[nameEnd] != '}' {
+				// Invalid braced placeholders are emitted literally. Advance
+				// only past the dollar; any later dollar tokens still follow
+				// the normal safe_substitute scan.
+				b.WriteByte('$')
+				i++
+				continue
+			}
+			end++
+		}
+
+		key := s[nameStart:nameEnd]
 		if val, ok := vars[key]; ok {
 			b.WriteString(val)
 		} else {
-			b.WriteString("${")
-			b.WriteString(key)
-			b.WriteString("}")
+			b.WriteString(s[start:end])
 		}
+		i = end
 	}
 	return b.String()
+}
+
+func templateIdentifierStart(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func templateIdentifierContinue(c byte) bool {
+	return templateIdentifierStart(c) || (c >= '0' && c <= '9')
 }
 
 // jsonRPCRequest is a JSON-RPC 2.0 request envelope.

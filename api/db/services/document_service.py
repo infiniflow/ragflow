@@ -19,22 +19,20 @@ from datetime import datetime
 from time import monotonic
 
 import xxhash
-from peewee import fn, Case, JOIN
+from peewee import JOIN, Case, fn
 
-from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
-from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES, FileType, UserTenantRole, CanvasCategory
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, User
+from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
+from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES, CanvasCategory, FileType, UserTenantRole
+from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task, Tenant, User, UserCanvas, UserTenant
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService, retry_deadlock_operation
-from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.doc_metadata_service import DocMetadataService
-
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
-from common.constants import ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME, MAXIMUM_TASK_PAGE_NUMBER
+from common.constants import MAXIMUM_TASK_PAGE_NUMBER, SVR_CONSUMER_GROUP_NAME, ParserType, StatusEnum, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
-
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 
@@ -607,8 +605,8 @@ class DocumentService(CommonService):
         acceptable here.
         """
         from rag.svr.task_executor_refactor.dataset_wiki_generator import (
-            WIKI_MAP_COMPILE_KWD,
             WIKI_DERIVED_COMPILE_KWDS,
+            WIKI_MAP_COMPILE_KWD,
         )
 
         index = search.index_name(tenant_id)
@@ -1029,6 +1027,51 @@ class DocumentService(CommonService):
         return list(cls.model.select(*fields).where(cls.model.id.in_(docids)).dicts())
 
     @classmethod
+    def _find_image_document_id(cls, kb_id, image_id, doc_id=None):
+        e, kb = KnowledgebaseService.get_by_id(kb_id)
+        if not e:
+            return None
+
+        filters = {"img_id": image_id}
+        if doc_id:
+            filters["doc_id"] = doc_id
+        try:
+            result = settings.docStoreConn.search(
+                ["doc_id", "img_id"],
+                [],
+                filters,
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                search.index_name(kb.tenant_id),
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(result, ["doc_id", "img_id"])
+        except Exception:
+            logging.warning("Failed to resolve document image ownership")
+            return None
+
+        for row in (rows or {}).values():
+            if row.get("img_id") == image_id and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
+                return row["doc_id"]
+        return None
+
+    @classmethod
+    def image_belongs_to_document(cls, doc, image_id):
+        return cls._find_image_document_id(doc.kb_id, image_id, doc.id) == doc.id
+
+    @classmethod
+    def get_by_image_id(cls, kb_id, image_id):
+        doc_id = cls._find_image_document_id(kb_id, image_id)
+        if not doc_id:
+            return False, None
+        e, doc = cls.get_by_id(doc_id)
+        if not e or doc.kb_id != kb_id:
+            return False, None
+        return True, doc
+
+    @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
         if not config:
@@ -1122,7 +1165,7 @@ class DocumentService(CommonService):
                         bad += 1
                     if (t.progress or 0) == 0:
                         own_queued_by_priority[t.priority] = own_queued_by_priority.get(t.priority, 0) + 1
-                    prg += t.progress if t.progress >= 0 else 0
+                    prg += max(t.progress, 0)
                     if (t.progress_msg or "").strip():
                         msg.append(t.progress_msg)
                     priority = max(priority, t.priority)
@@ -1226,8 +1269,8 @@ class DocumentService(CommonService):
 
     @classmethod
     def run(cls, tenant_id: str, doc: dict, kb_table_num_map: dict, user_id: str | None = None):
-        from api.db.services.task_service import queue_dataflow, queue_tasks
         from api.db.services.file2document_service import File2DocumentService
+        from api.db.services.task_service import queue_dataflow, queue_tasks
 
         doc["tenant_id"] = tenant_id
         llm_user_id = user_id or doc.get("llm_user_id")

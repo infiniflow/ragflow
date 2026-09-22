@@ -25,12 +25,25 @@ import subprocess
 import sys
 import threading
 import uuid
-from urllib.parse import urljoin
-
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
 _LONG_TIME_THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("LONG_TIME_THREAD_POOL_WORKERS", "1")), thread_name_prefix="long-time")
+
+
+def env_flag(name: str, default: bool) -> bool:
+    """Read a boolean environment variable the way the rest of the codebase does.
+
+    Unset keeps the documented default. Anything else is matched against the
+    truthy vocabulary used elsewhere in this file and in common/data_source, so
+    a switch written as "off" or "disabled" turns the feature off instead of
+    being read as its opposite.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def get_uuid():
@@ -132,7 +145,7 @@ async def download_img(url):
 
         try:
             kind, payload = await asyncio.wait_for(_stream_one_get(), timeout=request_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "download_img total wall-clock timeout: redirect_hops=%s timeout=%s",
                 redirect_hops,

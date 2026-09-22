@@ -16,20 +16,20 @@
 import logging
 
 from api.apps import current_user
-from api.db import TenantPermission
-from api.db.services.memory_service import MemoryService
-from api.db.services.user_service import UserTenantService
-from api.db.services.canvas_service import UserCanvasService
-from api.db.services.task_service import TaskService
-from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
-from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids
-from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
-from memory.services.messages import MessageService
-from memory.utils.prompt_util import PromptAssembler
-from common.constants import MemoryType, ForgettingPolicy
+from api.db import TenantPermission
+from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, query_message, queue_save_to_memory_task
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids
+from api.db.services.canvas_service import UserCanvasService
+from api.db.services.memory_service import MemoryService
+from api.db.services.task_service import TaskService
+from api.db.services.user_service import UserTenantService
+from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human, memory_type_names, order_facet_options, order_owner_options
+from common.constants import ForgettingPolicy, MemoryType
 from common.exceptions import ArgumentException, NotFoundException
 from common.time_utils import current_timestamp, timestamp_to_date
+from memory.services.messages import MessageService
+from memory.utils.prompt_util import PromptAssembler
 
 
 def _split_filter_values(values):
@@ -306,7 +306,14 @@ async def list_memory_filters():
             memory_type.setdefault(item, {"id": item, "label": item, "count": 0})["count"] += 1
         item = memory["storage_type"]
         storage_type.setdefault(item, {"id": item, "label": item, "count": 0})["count"] += 1
-    return {"filter": {"owner": list(owner.values()), "memory_type": list(memory_type.values()), "storage_type": list(storage_type.values())}, "total": total}
+    return {
+        "filter": {
+            "owner": order_owner_options(owner),
+            "memory_type": order_facet_options(memory_type, memory_type_names()),
+            "storage_type": order_facet_options(storage_type, ("table", "graph")),
+        },
+        "total": total,
+    }
 
 
 async def get_memory_config(memory_id):

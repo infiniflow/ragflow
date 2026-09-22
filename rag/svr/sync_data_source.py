@@ -32,64 +32,65 @@ import signal
 import sys
 import threading
 import traceback
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from box_sdk_gen import AccessToken, BoxOAuth, OAuthConfig
 from flask import json
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService, resolve_connector_doc_id
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
-from common.constants import ConnectorTaskType, FileSource, TaskStatus
 from common.config_utils import show_configs
-from common.data_source.config import INDEX_BATCH_SIZE, SYNC_BATCH_PAUSE_SECONDS
+from common.constants import ConnectorTaskType, FileSource, TaskStatus
 from common.data_source import (
-    BlobStorageConnector,
-    RSSConnector,
-    SitemapConnector,
-    NotionConnector,
-    DiscordConnector,
-    GoogleDriveConnector,
-    MoodleConnector,
-    JiraConnector,
-    DropboxConnector,
     AirtableConnector,
     AsanaConnector,
-    ImapConnector,
-    ZendeskConnector,
-    SeaFileConnector,
-    RDBMSConnector,
+    AzureBlobConnector,
     BigQueryConnector,
+    BlobStorageConnector,
     DingTalkAITableConnector,
-    RestAPIConnector,
-    XquikConnector,
+    DiscordConnector,
+    DropboxConnector,
+    GoogleDriveConnector,
+    ImapConnector,
+    JiraConnector,
+    MoodleConnector,
+    NotionConnector,
     OneDriveConnector,
     OutlookConnector,
-    AzureBlobConnector,
+    RDBMSConnector,
+    RestAPIConnector,
+    RSSConnector,
     SalesforceConnector,
-    TeamsConnector,
-    SlackConnector,
+    SeaFileConnector,
     SharePointConnector,
+    SitemapConnector,
+    SlackConnector,
+    TeamsConnector,
+    XquikConnector,
+    ZendeskConnector,
+    ZoteroConnector,
 )
-from common.data_source.models import ConnectorFailure, SeafileSyncScope
-from common.data_source.webdav_connector import WebDAVConnector
-from common.data_source.confluence_connector import ConfluenceConnector
-from common.data_source.gmail_connector import GmailConnector
+from common.data_source.azure_devops.connector import AzureDevOpsConnector
+from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.box_connector import BoxConnector
+from common.data_source.config import INDEX_BATCH_SIZE, SYNC_BATCH_PAUSE_SECONDS
+from common.data_source.confluence_connector import ConfluenceConnector
+from common.data_source.exceptions import ConnectorValidationError
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
-from common.data_source.bitbucket.connector import BitbucketConnector
-from common.data_source.azure_devops.connector import AzureDevOpsConnector
+from common.data_source.gmail_connector import GmailConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.sitemap_connector import iter_in_worker_thread, validate_connector_in_thread
-from common.data_source.exceptions import ConnectorValidationError
+from common.data_source.webdav_connector import WebDAVConnector
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
 from rag.svr.feishu_wiki_sync import _build_feishu_wiki_generator
-from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -179,7 +180,7 @@ class SyncBase:
         window_start = None
         if task.get("reindex") != "1" and task.get("poll_range_start"):
             window_start = task["poll_range_start"]
-        window_end = datetime.now(timezone.utc)
+        window_end = datetime.now(UTC)
         return f"sync window: {cls._format_window_boundary(window_start)} -> {cls._format_window_boundary(window_end)}"
 
     @classmethod
@@ -211,7 +212,7 @@ class SyncBase:
             try:
                 await asyncio.wait_for(self._run_task_logic(task), timeout=task["timeout_secs"])
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 msg = f"Task timeout after {task['timeout_secs']} seconds"
                 SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "error_msg": msg})
                 return
@@ -258,7 +259,7 @@ class SyncBase:
         had_parse_errors = False
         added_docs = 0
         updated_docs = 0
-        next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        next_update = datetime(1970, 1, 1, tzinfo=UTC)
         saw_documents = False
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
         existing_headers = await asyncio.to_thread(
@@ -599,7 +600,7 @@ class RSS(SyncBase):
         if task["reindex"] == "1" or not task["poll_range_start"]:
             return self.connector.load_from_state()
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
 
         document_generator = self.connector.poll_source(
             task["poll_range_start"].timestamp(),
@@ -707,7 +708,7 @@ class Confluence(SyncBase):
         else:
             start_time = task["poll_range_start"].timestamp()
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
@@ -762,7 +763,7 @@ class Notion(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(UTC).timestamp())
         )
 
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
@@ -828,14 +829,14 @@ class Discord(SyncBase):
         self.connector = DiscordConnector(
             server_ids=server_ids,
             channel_names=channel_names,
-            start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
+            start_date=datetime(1970, 1, 1, tzinfo=UTC).strftime("%Y-%m-%d"),
             batch_size=self.conf.get("batch_size", 1024),
         )
         self.connector.load_credentials(self.conf["credentials"])
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(UTC).timestamp())
         )
 
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
@@ -895,7 +896,7 @@ class Gmail(SyncBase):
                 document_generator = self.connector.load_from_state()
             else:
                 start_time = poll_start.timestamp()
-                end_time = datetime.now(timezone.utc).timestamp()
+                end_time = datetime.now(UTC).timestamp()
                 _begin_info = f"from {poll_start}"
                 document_generator = self.connector.poll_source(start_time, end_time)
 
@@ -918,7 +919,7 @@ class Dropbox(SyncBase):
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            end_time = datetime.now(timezone.utc).timestamp()
+            end_time = datetime.now(UTC).timestamp()
             document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
             _begin_info = f"from {poll_start}"
 
@@ -959,7 +960,7 @@ class GoogleDrive(SyncBase):
             self._persist_rotated_credentials(task["connector_id"], new_credentials)
 
         # Capture end_time BEFORE the snapshot to prevent the ingestion race condition
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
@@ -1063,7 +1064,7 @@ class Jira(SyncBase):
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
@@ -1144,7 +1145,7 @@ class SharePoint(SyncBase):
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
@@ -1216,7 +1217,7 @@ class OneDrive(SyncBase):
             start_ts = 0.0
         else:
             start_ts = task["poll_range_start"].timestamp()
-        end_ts = datetime.now(timezone.utc).timestamp()
+        end_ts = datetime.now(UTC).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
         document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
@@ -1269,7 +1270,7 @@ class Outlook(SyncBase):
             start_ts = 0.0
         else:
             start_ts = task["poll_range_start"].timestamp()
-        end_ts = datetime.now(timezone.utc).timestamp()
+        end_ts = datetime.now(UTC).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
         document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
@@ -1338,7 +1339,7 @@ class Salesforce(SyncBase):
             start_ts = 0.0
         else:
             start_ts = task["poll_range_start"].timestamp()
-        end_ts = datetime.now(timezone.utc).timestamp()
+        end_ts = datetime.now(UTC).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
         document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
@@ -1384,7 +1385,7 @@ class AzureBlob(SyncBase):
             start_ts = 0.0
         else:
             start_ts = task["poll_range_start"].timestamp()
-        end_ts = datetime.now(timezone.utc).timestamp()
+        end_ts = datetime.now(UTC).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
         document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
@@ -1448,7 +1449,7 @@ class Slack(SyncBase):
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            end_time = datetime.now(timezone.utc).timestamp()
+            end_time = datetime.now(UTC).timestamp()
             document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
             _begin_info = f"from {poll_start}"
 
@@ -1505,7 +1506,7 @@ class Teams(SyncBase):
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
@@ -1575,7 +1576,7 @@ class WebDAV(SyncBase):
             document_batch_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            end_ts = datetime.now(timezone.utc).timestamp()
+            end_ts = datetime.now(UTC).timestamp()
             document_batch_generator = self.connector.poll_source(
                 task["poll_range_start"].timestamp(),
                 end_ts,
@@ -1611,7 +1612,7 @@ class Moodle(SyncBase):
             # this, a module created between the snapshot and the poll
             # could be polled as new and at the same time be missing from
             # the slim list, which would mark it as stale and delete it.
-            end_ts = datetime.now(timezone.utc).timestamp()
+            end_ts = datetime.now(UTC).timestamp()
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 end_ts,
@@ -1654,7 +1655,7 @@ class BOX(SyncBase):
         else:
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                datetime.now(UTC).timestamp(),
             )
             _begin_info = f"from {poll_start}"
         self.log_connection("Box", f"folder_id({self.conf['folder_id']})", task)
@@ -1688,7 +1689,7 @@ class Airtable(SyncBase):
         else:
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                datetime.now(UTC).timestamp(),
             )
             _begin_info = f"from {poll_start}"
 
@@ -1722,7 +1723,7 @@ class Asana(SyncBase):
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            end_time = datetime.now(timezone.utc).timestamp()
+            end_time = datetime.now(UTC).timestamp()
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 end_time,
@@ -1761,11 +1762,11 @@ class Github(SyncBase):
         self.connector.load_credentials({"github_access_token": credentials["github_access_token"]})
 
         if task.get("reindex") == "1" or not task.get("poll_range_start"):
-            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            start_time = datetime.fromtimestamp(0, tz=UTC)
         else:
             start_time = task.get("poll_range_start")
 
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
 
         runner = ConnectorRunner(connector=self.connector, batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE), include_permissions=False, time_range=(start_time, end_time))
 
@@ -1812,7 +1813,7 @@ class IMAP(SyncBase):
         )
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.IMAP, credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
         try:
             poll_range_days = float(self.conf.get("poll_range", 30))
         except (TypeError, ValueError):
@@ -1911,7 +1912,7 @@ class Zendesk(SyncBase):
         self.connector = ZendeskConnector(content_type=self.conf.get("zendesk_content_type"))
         self.connector.load_credentials(self.conf["credentials"])
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
         if task["reindex"] == "1" or not task.get("poll_range_start"):
             start_time = 0
             _begin_info = "totally"
@@ -2002,8 +2003,8 @@ class Gitlab(SyncBase):
                 document_generator = self.connector.load_from_state()
                 _begin_info = "totally"
             else:
-                document_generator = self.connector.poll_source(poll_start.timestamp(), datetime.now(timezone.utc).timestamp())
-                _begin_info = "from {}".format(poll_start)
+                document_generator = self.connector.poll_source(poll_start.timestamp(), datetime.now(UTC).timestamp())
+                _begin_info = f"from {poll_start}"
         self.log_connection("Gitlab", f"({self.conf['project_name']})", task)
         return document_generator
 
@@ -2026,13 +2027,13 @@ class Bitbucket(SyncBase):
         )
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            start_time = datetime.fromtimestamp(0, tz=UTC)
             _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
             _begin_info = f"from {start_time}"
 
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
 
         def document_batches():
             checkpoint = self.connector.build_dummy_checkpoint()
@@ -2079,13 +2080,13 @@ class AzureDevOps(SyncBase):
         )
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            start_time = datetime.fromtimestamp(0, tz=UTC)
             _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
             _begin_info = f"from {start_time}"
 
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
 
         def document_batches():
             checkpoint = self.connector.build_dummy_checkpoint()
@@ -2125,6 +2126,55 @@ class AzureDevOps(SyncBase):
         return wrapper()
 
 
+class Zotero(SyncBase):
+    SOURCE_NAME: str = FileSource.ZOTERO
+
+    def _zotero_batch_size(self) -> int:
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+        return batch_size
+
+    async def _prepare_connector(self, task: dict):
+        conf = self.conf
+        user_id = (conf.get("zotero_user_id") or conf["credentials"].get("zotero_user_id") or "").strip()
+        self.connector = ZoteroConnector(
+            zotero_user_id=user_id,
+            storage_mode=conf.get("storage_mode", "zotero_storage"),
+            webdav_url=conf.get("webdav_url"),
+            batch_size=self._zotero_batch_size(),
+        )
+        self.connector.load_credentials(conf["credentials"])
+        self.connector.validate_local_settings()
+        self.log_connection(
+            "Zotero",
+            f"user_id={user_id} storage={conf.get('storage_mode', 'zotero_storage')}",
+            task,
+        )
+
+    async def _initialize_for_prune(self, task: dict):
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
+
+        poll_start = task.get("poll_range_start")
+        if task["reindex"] == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+        else:
+            end_ts = datetime.now(UTC).timestamp()
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                end_ts,
+            )
+
+        return iter_in_worker_thread(document_generator)
+
+
 class SeaFile(SyncBase):
     SOURCE_NAME: str = FileSource.SEAFILE
 
@@ -2153,7 +2203,7 @@ class SeaFile(SyncBase):
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            end_ts = datetime.now(timezone.utc).timestamp()
+            end_ts = datetime.now(UTC).timestamp()
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 end_ts,
@@ -2204,7 +2254,7 @@ class DingTalkAITable(SyncBase):
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            end_ts = datetime.now(timezone.utc).timestamp()
+            end_ts = datetime.now(UTC).timestamp()
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 end_ts,
@@ -2345,9 +2395,7 @@ class BigQuery(_CursorPersistingSyncBase):
         self.connector.validate_connector_settings()
         self.connector.prepare_sync_state(task["connector_id"], self.conf)
 
-        if task["reindex"] == "1" or not task["poll_range_start"]:
-            document_generator = self.connector.load_from_state()
-        elif not self.connector.timestamp_column:
+        if task["reindex"] == "1" or not task["poll_range_start"] or not self.connector.timestamp_column:
             document_generator = self.connector.load_from_state()
         else:
             start_cursor_value = self.connector.get_saved_sync_cursor_value()
@@ -2382,7 +2430,7 @@ class REST_API(SyncBase):
         else:
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                datetime.now(UTC).timestamp(),
             )
             begin_info = f"from {poll_start}"
 
@@ -2395,7 +2443,7 @@ class Xquik(SyncBase):
 
     async def _generate(self, task: dict):
         poll_start = task.get("poll_range_start")
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
         incremental = task.get("reindex") != "1" and poll_start is not None
 
         self.connector = XquikConnector.from_config(
@@ -2437,6 +2485,7 @@ func_factory = {
     FileSource.ASANA: Asana,
     FileSource.IMAP: IMAP,
     FileSource.ZENDESK: Zendesk,
+    FileSource.ZOTERO: Zotero,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
@@ -2467,9 +2516,9 @@ async def dispatch_tasks():
     tasks = []
     for task in [*due_sync_tasks, *due_prune_tasks]:
         if task["poll_range_start"]:
-            task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
+            task["poll_range_start"] = task["poll_range_start"].astimezone(UTC)
         if task["poll_range_end"]:
-            task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
+            task["poll_range_end"] = task["poll_range_end"].astimezone(UTC)
         func = func_factory[task["source"]](task["config"])
         tasks.append(asyncio.create_task(func(task)))
 

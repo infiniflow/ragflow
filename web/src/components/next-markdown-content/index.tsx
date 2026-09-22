@@ -319,12 +319,14 @@ function MarkdownContent({
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={cn(styles.referenceImagePreview)}
                 ></Image>
               </HoverCardContent>
@@ -404,7 +406,7 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent, t],
+    [renderPopoverContent],
   );
 
   const dir = getDirAttribute(content?.replace(currentReg, ''));

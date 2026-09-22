@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from typing import List
+
 from common.constants import MemoryType
 
 
@@ -42,11 +42,25 @@ def format_ret_data_from_memory(memory):
     }
 
 
-def get_memory_type_human(memory_type: int) -> List[str]:
+def get_memory_type_human(memory_type: int) -> list[str]:
     return [mem_type.name.lower() for mem_type in MemoryType if memory_type & mem_type.value]
 
 
-def calculate_memory_type(memory_type_name_list: List[str]) -> int:
+def memory_type_names() -> list[str]:
+    return [mem_type.name.lower() for mem_type in MemoryType]
+
+
+def order_facet_options(counts: dict, canonical_order) -> list[dict]:
+    ordered = [counts[name] for name in canonical_order if name in counts]
+    ordered.extend(counts[name] for name in sorted(set(counts) - set(canonical_order)))
+    return ordered
+
+
+def order_owner_options(counts: dict) -> list[dict]:
+    return sorted(counts.values(), key=lambda option: (option["label"].lower(), option["id"]))
+
+
+def calculate_memory_type(memory_type_name_list: list[str]) -> int:
     memory_type = 0
     type_value_map = {mem_type.name.lower(): mem_type.value for mem_type in MemoryType}
     for mem_type in memory_type_name_list:

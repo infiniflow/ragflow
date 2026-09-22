@@ -15,7 +15,8 @@
 #
 
 import pytest
-from common.string_utils import remove_redundant_spaces, clean_markdown_block
+
+from common.string_utils import clean_markdown_block, remove_redundant_spaces
 
 
 class TestRemoveRedundantSpaces:
@@ -57,6 +58,24 @@ class TestRemoveRedundantSpaces:
         input_text = "This should remain unchanged"
         expected = "This should remain unchanged"
         assert remove_redundant_spaces(input_text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "привет мир",  # Russian
+            "Γειά σου κόσμε",  # Greek
+            "안녕 세계",  # Korean
+            "مرحبا بالعالم",  # Arabic
+        ],
+    )
+    def test_keep_spaces_between_non_latin_words(self, text):
+        """Regression: spaces between non-Latin words must be preserved.
+
+        The whitelist used ``a-z0-9`` (ASCII only), so a non-ASCII letter fell
+        into the negated class and was treated as punctuation, deleting the
+        space between two words (e.g. "привет мир" -> "приветмир").
+        """
+        assert remove_redundant_spaces(text) == text
 
     @pytest.mark.skip(reason="Failed")
     def test_mixed_punctuation(self):

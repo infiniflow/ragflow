@@ -59,7 +59,7 @@ func (e *serenedbEngine) Search(ctx context.Context, req *types.SearchRequest) (
 	outputFields := resolveOutputFields(req.SelectFields)
 	fieldsExpr := strings.Join(outputFields, ", ")
 
-	filters := searchFilters(req.Filter, req.KbIDs, pm.hasText || pm.hasVector)
+	filters := searchFilters(req.Filter, req.KbIDs, pm.hasText || pm.hasVector, req.IncludeUnavailable)
 	where := filtersExpr(filters)
 
 	offset := req.Offset
@@ -155,9 +155,10 @@ func resolveOutputFields(selectFields []string) []string {
 }
 
 // searchFilters builds the SQL predicates for a search. kb_id scopes the query
-// to the requested datasets within the shared tenant table, and scored queries
-// default to available_int=1 when the caller did not set it.
-func searchFilters(filter map[string]interface{}, kbIDs []string, scored bool) []string {
+// to the requested datasets within the shared tenant table. Scored retrieval
+// defaults to available_int=1, except when a management caller explicitly
+// requests disabled chunks as well.
+func searchFilters(filter map[string]interface{}, kbIDs []string, scored, includeUnavailable bool) []string {
 	cond := map[string]interface{}{}
 	for k, v := range filter {
 		cond[k] = v
@@ -165,7 +166,7 @@ func searchFilters(filter map[string]interface{}, kbIDs []string, scored bool) [
 	if kbs := stringSlice(kbIDs); len(kbs) > 0 {
 		cond["kb_id"] = kbs
 	}
-	if scored {
+	if scored && !includeUnavailable {
 		_, hasAvail := cond["available_int"]
 		_, hasStatus := cond["status"]
 		if !hasAvail && !hasStatus {

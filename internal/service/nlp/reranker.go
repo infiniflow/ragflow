@@ -17,9 +17,7 @@ package nlp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -153,13 +151,12 @@ func RerankByModel(
 		// tokenized content_ltks. Neural rerankers score stemmed / accent-split
 		// tokens far lower, which collapses relevance scores and forces an
 		// artificially low similarity_threshold. The natural text is passed
-		// as-is: RemoveRedundantSpaces is ASCII-oriented and mangles
-		// multilingual text ("sécurité des données" -> "sécuritédes données"),
-		// so it is only applied to the tokenized fallback used when
-		// content_with_weight is absent. Mirrors rag/nlp/search.py.
+		// as-is; common.RemoveRedundantSpaces is only applied to the tokenized
+		// fallback used when content_with_weight is absent, where it drops the
+		// space before punctuation tokens. Mirrors rag/nlp/search.py.
 		docText := extractNaturalText(chunk)
 		if docText == "" {
-			docText = RemoveRedundantSpaces(strings.Join(tks, " "))
+			docText = common.RemoveRedundantSpaces(strings.Join(tks, " "))
 		}
 		docs = append(docs, docText)
 	}
@@ -170,12 +167,7 @@ func RerankByModel(
 	// Get similarity scores from reranker model
 	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
 	if err != nil {
-		if errors.Is(err, models.ErrRerankTokenLimitPolicy) {
-			return nil, nil, nil, err
-		}
-		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
-		// If model fails, fall back to token similarity only
-		rerankResponse = &models.RerankResponse{}
+		return nil, nil, nil, err
 	}
 
 	// Use the Index field from the response to place scores in the correct position,
@@ -581,7 +573,7 @@ func extractTitleTokens(fields map[string]interface{}) []string {
 	if !ok {
 		return []string{}
 	}
-	// NOTE: Do NOT call RemoveRedundantSpaces here - it removes spaces between Chinese chars
+	// title_tks is a space-separated token list: split it, do not clean it as prose.
 	var result []string
 	for t := range strings.FieldsSeq(v) {
 		if t != "" {
@@ -656,21 +648,6 @@ func cosineSimilarity(a, b []float64) float64 {
 	}
 
 	return dot / (common.PySqrt(normA) * common.PySqrt(normB))
-}
-
-// RemoveRedundantSpaces removes redundant spaces from text
-// First pass: remove spaces after left-boundary characters
-// Second pass: remove spaces before right-boundary characters
-func RemoveRedundantSpaces(s string) string {
-	// First pass: remove spaces after left-boundary characters (opening brackets, etc.)
-	// e.g., "（ text" -> "（text", "【 text" -> "【text"
-	s = regexp.MustCompile(`([^\sa-z0-9.,\)>]) +([^\s])`).ReplaceAllString(s, "$1$2")
-
-	// Second pass: remove spaces before right-boundary characters (closing brackets, punctuation)
-	// e.g., "text ！" -> "text！"
-	s = regexp.MustCompile(`([^\s]) +([^\sa-z0-9.,\(])`).ReplaceAllString(s, "$1$2")
-
-	return s
 }
 
 // parseFloat parses a string to float64

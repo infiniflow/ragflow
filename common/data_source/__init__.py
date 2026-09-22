@@ -29,13 +29,13 @@ from common.constants import FileSource
 from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
 from .azure_blob_connector import AzureBlobConnector
-from .bigquery_connector import BigQueryConnector
 from .azure_devops.connector import AzureDevOpsConnector
+from .bigquery_connector import BigQueryConnector
 from .bitbucket.connector import BitbucketConnector
 from .blob_connector import BlobStorageConnector
 from .box_connector import BoxConnector
-from .confluence_connector import ConfluenceConnector
 from .config import BlobType, DocumentSource
+from .confluence_connector import ConfluenceConnector
 from .dingtalk_ai_table_connector import DingTalkAITableConnector
 from .discord_connector import DiscordConnector
 from .dropbox_connector import DropboxConnector
@@ -70,6 +70,7 @@ from .teams_connector import TeamsConnector
 from .webdav_connector import WebDAVConnector
 from .xquik_connector import XquikConnector
 from .zendesk_connector import ZendeskConnector
+from .zotero_connector import ZoteroConnector
 
 CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.S3: BlobStorageConnector,
@@ -97,6 +98,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.GITHUB: GithubConnector,
     FileSource.IMAP: ImapConnector,
     FileSource.ZENDESK: ZendeskConnector,
+    FileSource.ZOTERO: ZoteroConnector,
     FileSource.GITLAB: GitlabConnector,
     FileSource.BITBUCKET: BitbucketConnector,
     FileSource.AZURE_DEVOPS: AzureDevOpsConnector,
@@ -173,5 +175,6 @@ __all__ = [
     "WebDAVConnector",
     "XquikConnector",
     "ZendeskConnector",
+    "ZoteroConnector",
     "build_connector_for_source",
 ]

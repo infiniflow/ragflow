@@ -13,73 +13,72 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from io import BytesIO
-from datetime import datetime
-import logging
 import json
+import logging
 import os
 import re
+from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
-from quart import request, make_response, send_file
 from peewee import OperationalError
 from pydantic import ValidationError
+from quart import make_response, request, send_file
 
-from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
-from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
+from api.apps import AUTH_API, AUTH_BETA, AUTH_JWT, current_user, login_required
 from api.apps.services.document_api_service import (
-    validate_document_update_fields,
     map_doc_keys,
     map_doc_keys_with_run_status,
-    update_document_name_only,
-    update_chunk_method,
-    update_document_status_only,
     reset_document_for_reparse,
+    update_chunk_method,
+    update_document_name_only,
+    update_document_status_only,
+    validate_document_update_fields,
 )
+from api.common.check_team_permission import check_kb_team_permission
+from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
-from api.db.db_models import API4Conversation, DB
+from api.db.db_models import DB, API4Conversation, Task
 from api.db.services import duplicate_name
+from api.db.services.canvas_service import UserCanvasService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_counter_service import release_reparse_counters
-from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.canvas_service import UserCanvasService
-from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import (
+    add_tenant_id_to_kwargs,
+    check_duplicate_ids,
     construct_json_result,
     get_data_error_result,
-    get_error_data_result,
-    get_result,
-    get_json_result,
-    server_error_response,
-    add_tenant_id_to_kwargs,
-    get_request_json,
     get_error_argument_result,
-    check_duplicate_ids,
+    get_error_data_result,
+    get_json_result,
+    get_request_json,
+    get_result,
+    server_error_response,
     strip_graphrag_raptor_config,
 )
+from api.utils.file_response import apply_preview_file_response_headers
+from api.utils.file_utils import filename_type, thumbnail
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
+    DeleteDocumentReq,
     UpdateDocumentReq,
     format_validation_error_message,
     validate_and_parse_json_request,
-    DeleteDocumentReq,
 )
-
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
 from common import settings
-from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
+from common.constants import SANDBOX_ARTIFACT_BUCKET, ParserType, RetCode, TaskStatus
 from common.llm_request_context import normalize_llm_user_id
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
-from api.utils.file_utils import filename_type, thumbnail
-from api.utils.file_response import apply_preview_file_response_headers
-from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
+from rag.utils.base64_image import parse_storage_composite_id
 
 
 def _normalize_legacy_raptor_config(req: dict) -> None:
@@ -843,7 +842,7 @@ def list_docs(dataset_id, tenant_id):
     renamed_doc_list = [map_doc_keys(doc) for doc in payload]
     for doc_item in renamed_doc_list:
         if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
+            doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
         if doc_item.get("source_type"):
             doc_item["source_type"] = doc_item["source_type"].split("/")[0]
         if doc_item["parser_config"].get("metadata"):
@@ -1324,10 +1323,10 @@ def list_thumbnails():
         return get_error_argument_result(str(e))
 
     try:
-        docs = DocumentService.get_thumbnails(doc_ids)
+        docs = [doc for doc in DocumentService.get_thumbnails(doc_ids) if DocumentService.accessible(doc["id"], current_user.id)]
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
 
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
@@ -1786,8 +1785,8 @@ async def stop_parse_documents(tenant_id, dataset_id):
 def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
     """Split a composite document image ID into storage bucket and object key.
 
-    Thumbnail URLs use ``{dataset_id}-{thumbnail}``. Only the first hyphen
-    separates the dataset/kb id (bucket) from the object key, which may
+    Legacy chunk image IDs use ``{dataset_id}-{object_key}``. Only the first
+    hyphen separates the dataset/kb id (bucket) from the object key, which may
     contain additional hyphens (e.g. ``page-1.png``).
 
     Args:
@@ -1816,16 +1815,57 @@ def _detect_image_content_type_from_bytes(data):
     return None
 
 
-def _content_type_for_document_image(object_name, data):
-    ext_match = re.search(r"\.([^.]+)$", object_name.lower())
-    if ext_match:
-        content_type = CONTENT_TYPE_MAP.get(ext_match.group(1))
-        if content_type and content_type.startswith("image/"):
-            return content_type
-    detected = _detect_image_content_type_from_bytes(data)
-    if detected:
-        return detected
-    return "application/octet-stream"
+async def _document_image_response(data):
+    content_type = _detect_image_content_type_from_bytes(data)
+    if not content_type:
+        return get_data_error_result(message="Image not found.")
+    response = await make_response(data)
+    response.headers.set("Content-Type", content_type)
+    response.headers.set("Cache-Control", "no-store")
+    return response
+
+
+async def _get_document_image_bytes(bucket, object_name):
+    try:
+        return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, object_name)
+    except Exception:
+        logging.warning("Failed to retrieve authorized document image")
+        return None
+
+
+@manager.route("/documents/<doc_id>/thumbnail", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+async def get_document_thumbnail(doc_id):
+    try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Image not found.")
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e or not doc.thumbnail or doc.thumbnail.startswith(IMG_BASE64_PREFIX):
+            return get_data_error_result(message="Image not found.")
+        data = await _get_document_image_bytes(doc.kb_id, doc.thumbnail)
+        if not data:
+            return get_data_error_result(message="Image not found.")
+        return await _document_image_response(data)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/documents/<doc_id>/images/<image_id>", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+async def get_document_image_for_document(doc_id, image_id):
+    try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Image not found.")
+        e, doc = DocumentService.get_by_id(doc_id)
+        parsed = parse_storage_composite_id(image_id)
+        if not e or not parsed or not DocumentService.image_belongs_to_document(doc, image_id):
+            return get_data_error_result(message="Image not found.")
+        data = await _get_document_image_bytes(*parsed)
+        if not data:
+            return get_data_error_result(message="Image not found.")
+        return await _document_image_response(data)
+    except Exception as e:
+        return server_error_response(e)
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
@@ -1857,14 +1897,13 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
-        if data is None:
-            logging.warning("get_document_image: storage miss image_id: %s, bucket: %s, key: %s", image_id, bkt, nm)
+        e, doc = DocumentService.get_by_image_id(bkt, image_id)
+        if not e or not DocumentService.accessible(doc.id, current_user.id):
             return get_data_error_result(message="Image not found.")
-        content_type = _content_type_for_document_image(nm, data)
-        response = await make_response(data)
-        response.headers.set("Content-Type", content_type)
-        return response
+        data = await _get_document_image_bytes(bkt, nm)
+        if data is None:
+            return get_data_error_result(message="Image not found.")
+        return await _document_image_response(data)
     except Exception as e:
         return server_error_response(e)
 
@@ -2084,7 +2123,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
                     continue
             result[doc_id] = {"status": status}
         except Exception as e:
-            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
+            result[doc_id] = {"error": f"Internal server error: {e!s}"}
             has_error = True
 
     if has_error:

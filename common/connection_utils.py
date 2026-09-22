@@ -14,20 +14,23 @@
 #  limitations under the License.
 #
 
-import os
+import asyncio
 import queue
 import threading
-from typing import Any, Callable, Coroutine, Optional, Type, Union
-import asyncio
+from collections.abc import Callable, Coroutine
 from functools import wraps
-from quart import make_response, jsonify
-from common.constants import RetCode
+from typing import Any, Union
 
-TimeoutException = Union[Type[BaseException], BaseException]
+from quart import jsonify, make_response
+
+from common.constants import RetCode
+from common.misc_utils import env_flag
+
+TimeoutException = Union[type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 
 
-def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
+def timeout(seconds: float | str = None, attempts: int = 2, *, exception: TimeoutException | None = None, on_timeout: OnTimeoutCallback | None = None):
     if isinstance(seconds, str):
         seconds = float(seconds)
 
@@ -49,7 +52,7 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
 
             for a in range(attempts):
                 try:
-                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                    if env_flag("ENABLE_TIMEOUT_ASSERTION", False):
                         result = result_queue.get(timeout=seconds)
                     else:
                         result = result_queue.get()
@@ -67,11 +70,11 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
 
             for a in range(attempts):
                 try:
-                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                    if env_flag("ENABLE_TIMEOUT_ASSERTION", False):
                         return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
                     else:
                         return await func(*args, **kwargs)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if a < attempts - 1:
                         continue
                     if on_timeout is not None:

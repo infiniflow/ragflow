@@ -15,8 +15,7 @@
 #
 
 import os
-from enum import Enum, IntEnum
-from enum import StrEnum
+from enum import Enum, IntEnum, StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"
@@ -171,6 +170,7 @@ class FileSource(StrEnum):
     BITBUCKET = "bitbucket"
     AZURE_DEVOPS = "azure_devops"
     ZENDESK = "zendesk"
+    ZOTERO = "zotero"
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"

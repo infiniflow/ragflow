@@ -75,6 +75,9 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer fetch-token" {
 			t.Errorf("Authorization=%q, want rendered header", got)
 		}
+		if got := r.Header.Get("X-Template"); got != "cost $5" {
+			t.Errorf("X-Template=%q, want safe-substituted header", got)
+		}
 		if r.Method == http.MethodDelete {
 			atomic.AddInt32(&deleteCount, 1)
 			recordRequest(http.MethodDelete)
@@ -131,7 +134,8 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		Headers: map[string]string{
-			"${header_name}": "Bearer ${token}",
+			"${header_name}": "Bearer $token",
+			"X-Template":     "cost $$5",
 			sessionHeader:    "stale-session",
 		},
 		Variables: map[string]string{
@@ -281,18 +285,27 @@ func TestFetchToolsEmptyURL(t *testing.T) {
 }
 
 func TestSubstituteTemplate(t *testing.T) {
-	vars := map[string]string{"token": "abc123"}
-	if got := substituteTemplate("Bearer ${token}", vars); got != "Bearer abc123" {
-		t.Errorf("got %q", got)
-	}
-	if got := substituteTemplate("Bearer ${missing}", vars); got != "Bearer ${missing}" {
-		t.Errorf("got %q", got)
-	}
-	if got := substituteTemplate("no-var", vars); got != "no-var" {
-		t.Errorf("got %q", got)
-	}
-	if got := substituteTemplate("${a}-${token}", map[string]string{"a": "1", "token": "2"}); got != "1-2" {
-		t.Errorf("got %q", got)
+	vars := map[string]string{"token": "abc123", "name": "search", "nested": "${name}"}
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "braced", in: "Bearer ${token}", want: "Bearer abc123"},
+		{name: "unbraced", in: "X-$name", want: "X-search"},
+		{name: "escaped dollar", in: "cost $$5", want: "cost $5"},
+		{name: "unknown", in: "Bearer ${missing}", want: "Bearer ${missing}"},
+		{name: "multiple", in: "${name}-${token}", want: "search-abc123"},
+		{name: "non recursive", in: "$nested", want: "${name}"},
+		{name: "malformed braced", in: "${name", want: "${name"},
+		{name: "invalid identifier", in: "${1name}", want: "${1name}"},
+		{name: "literal dollar", in: "no-var$", want: "no-var$"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := substituteTemplate(tc.in, vars); got != tc.want {
+				t.Errorf("substituteTemplate(%q)=%q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 

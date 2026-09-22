@@ -15,6 +15,7 @@
 #
 
 import pytest
+
 from test.testcases.configs import INVALID_API_TOKEN
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
@@ -27,6 +28,21 @@ def test_document_image_invalid_id_contract(rest_client):
     payload = res.json()
     assert payload["code"] == 102, payload
     assert payload["message"] == "Image not found.", payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/documents/images/not-a-valid-image-id",
+        "/documents/doc-1/images/imagetemps-page-1.png",
+        "/documents/doc-1/thumbnail",
+    ],
+)
+def test_private_document_images_require_auth(rest_client_noauth, path):
+    res = rest_client_noauth.get(path)
+    assert res.status_code == 401, res.text
+    assert_auth_error(res.json(), "missing token")
 
 
 @pytest.mark.p2

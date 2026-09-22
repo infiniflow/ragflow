@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
 
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import env_flag, thread_pool_exec
 
 """
 Reference:
@@ -18,22 +18,23 @@ import os
 import re
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from copy import deepcopy
 from hashlib import md5
-from typing import Any, Callable, Set, Tuple
+from typing import Any
 
 import networkx as nx
 import numpy as np
 import xxhash
 from networkx.readwrite import json_graph
 
-from common.misc_utils import get_uuid
-from common.connection_utils import timeout
+from common import settings
 from common.asyncio_utils import LoopLocalSemaphore
+from common.connection_utils import timeout
+from common.doc_store.doc_store_base import OrderByExpr
+from common.misc_utils import get_uuid
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
-from common import settings
-from common.doc_store.doc_store_base import OrderByExpr
 
 GRAPH_FIELD_SEP = "<SEP>"
 
@@ -63,7 +64,7 @@ async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, labe
     """
     if not chunks:
         return
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
     sem = asyncio.Semaphore(_INSERT_CONCURRENCY)
     total = len(chunks)
     progress = {"done": 0, "next_report": 100}
@@ -88,7 +89,7 @@ async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, labe
                     if result:
                         raise Exception(f"Insert chunk error: {result}, please check log file and Elasticsearch/Infinity status!")
                     break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if attempt < max_retries - 1:
                         wait = 2**attempt
                         logging.warning(f"Insert batch at offset {offset}/{total} attempt {attempt + 1} timed out, retrying in {wait}s")
@@ -116,10 +117,10 @@ async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, labe
 
 @dataclasses.dataclass
 class GraphChange:
-    removed_nodes: Set[str] = dataclasses.field(default_factory=set)
-    added_updated_nodes: Set[str] = dataclasses.field(default_factory=set)
-    removed_edges: Set[Tuple[str, str]] = dataclasses.field(default_factory=set)
-    added_updated_edges: Set[Tuple[str, str]] = dataclasses.field(default_factory=set)
+    removed_nodes: set[str] = dataclasses.field(default_factory=set)
+    added_updated_nodes: set[str] = dataclasses.field(default_factory=set)
+    removed_edges: set[tuple[str, str]] = dataclasses.field(default_factory=set)
+    added_updated_edges: set[tuple[str, str]] = dataclasses.field(default_factory=set)
 
 
 def perform_variable_replacements(input: str, history: list[dict] | None = None, variables: dict | None = None) -> str:
@@ -414,7 +415,7 @@ def chunk_id(chunk):
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neighbors=None):
     """Convert a graph node (entity) to an embeddable chunk and append it to *chunks*."""
     global chat_limiter
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
     chunk = {
         "id": get_uuid(),
         "important_kwd": [ent_name],
@@ -471,7 +472,7 @@ async def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
 
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
     """Convert a graph edge (relation) to an embeddable chunk and append it to *chunks*."""
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
     chunk = {
         "id": get_uuid(),
         "from_entity_kwd": from_ent_name,
@@ -604,7 +605,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         len(_uncached_node_names),
     )
     if _uncached_node_names:
-        _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        _enable_ta = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
         _timeout = 3 if _enable_ta else 30000000
         for _i in range(0, len(_uncached_node_names), _INSERT_BULK_SIZE):
             _batch = _uncached_node_names[_i : _i + _INSERT_BULK_SIZE]
@@ -657,7 +658,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     if _uncached_edge_items:
         _edge_keys = [f"{f}->{t}" for f, t, _ in _uncached_edge_items]
         _edge_texts = [f"{f}->{t}: {a['description']}" for f, t, a in _uncached_edge_items]
-        _enable_ta = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        _enable_ta = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
         _timeout = 3 if _enable_ta else 30000000
         for _i in range(0, len(_edge_texts), _INSERT_BULK_SIZE):
             _btexts = _edge_texts[_i : _i + _INSERT_BULK_SIZE]
