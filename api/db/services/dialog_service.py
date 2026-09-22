@@ -945,6 +945,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             "prompt": re.sub(r"\n", "  \n", prompt),
             "created_at": time.time(),
             "usage": dict(getattr(getattr(chat_mdl, "mdl", None), "last_usage", None) or {}),
+            # Retrieval-time embedding calls (encode_queries) hit the same
+            # provider/instance as chat_mdl for a knowledge base configured on
+            # it (e.g. the same Azure OpenAI resource), so they count toward
+            # that resource's token metrics too, but are a separate LLMBundle
+            # with its own usage — surfaced separately, not folded into
+            # "usage", since embedding tokens are not chat prompt/completion
+            # tokens and mixing them would violate the OpenAI usage schema.
+            "embedding_usage": dict(getattr(embd_mdl, "last_usage", None) or {}),
         }
 
     if langfuse_tracer:
