@@ -413,10 +413,13 @@ func getExtractorChatInvoker() extractorChatInvoker {
 // decide whether to retry, route around, or log.
 type einoExtractorChatInvoker struct{}
 
-// Chat implements extractorChatInvoker for the production path.
+// Chat implements extractorChatInvoker for the production path. Every
+// error it returns is a *common.LLMError so the task detail can attribute
+// the failure to the tenant's model (provider call) or its configuration
+// (unresolvable target) instead of RAGFlow internals.
 func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRequest) (*extractorChatResponse, error) {
 	if req.ModelName == "" {
-		return nil, fmt.Errorf("extractor: chat: model_name is required")
+		return nil, common.NewLLMConfigError(req.Driver, "", errors.New("extractor: chat: model_name is required"))
 	}
 	driver := strings.ToLower(strings.TrimSpace(req.Driver))
 	modelName := req.ModelName
@@ -427,12 +430,12 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 		}
 	}
 	if driver == "" {
-		return nil, fmt.Errorf("extractor: chat: no driver resolved for model %q", modelName)
+		return nil, common.NewLLMConfigError("", modelName, fmt.Errorf("extractor: chat: no driver resolved for model %q", modelName))
 	}
 	common.Info(fmt.Sprintf("extractor: chat: driver=%s modelName=%s baseUrl=%s", driver, modelName, req.BaseURL))
 	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
+		return nil, common.NewLLMConfigError(driver, modelName, fmt.Errorf("extractor: resolve driver %q: %w", driver, err))
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -445,14 +448,14 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
 	// is observed even when the driver layer doesn't take a ctx.
-	common.Info(fmt.Sprintf("try to chat with message: %v", req.Messages))
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	out, err := wrapper.Generate(ctx, toExtractorEinoMessages(req.Messages))
 	if err != nil {
-		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
-		return nil, err
+		// Log attribution + the raw error; never dump prompt contents here.
+		common.Error(fmt.Sprintf("extractor: chat failed for model %s@%s (%d messages)", modelName, driver, len(req.Messages)), err)
+		return nil, common.NewLLMProviderError(driver, modelName, err)
 	}
 	common.Debug(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
 	return &extractorChatResponse{Content: out.Content}, nil
@@ -1191,12 +1194,16 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	}
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
-		return nil, err
+		// A model that cannot be resolved is a configuration problem on the
+		// tenant's side, not a RAGFlow defect.
+		return nil, common.NewLLMConfigError("", in.llmID, err)
 	}
 	msgs := buildExtractorMessages(systemPrompt, chunkText)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
 	if fitErr != nil {
-		return nil, fitErr
+		// Fitting failures tell the user to adjust the model's context
+		// length setting — also model-config territory.
+		return nil, common.NewLLMConfigError(driver, modelName, fitErr)
 	}
 	msgs = fitted
 	inv := getExtractorChatInvoker()
@@ -1298,20 +1305,26 @@ func splitKeywords(s string) []string {
 var nonRetryableStatusRE = regexp.MustCompile(`\b(?:400|401|403|404|405|422)\b`)
 
 // isRetryableLLMError classifies an LLM chat error as worth
-// retrying. The production chat invoker returns opaque errors:
+// retrying. The production chat invoker returns *common.LLMError:
 // configuration failures (missing model/driver) before any API
-// call, and the provider SDK's raw error after the call. We treat
-// context cancellation/deadline as terminal, plus a lightweight
-// heuristic for non-transient auth/client errors. Anything
-// unrecognized defaults to retryable so genuinely transient 5xx /
-// 429 / network blips keep retrying (matching the prior blind-retry
-// behavior).
+// call, and provider failures carrying the HTTP status parsed at
+// the call boundary. A recognized status decides retry directly;
+// context cancellation/deadline is terminal. Errors without a typed
+// status (test stubs, third-party invokers) fall back to the
+// lightweight message heuristic. Anything unrecognized defaults to
+// retryable so genuinely transient 5xx / 429 / network blips keep
+// retrying (matching the prior blind-retry behavior).
 func isRetryableLLMError(err error) bool {
 	if err == nil {
 		return true
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
+	}
+	if le, ok := common.AsLLMError(err); ok {
+		if le.StatusCode > 0 {
+			return le.StatusCode == 429 || le.StatusCode >= 500
+		}
 	}
 	msg := strings.ToLower(err.Error())
 	for _, s := range []string{

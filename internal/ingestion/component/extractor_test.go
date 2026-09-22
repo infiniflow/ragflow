@@ -2234,3 +2234,113 @@ func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
 		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}
 }
+
+// TestEinoChatInvoker_ConfigErrorsAreTyped verifies the production
+// invoker attributes unresolvable model targets to the tenant's model
+// configuration (a *common.LLMError of kind config).
+func TestEinoChatInvoker_ConfigErrorsAreTyped(t *testing.T) {
+	inv := &einoExtractorChatInvoker{}
+
+	_, err := inv.Chat(t.Context(), extractorChatRequest{})
+	le, ok := common.AsLLMError(err)
+	if !ok || le.Kind != common.LLMErrorConfig {
+		t.Fatalf("empty model name: want config LLMError, got %v (%v)", err, ok)
+	}
+
+	_, err = inv.Chat(t.Context(), extractorChatRequest{ModelName: "solo-model-no-at"})
+	le, ok = common.AsLLMError(err)
+	if !ok || le.Kind != common.LLMErrorConfig || !strings.Contains(le.Error(), "no driver resolved") {
+		t.Fatalf("missing driver: want typed config LLMError, got %v (%v)", err, ok)
+	}
+}
+
+// TestExtractorComponent_Invoke_LLMErrorCarriesAttribution verifies a
+// provider failure wrapped at the chat boundary stays reachable via
+// errors.As through the component wrap chain, so the ingestor can render
+// a model-attributed user message instead of the raw chain.
+func TestExtractorComponent_Invoke_LLMErrorCarriesAttribution(t *testing.T) {
+	prevMax, prevDelay := extractorRetryMax, extractorRetryDelay
+	extractorRetryMax, extractorRetryDelay = 3, time.Millisecond
+	t.Cleanup(func() {
+		extractorRetryMax, extractorRetryDelay = prevMax, prevDelay
+	})
+
+	provider := common.NewLLMProviderError("openai", "gpt-4o-mini",
+		errors.New("API request failed with status 402: insufficient balance"))
+	withStubChatInvoker(t,
+		stubResponse{Err: provider},
+		stubResponse{Err: provider},
+		stubResponse{Err: provider},
+		stubResponse{Err: provider},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "x"}},
+	})
+	if err == nil {
+		t.Fatal("Invoke returned nil error")
+	}
+	le, ok := common.AsLLMError(err)
+	if !ok {
+		t.Fatalf("LLMError not reachable through Invoke chain: %v", err)
+	}
+	if le.StatusCode != 402 {
+		t.Errorf("StatusCode = %d, want 402", le.StatusCode)
+	}
+	if !strings.Contains(err.Error(), "insufficient balance") {
+		t.Errorf("full chain must retain provider reason for logs: %v", err)
+	}
+}
+
+// TestExtractorComponent_Invoke_FitFailureIsTypedConfigError verifies the
+// prompt-fitting failure (a model context-length configuration problem) is
+// attributed to the model config in the returned chain.
+func TestExtractorComponent_Invoke_FitFailureIsTypedConfigError(t *testing.T) {
+	SetExtractorContextLengthOverride(func(context.Context, string) int { return 1 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	withStubChatInvoker(t, stubResponse{Content: "unused"})
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:   "gpt-4o-mini@openai",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
+	}}
+	_, err := c.callRaw(t.Context(), nil, extractorInputs{llmID: "gpt-4o-mini@openai"}, "system prompt", "chunk text that should not fit")
+	if err == nil {
+		t.Fatal("expected fitting failure")
+	}
+	le, ok := common.AsLLMError(err)
+	if !ok {
+		t.Fatalf("fit failure should be typed config LLMError, got %v", err)
+	}
+	if le.Kind != common.LLMErrorConfig {
+		t.Errorf("Kind = %q, want config", le.Kind)
+	}
+}
+
+// Additional isRetryableLLMError cases for the typed-status fast path.
+func TestIsRetryableLLMError_TypedStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"typed 429 retryable", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 429: slow down")), true},
+		{"typed 503 retryable", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 503")), true},
+		{"typed 401 terminal", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 401: bad key")), false},
+		{"typed 404 terminal", common.NewLLMProviderError("p", "m", errors.New("status code: 404, model not found")), false},
+		{"typed unknown status falls back retryable", common.NewLLMProviderError("p", "m", errors.New("connection reset by peer")), true},
+		{"retry wrap keeps typed classification", fmt.Errorf("failed after 3 retries: %w", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 429"))), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRetryableLLMError(tt.err); got != tt.want {
+				t.Errorf("isRetryableLLMError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}

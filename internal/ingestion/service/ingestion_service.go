@@ -863,7 +863,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), taskFailureDetail(err))
 		}
 		return ok
 	}
@@ -1267,6 +1267,20 @@ func (e *Ingestor) publishPendingCompileEvent(ctx context.Context, task *entity.
 	if err := knowledge_compile.PublishCompleted(ctx, event.tenantID, task.DatasetID, task.DocumentID, event.variants, event.taskTypes); err != nil {
 		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", task.DocumentID, err))
 	}
+}
+
+// taskFailureDetail renders the user-visible failure detail written to
+// the run's pipeline log. When the cause chain carries a *common.LLMError
+// (a failure attributable to the tenant's chat model), the detail becomes
+// a self-attributing one-liner from the model provider / configuration
+// side; the raw internal error chain stays in server-side logs only, so
+// users never have to parse RAGFlow-internal wrapping to learn their model
+// call failed.
+func taskFailureDetail(err error) string {
+	if llmErr, ok := common.AsLLMError(err); ok {
+		return llmErr.UserMessage()
+	}
+	return fmt.Sprintf("Task failed: %v", err)
 }
 
 func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {
