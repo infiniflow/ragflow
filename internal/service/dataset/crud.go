@@ -371,7 +371,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 		common.Warn("Dataset bucket already missing", zap.String("bucket", kb.ID))
 	} else {
 		if err := storageImpl.RemoveEmptyBucket(cleanupCtx, kb.ID); err != nil {
-			common.Warn("Failed to remove empty dataset bucket", zap.String("bucket", kb.ID), zap.Error(err))
+			common.Warn("Unable to remove empty dataset bucket", zap.String("bucket", kb.ID), zap.Error(err))
 		} else {
 			common.Info("Removed empty dataset bucket", zap.String("bucket", kb.ID))
 		}

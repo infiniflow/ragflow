@@ -240,7 +240,7 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 			continue
 		}
 		if err := store.RemoveEmptyBucket(ctx, dataset.ID); err != nil {
-			common.Warn("Failed to remove empty dataset bucket", zap.String("bucket", dataset.ID), zap.Error(err))
+			common.Warn("Unable to remove empty dataset bucket", zap.String("bucket", dataset.ID), zap.Error(err))
 		} else {
 			common.Info("Removed empty dataset bucket", zap.String("bucket", dataset.ID))
 		}
