@@ -374,7 +374,8 @@ var (
 	// canonicalRomanPattern accepts the full canonical Roman-numeral grammar
 	// (up to M) so the sequence track can parse page numbers beyond the XXX
 	// range strictBareNumberPattern's header/footer idiom covers. Non-canonical
-	// forms (IIII) are rejected; round-trip validation happens in romanValue.
+	// forms (IIII) are rejected by the pattern itself; romanValue only computes
+	// the subtractive sum of a spelling this regex already accepted.
 	canonicalRomanPattern = regexp.MustCompile(`(?i)^(m{0,3})(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$`)
 
 	// sitePromoPattern matches margin lines that advertise a download site —
@@ -764,9 +765,10 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 			continue
 		}
 
-		// A URL ad in either outer band is an advertising header/footer on
-		// sight — no whitespace gap and no recurrence required, and this also
-		// fires on documents too short for the recurrence tracks.
+		// A URL ad in either expanded margin zone (top 14% / bottom 14%,
+		// narrower than the sequence track's 20% bands) is an advertising
+		// header/footer on sight — no whitespace gap and no recurrence required,
+		// and this also fires on documents too short for the recurrence tracks.
 		if isSitePromo(b.Text) && (b.Bottom <= h*headerMaxZoneRatio || b.Top >= h*footerMinZoneRatio) {
 			slog.Debug("header_footer: dropped by site promo", "page", b.PageNumber, "textLen", utf8.RuneCountInString(b.Text))
 			drop[i] = struct{}{}

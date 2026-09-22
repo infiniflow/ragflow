@@ -1356,9 +1356,13 @@ func TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved(t *testing.T
 		boxes = append(boxes, tightFooter(pg, y)...)
 	}
 	got := RemoveHeaderFooterBoxes(boxes, heights)
+	keptYears := make(map[string]bool, len(years))
 	for _, b := range got {
-		if b.Text == "2024" || b.Text == "2025" || b.Text == "2026" {
-			continue
+		keptYears[b.Text] = true
+	}
+	for _, y := range years {
+		if !keptYears[y] {
+			t.Fatalf("year footer %q must be preserved: its value exceeds the page-number ceiling", y)
 		}
 	}
 	if len(got) != 6 {
