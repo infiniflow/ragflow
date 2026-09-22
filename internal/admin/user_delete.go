@@ -240,9 +240,10 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 			continue
 		}
 		if err := store.RemoveEmptyBucket(ctx, dataset.ID); err != nil {
-			return fmt.Errorf("remove empty dataset bucket %s: %w", dataset.ID, err)
+			common.Warn("Failed to remove empty dataset bucket", zap.String("bucket", dataset.ID), zap.Error(err))
+		} else {
+			common.Info("Removed empty dataset bucket", zap.String("bucket", dataset.ID))
 		}
-		common.Info("Removed empty dataset bucket", zap.String("bucket", dataset.ID))
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
@@ -273,9 +274,10 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 			continue
 		}
 		if err := store.RemoveEmptyBucket(ctx, file.ID); err != nil {
-			return fmt.Errorf("remove empty folder bucket %s: %w", file.ID, err)
+			common.Warn("Failed to remove empty folder bucket", zap.String("bucket", file.ID), zap.Error(err))
+		} else {
+			common.Info("Removed empty folder bucket", zap.String("bucket", file.ID))
 		}
-		common.Info("Removed empty folder bucket", zap.String("bucket", file.ID))
 	}
 	if docEngine == nil {
 		return nil

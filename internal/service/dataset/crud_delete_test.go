@@ -48,8 +48,8 @@ func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := testDatasetUpdateService(t)
-	if err := service.deleteDataset(t.Context(), "tenant-1", kb); err == nil {
-		t.Fatal("expected nonempty bucket error")
+	if err := service.deleteDataset(t.Context(), "tenant-1", kb); err != nil {
+		t.Fatalf("delete dataset with nonempty bucket: %v", err)
 	}
 	if !store.ObjExist(t.Context(), "kb-1", "untracked") {
 		t.Fatal("dataset deletion removed an untracked object")
@@ -58,17 +58,8 @@ func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 		t.Fatal("dataset deletion retained a document object")
 	}
 	var count int64
-	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("dataset deleted after storage failure: count=%d, err=%v", count, err)
-	}
-	if err := store.Remove(t.Context(), "kb-1", "untracked"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.deleteDataset(t.Context(), "tenant-1", kb); err != nil {
-		t.Fatalf("retry after partial storage cleanup: %v", err)
-	}
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("dataset retained after retry: count=%d, err=%v", count, err)
+		t.Fatalf("dataset retained after storage failure: count=%d, err=%v", count, err)
 	}
 }
 

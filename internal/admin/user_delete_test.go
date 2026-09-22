@@ -263,7 +263,7 @@ func TestDeleteUserKeepsUserWhenExternalCleanupFails(t *testing.T) {
 	}
 }
 
-func TestDeleteUserKeepsUserWhenEmptyBucketRemovalFails(t *testing.T) {
+func TestDeleteUserContinuesWhenEmptyBucketRemovalFails(t *testing.T) {
 	db := setupUserDeletionDB(t)
 	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
 		t.Fatal(err)
@@ -274,12 +274,12 @@ func TestDeleteUserKeepsUserWhenEmptyBucketRemovalFails(t *testing.T) {
 	service := NewService()
 	service.deleteEngine = &deletionEngine{}
 	service.deleteStorage = &deletionStorage{bucketErr: errors.New("bucket is not empty")}
-	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err == nil {
-		t.Fatal("expected bucket removal error")
+	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err != nil {
+		t.Fatalf("DeleteUser after bucket removal failure: %v", err)
 	}
 	var count int64
-	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("user deleted after bucket failure: count=%d, err=%v", count, err)
+	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("user retained after bucket failure: count=%d, err=%v", count, err)
 	}
 }
 

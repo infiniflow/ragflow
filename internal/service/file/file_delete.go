@@ -158,9 +158,10 @@ func (s *FileService) removeFolderObjectsRecursive(ctx context.Context, folder *
 		return nil
 	}
 	if err := storageImpl.RemoveEmptyBucket(ctx, folder.ID); err != nil {
-		return fmt.Errorf("remove empty folder bucket %s: %w", folder.ID, err)
+		common.Warn("Failed to remove empty folder bucket", zap.String("bucket", folder.ID), zap.Error(err))
+	} else {
+		common.Info("Removed empty folder bucket", zap.String("bucket", folder.ID))
 	}
-	common.Info("Removed empty folder bucket", zap.String("bucket", folder.ID))
 	return nil
 }
 

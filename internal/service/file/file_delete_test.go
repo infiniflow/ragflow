@@ -50,8 +50,8 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(previous) })
 
 	service := testFileService()
-	if err := service.deleteFolderRecursive(t.Context(), folder, "tenant-1"); err == nil {
-		t.Fatal("expected nonempty bucket error")
+	if err := service.deleteFolderRecursive(t.Context(), folder, "tenant-1"); err != nil {
+		t.Fatalf("delete folder with nonempty bucket: %v", err)
 	}
 	if !store.ObjExist(t.Context(), folder.ID, "untracked") {
 		t.Fatal("folder deletion removed an untracked object")
@@ -59,14 +59,8 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	if store.ObjExist(t.Context(), folder.ID, "tracked") {
 		t.Fatal("folder deletion retained a file object")
 	}
-	if _, err := service.fileDAO.GetByID(t.Context(), db, folder.ID); err != nil {
-		t.Fatalf("folder record deleted after storage failure: %v", err)
-	}
-	if err := store.Remove(t.Context(), folder.ID, "untracked"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.deleteFolderRecursive(t.Context(), folder, "tenant-1"); err != nil {
-		t.Fatalf("retry after partial storage cleanup: %v", err)
+	if _, err := service.fileDAO.GetByID(t.Context(), db, folder.ID); err == nil {
+		t.Fatal("folder record retained after storage failure")
 	}
 }
 
