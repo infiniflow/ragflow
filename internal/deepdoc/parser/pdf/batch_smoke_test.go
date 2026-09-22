@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -65,14 +64,14 @@ func TestBatchResults(t *testing.T) {
 // ── helpers ─────────────────────────────────────────────────────────
 
 func setupLogger() {
-	level := slog.LevelInfo
+	level := "info"
 	switch common.GetEnv(common.EnvBatchLogLevel) {
 	case "debug":
-		level = slog.LevelDebug
+		level = "debug"
 	case "warn":
-		level = slog.LevelWarn
+		level = "warn"
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	_ = common.InitLogger(level, common.FileOutput{}, "")
 }
 
 type outputDirs struct {

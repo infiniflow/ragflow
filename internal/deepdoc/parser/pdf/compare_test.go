@@ -3,11 +3,10 @@
 package pdf
 
 import (
-	"log/slog"
-	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"testing"
+
+	"ragflow/internal/common"
 
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 )
@@ -17,14 +16,16 @@ import (
 // no generation, no CGO/DeepDoc dependency.  Use PY_OCR_SUFFIX to override
 // the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
-	level := slog.LevelInfo
-	if common.GetEnv(common.EnvBatchLogLevel) == "debug" {
-		level = slog.LevelDebug
+	level := "info"
+	switch common.GetEnv(common.EnvBatchLogLevel) {
+	case "debug":
+		level = "debug"
+	case "warn":
+		level = "warn"
 	}
-	if common.GetEnv(common.EnvBatchLogLevel) == "warn" {
-		level = slog.LevelWarn
+	if err := common.InitLogger(level, common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	goVariant := "ocr"
 	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)
