@@ -1337,6 +1337,11 @@ func TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard(t *testing.T) {
 			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
 		}
 		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if _, ok := parseBareNumberValue(b.Text); ok {
+				t.Fatalf("page number %q survived the sequence track", b.Text)
+			}
+		}
 		if len(got) != 3 {
 			t.Fatalf("chain within total-drift span must be removed, got %d kept boxes", len(got))
 		}
@@ -1383,13 +1388,14 @@ func TestRemoveHeaderFooterBoxes_TightBottomTextHeadingPreserved(t *testing.T) {
 		boxes = append(boxes, tb("Quarterly Report Summary", pg, 72, 300, 730, 742)) // gapAbove = 6pt, repeats identically
 	}
 	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var headings int
 	for _, b := range got {
 		if b.Text == "Quarterly Report Summary" {
-			continue
+			headings++
 		}
 	}
-	if len(got) != 8 {
-		t.Fatalf("tight repeated text headings must be preserved, got %d", len(got))
+	if headings != 4 || len(got) != 8 {
+		t.Fatalf("tight repeated text headings must be preserved, got %d of 4 headings (%d boxes)", headings, len(got))
 	}
 }
 
