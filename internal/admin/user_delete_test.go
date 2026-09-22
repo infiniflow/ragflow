@@ -68,9 +68,12 @@ func (e *deletionEngine) DeleteMetadata(_ context.Context, condition map[string]
 
 type deletionStorage struct {
 	storage.Storage
-	buckets []string
-	files   []string
-	err     error
+	buckets   []string
+	files     []string
+	err       error
+	bucketErr error
+	missing   bool
+	checkErr  error
 }
 
 func (s *deletionStorage) RemoveBucket(_ context.Context, bucket string) error {
@@ -80,9 +83,31 @@ func (s *deletionStorage) RemoveBucket(_ context.Context, bucket string) error {
 	s.buckets = append(s.buckets, bucket)
 	return nil
 }
+func (s *deletionStorage) RemoveEmptyBucket(_ context.Context, bucket string) error {
+	if s.bucketErr != nil {
+		return s.bucketErr
+	}
+	s.buckets = append(s.buckets, bucket)
+	return nil
+}
 func (s *deletionStorage) Remove(_ context.Context, bucket, name string, _ ...string) error {
+	if s.err != nil {
+		return s.err
+	}
 	s.files = append(s.files, bucket+"/"+name)
 	return nil
+}
+func (s *deletionStorage) ObjectExists(_ context.Context, bucket, name string) (bool, error) {
+	if s.checkErr != nil {
+		return false, s.checkErr
+	}
+	return !s.missing, nil
+}
+func (s *deletionStorage) BucketExistsWithError(_ context.Context, bucket string) (bool, error) {
+	if s.checkErr != nil {
+		return false, s.checkErr
+	}
+	return !s.missing, nil
 }
 
 func setupUserDeletionDB(t *testing.T) *gorm.DB {
@@ -123,10 +148,12 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by) VALUES (?, ?, ?, ?, ?)", "joined", "user-1", "team", "normal", "user-2")
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-kb", "user-1", "Own", "embd", "me", "user-1", "general", 1, 2, 3)
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "team-kb", "team", "Team", "embd", "team", "user-2", "general", 2, 5, 7)
-	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-doc", "own-kb", "general", "{}", "pdf", "user-1", "pdf", 2, 3)
-	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "joined-doc", "team-kb", "general", "{}", "pdf", "user-1", "pdf", 2, 3)
+	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-doc", "own-kb", "general", "{}", "pdf", "user-1", "pdf", "own.pdf", 2, 3)
+	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "joined-doc", "team-kb", "general", "{}", "pdf", "user-1", "pdf", "joined.pdf", 2, 3)
 	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "other-doc", "team-kb", "general", "{}", "pdf", "user-2", "pdf", 3, 4)
 	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, location, type) VALUES (?, ?, ?, ?, ?, ?, ?)", "own-file", "own-folder", "user-1", "user-1", "own.pdf", "own.pdf", "file")
+	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, type) VALUES (?, ?, ?, ?, ?, ?)", "own-folder", "own-folder", "user-1", "user-1", "/", "folder")
+	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, location, type, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "kb-file", "kb-folder", "user-1", "user-1", "own.pdf", "own.pdf", "pdf", "knowledgebase")
 	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, location, type) VALUES (?, ?, ?, ?, ?, ?, ?)", "joined-file", "team-folder", "team", "user-1", "joined.pdf", "joined.pdf", "file")
 	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, location, type) VALUES (?, ?, ?, ?, ?, ?, ?)", "other-file", "team-folder", "team", "user-2", "other.pdf", "other.pdf", "file")
 	insert("INSERT INTO file2document (id, file_id, document_id) VALUES (?, ?, ?)", "own-link", "own-file", "own-doc")
@@ -205,7 +232,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	if err := db.First(&team, "id = ?", "team-kb").Error; err != nil || team.DocNum != 1 || team.TokenNum != 3 || team.ChunkNum != 4 {
 		t.Fatalf("joined dataset counters = %+v, err=%v", team, err)
 	}
-	if len(store.buckets) != 1 || store.buckets[0] != "own-kb" || len(store.files) != 2 {
+	if !slices.Equal(store.buckets, []string{"own-kb", "own-folder"}) || !slices.Equal(store.files, []string{"own-kb/own.pdf", "team-kb/joined.pdf", "own-folder/own.pdf", "team-folder/joined.pdf"}) {
 		t.Fatalf("storage cleanup = buckets %v, files %v", store.buckets, store.files)
 	}
 	if !slices.Contains(docEngine.dropped, "ragflow_user-1") || !slices.Contains(docEngine.dropped, "memory_user-1") || !slices.Contains(docEngine.deleted, "doc_id:[joined-doc]") || !slices.Contains(docEngine.deleted, "metadata:id:[joined-doc]") {
@@ -221,6 +248,9 @@ func TestDeleteUserKeepsUserWhenExternalCleanupFails(t *testing.T) {
 	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id) VALUES (?, ?, ?, ?, ?, ?, ?)", "dataset", "team", "Dataset", "embd", "me", "user-1", "general").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
+		t.Fatal(err)
+	}
 	service := NewService()
 	service.deleteEngine = &deletionEngine{}
 	service.deleteStorage = &deletionStorage{err: errors.New("storage unavailable")}
@@ -230,6 +260,72 @@ func TestDeleteUserKeepsUserWhenExternalCleanupFails(t *testing.T) {
 	var count int64
 	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("user was deleted after external failure: count=%d, err=%v", count, err)
+	}
+}
+
+func TestDeleteUserKeepsUserWhenEmptyBucketRemovalFails(t *testing.T) {
+	db := setupUserDeletionDB(t)
+	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id) VALUES (?, ?, ?, ?, ?, ?, ?)", "dataset", "team", "Dataset", "embd", "me", "user-1", "general").Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewService()
+	service.deleteEngine = &deletionEngine{}
+	service.deleteStorage = &deletionStorage{bucketErr: errors.New("bucket is not empty")}
+	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err == nil {
+		t.Fatal("expected bucket removal error")
+	}
+	var count int64
+	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("user deleted after bucket failure: count=%d, err=%v", count, err)
+	}
+}
+
+func TestDeleteUserContinuesWhenStorageItemsAreMissing(t *testing.T) {
+	db := setupUserDeletionDB(t)
+	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id) VALUES (?, ?, ?, ?, ?, ?, ?)", "dataset", "team", "Dataset", "embd", "me", "user-1", "general").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
+		t.Fatal(err)
+	}
+	store := &deletionStorage{missing: true}
+	service := NewService()
+	service.deleteEngine = &deletionEngine{}
+	service.deleteStorage = store
+	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err != nil {
+		t.Fatalf("DeleteUser with missing storage items: %v", err)
+	}
+	if len(store.files) != 0 || len(store.buckets) != 0 {
+		t.Fatalf("storage deletion attempted for missing items: files=%v buckets=%v", store.files, store.buckets)
+	}
+}
+
+func TestDeleteUserStopsOnStorageCheckError(t *testing.T) {
+	db := setupUserDeletionDB(t)
+	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id) VALUES (?, ?, ?, ?, ?, ?, ?)", "dataset", "team", "Dataset", "embd", "me", "user-1", "general").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewService()
+	service.deleteEngine = &deletionEngine{}
+	service.deleteStorage = &deletionStorage{checkErr: errors.New("storage unavailable")}
+	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err == nil || !strings.Contains(err.Error(), "storage unavailable") {
+		t.Fatalf("DeleteUser error = %v", err)
+	}
+	var count int64
+	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("user deleted after storage check failed: count=%d, err=%v", count, err)
 	}
 }
 

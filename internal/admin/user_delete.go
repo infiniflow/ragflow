@@ -124,7 +124,7 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 	for _, dataset := range data.datasets {
 		data.datasetIDs = append(data.datasetIDs, dataset.ID)
 	}
-	if err := db.Model(&entity.Document{}).Select("id", "kb_id", "token_num", "chunk_num").Where("created_by = ?", userID).Find(&data.documents).Error; err != nil {
+	if err := db.Model(&entity.Document{}).Select("id", "kb_id", "location", "token_num", "chunk_num").Where("created_by = ?", userID).Find(&data.documents).Error; err != nil {
 		return nil, fmt.Errorf("load documents: %w", err)
 	}
 	seenDocuments := make(map[string]struct{}, len(data.documents))
@@ -134,7 +134,7 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 	for start := 0; start < len(data.datasetIDs); start += 1000 {
 		end := min(start+1000, len(data.datasetIDs))
 		var documents []entity.Document
-		if err := db.Model(&entity.Document{}).Select("id", "kb_id", "token_num", "chunk_num").Where("kb_id IN ?", data.datasetIDs[start:end]).Find(&documents).Error; err != nil {
+		if err := db.Model(&entity.Document{}).Select("id", "kb_id", "location", "token_num", "chunk_num").Where("kb_id IN ?", data.datasetIDs[start:end]).Find(&documents).Error; err != nil {
 			return nil, fmt.Errorf("load dataset documents: %w", err)
 		}
 		for _, document := range documents {
@@ -179,7 +179,7 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 			}
 		}
 	}
-	fileQuery := db.Model(&entity.File{}).Select("id", "parent_id", "location", "type").Where("created_by = ?", userID)
+	fileQuery := db.Model(&entity.File{}).Select("id", "parent_id", "tenant_id", "location", "type", "source_type").Where("created_by = ?", userID)
 	if data.ownedTenantID != "" {
 		fileQuery = fileQuery.Or("tenant_id = ?", data.ownedTenantID)
 	}
@@ -206,25 +206,76 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	if docEngine == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0) {
 		return fmt.Errorf("document engine is unavailable for user data cleanup")
 	}
-	if store == nil && (len(data.datasets) > 0 || len(data.files) > 0) {
+	if store == nil && (len(data.datasets) > 0 || len(data.documents) > 0 || len(data.files) > 0) {
 		return fmt.Errorf("storage is unavailable for user data cleanup")
 	}
 	datasetIDs := make(map[string]struct{}, len(data.datasetIDs))
 	for _, id := range data.datasetIDs {
 		datasetIDs[id] = struct{}{}
 	}
+	for _, document := range data.documents {
+		if document.Location == nil || *document.Location == "" {
+			continue
+		}
+		exists, err := store.ObjectExists(ctx, document.KbID, *document.Location)
+		if err != nil {
+			return fmt.Errorf("check document %s: %w", document.ID, err)
+		}
+		if !exists {
+			common.Warn("Document object already missing", zap.String("document_id", document.ID), zap.String("bucket", document.KbID))
+			continue
+		}
+		if err := store.Remove(ctx, document.KbID, *document.Location); err != nil {
+			return fmt.Errorf("remove document %s: %w", document.ID, err)
+		}
+		common.Info("Removed document object", zap.String("document_id", document.ID), zap.String("bucket", document.KbID))
+	}
+	for _, dataset := range data.datasets {
+		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
+		if err != nil {
+			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
+		}
+		if !exists {
+			common.Warn("Dataset bucket already missing", zap.String("bucket", dataset.ID))
+			continue
+		}
+		if err := store.RemoveEmptyBucket(ctx, dataset.ID); err != nil {
+			return fmt.Errorf("remove empty dataset bucket %s: %w", dataset.ID, err)
+		}
+		common.Info("Removed empty dataset bucket", zap.String("bucket", dataset.ID))
+	}
 	for _, file := range data.files {
-		_, datasetBucket := datasetIDs[file.ParentID]
-		if file.Location != nil && *file.Location != "" && file.Type != "folder" && !datasetBucket {
+		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
+			exists, err := store.ObjectExists(ctx, file.ParentID, *file.Location)
+			if err != nil {
+				return fmt.Errorf("check file %s: %w", file.ID, err)
+			}
+			if !exists {
+				common.Warn("File object already missing", zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
+				continue
+			}
 			if err := store.Remove(ctx, file.ParentID, *file.Location); err != nil {
 				return fmt.Errorf("remove file %s: %w", file.ID, err)
 			}
+			common.Info("Removed file object", zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
 		}
 	}
-	for _, dataset := range data.datasets {
-		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
-			return fmt.Errorf("remove dataset bucket %s: %w", dataset.ID, err)
+	for _, file := range data.files {
+		if file.Type != "folder" || file.SourceType == string(entity.FileSourceKnowledgebase) || file.TenantID != data.ownedTenantID {
+			continue
 		}
+		exists, err := store.BucketExistsWithError(ctx, file.ID)
+		if err != nil {
+			return fmt.Errorf("check folder bucket %s: %w", file.ID, err)
+		}
+		if !exists {
+			common.Warn("Folder bucket already missing", zap.String("bucket", file.ID))
+			continue
+		}
+		if err := store.RemoveEmptyBucket(ctx, file.ID); err != nil {
+			return fmt.Errorf("remove empty folder bucket %s: %w", file.ID, err)
+		}
+		common.Info("Removed empty folder bucket", zap.String("bucket", file.ID))
 	}
 	if docEngine == nil {
 		return nil

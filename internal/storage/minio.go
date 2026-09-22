@@ -234,6 +234,10 @@ func (m *MinioStorage) Remove(ctx context.Context, bucket, fnm string, tenantID 
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
 
 	if err := m.client.RemoveObject(ctx, bucket, fnm, minio.RemoveObjectOptions{}); err != nil {
+		code := minio.ToErrorResponse(err).Code
+		if code == "NoSuchKey" || code == "NoSuchBucket" {
+			return nil
+		}
 		common.Warn("Failed to remove object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 		return err
 	}
@@ -261,6 +265,19 @@ func (m *MinioStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantI
 	}
 
 	return true
+}
+
+func (m *MinioStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
+	_, err := m.client.StatObject(ctx, bucket, fnm, minio.StatObjectOptions{})
+	if err == nil {
+		return true, nil
+	}
+	code := minio.ToErrorResponse(err).Code
+	if code == "NoSuchKey" || code == "NoSuchBucket" {
+		return false, nil
+	}
+	return false, err
 }
 
 // GetPresignedURL generates a presigned URL for accessing an object
@@ -301,6 +318,13 @@ func (m *MinioStorage) BucketExists(ctx context.Context, bucket string) bool {
 	}
 
 	return exists
+}
+
+func (m *MinioStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	if m.bucket != "" {
+		bucket = m.bucket
+	}
+	return m.client.BucketExists(ctx, bucket)
 }
 
 func (m *MinioStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
@@ -398,6 +422,41 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 		}
 	}
 
+	return nil
+}
+
+// RemoveEmptyBucket removes a bucket only when it contains no object versions.
+func (m *MinioStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	actualBucket := bucket
+	prefix := ""
+	if m.bucket != "" {
+		actualBucket = m.bucket
+		if m.prefixPath != "" {
+			prefix = m.prefixPath + "/"
+		}
+		prefix += bucket + "/"
+	}
+	exists, err := m.client.BucketExists(ctx, actualBucket)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	listCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for object := range m.client.ListObjects(listCtx, actualBucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true, WithVersions: true}) {
+		if object.Err != nil {
+			return object.Err
+		}
+		return fmt.Errorf("bucket %s is not empty", bucket)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.bucket == "" {
+		return m.client.RemoveBucket(ctx, actualBucket)
+	}
 	return nil
 }
 

@@ -123,6 +123,16 @@ func (f *fakeStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	panic("not implemented in fakeStorage")
 }
 
+func (f *fakeStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	panic("not implemented in fakeStorage")
+}
+func (f *fakeStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return f.ObjExist(ctx, bucket, fnm), nil
+}
+func (f *fakeStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	panic("not implemented in fakeStorage")
+}
+
 func (f *fakeStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	panic("not implemented in fakeStorage")
 }
