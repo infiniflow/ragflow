@@ -635,7 +635,8 @@ var metaValueSpaceLoader = func(ctx context.Context, kbIDs []string) (common.Met
 	return NewMetadataService().GetMetaValueSpaceByKBs(ctx, kbIDs)
 }
 
-// ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
+// ApplyMetaDataFilter applies metadata filtering rules and returns the document
+// scope retrieval must be constrained to.
 // Supports three modes:
 // - auto: generate filter conditions via LLM
 // - semi_auto: generate conditions using selected metadata keys only via LLM
@@ -644,6 +645,22 @@ var metaValueSpaceLoader = func(ctx context.Context, kbIDs []string) (common.Met
 // When kbIDs is supplied, metadata filters are pushed down to the doc metadata
 // index (ES/Infinity) via FilterDocIdsByMetaPushdown instead of being evaluated
 // in-memory. The in-memory meta_filter path remains the fallback.
+//
+// The return value carries three distinct outcomes:
+//
+//   - nil -- no metadata narrowing. The filter produced no
+//     conditions, or was refused because the value space could not be shown to
+//     the model in full. Callers keep their own document scope and search it
+//     unfiltered; a filter that fails to narrow is recoverable, one that narrows
+//     to the wrong documents is not.
+//   - []string{NoMatchDocIDSentinel} -- manual conditions that match no document.
+//     Only manual mode produces the sentinel, and it means zero results on
+//     purpose: the user asked for those exact conditions.
+//   - any other slice -- the documents the filter selected.
+//
+// nil must never be turned into the sentinel: that would answer "the metadata
+// was unusable" with "no documents exist", which is the one outcome the user
+// did not ask for.
 func ApplyMetaDataFilter(
 	ctx context.Context,
 	metaDataFilter map[string]interface{},
@@ -653,9 +670,9 @@ func ApplyMetaDataFilter(
 	baseDocIDs []string,
 	kbIDs []string,
 	manualValueResolver ...ManualValueResolver,
-) ([]string, bool) {
+) []string {
 	if metaDataFilter == nil {
-		return baseDocIDs, false
+		return baseDocIDs
 	}
 
 	method, _ := metaDataFilter["method"].(string)
@@ -745,19 +762,21 @@ func ApplyMetaDataFilter(
 	case "auto":
 		space, ok := getValueSpace()
 		if !ok {
-			return nil, true
+			return nil
 		}
 		filters, err := GenMetaFilter(ctx, chatModel, space, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
-			return baseDocIDs, false
+			return baseDocIDs
 		}
 		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
-			return nil, true // Return nil to indicate auto filter returned empty
+			// No conditions, or conditions that selected nothing: the model was
+			// not able to narrow the search, so it stays unnarrowed.
+			return nil
 		}
-		return docIDs, false
+		return docIDs
 
 	case "semi_auto":
 		selectedKeys := []string{}
@@ -782,7 +801,7 @@ func ApplyMetaDataFilter(
 		if len(selectedKeys) > 0 {
 			space, ok := getValueSpace()
 			if !ok {
-				return nil, true
+				return nil
 			}
 			// Filter the value space to only selected keys
 			filteredSpace := make(common.MetaValueSpace)
@@ -796,14 +815,14 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredSpace, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
-					return baseDocIDs, false
+					return baseDocIDs
 				}
 				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 				if len(docIDs) == 0 {
-					return nil, true
+					return nil
 				}
-				return docIDs, false
+				return docIDs
 			}
 		}
 
@@ -814,7 +833,7 @@ func ApplyMetaDataFilter(
 			logic = logicVal
 		}
 		if len(manualFilters) == 0 {
-			return baseDocIDs, false
+			return baseDocIDs
 		}
 
 		// Apply manual_value_resolver callback if provided
@@ -849,12 +868,13 @@ func ApplyMetaDataFilter(
 		filteredIDs := runMetadataFilter(conditions, logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
-			return []string{NoMatchDocIDSentinel}, false
+			// The user named these conditions, so no match is the answer.
+			return []string{NoMatchDocIDSentinel}
 		}
-		return docIDs, false
+		return docIDs
 	}
 
-	return baseDocIDs, false
+	return baseDocIDs
 }
 
 func constrainDocIDs(baseDocIDs, filteredDocIDs []string) []string {
