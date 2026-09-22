@@ -2367,7 +2367,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, nil
 			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
-			return nil, fmt.Errorf("canvas invoke: %w", err)
+			return nil, canvasInvokeError(err)
 		}
 
 		// Persist the Agent answer for subsequent Agent prompts. The terminal
@@ -2908,6 +2908,18 @@ func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "[GraphRunError] no tasks to execute")
+}
+
+func canvasInvokeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "[GraphRunError] no tasks to execute") &&
+		strings.Contains(msg, "last completed nodes: [Switch:") {
+		return errors.New("canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
+	}
+	return fmt.Errorf("canvas invoke: %w", err)
 }
 
 // markRunSucceeded records the run as completed successfully via
