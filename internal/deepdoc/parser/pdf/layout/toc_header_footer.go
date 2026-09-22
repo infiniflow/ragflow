@@ -444,28 +444,17 @@ func computePageGaps(boxes []pdf.TextBox, indices []int, pageHeight float64) (ma
 }
 
 // classifyZone determines whether a box sits in a header or footer zone.
-//
-// The expanded bands (10%->14% top, 90%->86% bottom) normally require a
-// whitespace gap separating the candidate from body text. A box whose text is
-// an unambiguously decorated page number ("- 7 -", "[7]", "第 7 页") skips the
-// gap requirement: the decoration is deterministic evidence, and Word-derived
-// pages place footers a few points under body text with no gap to find. Bare
-// numbers do NOT skip it — only footnote guards distinguish them, and the
-// sequence track (see collectPageNumberCandidates) handles tight bare numbers.
-// A side effect: "X / Y" fraction-styled lines inside the expanded band can be
-// pulled into the footer zone; they are rare enough to accept.
 func classifyZone(b pdf.TextBox, pageHeight float64, gapAbove, gapBelow float64) string {
 	if b.Bottom <= pageHeight*headerZoneRatio {
 		return "header"
 	}
-	decorated := strictDecoratedPagePattern.MatchString(strings.TrimSpace(b.Text))
-	if b.Bottom <= pageHeight*headerMaxZoneRatio && (gapBelow >= minWhitespaceGapPt || decorated) {
+	if b.Bottom <= pageHeight*headerMaxZoneRatio && gapBelow >= minWhitespaceGapPt {
 		return "header"
 	}
 	if b.Top >= pageHeight*footerZoneRatio {
 		return "footer"
 	}
-	if b.Top >= pageHeight*footerMinZoneRatio && (gapAbove >= minWhitespaceGapPt || decorated) {
+	if b.Top >= pageHeight*footerMinZoneRatio && gapAbove >= minWhitespaceGapPt {
 		return "footer"
 	}
 	return ""
@@ -715,7 +704,7 @@ func findPageNumberSequenceDrops(cands []pageNumCand) []int {
 //     - Locality track (consecutive pages with stable Y) to remove chapter-varying headers.
 //  3. Tier 3: Adaptive Whitespace Gap. Automatically extends the candidate zone
 //     from 10% to up to 14% when separated from body content by >= 18pt of blank
-//     space (decorated page numbers skip the gap requirement).
+//     space.
 //  4. Sequence track: bare numeric / Roman-numeral boxes in wide margin bands
 //     are removed when they step by one across >= 3 consecutive pages at a
 //     stable Y, catching page numbers that sit too tight under body text for
