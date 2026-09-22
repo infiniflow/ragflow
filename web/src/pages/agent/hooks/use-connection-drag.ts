@@ -33,11 +33,19 @@ export const useConnectionDrag = (
   clearActiveDropdown: () => void,
   checkAndRemoveExistingPlaceholder: () => void,
   reactFlowInstance?: ReactFlowInstance<any, any>,
+  // Returns whether the "next step" menu offers at least one operator for the
+  // drag source. When it does not, the drag ends without a placeholder node or
+  // empty dropdown.
+  hasNextStepOperators?: (sourceNodeId: string) => boolean,
 ) => {
   // Reference for whether connection is established
   const isConnectedRef = useRef(false);
   // Reference for connection start parameters
   const connectionStartRef = useRef<ConnectionStartParams | null>(null);
+  // Source node of the connection drag whose dropdown is open. Kept separate
+  // from connectionStartRef because that ref is reset in onConnectEnd before
+  // the menu renders and needs the source to filter its operator list.
+  const dragSourceNodeIdRef = useRef<string>();
   // Reference to prevent immediate close
   const preventCloseRef = useRef(false);
   // Reference to track mouse position for click detection
@@ -62,6 +70,7 @@ export const useConnectionDrag = (
         nodeId: params.nodeId,
         handleId: params.handleId,
       };
+      dragSourceNodeIdRef.current = params.nodeId;
     } else {
       connectionStartRef.current = null;
     }
@@ -99,10 +108,20 @@ export const useConnectionDrag = (
           // Check and remove existing placeholder-node before creating new one
           checkAndRemoveExistingPlaceholder();
 
+          const sourceNodeId = connectionStartRef.current.nodeId;
+
+          // Nothing to offer from this source: end the drag without a
+          // placeholder node or an empty dropdown.
+          if (hasNextStepOperators && !hasNextStepOperators(sourceNodeId)) {
+            connectionStartRef.current = null;
+            mouseStartPosRef.current = null;
+            return;
+          }
+
           // Create placeholder node and establish connection
           const mockEvent = { clientX, clientY };
           const contextData = {
-            nodeId: connectionStartRef.current.nodeId,
+            nodeId: sourceNodeId,
             id: connectionStartRef.current.handleId,
             type: 'source' as const,
             position: Position.Right,
@@ -157,6 +176,7 @@ export const useConnectionDrag = (
       calculateDropdownPosition,
       setActiveDropdown,
       showModal,
+      hasNextStepOperators,
     ],
   );
 
@@ -207,7 +227,7 @@ export const useConnectionDrag = (
   }, [removePlaceholderNode, hideModal, clearActiveDropdown]);
 
   return {
-    nodeId: connectionStartRef.current?.nodeId,
+    nodeId: dragSourceNodeIdRef.current,
     onConnectStart,
     onConnectEnd,
     handleConnect,
