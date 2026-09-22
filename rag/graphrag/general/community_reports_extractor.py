@@ -8,27 +8,25 @@ Reference:
 """
 
 import asyncio
-import json
 import logging
+import json
 import re
-from collections.abc import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
-
 import networkx as nx
 import pandas as pd
 
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.misc_utils import env_flag
-from common.token_utils import num_tokens_from_string
-from rag.graphrag.checkpoints import community_checkpoint_key
 from rag.graphrag.general import leiden
 from rag.graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.leiden import add_community_info2graph
-from rag.graphrag.utils import chat_limiter, dict_has_keys_with_types, perform_variable_replacements
+from rag.graphrag.checkpoints import community_checkpoint_key
 from rag.llm.chat_model import Base as CompletionLLM
+from rag.graphrag.utils import perform_variable_replacements, dict_has_keys_with_types, chat_limiter
+from common.token_utils import num_tokens_from_string
 
 
 @dataclass
@@ -106,7 +104,7 @@ class CommunityReportsExtractor(Extractor):
 
             rela_list = []
             k = 0
-            for i in range(len(ents)):
+            for i in range(0, len(ents)):
                 if k >= 10000:
                     break
                 for j in range(i + 1, len(ents)):
@@ -125,7 +123,7 @@ class CommunityReportsExtractor(Extractor):
                 try:
                     timeout = 180 if enable_timeout_assertion else 1000000000
                     response = await asyncio.wait_for(self._async_chat(text, [{"role": "user", "content": "Output:"}], {}, task_id), timeout=timeout)
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     logging.warning("extract_community_report._async_chat timeout, skipping...")
                     return
                 except Exception as e:

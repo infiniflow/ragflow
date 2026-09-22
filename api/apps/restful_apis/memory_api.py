@@ -17,15 +17,14 @@ import logging
 import os
 import time
 
-from quart import g, request
-
-from api.apps import AUTH_API, current_user, login_required
-from api.apps.services import memory_api_service
-from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
-from api.utils.api_utils import get_error_argument_result, get_json_result, get_request_json, validate_request
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
+from quart import request, g
 from common.constants import RetCode
 from common.exceptions import ArgumentException, NotFoundException
+from api.apps import AUTH_API, login_required, current_user
+from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
+from api.apps.services import memory_api_service
+from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 
 
 @manager.route("/memories", methods=["POST"])  # noqa: F821

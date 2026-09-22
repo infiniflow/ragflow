@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 from abc import ABC
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from json.decoder import JSONDecodeError
 from typing import ClassVar
 from urllib.parse import urlparse
@@ -88,10 +88,11 @@ class Base(ABC):
         url = self._get_model_list_url()
         if not url:
             return None
-        async with aiohttp.ClientSession() as session, session.get(url, headers={"Authorization": f"Bearer {self._get_api_key()}"}) as resp:
-            if resp.status != 200:
-                return None
-            return await resp.json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"Authorization": f"Bearer {self._get_api_key()}"}) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
 
     def _format_model_list(self, raw_model_list):
         return raw_model_list
@@ -205,7 +206,9 @@ class VolcEngine(Base):
         for model in serving_model:
             model_types = []
 
-            if model.get("domain", "") == "Embedding" or set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
+            if model.get("domain", "") == "Embedding":
+                model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
                 model_types.append(LLMType.EMBEDDING.value)
             else:
                 modalities = model.get("modalities", {})
@@ -671,10 +674,11 @@ class Xiaomi(OpenAIAPICompatible):
         url = self._get_model_list_url()
         if not url:
             return None
-        async with aiohttp.ClientSession() as session, session.get(url, headers={"api-key": self._get_api_key()}) as resp:
-            if resp.status != 200:
-                return None
-            return await resp.json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"api-key": self._get_api_key()}) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
 
 
 class MWS(OpenAIAPICompatible):
@@ -751,22 +755,23 @@ class MWS(OpenAIAPICompatible):
         logging.info("mws_model_discovery_request", extra=log_context)
 
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session, session.get(url, headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
-                if response.status != 200:
-                    logging.warning(
-                        "mws_model_discovery_request_failed",
-                        extra={
-                            **log_context,
-                            "failure_stage": "http_response",
-                            "http_status": response.status,
-                        },
-                    )
-                    logging.info(
-                        "mws_model_discovery_completed",
-                        extra={**log_context, "result_count": 0},
-                    )
-                    return []
-                raw_model_list = await response.json()
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                async with session.get(url, headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
+                    if response.status != 200:
+                        logging.warning(
+                            "mws_model_discovery_request_failed",
+                            extra={
+                                **log_context,
+                                "failure_stage": "http_response",
+                                "http_status": response.status,
+                            },
+                        )
+                        logging.info(
+                            "mws_model_discovery_completed",
+                            extra={**log_context, "result_count": 0},
+                        )
+                        return []
+                    raw_model_list = await response.json()
         except Exception as error:
             logging.warning(
                 "mws_model_discovery_request_failed",
@@ -875,7 +880,7 @@ class NVIDIA(OpenAIAPICompatible):
         if not deprecation:
             return True
         try:
-            cutoff = datetime.strptime(deprecation, "%m/%d/%Y").replace(tzinfo=UTC)
+            cutoff = datetime.strptime(deprecation, "%m/%d/%Y").replace(tzinfo=timezone.utc)
         except (TypeError, ValueError):
             return False
         return cutoff.date() > now.date()
@@ -886,7 +891,7 @@ class NVIDIA(OpenAIAPICompatible):
         if resources is None:
             return []
 
-        now = now or datetime.now(UTC)
+        now = now or datetime.now(timezone.utc)
         active_endpoints = cls._active_endpoint_keys(resources, now)
 
         filtered = []
@@ -953,7 +958,7 @@ class NVIDIA(OpenAIAPICompatible):
         resources = self._catalog_resources(catalog_pages)
         if resources is None:
             raise ValueError("NVIDIA endpoint catalog response is incomplete")
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         filtered_models = self._filter_hosted_models(formatted_models, catalog_pages, now)
         raw_model_items = raw_models.get("data") if isinstance(raw_models, dict) else raw_models
         raw_model_count = len(raw_model_items) if isinstance(raw_model_items, list) else 0
@@ -1364,11 +1369,12 @@ class AIMLAPI(Base):
             logging.warning("[aimlapi.com] Model list skipped: no base URL configured")
             return None
         headers = {"Authorization": f"Bearer {self._get_api_key()}", **attribution_headers()}
-        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session, session.get(url, headers=headers) as resp:
-            if resp.status != 200:
-                logging.warning("[aimlapi.com] Model list request to %s failed with HTTP %s", url, resp.status)
-                return None
-            return await resp.json()
+        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    logging.warning("[aimlapi.com] Model list request to %s failed with HTTP %s", url, resp.status)
+                    return None
+                return await resp.json()
 
     def _format_model_list(self, raw_model_list):
         models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list

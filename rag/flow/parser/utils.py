@@ -18,11 +18,12 @@ from io import BytesIO
 
 from bs4 import BeautifulSoup
 from docx import Document
-from api.db.services.llm_service import LLMBundle
+
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type,
     resolve_model_config,
 )
+from api.db.services.llm_service import LLMBundle
 from common.constants import LLMType
 from deepdoc.parser.figure_parser import VisionFigureParser
 from rag.nlp import is_english, random_choices, remove_contents_table
@@ -82,7 +83,7 @@ def extract_word_outlines(filename, binary=None):
         if not text:
             continue
         style_name = paragraph.style.name if paragraph.style else ""
-        match = re.search(r"Heading\s*(\d+)", style_name, re.I)
+        match = re.search(r"Heading\s*(\d+)", style_name, re.IGNORECASE)
         if not match:
             continue
         outlines.append((text, int(match.group(1)) - 1, None))

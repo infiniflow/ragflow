@@ -167,54 +167,53 @@ def supplement_deepdoc_bboxes_with_embedded_images(
     merged = list(bboxes or [])
     represented = _collect_represented_embedded_regions(merged)
     supplemented = []
-    with _pdfplumber_shared_lock():
-        with pdfplumber.open(io.BytesIO(blob)) as pdf:
-            for page_number, page in enumerate(pdf.pages, start=1):
-                if not (from_page + 1 <= page_number <= to_page):
-                    continue
-                if page.images:
-                    for im in page.images:
-                        x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
-                        if x1 <= x0 or bottom <= top:
-                            continue
-                        if (x1 - x0) < 11 or (bottom - top) < 11:
-                            continue
-                        region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
-                        if region in represented:
-                            continue
-                        represented.add(region)
-                        cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
-                        supplemented.append(
-                            {
-                                "page_number": page_number,
-                                "x0": float(x0),
-                                "x1": float(x1),
-                                "top": float(top),
-                                "bottom": float(bottom),
-                                "layout_type": "figure",
-                                "text": "",
-                                "image": cropped,
-                                "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
-                                "_embedded_supplement": True,
-                            }
-                        )
-                elif not page.chars:
-                    pil = page.to_image(resolution=72 * zoom, antialias=True).original
-                    width, height = pil.size
-                    region = _embedded_image_region_key(page_number, 0, 0, width, height)
+    with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+        for page_number, page in enumerate(pdf.pages, start=1):
+            if not (from_page + 1 <= page_number <= to_page):
+                continue
+            if page.images:
+                for im in page.images:
+                    x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
+                    if x1 <= x0 or bottom <= top:
+                        continue
+                    if (x1 - x0) < 11 or (bottom - top) < 11:
+                        continue
+                    region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
                     if region in represented:
                         continue
                     represented.add(region)
+                    cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
                     supplemented.append(
                         {
                             "page_number": page_number,
+                            "x0": float(x0),
+                            "x1": float(x1),
+                            "top": float(top),
+                            "bottom": float(bottom),
                             "layout_type": "figure",
                             "text": "",
-                            "image": pil,
-                            "positions": [[page_number, 0, width, 0, height]],
+                            "image": cropped,
+                            "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
                             "_embedded_supplement": True,
                         }
                     )
+            elif not page.chars:
+                pil = page.to_image(resolution=72 * zoom, antialias=True).original
+                width, height = pil.size
+                region = _embedded_image_region_key(page_number, 0, 0, width, height)
+                if region in represented:
+                    continue
+                represented.add(region)
+                supplemented.append(
+                    {
+                        "page_number": page_number,
+                        "layout_type": "figure",
+                        "text": "",
+                        "image": pil,
+                        "positions": [[page_number, 0, width, 0, height]],
+                        "_embedded_supplement": True,
+                    }
+                )
 
     if not supplemented:
         return merged
@@ -354,9 +353,8 @@ def _fetch_source_blob(from_upstream, canvas):
 
 
 def _load_pdf_page_images(blob, zoom=PDF_PREVIEW_ZOOM):
-    with _pdfplumber_shared_lock():
-        with pdfplumber.open(io.BytesIO(blob)) as pdf:
-            return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]
+    with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+        return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]
 
 
 def _crop_pdf_preview(page_images, positions, zoom=PDF_PREVIEW_ZOOM):

@@ -7,7 +7,7 @@ import logging
 import time
 import zipfile
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -73,7 +73,7 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.size_threshold = BLOB_STORAGE_SIZE_THRESHOLD
 
     @classmethod
-    def build_connector(cls, config: dict[str, Any]) -> ZoteroConnector:
+    def build_connector(cls, config: dict[str, Any]) -> "ZoteroConnector":
         credentials = config.get("credentials") or {}
         user_id = (config.get("zotero_user_id") or credentials.get("zotero_user_id") or "").strip()
         connector = cls(
@@ -124,8 +124,8 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         yield from self._yield_documents()
 
     def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> GenerateDocumentsOutput:
-        start_dt = datetime.fromtimestamp(start, tz=UTC)
-        end_dt = datetime.fromtimestamp(end, tz=UTC)
+        start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
+        end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
         yield from self._yield_documents(start_dt=start_dt, end_dt=end_dt)
 
     def retrieve_all_slim_docs_perm_sync(self, callback: Any = None) -> GenerateSlimDocumentOutput:
@@ -186,7 +186,7 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _document_id(self, attachment_key: str) -> str:
         return f"zotero:{self.user_id}:{attachment_key}"
 
-    def _iter_pdf_attachments(self) -> Generator[dict[str, Any]]:
+    def _iter_pdf_attachments(self) -> Generator[dict[str, Any], None, None]:
         start = 0
         while True:
             items = self._list_attachment_items(start=start)
@@ -349,9 +349,9 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     @staticmethod
     def _parse_time(value: str | None) -> datetime:
         if not value:
-            return datetime.now(UTC)
+            return datetime.now(timezone.utc)
         normalized = value.replace("Z", "+00:00")
         try:
-            return datetime.fromisoformat(normalized).astimezone(UTC)
+            return datetime.fromisoformat(normalized).astimezone(timezone.utc)
         except ValueError:
-            return datetime.now(UTC)
+            return datetime.now(timezone.utc)

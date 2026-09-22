@@ -29,13 +29,13 @@ from common.constants import FileSource
 from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
 from .azure_blob_connector import AzureBlobConnector
-from .azure_devops.connector import AzureDevOpsConnector
 from .bigquery_connector import BigQueryConnector
+from .azure_devops.connector import AzureDevOpsConnector
 from .bitbucket.connector import BitbucketConnector
 from .blob_connector import BlobStorageConnector
 from .box_connector import BoxConnector
-from .config import BlobType, DocumentSource
 from .confluence_connector import ConfluenceConnector
+from .config import BlobType, DocumentSource
 from .dingtalk_ai_table_connector import DingTalkAITableConnector
 from .discord_connector import DiscordConnector
 from .dropbox_connector import DropboxConnector

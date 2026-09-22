@@ -50,9 +50,7 @@ def test_supplement_merges_text_bboxes_with_embedded_images(monkeypatch):
     fake_page = SimpleNamespace(
         images=[{"x0": 0, "top": 0, "x1": 12, "bottom": 12}],
         chars=[object()],
-        crop=lambda rect: SimpleNamespace(
-            to_image=lambda resolution, antialias: SimpleNamespace(original=object())
-        ),
+        crop=lambda rect: SimpleNamespace(to_image=lambda resolution, antialias: SimpleNamespace(original=object())),
     )
     fake_pdf = SimpleNamespace(pages=[fake_page])
 
@@ -98,9 +96,7 @@ def test_supplement_appends_only_missing_embedded_images(monkeypatch):
             {"x0": 20, "top": 0, "x1": 32, "bottom": 12},
         ],
         chars=[object()],
-        crop=lambda rect: SimpleNamespace(
-            to_image=lambda resolution, antialias: SimpleNamespace(original=object())
-        ),
+        crop=lambda rect: SimpleNamespace(to_image=lambda resolution, antialias: SimpleNamespace(original=object())),
     )
     fake_pdf = SimpleNamespace(pages=[fake_page])
 

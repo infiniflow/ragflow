@@ -13,69 +13,71 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
+from io import BytesIO
+from datetime import datetime
 import logging
+import json
 import os
 import re
-from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 
+from quart import request, make_response, send_file
 from peewee import OperationalError
 from pydantic import ValidationError
-from quart import make_response, request, send_file
 
-from api.apps import AUTH_API, AUTH_BETA, AUTH_JWT, current_user, login_required
+from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
+from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import (
+    validate_document_update_fields,
     map_doc_keys,
     map_doc_keys_with_run_status,
-    reset_document_for_reparse,
-    update_chunk_method,
     update_document_name_only,
+    update_chunk_method,
     update_document_status_only,
-    validate_document_update_fields,
+    reset_document_for_reparse,
 )
-from api.common.check_team_permission import check_kb_team_permission
-from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
-from api.db.db_models import DB, API4Conversation, Task
+from api.db.db_models import API4Conversation, DB
 from api.db.services import duplicate_name
-from api.db.services.canvas_service import UserCanvasService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_counter_service import release_reparse_counters
+from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.canvas_service import UserCanvasService
+from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import (
-    add_tenant_id_to_kwargs,
-    check_duplicate_ids,
     construct_json_result,
     get_data_error_result,
-    get_error_argument_result,
     get_error_data_result,
-    get_json_result,
-    get_request_json,
     get_result,
+    get_json_result,
     server_error_response,
+    add_tenant_id_to_kwargs,
+    get_request_json,
+    get_error_argument_result,
+    check_duplicate_ids,
     strip_graphrag_raptor_config,
 )
-from api.utils.file_response import apply_preview_file_response_headers
-from api.utils.file_utils import filename_type, thumbnail
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
-    DeleteDocumentReq,
     UpdateDocumentReq,
     format_validation_error_message,
     validate_and_parse_json_request,
+    DeleteDocumentReq,
 )
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers, html2pdf, is_valid_url
+
 from common import settings
-from common.constants import SANDBOX_ARTIFACT_BUCKET, ParserType, RetCode, TaskStatus
+from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.llm_request_context import normalize_llm_user_id
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
+from api.utils.file_utils import filename_type, thumbnail
+from api.utils.file_response import apply_preview_file_response_headers
+from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 from rag.utils.base64_image import parse_storage_composite_id
@@ -2123,7 +2125,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
                     continue
             result[doc_id] = {"status": status}
         except Exception as e:
-            result[doc_id] = {"error": f"Internal server error: {e!s}"}
+            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
             has_error = True
 
     if has_error:

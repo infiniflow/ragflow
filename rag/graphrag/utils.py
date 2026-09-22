@@ -18,23 +18,22 @@ import os
 import re
 import time
 from collections import defaultdict
-from collections.abc import Callable
 from copy import deepcopy
 from hashlib import md5
-from typing import Any
+from typing import Any, Callable, Set, Tuple
 
 import networkx as nx
 import numpy as np
 import xxhash
 from networkx.readwrite import json_graph
 
-from common import settings
-from common.asyncio_utils import LoopLocalSemaphore
-from common.connection_utils import timeout
-from common.doc_store.doc_store_base import OrderByExpr
 from common.misc_utils import get_uuid
+from common.connection_utils import timeout
+from common.asyncio_utils import LoopLocalSemaphore
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
+from common import settings
+from common.doc_store.doc_store_base import OrderByExpr
 
 GRAPH_FIELD_SEP = "<SEP>"
 
@@ -89,7 +88,7 @@ async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, labe
                     if result:
                         raise Exception(f"Insert chunk error: {result}, please check log file and Elasticsearch/Infinity status!")
                     break
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     if attempt < max_retries - 1:
                         wait = 2**attempt
                         logging.warning(f"Insert batch at offset {offset}/{total} attempt {attempt + 1} timed out, retrying in {wait}s")
@@ -117,10 +116,10 @@ async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, labe
 
 @dataclasses.dataclass
 class GraphChange:
-    removed_nodes: set[str] = dataclasses.field(default_factory=set)
-    added_updated_nodes: set[str] = dataclasses.field(default_factory=set)
-    removed_edges: set[tuple[str, str]] = dataclasses.field(default_factory=set)
-    added_updated_edges: set[tuple[str, str]] = dataclasses.field(default_factory=set)
+    removed_nodes: Set[str] = dataclasses.field(default_factory=set)
+    added_updated_nodes: Set[str] = dataclasses.field(default_factory=set)
+    removed_edges: Set[Tuple[str, str]] = dataclasses.field(default_factory=set)
+    added_updated_edges: Set[Tuple[str, str]] = dataclasses.field(default_factory=set)
 
 
 def perform_variable_replacements(input: str, history: list[dict] | None = None, variables: dict | None = None) -> str:

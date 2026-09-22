@@ -52,6 +52,7 @@ from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parse
 from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
+from rag.app.pdf_naive_vision import enhance_naive_deepdoc_pdf_media, naive_deepdoc_vision_available
 from rag.nlp import (
     DEFAULT_DELIMITER,
     append_context2table_image4pdf,
@@ -67,7 +68,6 @@ from rag.nlp import (
     tokenize_chunks_with_positions,
     tokenize_table,
 )
-from rag.app.pdf_naive_vision import enhance_naive_deepdoc_pdf_media, naive_deepdoc_vision_available
 from rag.utils.file_utils import extract_embed_file, extract_html, extract_links_from_docx, extract_links_from_pdf
 
 

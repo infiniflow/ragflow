@@ -17,21 +17,21 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from configs import INVALID_API_TOKEN
-from libs.auth import RAGFlowWebApiAuth
 from test_common import (
-    bulk_upload_documents,
-    delete_document,
     document_change_status,
     document_filter,
     document_infos,
     document_metadata_summary,
     document_metadata_update,
-    document_update,
     document_update_metadata_setting,
+    bulk_upload_documents,
+    delete_document,
+    document_update,
 )
 
 from common.constants import RetCode
+from configs import INVALID_API_TOKEN
+from libs.auth import RAGFlowWebApiAuth
 
 INVALID_AUTH_CASES = [
     (None, 401, "Unauthorized"),

@@ -266,7 +266,7 @@ async def import_multiple() -> Response:
     results = []
     try:
         for server_name, config in servers.items():
-            if not all(key in config for key in ("type", "url")):
+            if not all(key in config for key in {"type", "url"}):
                 results.append({"server": server_name, "success": False, "message": "Missing required fields (type or url)"})
                 continue
 

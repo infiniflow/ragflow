@@ -13,36 +13,40 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
-import logging
 import os
-import re
+import json
 import secrets
+import logging
+import re
 from datetime import date
 
-import memory.utils.es_conn as memory_es_conn
-import memory.utils.gaussdb_conn as memory_gaussdb_conn
-import memory.utils.infinity_conn as memory_infinity_conn
-import memory.utils.ob_conn as memory_ob_conn
+from common.constants import RAG_FLOW_SERVICE_NAME
+from common.file_utils import get_project_base_directory
+from common.config_utils import get_base_config, decrypt_database_config
+from common.misc_utils import env_flag, pip_install_torch
+from common.constants import SVR_QUEUE_NAME, Storage
+
 import rag.utils
 import rag.utils.es_conn
-import rag.utils.gaussdb_conn
 import rag.utils.infinity_conn
 import rag.utils.ob_conn
 import rag.utils.opensearch_conn
-from common.config_utils import decrypt_database_config, get_base_config
-from common.constants import RAG_FLOW_SERVICE_NAME, SVR_QUEUE_NAME, Storage
-from common.file_utils import get_project_base_directory
-from common.misc_utils import env_flag, pip_install_torch
-from rag.nlp import search
+import rag.utils.gaussdb_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
 from rag.utils.gcs_conn import RAGFlowGCS
 from rag.utils.minio_conn import RAGFlowMinio
 from rag.utils.opendal_conn import OpenDALStorage
-from rag.utils.oss_conn import RAGFlowOSS
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.s3_conn import RAGFlowS3
+from rag.utils.oss_conn import RAGFlowOSS
+
+from rag.nlp import search
+
+import memory.utils.es_conn as memory_es_conn
+import memory.utils.infinity_conn as memory_infinity_conn
+import memory.utils.ob_conn as memory_ob_conn
+import memory.utils.gaussdb_conn as memory_gaussdb_conn
 
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 

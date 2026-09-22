@@ -25,8 +25,9 @@ import subprocess
 import sys
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin
+
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 _LONG_TIME_THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("LONG_TIME_THREAD_POOL_WORKERS", "1")), thread_name_prefix="long-time")
@@ -145,7 +146,7 @@ async def download_img(url):
 
         try:
             kind, payload = await asyncio.wait_for(_stream_one_get(), timeout=request_timeout)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             logger.warning(
                 "download_img total wall-clock timeout: redirect_hops=%s timeout=%s",
                 redirect_hops,

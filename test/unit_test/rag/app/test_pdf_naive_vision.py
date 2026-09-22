@@ -110,4 +110,3 @@ def test_merge_updates_existing_table_figure_by_position():
     _sections, tables = merge_vlm_enhanced_bboxes_into_naive_pdf([("body", "@@1\t0\t0\t0\t0##")], tables, bboxes, pdf_parser)
     assert len(tables) == 1
     assert tables[0][0][1] == ["VLM caption"]
-

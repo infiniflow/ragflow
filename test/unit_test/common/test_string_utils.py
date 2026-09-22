@@ -15,8 +15,7 @@
 #
 
 import pytest
-
-from common.string_utils import clean_markdown_block, remove_redundant_spaces
+from common.string_utils import remove_redundant_spaces, clean_markdown_block
 
 
 class TestRemoveRedundantSpaces:

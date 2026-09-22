@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 from rag.flow.parser.pdf_chunk_metadata import (
-    apply_document_vertical_coords as _apply_document_vertical_coords,
     apply_document_vertical_coords_to_bboxes,
 )
 

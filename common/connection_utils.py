@@ -14,23 +14,20 @@
 #  limitations under the License.
 #
 
-import asyncio
 import queue
 import threading
-from collections.abc import Callable, Coroutine
+from typing import Any, Callable, Coroutine, Optional, Type, Union
+import asyncio
 from functools import wraps
-from typing import Any, Union
-
-from quart import jsonify, make_response
-
+from quart import make_response, jsonify
 from common.constants import RetCode
 from common.misc_utils import env_flag
 
-TimeoutException = Union[type[BaseException], BaseException]
+TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 
 
-def timeout(seconds: float | str = None, attempts: int = 2, *, exception: TimeoutException | None = None, on_timeout: OnTimeoutCallback | None = None):
+def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
     if isinstance(seconds, str):
         seconds = float(seconds)
 
@@ -74,7 +71,7 @@ def timeout(seconds: float | str = None, attempts: int = 2, *, exception: Timeou
                         return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
                     else:
                         return await func(*args, **kwargs)
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     if a < attempts - 1:
                         continue
                     if on_timeout is not None:

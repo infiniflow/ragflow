@@ -14,25 +14,26 @@
 #  limitations under the License.
 #
 import asyncio
-import itertools
 import logging
+import itertools
 import re
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import networkx as nx
+
 from rapidfuzz.distance import Levenshtein
 
+from rag.graphrag.general.extractor import Extractor
+from rag.nlp import is_english
+from rag.graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
+from rag.graphrag.checkpoints import resolution_checkpoint_key
+from rag.llm.chat_model import Base as CompletionLLM
+from rag.graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.misc_utils import env_flag
-from rag.graphrag.checkpoints import resolution_checkpoint_key
-from rag.graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
-from rag.graphrag.general.extractor import Extractor
-from rag.graphrag.utils import GraphChange, chat_limiter, perform_variable_replacements
-from rag.llm.chat_model import Base as CompletionLLM
-from rag.nlp import is_english
+
 
 DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_ENTITY_INDEX_DELIMITER = "<|>"
@@ -136,7 +137,7 @@ class EntityResolution(Extractor):
                         remain_candidates_to_resolve -= len(candidate_batch[1])
                         callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} remain.")
 
-                    except TimeoutError:
+                    except asyncio.TimeoutError:
                         logging.warning(f"Timeout resolving {candidate_batch}, skipping...")
                         remain_candidates_to_resolve -= len(candidate_batch[1])
                         callback(msg=f"Failed to resolve {len(candidate_batch[1])} pairs due to timeout, skipped. {remain_candidates_to_resolve} remain.")
@@ -220,7 +221,7 @@ class EntityResolution(Extractor):
                     timeout=timeout_seconds,
                 )
 
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 logging.warning("_resolve_candidate._async_chat timeout, skipping...")
                 return None
             except Exception as e:

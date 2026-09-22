@@ -22,18 +22,18 @@ import re
 import time
 from abc import ABC
 from copy import deepcopy
-from enum import StrEnum
-from json.decoder import JSONDecodeError
 from urllib.parse import urljoin
 
 import aiohttp
 import json_repair
+from json.decoder import JSONDecodeError
 import litellm
 from openai import AsyncOpenAI, OpenAI
+from enum import StrEnum
 
 from common.aimlapi_utils import attribution_headers
-from common.llm_request_context import current_llm_user
 from common.misc_utils import thread_pool_exec
+from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
@@ -495,7 +495,7 @@ class Base(ABC):
             time.sleep(delay)
             return None
 
-        msg = f"{ERROR_PREFIX}: {error_code} - {e!s}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
         logging.error(f"sync base giving up: {msg}")
         return msg
 
@@ -511,7 +511,7 @@ class Base(ABC):
             await asyncio.sleep(delay)
             return None
 
-        msg = f"{ERROR_PREFIX}: {error_code} - {e!s}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
         logging.error(f"async base giving up: {msg}")
         return msg
 
@@ -1337,14 +1337,15 @@ class MWSChat(Base):
     async def _post_json(self, body):
         """Send a non-streaming MWS chat request and decode its JSON response."""
         timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
-            self.chat_url,
-            headers=self.headers,
-            json=body,
-        ) as response:
-            if response.status != 200:
-                raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
-            return await response.json()
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+                return await response.json()
 
     async def _async_chat(self, history, gen_conf, **kwargs):
         """Return one complete MWS chat answer together with its token usage."""
@@ -1371,41 +1372,42 @@ class MWSChat(Base):
         estimated_tokens = 0
         reported_tokens = 0
 
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
-            self.chat_url,
-            headers=self.headers,
-            json=body,
-        ) as response:
-            if response.status != 200:
-                raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
 
-            async for raw_line in response.content:
-                line = raw_line.decode("utf-8").strip()
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if data == "[DONE]":
-                    break
-                event = json.loads(data)
-                usage = usage_from_response(event)
-                if usage["total_tokens"]:
-                    self.last_usage = usage
-                    reported_tokens = usage["total_tokens"]
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    event = json.loads(data)
+                    usage = usage_from_response(event)
+                    if usage["total_tokens"]:
+                        self.last_usage = usage
+                        reported_tokens = usage["total_tokens"]
 
-                choices = event.get("choices")
-                if not isinstance(choices, list) or not choices:
-                    continue
-                choice = choices[0]
-                delta = choice.get("delta") if isinstance(choice, dict) else None
-                content = delta.get("content") if isinstance(delta, dict) else None
-                if not isinstance(content, str) or not content:
-                    continue
-                if choice.get("finish_reason") == "length":
-                    content = self._length_stop(content)
-                if pending_content is not None:
-                    yield pending_content, 0
-                pending_content = content
-                estimated_tokens += num_tokens_from_string(content)
+                    choices = event.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") if isinstance(choice, dict) else None
+                    content = delta.get("content") if isinstance(delta, dict) else None
+                    if not isinstance(content, str) or not content:
+                        continue
+                    if choice.get("finish_reason") == "length":
+                        content = self._length_stop(content)
+                    if pending_content is not None:
+                        yield pending_content, 0
+                    pending_content = content
+                    estimated_tokens += num_tokens_from_string(content)
 
         yield pending_content or "", reported_tokens or estimated_tokens
 

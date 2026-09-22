@@ -15,30 +15,28 @@
 import asyncio
 import io
 import json
+import logging
 import os
 import random
 import re
 from functools import partial
 
-import logging
-
 import numpy as np
 from PIL import Image
 
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
-from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
-    resolve_model_config,
     get_tenant_default_model_by_type,
+    resolve_model_config,
 )
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
+from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
-from rag.nlp.delim import DEFAULT_DELIMITER
 from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
@@ -60,8 +58,8 @@ from rag.flow.parser.schema import ParserFromUpstream
 from rag.flow.parser.spreadsheet_positions import TCADP_POSITION_TAG_RE, tcadp_spreadsheet_json_items
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
-    extract_word_outlines,
     extract_docx_header_footer_texts,
+    extract_word_outlines,
     remove_header_footer_docx_sections,
     remove_header_footer_html_blob,
     remove_toc,
@@ -69,6 +67,7 @@ from rag.flow.parser.utils import (
     remove_toc_word,
 )
 from rag.llm.cv_model import Base as VLM
+from rag.nlp.delim import DEFAULT_DELIMITER
 from rag.utils.base64_image import image2id
 
 # Row ceiling passed to ``ExcelParser.html`` for a spreadsheet sheet. It is
@@ -756,7 +755,7 @@ class Parser(ProcessBase):
             has_layout = bool(raw_layout)
             layout = re.sub(r"\s+", " ", raw_layout) if has_layout else "text"
             b["layout_type"] = layout
-            if conf.get("remove_header_footer") and re.search(r"(header|footer|number)", raw_layout, re.I):
+            if conf.get("remove_header_footer") and re.search(r"(header|footer|number)", raw_layout, re.IGNORECASE):
                 continue
             if flatten_media_to_text:
                 b["doc_type_kwd"] = "text"
@@ -1434,7 +1433,7 @@ class Parser(ProcessBase):
         try:
             from_upstream = ParserFromUpstream.model_validate(kwargs)
         except Exception as e:
-            self.set_output("_ERROR", f"Input error: {str(e)}")
+            self.set_output("_ERROR", f"Input error: {e!s}")
             return
 
         name = from_upstream.name
