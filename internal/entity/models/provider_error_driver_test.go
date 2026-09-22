@@ -20,6 +20,9 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -115,5 +118,49 @@ func TestWrapProviderChatErrors_NewInstanceStaysTyped(t *testing.T) {
 	_, err := derived.ChatWithMessages(context.Background(), "m", nil, nil, nil, nil)
 	if _, ok := common.AsLLMError(err); !ok {
 		t.Errorf("derived copy lost typing: %v", err)
+	}
+}
+
+// TestRegisteredProviderChatErrorIsTyped exercises the full production
+// construction path — InitProviderManager registration → GetPreconfiguredDriver
+// → chat against a server that rejects the call — so the classification is
+// proven on real drivers, not only via hand-built stub errors in component
+// tests.
+func TestRegisteredProviderChatErrorIsTyped(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":{"message":"Insufficient Balance"}}`))
+	}))
+	defer server.Close()
+
+	dir, restore := setupProviderTestDir(t, "deepseek.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+	saved := providerManager
+	defer func() { providerManager = saved }()
+
+	driver, err := GetPreconfiguredDriver("deepseek", server.URL)
+	if err != nil {
+		t.Fatalf("GetPreconfiguredDriver: %v", err)
+	}
+	apiKey := "sk-test"
+	_, err = driver.ChatWithMessages(context.Background(), "deepseek-chat",
+		[]Message{{Role: "user", Content: "hi"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, nil)
+	if err == nil {
+		t.Fatal("expected chat failure against 402 server")
+	}
+	le, ok := common.AsLLMError(err)
+	if !ok {
+		t.Fatalf("registered-driver chat error not typed: %v", err)
+	}
+	if le.Kind != common.LLMErrorProvider || le.StatusCode != 402 {
+		t.Errorf("classification = %+v, want kind=provider status=402", le)
+	}
+	msg := le.UserMessage()
+	if !strings.Contains(msg, "not RAGFlow") || !strings.Contains(msg, "Insufficient Balance") {
+		t.Errorf("UserMessage must attribute to the model service and keep the reason: %s", msg)
 	}
 }
