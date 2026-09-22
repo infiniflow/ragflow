@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rag.llm.chat_model import Base
+from rag.llm.chat_model import Base, _merge_tool_call_delta
 
 pytestmark = pytest.mark.p1
 
@@ -89,6 +89,27 @@ def _model():
     model.verbose_tool_use = True
     model.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     return model
+
+
+def test_tool_call_delta_fills_name_from_later_chunk():
+    calls = {}
+    first = SimpleNamespace(
+        index=1,
+        id="call-1",
+        function=SimpleNamespace(name=None, arguments='{"query":'),
+    )
+    second = SimpleNamespace(
+        index=1,
+        id=None,
+        function=SimpleNamespace(name="search_archa_data", arguments='"Nesto"}'),
+    )
+
+    _merge_tool_call_delta(calls, first)
+    _merge_tool_call_delta(calls, second)
+
+    assert calls[1].id == "call-1"
+    assert calls[1].function.name == "search_archa_data"
+    assert calls[1].function.arguments == '{"query":"Nesto"}'
 
 
 def test_verbose_tool_use_serializes_exception_as_text():

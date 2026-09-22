@@ -76,6 +76,21 @@ LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小�
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
+def _merge_tool_call_delta(tool_calls, tool_call):
+    index = tool_call.index
+    if index not in tool_calls:
+        tool_call.function.arguments = tool_call.function.arguments or ""
+        tool_calls[index] = tool_call
+        return
+
+    current = tool_calls[index]
+    if not current.id and tool_call.id:
+        current.id = tool_call.id
+    if not current.function.name and tool_call.function.name:
+        current.function.name = tool_call.function.name
+    current.function.arguments += tool_call.function.arguments or ""
+
+
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
 # also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
@@ -788,13 +803,7 @@ class Base(ABC):
 
                         if hasattr(delta, "tool_calls") and delta.tool_calls:
                             for tool_call in delta.tool_calls:
-                                index = tool_call.index
-                                if index not in final_tool_calls:
-                                    if not tool_call.function.arguments:
-                                        tool_call.function.arguments = ""
-                                    final_tool_calls[index] = tool_call
-                                else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                                _merge_tool_call_delta(final_tool_calls, tool_call)
                             continue
 
                         if not hasattr(delta, "content") or delta.content is None:
@@ -856,7 +865,12 @@ class Base(ABC):
                             logging.exception(f"Tool call failed: {tc}")
                             return tc, name, {}, None, e
 
-                    tcs = list(final_tool_calls.values())
+                    tcs = [tc for tc in final_tool_calls.values() if tc.function.name]
+                    if not tcs:
+                        if answer:
+                            yield total_tokens
+                            return
+                        continue
                     logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
@@ -2749,13 +2763,7 @@ class LiteLLMBase(ABC):
 
                         if hasattr(delta, "tool_calls") and delta.tool_calls:
                             for tool_call in delta.tool_calls:
-                                index = tool_call.index
-                                if index not in final_tool_calls:
-                                    if not tool_call.function.arguments:
-                                        tool_call.function.arguments = ""
-                                    final_tool_calls[index] = tool_call
-                                else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                                _merge_tool_call_delta(final_tool_calls, tool_call)
                             continue
 
                         if not hasattr(delta, "content") or delta.content is None:
@@ -2835,7 +2843,12 @@ class LiteLLMBase(ABC):
                             logging.exception(f"Tool call failed: {tc}")
                             return tc, name, {}, None, e
 
-                    tcs = list(final_tool_calls.values())
+                    tcs = [tc for tc in final_tool_calls.values() if tc.function.name]
+                    if not tcs:
+                        if answer:
+                            yield total_tokens
+                            return
+                        continue
                     logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
