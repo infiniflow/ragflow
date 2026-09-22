@@ -346,10 +346,11 @@ func (o *OSSStorage) BucketExists(ctx context.Context, bucket string) bool {
 
 // RemoveBucket removes a bucket and all its objects
 func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
-	actualBucket := bucket
 	if o.bucket != "" {
-		actualBucket = o.bucket
+		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
 	}
+
+	actualBucket := bucket
 
 	// Check if bucket exists
 	if !o.BucketExists(ctx, actualBucket) {

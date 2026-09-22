@@ -126,6 +126,14 @@ func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.
 		}
 	}
 
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage is not configured for folder %s", folder.ID)
+	}
+	if err := storageImpl.RemoveBucket(ctx, folder.ID); err != nil {
+		return fmt.Errorf("failed to remove bucket for folder %s: %w", folder.ID, err)
+	}
+
 	// Delete the folder itself
 	if err = s.fileDAO.Delete(ctx, dao.DB, folder.ID); err != nil {
 		return err
