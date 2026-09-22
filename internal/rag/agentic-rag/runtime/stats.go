@@ -56,7 +56,6 @@ var phaseOrder = []string{
 	"direct",
 	"orchestrator",
 	"claim_research",
-	"sufficiency",
 	"grounded",
 	"finalize",
 }

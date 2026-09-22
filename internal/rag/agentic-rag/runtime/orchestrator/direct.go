@@ -14,28 +14,21 @@
 //  limitations under the License.
 //
 
-// Package orchestrator holds the top-level pipeline stages that sit above the
-// action session: the Sufficient Context Agent (SCA) review and the gap→query
-// rewriter.
+// Package orchestrator holds the two shapes the graph still shares with what used to be the
+// orchestrator stage: JSONModel, the seam the graph's own model satisfies, and MissingPiece, the
+// gap a round's record still yields.
 //
-// Covers the Sufficient Context Agent (SCA) review and the gap→query rewriter.
+// The stage itself is gone — the SCA (Sufficient Context Agent) review, the sufficiency round and
+// the gap→query rewriter were removed with it (see the note in query_rewriter.go), leaving the
+// vocabulary those call sites still need.
 //
 // The low-mode direct search deliberately has no counterpart in this package: its Go
-// implementation is runDirect
-// (agentic_rag.go, called from the low graph's direct_search node), the low graph
-// node's body, because that step needs the full RAGTools config rather than a
-// runtime-level dependency bundle. One implementation only; its contract is
-// pinned by TestBuildLowGraphRunsFormalizeThenDirectSearch.
+// implementation is runDirect (agentic_rag.go, called from the low graph's direct_search node),
+// because that step needs the full RAGTools config rather than a runtime-level dependency bundle.
+// One implementation only; its contract is pinned by TestBuildLowGraphRunsFormalizeThenDirectSearch.
 package orchestrator
 
-import (
-	"context"
-	"fmt"
-
-	"ragflow/internal/common"
-)
-
-var _LOG = common.StdLogger()
+import "context"
 
 // JSONModel generates one JSON object from a rendered prompt.
 //
@@ -44,5 +37,3 @@ var _LOG = common.StdLogger()
 type JSONModel interface {
 	GenJSON(ctx context.Context, prompt string) (any, error)
 }
-
-func fmtClaimCount(n int) string { return fmt.Sprintf("%d claim draft(s)", n) }

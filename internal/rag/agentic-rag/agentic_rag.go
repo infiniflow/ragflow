@@ -70,8 +70,6 @@ import (
 //	answer composition  → ComposeAnswerWith (graph_compose.go)
 //	naive answer        → ComposeNaiveAnswer       (agentic_rag_graph.go)
 //	evidence fitting    → FitEvidence              (below)
-//	sufficiency review  → SCA review               (runtime/orchestrator/sufficient_context.go)
-//	gap rewrite         → SCA gap rewrite          (runtime/orchestrator/sufficient_context.go)
 //	entry point         → Rag                      (below)
 //
 //	document scope      → toolDocScope          (runtime/tool_executor.go)
