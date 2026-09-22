@@ -737,8 +737,9 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 
 // TestMarkdownParser_RawHTMLTableHandled covers a user-written raw <table> HTML
 // block (not a GFM pipe table). renderMarkdownTablesInline only rewrites GFM
-// pipe tables, so the raw <table> passes through and is caught by isTableHTML
-// as an HTMLBlock, producing a single doc_type_kwd:"table" item in document
+// pipe tables, so the raw <table> passes through and is caught by
+// htmltable.IsTableStrictHTML as an HTMLBlock, producing a single
+// doc_type_kwd:"table" item in document
 // order. There must be NO redundant inlined doc_type_kwd:"text" copy.
 func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 	ctx := t.Context()

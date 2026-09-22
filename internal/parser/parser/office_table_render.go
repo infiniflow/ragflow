@@ -19,7 +19,6 @@ package parser
 import (
 	"encoding/base64"
 	"fmt"
-	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,6 +28,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/htmltable"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
@@ -125,31 +125,12 @@ func recordsToHTMLTableItem(records [][]string, sheet string, sheetIndex, header
 			colEnd = len(row)
 		}
 	}
-	var builder strings.Builder
-	builder.WriteString("<table><caption>")
-	builder.WriteString(html.EscapeString(sheet))
-	builder.WriteString("</caption>\n<tr>")
-	for _, cell := range records[0] {
-		builder.WriteString("<th>")
-		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		builder.WriteString("</th>")
-	}
-	builder.WriteString("</tr>\n")
-	for _, row := range records[1:] {
-		builder.WriteString("<tr>")
-		for _, cell := range row {
-			builder.WriteString("<td>")
-			builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-			builder.WriteString("</td>")
-		}
-		builder.WriteString("</tr>\n")
-	}
-	builder.WriteString("</table>\n")
+	text := htmltable.RenderTableHTML(sheet, records[0], records[1:])
 	rowStart, rowEnd := headerRow, headerRow
 	if len(dataRows) > 0 {
 		rowStart, rowEnd = dataRows[0], dataRows[len(dataRows)-1]
 	}
-	return NewTableJSONItem(builder.String(), sheet, [][]float64{{
+	return NewTableJSONItem(text, sheet, [][]float64{{
 		float64(sheetIndex), float64(rowStart), float64(rowEnd), 1, float64(colEnd),
 	}})
 }
