@@ -133,6 +133,7 @@ export enum Operator {
   GeneralChunker = 'GeneralChunker',
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
+  ManualChunker = 'ManualChunker',
   TableChunker = 'TableChunker',
   QAChunker = 'QAChunker',
   OneChunker = 'OneChunker',
