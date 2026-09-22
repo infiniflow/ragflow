@@ -67,7 +67,7 @@ import (
 //	keyword extraction  → ExtractWeightedKeywords  (runtime/keywords.go)
 //	keyword compaction  → CompactKeywords          (runtime/tool_text_processing.go)
 //	web retrieval       → searchExecutor.webSearch (runtime/tool_executor.go)
-//	answer composition  → ComposeAnswer            (agentic_rag_graph.go)
+//	answer composition  → ComposeAnswerWith (graph_compose.go)
 //	naive answer        → ComposeNaiveAnswer       (agentic_rag_graph.go)
 //	evidence fitting    → FitEvidence              (below)
 //	sufficiency review  → SCA review               (runtime/orchestrator/sufficient_context.go)

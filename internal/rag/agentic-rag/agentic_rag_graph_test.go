@@ -2276,7 +2276,7 @@ func TestRunAgenticComposesFromResearchFindings(t *testing.T) {
 		PreSummary: "Culdcept was created by OmiyaSoft and released in 1999.",
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "Culdcept was created by OmiyaSoft and released in 1999 [1]."}}}
-	res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "Who created Culdcept?", false, false)
+	res := ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb, "Who created Culdcept?", false, false, false)
 	if res.Failed {
 		t.Fatal("composition must succeed")
 	}
@@ -2418,7 +2418,7 @@ func TestComposePublishesCiteChunkIDs(t *testing.T) {
 		},
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "it is grey [ID:0]."}}}
-	if res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "what colour is it?", false, false); res.Failed {
+	if res := ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb, "what colour is it?", false, false, false); res.Failed {
 		t.Fatal("composition must succeed")
 	}
 	got := mdl.lastUserPrompt()
@@ -2465,8 +2465,8 @@ func TestAnswerPromptCarriesTargetContract(t *testing.T) {
 		Chunks: []map[string]any{{"chunk_id": "c1", "content": "river A is 300km; river B is 900km"}},
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "river B [1]."}}}
-	if res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb,
-		"Which river is the longest?", false, false); res.Failed {
+	if res := ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb,
+		"Which river is the longest?", false, false, false); res.Failed {
 		t.Fatal("composition must succeed")
 	}
 	got := mdl.lastUserPrompt()
@@ -2485,7 +2485,7 @@ func TestAnswerPromptCarriesTargetContract(t *testing.T) {
 func TestAnswerPromptNoEvidenceInstructions(t *testing.T) {
 	// No chunks, no summary -> insufficiency statement.
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "unknown [1]."}}}
-	ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, &runtime.Kbinfos{}, "q?", false, false)
+	ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, &runtime.Kbinfos{}, "q?", false, false, false)
 	if got := mdl.lastUserPrompt(); !strings.Contains(got, "No supporting evidence was retrieved") {
 		t.Errorf("prompt missing the no-evidence instruction:\n%s", got)
 	}
@@ -2493,7 +2493,7 @@ func TestAnswerPromptNoEvidenceInstructions(t *testing.T) {
 	// No chunks but a draft exists -> answer from the summary, do not refuse.
 	kb := &runtime.Kbinfos{PreSummary: "partial findings"}
 	mdl2 := &fakeModel{replies: []*runtime.ModelReply{{Content: "x [1]."}}}
-	ComposeAnswer(context.Background(), AnswerDeps{Model: mdl2}, kb, "q?", false, false)
+	ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl2}, kb, "q?", false, false, false)
 	if got := mdl2.lastUserPrompt(); !strings.Contains(got, "The retrieved passages are limited") {
 		t.Errorf("prompt missing the limited-evidence instruction:\n%s", got)
 	}
@@ -2508,7 +2508,7 @@ func TestAnswerPromptOrdersPartialPreamble(t *testing.T) {
 		PreSummary: "the draft",
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "x [1]."}}}
-	ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "q?", true, false)
+	ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb, "q?", true, false, false)
 
 	got := mdl.lastUserPrompt()
 	iQ := strings.Index(got, "Question:")

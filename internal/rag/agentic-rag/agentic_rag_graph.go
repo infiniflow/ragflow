@@ -1952,19 +1952,6 @@ func errorAnswerText(err error) string {
 	return "**ERROR**: " + providerErrorSummary(err)
 }
 
-// ComposeAnswer: turn the gathered
-// evidence into a grounded, cited answer.
-//
-// Behaviour, in order:
-//  1. no evidence + configured empty_response → return it WITHOUT calling the LLM;
-//  2. rank chunks by similarity, keep the top citeChunkCap as citation reference;
-//  3. render the evidence block under the token budget (kb_prompt);
-//  4. prepend the fact-preserving pre_summary (the SCA-reviewed draft) when set;
-//  5. call the model with FINAL_ANSWER_SYSTEM + the composed user content.
-func ComposeAnswer(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos, question string, partial, abstain bool) AnswerResult {
-	return ComposeAnswerWith(ctx, deps, kb, question, partial, abstain, false)
-}
-
 // multimodalUserMsg builds a user message that carries the given text plus any
 // vision-gated image data URIs. Returns nil when there is no text and no
 // images, so callers fall back to schema.UserMessage. Used by the non-outer

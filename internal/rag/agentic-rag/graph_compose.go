@@ -272,7 +272,7 @@ const (
 // (runtime/report_prompt.go) and re-used here via the runtime import rather than
 // duplicated.
 
-// AnswerDeps are the dependencies of ComposeAnswer.
+// AnswerDeps are the dependencies of ComposeAnswerWith.
 type AnswerDeps struct {
 	// Model drives the composition call.
 	Model runtime.SessionModel
@@ -299,11 +299,6 @@ type AnswerDeps struct {
 	UserImages []string
 }
 
-// ComposeAnswerWith is ComposeAnswer with the third no-evidence term: `no_evidence =
-// abstain or empty_result or not chunks`, used both for the empty_response short circuit
-// and for the degradation instructions in the prompt. The extra `emptyResult` term is the
-// agentic loop's own "nothing was found" signal, distinct from "we abstained" and from
-// "the pool happens to be empty".
 type finalizeAnnouncedKey struct{}
 
 // markFinalizeAnnounced records that [Finalize] has been reported for this run's
@@ -520,6 +515,19 @@ func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
 	}
 }
 
+// ComposeAnswerWith turns the gathered evidence into a grounded, cited answer.
+//
+// Behaviour, in order:
+//  1. no evidence + configured empty_response → return it WITHOUT calling the LLM;
+//  2. rank chunks by similarity, keep the top citeChunkCap as citation reference;
+//  3. render the evidence block under the token budget (kb_prompt);
+//  4. prepend the fact-preserving pre_summary (the SCA-reviewed draft) when set;
+//  5. call the model with FINAL_ANSWER_SYSTEM + the composed user content.
+//
+// "No evidence" is three distinct terms, not one: `abstain` is the run's own decision,
+// `emptyResult` is the agentic loop's "nothing was found" signal, and an empty pool is the
+// dataset happening to return nothing. All three steer the prompt's degradation
+// instructions; only the first two are the run's own verdicts.
 func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos, question string, partial, abstain, emptyResult bool) AnswerResult {
 	logger := deps.Logger
 	if logger == nil {
@@ -695,7 +703,7 @@ const (
 		"sources are insufficient, and do not answer from general knowledge.\n"
 )
 
-// ComposeAnswerStream is ComposeAnswer for models that can emit incrementally:
+// ComposeAnswerStream is ComposeAnswerWith for models that can emit incrementally:
 // it renders the same prompt, forwards each piece as it arrives, and returns the
 // assembled answer. A streaming failure is returned so the caller can fall back
 // to the one-shot call.
@@ -861,7 +869,7 @@ func cleanAnswer(s string) string {
 // (lines 1555-1568): one retrieve pass, then a single composed answer over the
 // top chunks.
 //
-// Unlike ComposeAnswer this does NOT use kb_prompt and does NOT use
+// Unlike ComposeAnswerWith this does NOT use kb_prompt and does NOT use
 // FinalAnswerSystem — the naive path renders a flat "[i] content" list truncated to the
 // first 1500 chars of each chunk, capped at 8 chunks, and sends it under a short fixed
 // system prompt.
