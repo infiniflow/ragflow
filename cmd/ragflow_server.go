@@ -39,7 +39,6 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/mcp"
 	"ragflow/internal/rag/agentic-rag"
 	agenticruntime "ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/router"
@@ -90,14 +89,7 @@ type serverArgs struct {
 	adminPort     *int    // Used by api, ingestor, syncer, deepdoc for heartbeat, "ip:port"
 	name          *string // server name
 	enablePProf   bool    // enable pprof
-	mcpEnabled    bool
-	mcpHost       string
-	mcpPort       int
-	mcpMode       string
-	mcpAPIKey     string
-	mcpSSE        bool
-	mcpStreamable bool
-	mcpJSON       bool
+
 }
 
 // engineDocEngine is the small slice of the engine surface the doc-chunk pager
@@ -189,14 +181,7 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req agenticruntime.DocChu
 }
 
 func parseArgs() (*serverArgs, error) {
-	args := &serverArgs{
-		mcpHost:       "127.0.0.1",
-		mcpPort:       9382,
-		mcpMode:       "self-host",
-		mcpSSE:        true,
-		mcpStreamable: true,
-		mcpJSON:       true,
-	}
+	args := &serverArgs{}
 
 	var serverMode string
 	var configPath string
@@ -210,24 +195,9 @@ func parseArgs() (*serverArgs, error) {
 				}
 				args.logLevel = &value
 				continue
-			case "--mcp-host":
-				args.mcpHost = value
-				continue
-			case "--mcp-port":
-				port, err := parsePort(value, "MCP")
-				if err != nil {
-					return nil, err
-				}
-				args.mcpPort = port
-				continue
-			case "--mcp-mode":
-				args.mcpMode = value
-				continue
-			case "--mcp-host-api-key":
-				args.mcpAPIKey = value
-				continue
 			}
 		}
+
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
@@ -240,20 +210,6 @@ func parseArgs() (*serverArgs, error) {
 		case "--api":
 			serverMode = "api"
 			args.mode = &serverMode
-		case "--enable-mcpserver":
-			args.mcpEnabled = true
-		case "--transport-sse-enabled":
-			args.mcpSSE = true
-		case "--no-transport-sse-enabled":
-			args.mcpSSE = false
-		case "--transport-streamable-http-enabled":
-			args.mcpStreamable = true
-		case "--no-transport-streamable-http-enabled":
-			args.mcpStreamable = false
-		case "--json-response":
-			args.mcpJSON = true
-		case "--no-json-response":
-			args.mcpJSON = false
 		case "--syncer":
 			serverMode = "syncer"
 			args.mode = &serverMode
@@ -325,12 +281,6 @@ func parseArgs() (*serverArgs, error) {
 		}
 	}
 
-	if err := applyMCPEnv(args); err != nil {
-		return nil, err
-	}
-	if err := validateMCPArgs(args); err != nil {
-		return nil, err
-	}
 	if args.migrateDB && args.mode != nil {
 		return nil, errors.New("--migrate cannot be combined with a server mode")
 	}
@@ -357,76 +307,6 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	return level
 }
 
-func applyMCPEnv(args *serverArgs) error {
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST"); ok {
-		args.mcpHost = value
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_PORT"); ok {
-		port, err := parsePort(value, "MCP")
-		if err != nil {
-			return err
-		}
-		args.mcpPort = port
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_LAUNCH_MODE"); ok {
-		args.mcpMode = value
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST_API_KEY"); ok {
-		args.mcpAPIKey = value
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_ENABLED"); ok {
-		args.mcpEnabled = parseMCPBool(value)
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED"); ok {
-		args.mcpSSE = parseMCPBool(value)
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED"); ok {
-		args.mcpStreamable = parseMCPBool(value)
-	}
-	if value, ok := os.LookupEnv("RAGFLOW_MCP_JSON_RESPONSE"); ok {
-		args.mcpJSON = parseMCPBool(value)
-	}
-	return nil
-}
-
-func validateMCPArgs(args *serverArgs) error {
-	if args.mcpMode != "self-host" && args.mcpMode != "host" {
-		return fmt.Errorf("invalid MCP mode: %s", args.mcpMode)
-	}
-	if !args.mcpStreamable && args.mcpJSON {
-		args.mcpJSON = false
-	}
-	if !args.mcpSSE && !args.mcpStreamable {
-		args.mcpStreamable = true
-	}
-	if args.mcpEnabled && args.mcpMode == "self-host" && args.mcpAPIKey == "" {
-		return errors.New("--mcp-host-api-key is required when --mcp-mode=self-host")
-	}
-	return nil
-}
-
-func parseMCPBool(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
-func parsePort(value, name string) (int, error) {
-	port, err := strconv.Atoi(value)
-	if err != nil || port <= 0 || port > 65535 {
-		return 0, fmt.Errorf("invalid %s port: %s", name, value)
-	}
-	return port, nil
-}
-
-// registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
-// fallback used when no external DeepDoc HTTP service is configured. It is
-// compiled into the server built with -tags cgo, which statically links the
-// ONNX Runtime backend (libonnxruntime.a); the unit-test tier builds without
-// cgo and stays free of the onnxruntime dependency.
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
@@ -451,15 +331,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
-		fmt.Fprintf(os.Stderr, "API MCP options:\n")
-		fmt.Fprintf(os.Stderr, "  --enable-mcpserver\tEnable the MCP server\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-host=string\tMCP bind address (default: 127.0.0.1)\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-port=int \tMCP port (default: 9382)\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-mode=self-host|host\tMCP mode (default: self-host)\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-host-api-key=string\tAPI key required in self-host mode\n")
-		fmt.Fprintf(os.Stderr, "  --transport-sse-enabled, --no-transport-sse-enabled\tEnable or disable MCP SSE transport (default: enabled)\n")
-		fmt.Fprintf(os.Stderr, "  --transport-streamable-http-enabled, --no-transport-streamable-http-enabled\tEnable or disable MCP streamable HTTP transport (default: enabled)\n")
-		fmt.Fprintf(os.Stderr, "  --json-response, --no-json-response\tEnable or disable MCP JSON responses (default: enabled)\n\n")
+		fmt.Fprintln(os.Stderr, "MCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
 		fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
@@ -475,15 +347,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile          \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
-		fmt.Fprintf(os.Stderr, "\nMCP options:\n")
-		fmt.Fprintf(os.Stderr, "  --enable-mcpserver\tEnable the MCP server\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-host=string\tMCP bind address (default: 127.0.0.1)\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-port=int \tMCP port (default: 9382)\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-mode=self-host|host\tMCP mode (default: self-host)\n")
-		fmt.Fprintf(os.Stderr, "  --mcp-host-api-key=string\tAPI key required in self-host mode\n")
-		fmt.Fprintf(os.Stderr, "  --transport-sse-enabled, --no-transport-sse-enabled\tEnable or disable MCP SSE transport (default: enabled)\n")
-		fmt.Fprintf(os.Stderr, "  --transport-streamable-http-enabled, --no-transport-streamable-http-enabled\tEnable or disable MCP streamable HTTP transport (default: enabled)\n")
-		fmt.Fprintf(os.Stderr, "  --json-response, --no-json-response\tEnable or disable MCP JSON responses (default: enabled)\n")
+		fmt.Fprintln(os.Stderr, "\nMCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
 	case *args.mode == "admin":
 		fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
@@ -1167,7 +1031,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	if err := startServer(ctx, args); err != nil {
+	if err := startServer(ctx); err != nil {
 		return err
 	}
 
@@ -1176,7 +1040,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func startServer(ctx context.Context, args *serverArgs) error {
+func startServer(ctx context.Context) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1483,17 +1347,7 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	// MCP server endpoint — exposes RAGFlow capabilities as MCP tools
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
-	mcpServerHandler := handler.NewMCPServerHandler(
-		func(ctx context.Context, userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderBy, desc)
-		},
-		func(ctx context.Context, userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderBy, desc)
-		},
-		func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
-			return handler.MCPRetrieval(ctx, datasetsService, userID, req)
-		},
-	)
+	mcpServerHandler := handler.NewMCPServerHandler(datasetsService, chatService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	// Install the agent service's Kvrocks-backed run infrastructure
@@ -1682,41 +1536,16 @@ func startServer(ctx context.Context, args *serverArgs) error {
 	var mcpSrv *http.Server
 	var mcpCloser interface{ Close() error }
 	var mcpListener net.Listener
-	if args != nil && args.mcpEnabled {
-		resolveUser := func(ctx context.Context, authorization string) (string, error) {
-			if args.mcpMode == "self-host" {
-				authorization = args.mcpAPIKey
-			}
-			user, err := authHandler.ResolveMCPUser(ctx, authorization)
-			if err != nil {
-				return "", err
-			}
-			return user.ID, nil
+	mcpConfig := apiServerConfig.MCP
+	if mcpConfig.Enabled {
+		mcpHandler, err := mcpServerHandler.NewStandalone(ctx, authHandler, mcpConfig)
+		if err != nil {
+			return err
 		}
-		if args.mcpMode == "self-host" {
-			authCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			_, err := resolveUser(authCtx, "")
-			cancel()
-			if err != nil {
-				return errors.New("invalid configured MCP API key")
-			}
-		}
-		mcpHandler := handler.NewStandaloneMCPHandler(
-			resolveUser,
-			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-				return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderby, desc)
-			},
-			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-				return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderby, desc)
-			},
-			func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
-				return handler.MCPRetrieval(ctx, datasetsService, userID, req)
-			},
-			mcp.Options{SSE: args.mcpSSE, StreamableHTTP: args.mcpStreamable, JSONResponse: args.mcpJSON},
-		)
+
 		mcpCloser = mcpHandler
 		defer mcpHandler.Close()
-		mcpAddr := fmt.Sprintf("%s:%d", args.mcpHost, args.mcpPort)
+		mcpAddr := net.JoinHostPort(strings.Trim(mcpConfig.Host, "[]"), strconv.Itoa(mcpConfig.Port))
 		mcpListener, err = net.Listen("tcp", mcpAddr)
 		if err != nil {
 			return fmt.Errorf("listen MCP server on %s: %w", mcpAddr, err)
