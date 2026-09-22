@@ -836,7 +836,7 @@ func normalizePDFDocType(item map[string]any) {
 	// downstream VLM/chunker crop it on demand.
 	_, hasMedia := ExtractPDFPositions(item)
 	docType, _ := item["doc_type_kwd"].(string)
-	if img, _ := item["image"].(string); img != "" && docType != "table" {
+	if img, _ := item["image"].(string); img != "" && docType != "table" && layoutType != "table" && hasMedia {
 		item["doc_type_kwd"] = "image"
 		return
 	}

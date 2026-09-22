@@ -135,6 +135,19 @@ def _embedded_image_region_key(page_number, x0, top, x1, bottom):
     )
 
 
+def build_document_page_cum_height(blob):
+    """Cumulative page heights for the full PDF (PDF points), matching DeepDOC ``page_cum_height``."""
+    heights = [0.0]
+    try:
+        with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+            for page in pdf.pages:
+                heights.append(float(page.height))
+    except Exception as e:
+        logging.warning("Failed to build document page cumulative heights: %s", e)
+        return None
+    return list(np.cumsum(heights))
+
+
 def _collect_represented_embedded_regions(bboxes):
     regions = set()
     for box in bboxes or []:
@@ -167,57 +180,80 @@ def supplement_deepdoc_bboxes_with_embedded_images(
     merged = list(bboxes or [])
     represented = _collect_represented_embedded_regions(merged)
     supplemented = []
-    with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
-        for page_number, page in enumerate(pdf.pages, start=1):
-            if not (from_page + 1 <= page_number <= to_page):
-                continue
-            if page.images:
-                for im in page.images:
-                    x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
-                    if x1 <= x0 or bottom <= top:
-                        continue
-                    if (x1 - x0) < 11 or (bottom - top) < 11:
-                        continue
-                    region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
-                    if region in represented:
-                        continue
-                    represented.add(region)
-                    cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
-                    supplemented.append(
-                        {
-                            "page_number": page_number,
-                            "x0": float(x0),
-                            "x1": float(x1),
-                            "top": float(top),
-                            "bottom": float(bottom),
-                            "layout_type": "figure",
-                            "text": "",
-                            "image": cropped,
-                            "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
-                            "_embedded_supplement": True,
-                        }
-                    )
-            elif not page.chars:
-                pil = page.to_image(resolution=72 * zoom, antialias=True).original
-                width, height = pil.size
-                region = _embedded_image_region_key(page_number, 0, 0, width, height)
-                if region in represented:
+    try:
+        with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                if not (from_page + 1 <= page_number <= to_page):
                     continue
-                represented.add(region)
-                supplemented.append(
-                    {
-                        "page_number": page_number,
-                        "layout_type": "figure",
-                        "text": "",
-                        "image": pil,
-                        "positions": [[page_number, 0, width, 0, height]],
-                        "_embedded_supplement": True,
-                    }
-                )
+                try:
+                    if page.images:
+                        for im in page.images:
+                            try:
+                                x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
+                                if x1 <= x0 or bottom <= top:
+                                    continue
+                                if (x1 - x0) < 11 or (bottom - top) < 11:
+                                    continue
+                                region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
+                                if region in represented:
+                                    continue
+                                represented.add(region)
+                                cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
+                                supplemented.append(
+                                    {
+                                        "page_number": page_number,
+                                        "x0": float(x0),
+                                        "x1": float(x1),
+                                        "top": float(top),
+                                        "bottom": float(bottom),
+                                        "layout_type": "figure",
+                                        "text": "",
+                                        "image": cropped,
+                                        "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
+                                        "_embedded_supplement": True,
+                                    }
+                                )
+                            except Exception as e:
+                                logging.warning(
+                                    "Skip embedded PDF image on page %s: %s",
+                                    page_number,
+                                    e,
+                                )
+                    elif not page.chars:
+                        pdf_width = float(page.width)
+                        pdf_height = float(page.height)
+                        region = _embedded_image_region_key(page_number, 0, 0, pdf_width, pdf_height)
+                        if region in represented:
+                            continue
+                        represented.add(region)
+                        pil = page.to_image(resolution=72 * zoom, antialias=True).original
+                        supplemented.append(
+                            {
+                                "page_number": page_number,
+                                "x0": 0.0,
+                                "x1": pdf_width,
+                                "top": 0.0,
+                                "bottom": pdf_height,
+                                "layout_type": "figure",
+                                "text": "",
+                                "image": pil,
+                                "positions": [[page_number, 0, int(pdf_width), 0, int(pdf_height)]],
+                                "_embedded_supplement": True,
+                            }
+                        )
+                except Exception as e:
+                    logging.warning("Skip embedded-image supplementation on page %s: %s", page_number, e)
+    except Exception as e:
+        logging.warning("Failed to supplement embedded PDF images: %s", e)
+        return merged
 
     if not supplemented:
         return merged
-    return merged + supplemented
+    result = merged + supplemented
+    doc_heights = build_document_page_cum_height(blob)
+    if doc_heights is not None:
+        return apply_document_vertical_coords_to_bboxes(result, doc_heights)
+    return result
 
 
 def apply_document_vertical_coords(box, page_cum_height):

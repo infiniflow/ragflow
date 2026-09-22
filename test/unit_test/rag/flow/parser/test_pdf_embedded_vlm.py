@@ -41,6 +41,104 @@ def test_supplement_embedded_images_for_image_only_pdf(monkeypatch):
     out = module.supplement_deepdoc_bboxes_with_embedded_images(data, [])
     assert out, "expected embedded image boxes for image-only PDF"
     assert out[0].get("image") is not None
+    positions = out[0].get("positions") or []
+    assert positions, "expected PDF-point positions for image-only page"
+    _page, right, bottom = positions[0][0], positions[0][2], positions[0][4]
+    assert right <= 1000, "positions should be PDF points, not raster pixels"
+    assert bottom <= 1000, "positions should be PDF points, not raster pixels"
+
+
+@pytest.mark.p1
+def test_supplement_scanned_page_uses_pdf_point_dimensions(monkeypatch):
+    module = _load_pdf_chunk_metadata(monkeypatch)
+    pdf_width, pdf_height = 612.0, 792.0
+    raster = SimpleNamespace(size=(1836, 2376))
+    fake_page = SimpleNamespace(
+        images=[],
+        chars=[],
+        width=pdf_width,
+        height=pdf_height,
+        to_image=lambda resolution, antialias: SimpleNamespace(original=raster),
+    )
+    fake_pdf = SimpleNamespace(pages=[fake_page])
+
+    class FakePlumber:
+        @staticmethod
+        def open(_blob):
+            return FakeContext(fake_pdf)
+
+    class FakeContext:
+        def __init__(self, pdf):
+            self.pdf = pdf
+
+        def __enter__(self):
+            return self.pdf
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(module.pdfplumber, "open", FakePlumber.open)
+    out = module.supplement_deepdoc_bboxes_with_embedded_images(b"pdf", [])
+    assert len(out) == 1
+    assert out[0]["positions"] == [[1, 0, int(pdf_width), 0, int(pdf_height)]]
+
+
+@pytest.mark.p1
+def test_supplement_skips_failed_embedded_image_and_continues(monkeypatch):
+    module = _load_pdf_chunk_metadata(monkeypatch)
+
+    def bad_crop(_rect):
+        raise RuntimeError("crop failed")
+
+    good_page = SimpleNamespace(
+        images=[{"x0": 20, "top": 0, "x1": 32, "bottom": 12}],
+        chars=[object()],
+        crop=bad_crop,
+    )
+    fake_pdf = SimpleNamespace(pages=[good_page])
+
+    class FakePlumber:
+        @staticmethod
+        def open(_blob):
+            return FakeContext(fake_pdf)
+
+    class FakeContext:
+        def __enter__(self):
+            return fake_pdf
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(module.pdfplumber, "open", FakePlumber.open)
+    text_bbox = {"layout_type": "text", "text": "body", "page_number": 1}
+    out = module.supplement_deepdoc_bboxes_with_embedded_images(b"pdf", [text_bbox])
+    assert len(out) == 1
+    assert out[0]["text"] == "body"
+
+
+@pytest.mark.p1
+def test_build_document_page_cum_height(monkeypatch):
+    module = _load_pdf_chunk_metadata(monkeypatch)
+    fake_pdf = SimpleNamespace(pages=[SimpleNamespace(height=100.0), SimpleNamespace(height=200.0)])
+
+    class FakePlumber:
+        @staticmethod
+        def open(_blob):
+            return FakeContext(fake_pdf)
+
+    class FakeContext:
+        def __init__(self, pdf):
+            self.pdf = pdf
+
+        def __enter__(self):
+            return self.pdf
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(module.pdfplumber, "open", FakePlumber.open)
+    out = module.build_document_page_cum_height(b"pdf")
+    assert out == [0.0, 100.0, 300.0]
 
 
 @pytest.mark.p1
