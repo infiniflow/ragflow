@@ -24,11 +24,15 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/storage"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -148,8 +152,8 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by) VALUES (?, ?, ?, ?, ?)", "joined", "user-1", "team", "normal", "user-2")
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-kb", "user-1", "Own", "embd", "me", "user-1", "general", 1, 2, 3)
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "team-kb", "team", "Team", "embd", "team", "user-2", "general", 2, 5, 7)
-	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-doc", "own-kb", "general", "{}", "pdf", "user-1", "pdf", "own.pdf", 2, 3)
-	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "joined-doc", "team-kb", "general", "{}", "pdf", "user-1", "pdf", "joined.pdf", 2, 3)
+	insert("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-doc", "own-kb", "Owned document", "general", "{}", "pdf", "user-1", "pdf", "own.pdf", 2, 3)
+	insert("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "joined-doc", "team-kb", "Joined document", "general", "{}", "pdf", "user-1", "pdf", "joined.pdf", 2, 3)
 	insert("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "other-doc", "team-kb", "general", "{}", "pdf", "user-2", "pdf", 3, 4)
 	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, location, type) VALUES (?, ?, ?, ?, ?, ?, ?)", "own-file", "own-folder", "user-1", "user-1", "own.pdf", "own.pdf", "file")
 	insert("INSERT INTO file (id, parent_id, tenant_id, created_by, name, type) VALUES (?, ?, ?, ?, ?, ?)", "own-folder", "own-folder", "user-1", "user-1", "/", "folder")
@@ -186,6 +190,10 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 
 	docEngine := &deletionEngine{}
 	store := &deletionStorage{}
+	core, logs := observer.New(zapcore.InfoLevel)
+	oldLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = oldLogger })
 	service := NewService()
 	service.deleteEngine = docEngine
 	service.deleteStorage = store
@@ -237,6 +245,27 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	}
 	if !slices.Contains(docEngine.dropped, "ragflow_user-1") || !slices.Contains(docEngine.dropped, "memory_user-1") || !slices.Contains(docEngine.deleted, "doc_id:[joined-doc]") || !slices.Contains(docEngine.deleted, "metadata:id:[joined-doc]") {
 		t.Fatalf("index cleanup = dropped %v, deleted %v", docEngine.dropped, docEngine.deleted)
+	}
+	for _, check := range []struct {
+		message string
+		field   string
+		want    string
+	}{
+		{"Removed document object", "document", "Joined document (joined-doc)"},
+		{"Removed document object", "dataset", "Team (team-kb)"},
+		{"Removed file object", "file", "own.pdf (own-file)"},
+		{"Removed empty folder bucket", "folder", "/ (own-folder)"},
+	} {
+		matched := false
+		for _, entry := range logs.FilterMessage(check.message).All() {
+			if entry.ContextMap()[check.field] == check.want {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("missing %s log with %s=%q", check.message, check.field, check.want)
+		}
 	}
 }
 

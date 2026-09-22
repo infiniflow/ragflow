@@ -21,7 +21,12 @@ import (
 	"errors"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/storage"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type failingObjectCheckStorage struct{ storage.Storage }
@@ -48,6 +53,10 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	previous := factory.GetStorage()
 	factory.SetStorage(store)
 	t.Cleanup(func() { factory.SetStorage(previous) })
+	core, logs := observer.New(zapcore.InfoLevel)
+	previousLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = previousLogger })
 
 	service := testFileService()
 	if err := service.deleteFolderRecursive(t.Context(), folder, "tenant-1"); err != nil {
@@ -61,6 +70,12 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	}
 	if _, err := service.fileDAO.GetByID(t.Context(), db, folder.ID); err == nil {
 		t.Fatal("folder record retained after storage failure")
+	}
+	if entries := logs.FilterMessage("Deleted file").All(); len(entries) != 1 || entries[0].ContextMap()["file"] != "tracked (file-1)" {
+		t.Errorf("file deletion logs = %v", entries)
+	}
+	if entries := logs.FilterMessage("Deleted folder").All(); len(entries) != 1 || entries[0].ContextMap()["folder"] != "folder ("+folder.ID+")" {
+		t.Errorf("folder deletion logs = %v", entries)
 	}
 }
 

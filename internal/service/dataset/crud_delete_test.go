@@ -19,16 +19,21 @@ package dataset
 import (
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
-	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
+	if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "Document", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
 		t.Fatal(err)
 	}
 	store := storage.NewMemoryStorage()
@@ -42,6 +47,10 @@ func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 	previous := factory.GetStorage()
 	factory.SetStorage(store)
 	t.Cleanup(func() { factory.SetStorage(previous) })
+	core, logs := observer.New(zapcore.InfoLevel)
+	previousLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = previousLogger })
 
 	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
 	if err != nil {
@@ -60,6 +69,12 @@ func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 	var count int64
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("dataset retained after storage failure: count=%d, err=%v", count, err)
+	}
+	if entries := logs.FilterMessage("Removed dataset document object").All(); len(entries) != 1 || entries[0].ContextMap()["document"] != "Document (doc-1)" || entries[0].ContextMap()["dataset"] != "Dataset (kb-1)" {
+		t.Errorf("document deletion logs = %v", entries)
+	}
+	if entries := logs.FilterMessage("Deleted dataset").All(); len(entries) != 1 || entries[0].ContextMap()["dataset"] != "Dataset (kb-1)" {
+		t.Errorf("dataset deletion logs = %v", entries)
 	}
 }
 

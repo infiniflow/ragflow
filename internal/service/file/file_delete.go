@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -76,13 +77,13 @@ func removeFileObject(ctx context.Context, storageImpl storage.Storage, file *en
 			return fmt.Errorf("check file %s: %w", file.ID, err)
 		}
 		if !exists {
-			common.Warn("File object already missing", zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
+			common.Warn("File object already missing", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
 			return nil
 		}
 		if err := storageImpl.Remove(ctx, file.ParentID, *file.Location); err != nil {
 			return fmt.Errorf("remove file %s: %w", file.ID, err)
 		}
-		common.Info("Removed file object", zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
+		common.Info("Removed file object", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
 	}
 	return nil
 }
@@ -116,6 +117,7 @@ func (s *FileService) deleteSingleFileRecords(ctx context.Context, file *entity.
 	if err = s.fileDAO.Delete(ctx, dao.DB, file.ID); err != nil {
 		return err
 	}
+	common.Info("Deleted file", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID))
 
 	return nil
 }
@@ -154,13 +156,13 @@ func (s *FileService) removeFolderObjectsRecursive(ctx context.Context, folder *
 		return fmt.Errorf("check folder bucket %s: %w", folder.ID, err)
 	}
 	if !exists {
-		common.Warn("Folder bucket already missing", zap.String("bucket", folder.ID))
+		common.Warn("Folder bucket already missing", zap.String("folder", fileNameAndID(folder)), zap.String("bucket", folder.ID))
 		return nil
 	}
 	if err := storageImpl.RemoveEmptyBucket(ctx, folder.ID); err != nil {
-		common.Warn("Unable to remove empty folder bucket", zap.String("bucket", folder.ID), zap.Error(err))
+		common.Warn("Unable to remove empty folder bucket", zap.String("folder", fileNameAndID(folder)), zap.String("bucket", folder.ID), zap.Error(err))
 	} else {
-		common.Info("Removed empty folder bucket", zap.String("bucket", folder.ID))
+		common.Info("Removed empty folder bucket", zap.String("folder", fileNameAndID(folder)), zap.String("bucket", folder.ID))
 	}
 	return nil
 }
@@ -182,5 +184,13 @@ func (s *FileService) deleteFolderRecordsRecursive(ctx context.Context, folder *
 	if err = s.fileDAO.Delete(ctx, dao.DB, folder.ID); err != nil {
 		return err
 	}
+	common.Info("Deleted folder", zap.String("folder", fileNameAndID(folder)), zap.String("folder_id", folder.ID))
 	return nil
+}
+
+func fileNameAndID(file *entity.File) string {
+	if file.Name == "" {
+		return file.ID
+	}
+	return fmt.Sprintf("%s (%s)", file.Name, file.ID)
 }
