@@ -499,6 +499,10 @@ export const useRunDocument = () => {
         // picks up the real status. Stage timestamps in the same pass so the
         // list's stop-loss can downgrade the interval and retry an overdue
         // cancel exactly once.
+        // A list refetch already in flight when the click landed would
+        // resolve with the pre-cancel row and overwrite the optimistic
+        // STOPPING below, so drop it first.
+        await queryClient.cancelQueries({ queryKey: DocumentKeys.all() });
         if (isGo) {
           markCancelRequested(documentIds);
         }

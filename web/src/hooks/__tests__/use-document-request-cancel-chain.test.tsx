@@ -136,10 +136,14 @@ function makeWrapper() {
   return Wrapper;
 }
 
+// Steps must be finer than the poll interval: React Query skips an interval
+// tick while a request is in flight, and a synchronous advance does not flush
+// microtasks, so a coarse step would collapse every interval into one request
+// and hide the poll cadence under test.
 const advanceSeconds = async (seconds: number) => {
-  for (let i = 0; i < seconds; i++) {
+  for (let i = 0; i < seconds * 4; i++) {
     await act(async () => {
-      jest.advanceTimersByTime(1000);
+      jest.advanceTimersByTime(250);
     });
   }
 };
@@ -196,7 +200,7 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
     // reaches the server while the first request is still pending. Every poll
     // returns a byte-identical stopping row (the stuck case), so the retry must
     // not depend on the list data changing between polls.
-    expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(25);
+    expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(55);
     expect(mockIngest).toHaveBeenCalledTimes(2);
     expect(mockIngest).toHaveBeenLastCalledWith({ doc_ids: [docId], run: 2 });
 
@@ -221,7 +225,7 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
     // A page reload adopts a cancel nobody clicked here: polling stays fast
     // for the window ...
     await advanceSeconds(5);
-    expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(5);
+    expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(8);
 
     // ... and after the window the interval downgrades instead of hammering
     // the list endpoint forever.
@@ -231,5 +235,58 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
     expect(mockList.mock.calls.length).toBeLessThan(callsAtWindowEnd + 6);
 
     expect(mockIngest).not.toHaveBeenCalled();
+  });
+
+  it('keeps the optimistic STOPPING when a pre-cancel list response lands late', async () => {
+    const docId = 'doc-chain-stale';
+    let resolveStalePoll!: (value: unknown) => void;
+    const stalePoll = new Promise((resolve) => {
+      resolveStalePoll = resolve;
+    });
+
+    mockList.mockResolvedValueOnce(
+      listResult(makeDoc(docId, IngestionTaskStatus.RUNNING)) as never,
+    );
+    // The poll that is in flight when the click lands answers with the
+    // pre-cancel RUNNING row, held back until after the optimistic update.
+    mockList.mockReturnValueOnce(stalePoll as never);
+    mockList.mockReturnValue(new Promise(() => {}) as never);
+    mockIngest.mockReturnValue(new Promise(() => {}) as never);
+
+    const { result } = renderHook(useCancelChain, { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(result.current.list.documents).toHaveLength(1));
+    expect(result.current.list.documents[0].ingestion_status).toBe(
+      IngestionTaskStatus.RUNNING,
+    );
+
+    // RUNNING polls every 5s: let one request go out and stay pending.
+    await advanceSeconds(8);
+    expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    await act(async () => {
+      void result.current.run.runDocumentByIds({
+        documentIds: [docId],
+        run: 2,
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.list.documents[0].ingestion_status).toBe(
+        IngestionTaskStatus.STOPPING,
+      ),
+    );
+
+    // Without dropping the in-flight refetch, this stale response would
+    // overwrite STOPPING, reset the stop-loss tracking and leave the row
+    // looking running again until the next poll contradicts it.
+    await act(async () => {
+      resolveStalePoll(listResult(makeDoc(docId, IngestionTaskStatus.RUNNING)));
+    });
+    await advanceSeconds(1);
+
+    expect(result.current.list.documents[0].ingestion_status).toBe(
+      IngestionTaskStatus.STOPPING,
+    );
   });
 });

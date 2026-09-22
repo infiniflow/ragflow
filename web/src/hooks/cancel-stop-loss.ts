@@ -20,6 +20,11 @@
 // cadence and one cancel request is re-sent for the overdue documents.
 export const CANCEL_STOP_LOSS_MS = 30_000;
 
+// Cadence while a cancel is within its window: the ingestor polls its own
+// cancel flag every 500ms, so 500ms here converges the row on the first list
+// response after the worker settles instead of waiting out a longer poll.
+export const CANCEL_POLL_MS = 500;
+
 // Window start per document: set when the user cancels, or at the first sight
 // of a stopping document that predates this session (e.g. a page reload), so
 // an orphaned cancel still downgrades once its window has elapsed.
@@ -47,7 +52,7 @@ export const getCancelRequestInterval = (stoppingIds: string[]) => {
   return stoppingIds.some(
     (id) => now - (cancelRequestedAt.get(id) ?? now) < CANCEL_STOP_LOSS_MS,
   )
-    ? 1000
+    ? CANCEL_POLL_MS
     : 5000;
 };
 

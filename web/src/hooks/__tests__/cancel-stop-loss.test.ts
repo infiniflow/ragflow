@@ -34,14 +34,14 @@ describe('cancel stop-loss', () => {
     jest.useRealTimers();
   });
 
-  it('keeps the 1s interval while the cancel is fresh', () => {
+  it('keeps the fast interval while the cancel is fresh', () => {
     markCancelRequested(['doc-fresh']);
 
-    expect(getCancelRequestInterval(['doc-fresh'])).toBe(1000);
+    expect(getCancelRequestInterval(['doc-fresh'])).toBe(500);
 
     advance(CANCEL_STOP_LOSS_MS - 1);
 
-    expect(getCancelRequestInterval(['doc-fresh'])).toBe(1000);
+    expect(getCancelRequestInterval(['doc-fresh'])).toBe(500);
   });
 
   it('falls back to the 5s interval once the cancel is overdue', () => {
@@ -52,14 +52,14 @@ describe('cancel stop-loss', () => {
     expect(getCancelRequestInterval(['doc-overdue'])).toBe(5000);
   });
 
-  it('keeps the 1s interval while any stopping document is still fresh', () => {
+  it('keeps the fast interval while any stopping document is still fresh', () => {
     markCancelRequested(['doc-mixed-old']);
 
     advance(CANCEL_STOP_LOSS_MS);
     markCancelRequested(['doc-mixed-new']);
 
     expect(getCancelRequestInterval(['doc-mixed-old', 'doc-mixed-new'])).toBe(
-      1000,
+      500,
     );
   });
 
@@ -107,7 +107,7 @@ describe('cancel stop-loss', () => {
     );
 
     // The window starts at the first sight, so polling stays fast ...
-    expect(getCancelRequestInterval(['doc-adopted'])).toBe(1000);
+    expect(getCancelRequestInterval(['doc-adopted'])).toBe(500);
 
     // ... then downgrades once the window has elapsed, and never retries.
     advance(CANCEL_STOP_LOSS_MS);
@@ -147,7 +147,7 @@ describe('cancel stop-loss', () => {
     expect(observeStoppingDocuments(['doc-resumed'], ['doc-resumed'])).toEqual(
       [],
     );
-    expect(getCancelRequestInterval(['doc-resumed'])).toBe(1000);
+    expect(getCancelRequestInterval(['doc-resumed'])).toBe(500);
   });
 
   it('keeps tracking a cancel on a document missing from the current result', () => {
