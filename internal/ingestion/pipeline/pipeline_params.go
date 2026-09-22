@@ -40,6 +40,23 @@ var extractorValidParamKeys = func() map[string]struct{} {
 	return keys
 }()
 
+// componentParamSchemaKeys maps a DSL component_name (lower-cased) to the
+// param keys its param schema declares. CleanComponentParams unions these with
+// the keys a template already bakes, so a param the component can read is
+// never dropped just because a template — or a canvas snapshot saved before
+// the param existed — does not carry it.
+//
+// Components whose accepted keys are defined by the DSL itself (Parser file
+// families) or whose param struct is not part of the schema package
+// (GeneralChunker, QAChunker) stay out of this table; Extractor and Compiler
+// keep their cpnID-prefixed dynamic whitelists.
+var componentParamSchemaKeys = map[string]map[string]struct{}{
+	"titlechunker":  extractJSONTags(schema.TitleChunkerParam{}),
+	"manualchunker": extractJSONTags(schema.TitleChunkerParam{}),
+	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
+	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
+}
+
 // extractJSONTags returns all top-level json tag names from a struct.
 func extractJSONTags(v any) map[string]struct{} {
 	tags := make(map[string]struct{})
@@ -121,6 +138,9 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 		if IsChunkerComponent(s.CpnID) {
 			keys["enable_children"] = struct{}{}
+		}
+		for k := range componentParamSchemaKeys[strings.ToLower(s.ComponentName)] {
+			keys[k] = struct{}{}
 		}
 		validCPNs[s.CpnID] = keys
 		componentNames[s.CpnID] = s.ComponentName

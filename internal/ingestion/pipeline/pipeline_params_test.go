@@ -791,3 +791,174 @@ func TestBuildParserConfig_CompilerRuntimeParamsSurvive(t *testing.T) {
 		t.Errorf("expected DSL default plan=false to be baked in, got %#v", params["plan"])
 	}
 }
+
+// --- componentParamSchemaKeys (schema-derived component param whitelist) ---
+
+// titleFamilyDSL mirrors a canvas snapshot saved before chunk_token_cap /
+// root_chunk_as_heading existed: the title-chunker node bakes only the older
+// params.
+func titleFamilyDSL(t *testing.T) []byte {
+	t.Helper()
+	dsl := map[string]any{
+		"components": map[string]any{
+			"TitleChunker:StaleSnapshot": map[string]any{
+				"obj": map[string]any{
+					"component_name": "TitleChunker",
+					"params": map[string]any{
+						"outputs":   map[string]any{},
+						"method":    "hierarchy",
+						"hierarchy": float64(3),
+						"levels":    []any{[]any{"^#[^#]"}},
+					},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl fixture: %v", err)
+	}
+	return raw
+}
+
+func TestCleanComponentParams_TitleFamilyKeepsSchemaParamsWithoutBakedKeys(t *testing.T) {
+	dslJSON := titleFamilyDSL(t)
+	raw := map[string]any{
+		"TitleChunker:StaleSnapshot": map[string]any{
+			"chunk_token_cap":       256,
+			"root_chunk_as_heading": true,
+		},
+	}
+	result := CleanComponentParams(dslJSON, raw)
+	params, ok := result["TitleChunker:StaleSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TitleChunker params to survive, got %#v", result)
+	}
+	if _, ok := params["chunk_token_cap"]; !ok {
+		t.Errorf("chunk_token_cap dropped although the component schema declares it: %#v", params)
+	}
+	if _, ok := params["root_chunk_as_heading"]; !ok {
+		t.Errorf("root_chunk_as_heading dropped although the component schema declares it: %#v", params)
+	}
+}
+
+// TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates locks the
+// dataset/document save path for the title-chunker family: both params must
+// survive BuildParserConfig for every builtin template that carries a
+// TitleChunker or ManualChunker node, none of which bake the two keys in their
+// DSL params.
+func TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	tested := 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			continue
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			if s.ComponentName != "TitleChunker" && s.ComponentName != "ManualChunker" {
+				continue
+			}
+			tested++
+			overrides := map[string]interface{}{
+				s.CpnID: map[string]any{
+					"chunk_token_cap":       256,
+					"root_chunk_as_heading": true,
+				},
+			}
+			params, ok := BuildParserConfig(dslJSON, overrides)[s.CpnID].(map[string]any)
+			if !ok {
+				t.Fatalf("template %q: component %q missing from built parser_config", ref, s.CpnID)
+			}
+			if !reflect.DeepEqual(params["chunk_token_cap"], 256) {
+				t.Errorf("template %q %s: chunk_token_cap = %#v, want 256", ref, s.CpnID, params["chunk_token_cap"])
+			}
+			if !reflect.DeepEqual(params["root_chunk_as_heading"], true) {
+				t.Errorf("template %q %s: root_chunk_as_heading = %#v, want true", ref, s.CpnID, params["root_chunk_as_heading"])
+			}
+		}
+	}
+	if tested == 0 {
+		t.Fatal("expected at least one builtin template with a TitleChunker/ManualChunker component")
+	}
+}
+
+// operatorFormParamKeys mirrors the params the dataset/document pipeline
+// operator forms submit (transformFormConfigToApi in
+// web/src/utils/pipeline-operator.ts). Every key listed for a component must be
+// accepted by CleanComponentParams for that component in every builtin
+// template; otherwise a user edit is silently dropped.
+var operatorFormParamKeys = map[string][]string{
+	"TitleChunker": {
+		"method", "levels", "hierarchy", "include_heading_content",
+		"root_chunk_as_heading", "chunk_token_cap",
+	},
+	"ManualChunker": {"method", "levels", "hierarchy", "root_chunk_as_heading"},
+	"TokenChunker": {
+		"chunk_token_size", "overlapped_percent", "delimiters", "delimiter_mode",
+		"children_delimiters", "enable_children", "table_context_size", "image_context_size",
+	},
+	"GeneralChunker": {
+		"chunk_token_size", "overlapped_percent", "delimiters", "children_delimiters",
+		"enable_children", "table_context_size", "image_context_size",
+	},
+	"Tokenizer": {"search_method", "filename_embd_weight", "fields"},
+	"Extractor": {"llm_id", "keywords", "questions", "tags", "summary", "metadata"},
+}
+
+func TestCleanComponentParams_AcceptsOperatorFormParams(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	checked := 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			continue
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			expected, ok := operatorFormParamKeys[s.ComponentName]
+			if !ok {
+				continue
+			}
+			checked++
+			params := make(map[string]any, len(expected))
+			for _, key := range expected {
+				params[key] = "probe"
+			}
+			cleaned := CleanComponentParams(dslJSON, map[string]interface{}{s.CpnID: params})
+			got, ok := cleaned[s.CpnID].(map[string]any)
+			if !ok {
+				t.Fatalf("template %q: component %q missing from cleaned result", ref, s.CpnID)
+			}
+			for _, key := range expected {
+				if _, ok := got[key]; !ok {
+					t.Errorf("template %q component %s: operator-form param %q is silently dropped", ref, s.CpnID, key)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("expected at least one builtin template component matched by operatorFormParamKeys")
+	}
+}
