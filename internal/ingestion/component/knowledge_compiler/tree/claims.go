@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -302,13 +304,13 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 	}
 	raw, err := common.GenJSON(ctx, deps.Chat, req)
 	if err != nil {
-		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
+		rfcommon.Warn("tree: claim extraction skipped for batch", zap.String("batch", claimBatchLabel(batch)), zap.Error(err))
 		return nil
 	}
 
 	items, err := parseClaimItemsMap(raw)
 	if err != nil {
-		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
+		rfcommon.Warn("tree: claim extraction skipped for batch", zap.String("batch", claimBatchLabel(batch)), zap.Error(err))
 		return nil
 	}
 	if len(items) == 0 {
@@ -345,8 +347,9 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 	// document would let a quote match an unrelated chunk that merely happens to
 	// contain the same sentence, and would then attribute the claim to it.
 	claims, verified, rejected := ValidateClaims(claims, textByID, mode)
-	log.Printf("tree: claim extraction batch=%s chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
-		claimBatchLabel(batch), len(batch), len(claims), emitted, verified, rejected)
+	rfcommon.Info("tree: claim extraction",
+		zap.String("batch", claimBatchLabel(batch)), zap.Int("chunks", len(batch)), zap.Int("claims", len(claims)),
+		zap.Int("emitted_evidence", emitted), zap.Int("verified", verified), zap.Int("rejected", rejected))
 
 	// Recover attribution from the evidence that survived the gate: the chunk a
 	// quote was located in IS where the claim came from. A claim that neither the
@@ -367,7 +370,7 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 			}
 		}
 		if id == "" {
-			log.Printf("tree: dropped claim with no attributable source: %s", c.Name)
+			rfcommon.Warn("tree: dropped claim with no attributable source", zap.String("claim", c.Name))
 			continue
 		}
 		c.SourceChunkIDs = []string{id}

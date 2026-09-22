@@ -41,7 +41,6 @@ package chunker
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -260,7 +259,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
 		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
 		if eErr != nil {
-			slog.Warn("HierarchyTitleChunker: could not open PDF for on-demand cropping", "err", eErr)
+			common.Warn("HierarchyTitleChunker: could not open PDF for on-demand cropping", zap.Error(eErr))
 		}
 		if engine != nil {
 			defer engine.Close()
