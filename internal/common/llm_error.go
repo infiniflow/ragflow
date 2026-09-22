@@ -160,37 +160,39 @@ func TruncateForUser(s string) string {
 // "503 Service Unavailable, body: {\"error\":{\"message\":\"No available
 // channel...\"}}" as gibberish, while "503 Service Unavailable: No available
 // channel..." states the actual problem. The raw body stays in server logs
-// via Error()/Unwrap; only the user message is refined. Text without a
-// parseable JSON body (or without a message inside it) is returned as-is.
+// via Error()/Unwrap; only the user message is refined. Candidate JSON
+// objects are located by their opening brace and decoded independently of
+// key order, whitespace, or trailing text; text without a parseable body
+// (or without a message inside it) is returned as-is.
 func refineReason(s string) string {
-	i := strings.Index(s, `{"error"`)
-	if i < 0 {
-		i = strings.Index(s, `{"message"`)
-	}
-	if i < 0 {
-		return s
-	}
-	var payload struct {
-		Error struct {
+	for i := 0; i < len(s); {
+		start := strings.IndexByte(s[i:], '{')
+		if start < 0 {
+			break
+		}
+		start += i
+		var payload struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
 			Message string `json:"message"`
-		} `json:"error"`
-		Message string `json:"message"`
+		}
+		if err := json.NewDecoder(strings.NewReader(s[start:])).Decode(&payload); err == nil {
+			message := payload.Error.Message
+			if message == "" {
+				message = payload.Message
+			}
+			if message != "" {
+				prefix := strings.TrimRight(strings.TrimSuffix(strings.TrimSpace(s[:start]), "body:"), " :,:")
+				if prefix == "" {
+					return message
+				}
+				return prefix + ": " + message
+			}
+		}
+		i = start + 1
 	}
-	if err := json.Unmarshal([]byte(s[i:]), &payload); err != nil {
-		return s
-	}
-	message := payload.Error.Message
-	if message == "" {
-		message = payload.Message
-	}
-	if message == "" {
-		return s
-	}
-	prefix := strings.TrimRight(strings.TrimSuffix(strings.TrimSpace(s[:i]), "body:"), " :,:")
-	if prefix == "" {
-		return message
-	}
-	return prefix + ": " + message
+	return s
 }
 
 // AsLLMError finds the first LLMError in err's chain.

@@ -136,11 +136,11 @@ func TestRegisteredProviderChatErrorIsTyped(t *testing.T) {
 
 	dir, restore := setupProviderTestDir(t, "deepseek.json")
 	defer restore()
+	saved := providerManager
+	defer func() { providerManager = saved }()
 	if err := InitProviderManager(dir); err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
-	saved := providerManager
-	defer func() { providerManager = saved }()
 
 	driver, err := GetPreconfiguredDriver("deepseek", server.URL)
 	if err != nil {

@@ -131,6 +131,23 @@ func TestRefineReason(t *testing.T) {
 			in:   `failed: {"error":{"code":"rate_limited"}}`,
 			want: `failed: {"error":{"code":"rate_limited"}}`,
 		},
+		{
+			name: "reordered keys",
+			in:   `upstream error: {"type":"error","error":{"message":"overloaded_error"}}`,
+			want: "upstream error: overloaded_error",
+			dont: "type",
+		},
+		{
+			name: "pretty printed body",
+			in:   "failed:\n{\n  \"error\": {\n    \"message\": \"quota exceeded\"\n  }\n}",
+			want: "failed: quota exceeded",
+			dont: "{",
+		},
+		{
+			name: "trailing text after body ignored",
+			in:   `API error: 400: {"error":{"message":"bad input"}} (request id: abc)`,
+			want: "API error: 400: bad input",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
