@@ -588,10 +588,10 @@ type promoSpot struct {
 // same series and can be dropped against it. Roman-numeral front matter is
 // excluded (parseDecimalValue only), and the fit takes the dominant offset
 // rather than requiring every sample to agree, so a few stray in-zone integers
-// never disable the rule.
+// never disable the rule. Support is counted in distinct pages, not boxes, so a
+// handful of pages carrying many numbers cannot arm the rule alone.
 func fitPageNumberSeries(boxes []pdf.TextBox, pageHeights map[int]float64, gapAbove, gapBelow map[int]float64, numPages int) (int, bool) {
-	ceiling := pageNumberCeiling(numPages)
-	offsetCount := make(map[int]int, 16)
+	offsetPages := make(map[int]map[int]bool, 8)
 	for i := range boxes {
 		b := boxes[i]
 		if isNonTextLayout(b.LayoutType) {
@@ -605,18 +605,21 @@ func fitPageNumberSeries(boxes []pdf.TextBox, pageHeights map[int]float64, gapAb
 			continue
 		}
 		val, ok := parseDecimalValue(strings.TrimSpace(b.Text))
-		if !ok || val > ceiling {
+		if !ok || val < 0 || val > numPages {
 			continue
 		}
 		off := b.PageNumber - val
 		if off < 0 {
 			continue
 		}
-		offsetCount[off]++
+		if offsetPages[off] == nil {
+			offsetPages[off] = make(map[int]bool)
+		}
+		offsetPages[off][b.PageNumber] = true
 	}
 	bestOff, bestN := 0, 0
-	for off, n := range offsetCount {
-		if n > bestN {
+	for off, pages := range offsetPages {
+		if n := len(pages); n > bestN {
 			bestOff, bestN = off, n
 		}
 	}
@@ -624,6 +627,97 @@ func fitPageNumberSeries(boxes []pdf.TextBox, pageHeights map[int]float64, gapAb
 		return 0, false
 	}
 	return bestOff, true
+}
+
+// promoCompanionDrops returns indices of margin-band boxes that are the slogan
+// half of an advertisement already seen in the same band next to a dropped
+// site-promo box. It harvests the short, non-title, in-band peers of every
+// promo spot, then flags every band box whose collapsed text was harvested on
+// at least minCompanionPages distinct pages — so a piracy header whose URL line
+// is omitted or split on some pages still goes. The peers are keyed on
+// collapseText (whitespace + case only, digits preserved) so two lines that
+// differ only by a number are never merged. `skip` holds indices already doomed
+// by an earlier tier and is consulted, never mutated.
+func promoCompanionDrops(boxes []pdf.TextBox, perPage map[int][]int, pageHeights map[int]float64, skip map[int]struct{}, promoSpots []promoSpot) []int {
+	companionPages := make(map[string]map[int]bool)
+	for _, sp := range promoSpots {
+		h := pageHeights[sp.page]
+		for _, j := range perPage[sp.page] {
+			if _, dropped := skip[j]; dropped {
+				continue
+			}
+			b := boxes[j]
+			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
+				continue
+			}
+			if bandOf(b, h) != sp.band {
+				continue
+			}
+			key := collapseText(b.Text)
+			if key == "" || utf8.RuneCountInString(key) > promoCompanionMaxRunes {
+				continue
+			}
+			if companionPages[key] == nil {
+				companionPages[key] = make(map[int]bool)
+			}
+			companionPages[key][sp.page] = true
+		}
+	}
+	var out []int
+	for key, pages := range companionPages {
+		if len(pages) < minCompanionPages {
+			continue
+		}
+		for i := range boxes {
+			if _, dropped := skip[i]; dropped {
+				continue
+			}
+			b := boxes[i]
+			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
+				continue
+			}
+			h, ok := pageHeights[b.PageNumber]
+			if !ok || h <= 0 {
+				continue
+			}
+			if bandOf(b, h) != "" && collapseText(b.Text) == key {
+				out = append(out, i)
+			}
+		}
+	}
+	return out
+}
+
+// tightBandPageNumberDrops returns indices of isolated decimal page numbers that
+// sit in a wide margin band yet too tight under body text to clear the zone
+// gate, matched against the value = page - offset series fitted by
+// fitPageNumberSeries. A no-op (nil) when the series cannot be established.
+func tightBandPageNumberDrops(boxes []pdf.TextBox, pageHeights map[int]float64, gapAbove, gapBelow map[int]float64, numPages int) []int {
+	offset, ok := fitPageNumberSeries(boxes, pageHeights, gapAbove, gapBelow, numPages)
+	if !ok {
+		return nil
+	}
+	var out []int
+	for i := range boxes {
+		b := boxes[i]
+		if isNonTextLayout(b.LayoutType) {
+			continue
+		}
+		h, ok := pageHeights[b.PageNumber]
+		if !ok || h <= 0 {
+			continue
+		}
+		if classifyZone(b, h, gapAbove[i], gapBelow[i]) != "" {
+			continue
+		}
+		if b.Top < h*seqBandBottomRatio && b.Bottom > h*seqBandTopRatio {
+			continue
+		}
+		if val, ok := parseDecimalValue(strings.TrimSpace(b.Text)); ok && val == b.PageNumber-offset {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // isDeterministicPageNumber reports whether text is unambiguously a page number.
@@ -890,91 +984,17 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		return applyDrop(boxes, drop)
 	}
 
-	// Promo-companion propagation. A fixed slogan that shares a margin band with
-	// a dropped site-promo box is part of the same advertisement: piracy PDFs
-	// often render the URL line separately from (or omit it on some pages of) a
-	// header like "site handle  download more books free". Harvest the in-band,
-	// non-title, short peers of every dropped promo, then drop every band box
-	// whose normalized text was harvested on at least minCompanionPages pages.
-	// The page-count floor and the title/non-text guards keep body text that
-	// merely shares a page with an ad from ever being captured.
-	companionPages := make(map[string]map[int]bool)
-	for _, sp := range promoSpots {
-		h := pageHeights[sp.page]
-		for _, j := range perPage[sp.page] {
-			if _, dropped := drop[j]; dropped {
-				continue
-			}
-			b := boxes[j]
-			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
-				continue
-			}
-			if bandOf(b, h) != sp.band {
-				continue
-			}
-			norm := normalizeRunningText(b.Text)
-			if norm == "" || utf8.RuneCountInString(norm) > promoCompanionMaxRunes {
-				continue
-			}
-			if companionPages[norm] == nil {
-				companionPages[norm] = make(map[int]bool)
-			}
-			companionPages[norm][sp.page] = true
-		}
+	// Promo-companion propagation, then tight-band page-number recovery. Both
+	// run after Tier 1 and before the recurrence engine, so the boxes they
+	// remove never enter the recurrence statistics (which already skip dropped
+	// indices) and cannot perturb any "#"-masked count.
+	for _, idx := range promoCompanionDrops(boxes, perPage, pageHeights, drop, promoSpots) {
+		slog.Debug("header_footer: dropped by promo companion", "page", boxes[idx].PageNumber, "zone", bandOf(boxes[idx], pageHeights[boxes[idx].PageNumber]), "textLen", utf8.RuneCountInString(boxes[idx].Text))
+		drop[idx] = struct{}{}
 	}
-	for norm, pages := range companionPages {
-		if len(pages) < minCompanionPages {
-			continue
-		}
-		for i := range boxes {
-			if _, dropped := drop[i]; dropped {
-				continue
-			}
-			b := boxes[i]
-			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
-				continue
-			}
-			h, ok := pageHeights[b.PageNumber]
-			if !ok || h <= 0 {
-				continue
-			}
-			if bandOf(b, h) != "" && normalizeRunningText(b.Text) == norm {
-				slog.Debug("header_footer: dropped by promo companion", "page", b.PageNumber, "zone", bandOf(b, h), "textLen", utf8.RuneCountInString(b.Text))
-				drop[i] = struct{}{}
-			}
-		}
-	}
-
-	// Tight-band page numbers. When the gap-separated page numbers all satisfy
-	// value = page - offset, an isolated number sitting too tight under body
-	// text to clear the geometric gate is still part of that series; drop it
-	// against the fitted offset. Only decimal numbers are matched, so a genuine
-	// value that breaks the line never disables or misfires the rule.
-	if offset, ok := fitPageNumberSeries(boxes, pageHeights, allGapAbove, allGapBelow, numPages); ok {
-		for i := range boxes {
-			if _, dropped := drop[i]; dropped {
-				continue
-			}
-			b := boxes[i]
-			if isNonTextLayout(b.LayoutType) {
-				continue
-			}
-			h, ok := pageHeights[b.PageNumber]
-			if !ok || h <= 0 {
-				continue
-			}
-			if classifyZone(b, h, allGapAbove[i], allGapBelow[i]) != "" {
-				continue
-			}
-			if b.Top < h*seqBandBottomRatio && b.Bottom > h*seqBandTopRatio {
-				continue
-			}
-			val, ok := parseDecimalValue(strings.TrimSpace(b.Text))
-			if ok && val >= 0 && val == b.PageNumber-offset {
-				slog.Debug("header_footer: dropped by page-number series fit", "page", b.PageNumber, "value", val, "offset", offset)
-				drop[i] = struct{}{}
-			}
-		}
+	for _, idx := range tightBandPageNumberDrops(boxes, pageHeights, allGapAbove, allGapBelow, numPages) {
+		slog.Debug("header_footer: dropped by page-number series fit", "page", boxes[idx].PageNumber)
+		drop[idx] = struct{}{}
 	}
 
 	// Tier 2: Dual-Track Recurrence Engine.
@@ -1178,6 +1198,14 @@ func applyDrop(boxes []pdf.TextBox, drop map[int]struct{}) []pdf.TextBox {
 		out = append(out, boxes[i])
 	}
 	return out
+}
+
+// collapseText lower-cases and whitespace-collapses text without masking
+// digits, for comparison keys that must not treat two differently-numbered
+// lines as identical (unlike normalizeRunningText, which is for running
+// headers/footers whose per-page number must be folded away).
+func collapseText(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(text), " "))
 }
 
 // normalizeRunningText collapses whitespace, replaces digit runs with a single
