@@ -47,6 +47,7 @@ import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
 import memory.utils.gaussdb_conn as memory_gaussdb_conn
+import memory.utils.vastbase_conn as memory_vastbase_conn
 
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
@@ -453,6 +454,8 @@ def init_settings():
         # same GaussDB configuration and shares the lazy connection pool with
         # docStoreConn, but keeps its own table layout and query semantics.
         msgStoreConn = memory_gaussdb_conn.GaussDBMemoryConnection()
+    elif lower_case_doc_engine == "vastbase":
+        msgStoreConn = memory_vastbase_conn.VBConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:

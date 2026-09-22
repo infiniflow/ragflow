@@ -24,15 +24,17 @@ def test_doc_engine_vastbase_flag(monkeypatch):
     assert settings.DOC_ENGINE_GAUSSDB is False
 
 
-def test_init_settings_wires_vastbase_doc_store(monkeypatch):
+def test_init_settings_wires_vastbase_doc_and_message_store(monkeypatch):
     monkeypatch.setenv("DOC_ENGINE", "vastbase")
     monkeypatch.setenv("STORAGE_IMPL", "MINIO")
 
     fake_doc = MagicMock(name="VBConnectionDoc")
+    fake_msg = MagicMock(name="VBConnectionMsg")
 
     with (
         patch("common.settings.get_base_config", return_value={"host": "vb.local", "port": 5432, "db_name": "ragflow"}),
         patch("rag.utils.vastbase_conn.VBConnection", return_value=fake_doc),
+        patch("memory.utils.vastbase_conn.VBConnection", return_value=fake_msg),
         patch("common.settings.decrypt_database_config", return_value={}),
         patch("common.settings.StorageFactory.create", return_value=MagicMock()),
     ):
@@ -41,4 +43,5 @@ def test_init_settings_wires_vastbase_doc_store(monkeypatch):
         settings.init_settings()
 
     assert settings.docStoreConn is fake_doc
+    assert settings.msgStoreConn is fake_msg
     assert settings.VB["host"] == "vb.local"
