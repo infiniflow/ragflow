@@ -95,12 +95,16 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	pdf.SetX(bodyX)
 	pdf.SetY(bodyY)
 	pageNumber := 1
+	closePage := func() {
+		drawWatermark(pdf, fonts, opts)
+		drawFooter(pdf, fonts, opts, pageNumber)
+	}
 
 	for _, line := range splitLines(content) {
 		if line == "" {
 			bodyY += lineHeight
 			if bodyY > 760 {
-				drawFooter(pdf, fonts, opts, pageNumber)
+				closePage()
 				pdf.AddPage()
 				drawHeader(pdf, fonts, opts)
 				bodyY = 72.0
@@ -111,7 +115,7 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 			continue
 		}
 		if bodyY > 760 {
-			drawFooter(pdf, fonts, opts, pageNumber)
+			closePage()
 			pdf.AddPage()
 			drawHeader(pdf, fonts, opts)
 			bodyY = 72.0
@@ -125,10 +129,7 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 		bodyY += lineHeight
 	}
 
-	if opts.WatermarkText != "" {
-		drawWatermark(pdf, fonts, opts)
-	}
-	drawFooter(pdf, fonts, opts, pageNumber)
+	closePage()
 
 	return writePDFToBytes(pdf)
 }
