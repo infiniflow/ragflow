@@ -103,7 +103,7 @@ func (s *Service) deleteUserData(ctx context.Context, user *entity.User) (*Delet
 			publishWarning = true
 			break
 		}
-		if err := knowledge_compile.PublishDeleted(publishCtx, data.docTenants[document.KbID], document.KbID, document.ID, nil); err != nil {
+		if err := knowledge_compile.PublishDeleted(publishCtx, data.docTenants[document.KbID], document.KbID, document.ID, nil, nil); err != nil {
 			common.Warn("failed to publish document deletion", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.Error(err))
 			publishWarning = true
 		}
