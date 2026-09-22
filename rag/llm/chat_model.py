@@ -741,12 +741,14 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         if not self.tools:
             async for chunk in self.async_chat_streamly(system, history, gen_conf):
                 yield chunk
             return
 
-        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -1358,6 +1360,8 @@ class MWSChat(Base):
             if role == "assistant":
                 tool_calls = message.get("tool_calls")
                 if tool_calls:
+                    if not isinstance(tool_calls, list):
+                        raise ValueError("MWS assistant message tool_calls must be a list")
                     if content is not None and not isinstance(content, str):
                         raise ValueError("MWS assistant message content must be a string")
                     serialized_calls = json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
