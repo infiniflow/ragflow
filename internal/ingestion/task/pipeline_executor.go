@@ -109,21 +109,27 @@ type noRefreshChunkInserter interface {
 	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
 }
 
-// insertChunksForIngestion writes chunks through the engine's no-refresh path
-// when it offers one, falling back to the plain inserter otherwise.
+// insertChunksForIngestion writes non-final chunks through the engine's
+// no-refresh path when it offers one, falling back to the plain inserter
+// otherwise.
 //
-// Waiting for a refresh costs ~0.5s per write (median; p90 1.0s, max 5.0s) with
-// the KB index's refresh_interval=1000ms, and it buys nothing during ingestion:
-// the index publishes the chunks on its own refresh cycle a moment later, so the
-// only difference is up to a second before they are searchable. It is also what
-// Python's ingestion does - it inserts with refresh=False
-// (rag/svr/task_executor_refactor/chunk_service.py:386 and :423) while its API
-// default stays "wait_for" - so this keeps the two ingestion paths in step.
+// Refreshing every batch adds unnecessary latency. The writer uses the regular
+// inserter for its final batch, so all preceding batches become searchable
+// before the document task is acknowledged and its completion event is sent.
 func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
 			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
 		}
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+	}
+}
+
+// insertFinalChunksForIngestion waits for the index refresh before returning.
+// The final write makes every preceding no-refresh batch searchable before the
+// document task is acknowledged and its completion event is published.
+func insertFinalChunksForIngestion(eng engine.DocEngine) InsertFunc {
+	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
 	}
 }
@@ -143,7 +149,12 @@ func NewPipelineExecutor(
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
-		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
+		indexWriter: newChunkIndexWriter(
+			insertChunksForIngestion(engine.Get()),
+			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
+			taskCtx.Doc.KbID,
+			docBulkSize,
+		).withFinalInsertFunc(insertFinalChunksForIngestion(engine.Get())),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
 			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
 		},
@@ -158,6 +169,7 @@ type DeleteChunksFunc func(ctx context.Context, condition map[string]any, baseNa
 
 func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	s.indexWriter.insertFunc = f
+	s.indexWriter.finalInsertFunc = f
 	return s
 }
 
