@@ -65,7 +65,16 @@ export const useConnectionDrag = (
       mouseStartPosRef.current = { x: event.clientX, y: event.clientY };
     }
 
-    if (params && params.nodeId && params.handleId) {
+    // Only a drag starting from an output (source) handle may create a
+    // downstream node. A drag from an input (target) handle is kept for
+    // connecting to another node, but dropping it on the pane must not
+    // create a placeholder node or the "next step" menu.
+    if (
+      params &&
+      params.nodeId &&
+      params.handleId &&
+      params.handleType === 'source'
+    ) {
       connectionStartRef.current = {
         nodeId: params.nodeId,
         handleId: params.handleId,
