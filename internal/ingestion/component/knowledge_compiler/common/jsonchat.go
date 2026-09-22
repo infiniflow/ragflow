@@ -176,16 +176,12 @@ func CompactError(err error) string {
 	}
 	const maxLength = 1000
 	message := strings.Join(strings.Fields(err.Error()), " ")
-	message = errorCredentialRE.ReplaceAllString(message, "$1=[REDACTED]")
-	message = errorAPIKeyRE.ReplaceAllString(message, "[REDACTED]")
+	message = appcommon.RedactCredentials(message)
 	if len(message) > maxLength {
 		return message[:maxLength] + "..."
 	}
 	return message
 }
-
-var errorCredentialRE = regexp.MustCompile(`(?i)(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?[^,\s}"']+`)
-var errorAPIKeyRE = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]+`)
 
 // jsonCandidates yields progressively "cleaned" versions of an LLM reply that
 // may contain JSON: the raw text, a fenced ```json ... ``` block, and the

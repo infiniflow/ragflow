@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // LLMErrorKind distinguishes the two user-attributable failure sources.
@@ -145,14 +146,35 @@ func ExtractHTTPStatus(err error) int {
 	return 0
 }
 
-// TruncateForUser collapses whitespace and caps length so a provider error
-// body (often JSON/HTML) fits in a single readable detail line.
+// TruncateForUser collapses whitespace, redacts credential-shaped values and
+// caps length (never splitting a multi-byte rune) so a provider error body —
+// often JSON/HTML, occasionally echoing request URLs or keys — fits in a
+// single safe, readable detail line.
 func TruncateForUser(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
+	s = RedactCredentials(s)
 	if len(s) > maxUserReasonLen {
-		s = s[:maxUserReasonLen] + "..."
+		n := maxUserReasonLen
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n] + "..."
 	}
 	return s
+}
+
+// errorCredentialRE matches credential-valued assignments ("api-key: sk-...",
+// "password=...", ...) keeping the field name so readers see what was hidden.
+var errorCredentialRE = regexp.MustCompile(`(?i)(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?[^,\s}"']+`)
+
+// errorAPIKeyRE matches bare API-key-shaped tokens.
+var errorAPIKeyRE = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]+`)
+
+// RedactCredentials removes credential-shaped values from text before it is
+// surfaced to users (provider errors routinely echo request URLs and keys).
+func RedactCredentials(s string) string {
+	s = errorCredentialRE.ReplaceAllString(s, "$1=[REDACTED]")
+	return errorAPIKeyRE.ReplaceAllString(s, "[REDACTED]")
 }
 
 // refineReason replaces an embedded provider JSON error body with the

@@ -519,7 +519,13 @@ func dispatchMinerUPDF(
 		baseURL = *apiConfig.BaseURL
 	}
 	if baseURL == "" {
-		baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
+		var baseURLErr error
+		baseURL, baseURLErr = resolveMinerUBaseURL(driver, apiConfig)
+		if baseURLErr != nil {
+			// Surfaced because a silent empty base URL degrades apiURL to a
+			// relative "/file_parse" request that fails far from the cause.
+			common.Warn("parser: MinerU base URL unresolved: " + baseURLErr.Error())
+		}
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
@@ -645,11 +651,14 @@ func dispatchPaddleOCRPdf(
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.
+// Registered drivers are wrapped by models.WrapProviderChatErrors, which
+// only promotes the ModelDriver method set — capability probes must assert
+// on the underlying driver.
 func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig) (string, error) {
 	type baseURLGetter interface {
 		GetBaseURL(*modelModule.APIConfig) (string, error)
 	}
-	if g, ok := driver.(baseURLGetter); ok {
+	if g, ok := modelModule.Underlying(driver).(baseURLGetter); ok {
 		return g.GetBaseURL(apiConfig)
 	}
 	return "", fmt.Errorf("driver %q does not expose GetBaseURL", driver.Name())

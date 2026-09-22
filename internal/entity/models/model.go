@@ -301,9 +301,12 @@ func InitProviderManager(dirPath string) error {
 		if err != nil {
 			return fmt.Errorf("error creating model driver for provider %s: %w", provider.Name, err)
 		}
-		// Every ModelDriver in the process is minted here, so this is the one
-		// boundary where chat failures gain provider attribution for all
-		// consumers (extractor, vision, agent LLM nodes, services).
+		// Every driver registered with the provider manager passes through
+		// here, so this is the boundary where chat failures gain provider
+		// attribution for all consumers (extractor, vision, agent LLM
+		// nodes, services). Known exemptions: the synthetic "dummy" branch
+		// of GetPreconfiguredDriver and drivers hand-constructed outside
+		// the manager return unclassified errors.
 		provider.ModelDriver = WrapProviderChatErrors(provider.ModelDriver)
 
 		// Add to providers list

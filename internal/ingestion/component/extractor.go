@@ -435,7 +435,10 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	common.Info(fmt.Sprintf("extractor: chat: driver=%s modelName=%s baseUrl=%s", driver, modelName, req.BaseURL))
 	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
-		return nil, common.NewLLMConfigError(driver, modelName, fmt.Errorf("extractor: resolve driver %q: %w", driver, err))
+		if isExtractorConfigFailure(err) {
+			return nil, common.NewLLMConfigError(driver, modelName, fmt.Errorf("extractor: resolve driver %q: %w", driver, err))
+		}
+		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -1196,9 +1199,12 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	}
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
-		// A model that cannot be resolved is a configuration problem on the
-		// tenant's side, not a RAGFlow defect.
-		return nil, common.NewLLMConfigError("", in.llmID, err)
+		// Only configuration problems are attributed to the tenant's model
+		// settings; infrastructure errors (DB failures) keep the raw chain.
+		if isExtractorConfigFailure(err) {
+			return nil, common.NewLLMConfigError("", in.llmID, err)
+		}
+		return nil, err
 	}
 	msgs := buildExtractorMessages(systemPrompt, chunkText)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
@@ -1323,10 +1329,17 @@ func isRetryableLLMError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	if le, ok := common.AsLLMError(err); ok {
-		if le.StatusCode > 0 {
-			return le.StatusCode == 429 || le.StatusCode >= 500
+	if le, ok := common.AsLLMError(err); ok && le.StatusCode > 0 {
+		switch {
+		case le.StatusCode == 429 || le.StatusCode >= 500:
+			return true
+		case nonRetryableStatusRE.MatchString(strconv.Itoa(le.StatusCode)):
+			return false
 		}
+		// A typed status outside the retryable set and outside the
+		// historically non-retryable enumeration (408/409/425/499, ...)
+		// falls through to the message heuristic, preserving the prior
+		// default-retry behavior for unrecognized statuses.
 	}
 	msg := strings.ToLower(err.Error())
 	for _, s := range []string{
@@ -1379,6 +1392,35 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 		return nil, nil
 	}
 	return parsed, nil
+}
+
+// isExtractorConfigFailure reports whether a model-target resolution error
+// is a tenant configuration problem (deleted/disabled/mis-typed model,
+// missing provider) as opposed to an infrastructure failure. Only the
+// config-shaped errors may be attributed to the user's model settings; DB
+// or other runtime failures keep the raw chain so they surface as a
+// RAGFlow-side issue. The shapes are this repo's own resolver messages, so
+// exact-substring matching is stable.
+func isExtractorConfigFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errorsIsRecordNotFound(err) {
+		return true
+	}
+	msg := err.Error()
+	for _, s := range []string{
+		"not found or not usable", "is disabled", "cannot be used as",
+		"has no access to provider", "driver not found",
+		"model provider config not found", "model config not found",
+		"no default", "has no", "provider name missing",
+		"does not support custom base_url", "is not configured",
+	} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveExtractorChatTarget resolves the llm_id into driver / model /

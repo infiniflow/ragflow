@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 )
@@ -75,23 +76,72 @@ func TestWrapProviderChatErrors_TypesStreamFailures(t *testing.T) {
 	}
 }
 
-func TestWrapProviderChatErrors_PassesThroughNilAndContextErrors(t *testing.T) {
+func TestWrapProviderChatErrors_PassesThroughNilAndCallerContextErrors(t *testing.T) {
 	d := WrapProviderChatErrors(&fakeChatDriver{name: "p"})
 	if _, err := d.ChatWithMessages(context.Background(), "m", nil, nil, nil, nil); err != nil {
 		t.Fatalf("success must stay nil, got %v", err)
 	}
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
 	for _, raw := range []error{
 		context.Canceled,
 		fmt.Errorf("http round trip: %w", context.DeadlineExceeded),
 	} {
 		d := WrapProviderChatErrors(&fakeChatDriver{name: "p", chatErr: raw})
-		_, err := d.ChatWithMessages(context.Background(), "m", nil, nil, nil, nil)
+		_, err := d.ChatWithMessages(canceledCtx, "m", nil, nil, nil, nil)
 		if _, typed := common.AsLLMError(err); typed {
-			t.Errorf("caller control-flow error must stay untyped: %v", err)
+			t.Errorf("caller-side cancellation must stay untyped: %v", err)
 		}
 		if !goerrors.Is(err, goerrors.Unwrap(raw)) && !goerrors.Is(err, raw) {
 			t.Errorf("pass-through must keep the original chain reachable: %v", err)
 		}
+	}
+
+	// Provider-side slowness: the driver's internal request timeout fires
+	// while the caller's context is still live — this IS the provider's
+	// failure and must be attributed.
+	liveCtx, liveCancel := context.WithTimeout(context.Background(), time.Hour)
+	defer liveCancel()
+	d = WrapProviderChatErrors(&fakeChatDriver{name: "p", chatErr: fmt.Errorf("failed to send request: %w", context.DeadlineExceeded)})
+	_, err := d.ChatWithMessages(liveCtx, "m", nil, nil, nil, nil)
+	if le, typed := common.AsLLMError(err); !typed || le.Kind != common.LLMErrorProvider {
+		t.Errorf("provider-internal timeout must be typed as provider error: %v (%v)", err, typed)
+	}
+}
+
+// TestUnderlyingRestoresConcreteDriverType pins the wrapper's core
+// escape-hatch invariant: interface embedding promotes only the ModelDriver
+// method set, so any concrete-type or capability assertion must resolve
+// through Underlying back to the original driver pointer. Guards every
+// future call site that probes drivers by type, not just existing ones.
+func TestUnderlyingRestoresConcreteDriverType(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "mineru.json")
+	defer restore()
+	saved := providerManager
+	defer func() { providerManager = saved }()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	provider := GetProviderManager().FindProvider("MinerU.Net")
+	if provider == nil || provider.ModelDriver == nil {
+		t.Fatal("MinerU.Net provider missing")
+	}
+	wrapped := provider.ModelDriver
+	if _, isWrapper := wrapped.(*providerErrorDriver); !isWrapper {
+		t.Fatalf("registered driver not wrapped: %T", wrapped)
+	}
+	underlying := Underlying(wrapped)
+	if underlying == wrapped {
+		t.Fatal("Underlying did not unwrap")
+	}
+	if _, ok := underlying.(*MinerUModel); !ok {
+		t.Errorf("Underlying type = %T, want *MinerUModel", underlying)
+	}
+	// Name() survives promotion, so name-based checks keep working.
+	if underlying.Name() != wrapped.Name() {
+		t.Errorf("Name mismatch: %q vs %q", underlying.Name(), wrapped.Name())
 	}
 }
 

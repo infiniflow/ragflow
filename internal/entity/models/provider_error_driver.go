@@ -65,21 +65,24 @@ func Underlying(driver ModelDriver) ModelDriver {
 
 func (d *providerErrorDriver) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	resp, err := d.ModelDriver.ChatWithMessages(ctx, modelName, messages, apiConfig, chatModelConfig, modelUsage)
-	return resp, classifyChatError(d.Name(), modelName, err)
+	return resp, classifyChatError(ctx, d.Name(), modelName, err)
 }
 
 func (d *providerErrorDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return classifyChatError(d.Name(), modelName, d.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, apiConfig, modelConfig, modelUsage, sender))
+	return classifyChatError(ctx, d.Name(), modelName, d.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, apiConfig, modelConfig, modelUsage, sender))
 }
 
-// classifyChatError types a provider rejection while letting cancellation and
-// deadline errors through untyped: they are the caller's own control flow,
-// not a model-service failure to attribute to the tenant's provider.
-func classifyChatError(provider, model string, err error) error {
+// classifyChatError types a provider rejection. Cancellation and deadline
+// errors pass through untyped only while the caller's own context is done:
+// they are the caller's control flow, not a model-service failure. A
+// deadline error with a live caller context came from the driver's internal
+// request timeout (the provider was too slow) and is attributed to the
+// provider like any other failure.
+func classifyChatError(ctx context.Context, provider, model string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		return err
 	}
 	return common.NewLLMProviderError(provider, model, err)

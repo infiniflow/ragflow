@@ -2330,6 +2330,7 @@ func TestIsRetryableLLMError_TypedStatus(t *testing.T) {
 		want bool
 	}{
 		{"typed 429 retryable", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 429: slow down")), true},
+		{"typed unenumerated 408 keeps legacy retryable default", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 408: request timeout")), true},
 		{"typed 503 retryable", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 503")), true},
 		{"typed 401 terminal", common.NewLLMProviderError("p", "m", errors.New("API request failed with status 401: bad key")), false},
 		{"typed 404 terminal", common.NewLLMProviderError("p", "m", errors.New("status code: 404, model not found")), false},
@@ -2340,6 +2341,30 @@ func TestIsRetryableLLMError_TypedStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isRetryableLLMError(tt.err); got != tt.want {
 				t.Errorf("isRetryableLLMError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsExtractorConfigFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"record not found is config", gorm.ErrRecordNotFound, true},
+		{"disabled model is config", errors.New(`model "m" is disabled`), true},
+		{"wrong type is config", errors.New(`model "m" cannot be used as chat model`), true},
+		{"missing provider is config", errors.New("provider \"X\" driver not found"), true},
+		{"not usable is config", errors.New(`tenant model "gpt-9@nope" not found or not usable`), true},
+		{"db failure is infra", errors.New("dial tcp 10.0.0.2:3306: connect: connection refused"), false},
+		{"wrapped db failure is infra", fmt.Errorf("model %q lookup failed: %w", "m", errors.New("context deadline exceeded")), false},
+		{"nil", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isExtractorConfigFailure(tc.err); got != tc.want {
+				t.Errorf("isExtractorConfigFailure(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

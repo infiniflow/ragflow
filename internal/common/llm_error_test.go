@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestLLMErrorChainPreserved(t *testing.T) {
@@ -202,5 +203,27 @@ func TestUserMessagePunctuationJoinsCleanly(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Incorrect API key provided. This error") {
 		t.Errorf("period-ending reason must join with a single space: %q", msg)
+	}
+}
+
+func TestTruncateForUserRedactsCredentials(t *testing.T) {
+	in := `API request failed with status 401: invalid api-key: sk-abc123XYZ provided (authorization: Bearer xyz secret=whatever)`
+	got := TruncateForUser(in)
+	if strings.Contains(got, "sk-abc123XYZ") || strings.Contains(got, "Bearer xyz") || strings.Contains(got, "secret=whatever") {
+		t.Errorf("credential values must be redacted: %q", got)
+	}
+	if !strings.Contains(got, "[REDACTED]") {
+		t.Errorf("expected redaction marker: %q", got)
+	}
+}
+
+func TestTruncateForUserIsRuneSafe(t *testing.T) {
+	in := strings.Repeat("模型服务不可用", 100) // multi-byte runes spanning the cap
+	got := TruncateForUser(in)
+	if !utf8.ValidString(got) {
+		t.Errorf("truncated string splits a rune: %q", got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("truncation marker missing: %q", got)
 	}
 }
