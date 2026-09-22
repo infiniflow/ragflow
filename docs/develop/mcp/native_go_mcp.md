@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
 title: Native Go MCP Runtime
 sidebar_label: Native Go MCP Runtime
 slug: /native_go_mcp
@@ -39,7 +39,9 @@ Uncomment the MCP example in `conf/service_conf.yaml` for a local binary, or in
 than the generated file. Alternatively, put the environment settings in
 `docker/.env-go`. Start `entrypoint-go.sh` without MCP flags.
 For access through a published Docker port, set the container bind address to
-`0.0.0.0` and publish `9382`; use host mode for clients outside a trusted network.
+`0.0.0.0` and add `- ${SVR_MCP_PORT}:9382` to the relevant service's `ports`
+in `docker/docker-compose-go.yml`. That file does not publish `9382` by
+default. Use host mode for clients that authenticate individually.
 The existing MCP endpoint on the main API remains available independently.
 
 Environment values override YAML, which overrides built-in defaults:
@@ -80,7 +82,7 @@ to disable one. Set `json_response: false` to stream streamable HTTP responses.
 
 If streamable HTTP is disabled, JSON responses are disabled first. If both
 transports are disabled, streamable HTTP is then re-enabled with JSON responses
-still disabled, preserving the Python server's resolution order.
+still disabled.
 
 ## Streamable HTTP smoke example
 

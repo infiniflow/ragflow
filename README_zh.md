@@ -62,8 +62,8 @@
 - 📌 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系统架构](#-系统架构)
-- 🎬 [自主托管](#-自主托管)
-- 🔧 [系统配置](#-系统配置)
+- 🐳 [Docker 快速部署](#-docker-快速部署)
+- ⚙️ [Docker 配置与调整](#-docker-配置与调整)
 - 🔨 [以源代码启动服务](#-以源代码启动服务)
 - 📚 [技术文档](#-技术文档)
 - 📜 [路线图](#-路线图)
@@ -80,6 +80,8 @@
 ## 🎮 快速开始
 
 请登录网址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 体验云服务。
+
+如果想在本地部署，请参阅[Docker 快速部署](#-docker-快速部署)。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -123,7 +125,7 @@
 ### 🧩 **知识编译（Knowledge Compilation）**
 
 - 支持文档级和知识库级编译，将原始内容组织为结构化的知识产物。
-- 通过编译模板生成 Wiki、Graph、Tree、PageIndex、思维导图、时间线及 Skills，满足不同的知识组织和复用需求。
+- 通过编译模板生成 Wiki、Graph、Tree、PageIndex、Mindmap、Timeline及 Skills，满足不同的知识组织和复用需求。
 - 支持配置编译模型与处理规则，并查看、更新和重新生成知识产物。
 
 ### 🧠 **Agentic Retrieval**
@@ -164,7 +166,7 @@
 
 图中的 Retrieval service 以 Infinity、Elasticsearch 为例，Storage service 以 MinIO、S3 为例；模型由所配置的 Model provider 提供。这些方框表示功能边界，不代表每个方框都必须单独部署为进程。Go 服务的 API、Admin 和 Ingestion 分别通过 `ragflow_server` 的不同模式启动；DeepDoc 在 Go 进程内运行。实际部署的组件和后端以配置为准。
 
-## 🎬 自主托管
+## 🐳 Docker 快速部署
 
 ### 📝 前提条件
 
@@ -242,28 +244,28 @@ Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的
 
    _好戏开始，接着奏乐接着舞！_
 
-## 🔧 系统配置
+详情请见 [快速入门指南](./docs/quickstart.mdx)。
 
-Go 版 Docker 部署主要使用以下文件：
+## ⚙️ Docker 配置与调整
 
-- [.env-go](./docker/.env-go)：Go 服务使用的镜像、服务配置及端口等环境变量。
-- [.env](./docker/.env)：基础 Compose 依赖服务使用的环境文件；当前 `docker-compose-base.yml` 中的 MySQL、Elasticsearch、MinIO、Redis 等服务仍从此文件读取变量。
-- [service_conf.yaml.template](./docker/service_conf.yaml.template)：配置各类后台服务。
-- [docker-compose-go.yml](./docker/docker-compose-go.yml)：启动 Go 服务及其依赖。
+首次启动前，进入 `ragflow/docker` 目录，按部署环境修改 `.env-go` 中的 `RAGFLOW_IMAGE`。默认值 `infiniflow/ragflow:go-test-1` 是测试标签；没有该镜像时，先按下文“源码编译 Docker 镜像”构建，再将其改为 `ragflow:go-local`。不能访问镜像站点或模型站点时，也在 `.env-go` 中配置镜像来源和 `HF_ENDPOINT`。
 
-请确保 [.env-go](./docker/.env-go) 与 [.env](./docker/.env) 中的密码、端口和服务地址保持一致，并与 [service_conf.yaml.template](./docker/service_conf.yaml.template) 中的连接配置对应。Go Compose 会读取 `.env-go`，基础依赖服务仍会读取 `.env`。
+如需修改网页访问端口，调整 `.env-go` 中的 `SVR_WEB_HTTP_PORT`（默认 `80`）。如需修改数据库、对象存储或检索服务的密码及端口，请同时修改 `.env-go` 和 `.env` 中对应的值，并检查 `service_conf.yaml.template` 中的连接配置；Go 服务读取 `.env-go`，基础依赖服务还会读取 `.env`。更多配置项见 [Docker 配置说明](./docker/README.md)。
 
-如果不能访问镜像站点或模型站点，请按 [.env-go](./docker/.env-go) 中的说明配置镜像来源和 `HF_ENDPOINT`。
+配置完成后，在 `ragflow/docker` 目录运行：
 
-> [./docker/README](./docker/README.md) 解释了 [service_conf.yaml.template](./docker/service_conf.yaml.template) 用到的环境变量设置和服务配置。
+```bash
+docker compose --env-file .env-go -f docker-compose-go.yml up -d
+docker compose --env-file .env-go -f docker-compose-go.yml ps
+```
 
-如需更改 Web 端口，在 [.env-go](./docker/.env-go) 中调整 `SVR_WEB_HTTP_PORT`；如需更改基础依赖服务的映射端口，也要同步检查 [.env](./docker/.env)。
+修改配置后，重新运行上述 `up -d` 命令，让 Compose 重新创建配置发生变化的容器；如果只修改了挂载的 `service_conf.yaml.template`，还需重启 Go 服务容器：
 
-> 所有系统配置都需要通过系统重启生效：
->
-> ```bash
-> docker compose --env-file .env-go -f docker-compose-go.yml up -d
-> ```
+```bash
+docker compose --env-file .env-go -f docker-compose-go.yml restart ragflow-cpu
+```
+
+使用 GPU 部署时，将最后一条命令中的 `ragflow-cpu` 改为 `ragflow-gpu`。
 
 ### 把文档引擎从 Elasticsearch 切换成为 Infinity
 
@@ -286,6 +288,8 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 
 > [!WARNING]
 > Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
+
+详情请见 [Docker 配置说明](./docker/README.md)。
 
 ## 🔧 源码编译 Docker 镜像
 
@@ -359,6 +363,8 @@ docker build --platform linux/amd64 \
    ```
 
    开发结束时，在各服务终端按 `Ctrl+C` 停止进程；如需停止依赖容器，运行 `docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml --profile ragflow-go --profile elasticsearch --profile metadata-mysql down`。
+
+详情请见 [从源代码启动服务](./docs/develop/launch_ragflow_from_source.md)。
 
 ## 📚 技术文档
 
