@@ -119,6 +119,9 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		if s.ComponentName == "GeneralChunker" {
 			keys["delimiters"] = struct{}{}
 		}
+		if IsChunkerComponent(s.CpnID) {
+			keys["enable_children"] = struct{}{}
+		}
 		validCPNs[s.CpnID] = keys
 		componentNames[s.CpnID] = s.ComponentName
 	}
@@ -285,6 +288,42 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 		result[cpnID] = base
 	}
 	return result
+}
+
+// ApplyParentChildChunkerConfig derives runtime children_delimiters from the
+// top-level parent_child setting. Callers with component-scoped chunker edits
+// apply those edits after this mapping.
+func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
+	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	componentConfig["parent_child"] = parentChild
+	useParentChild, _ := parentChild["use_parent_child"].(bool)
+	childrenDelimiters := []string{}
+	if useParentChild {
+		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+		}
+	}
+
+	for componentID, value := range componentConfig {
+		if !IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		params["children_delimiters"] = childrenDelimiters
+	}
+}
+
+// IsChunkerComponent reports whether a pipeline component can split parent
+// chunks into children.
+func IsChunkerComponent(componentID string) bool {
+	lowerID := strings.ToLower(componentID)
+	return strings.HasPrefix(lowerID, "generalchunker:") || strings.HasPrefix(lowerID, "tokenchunker:")
 }
 
 // ResolveComponentParamsDefaults takes DSL JSON bytes and returns the

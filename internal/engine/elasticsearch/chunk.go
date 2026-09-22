@@ -589,18 +589,17 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 				"source": fmt.Sprintf("ctx._source.remove(\"%s\");", k),
 			},
 		}
-		body, _ := json.Marshal(scriptBody)
+		body, _ = json.Marshal(scriptBody)
 		req := esapi.UpdateRequest{
 			Index:      indexName,
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
 		}
-		res, err := req.Do(ctx, e.client)
+		res, err = req.Do(ctx, e.client)
 		if err != nil {
 			common.Warn("Failed to remove feas field", zap.String("field", k), zap.Error(err))
-		} else {
-			res.Body.Close()
 		}
+		closeESBody(res)
 	}
 
 	// Remove specific field if removeField is set
@@ -610,18 +609,17 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 				"source": fmt.Sprintf("ctx._source.remove('%s');", removeField),
 			},
 		}
-		body, _ := json.Marshal(scriptBody)
+		body, _ = json.Marshal(scriptBody)
 		req := esapi.UpdateRequest{
 			Index:      indexName,
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
 		}
-		res, err := req.Do(ctx, e.client)
+		res, err = req.Do(ctx, e.client)
 		if err != nil {
 			common.Warn("Failed to remove field", zap.String("field", removeField), zap.Error(err))
-		} else {
-			res.Body.Close()
 		}
+		closeESBody(res)
 	}
 
 	// Remove specific values from array fields (removeDict)
@@ -641,18 +639,17 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 					"params": params,
 				},
 			}
-			body, _ := json.Marshal(scriptBody)
+			body, _ = json.Marshal(scriptBody)
 			req := esapi.UpdateRequest{
 				Index:      indexName,
 				DocumentID: actualID,
 				Body:       bytes.NewReader(body),
 			}
-			res, err := req.Do(ctx, e.client)
+			res, err = req.Do(ctx, e.client)
 			if err != nil {
 				common.Warn("Failed to remove dict fields", zap.Error(err))
-			} else {
-				res.Body.Close()
 			}
+			closeESBody(res)
 		}
 	}
 
@@ -890,6 +887,17 @@ func sanitizeString(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	return strings.TrimSpace(s)
+}
+
+// closeESBody releases an ES response body, tolerating the nil response the
+// client returns alongside a transport error. Callers that check `err` first
+// and close only on the success branch leak the body whenever the client ever
+// hands back a non-nil response with an error, so every Do/Search call site
+// funnels its close through here.
+func closeESBody(res *esapi.Response) {
+	if res != nil && res.Body != nil {
+		_ = res.Body.Close()
+	}
 }
 
 // copyFields creates a shallow copy of a map
@@ -1249,6 +1257,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				// knn leg's w; a text-only query has no such pairing, so the
 				// boolean filter wrapper must not apply the constant boost —
 				// otherwise every BM25 score is silently multiplied by 0.5.
+				//
+				// Logged because it is the boost that orders the first-stage
+				// result set, and so decides which candidates survive the
+				// caller's size cap.
 				if hasVectorMatch {
 					boolMap["boost"] = 1.0 - vectorSimilarityWeight
 				}
@@ -1411,6 +1423,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		return nil, fmt.Errorf("error encoding query: %w", err)
 	}
 
+	// Two legs (text + knn) decide the result set; when the window comes back short
+	// the body is logged below, to tell "the index has less" from "the request
+	// asked for less".
+	hybrid := hasTextMatch && hasVectorMatch
+
 	// Execute search. When useSearchAfter is true we must NOT send
 	// from/size (we dropped them above) and instead walk the result set
 	// page-by-page with the search_after cursor — ES otherwise returns
@@ -1434,34 +1451,26 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// each iteration a fresh bytes.NewReader.
 		payload := append([]byte(nil), buf.Bytes()...)
 		for _, indexName := range req.IndexNames {
-			res, err := e.client.Search(
-				e.client.Search.WithContext(ctx),
-				e.client.Search.WithIndex(indexName),
-				e.client.Search.WithBody(bytes.NewReader(payload)),
-				e.client.Search.WithTrackTotalHits(true),
-			)
-			if err != nil {
-				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(err))
+			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
+			if esErr != nil {
+				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(esErr))
 				continue
 			}
-			defer res.Body.Close()
-
-			if res.IsError() {
-				bodyBytes, _ := io.ReadAll(res.Body)
-				common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
-				continue
+			if hybrid {
+				// A window the backend could not fill is a candidate shortfall
+				// upstream; only then is the request body worth its size.
+				common.InfoCtx(ctx, "Elasticsearch hybrid response",
+					zap.String("index", indexName),
+					zap.Int64("total", indexTotal),
+					zap.Int("returned", len(searchChunks)),
+					zap.Int("window", limit))
+				if limit > 0 && len(searchChunks) < limit {
+					common.InfoCtx(ctx, "Elasticsearch hybrid body (window not filled)",
+						zap.Strings("indexes", req.IndexNames),
+						zap.String("body", elideQueryVector(payload)))
+				}
 			}
-
-			// Parse response and return results
-			var esResp SearchResponse
-			if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
-				common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
-				continue
-			}
-
-			searchChunks := convertESResponse(&esResp, "")
-			totalHits += esResp.Hits.Total.Value
-
+			totalHits += indexTotal
 			allResults = append(allResults, searchChunks...)
 		}
 	}
@@ -1472,10 +1481,9 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Post-processing: Sort results by score
 	if len(allResults) > 0 && (matchText != nil || hasVectorMatch) {
+		// "_score" is the ES hit score. "SCORE" is Infinity's column and reads
+		// back empty here, which flattened every hybrid chunk's score to 0.
 		scoreColumn := "_score"
-		if matchText != nil && hasVectorMatch {
-			scoreColumn = "SCORE"
-		}
 
 		pagerankField := common.PAGERANK_FLD
 		if isSkillIndex {
@@ -1493,6 +1501,35 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		Chunks: allResults,
 		Total:  totalHits,
 	}, nil
+}
+
+func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithBody(bytes.NewReader(payload)),
+		e.client.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(err))
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, 0, fmt.Errorf("elasticsearch error response: %s", string(bodyBytes))
+	}
+
+	// Parse response and return results
+	var esResp SearchResponse
+	if err = json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+		common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
+		return nil, 0, err
+	}
+
+	return convertESResponse(&esResp, ""), esResp.Hits.Total.Value, nil
 }
 
 // searchAfterFetcher issues one ES search request with the given batch
@@ -2106,7 +2143,7 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, isSkillIndex, isMemor
 		"query_string": map[string]interface{}{
 			"fields":               fields,
 			"type":                 "best_fields",
-			"query":                strings.ToLower(matchText.MatchingText),
+			"query":                lowerCaseQueryText(matchText.MatchingText),
 			"minimum_should_match": minimumShouldMatch,
 			"boost":                boost,
 		},
@@ -2175,63 +2212,13 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 
 	// Try search by doc_id field (which is stored in the document)
 	for _, datasetID := range datasetIDs {
-		searchReq := map[string]interface{}{
-			"query": map[string]interface{}{
-				"bool": map[string]interface{}{
-					"must": []map[string]interface{}{
-						{"term": map[string]interface{}{"id": chunkID}},
-						{"term": map[string]interface{}{"kb_id": datasetID}},
-					},
-				},
-			},
-		}
-
-		body, err := json.Marshal(searchReq)
+		source, found, err := e.searchChunkInDataset(ctx, baseName, chunkID, datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal search request: %w", err)
+			return nil, err
 		}
-
-		res, err := e.client.Search(
-			e.client.Search.WithContext(ctx),
-			e.client.Search.WithIndex(baseName),
-			e.client.Search.WithBody(bytes.NewReader(body)),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to search for chunk: %w", err)
-		}
-
-		if res.IsError() {
-			res.Body.Close()
-			return nil, fmt.Errorf("failed to search for chunk: %s", res.Status())
-		}
-
-		var searchResult map[string]interface{}
-		if err := json.NewDecoder(res.Body).Decode(&searchResult); err != nil {
-			res.Body.Close()
-			return nil, fmt.Errorf("failed to parse search response: %w", err)
-		}
-		res.Body.Close()
-
-		hits, ok := searchResult["hits"].(map[string]interface{})
-		if !ok {
+		if !found {
 			continue
 		}
-
-		hitList, ok := hits["hits"].([]interface{})
-		if !ok || len(hitList) == 0 {
-			continue
-		}
-
-		firstHit, ok := hitList[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		source, ok := firstHit["_source"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
 		common.Info("GetChunk found hit", zap.String("baseName", baseName), zap.String("chunkID", chunkID))
 		source["id"] = chunkID
 		return source, nil
@@ -2239,6 +2226,66 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 
 	common.Info("GetChunk no hits found", zap.String("baseName", baseName), zap.String("chunkID", chunkID))
 	return nil, nil
+}
+
+func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, datasetID string) (map[string]interface{}, bool, error) {
+	searchReq := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"id": chunkID}},
+					{"term": map[string]interface{}{"kb_id": datasetID}},
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(searchReq)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal search request: %w", err)
+	}
+
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(baseName),
+		e.client.Search.WithBody(bytes.NewReader(body)),
+	)
+
+	defer closeESBody(res)
+
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to search for chunk: %w", err)
+	}
+
+	if res.IsError() {
+		return nil, false, fmt.Errorf("failed to search for chunk: %s", res.Status())
+	}
+
+	var searchResult map[string]interface{}
+	if err = json.NewDecoder(res.Body).Decode(&searchResult); err != nil {
+		return nil, false, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	hits, ok := searchResult["hits"].(map[string]interface{})
+	if !ok {
+		return nil, false, nil
+	}
+
+	hitList, ok := hits["hits"].([]interface{})
+	if !ok || len(hitList) == 0 {
+		return nil, false, nil
+	}
+
+	firstHit, ok := hitList[0].(map[string]interface{})
+	if !ok {
+		return nil, false, nil
+	}
+
+	source, ok := firstHit["_source"].(map[string]interface{})
+	if !ok {
+		return nil, false, nil
+	}
+	return source, true, nil
 }
 
 func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) (interface{}, error) {
@@ -2263,7 +2310,7 @@ func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) 
 		Found  bool                   `json:"found"`
 		Source map[string]interface{} `json:"_source"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&getResult); err != nil {
+	if err = json.NewDecoder(res.Body).Decode(&getResult); err != nil {
 		return nil, fmt.Errorf("failed to parse memory message get response: %w", err)
 	}
 	if !getResult.Found || getResult.Source == nil {
@@ -2321,23 +2368,23 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				}
 			}
 
-			if _, ok := val.([]interface{}); ok {
+			if _, ok = val.([]interface{}); ok {
 				m[field] = val
 				continue
 			}
 
 			if field == "available_int" {
-				if _, ok := val.(int); ok {
+				if _, ok = val.(int); ok {
 					m[field] = val
 					continue
 				}
-				if _, ok := val.(float64); ok {
+				if _, ok = val.(float64); ok {
 					m[field] = val
 					continue
 				}
 			}
 
-			if _, ok := val.(string); !ok {
+			if _, ok = val.(string); !ok {
 				val = fmt.Sprintf("%v", val)
 			}
 			m[field] = val
@@ -2730,10 +2777,10 @@ func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName
 		Index: []string{indexName},
 	}
 	res, err := req.Do(ctx, e.client)
+	defer closeESBody(res)
 	if err != nil {
 		return false, fmt.Errorf("failed to get memory vector mapping: %w", err)
 	}
-	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusNotFound {
 		return false, nil
@@ -2797,10 +2844,10 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 		Body:  bytes.NewReader(data),
 	}
 	res, err := req.Do(ctx, e.client)
+	defer closeESBody(res)
 	if err != nil {
 		return fmt.Errorf("failed to update memory vector mapping: %w", err)
 	}
-	defer res.Body.Close()
 
 	if res.IsError() {
 		bodyBytes, _ := io.ReadAll(res.Body)
@@ -3050,6 +3097,75 @@ func getDefaultSkillMapping() map[string]interface{} {
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format
+// queryStringOperators holds the tokens Lucene's query_string parser only
+// recognises as operators in upper case.
+var queryStringOperators = map[string]bool{"AND": true, "OR": true, "NOT": true}
+
+// lowerCaseQueryText folds the terms of a query_string expression but keeps its
+// upper-case boolean operators. The *_tks/*_ltks fields are whitespace-analyzed
+// and so case-sensitive, while Lucene only reads AND/OR/NOT in upper case:
+//
+//	"病毒 OR 勒索" -> content_ltks:病毒 content_ltks:勒索
+//	"病毒 or 勒索" -> content_ltks:病毒 content_ltks:or content_ltks:勒索
+//
+// That folded "or" is an extra clause every minimum_should_match percentage is
+// re-based on — a 94-hit search came back with 32. Quoted text is a phrase, never
+// an operator, so it is folded too.
+func lowerCaseQueryText(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	inQuote := false
+	escaped := false
+	for i := 0; i < len(text); {
+		c := text[i]
+		if escaped {
+			b.WriteByte(c)
+			escaped = false
+			i++
+			continue
+		}
+		switch {
+		case c == '\\':
+			b.WriteByte(c)
+			escaped = true
+			i++
+		case c == '"':
+			inQuote = !inQuote
+			b.WriteByte(c)
+			i++
+		case isASCIILetter(c):
+			j := i
+			for j < len(text) && isASCIILetter(text[j]) {
+				j++
+			}
+			word := text[i:j]
+			if !inQuote && queryStringOperators[word] {
+				b.WriteString(word)
+			} else {
+				b.WriteString(strings.ToLower(word))
+			}
+			i = j
+		default:
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return b.String()
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// queryVectorField matches the serialized query vector: 1024 floats that say
+// nothing about why a search came back short, so they never reach the log.
+var queryVectorField = regexp.MustCompile(`"query_vector":\s*\[[^\]]*\]`)
+
+// elideQueryVector drops that vector from a body before it is logged.
+func elideQueryVector(body []byte) string {
+	return queryVectorField.ReplaceAllString(string(body), `"query_vector":"<elided>"`)
+}
+
 func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[string]interface{} {
 	if esResp == nil || esResp.Hits.Hits == nil {
 		return []map[string]interface{}{}
@@ -3168,8 +3284,9 @@ func sortByScore(chunks []map[string]interface{}, limit int) []map[string]interf
 		return chunks
 	}
 
-	// Sort by _score descending
-	sort.Slice(chunks, func(i, j int) bool {
+	// Stable: the reference does not re-sort at all, so ties keep the order ES
+	// returned them in.
+	sort.SliceStable(chunks, func(i, j int) bool {
 		scoreI := getChunkScore(chunks[i])
 		scoreJ := getChunkScore(chunks[j])
 		return scoreI > scoreJ

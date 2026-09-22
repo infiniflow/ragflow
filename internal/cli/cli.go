@@ -106,6 +106,8 @@ func (c *CommandLineConfig) Print() {
 	}
 }
 
+var Arguments *CommandLineConfig
+
 func ParseArgs(args []string) (*CommandLineConfig, error) {
 	commandLineConfig := &CommandLineConfig{
 		CLIMode:           APIMode,
@@ -763,19 +765,19 @@ func (c *CLI) execute(input string) error {
 
 	// Handle meta commands
 	if cmd.Type == "meta" {
-		return c.handleMetaCommand(cmd)
+		return c.handleMetaCommand(1, cmd)
 	}
 
 	// Execute the command using the client
 	var result ResponseIf
-	result, err = c.ExecuteCommand(cmd)
+	result, err = c.ExecuteCommand(1, cmd)
 	if result != nil {
 		result.PrintOut()
 	}
 	return err
 }
 
-func (c *CLI) handleMetaCommand(cmd *Command) error {
+func (c *CLI) handleMetaCommand(commandCount int, cmd *Command) error {
 	command := cmd.Params["command"].(string)
 	//args, _ := cmd.Params["args"].([]string)
 
@@ -905,7 +907,7 @@ func (c *CLI) VerifyAuth(username, password string) error {
 	cmd.Params["email"] = username
 	cmd.Params["password"] = password
 
-	_, err := c.LoginUserByCommand(cmd)
+	_, err := c.LoginUserByCommand(1, cmd)
 	return err
 }
 

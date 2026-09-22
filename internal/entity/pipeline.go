@@ -18,6 +18,10 @@ package entity
 
 import "time"
 
+// DatasetLogDocumentID is the synthetic document identity shared by
+// dataset-level graph, RAPTOR, mind-map, and knowledge-compilation logs.
+const DatasetLogDocumentID = "graph_raptor_x"
+
 // PipelineOperationLog pipeline operation log model
 type PipelineOperationLog struct {
 	ID         string `gorm:"column:id;primaryKey;size:32" json:"id"`

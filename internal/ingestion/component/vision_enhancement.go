@@ -29,11 +29,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -90,23 +90,6 @@ func (s *promptDirState) resolve(requestedRoot string) (string, error) {
 	return s.root, nil
 }
 
-// cleanMarkdownBlock mirrors Python common/string_utils.py:clean_markdown_block
-// and removes a closing fence only after recognizing an opening markdown wrapper.
-//
-// Matches Python without re.MULTILINE so ^/$ anchor only the whole text.
-var (
-	reMarkdownOpen  = regexp.MustCompile(`^\s*` + "```" + `markdown\s*\n?`)
-	reMarkdownClose = regexp.MustCompile(`\n?\s*` + "```" + `\s*$`)
-)
-
-func cleanMarkdownBlock(s string) string {
-	if reMarkdownOpen.MatchString(s) {
-		s = reMarkdownOpen.ReplaceAllString(s, "")
-		s = reMarkdownClose.ReplaceAllString(s, "")
-	}
-	return strings.TrimSpace(s)
-}
-
 // isUsableVisionImage reports whether raw carries a valid image data URI or a
 // base64 payload that can be sent to a vision model.
 func isUsableVisionImage(raw string) bool {
@@ -155,6 +138,16 @@ func isVisionEnhancementAllowed(fileType utility.FileType) bool {
 	}
 }
 
+// visionImageCropper yields a vision-usable base64 image for a parsed item.
+// Under cgo it crops on demand from the source PDF when the item carries
+// positions but no inlined image; under !cgo it returns the inlined image
+// (the only form available without a native renderer). Close releases any
+// re-acquired engine so native handles are not leaked.
+type visionImageCropper interface {
+	Crop(item map[string]any) (string, error)
+	Close() error
+}
+
 // maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
 // descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
 // with non-empty image field).
@@ -180,9 +173,19 @@ func maybeDispatchVisionEnhancement(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
-	language := resolveVisionLanguage(inputs, "")
+	// Language priority mirrors Python's enhance_media_sections_with_vision
+	// (rag/flow/parser/parser.py:778): the run-level dataset language first
+	// (the Parser pulls it into inputs from Globals), then the family setup's
+	// lang, then English.
+	family := resolveParserFamily(fileType)
+	setup := setups[family]
+	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
-	// 1. Collect target items (images/tables with non-empty image data).
+	// 1. Collect target items (images/tables that can be described). A target
+	// may carry an inlined image (docx/markdown, or any pre-inlined source) or,
+	// under cgo for PDF, only PDF positions — in which case the cropper
+	// re-acquires the source PDF and crops on demand (the parser no longer
+	// inlines PDF media). The cropper transparently handles both forms.
 	type target struct {
 		idx int
 	}
@@ -192,20 +195,29 @@ func maybeDispatchVisionEnhancement(
 		if kd != "image" && kd != "table" {
 			continue
 		}
-		img, _ := item["image"].(string)
-		if img == "" {
+		if img, _ := item["image"].(string); img != "" {
+			targets = append(targets, target{idx: i})
 			continue
 		}
-		targets = append(targets, target{idx: i})
+		if _, ok := parser.ExtractPDFPositions(item); ok {
+			targets = append(targets, target{idx: i})
+		}
 	}
 	if len(targets) == 0 {
 		return dispatched, false, nil
 	}
 
+	// Acquire the on-demand cropper (cgo: crops from storage; !cgo: returns
+	// the inlined image). Best-effort: a failure here means no vision
+	// enhancement, matching Python's try/except pass.
+	cropper, cerr := newVisionImageCropper(ctx, db, inputs)
+	if cerr != nil {
+		return dispatched, false, nil
+	}
+	defer cropper.Close()
+
 	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
 	// default. Mirror Python's vlm_conf["llm_id"] preference.
-	family := resolveParserFamily(fileType)
-	setup := setups[family]
 	modelRef := configuredMediaModelID(setup, family)
 	var driver modelModule.ModelDriver
 	var modelName string
@@ -257,7 +269,10 @@ dispatch:
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			img, _ := dispatched.JSON[itemIdx]["image"].(string)
+			img, ierr := cropper.Crop(dispatched.JSON[itemIdx])
+			if ierr != nil || img == "" {
+				return
+			}
 			if !isUsableVisionImage(img) {
 				slog.Warn("vision enhancement: invalid image data skipped",
 					"item", itemIdx)
@@ -356,7 +371,7 @@ func extractVisionAnswer(resp *modelModule.ChatResponse) string {
 	if resp == nil || resp.Answer == nil {
 		return ""
 	}
-	return cleanMarkdownBlock(*resp.Answer)
+	return common.CleanMarkdownBlock(*resp.Answer)
 }
 
 func defaultVisionChatInvoker(

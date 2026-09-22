@@ -144,7 +144,7 @@ type ExtractorOutputs struct {
 	OutputFormat string `json:"output_format,omitempty"`
 
 	// Chunks is the enriched chunk list. Each chunk is enriched with
-	// modular extraction fields (important_kwd, question_kwd, tag_kwd,
+	// modular extraction fields (important_kwd, question_kwd, tag_feas,
 	// summary, metadata).
 	Chunks []map[string]any `json:"chunks,omitempty"`
 

@@ -17,6 +17,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,8 @@ import (
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -410,14 +413,35 @@ func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*
 	for id, count := range ownerCounts {
 		resp.Filter.Owner = append(resp.Filter.Owner, MemoryFilterOption{ID: id, Label: ownerLabels[id], Count: count})
 	}
-	for id, count := range typeCounts {
-		resp.Filter.MemoryType = append(resp.Filter.MemoryType, MemoryFilterOption{ID: id, Label: id, Count: count})
-	}
-	for id, count := range storageCounts {
-		resp.Filter.StorageType = append(resp.Filter.StorageType, MemoryFilterOption{ID: id, Label: id, Count: count})
-	}
+	resp.Filter.MemoryType = filterOptionsInOrder(typeCounts, dao.MemoryTypeNames())
+	resp.Filter.StorageType = filterOptionsInOrder(storageCounts, []string{"table", "graph"})
+	slices.SortFunc(resp.Filter.Owner, func(a, b MemoryFilterOption) int {
+		return cmp.Or(cmp.Compare(strings.ToLower(a.Label), strings.ToLower(b.Label)), cmp.Compare(a.ID, b.ID))
+	})
 	resp.Total = int64(len(memories))
 	return resp, nil
+}
+
+func filterOptionsInOrder(counts map[string]int64, canonicalOrder []string) []MemoryFilterOption {
+	options := make([]MemoryFilterOption, 0, len(counts))
+	known := make(map[string]bool, len(canonicalOrder))
+	for _, id := range canonicalOrder {
+		if count, ok := counts[id]; ok {
+			options = append(options, MemoryFilterOption{ID: id, Label: id, Count: count})
+			known[id] = true
+		}
+	}
+	rest := make([]string, 0, len(counts)-len(options))
+	for id := range counts {
+		if !known[id] {
+			rest = append(rest, id)
+		}
+	}
+	sort.Strings(rest)
+	for _, id := range rest {
+		options = append(options, MemoryFilterOption{ID: id, Label: id, Count: counts[id]})
+	}
+	return options
 }
 
 // CreateMemory creates a new memory with the given parameters
