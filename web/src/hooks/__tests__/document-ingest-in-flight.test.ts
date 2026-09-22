@@ -72,4 +72,33 @@ describe('sendDocumentIngest', () => {
     resolveRetry('retry');
     await expect(retry).resolves.toBe('retry');
   });
+
+  it('starts a fresh request when the retry settles before the original', async () => {
+    let resolveFirst!: (value: string) => void;
+    let resolveRetry!: (value: string) => void;
+    const params = { documentIds: ['doc-reverse'], run: 2 };
+    const first = sendDocumentIngest(
+      params,
+      () => new Promise<string>((resolve) => (resolveFirst = resolve)),
+    );
+
+    const request = jest.fn(
+      () => new Promise<string>((resolve) => (resolveRetry = resolve)),
+    );
+    const retry = sendDocumentIngest(params, request, { force: true });
+
+    // The retry settles first; it must free the key even though the original
+    // is still pending, so the next call issues a fresh request instead of
+    // being served by the stale original.
+    resolveRetry('retry');
+    await expect(retry).resolves.toBe('retry');
+
+    const third = sendDocumentIngest(params, () => Promise.resolve('third'));
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(third).not.toBe(first);
+    await expect(third).resolves.toBe('third');
+
+    resolveFirst('first');
+    await expect(first).resolves.toBe('first');
+  });
 });

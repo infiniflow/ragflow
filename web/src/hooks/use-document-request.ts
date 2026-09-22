@@ -501,7 +501,11 @@ export const useRunDocument = () => {
         // cancel exactly once.
         // A list refetch already in flight when the click landed would
         // resolve with the pre-cancel row and overwrite the optimistic
-        // STOPPING below, so drop it first.
+        // STOPPING below, so drop it first. This must stay ahead of the
+        // optimistic write: cancelQueries reverts a query to the state it had
+        // when that refetch started, which would roll the write back. The
+        // all() prefix also covers the byIds views, so their in-flight
+        // refetches are dropped the same way.
         await queryClient.cancelQueries({ queryKey: DocumentKeys.all() });
         if (isGo) {
           markCancelRequested(documentIds);

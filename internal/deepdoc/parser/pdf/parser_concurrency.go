@@ -174,10 +174,11 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 // OCR). A failure raised while the parse context is cancelled is the stop path,
 // not a fault: cancelling terminates every in-flight ONNX Run, and the native
 // session answers with the runtime's terminate-flag error (or ctx.Err()), which
-// carries no context.Canceled to match on. Those pages stay quiet instead of
+// carries no context.Canceled to match on. Those pages log at debug instead of
 // warning once per page; any other failure keeps its per-page warning.
 func reportPageInferenceFailure(ctx context.Context, msg string, page int, err error) {
 	if ctx.Err() != nil {
+		slog.Debug(msg, "page", page, "err", err)
 		return
 	}
 	slog.Warn(msg, "page", page, "err", err)
