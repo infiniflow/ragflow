@@ -479,6 +479,13 @@ class SereneDBConnection(DocStoreConnection):
                     filters.append(f"{k} IN ({', '.join(_escape(x) for x in v)})")
                 else:
                     filters.append(f"{k} = {_escape(v)}")
+            else:
+                # A predicate this schema cannot represent matches NOTHING; dropping it turns a
+                # narrow query into a silent full scan. remove_wiki_products() filters on
+                # compile_kwd and source_doc_ids, neither a column here, so only kb_id survived -
+                # 42.8M rows - and its pager walked them for every document deleted.
+                logger.debug("SereneDB filter on unknown column %r -> no rows can match", k)
+                filters.append("FALSE")
         return filters
 
     """
@@ -518,6 +525,10 @@ class SereneDBConnection(DocStoreConnection):
         fields_expr = ", ".join(output_fields)
 
         condition = dict(condition or {})
+        # kb_id ALWAYS here, unlike delete() and update(). This doc_id comes off the wire -
+        # search.py copies the request's doc_ids into the condition - and one tenant table
+        # holds every knowledge base, so dropping kb_id would let a caller read another
+        # dataset by naming a document in it. delete()/update() ids are the caller's own.
         condition["kb_id"] = dataset_ids
         filters = self._get_filters(condition)
         filters_expr = " AND ".join(filters) if filters else "TRUE"
@@ -820,15 +831,8 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             return 0
         condition = dict(condition or {})
         if not index_name.startswith("ragflow_doc_meta_"):
-            # kb_id is redundant when doc_id is given, and expensive. A document belongs to
-            # exactly one knowledge base, so kb_id cannot change which rows match - but every
-            # row here shares the same kb_id, so the planner picks that non-selective column
-            # and scans. Measured 2026-09-09 on 43.6M rows:
-            #   WHERE doc_id=...                6.8 ms
-            #   WHERE doc_id=... AND kb_id=...  391.8 ms
-            # Indexing around it does NOT work: composite (doc_id, kb_id) gives 113.8ms and
-            # (kb_id, doc_id) gives 101-147ms - ordering is irrelevant, because the planner
-            # satisfies one predicate and post-filters the other either way.
+            # kb_id is redundant once doc_id is fixed, and costs 6.8ms -> 391.8ms because
+            # every row shares it. See the fuller note on delete().
             if not condition.get("doc_id"):
                 condition["kb_id"] = dataset_id
         filters = self._get_filters(condition)

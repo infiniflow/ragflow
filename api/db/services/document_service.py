@@ -579,17 +579,28 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def delete_chunk_images(cls, doc, tenant_id):
-        page = 0
-        page_size = 1000
+        # No chunk_num==0 shortcut: the count is incremented AFTER the images are uploaded
+        # and the chunks inserted, so a document deleted in that window has a zero count and
+        # real images. With the doc_id index added alongside this, proving a document has
+        # none costs 1.4ms + 0.7ms anyway.
+        #
+        # One window sized from the document's own count rather than a growing OFFSET; the
+        # loop covers a count that understates reality and advances by the rows received.
+        # Capped as well as floored: chunk_num is an unbounded IntegerField, and the loop
+        # already handles more than one page.
+        page_size = min(max(int(doc.chunk_num) + 64, 1024), 8192)
+        offset = 0
         while True:
-            chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(), page * page_size, page_size, search.index_name(tenant_id), [doc.kb_id])
+            chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(), offset, page_size, search.index_name(tenant_id), [doc.kb_id])
             chunk_ids = settings.docStoreConn.get_doc_ids(chunks)
             if not chunk_ids:
                 break
             for cid in chunk_ids:
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
                     settings.STORAGE_IMPL.rm(doc.kb_id, cid)
-            page += 1
+            if len(chunk_ids) < page_size:
+                break
+            offset += len(chunk_ids)
 
     @classmethod
     def remove_wiki_products(cls, doc, tenant_id):
