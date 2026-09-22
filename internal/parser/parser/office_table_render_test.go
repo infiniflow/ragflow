@@ -53,13 +53,21 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	}
 }
 
-func TestXLSXParserHTML4ExcelRemainsAtomic(t *testing.T) {
+// TestXLSXParserHTML4ExcelIsIgnored pins the retirement: html4excel is still
+// accepted at the entry (with a deprecation warning) but selects nothing —
+// the wire is identical to the default path.
+func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Question")
 		mustSetCell(t, f, "Sheet1", "B1", "Answer")
 		mustSetCell(t, f, "Sheet1", "A2", "Q1")
 		mustSetCell(t, f, "Sheet1", "B2", "A1")
 	})
+	plain, _ := NewXLSXParser("")
+	plainRes := plain.ParseWithResult(t.Context(), "qa.xlsx", data)
+	if plainRes.Err != nil {
+		t.Fatalf("ParseWithResult: %v", plainRes.Err)
+	}
 	p, _ := NewXLSXParser("")
 	p.ConfigureFromSetup(map[string]any{"html4excel": true})
 	res := p.ParseWithResult(t.Context(), "qa.xlsx", data)
@@ -71,6 +79,9 @@ func TestXLSXParserHTML4ExcelRemainsAtomic(t *testing.T) {
 	}
 	if res.JSON[0]["ck_type"] != "table" || !strings.Contains(res.JSON[0]["text"].(string), "<table>") {
 		t.Fatalf("html4excel item = %#v", res.JSON[0])
+	}
+	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
+		t.Errorf("html4excel changed the wire: %v vs %v", res.JSON, plainRes.JSON)
 	}
 }
 

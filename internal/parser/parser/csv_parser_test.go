@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -57,15 +58,27 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	}
 }
 
-func TestCSVParserHTML4ExcelRemainsAtomic(t *testing.T) {
+// TestCSVParserHTML4ExcelIsIgnored pins the retirement: html4excel is still
+// accepted at the entry (with a deprecation warning) but selects nothing —
+// the wire is identical to the default path.
+func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
+	data := []byte("Question,Answer\nQ1,A1\n")
+	plain := NewCSVParser()
+	plainRes := plain.ParseWithResult(context.Background(), "qa.csv", data)
+	if plainRes.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", plainRes.Err)
+	}
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"html4excel": true})
-	res := p.ParseWithResult(context.Background(), "qa.csv", []byte("Question,Answer\nQ1,A1\n"))
+	res := p.ParseWithResult(context.Background(), "qa.csv", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 	if len(res.JSON) != 1 || res.JSON[0]["ck_type"] != "table" {
 		t.Fatalf("items = %#v, want one table item", res.JSON)
+	}
+	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
+		t.Errorf("html4excel changed the wire: %v vs %v", res.JSON, plainRes.JSON)
 	}
 }
 
