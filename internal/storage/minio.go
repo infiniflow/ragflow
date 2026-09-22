@@ -345,7 +345,7 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 		prefix += fmt.Sprintf("%s/", origBucket)
 	}
 
-	// List and delete objects with prefix
+	// Include versions and delete markers so versioned buckets can be emptied.
 	removeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	objectsCh := make(chan minio.ObjectInfo)
@@ -355,8 +355,9 @@ func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 		defer close(objectsCh)
 		defer close(listErrCh)
 		for obj := range m.client.ListObjects(removeCtx, actualBucket, minio.ListObjectsOptions{
-			Prefix:    prefix,
-			Recursive: true,
+			Prefix:       prefix,
+			Recursive:    true,
+			WithVersions: true,
 		}) {
 			if obj.Err != nil {
 				common.Warn("Failed to list objects", zap.Error(obj.Err))
