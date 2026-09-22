@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -333,6 +335,11 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 }
 
 func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb *entity.Knowledgebase) error {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+
 	// Collect document IDs first so engine cleanup can run before the
 	// transaction (engine ops are not transactional).
 	var documents []entity.Document
@@ -344,7 +351,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
 
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
+	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
@@ -387,7 +394,16 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 			return fmt.Errorf("delete dataset error for %s", kb.ID)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// Dataset uploads and generated objects are stored under the KB ID.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
+	if err := storageImpl.RemoveBucket(cleanupCtx, kb.ID); err != nil {
+		return fmt.Errorf("dataset %s deleted but storage cleanup failed: %w", kb.ID, err)
+	}
+	return nil
 }
 
 func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
