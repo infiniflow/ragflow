@@ -3111,7 +3111,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       searchMethodTip: `决定该知识库启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名 Embedding 权重',
-      parserMethod: '解析方法',
+      parserMethod: '解析器',
       tableResultType: '表格返回形式',
       markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:

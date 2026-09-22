@@ -3596,7 +3596,7 @@ This process aggregates variables from multiple branches into a single variable 
       searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
-      parserMethod: 'PDF parser',
+      parserMethod: 'Parser',
       tableResultType: 'Table result type',
       markdownImageResponseType: 'Markdown image response type',
       // systemPrompt: 'System Prompt',
