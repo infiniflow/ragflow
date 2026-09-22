@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -463,7 +464,7 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 		if r == nil {
 			continue
 		}
-		if r.Err != nil {
+		if r.Err != nil && !errors.Is(r.Err, context.Canceled) {
 			common.Warn("deepdoc pdf parse: page worker failed",
 				zap.Int("page", r.PageNumber), zap.Error(r.Err))
 		}
@@ -647,7 +648,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
-	if pageErr != nil {
+	if pageErr != nil && !errors.Is(pageErr, context.Canceled) {
 		common.Warn("deepdoc pdf parse: runPageWorkers some pages failed",
 			zap.Error(pageErr))
 	}

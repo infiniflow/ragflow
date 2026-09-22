@@ -33,6 +33,7 @@ _UNRELATED_PROVIDERS = {
     "webdav_connector": "WebDAVConnector",
     "xquik_connector": "XquikConnector",
     "zendesk_connector": "ZendeskConnector",
+    "zotero_connector": "ZoteroConnector",
     "azure_devops.connector": "AzureDevOpsConnector",
     "bitbucket.connector": "BitbucketConnector",
     "github.connector": "GithubConnector",

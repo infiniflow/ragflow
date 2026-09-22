@@ -355,7 +355,15 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		// higher-level "Task ... failed" branch.
 		switch ev.Phase {
 		case runtime.PhaseError:
-			if ev.Err != nil {
+			if errors.Is(ev.Err, context.Canceled) {
+				// A user cancel is a normal control path; the authoritative
+				// "Task ... cancelled" line is logged by the service layer, so
+				// keep this at debug to avoid duplicate noise.
+				common.Debug("component progress: canceled",
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			} else if ev.Err != nil {
 				common.Error("component progress: error", ev.Err,
 					zap.String("component", ev.Component),
 					zap.String("task_id", p.taskID),
