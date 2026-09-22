@@ -20,18 +20,22 @@
 //
 // Unlike TokenChunker (which token-shreds a row's text into multiple
 // pieces) or OneChunker (which merges many rows into a single chunk),
-// TableChunker keeps the row as the unit of chunking. The table parser is
-// responsible for producing one structured record (ChunkDoc) per row with
-// the formatted "- field: value" content and any column-role / field_map
-// metadata; this chunker passes each record through unchanged, one chunk
-// per row.
+// TableChunker keeps the row as the unit of chunking. Row-IR records from
+// spreadsheet parsers pass through unchanged — the table parser produced
+// one structured record per row already. HTML table payloads are expanded
+// here: each data row becomes one chunk whose text repeats the column names
+// in the Python "- field: value" line format, carrying its own position
+// tuple when the item's position matrix is row-aligned.
 package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/htmltable"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
@@ -137,9 +141,80 @@ func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 				continue
 			}
 		}
-		filtered = append(filtered, item)
+		filtered = append(filtered, expandHTMLTableRows(item)...)
 	}
 	return filtered
+}
+
+// expandHTMLTableRows turns one HTML <table> payload into one chunk per data
+// row. Row-IR records (which are already per-row) and non-table payloads
+// pass through unchanged. A table whose only row is the header keeps the
+// whole markup as its single chunk: the header line is then the only
+// searchable representation.
+func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
+	if item.CKType == "table_row" || item.CKType == "table_header" || !htmltable.IsTableHTML(item.Text) {
+		return []schema.ChunkDoc{item}
+	}
+	rows, headerCount := htmltable.TableRowsWithHeader(item.Text)
+	if len(rows) <= headerCount {
+		return []schema.ChunkDoc{item}
+	}
+	names := rows[0]
+	// R1: a row chunk must carry only its own tuple. That is only sound when
+	// the item's matrix was built row-aligned (one tuple per <tr>, header
+	// included); a whole-table tuple must not be copied onto every row, so
+	// misaligned payloads get no positions at all.
+	var matrix [][]float64
+	aligned := false
+	if len(item.Positions) > 0 {
+		if err := json.Unmarshal(item.Positions, &matrix); err == nil && len(matrix) == len(rows) {
+			aligned = true
+		}
+	}
+	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
+	for i, row := range rows[headerCount:] {
+		text := tableRowRecordText(names, row)
+		if text == "" {
+			continue
+		}
+		doc := item
+		doc.Text = text
+		doc.TKNums = nil
+		doc.Positions = nil
+		if aligned {
+			if tuple, err := json.Marshal([][]float64{matrix[headerCount+i]}); err == nil {
+				doc.Positions = tuple
+			}
+		}
+		out = append(out, doc)
+	}
+	if len(out) == 0 {
+		return []schema.ChunkDoc{item}
+	}
+	return out
+}
+
+// tableRowRecordText renders one row in rag/app/table.py's line format:
+// "- {field}: {value}" per non-empty cell, newline joined. A cell whose
+// column has no header name keeps its value alone rather than being dropped.
+func tableRowRecordText(names, cells []string) string {
+	lines := make([]string, 0, len(cells))
+	for j, cell := range cells {
+		value := strings.TrimSpace(cell)
+		if value == "" {
+			continue
+		}
+		name := ""
+		if j < len(names) {
+			name = strings.TrimSpace(names[j])
+		}
+		if name != "" {
+			lines = append(lines, "- "+name+": "+value)
+			continue
+		}
+		lines = append(lines, "- "+value)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func spreadsheetTableKey(item schema.ChunkDoc) string {

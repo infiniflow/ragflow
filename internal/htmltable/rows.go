@@ -34,6 +34,16 @@ import (
 // into the cell holding it — and a row or cell missing its closing tag is
 // recovered rather than dropped.
 func TableRows(htmlStr string) [][]string {
+	rows, _ := TableRowsWithHeader(htmlStr)
+	return rows
+}
+
+// TableRowsWithHeader returns every row's cell text in document order, plus
+// the number of leading header rows. A row counts as a header row when any of
+// its cells is a <th>. When no row uses <th> at all the first row is treated
+// as the header — the same convention SplitLargeHTMLTable applies when
+// replicating headers into sub-tables.
+func TableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 	// A <tr> outside a <table> is discarded by the HTML5 "in body" insertion
 	// mode, so a bare row fragment would yield nothing. Give the parser the
 	// table context it needs instead of dropping the rows silently.
@@ -43,9 +53,9 @@ func TableRows(htmlStr string) [][]string {
 	}
 	doc, err := html.Parse(strings.NewReader(htmlStr))
 	if err != nil {
-		return nil
+		return nil, 0
 	}
-	var rows [][]string
+	var headerFlags []bool
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		// An inert subtree is parsed but never rendered. <template> puts its
@@ -57,8 +67,12 @@ func TableRows(htmlStr string) [][]string {
 		}
 		if isHTMLElement(n, "tr") {
 			var cells []string
+			anyTh := false
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
+					if isHTMLElement(c, "th") {
+						anyTh = true
+					}
 					cells = append(cells, CellText(c))
 				}
 			}
@@ -66,6 +80,7 @@ func TableRows(htmlStr string) [][]string {
 			// the nested table's text, so its rows must not be reported a
 			// second time as rows of the enclosing table.
 			rows = append(rows, cells)
+			headerFlags = append(headerFlags, anyTh)
 			return
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -73,7 +88,13 @@ func TableRows(htmlStr string) [][]string {
 		}
 	}
 	walk(doc)
-	return rows
+	for len(headerFlags) > headerCount && headerFlags[headerCount] {
+		headerCount++
+	}
+	if len(rows) > 0 && headerCount == 0 {
+		headerCount = 1
+	}
+	return rows, headerCount
 }
 
 // CellText returns the visible text of a table cell. The parser hands text
