@@ -377,7 +377,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	}
 	values, ok := listFromValue(value)
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list")
+		return nil, errors.New("`dataset_ids` should be a list.")
 	}
 
 	normalizedIDs := make([]string, 0, len(values))
@@ -392,11 +392,11 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 
 	for _, datasetID := range normalizedIDs {
 		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, tenantID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
 			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
@@ -1032,7 +1032,7 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 	}
 	items, ok := value.([]interface{})
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list")
+		return nil, errors.New("`dataset_ids` should be a list.")
 	}
 
 	var kbs []*entity.Knowledgebase
@@ -1043,11 +1043,11 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 		}
 		datasetID := fmt.Sprint(item)
 		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
 			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
