@@ -515,6 +515,26 @@ async def test_mws_bound_tool_stream_normalizes_existing_tool_history():
             [{"role": "assistant", "content": None, "tool_calls": {"id": "call_123"}}],
             "assistant message tool_calls must be a list",
         ),
+        (
+            [{"role": "assistant", "content": "invalid", "tool_calls": {}}],
+            "assistant message tool_calls must be a list",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup"}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": {}}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": "{"}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": "[]"}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
         ([{"role": "tool", "content": "result"}], "requires tool_call_id"),
         (
             [{"role": "tool", "tool_call_id": "call_123", "content": None}],
