@@ -24,7 +24,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 
 ## Web Page and Information Retrieval
 
-### Tavily Search 
+### Tavily Search
 
 Tavily is a web search service for LLMs. It is suitable for retrieving general web information, news, and content that needs to be limited to specific domains. Keep queries focused on a single topic and avoid overly long natural-language questions.
 
@@ -70,7 +70,7 @@ The output usually contains search result summaries, titles, links, snippets, an
 
 ![Tavily Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_search.jpg)
 
-### Tavily Extract 
+### Tavily Extract
 
 Tavily Extract reads the body content of one or more known URLs. A common workflow is to use Tavily Search to obtain links, then pass those links to this component to extract page content.
 
@@ -109,7 +109,7 @@ The output contains the page body, title, URL, and extraction status. `formalize
 
 ![Tavily Extract](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_extract.jpg)
 
-### Google 
+### Google
 
 Google Search obtains Google organic search results through SerpApi. It is suitable for web retrieval that requires country and language targeting.
 
@@ -169,7 +169,7 @@ The output contains titles, links, and summaries returned by DuckDuckGo. It can 
 
 ![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_2.jpg)
 
-### SearXNG 
+### SearXNG
 
 SearXNG is a self-hostable privacy-oriented meta-search engine. This component calls a user-provided SearXNG instance and is suitable for scenarios that need control over retrieval sources or internal search deployment.
 
@@ -193,7 +193,7 @@ SearXNG is a self-hostable privacy-oriented meta-search engine. This component c
 
 The output contains titles, links, summaries, and source information returned by SearXNG. Before use, configure a reachable SearXNG service address and pass the system security checks.
 
-### Keenable 
+### Keenable
 
 Keenable is a web search API for AI Agents. By default, it supports a public free path without a key. After configuring a key, you can increase the limit and enable low-latency realtime mode.
 
@@ -308,7 +308,7 @@ The output contains academic retrieval entries such as paper titles, authors, ab
 
 ![Google Scholar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/google_scholar.jpg)
 
-### ArXiv 
+### ArXiv
 
 ArXiv is used to retrieve open preprints across fields such as computer science, mathematics, physics, and quantitative finance. ArXiv papers may not have undergone peer review, so mark their preprint nature when using the results.
 
@@ -334,7 +334,7 @@ The output contains paper titles, authors, abstracts, publication times, categor
 
 ![ArXiv](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/arxiv.jpg)
 
-### PubMed 
+### PubMed
 
 PubMed is used to retrieve life science and biomedical literature. The component queries through NCBI E-utilities and returns titles, authors, journals, DOIs, abstracts, and other information.
 
@@ -360,7 +360,7 @@ The output contains medical literature titles, authors, journals, abstracts, pub
 
 ![PubMed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pubmed.jpg)
 
-### BGPT 
+### BGPT
 
 BGPT retrieves scientific papers and returns structured evidence, including research methods, sample sizes, results, limitations, conflicts of interest, data availability, and falsifiability tips. It is suitable for evaluating scientific claims, not only for finding paper abstracts.
 
@@ -390,7 +390,7 @@ The output contains biomedical knowledge retrieval results and summaries, which 
 
 ## Data and Financial Queries
 
-### Execute SQL 
+### Execute SQL
 
 Execute SQL connects to an external database and executes SQL statements. The result is formatted as text or table content.
 
@@ -440,7 +440,7 @@ The output contains SQL execution results, field names, and record content. You 
 
 ![Execute SQL](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/execute_sql.jpg)
 
-### Yahoo Finance 
+### Yahoo Finance
 
 The Yahoo Finance component queries stock quotes, company profiles, historical market data, financial statements, and news through `yfinance`, and outputs the selected content as a Markdown report.
 
@@ -481,7 +481,7 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 
 The output contains a financial query report and structured market data, which can be used by subsequent Agents to generate market overviews or indicator explanations.
 
-### WenCai 
+### WenCai
 WenCai is used to screen financial data such as stocks, indices, funds, Hong Kong stocks, U.S. stocks, futures, and other instruments based on natural-language conditions.
 
 #### Parameter Description
@@ -574,7 +574,7 @@ The output contains sending status and error information. `success` being `true`
 
 ![Email](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/email.jpg)
 
-### HTTP Request 
+### HTTP Request
 
 The HTTP Request component calls external HTTP APIs, allowing business systems, third-party services, or self-built APIs to be connected to Agent workflows.
 
@@ -589,8 +589,7 @@ The HTTP Request component calls external HTTP APIs, allowing business systems, 
 | timeout | integer | No | 60 | Request timeout in seconds. |
 | proxy | string | No | Empty | Optional HTTP/HTTPS proxy address. |
 | clean_html | boolean | No | false | Whether to clean HTML tags from the response. |
-| datatype | string | No | json | Python request body type: `json` or `formdata`. |
-| body | string | No | Empty | Raw request body supported by the Go runtime. |
+| body | string | No | Empty | Raw request body. |
 | content_type | string | No | Empty | POST/PUT default to `application/json`. |
 
 #### Supported Values
@@ -686,16 +685,12 @@ Browser is an LLM-driven browser automation component. It can access web pages, 
 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
-| llm_id | string | Yes | Empty | Configured chat model ID used by Browser. The Go path can accept `model_id` as an alias. |
-| prompts | string | Yes | `{sys.query}` | Natural-language browser task. Canvas variables are supported. The Go path can accept `prompt` as an alias. |
-| max_steps | integer | No | 30 | Maximum number of browser execution steps. Effective in the Python path. The current Go Stagehand path accepts this field but does not use it during execution. |
+| llm_id | string | Yes | Empty | Configured chat model ID used by Browser. |
+| prompts | string | Yes | `{sys.query}` | Natural-language browser task. Canvas variables are supported. |
 | headless | boolean | No | true | Whether to run the browser in headless mode. |
 | enable_default_extensions | boolean | No | false | Whether to enable default `browser-use` extensions. |
 | chromium_sandbox | boolean | No | false | Whether to enable the Chromium sandbox. In Docker root environments, keep this disabled in general. |
-| persist_session | boolean | No | true | Whether to reuse the browser user directory for the same node. Effective in the Python path. |
 | upload_sources | array/string | No | `[]` | File IDs, URLs, or upstream variable references for the browser task. |
-| url | string | No | Empty | Compatibility field accepted by the current Go component. It does not participate in Stagehand execution. |
-| timeout | integer | No | 0 | Compatibility field accepted by the current Go component. It does not participate in Stagehand execution. |
 
 #### Supported Values
 

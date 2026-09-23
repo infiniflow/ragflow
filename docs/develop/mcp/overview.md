@@ -18,7 +18,7 @@ Model Context Protocol (MCP) lets AI applications discover and call tools expose
 
 ## Use RAGFlow as an MCP server
 
-The Go API server exposes RAGFlow tools directly through its services. No separate Python MCP process or RAGFlow base URL is required.
+The Go API server exposes RAGFlow tools directly at its built-in MCP endpoint.
 
 ```text
 External MCP client

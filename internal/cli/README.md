@@ -1,14 +1,13 @@
 # RAGFlow CLI (Go Version)
 
-This is the Go implementation of the RAGFlow command-line interface, compatible with the Python version's syntax.
+This is the Go implementation of the RAGFlow command-line interface.
 
 ## Features
 
 - Interactive mode and single command execution
-- Full compatibility with Python CLI syntax
 - Recursive descent parser for SQL-like commands
 - Virtual Filesystem for intuitive resource management
-- Support for all major commands:
+- Support for major commands, including:
   - User management: LOGIN, REGISTER, CREATE USER, DROP USER, LIST USERS, etc.
   - Service management: LIST SERVICES, SHOW SERVICE, STARTUP/SHUTDOWN/RESTART SERVICE
   - Role management: CREATE ROLE, DROP ROLE, LIST ROLES, GRANT/REVOKE PERMISSION
@@ -16,14 +15,52 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
   - Model management: SET/RESET DEFAULT LLM/VLM/EMBEDDING/etc.
   - And more...
 
+## Installation
+
+For regular use, install a prebuilt Go binary from the latest RAGFlow GitHub Release. The installers detect the platform, download the matching binary, and verify its SHA-256 checksum.
+
+### Linux and macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | sh
+```
+
+The default installation path is `/usr/local/bin/ragflow-cli`. To use another directory, set `INSTALL_DIR`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 | iex
+```
+
+The Windows installer uses `%LOCALAPPDATA%\Programs\RAGFlow` by default and adds it to the user `PATH`. Restart the terminal after installation if prompted.
+
+Verify the installation:
+
+```bash
+ragflow-cli --version
+```
+
 ## Usage
 
-### Build and run
+### Build and run from source
 
 ```bash
 go build -o ragflow-cli ./cmd/ragflow-cli.go
 ./ragflow-cli
 ```
+
+### Interactive meta-commands
+
+The currently implemented meta-commands are:
+
+- `\?`, `\h`, or `\help`: show help.
+- `\pwd`: show the current working directory.
+- `\q`, `\quit`, or `\exit`: exit the CLI.
 
 ## Architecture
 
@@ -39,7 +76,7 @@ internal/cli/
 └── filesystem/         # Virtual Filesystem
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
-    ├── base.go         # Provider interface definition    
+    ├── base.go         # Provider interface definition
     ├── dataset.go      # Dataset provider implementation
     ├── file.go         # File manager provider implementation
     └── utils.go        # Helper functions
@@ -166,4 +203,4 @@ The parser uses a hand-written recursive descent approach instead of go-yacc for
 - Easier to extend and maintain
 - No code generation step required
 
-The parser structure follows the grammar defined in the Python version, ensuring full syntax compatibility.
+The parser uses the SQL-like command grammar documented in this guide.

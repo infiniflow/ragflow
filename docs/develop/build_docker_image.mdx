@@ -24,7 +24,7 @@ The Go image currently targets `linux/amd64`. On an Apple Silicon Mac, Docker De
 
 ## Platform support
 
-- **Linux x86-64:** CPU deployment is the default and recommended path. GPU deployment is available when the host has NVIDIA Container Toolkit configured.
+- **Linux x86-64:** CPU deployment is the default and recommended path. A GPU Compose deployment is available when the host has NVIDIA Container Toolkit configured. In the RAGFlow open-source 1.0 release, the Go DeepDoc backend remains CPU-only and does not support GPU inference.
 - **Apple Silicon macOS:** Build and run the `linux/amd64` image through Docker Desktop x86-64 emulation. Document processing and image builds may be slower than on an x86-64 Linux host.
 - **Linux ARM64:** Native builds are not supported by the checked-in Go Dockerfile and its native dependencies. Do not use an x86-64 image on ARM64 unless the resulting emulation setup has been validated for your workload.
 - **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
@@ -58,7 +58,7 @@ cd docker
 docker compose --env-file .env-go -f docker-compose-go.yml up -d
 ```
 
-The default `DEVICE=cpu` starts `ragflow-cpu`. To use `ragflow-gpu`, set `DEVICE=gpu` in `.env-go` and configure the NVIDIA container runtime on the host.
+The default `DEVICE=cpu` starts `ragflow-cpu`. To use `ragflow-gpu`, set `DEVICE=gpu` in `.env-go` and configure the NVIDIA container runtime on the host. This selection can make GPUs available to components that explicitly support them, but it does not enable GPU execution for the open-source 1.0 Go DeepDoc backend.
 
 ## Verify the service
 
