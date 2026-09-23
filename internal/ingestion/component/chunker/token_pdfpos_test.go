@@ -93,7 +93,7 @@ func TestCloneChunkDoc_DeepCopiesPDFPositions(t *testing.T) {
 // TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix verifies the
 // chunker-side contract for diff 1.4: preserved `positions` must decode
 // (via ChunkDoc.ToMap → decodeStructuredValue) to a [][]float64 matrix so
-// the downstream task-layer processChunkPositions → AddPositions can
+// the downstream task-layer processChunkPositions → addPDFPositions can
 // convert it to page_num_int / top_int / position_int. The coordinate
 // conversion itself lives in internal/ingestion/task (processChunkPositions),
 // not in the chunker.
