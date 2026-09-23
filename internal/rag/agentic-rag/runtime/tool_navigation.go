@@ -1134,7 +1134,7 @@ func navTypeOr(t string) string {
 func navOutlineLine(indent, name, nodeType, desc string, chunks []string) string {
 	line := indent + "- " + name + " (" + navTypeOr(nodeType) + ")"
 	if desc != "" {
-		line += ": " + snippet(desc, structDescSnippet)
+		line += ": " + Snippet(desc, structDescSnippet)
 	}
 	if c := chunkPtrs(chunks); c != "" {
 		line += " [chunks: " + c + "]"
@@ -1470,7 +1470,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		claimed[cid] = true
 		line := "- [claim] " + strings.TrimSpace(hit.Name)
 		if quote := docClaimQuote(hit); quote != "" {
-			line += " | Evidence: \"" + snippet(quote, claimEvidenceChars) + "\""
+			line += " | Evidence: \"" + Snippet(quote, claimEvidenceChars) + "\""
 		}
 		line += " [chunks: " + cid + "]"
 		lines = append(lines, line)
@@ -1537,7 +1537,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 				if text == "" {
 					continue
 				}
-				lines = append(lines, "- [chunk "+c.id+"]: "+snippet(text, 300))
+				lines = append(lines, "- [chunk "+c.id+"]: "+Snippet(text, 300))
 			}
 		}
 	}

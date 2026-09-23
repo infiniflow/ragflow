@@ -1934,40 +1934,116 @@ func recordSessionEvidence(kb *runtime.Kbinfos, refs []string) {
 	kb.PublishEvidence(refs)
 }
 
-// evidenceOrder puts the passages the run has actually READ first — in the order it read them — then
-// the opening's ranked head, then the rest by score.
+// evidenceOrder is the ANSWER stage's evidence list: the passages the run SHOWED first, then the ones it
+// READ, then the opening's ranked head, then the rest by score — deduped, and never more than `max`.
 //
-// It is the ANSWER stage's evidence budget, and it is mechanical on purpose: the passages a run paid a
-// tool call for are the ones its answer may cite, and "what the run read" needs no judgement about
-// what those passages mean (see the note on SessionRecord in runtime/session_state_line.go). It used to
-// put the passages behind a RUNTIME-DERIVED member list first — a ledger built by reading names out of
-// the model's queries and substring-matching them against the slots — which is the inference this
-// design removes: a passage the model never saw and never noted is not the run's evidence.
-func evidenceOrder(ranked []map[string]any, kb *runtime.Kbinfos, cap int) []map[string]any {
+// WHAT THE RUN SHOWED comes first because it is evidence whether or not a tool call was spent on it. The
+// seed renders the scan's delivered windows as numbered material ([ID:n]) and the answer resolves its
+// markers against this list; before this change the windows were published for citation but were NOT in
+// the list, so a member the session enumerated from them had no block behind it. Measured 2026-09-21
+// (三国/关羽, three runs of one build, `list_chunks` called zero times in all three): rendered_blocks
+// 10/176/299 while the members' own windows were absent from two of the three answers — the shape the
+// reader reports as "14 names, no citations".
+//
+// It is mechanical on purpose: every id here is a passage the run was already handed (a shown window, a
+// read page, an opening preview), and "what the run was handed" needs no judgement about what those
+// passages mean (see the note on SessionRecord in runtime/session_state_line.go). It used to put the
+// passages behind a RUNTIME-DERIVED member list first — a ledger built by reading names out of the model's
+// queries and substring-matching them against the slots — which is the inference this design removes: a
+// passage the model never saw and never noted is not the run's evidence.
+//
+// The size and the de-duplication are the two halves of "the answer prompt does not grow with the pool"
+// (see the evidence constants in graph_compose.go): `max` is a COUNT, and two passages that say the same
+// thing (overlapping windows of adjacent chunks) take one slot, not two.
+func evidenceOrder(ranked []map[string]any, kb *runtime.Kbinfos, max int) []map[string]any {
 	if kb == nil || len(ranked) == 0 {
 		return ranked
 	}
-	material := append(kb.ReadIDs(), kb.Opening()...)
-	out := make([]map[string]any, 0, len(ranked))
-	used := map[string]bool{}
-	for _, id := range material {
-		if c := kb.ChunkByID(id); c != nil && !used[id] {
-			used[id] = true
-			out = append(out, c)
+	if max <= 0 {
+		max = answerEvidenceBlocks
+	}
+	shown := make([]string, 0, len(kb.ScanWindows()))
+	for _, w := range kb.ScanWindows() {
+		if w.ChunkID != "" {
+			shown = append(shown, w.ChunkID)
 		}
 	}
-	head := len(out)
-	for _, c := range ranked {
-		if head > 0 && len(out) >= head+cap {
+	material := make([]string, 0, len(shown)+len(kb.ReadIDs())+len(kb.Opening()))
+	material = append(material, shown...)
+	// The SESSION's own registry is the other half of "shown": a window the session cited or a page a tool
+	// published reached the model as material too, and the answer must be able to cite it back.
+	material = append(material, kb.SessionEvidenceRefs...)
+	material = append(material, kb.ReadIDs()...)
+	material = append(material, kb.Opening()...)
+	out := make([]map[string]any, 0, max)
+	used := map[string]bool{}
+	texts := make([]string, 0, max)
+	neglected := 0
+	take := func(c map[string]any) bool {
+		if len(out) >= max {
+			return false
+		}
+		id := runtime.ChunkIDOf(c)
+		if id != "" {
+			if used[id] {
+				return true
+			}
+			used[id] = true
+		}
+		text := runtime.ChunkTextOf(c)
+		for _, kept := range texts {
+			if runtime.NearDuplicate(kept, text) {
+				neglected++
+				return true
+			}
+		}
+		texts = append(texts, text)
+		out = append(out, c)
+		return true
+	}
+	for _, id := range material {
+		if len(out) >= max {
 			break
 		}
-		if id := runtime.ChunkIDOf(c); id != "" && used[id] {
-			continue
+		if c := kb.ChunkByID(id); c != nil {
+			take(c)
 		}
-		out = append(out, c)
 	}
+	for _, c := range ranked {
+		if len(out) >= max {
+			break
+		}
+		take(c)
+	}
+	kb.NoteEvidenceSelection(len(out), neglected, len(material))
 	if len(out) == 0 {
 		return ranked
+	}
+	return out
+}
+
+// evidenceChunkForPrompt returns a COPY of a pool chunk whose text is capped at `runes`, for the answer
+// prompt only. The pool keeps the whole passage — list_chunks reads it and the reference list points at it
+// — while the BLOCK is what the answer pays for, and a constant block size is half of what keeps the
+// answer prompt a constant (see answerEvidenceChunkRunes).
+//
+// The cap is what stops the "scattered fragments" complaint from being traded for its opposite: measured
+// 2026-09-21, the answer complained about fragments when its material was 240-rune cuts, and the run that
+// handed it the whole pool (176-299 blocks) stopped citing altogether.
+func evidenceChunkForPrompt(c map[string]any, runes int) map[string]any {
+	text := runtime.ChunkTextOf(c)
+	if runes <= 0 || len([]rune(text)) <= runes {
+		return c
+	}
+	cut := runtime.Snippet(text, runes)
+	out := make(map[string]any, len(c))
+	for k, v := range c {
+		out[k] = v
+	}
+	for _, key := range []string{"content_with_weight", "content"} {
+		if _, ok := out[key]; ok {
+			out[key] = cut
+		}
 	}
 	return out
 }
@@ -1999,13 +2075,21 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 		chunks = kb.Chunks
 	}
 	ranked := rankByScore(chunks)
-	citeChunks := evidenceOrder(ranked, kb, citeChunkCap)
+	citeChunks := evidenceOrder(ranked, kb, answerEvidenceBlocks)
 	if len(citeChunks) == 0 {
 		citeChunks = chunks
 	}
 	maxTokens := d.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = evidenceBudgetTokens
+	}
+	// ONE block, ONE bound. The selection above is capped at answerEvidenceBlocks, and each block's text is
+	// capped here, so the evidence is a CONSTANT amount of material no matter how large the pool grew (see
+	// the evidence constants in graph_compose.go). The cap goes on a COPY: the pool keeps the whole passage
+	// (list_chunks reads it, and the reference list points at it).
+	renderChunks := make([]map[string]any, 0, len(citeChunks))
+	for _, c := range citeChunks {
+		renderChunks = append(renderChunks, evidenceChunkForPrompt(c, answerEvidenceChunkRunes))
 	}
 	// Publish the ordered evidence list the model is about to see so the chat
 	// pipeline can resolve the answer's [ID:n] markers against THE SAME list and put
@@ -2026,7 +2110,7 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// cannot cite and the user cannot open. Appending keeps the rendered prefix intact
 	// (block n is still position n) and gives the completion its target: the ids appended here
 	// are what the answer's markers resolve against.
-	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
+	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(renderChunks, maxTokens)
 	if kb != nil {
 		// The published list is the rendered blocks plus the passages the run READ that did not render a
 		// block (the budget admits only the first few whole chunks), so a marker the answer writes for a
@@ -2038,7 +2122,13 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 				present = append(present, id)
 			}
 		}
-		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(citeChunks, sources), present)
+		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(renderChunks, sources), present)
+		// The numbers behind the evidence, in the log: a selection that quietly renders 176 blocks instead
+		// of the constant 30 is a run whose answers will not cite (see the evidence constants).
+		carried, neglected, candidates := kb.EvidenceSelection()
+		_LOG.Printf("[Formalize][evidence] blocks=%d/%d (offered %d, near-duplicates dropped %d) "+
+			"chunk_runes=%d budget=%d", len(blocks), carried, candidates, neglected,
+			answerEvidenceChunkRunes, maxTokens)
 	}
 	evidence := strings.Join(blocks, "\n")
 

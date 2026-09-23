@@ -77,7 +77,10 @@ func TestTheScanTruncatesByBudgetAndSaysHowMuchIsLeft(t *testing.T) {
 		chunks = append(chunks, map[string]any{
 			"chunk_id": fmt.Sprintf("c-%02d", i),
 			"doc_id":   "d1",
-			"content":  fmt.Sprintf("云长手起刀落，斩%d将于马下，后又砍之。", i) + strings.Repeat("后文甚长，", 40),
+			// DISTINCT passages (see TestTheScanCollapsesOnlyTheSamePassage): a member passage differs
+			// from its neighbour by a name, and only a REPEATED passage is collapsed.
+			"content": fmt.Sprintf("第%d回：云长手起刀落，斩%d将于马下。%s", i, i,
+				strings.Repeat(fmt.Sprintf("此段第%d句略述战况，", i), 6)),
 		})
 	}
 	r := &stubRetriever{chunks: chunks}
@@ -221,9 +224,9 @@ func TestTheScanFallsBackToTheActWordsWhenTheSpellingDiffers(t *testing.T) {
 // and the pool is not a prompt.
 func TestTheScanWindowsReachTheSessionAsMaterial(t *testing.T) {
 	kb := &Kbinfos{}
-	var windows []scanWindow
+	var windows []ScanWindow
 	for i := 0; i < 5; i++ {
-		windows = append(windows, scanWindow{
+		windows = append(windows, ScanWindow{
 			ChunkID: fmt.Sprintf("c%d", i),
 			DocID:   "d1",
 			Text:    fmt.Sprintf("%d 云长手起刀落，斩之于马下。", i),
@@ -234,37 +237,83 @@ func TestTheScanWindowsReachTheSessionAsMaterial(t *testing.T) {
 	// max <= 0 is what production passes: EVERY delivered window, so the model enumerates from the whole
 	// material instead of from a sample of it.
 	block := renderScanWindows(kb, 0)
-	for _, want := range []string{"SCAN WINDOWS", "[ID:0]", "[ID:4]", "doc d1"} {
+	for _, want := range []string{"SCAN WINDOWS", "[ID:0]", "doc d1"} {
 		if !strings.Contains(block, want) {
 			t.Errorf("scan block %q missing %q", block, want)
 		}
 	}
+	// NEIGHBOURS OF ONE DOCUMENT ARE ONE BLOCK, and every passage in it stays PUBLISHED: a page of
+	// one-sentence lines is a page of fragments (the shape a 2026-09-21 answer complained about), while a
+	// block that carried five passages without publishing them would leave four of them uncitable.
+	if n := strings.Count(block, "斩之于马下"); n != 5 {
+		t.Errorf("the block carries %d of the 5 passages, want all of them once:\n%s", n, block)
+	}
 	if strings.Contains(block, "more window(s)") {
 		t.Errorf("the seed cut the material it was given:\n%s", block)
 	}
-	// Shown windows are PUBLISHED: they are the handles the answer cites.
 	if want := []string{"c0", "c1", "c2", "c3", "c4"}; !reflect.DeepEqual(kb.SessionEvidenceRefs, want) {
 		t.Errorf("published = %v, want the shown windows in order (%v)", kb.SessionEvidenceRefs, want)
 	}
-	// A caller that asks for a line cap still gets one, and what it left out is said.
-	capped := renderScanWindows(kb, 3)
-	if !strings.Contains(capped, "[ID:2]") || strings.Contains(capped, "[ID:3]") ||
-		!strings.Contains(capped, "…and 2 more window(s)") {
-		t.Errorf("capped block = %q, want three lines and the count of what is left", capped)
+	// A caller that asks for a BLOCK cap still gets one, and what it left out is said. Three documents,
+	// so the blocks do not merge.
+	many := &Kbinfos{}
+	many.NoteScanWindows([]ScanWindow{
+		{ChunkID: "a", DocID: "d1", Text: "云长手起刀落，斩之。"},
+		{ChunkID: "b", DocID: "d2", Text: "关公直取管亥，劈于马下。"},
+		{ChunkID: "c", DocID: "d3", Text: "颜良措手不及，刺于马下。"},
+	})
+	capped := renderScanWindows(many, 1)
+	if !strings.Contains(capped, "[ID:0]") || !strings.Contains(capped, "…and 2 more window(s)") {
+		t.Errorf("capped block = %q, want one block and the count of what is left", capped)
 	}
 	// An identical window is shown once: overlapping windows repeat a sentence, and a repeat is not a
 	// second member.
 	dup := &Kbinfos{}
-	dup.NoteScanWindows([]scanWindow{
+	dup.NoteScanWindows([]ScanWindow{
 		{ChunkID: "c-a", DocID: "d1", Text: "云长手起刀落，斩之于马下。"},
 		{ChunkID: "c-b", DocID: "d1", Text: "云长手起刀落，斩之于马下。"},
 	})
 	if n := strings.Count(renderScanWindows(dup, 0), "斩之于马下"); n != 1 {
 		t.Errorf("the block shows the same window %d time(s), want once", n)
 	}
+	if want := []string{"c-a", "c-b"}; !reflect.DeepEqual(dup.SessionEvidenceRefs, want) {
+		t.Errorf("published = %v, want both passages of the group (%v)", dup.SessionEvidenceRefs, want)
+	}
 	// Nothing scanned, nothing rendered — and no empty heading either.
 	if got := renderScanWindows(&Kbinfos{}, 0); got != "" {
 		t.Errorf("renderScanWindows on a run with no scan = %q, want nothing", got)
+	}
+}
+
+// TestTheScanCollapsesOnlyTheSamePassage pins both sides of the near-duplicate rule: the same passage
+// delivered twice is one passage, and two passages that differ by a NAME are two.
+//
+// The second half is the half that matters here. This runtime's questions are enumerations, and their
+// member passages agree in everything but the name — "手起一刀，斩颜良于马下" against "…斩文丑于马下". A
+// containment test loose enough to merge those (0.85, the number a same-kind pipeline uses for its merged
+// contexts) would silently delete members, which is a worse failure than a repeated window.
+func TestTheScanCollapsesOnlyTheSamePassage(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "c-1", "doc_id": "d1", "content": "云长手起刀落，斩颜良于马下，众皆骇然。"},
+		{"chunk_id": "c-2", "doc_id": "d1", "content": "云长手起刀落，斩文丑于马下，众皆骇然。"},
+		{"chunk_id": "c-3", "doc_id": "d2", "content": "颜良措手不及，被云长手起一刀，刺于马下。"},
+		{"chunk_id": "c-4", "doc_id": "d2", "content": "颜良措手不及，被云长手起一刀，刺于马下。"},
+	}
+	deps, _ := newTestSearchDeps(&stubRetriever{chunks: chunks})
+	res := ScanMatchAny(context.Background(), deps, []string{"云长"}, []string{"斩", "刺"}, nil, 0)
+
+	if res.Duplicates != 1 {
+		t.Errorf("duplicates = %d, want 1 (the passage delivered twice)", res.Duplicates)
+	}
+	got := map[string]bool{}
+	for _, w := range res.Windows {
+		got[w.ChunkID] = true
+	}
+	// 颜良 and 文丑 are two members: both survive. The second copy of the 颜良 passage is the duplicate.
+	for _, want := range []string{"c-1", "c-2", "c-3"} {
+		if !got[want] {
+			t.Errorf("windows = %v, want %s kept (a member dropped is worse than a repeat)", got, want)
+		}
 	}
 }
 

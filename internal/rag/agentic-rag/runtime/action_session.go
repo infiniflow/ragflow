@@ -4867,17 +4867,14 @@ func DeadlineToDuration(seconds float64) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
-// The seed's scan material is bounded by CHARACTERS — the one bound, rather than a line cap, because
-// the point of the block is that it is the whole delivered material (see renderScanWindows) — and the
-// bound itself is the SCAN stage's block bound (see StageChars(stageScan)), not a constant here.
+// The seed's scan material has NO budget of its own: it renders what the scan DELIVERED, and the scan's
+// delivery budget (scanOutTotalChars, scan_match_any.go) is the one number that cuts it.
 //
-// 40000 is about 20-30k tokens of Chinese, the same order as what a WeKnora-style pipeline hands its
-// answerer in one pass. The block is a PAGE, not the pool: a bigger one does not buy members — measured
-// 2026-09-21 00:52, an 80000-character page with the actor channel in front of it produced a FIVE-member
-// answer, because the round costing nothing but reading is the same round that has nothing left to
-// search with. The actor channel's coverage lives in the pool (every window it reached is citable), and
-// the page shows the head of the act-word ranking, which is where the deed's sentences are.
-
+// It used to be TWO numbers: the scan delivered up to 72000 characters while this block rendered 40000 of
+// them, so the coverage line the session was handed ("delivered 167 windows") described a cut the model
+// never saw, and "…and N more in the evidence pool" described material that was, by construction, in the
+// pool and readable. One budget, one number (see renderScanWindows).
+//
 // scanSeedBlockEnabled gates the SCAN WINDOWS block in the session's seed.
 //
 // ON, and that is a MEASURED decision, not a default: switching it OFF for one FRAMES run
@@ -4898,13 +4895,26 @@ func scanSeedBlock(kb *Kbinfos) string {
 	return renderScanWindows(kb, 0)
 }
 
-// scanWindowRunes bounds one rendered scan window: the sentence around the match.
-const scanWindowRunes = 240
+// scanWindowRunes bounds one rendered scan block: the sentence around the match, PLUS the neighbouring
+// windows of the same document while they fit (see renderScanWindows).
+//
+// 600 rather than 240, because a page of 240-rune cuts is what earns the "the materials are only
+// scattered fragments" answer: measured 2026-09-21, the run complained about fragments while 166 windows
+// were in hand, and the same window size is what leaves a member's sentence without its subject. 600 is
+// the size band a same-kind pipeline merges its contexts to (350-850).
+const scanWindowRunes = 600
 
 // renderScanWindows renders the scan's delivered windows as the enumeration material the session starts
-// from: one line per window, each with the citation handle of the passage it came from, bounded by
-// CHARACTERS (the scan stage's block bound, see StageChars) and by max lines when a caller asks for one (max <= 0: no line cap, which
-// is what production passes). Every window it shows is PUBLISHED, so the answer can cite what it read.
+// from: one BLOCK per passage (or per run of neighbouring passages of the same document, see below), each
+// with the citation handle of the passage it came from, and bounded by max lines when a caller asks for
+// one (max <= 0: no line cap, which is what production passes). Every passage it shows is PUBLISHED, so
+// the answer can cite what it read.
+//
+// NEIGHBOURS ARE MERGED: consecutive windows of the same document are one block while they fit
+// scanWindowRunes, because a retrieval window is a sentence and a page of one-sentence lines is a page of
+// fragments — the shape 2026-09-21's answer complained about in as many words. The whole group is
+// published (so every passage in it stays addressable and citable) and the block is numbered by its first
+// passage.
 //
 // COMPLETE by construction, and that is the point. The block used to render thirty lines and say "…and
 // 103 more window(s)" — a sample, so the model enumerated from a sample. Measured 2026-09-21 (三国/关羽):
@@ -4928,40 +4938,66 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 	var b strings.Builder
 	b.WriteString("SCAN WINDOWS (the run's own declared probes matched these passages; each line is the " +
 		"sentence around the match — the material to enumerate from):\n")
-	budget := StageChars(stageScan)
-	shown, chars, repeated := 0, 0, 0
+	shown, repeated := 0, 0
 	seen := map[string]bool{}
-	for _, w := range windows {
+	consumed := 0
+	for i := 0; i < len(windows); i++ {
+		w := windows[i]
+		start := i
+		text := strings.Join(strings.Fields(w.Text), " ")
+		if text == "" {
+			consumed++
+			continue
+		}
+		// The run of neighbouring windows of this document that still fits one block.
+		ids := []string{w.ChunkID}
+		for j := i + 1; j < len(windows) && windows[j].DocID == w.DocID; j++ {
+			next := strings.Join(strings.Fields(windows[j].Text), " ")
+			if next == "" {
+				i = j
+				continue
+			}
+			// A window the block already carries is absorbed, not repeated: overlapping windows of
+			// adjacent chunks restate a sentence, and a block that says it twice spends the page on a copy
+			// (its id is still published, so it stays citable).
+			if strings.Contains(text, next) {
+				repeated++
+				ids = append(ids, windows[j].ChunkID)
+				i = j
+				continue
+			}
+			if len([]rune(text))+len([]rune(next))+1 > scanWindowRunes {
+				break
+			}
+			text += " " + next
+			ids = append(ids, windows[j].ChunkID)
+			i = j
+		}
+		group := i - start + 1
+		if seen[text] {
+			repeated += group
+			consumed += group
+			continue
+		}
+		nums := kb.PublishEvidence(ids)
+		if len(nums) == 0 {
+			consumed += group
+			continue
+		}
 		if max > 0 && shown >= max {
 			break
 		}
-		text := FlattenLine(w.Text)
-		if text == "" {
-			continue
-		}
-		if seen[text] {
-			repeated++
-			continue
-		}
-		nums := kb.PublishEvidence([]string{w.ChunkID})
-		if len(nums) == 0 {
-			continue
-		}
-		line := fmt.Sprintf("[ID:%d] %s | doc %s\n", nums[0], TruncateRunes(text, scanWindowRunes), w.DocID)
-		if chars+len([]rune(line)) > budget {
-			break
-		}
 		seen[text] = true
-		b.WriteString(line)
-		chars += len([]rune(line))
+		b.WriteString(fmt.Sprintf("[ID:%d] %s | doc %s\n", nums[0], TruncateRunes(text, scanWindowRunes), w.DocID))
 		shown++
+		consumed += group
 	}
 	if shown == 0 {
 		return ""
 	}
-	if rest := len(windows) - shown - repeated; rest > 0 {
-		fmt.Fprintf(&b, "…and %d more window(s) in the evidence pool (this block is bounded by %d "+
-			"characters); read on with list_chunks on the documents above.\n", rest, budget)
+	if rest := len(windows) - consumed - repeated; rest > 0 {
+		fmt.Fprintf(&b, "…and %d more window(s) the probes matched that this block did not show; "+
+			"read on with list_chunks on the documents above.\n", rest)
 	}
 	return b.String()
 }

@@ -148,7 +148,13 @@ type Kbinfos struct {
 	// scanLine is the coverage line of the run's scan channel (see NoteScanLine).
 	scanLine string
 	// scanWindows are the windows that scan delivered (see NoteScanWindows).
-	scanWindows []scanWindow
+	scanWindows []ScanWindow
+	// evidenceBlocks / evidenceNeglected / evidenceCandidates are the answer stage's evidence selection
+	// numbers (see NoteEvidenceSelection): what the answer's evidence carried, what it dropped as
+	// near-duplicate, and what it was offered.
+	evidenceBlocks     int
+	evidenceNeglected  int
+	evidenceCandidates int
 	// CiteChunkIDs is the ordered id list of the chunks the final-answer call
 	// rendered as numbered evidence — Python's tools._rag_cite_chunk_ids
 	// (agentic_rag_graph.py:870). The renderer puts the passages behind enumerated
@@ -353,19 +359,19 @@ var scanLineField = struct{}{}
 // matches a probe the plan declared. Kept on the pool because the seed renders them and the answer may
 // cite them — they are the enumeration channel's material, and a window the session never sees is a
 // window no answer can enumerate.
-func (k *Kbinfos) NoteScanWindows(w []scanWindow) {
+func (k *Kbinfos) NoteScanWindows(w []ScanWindow) {
 	if k == nil {
 		return
 	}
-	k.scanWindows = append([]scanWindow(nil), w...)
+	k.scanWindows = append([]ScanWindow(nil), w...)
 }
 
 // ScanWindows are the windows recorded by NoteScanWindows, empty when no scan ran.
-func (k *Kbinfos) ScanWindows() []scanWindow {
+func (k *Kbinfos) ScanWindows() []ScanWindow {
 	if k == nil {
 		return nil
 	}
-	return append([]scanWindow(nil), k.scanWindows...)
+	return append([]ScanWindow(nil), k.scanWindows...)
 }
 
 // NoteScanLine records the scan's coverage line for this run.
@@ -382,6 +388,29 @@ func (k *Kbinfos) ScanLine() string {
 		return ""
 	}
 	return k.scanLine
+}
+
+// NoteEvidenceSelection records the ANSWER stage's evidence selection: how many passages the answer's
+// evidence carries, how many candidates were dropped for saying the same thing as one already taken, and
+// how many candidates were offered. The size of the answer's evidence is a CONSTANT (see
+// answerEvidenceBlocks), and these are the numbers that say whether it was met — the answer's citation
+// discipline is a function of how much evidence it is handed, so a run that quietly renders 176 blocks
+// instead of 30 is a run whose answers will not cite (measured 2026-09-21: 30-block shape → markers
+// resolve; 176-299 blocks → 0-5 markers).
+func (k *Kbinfos) NoteEvidenceSelection(blocks, neglected, candidates int) {
+	if k == nil {
+		return
+	}
+	k.evidenceBlocks, k.evidenceNeglected, k.evidenceCandidates = blocks, neglected, candidates
+}
+
+// EvidenceSelection is what NoteEvidenceSelection recorded: blocks carried, near-duplicates dropped,
+// candidates offered.
+func (k *Kbinfos) EvidenceSelection() (blocks, neglected, candidates int) {
+	if k == nil {
+		return 0, 0, 0
+	}
+	return k.evidenceBlocks, k.evidenceNeglected, k.evidenceCandidates
 }
 
 // ReadIDs are the passages the run has actually READ — deep-read through list_chunks, as opposed to

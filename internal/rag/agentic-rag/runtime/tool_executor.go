@@ -1521,7 +1521,7 @@ func metadataContextDocs(docIDs []string, perDoc map[string]map[string]any, keys
 			if rendered == "" {
 				continue
 			}
-			values[k] = snippet(rendered, metadataContextValueRunes)
+			values[k] = Snippet(rendered, metadataContextValueRunes)
 		}
 		if len(values) == 0 {
 			continue
