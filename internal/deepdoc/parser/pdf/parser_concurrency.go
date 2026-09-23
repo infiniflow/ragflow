@@ -56,10 +56,10 @@ func DeepDocConcurrency() int {
 	return deepDocInferenceConcurrency
 }
 
-// ── Per-document page concurrency (N) ──────────────────────────────────────
+// ── Process-wide page concurrency (N) ──────────────────────────────────────
 //
-// PageConcurrency (N) is how many pages of a single document are parsed
-// concurrently inside one ingestor worker. It is the size of the shared page
+// PageConcurrency (N) is the total number of PDF pages parsed concurrently
+// across the whole process. It is the size of the shared page
 // worker pool (see parserPageWorkerPool) and is resolved once at server start
 // via SetPageConcurrency from CLI > env > config (ingestor.page_concurrency) >
 // default(2). It is deliberately independent of the process inference budget
@@ -147,7 +147,7 @@ var (
 )
 
 // defaultPageWorkerCount sizes the shared page worker pool from the
-// per-document page concurrency (N), resolved once at server start via
+// process-wide page concurrency (N), resolved once at server start via
 // SetPageConcurrency. N is independent of the process inference budget: page
 // workers beyond DeepDocConcurrency() simply queue rendered bitmaps while they
 // wait for an inference slot, so sizing the pool to N never over-subscribes

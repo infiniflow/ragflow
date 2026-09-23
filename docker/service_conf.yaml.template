@@ -128,8 +128,8 @@ ingestor:
   # CLI flag --ingestor-max-concurrent-workers (highest precedence).
   # Valid range [1, 256]. Default 1.
   max_concurrent_workers: 1
-  # Per-document page concurrency (N). How many pages of one document are parsed
-  # concurrently inside a single ingestor worker. Override with the env var
+  # Process-wide page concurrency (N). Total PDF pages parsed concurrently across
+  # the whole process (shared by all ingestor workers). Override with the env var
   # RAGFLOW_INGESTOR_PAGE_CONCURRENCY, or the CLI flag --ingestor-page-concurrency
   # (highest precedence). Valid range [1, 16]. Default 2.
   page_concurrency: 2

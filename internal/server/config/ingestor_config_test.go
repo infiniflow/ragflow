@@ -42,7 +42,7 @@ func TestParseIngestorConfigReadsWorkerAndCompilerSettings(t *testing.T) {
 }
 
 // TestParseIngestorConfigDefaultsToK1AndN2 pins the conservative defaults:
-// the ingestor worker count (K) defaults to 1 and the per-document page
+// the ingestor worker count (K) defaults to 1 and the process-wide page
 // concurrency (N) defaults to 2 when no ingestor section is configured.
 func TestParseIngestorConfigDefaultsToK1AndN2(t *testing.T) {
 	config := &Config{}
@@ -79,10 +79,15 @@ func TestParseIngestorConfigReadsPageConcurrency(t *testing.T) {
 	}
 }
 
-// TestParseIngestorConfigRejectsOutOfRangeWorkers pins the fail-fast contract:
-// an explicit ingestor.max_concurrent_workers outside [1, 256] is rejected at
-// config load, not silently coerced.
-func TestParseIngestorConfigRejectsOutOfRangeWorkers(t *testing.T) {
+// TestParseIngestorConfigToleratesOutOfRangeWorkers pins the precedence
+// contract: ParseIngestorConfig must NOT fail-fast on an out-of-range
+// ingestor.max_concurrent_workers. Range validation belongs to the
+// CLI/env/config resolver (config.MinIngestorWorkers / MaxIngestorWorkers),
+// which runs later during startup, so a config value that a higher-priority
+// source (CLI flag or env var) overrides must survive config load. The resolver
+// still rejects the final resolved value, so fail-fast is preserved where it
+// matters.
+func TestParseIngestorConfigToleratesOutOfRangeWorkers(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		value int
@@ -95,16 +100,17 @@ func TestParseIngestorConfigRejectsOutOfRangeWorkers(t *testing.T) {
 			v := viper.New()
 			v.Set("ingestor", map[string]any{"max_concurrent_workers": tc.value})
 			config := &Config{}
-			if err := config.ParseIngestorConfig(v); err == nil {
-				t.Fatalf("ParseIngestorConfig accepted max_concurrent_workers=%d, want error", tc.value)
+			if err := config.ParseIngestorConfig(v); err != nil {
+				t.Fatalf("ParseIngestorConfig rejected max_concurrent_workers=%d: %v (validation moved to resolver)", tc.value, err)
 			}
 		})
 	}
 }
 
-// TestParseIngestorConfigRejectsOutOfRangePageConcurrency pins the same
-// fail-fast contract for ingestor.page_concurrency outside [1, 16].
-func TestParseIngestorConfigRejectsOutOfRangePageConcurrency(t *testing.T) {
+// TestParseIngestorConfigToleratesOutOfRangePageConcurrency pins the same
+// precedence contract for ingestor.page_concurrency: config load tolerates
+// out-of-range values; the resolver rejects the final resolved value.
+func TestParseIngestorConfigToleratesOutOfRangePageConcurrency(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		value int
@@ -117,8 +123,8 @@ func TestParseIngestorConfigRejectsOutOfRangePageConcurrency(t *testing.T) {
 			v := viper.New()
 			v.Set("ingestor", map[string]any{"page_concurrency": tc.value})
 			config := &Config{}
-			if err := config.ParseIngestorConfig(v); err == nil {
-				t.Fatalf("ParseIngestorConfig accepted page_concurrency=%d, want error", tc.value)
+			if err := config.ParseIngestorConfig(v); err != nil {
+				t.Fatalf("ParseIngestorConfig rejected page_concurrency=%d: %v (validation moved to resolver)", tc.value, err)
 			}
 		})
 	}
