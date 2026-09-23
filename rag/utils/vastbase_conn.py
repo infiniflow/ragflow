@@ -635,13 +635,22 @@ class VBConnection(DocStoreConnection):
             # these are combined via UNION ALL (not OR) at query time — see note below.
             fulltext_ft_parts: list = []
             filter_vector = None
+            # One information_schema lookup per table, shared between the
+            # condition pre-pass below and the per-table query loop.
+            table_instances: dict[str, list] = {}
+
+            def _table_instance(name: str):
+                if name not in table_instances:
+                    table_instances[name] = get_table_instance(vb_conn, name)
+                return table_instances[name]
+
             if condition:
                 for indexName in index_names:
                     if indexName.startswith("ragflow_doc_meta_"):
                         table_name = indexName
                     else:
                         table_name = f"{indexName}_{knowledgebase_ids[0]}"
-                    table_instance = get_table_instance(vb_conn, table_name)
+                    table_instance = _table_instance(table_name)
                     if table_instance:
                         filter_cond = equivalent_condition_to_str(condition, table_instance)
                         break
@@ -719,14 +728,20 @@ class VBConnection(DocStoreConnection):
                     # doc_meta tables don't have kb_id suffix
                     table_name = indexName if is_meta else f"{indexName}_{knowledgebaseId}"
                     try:
-                        table_exists = get_table_exists(vb_conn, table_name)
-                        if not table_exists:
+                        table_instance = _table_instance(table_name)
+                        if not table_instance:
                             continue
                     except Exception:
                         logger.warning(f"Error checking table {table_name}, skipping...")
                         continue
                     table_list.append(table_name)
-                    select_fields_sql = sql.SQL(", ").join([select_identifier(field) for field in output])
+                    # Keep only columns that exist and let get_fields() fill the gaps with None.
+                    existing_columns = {n for n, *_ in table_instance}
+                    table_output = [f for f in output if f == "*" or f in existing_columns]
+                    if not table_output:
+                        logger.warning("VBConnection.search skip table=%s: none of the requested fields exist.", table_name)
+                        continue
+                    select_fields_sql = sql.SQL(", ").join([select_identifier(field) for field in table_output])
                     sql_expr = None
                     filter_fulltext_expr = None
                     filter_vector_expr = None
@@ -865,7 +880,7 @@ class VBConnection(DocStoreConnection):
                                 """).format(
                                     filter_fulltext_expr=filter_fulltext_expr,
                                     filter_vector_expr=filter_vector_expr,
-                                    select_fields=sql.SQL(", ").join([sql.SQL("COALESCE(a.{field},b.{field}) AS {field}").format(field=sql.Identifier(field)) for field in output]),
+                                    select_fields=sql.SQL(", ").join([sql.SQL("COALESCE(a.{field},b.{field}) AS {field}").format(field=sql.Identifier(field)) for field in table_output]),
                                     fused_score=fused_score,
                                     score_column=sql.Identifier(score_column),
                                     limit=sql.Literal(matchExpr.topn),

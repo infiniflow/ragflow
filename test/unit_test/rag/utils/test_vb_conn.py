@@ -68,6 +68,7 @@ class RecordingCursor:
     def __init__(self, conn):
         self._conn = conn
         self.description = conn.description
+        self.rowcount = 0
 
     def __enter__(self):
         return self
@@ -87,7 +88,9 @@ class RecordingCursor:
         return self._conn.fetchone_results.pop(0)
 
     def fetchall(self):
-        return self._conn.fetchall_results.pop(0)
+        rows = self._conn.fetchall_results.pop(0)
+        self.rowcount = len(rows)
+        return rows
 
 
 class RecordingConnection:
@@ -684,7 +687,7 @@ class TestSearchDenseSql:
         connection = object.__new__(_vb_connection_class())
         connection.db_compatibility = compatibility
         connection.get_conn = contextlib.contextmanager(lambda: (yield conn))
-        monkeypatch.setattr(vastbase_conn_module, "get_table_exists", lambda c, t: True)
+        monkeypatch.setattr(vastbase_conn_module, "get_table_instance", lambda c, t: _chunk_table_instance())
         dense = MatchDenseExpr("q_3_vec", [0.1, 0.2, 0.3], "float", "cosine", 10, {"similarity": 0.17})
         connection.search(["id"], [], {}, [dense], OrderByExpr(), 0, 10, "vb", ["kb1"])
 
@@ -696,3 +699,43 @@ class TestSearchDenseSql:
         assert "LIMIT 10" in inner
         # The threshold filters the SIMILARITY alias after the scan, in the outer query.
         assert 'WHERE "SIMILARITY" >= 0.17' in outer
+
+
+class TestSearchColumnTolerance:
+    """ES dynamic-mapping parity: requested fields the table never stored must
+    not reach the SQL select list — ES returns nulls for unmapped fields, while
+    Vastbase raises UndefinedColumn. Covers the compile-pipeline fields
+    (summary_with_weight, source_chunk_ids, ...) being read before any compile
+    insert has added those columns via ensure_table_columns()."""
+
+    def _connection(self, conn):
+        connection = object.__new__(_vb_connection_class())
+        connection.db_compatibility = "PG"
+        connection.get_conn = contextlib.contextmanager(lambda: (yield conn))
+        return connection
+
+    def test_missing_select_fields_are_dropped_from_sql(self, monkeypatch, render_as_string):
+        conn = RecordingConnection(fetchall_results=[[]], description=[("id",)])
+        connection = self._connection(conn)
+        monkeypatch.setattr(vastbase_conn_module, "get_table_instance", lambda c, t: _chunk_table_instance())
+        dense = MatchDenseExpr("q_3_vec", [0.1, 0.2, 0.3], "float", "cosine", 10, {"similarity": 0.17})
+        connection.search(["content_with_weight", "summary_with_weight", "source_chunk_ids"], [], {}, [dense], OrderByExpr(), 0, 10, "vb", ["kb1"])
+
+        rendered = _render(conn.executed[0][0])
+        # _chunk_table_instance() has none of the three requested fields (nor
+        # pagerank_fea) — only "id" survives into the select list.
+        for missing in ("content_with_weight", "summary_with_weight", "source_chunk_ids", "pagerank_fea"):
+            assert missing not in rendered
+        assert 'SELECT "id", (1-(' in rendered
+
+    def test_missing_pagerank_column_defaults_to_zero(self, monkeypatch, render_as_string):
+        conn = RecordingConnection(fetchall_results=[[("c1", 0.9)]], description=[("id",), ("SIMILARITY",)])
+        connection = self._connection(conn)
+        monkeypatch.setattr(vastbase_conn_module, "get_table_instance", lambda c, t: _chunk_table_instance())
+        dense = MatchDenseExpr("q_3_vec", [0.1, 0.2, 0.3], "float", "cosine", 10, {"similarity": 0.17})
+        res, total = connection.search(["id"], [], {}, [dense], OrderByExpr(), 0, 10, "vb", ["kb1"])
+
+        assert total == 1
+        # The Sum ranking needs pagerank_fea even though the table lacks the column.
+        assert "pagerank_fea" in res.columns
+        assert res["id"].tolist() == ["c1"]
