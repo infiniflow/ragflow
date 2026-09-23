@@ -482,9 +482,7 @@ class LLM(ComponentBase):
         # dangling downstream ID -- retained by the canvas/DSL but missing
         # from the loaded components -- must not raise here: it is simply
         # ineligible for streaming, so the eager path runs instead.)
-        has_message_downstream = bool(downstreams) and all(
-            (component := self._canvas.get_component(cid)) is not None and component["obj"].component_name.lower() == "message" for cid in downstreams
-        )
+        has_message_downstream = bool(downstreams) and all((component := self._canvas.get_component(cid)) is not None and component["obj"].component_name.lower() == "message" for cid in downstreams)
         if has_message_downstream and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output_async, prompt, deepcopy(msg)))
             return
