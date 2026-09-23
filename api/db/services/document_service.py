@@ -697,7 +697,7 @@ class DocumentService(CommonService):
                 0,
                 10,
                 index,
-                doc.kb_id,
+                [doc.kb_id],
             )
             if settings.docStoreConn.get_fields(res, ["id"]):
                 settings.docStoreConn.delete(
