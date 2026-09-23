@@ -17,6 +17,7 @@
 package chunker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -181,9 +182,9 @@ func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
 		"name":          "questions.csv",
 		"output_format": "json",
 		"json": []map[string]any{{
-			"doc_type_kwd": "text",
-			"ck_type":      "table_row",
-			"cells":        []string{"question", "answer", "unexpected"},
+			"text":         "<table><tr><td>question</td><td></td><td>unexpected</td></tr></table>",
+			"doc_type_kwd": "table",
+			"ck_type":      "table",
 		}},
 	}
 	out, err := comp.Invoke(t.Context(), nil, inputs)
@@ -420,7 +421,7 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 	}
 }
 
-func TestQAChunkerSpreadsheetRowIRTreatsFirstRowAsQAData(t *testing.T) {
+func TestQAChunkerSpreadsheetWireTreatsFirstRowAsQAData(t *testing.T) {
 	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
@@ -430,8 +431,7 @@ func TestQAChunkerSpreadsheetRowIRTreatsFirstRowAsQAData(t *testing.T) {
 		"file_type":     "xlsx",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "cells": []string{"ID", "Status"}},
-			{"text": "ID：A-100; Status：paid", "doc_type_kwd": "text", "ck_type": "table_row", "cells": []string{"A-100", "paid"}},
+			spreadsheetSegmentItem("Sheet1", []string{"ID", "Status"}, [][]string{{"A-100", "paid"}}, 1, 2),
 		},
 	})
 	if err != nil {
@@ -446,6 +446,27 @@ func TestQAChunkerSpreadsheetRowIRTreatsFirstRowAsQAData(t *testing.T) {
 	}
 	if got, _ := chunks[1]["text"].(string); got != "Question: A-100\tAnswer: paid" {
 		t.Fatalf("second-row QA = %q", got)
+	}
+	// top_int keeps the legacy 0-based record index: rowStart - 1.
+	for i, want := range []any{float64(0), float64(1)} {
+		top, _ := chunks[i]["top_int"].([]any)
+		if len(top) != 1 || top[0] != want {
+			t.Errorf("chunk[%d] top_int = %v, want [%v]", i, chunks[i]["top_int"], want)
+		}
+	}
+	// R1: each pair carries only its own row's tuple, not the segment matrix.
+	for i, wantRow := range []float64{1, 2} {
+		raw, _ := json.Marshal(chunks[i]["positions"])
+		var matrix [][]float64
+		if err := json.Unmarshal(raw, &matrix); err != nil {
+			t.Fatalf("chunk[%d] positions = %v: %v", i, chunks[i]["positions"], err)
+		}
+		if len(matrix) != 1 {
+			t.Fatalf("chunk[%d] positions = %v, want one tuple", i, chunks[i]["positions"])
+		}
+		if tuple := matrix[0]; len(tuple) != 5 || tuple[1] != wantRow {
+			t.Errorf("chunk[%d] tuple = %v, want rowStart %v", i, tuple, wantRow)
+		}
 	}
 }
 

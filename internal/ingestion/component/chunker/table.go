@@ -114,7 +114,8 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 }
 
 // tableItems returns the per-row records, preferring JSONResult and
-// falling back to Chunks. Each record becomes exactly one chunk.
+// falling back to Chunks. Each HTML table row becomes exactly one chunk;
+// every other payload record passes through as one chunk.
 func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 	source := items
 	if len(source) == 0 {
@@ -123,35 +124,19 @@ func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 	if len(source) == 0 {
 		return nil
 	}
-	dataTables := make(map[string]struct{})
-	for _, item := range source {
-		if item.CKType == "table_row" {
-			dataTables[spreadsheetTableKey(item)] = struct{}{}
-		}
-	}
 	filtered := make([]schema.ChunkDoc, 0, len(source))
 	for _, item := range source {
-		// Spreadsheet parsers expose the header as schema metadata. It is
-		// already represented in each table_row and must not become a data
-		// chunk of its own. A table with no data rows still needs its header
-		// as the only searchable representation.
-		if item.CKType == "table_header" {
-			if _, hasRows := dataTables[spreadsheetTableKey(item)]; hasRows {
-				continue
-			}
-		}
 		filtered = append(filtered, expandHTMLTableRows(item)...)
 	}
 	return filtered
 }
 
 // expandHTMLTableRows turns one HTML <table> payload into one chunk per data
-// row. Row-IR records (which are already per-row) and non-table payloads
-// pass through unchanged. A table whose only row is the header keeps the
-// whole markup as its single chunk: the header line is then the only
-// searchable representation.
+// row. Non-table payloads pass through unchanged. A table whose only row is
+// the header keeps the whole markup as its single chunk: the header line is
+// then the only searchable representation.
 func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
-	if item.CKType == "table_row" || item.CKType == "table_header" || !isTableHTML(item.Text) {
+	if !isTableHTML(item.Text) {
 		return []schema.ChunkDoc{item}
 	}
 	rows, headerCount := tableRowsWithHeader(item.Text)
@@ -214,22 +199,6 @@ func tableRowRecordText(names, cells []string) string {
 		lines = append(lines, "- "+value)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func spreadsheetTableKey(item schema.ChunkDoc) string {
-	if item.TableID != "" {
-		return "table:" + item.TableID
-	}
-	if item.SheetIndex != nil {
-		return fmt.Sprintf("sheet-index:%d", *item.SheetIndex)
-	}
-	if item.Sheet != "" {
-		return "sheet:" + item.Sheet
-	}
-	if sheet, ok := spreadsheetPositionSheet(item); ok {
-		return fmt.Sprintf("position-sheet:%g", sheet)
-	}
-	return "unknown"
 }
 
 func init() {

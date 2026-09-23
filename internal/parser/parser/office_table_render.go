@@ -42,118 +42,6 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 // value parsing.
 var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
-func recordsToSpreadsheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int) []map[string]any {
-	if len(records) == 0 {
-		return nil
-	}
-	if headerRow <= 0 {
-		headerRow = 1
-	}
-	if len(dataRows) != len(records)-1 {
-		dataRows = make([]int, len(records)-1)
-		for i := range dataRows {
-			dataRows[i] = headerRow + i + 1
-		}
-	}
-	maxCols := 0
-	for _, row := range records {
-		if len(row) > maxCols {
-			maxCols = len(row)
-		}
-	}
-	if maxCols == 0 {
-		return nil
-	}
-	header := append([]string(nil), records[0]...)
-	if len(header) == 0 {
-		header = padSpreadsheetRow(header, maxCols)
-	}
-	headerColEnd := len(header)
-	tableID := fmt.Sprintf("sheet-%d", sheetIndex)
-	items := make([]map[string]any, 0, len(records))
-	headerText := spreadsheetRowText(header, nil, sheet)
-	items = append(items, map[string]any{
-		"text":         headerText,
-		"doc_type_kwd": DocTypeTable,
-		"ck_type":      "table_header",
-		"table_id":     tableID,
-		"sheet":        sheet,
-		"sheet_index":  sheetIndex,
-		"cells":        header,
-		"row_start":    headerRow,
-		"row_end":      headerRow,
-		"col_start":    1,
-		"col_end":      headerColEnd,
-		"positions":    [][]float64{{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)}},
-	})
-	for i, sourceRow := range records[1:] {
-		cells := append([]string(nil), sourceRow...)
-		colStart, colEnd := nonEmptyColumnRange(cells)
-		if colStart == 0 {
-			continue
-		}
-		rowNumber := dataRows[i]
-		items = append(items, map[string]any{
-			"text":         spreadsheetRowText(header, cells, sheet),
-			"doc_type_kwd": DocTypeText,
-			"ck_type":      "table_row",
-			"table_id":     tableID,
-			"sheet":        sheet,
-			"sheet_index":  sheetIndex,
-			"headers":      header,
-			"cells":        cells,
-			"row_start":    rowNumber,
-			"row_end":      rowNumber,
-			"col_start":    colStart,
-			"col_end":      colEnd,
-			"positions":    [][]float64{{float64(sheetIndex), float64(rowNumber), float64(rowNumber), float64(colStart), float64(colEnd)}},
-		})
-	}
-	return items
-}
-
-func recordsToHTMLTableItem(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int) map[string]any {
-	if len(records) == 0 {
-		return nil
-	}
-	if headerRow <= 0 {
-		headerRow = 1
-	}
-	colEnd := 1
-	for _, row := range records {
-		if len(row) > colEnd {
-			colEnd = len(row)
-		}
-	}
-	var builder strings.Builder
-	builder.WriteString("<table><caption>")
-	builder.WriteString(html.EscapeString(sheet))
-	builder.WriteString("</caption>\n<tr>")
-	for _, cell := range records[0] {
-		builder.WriteString("<th>")
-		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		builder.WriteString("</th>")
-	}
-	builder.WriteString("</tr>\n")
-	for _, row := range records[1:] {
-		builder.WriteString("<tr>")
-		for _, cell := range row {
-			builder.WriteString("<td>")
-			builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-			builder.WriteString("</td>")
-		}
-		builder.WriteString("</tr>\n")
-	}
-	builder.WriteString("</table>\n")
-	rowStart, rowEnd := headerRow, headerRow
-	if len(dataRows) > 0 {
-		rowStart, rowEnd = dataRows[0], dataRows[len(dataRows)-1]
-	}
-	return NewTableJSONItem(builder.String(), sheet, [][]float64{{
-		float64(sheetIndex), float64(rowStart), float64(rowEnd), 1, float64(colEnd),
-	}})
-}
-
 // spreadsheetSegmentRow is one emitted data row: its cells for the markup
 // and its row-aligned position tuple.
 type spreadsheetSegmentRow struct {
@@ -200,11 +88,15 @@ func renderSpreadsheetTable(sheet string, header []string, rows [][]string) stri
 // matrix — one tuple per <tr> in strict markup order, header included — so
 // row-level consumers index positions by <tr> number with no side channel.
 //
-// Splitting reproduces the ordering sortSpreadsheetItems gave the old row IR:
-// an image lands after the last row whose (row, colStart) sorts at or before
-// its anchor, rows before the header's anchor keep the header in front of the
-// image (a header-only lead segment), and fully empty rows are skipped from
-// both markup and matrix (the IR path's colStart==0 continue).
+// An image lands after the last row whose (row, colStart) sorts at or before
+// its anchor; rows before the header's anchor keep the header in front of
+// the image (a header-only lead segment); fully empty rows are skipped from
+// both markup and matrix.
+//
+// Segmentation is semantic only — sheet boundaries and image anchors, never a
+// size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
+// ignored the user's chunk size; that budget belongs to the chunker (see the
+// chunker's splitSpreadsheetTable).
 func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any) []map[string]any {
 	sortImagesByAnchor(images)
 	if len(records) == 0 {
@@ -334,12 +226,6 @@ func sortImagesByAnchor(images []map[string]any) {
 	})
 }
 
-func padSpreadsheetRow(row []string, width int) []string {
-	padded := make([]string, width)
-	copy(padded, row)
-	return padded
-}
-
 func nonEmptyColumnRange(row []string) (int, int) {
 	start, end := 0, 0
 	for i, cell := range row {
@@ -353,70 +239,6 @@ func nonEmptyColumnRange(row []string) (int, int) {
 		end = col
 	}
 	return start, end
-}
-
-func spreadsheetRowText(headers, cells []string, sheet string) string {
-	values := headers
-	if cells != nil {
-		values = cells
-	}
-	parts := make([]string, 0, len(values))
-	for i, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if cells == nil {
-			parts = append(parts, value)
-			continue
-		}
-		header := ""
-		if i < len(headers) {
-			header = strings.TrimSpace(headers[i])
-		}
-		if header != "" {
-			parts = append(parts, header+"："+value)
-		} else {
-			parts = append(parts, value)
-		}
-	}
-	text := strings.Join(parts, "; ")
-	if cells != nil && sheet != "" && !strings.Contains(strings.ToLower(sheet), "sheet") {
-		text += " ——" + sheet
-	}
-	return text
-}
-
-func sortSpreadsheetItems(items []map[string]any) {
-	sort.SliceStable(items, func(i, j int) bool {
-		headerI := items[i]["ck_type"] == "table_header"
-		headerJ := items[j]["ck_type"] == "table_header"
-		if headerI != headerJ {
-			return headerI
-		}
-		ri, ci := spreadsheetItemCoordinate(items[i])
-		rj, cj := spreadsheetItemCoordinate(items[j])
-		if ri != rj {
-			return ri < rj
-		}
-		if ci != cj {
-			return ci < cj
-		}
-		return spreadsheetItemKindRank(items[i]) < spreadsheetItemKindRank(items[j])
-	})
-}
-
-func spreadsheetItemCoordinate(item map[string]any) (int, int) {
-	row, _ := numericItemInt(item["row_start"])
-	col, _ := numericItemInt(item["col_start"])
-	return row, col
-}
-
-func spreadsheetItemKindRank(item map[string]any) int {
-	if item["ck_type"] == "image" {
-		return 1
-	}
-	return 0
 }
 
 func numericItemInt(value any) (int, bool) {

@@ -8,7 +8,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-func TestXLSXParserEmitsSpreadsheetRows(t *testing.T) {
+func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "ID")
 		mustSetCell(t, f, "Sheet1", "B1", "Status")
@@ -50,19 +50,6 @@ func TestXLSXParserEmitsSpreadsheetRows(t *testing.T) {
 	}
 	if got := positions[2]; !reflect.DeepEqual(got, []float64{1, 3, 3, 1, 2}) {
 		t.Fatalf("row 3 tuple = %v, want [1 3 3 1 2]", got)
-	}
-}
-
-func TestSortSpreadsheetItemsKeepsHeaderBeforeRowsWhenHeaderIsLater(t *testing.T) {
-	items := []map[string]any{
-		{"ck_type": "table_row", "row_start": 1, "col_start": 1},
-		{"ck_type": "table_row", "row_start": 2, "col_start": 1},
-		{"ck_type": "table_header", "row_start": 5, "col_start": 1},
-	}
-
-	sortSpreadsheetItems(items)
-	if items[0]["ck_type"] != "table_header" {
-		t.Fatalf("sorted items = %#v, want table_header first", items)
 	}
 }
 

@@ -156,7 +156,6 @@ func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, i
 			row, _ := numericItemInt(image["row_start"])
 			col, _ := numericItemInt(image["col_start"])
 			image["sheet_index"] = sheetIdx + 1
-			image["table_id"] = fmt.Sprintf("sheet-%d", sheetIdx+1)
 			image["positions"] = [][]float64{{float64(sheetIdx + 1), float64(row), float64(row), float64(col), float64(col)}}
 		}
 		// One wire shape for every spreadsheet sheet: segmented HTML tables
