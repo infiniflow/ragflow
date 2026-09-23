@@ -17,10 +17,12 @@ import logging
 import os
 import time
 from abc import ABC
-import requests
 
+import requests
 from agent.tools.base import ToolBase, ToolMeta, ToolParamBase
 from common.connection_utils import timeout
+
+logger = logging.getLogger(__name__)
 
 WEBZ_NEWS_SEARCH_URL = "https://api.webz.io/newsApiLite"
 WEBZ_USER_AGENT = "RAGFlow webz-integration/infiniflow-ragflow"
@@ -95,7 +97,7 @@ When searching:
 class WebzSearch(ToolBase, ABC):
     component_name = "WebzSearch"
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", "12")))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("WebzSearch processing"):
             return
@@ -109,18 +111,18 @@ class WebzSearch(ToolBase, ABC):
             "size": min(max(1, int(self._param.top_n)), WEBZ_MAX_COUNT),
         }
 
-        logging.info(f"WebzSearch: starting news search query={params['query']}")
+        logger.info(f"WebzSearch: starting news search query={params['query']}")
         last_e = None
         attempts = self._param.max_retries + 1
         for attempt in range(attempts):
             if self.check_if_canceled("WebzSearch processing"):
-                logging.info("WebzSearch: cancelled before request")
+                logger.info("WebzSearch: cancelled before request")
                 return
 
             try:
                 data = _search(self._param.api_key, params)
                 if self.check_if_canceled("WebzSearch processing"):
-                    logging.info("WebzSearch: cancelled after request")
+                    logger.info("WebzSearch: cancelled after request")
                     return
 
                 if not isinstance(data, dict):
@@ -136,14 +138,14 @@ class WebzSearch(ToolBase, ABC):
                     get_content=_result_content,
                 )
                 self.set_output("json", results)
-                logging.info(f"WebzSearch: returned {len(results)} results")
+                logger.info(f"WebzSearch: returned {len(results)} results")
                 return self.output("formalized_content")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - retry boundary for tool execution failures
                 if self.check_if_canceled("WebzSearch processing"):
                     return
 
                 last_e = e
-                logging.error(f"Webz.io error: {type(e).__name__}")
+                logger.error(f"Webz.io error: {type(e).__name__}")
                 # Do not retry non-transient validation errors or client 4xx (except rate-limit 429)
                 if isinstance(e, ValueError) or (
                     isinstance(e, requests.HTTPError)
