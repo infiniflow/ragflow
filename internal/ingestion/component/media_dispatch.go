@@ -138,7 +138,7 @@ func maybeDispatchImage(
 	// Step 1b: Fallback to local ONNX OCR (DeepDoc /predict/ocr).
 	// Mirrors Python's picture.py:ocr(np.array(img)) from deepdoc.vision.
 	if ocrText == "" {
-		if txt, err := runLocalImageOCR(binary); err == nil && txt != "" {
+		if txt, err := runLocalImageOCR(ctx, binary); err == nil && txt != "" {
 			ocrText = txt
 		}
 	}
@@ -464,7 +464,7 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  3. For each box: crop → OCRRecognize → text
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
-func runLocalImageOCR(binary []byte) (string, error) {
+func runLocalImageOCR(ctx context.Context, binary []byte) (string, error) {
 	analyzer, err := parser.GetDocAnalyzer()
 	if err != nil {
 		return "", fmt.Errorf("local OCR: %w", err)
@@ -476,7 +476,6 @@ func runLocalImageOCR(binary []byte) (string, error) {
 	}
 
 	// Step 1: Detect text regions.
-	ctx := context.Background()
 	boxes, err := analyzer.OCRDetect(ctx, img)
 	if err != nil {
 		return "", fmt.Errorf("local OCR: detect: %w", err)
@@ -503,6 +502,9 @@ func runLocalImageOCR(binary []byte) (string, error) {
 	var texts []string
 	bounds := img.Bounds()
 	for _, box := range boxes {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		// Convert quad box to axis-aligned crop rect.
 		x0 := int(min4(box.X0, box.X1, box.X2, box.X3))
 		y0 := int(min4(box.Y0, box.Y1, box.Y2, box.Y3))
