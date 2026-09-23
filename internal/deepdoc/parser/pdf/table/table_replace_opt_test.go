@@ -105,12 +105,13 @@ func TestBuildReplacementsAfterMergeCrossPageEquivalence(t *testing.T) {
 		x0 := rng.Float64() * coordRange
 		y0 := rng.Float64() * coordRange
 		boxes[i] = pdf.TextBox{
-			PageNumber: p,
-			X0:         x0,
-			X1:         x0 + rng.Float64()*50,
-			Top:        y0,
-			Bottom:     y0 + rng.Float64()*50,
-			LayoutType: pdf.LayoutTypeTable,
+			PageNumber:    p,
+			HasPageNumber: true,
+			X0:            x0,
+			X1:            x0 + rng.Float64()*50,
+			Top:           y0,
+			Bottom:        y0 + rng.Float64()*50,
+			LayoutType:    pdf.LayoutTypeTable,
 		}
 	}
 	tables := make([]pdf.TableItem, nTables)
@@ -179,13 +180,14 @@ func TestMarkNoMergeTablesCrossPageEquivalence(t *testing.T) {
 			lt = pdf.LayoutTypeTitle // a caption-like follower
 		}
 		boxes[i] = pdf.TextBox{
-			PageNumber: p,
-			X0:         x0,
-			X1:         x0 + rng.Float64()*50,
-			Top:        y0,
-			Bottom:     y0 + rng.Float64()*50,
-			LayoutType: lt,
-			Text:       "caption text",
+			PageNumber:    p,
+			HasPageNumber: true,
+			X0:            x0,
+			X1:            x0 + rng.Float64()*50,
+			Top:           y0,
+			Bottom:        y0 + rng.Float64()*50,
+			LayoutType:    lt,
+			Text:          "caption text",
 		}
 	}
 	tables := make([]pdf.TableItem, nTables)
@@ -233,13 +235,13 @@ func TestMarkNoMergeTablesCrossPageSpanningTable(t *testing.T) {
 	}}
 
 	// Box on page 5 overlapping the span table's page-5 position.
-	boxP5 := pdf.TextBox{PageNumber: 5, X0: 10, X1: 100, Top: 10, Bottom: 50, LayoutType: pdf.LayoutTypeTable}
+	boxP5 := pdf.TextBox{PageNumber: 5, HasPageNumber: true, X0: 10, X1: 100, Top: 10, Bottom: 50, LayoutType: pdf.LayoutTypeTable}
 	// Box on page 7 overlapping the span table's page-7 position.
-	boxP7 := pdf.TextBox{PageNumber: 7, X0: 10, X1: 100, Top: 10, Bottom: 50, LayoutType: pdf.LayoutTypeTable}
+	boxP7 := pdf.TextBox{PageNumber: 7, HasPageNumber: true, X0: 10, X1: 100, Top: 10, Bottom: 50, LayoutType: pdf.LayoutTypeTable}
 	// Box on page 6 with identical coordinates but no span-table position there.
-	boxP6 := pdf.TextBox{PageNumber: 6, X0: 10, X1: 100, Top: 10, Bottom: 50, LayoutType: pdf.LayoutTypeTable}
+	boxP6 := pdf.TextBox{PageNumber: 6, HasPageNumber: true, X0: 10, X1: 100, Top: 10, Bottom: 50, LayoutType: pdf.LayoutTypeTable}
 	// A caption following on page 5 should mark the span table NoMerge.
-	capP5 := pdf.TextBox{PageNumber: 5, X0: 10, X1: 100, Top: 60, Bottom: 70, LayoutType: pdf.LayoutTypeTitle, Text: "表 1"}
+	capP5 := pdf.TextBox{PageNumber: 5, HasPageNumber: true, X0: 10, X1: 100, Top: 60, Bottom: 70, LayoutType: pdf.LayoutTypeTitle, Text: "表 1"}
 
 	boxes := []pdf.TextBox{boxP5, boxP6, boxP7, capP5}
 	tables := []pdf.TableItem{spanTable, otherTable}

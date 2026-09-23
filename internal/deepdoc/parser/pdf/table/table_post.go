@@ -251,15 +251,18 @@ func MarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
 		lt := boxes[i].LayoutType
 		if lt == pdf.LayoutTypeTable {
 			// Restrict candidates to positions on this box's page, plus the
-			// page-agnostic positions. A box with no page metadata falls back to
-			// the full set (boxOverlapsPositionPage skips the page check for it).
+			// page-agnostic positions. A box without page metadata (HasPageNumber
+			// false) falls back to the full set (boxOverlapsPositionPage skips
+			// the page check for it). Note we key on HasPageNumber, not on
+			// PageNumber == 0: page numbers are 0-based, so the legitimate first
+			// page carries PageNumber == 0 and must still be scoped to its page.
 			// The original cross-product keeps the highest-indexed table a box
 			// overlaps as lastTableTI; candidates are ordered by ascending table
 			// index, so assigning lastTableTI on every match leaves the highest
 			// index in place — matching the original semantics. seen avoids
 			// re-testing a table whose positions span several slots on the page.
 			var cands []pagePosition
-			if boxes[i].PageNumber == 0 {
+			if !boxes[i].HasPageNumber {
 				cands = all
 			} else {
 				cands = append(cands, byPage[boxes[i].PageNumber]...)
@@ -321,7 +324,7 @@ func buildReplacementsAfterMerge(boxes []pdf.TextBox, tables []pdf.TableItem, re
 			continue
 		}
 		var cands []pagePosition
-		if boxes[i].PageNumber == 0 {
+		if !boxes[i].HasPageNumber {
 			cands = all
 		} else {
 			cands = append(cands, byPage[boxes[i].PageNumber]...)
@@ -524,10 +527,13 @@ func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 // single page-local position matches the same Y band on all pages, which (a)
 // inflates the table/box replacement cross-product into a multi-GB reps slice
 // and (b) makes a table wrongly claim boxes that live on other pages. When page
-// metadata is missing on either side we fall back to the X/Y-only check so
-// legacy call paths keep working.
+// metadata is missing on either side (an empty Position.PageNumbers, or a box
+// whose HasPageNumber is false) we fall back to the X/Y-only check so legacy
+// call paths keep working. HasPageNumber is used instead of `box.PageNumber !=
+// 0` because page numbers are 0-based: the legitimate first page has
+// PageNumber == 0 and must NOT be treated as "missing".
 func boxOverlapsPositionPage(box pdf.TextBox, pos pdf.Position) bool {
-	if len(pos.PageNumbers) > 0 && box.PageNumber != 0 {
+	if len(pos.PageNumbers) > 0 && box.HasPageNumber {
 		onSamePage := false
 		for _, p := range pos.PageNumbers {
 			if p == box.PageNumber {

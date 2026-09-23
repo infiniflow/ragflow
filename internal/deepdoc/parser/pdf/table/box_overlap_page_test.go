@@ -18,21 +18,23 @@ func TestBoxOverlapsPositionPage(t *testing.T) {
 	// A position on page 5 with a normal X/Y band.
 	pos := pdf.Position{PageNumbers: []int{5}, Left: 10, Right: 100, Top: 10, Bottom: 50}
 
-	// Same page + X/Y overlap -> true.
-	samePage := pdf.TextBox{PageNumber: 5, X0: 10, X1: 100, Top: 10, Bottom: 50}
+	// Same page + X/Y overlap -> true. HasPageNumber marks the page as real
+	// (page numbers are 0-based, so a missing-metadata box must opt out
+	// explicitly rather than relying on PageNumber != 0).
+	samePage := pdf.TextBox{PageNumber: 5, HasPageNumber: true, X0: 10, X1: 100, Top: 10, Bottom: 50}
 	if !boxOverlapsPositionPage(samePage, pos) {
 		t.Errorf("same-page X/Y overlap should be true")
 	}
 
 	// Different page but identical X/Y band -> false. This is the case the old
 	// (page-blind) check got wrong: it would return true and inflate reps.
-	crossPage := pdf.TextBox{PageNumber: 6, X0: 10, X1: 100, Top: 10, Bottom: 50}
+	crossPage := pdf.TextBox{PageNumber: 6, HasPageNumber: true, X0: 10, X1: 100, Top: 10, Bottom: 50}
 	if boxOverlapsPositionPage(crossPage, pos) {
 		t.Errorf("cross-page X/Y overlap must be false: page-local Y must not match across pages")
 	}
 
 	// Disjoint X/Y on a different page -> false (sanity, would be false either way).
-	disjoint := pdf.TextBox{PageNumber: 6, X0: 500, X1: 600, Top: 500, Bottom: 600}
+	disjoint := pdf.TextBox{PageNumber: 6, HasPageNumber: true, X0: 500, X1: 600, Top: 500, Bottom: 600}
 	if boxOverlapsPositionPage(disjoint, pos) {
 		t.Errorf("disjoint box should be false regardless of page")
 	}
@@ -71,7 +73,7 @@ func TestBoxOverlapsPositionPage_MergedTable(t *testing.T) {
 	merged := pdf.Position{PageNumbers: []int{4, 5}, Left: 10, Right: 400, Top: 60, Bottom: 200}
 
 	// Box on the anchor page (4) -> must match.
-	anchorBox := pdf.TextBox{PageNumber: 4, X0: 10, X1: 400, Top: 60, Bottom: 200}
+	anchorBox := pdf.TextBox{PageNumber: 4, HasPageNumber: true, X0: 10, X1: 400, Top: 60, Bottom: 200}
 	if !boxOverlapsPositionPage(anchorBox, merged) {
 		t.Errorf("anchor-page box of a merged table should match")
 	}
@@ -79,7 +81,7 @@ func TestBoxOverlapsPositionPage_MergedTable(t *testing.T) {
 	// Box on the continuation page (5) -> must still match. This is the case
 	// that proves the page constraint uses membership, not equality with a
 	// single page, so cross-page merges keep their boxes.
-	continuationBox := pdf.TextBox{PageNumber: 5, X0: 10, X1: 400, Top: 60, Bottom: 200}
+	continuationBox := pdf.TextBox{PageNumber: 5, HasPageNumber: true, X0: 10, X1: 400, Top: 60, Bottom: 200}
 	if !boxOverlapsPositionPage(continuationBox, merged) {
 		t.Errorf("continuation-page box of a merged table should match")
 	}
@@ -87,8 +89,46 @@ func TestBoxOverlapsPositionPage_MergedTable(t *testing.T) {
 	// Box on a page the merged table does NOT span (6) -> must be rejected,
 	// even though the page-local X/Y band is identical. Without membership
 	// semantics this would wrongly inflate reps on large documents.
-	outsideBox := pdf.TextBox{PageNumber: 6, X0: 10, X1: 400, Top: 60, Bottom: 200}
+	outsideBox := pdf.TextBox{PageNumber: 6, HasPageNumber: true, X0: 10, X1: 400, Top: 60, Bottom: 200}
 	if boxOverlapsPositionPage(outsideBox, merged) {
 		t.Errorf("box on a non-spanned page must be rejected even for a merged table")
+	}
+}
+
+// TestBoxOverlapsPositionPage_FirstPageZero is the regression test for the
+// page-0 bug: page numbers are 0-based, so the FIRST page legitimately carries
+// PageNumber == 0. A box on page 0 must be scoped to page 0, not matched
+// against the same page-local Y band on every other page. The bug this guards
+// against is the old `box.PageNumber != 0` guard, which treated PageNumber == 0
+// as "missing metadata" and exempted the entire first page from the page
+// constraint (re-introducing cross-page mis-attribution and the reps blow-up).
+//
+// This test fails against the unfixed code: with no HasPageNumber discrimination
+// the helper skips the page check for PageNumber == 0 and reports a page-5
+// position as overlapping a page-0 box.
+func TestBoxOverlapsPositionPage_FirstPageZero(t *testing.T) {
+	// Box genuinely on the first page (PageNumber == 0, HasPageNumber marks it
+	// as a real page rather than missing metadata).
+	boxP0 := pdf.TextBox{PageNumber: 0, HasPageNumber: true, X0: 10, X1: 100, Top: 10, Bottom: 50}
+
+	// Position on the same page 0 with identical X/Y -> must match.
+	posP0 := pdf.Position{PageNumbers: []int{0}, Left: 10, Right: 100, Top: 10, Bottom: 50}
+	if !boxOverlapsPositionPage(boxP0, posP0) {
+		t.Errorf("page-0 box should match a page-0 position")
+	}
+
+	// Position on a different page (5) but identical page-local X/Y band -> must
+	// NOT match. The old code skipped the page check for PageNumber == 0 and
+	// returned true here, which is the bug.
+	posP5 := pdf.Position{PageNumbers: []int{5}, Left: 10, Right: 100, Top: 10, Bottom: 50}
+	if boxOverlapsPositionPage(boxP0, posP5) {
+		t.Errorf("page-0 box must not match a page-5 position: page-local Y must not cross pages")
+	}
+
+	// A box built without page metadata (HasPageNumber left false) still falls
+	// back to the X/Y-only check so legacy call paths keep working.
+	legacyBox := pdf.TextBox{PageNumber: 0, X0: 10, X1: 100, Top: 10, Bottom: 50}
+	if !boxOverlapsPositionPage(legacyBox, posP5) {
+		t.Errorf("box without page metadata must fall back to X/Y-only")
 	}
 }

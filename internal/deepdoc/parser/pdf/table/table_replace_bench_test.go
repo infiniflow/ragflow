@@ -19,12 +19,13 @@ func buildSyntheticDoc(pages, nBoxes, nTables, posPerTab int, seed int64) ([]pdf
 		x0 := rng.Float64() * 1000
 		y0 := rng.Float64() * 1000
 		boxes[i] = pdf.TextBox{
-			PageNumber: p,
-			X0:         x0,
-			X1:         x0 + rng.Float64()*50,
-			Top:        y0,
-			Bottom:     y0 + rng.Float64()*50,
-			LayoutType: pdf.LayoutTypeTable,
+			PageNumber:    p,
+			HasPageNumber: true,
+			X0:            x0,
+			X1:            x0 + rng.Float64()*50,
+			Top:           y0,
+			Bottom:        y0 + rng.Float64()*50,
+			LayoutType:    pdf.LayoutTypeTable,
 		}
 	}
 	tables := make([]pdf.TableItem, nTables)
