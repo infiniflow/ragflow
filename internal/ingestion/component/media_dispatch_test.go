@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"image"
+	"image/png"
 	"strings"
 	"sync"
 	"testing"
@@ -28,11 +29,38 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
+
+type requestContextKey struct{}
+
+type requestContextAnalyzer struct {
+	value any
+}
+
+func (a *requestContextAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (a *requestContextAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
+func (a *requestContextAnalyzer) OCRDetect(ctx context.Context, _ image.Image) ([]deepdoctype.OCRBox, error) {
+	a.value = ctx.Value(requestContextKey{})
+	return []deepdoctype.OCRBox{{X0: 1, Y0: 1, X1: 19, Y1: 1, X2: 19, Y2: 19, X3: 1, Y3: 19}}, nil
+}
+
+func (a *requestContextAnalyzer) OCRRecognize(ctx context.Context, _ image.Image) ([]deepdoctype.OCRText, error) {
+	a.value = ctx.Value(requestContextKey{})
+	return []deepdoctype.OCRText{{Text: strings.Repeat("recognized ", 4)}}, nil
+}
+
+func (*requestContextAnalyzer) Health() bool { return true }
 
 // imagePromptCaptureDriver embeds ModelDriver so it satisfies the interface
 // without listing every method; only ChatWithMessages is overridden to record
@@ -134,6 +162,46 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	}
 	if got != "自定义视觉提示" {
 		t.Fatalf("VLM user text = %q, want %q (image branch must read system_prompt)", got, "自定义视觉提示")
+	}
+}
+
+func TestMaybeDispatchImage_PassesRequestContextToLocalOCR(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		return analyzer, true
+	}
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+	requestValue := "request-context"
+	ctx := context.WithValue(t.Context(), requestContextKey{}, requestValue)
+	setups := defaultSetups()
+	setups["image"]["layout_recognize"] = ""
+
+	res, handled, err := maybeDispatchImage(
+		ctx,
+		dao.DB,
+		utility.FileTypeVISUAL,
+		"context.png",
+		encoded.Bytes(),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	if analyzer.value != requestValue {
+		t.Errorf("OCR context value = %v, want %q", analyzer.value, requestValue)
+	}
+	if got, want := res.JSON[0]["text"], strings.TrimSpace(strings.Repeat("recognized ", 4)); got != want {
+		t.Errorf("OCR text = %q, want %q", got, want)
 	}
 }
 
