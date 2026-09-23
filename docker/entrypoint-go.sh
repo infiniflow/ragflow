@@ -135,10 +135,17 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 # -----------------------------------------------------------------------------
 # Select Nginx Configuration
 # -----------------------------------------------------------------------------
-# This image ships the Go backend only, so the golang config is the only one
-# available.
+# ragflow.conf.golang routes to the Go ports (9383/9384); ragflow.conf.python
+# routes to the Python ports (9380/9381); ragflow.conf.hybrid splits between
+# them. This image only runs Go servers, so use the Go config by default.
 NGINX_CONF_DIR="/etc/nginx/conf.d"
-cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+if [ -n "$API_PROXY_SCHEME" ] && [ "$API_PROXY_SCHEME" = "hybrid" ]; then
+    cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
+    echo "Applied nginx config: ragflow.conf.hybrid"
+else
+    cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+    echo "Applied nginx config: ragflow.conf.golang (Go image default)"
+fi
 
 # -----------------------------------------------------------------------------
 # Function(s)
