@@ -4,9 +4,6 @@ import (
 	"math"
 	"sort"
 
-	"go.uber.org/zap"
-
-	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -133,7 +130,18 @@ func findTableAnchors(boxes []pdf.TextBox, tables []pdf.TableItem) []struct{ ti,
 
 // buildTableHTMLs constructs HTML for each table, converting cells to page space first.
 // Returns a map from table index to HTML string.
+//
+// It indexes the table-layout boxes by page once (see indexTableLayoutBoxes) and
+// then, per table, restricts the box scan to the pages the table occupies instead
+// of the whole document. The naive version rescanned every box for every table
+// (O(tables*boxes*positions) on a large document); on a 3,000-page PDF this was
+// the dominant CPU cost of the parse stage (~95% of a profile sample). The
+// page-bucketed scan is equivalent — boxOverlapsPositionPage already requires a
+// box and a position to share a page, so a box outside the table's pages can
+// never match under either implementation. collectTableBoxes carries the full
+// equivalence argument and is guarded by TestCollectTableBoxesByPageEquivalence.
 func buildTableHTMLs(boxes []pdf.TextBox, tables []pdf.TableItem) map[int]string {
+	boxesByPage, boxesNoPage := indexTableLayoutBoxes(boxes)
 	htmls := make(map[int]string)
 	for ti := range tables {
 		if len(tables[ti].Cells) == 0 {
@@ -142,24 +150,109 @@ func buildTableHTMLs(boxes []pdf.TextBox, tables []pdf.TableItem) map[int]string
 		// Convert TSR cells from crop-pixel space to page-global 72 DPI
 		s := tables[ti].Scale
 		pageGlobalCells := CellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
-		// Collect only table-labelled boxes
-		var tableBoxes []pdf.TextBox
-		for i := range boxes {
-			if boxes[i].LayoutType != pdf.LayoutTypeTable {
-				continue
-			}
-			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPositionPage(boxes[i], tp) {
-					tableBoxes = append(tableBoxes, boxes[i])
-					break
-				}
-			}
-		}
-		common.Debug("extractTableAndReplace constructTable",
-			zap.Int("table", ti), zap.Int("cells", len(pageGlobalCells)), zap.Int("boxes", len(tableBoxes)))
+		tableBoxes := collectTableBoxes(boxes, tables[ti], boxesByPage, boxesNoPage)
 		htmls[ti] = ConstructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
 	}
 	return htmls
+}
+
+// indexTableLayoutBoxes buckets the table-layout boxes by page so callers can
+// restrict a per-table scan to just the boxes on the pages the table occupies.
+// Boxes without page metadata (HasPageNumber false) are page-agnostic and
+// returned separately: boxOverlapsPositionPage skips the page check for them, so
+// they must be tested against every table.
+//
+// Key on HasPageNumber, not on PageNumber == 0: page numbers are 0-based, so the
+// legitimate first page carries PageNumber == 0 and must still be scoped to its
+// page. Only truly page-less boxes go to noPage.
+func indexTableLayoutBoxes(boxes []pdf.TextBox) (byPage map[int][]int, noPage []int) {
+	byPage = make(map[int][]int, len(boxes))
+	for i := range boxes {
+		if boxes[i].LayoutType != pdf.LayoutTypeTable {
+			continue
+		}
+		if boxes[i].HasPageNumber {
+			byPage[boxes[i].PageNumber] = append(byPage[boxes[i].PageNumber], i)
+		} else {
+			noPage = append(noPage, i)
+		}
+	}
+	return byPage, noPage
+}
+
+// collectTableBoxes returns the table-layout boxes belonging to tbl, in ascending
+// box-index order — the order buildTableHTMLs has always used and that
+// ConstructTable relies on for deterministic output. It only scans boxes on the
+// pages tbl occupies (plus page-agnostic boxes) instead of the full document.
+//
+// Equivalence to the brute-force O(boxes*positions) scan:
+//   - boxOverlapsPositionPage requires a box and a position to agree on page
+//     (when both carry page metadata). A table-layout box on a page tbl does not
+//     occupy can therefore never match tbl under either implementation, so
+//     excluding it is safe.
+//   - When tbl has a position with no PageNumbers (page-agnostic), the page check
+//     is skipped for that position, so any table-layout box may match. The
+//     implementation detects this and falls back to scanning every table-layout
+//     box for that table, which is exactly what the brute force does.
+//   - Candidates are sorted ascending before the overlap test, reproducing the
+//     original whole-document scan order that ConstructTable depends on.
+func collectTableBoxes(boxes []pdf.TextBox, tbl pdf.TableItem, boxesByPage map[int][]int, boxesNoPage []int) []pdf.TextBox {
+	// Collect candidate box indices.
+	var cand []int
+	hasAgnosticPos := false
+	for pi := range tbl.Positions {
+		if len(tbl.Positions[pi].PageNumbers) == 0 {
+			hasAgnosticPos = true
+			break
+		}
+	}
+	if hasAgnosticPos {
+		// Any table-layout box may overlap a page-agnostic position, so the
+		// candidate set is every table-layout box (mirrors the brute force).
+		cand = make([]int, 0, len(boxes))
+		for i := range boxes {
+			if boxes[i].LayoutType == pdf.LayoutTypeTable {
+				cand = append(cand, i)
+			}
+		}
+	} else {
+		// Boxes on distinct pages live in disjoint buckets, so once a table's
+		// page numbers are de-duplicated, concatenating the buckets plus the
+		// page-agnostic boxes needs no per-box de-duplication. Positions are few,
+		// so de-duplicating the (typically tiny) page-number list is cheaper than
+		// a per-table map of boxes. A table can list the same page several times
+		// (multiple positions on one page), which is exactly why the dedup is needed.
+		var pgNums []int
+		for pi := range tbl.Positions {
+			pgNums = append(pgNums, tbl.Positions[pi].PageNumbers...)
+		}
+		seenPage := make(map[int]bool, len(pgNums))
+		uniqPages := pgNums[:0]
+		for _, p := range pgNums {
+			if !seenPage[p] {
+				seenPage[p] = true
+				uniqPages = append(uniqPages, p)
+			}
+		}
+		cand = make([]int, 0, len(uniqPages)*8+len(boxesNoPage))
+		for _, p := range uniqPages {
+			cand = append(cand, boxesByPage[p]...)
+		}
+		cand = append(cand, boxesNoPage...)
+	}
+	// cand preserves no particular order; sort ascending so the returned boxes
+	// follow the original whole-document scan order.
+	sort.Ints(cand)
+	var tableBoxes []pdf.TextBox
+	for _, bi := range cand {
+		for pi := range tbl.Positions {
+			if boxOverlapsPositionPage(boxes[bi], tbl.Positions[pi]) {
+				tableBoxes = append(tableBoxes, boxes[bi])
+				break
+			}
+		}
+	}
+	return tableBoxes
 }
 
 // insertTableBoxes filters out boxes in removeSet and inserts table HTML boxes at anchor positions.
