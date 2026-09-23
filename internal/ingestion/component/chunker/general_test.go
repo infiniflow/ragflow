@@ -1079,3 +1079,51 @@ func TestGeneralChunkerPDFAttachesOutlineOnce(t *testing.T) {
 		t.Errorf("outline entry = %#v", entry)
 	}
 }
+
+// TestGeneralChunkerNonSpreadsheetTableNotMediaContext: a table item without
+// spreadsheet identity must not become a media-context source. The DOCX and
+// PDF strategies share the collector, so reading their tables as context would
+// change those documents' image chunks (and their chunk ids) as a side effect
+// of the spreadsheet wire switch.
+func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   100,
+		"image_context_size": 10,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	table := map[string]any{
+		"text":         "<table><caption>Doc</caption>\n<tr><th>Name</th></tr>\n<tr><td>Revenue</td></tr>\n</table>\n",
+		"doc_type_kwd": "table",
+		"ck_type":      "table",
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			table,
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure"},
+			table,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want table, image, table", chunks)
+	}
+	if chunks[1]["ck_type"] != "image" {
+		t.Fatalf("image chunk = %#v", chunks[1])
+	}
+	if got, _ := chunks[1]["text"].(string); got != "B2" {
+		t.Errorf("image chunk text = %q, want B2 with no table text folded in", got)
+	}
+	for _, key := range []string{"context_above", "context_below"} {
+		if _, exists := chunks[1][key]; exists {
+			t.Errorf("image chunk must not carry %s: %v", key, chunks[1][key])
+		}
+	}
+}

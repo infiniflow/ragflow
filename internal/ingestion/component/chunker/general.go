@@ -491,13 +491,16 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 // media context. Text units contribute their body; spreadsheet table
 // segments contribute their data rows' cell text — the row IR's loose text
 // rows were the image context before the HTML wire unification, and the
-// repeating header stays out of the context exactly as it did then.
+// repeating header stays out of the context exactly as it did then. Only
+// spreadsheet segments qualify: attachGeneralMediaContext is shared with the
+// PDF and DOCX paths, where a table item carries no identity and must keep
+// its previous behavior (no context contribution).
 func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 	switch itemDocType(doc) {
 	case "text":
 		return doc.Text, true
 	case "table":
-		if !isTableStrictHTML(doc.Text) {
+		if !hasSpreadsheetIdentity(doc) || !isTableStrictHTML(doc.Text) {
 			return "", false
 		}
 		rows, headerCount := tableRowsWithHeader(doc.Text)

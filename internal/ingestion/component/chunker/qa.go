@@ -427,7 +427,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			rows = tableRows(txt)
 		}
 		if len(rows) > 0 {
-			tmp = qaPairsFromRows(rows, strictCSV, item.Positions)
+			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
 		} else {
 			tmp = extractQAText(txt)
 		}
@@ -454,7 +454,7 @@ func extractQATable(htmlStr string, strictPairs bool, positions json.RawMessage)
 	if htmlStr == "" {
 		return nil
 	}
-	return qaPairsFromRows(tableRows(htmlStr), strictPairs, positions)
+	return qaPairsFromRows(tableRows(htmlStr), strictPairs, positions, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty
@@ -462,20 +462,31 @@ func extractQATable(htmlStr string, strictPairs bool, positions json.RawMessage)
 // contract (Python qa.py:365) and requires a row to have exactly two cells
 // instead of taking the first two.
 //
-// positions is the item's own positions payload. When it is a matrix with
-// exactly one tuple per <tr> (the spreadsheet wire contract), each pair
-// carries only its row's tuple and takes its 0-based record index from
-// that tuple's rowStart (top_int = positions[i][1] - 1), which reproduces
-// the legacy row-IR numbering. Otherwise pairs are numbered by extraction
-// order, mirroring Python qa.py's enumerate over the extracted pairs.
-func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage) []qaPair {
+// positions is the item's own positions payload, and spreadsheetPositions
+// says whether it may be read as the spreadsheet wire's matrix. When it is
+// (identity present, one five-field tuple per <tr>), each pair carries only
+// its row's tuple and takes its 0-based record index from that tuple's
+// rowStart (top_int = positions[i][1] - 1), which reproduces the legacy
+// row-IR numbering. Otherwise pairs are numbered by extraction order,
+// mirroring Python qa.py's enumerate over the extracted pairs — PDF items
+// write layout boxes into the same field, so they must not be reinterpreted
+// as spreadsheet rows.
+func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
 	var matrix [][]float64
 	if len(positions) > 0 {
 		if err := json.Unmarshal(positions, &matrix); err != nil {
 			matrix = nil
 		}
 	}
-	rowAligned := len(matrix) == len(rows) && len(rows) > 0
+	rowAligned := spreadsheetPositions && len(matrix) == len(rows) && len(rows) > 0
+	if rowAligned {
+		for _, tuple := range matrix {
+			if len(tuple) != 5 {
+				rowAligned = false
+				break
+			}
+		}
+	}
 	pairs := make([]qaPair, 0, len(rows))
 	for i, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
