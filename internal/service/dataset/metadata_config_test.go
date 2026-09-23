@@ -52,15 +52,19 @@ func testDatasetServiceForDocumentMetadataConfig(t *testing.T) *DatasetService {
 func insertDatasetMetadataConfigKB(t *testing.T, datasetID, tenantID string) {
 	t.Helper()
 	kb := &entity.Knowledgebase{
-		ID:           datasetID,
-		TenantID:     tenantID,
-		Name:         "test-kb",
-		EmbdID:       "embedding@OpenAI",
-		CreatedBy:    tenantID,
-		Permission:   string(entity.TenantPermissionMe),
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		Status:       sptr("1"),
+		ID:         datasetID,
+		TenantID:   tenantID,
+		Name:       "test-kb",
+		EmbdID:     "embedding@OpenAI",
+		CreatedBy:  tenantID,
+		Permission: string(entity.TenantPermissionMe),
+		ParserID:   "naive",
+		// The Extractor node is where a dataset's modular metadata config lives; every
+		// metadata-config test needs one to scope onto.
+		ParserConfig: entity.JSONMap{
+			"Extractor:AutoExtractDefault": map[string]any{},
+		},
+		Status: sptr("1"),
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
@@ -235,14 +239,9 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-1").
 		Update("parser_config", entity.JSONMap{
-			"metadata": map[string]any{
-				"enabled":           false,
-				"metadata":          []any{},
-				"built_in_metadata": []any{},
-			},
 			"Extractor:AutoExtractDefault": map[string]any{
 				"metadata": map[string]any{
-					"enabled": true,
+					"enabled": false,
 					"metadata": []any{
 						map[string]any{"key": "stale", "type": "string"},
 					},
@@ -291,7 +290,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 		t.Fatalf("expected modular metadata map in extractor, got %#v", extractor["metadata"])
 	}
 	if enabled, ok := extractorMeta["enabled"].(bool); !ok || enabled {
-		t.Fatalf("extractor metadata.enabled = %#v, want false when dataset-level flag stays disabled", extractorMeta["enabled"])
+		t.Fatalf("extractor metadata.enabled = %#v, want false when the existing flag stays disabled", extractorMeta["enabled"])
 	}
 
 	// State 2: When enabled, updating fields updates component with enabled = true
@@ -377,9 +376,16 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent, got %#v", persisted.ParserConfig["enable_metadata"])
 	}
-	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level metadata must not be persisted: %#v", persisted.ParserConfig["metadata"])
+	}
+	extractor, ok = persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected modular metadata map, got %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("expected extractor component params, got %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	metaObj, ok := extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata map in extractor, got %#v", extractor["metadata"])
 	}
 	if enabled, ok := metaObj["enabled"].(bool); !ok || enabled {
 		t.Fatalf("expected modular metadata.enabled == false after emptying fields, got %#v", metaObj["enabled"])
@@ -496,9 +502,16 @@ func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}
-	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level metadata must not be persisted: %#v", persisted.ParserConfig["metadata"])
+	}
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected modular metadata, got %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("expected extractor component params, got %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	metaObj, ok := extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata in extractor, got %#v", extractor["metadata"])
 	}
 	if persistedEnabled, _ := metaObj["enabled"].(bool); !persistedEnabled {
 		t.Fatalf("expected metadata.enabled=true, got %#v", metaObj["enabled"])

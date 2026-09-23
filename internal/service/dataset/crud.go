@@ -140,8 +140,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			"children_delimiter": "\n",
 		}
 	}
-	parserConfig["parent_child"] = parentChild
 
+	// parent_child is input-only: its effect is derived onto the chunker nodes, so it
+	// is never persisted at the top level of parser_config.
 	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
 	if req.ParserConfig != nil {
 		for componentID, value := range req.ParserConfig {

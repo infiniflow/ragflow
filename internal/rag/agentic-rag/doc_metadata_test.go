@@ -50,20 +50,22 @@ func (r *docMetadataResolver) MetadataForDocIDs(_ context.Context, kbIDs, docIDs
 	return r.meta, nil
 }
 
-// declaringKB is a dataset row whose parser_config declares one extracted field
+// declaringKB is a dataset row whose Extractor node declares one extracted field
 // and two built-in ones — the shape the metadata config API writes.
 func declaringKB() []*entity.Knowledgebase {
 	return []*entity.Knowledgebase{{
 		ID: "kb1",
 		ParserConfig: entity.JSONMap{
-			"metadata": map[string]any{
-				"enabled": true,
-				"metadata": []any{
-					map[string]any{"key": "title", "type": "string"},
-				},
-				"built_in_metadata": []any{
-					map[string]any{"key": "update_time", "type": "time"},
-					map[string]any{"key": "file_name", "type": "string"},
+			"Extractor:AutoExtractDefault": map[string]any{
+				"metadata": map[string]any{
+					"enabled": true,
+					"metadata": []any{
+						map[string]any{"key": "title", "type": "string"},
+					},
+					"built_in_metadata": []any{
+						map[string]any{"key": "update_time", "type": "time"},
+						map[string]any{"key": "file_name", "type": "string"},
+					},
 				},
 			},
 		},

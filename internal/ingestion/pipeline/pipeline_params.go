@@ -316,15 +316,18 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 	return result
 }
 
-// ApplyParentChildChunkerConfig derives runtime children_delimiters from the
-// top-level parent_child setting unless the request explicitly configures the
-// chunker itself.
+// ApplyParentChildChunkerConfig derives the runtime children_delimiters of every chunker
+// component from the incoming parent_child setting, unless the request explicitly
+// configures that chunker itself.
+//
+// The parent_child key is input-only: its effect is carried by the chunker nodes, so it is
+// dropped from componentConfig and never persisted at the top level.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
 	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
+	delete(componentConfig, "parent_child")
 	if !ok {
 		return
 	}
-	componentConfig["parent_child"] = parentChild
 	useParentChild, _ := parentChild["use_parent_child"].(bool)
 	childrenDelimiters := []string{}
 	if useParentChild {

@@ -172,14 +172,11 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}, common.CodeSuccess, nil
 }
 
-// modularMetadataConfig reads the modular dataset-level metadata object
-// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. Missing
-// or malformed config yields a disabled, empty result.
+// modularMetadataConfig reads the modular metadata object
+// ({"enabled", "metadata", "built_in_metadata"}) from the dataset's Extractor node — the
+// only place it is stored. A missing or malformed config yields a disabled, empty result.
 func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
-	if parserConfig == nil {
-		return false, false, []any{}, []any{}
-	}
-	metaObj, ok := parserConfig["metadata"].(map[string]any)
+	metaObj, ok := common.ExtractorMetadataConfig(parserConfig)
 	if !ok {
 		return false, false, []any{}, []any{}
 	}

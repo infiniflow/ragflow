@@ -430,17 +430,9 @@ func ParserConfigBool(v any) bool {
 	return false
 }
 
-// ExtractorMetadataConfig returns the modular metadata config
-// ({"enabled", "metadata", "built_in_metadata"}) of the FIRST Extractor component node, in
-// sorted key order so two extractor nodes resolve deterministically.
-//
-// This is the component-scoped config the ingestion pipeline reads; flat legacy fields
-// (enable_metadata / metadata_config / built_in_metadata at the top level or on the node)
-// are deliberately not supported.
-func ExtractorMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
-	if parserConfig == nil {
-		return nil, false
-	}
+// extractorComponentIDs returns the Extractor component ids of a parser_config in
+// sorted key order, so two extractor nodes resolve deterministically.
+func extractorComponentIDs(parserConfig map[string]any) []string {
 	var extractorKeys []string
 	for k := range parserConfig {
 		lower := strings.ToLower(k)
@@ -449,7 +441,22 @@ func ExtractorMetadataConfig(parserConfig map[string]any) (map[string]any, bool)
 		}
 	}
 	sort.Strings(extractorKeys)
-	for _, k := range extractorKeys {
+	return extractorKeys
+}
+
+// ExtractorMetadataConfig returns the modular metadata config
+// ({"enabled", "metadata", "built_in_metadata"}) of the FIRST Extractor component node, in
+// sorted key order so two extractor nodes resolve deterministically.
+//
+// The Extractor node is the only place a dataset's modular metadata config is stored: the
+// top-level parser_config["metadata"] key is input-only and is stripped on write (see
+// ApplyComponentScopedParserConfig). Flat legacy fields (enable_metadata / metadata_config /
+// built_in_metadata at the top level or on the node) are deliberately not supported.
+func ExtractorMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
+	if parserConfig == nil {
+		return nil, false
+	}
+	for _, k := range extractorComponentIDs(parserConfig) {
 		node, ok := parserConfig[k].(map[string]any)
 		if !ok {
 			continue
@@ -461,15 +468,51 @@ func ExtractorMetadataConfig(parserConfig map[string]any) (map[string]any, bool)
 	return nil, false
 }
 
-// DatasetMetadataConfig returns the top-level modular metadata config of a dataset
-// (parser_config["metadata"]), which is where the dataset metadata API writes the fields a
-// user declared for extraction.
-func DatasetMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
-	if parserConfig == nil {
-		return nil, false
+// SetExtractorMetadataConfig writes a modular metadata config
+// ({"enabled", "metadata", "built_in_metadata"}) onto every Extractor component node of
+// parser_config. It is the single write path now that the top-level
+// parser_config["metadata"] key is gone, and it reports false when there is no Extractor
+// node to carry the config.
+func SetExtractorMetadataConfig(parserConfig map[string]any, metaObj map[string]any) bool {
+	if parserConfig == nil || metaObj == nil {
+		return false
 	}
-	metaObj, ok := parserConfig["metadata"].(map[string]any)
-	return metaObj, ok
+	written := false
+	for _, k := range extractorComponentIDs(parserConfig) {
+		node, ok := parserConfig[k].(map[string]any)
+		if !ok {
+			// A non-object node cannot carry params; skip it instead of
+			// overwriting whatever the caller stored there.
+			continue
+		}
+		node["metadata"] = copyAnyMap(metaObj)
+		written = true
+	}
+	return written
+}
+
+// copyAnyMap shallow-copies a JSON object so every Extractor node owns its own map.
+func copyAnyMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// IsModularMetadataConfig reports whether a parser_config metadata value is the modular
+// dataset-level config ({enabled, metadata, built_in_metadata}) rather than a
+// document-level metadata map of plain values. The two share the "metadata" key but are
+// different things: only the modular one is scoped onto the Extractor node and stripped
+// from the top level; a document-level map is left untouched.
+func IsModularMetadataConfig(value any) bool {
+	metaObj, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, hasEnabled := metaObj["enabled"]
+	_, hasBuiltIn := metaObj["built_in_metadata"]
+	return hasEnabled || hasBuiltIn
 }
 
 // MetadataRawFieldList normalizes a metadata field list that may arrive as []any (the DB
@@ -532,18 +575,15 @@ func MetadataFieldDefsFromRaw(value any) []MetadataFieldDef {
 }
 
 // DeclaredMetadataFieldsFromParserConfig returns the metadata fields a dataset DECLARES for
-// extraction, reading both the dataset-level config (parser_config["metadata"]) and, when
-// that is absent, the first Extractor component node's.
+// extraction, read from the first Extractor component node — the single place the modular
+// metadata config is stored.
 //
 // This is the DECLARATIVE source of a dataset's metadata: unlike the doc-metadata index it
 // exists BEFORE anything is indexed, and it carries each field's meaning (description) and
 // allowed values (enum) — what a model needs to fill a filter correctly rather than guess.
 // Fields declared in both lists are de-duplicated, first occurrence winning.
 func DeclaredMetadataFieldsFromParserConfig(parserConfig map[string]any) []MetadataFieldDef {
-	metaObj, ok := DatasetMetadataConfig(parserConfig)
-	if !ok {
-		metaObj, ok = ExtractorMetadataConfig(parserConfig)
-	}
+	metaObj, ok := ExtractorMetadataConfig(parserConfig)
 	if !ok {
 		return nil
 	}
