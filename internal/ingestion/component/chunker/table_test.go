@@ -82,54 +82,42 @@ func TestTableChunker_EmptyRows(t *testing.T) {
 	}
 }
 
-func TestTableChunkerSkipsSpreadsheetHeaderRecord(t *testing.T) {
-	chunks := tableChunksOf(t, map[string]any{
-		"name":          "orders.xlsx",
-		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "cells": []string{"ID", "Status"}},
-			{"text": "A-100; paid", "doc_type_kwd": "table", "ck_type": "table_row", "cells": []string{"A-100", "paid"}},
-		},
-	})
-	if len(chunks) != 1 {
-		t.Fatalf("got %d chunks, want only the data row", len(chunks))
-	}
-	if chunks[0]["ck_type"] != "table_row" || chunks[0]["text"] != "A-100; paid" {
-		t.Fatalf("chunks = %#v, want the table row only", chunks)
-	}
-}
-
+// TestTableChunkerPreservesHeaderOnlyTable: the header row only becomes a
+// chunk itself when the segment has no data rows — then the whole markup is
+// the table's only searchable representation.
 func TestTableChunkerPreservesHeaderOnlyTable(t *testing.T) {
+	segment := spreadsheetSegmentItem("Sheet1", []string{"ID", "Name"}, nil, 1, 1)
 	chunks := tableChunksOf(t, map[string]any{
 		"name":          "empty.xlsx",
 		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "ID; Name", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
-		},
+		"json":          []map[string]any{segment},
 	})
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want the header-only table preserved", len(chunks))
 	}
-	if chunks[0]["ck_type"] != "table_header" || chunks[0]["text"] != "ID; Name" {
-		t.Fatalf("chunk = %#v, want the header record", chunks[0])
+	if chunks[0]["ck_type"] != "table" || chunks[0]["text"] != segment["text"] {
+		t.Fatalf("chunk = %#v, want the header-only segment whole", chunks[0])
 	}
 }
 
 func TestTableChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
+	dataSegment := spreadsheetSegmentItem("Sheet1", []string{"ID", "Name"}, [][]string{{"A-1", "paid"}}, 1, 2)
+	headerSegment := spreadsheetSegmentItem("Sheet2", []string{"ID", "Status"}, nil, 2, 1)
 	chunks := tableChunksOf(t, map[string]any{
 		"name":          "mixed.xlsx",
 		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "ID; Name", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-2", "sheet_index": 2},
-			{"text": "A-1; paid", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-2", "sheet_index": 2},
-		},
+		"json":          []map[string]any{dataSegment, headerSegment},
 	})
 	if len(chunks) != 2 {
-		t.Fatalf("got %d chunks, want header-only sheet plus data row", len(chunks))
+		t.Fatalf("got %d chunks, want data row plus header-only segment", len(chunks))
 	}
-	if chunks[0]["ck_type"] != "table_header" || chunks[1]["ck_type"] != "table_row" {
-		t.Fatalf("chunks = %#v, want header then row", chunks)
+	// The header row of the data segment never becomes a chunk of its own;
+	// its column names live in the row record text instead.
+	if chunks[0]["text"] != "- ID: A-1\n- Name: paid" {
+		t.Fatalf("chunk0 = %#v", chunks[0])
+	}
+	if chunks[1]["text"] != headerSegment["text"] {
+		t.Fatalf("chunk1 = %#v, want the header-only segment whole", chunks[1])
 	}
 }
 

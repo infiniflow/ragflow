@@ -99,6 +99,16 @@ func tableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 	return rows, headerCount
 }
 
+// isTableStrictHTML reports whether block text is an outer <table> element
+// (the inlined GFM/HTML table). Only such blocks are emitted as structured
+// table items; other raw HTML (e.g. <div>, <style>) is plain text. The
+// spreadsheet wire is the markup this reports on (see the parser's
+// renderSpreadsheetTable), so callers that slice a positions matrix use
+// this strict form rather than the candidate filter.
+func isTableStrictHTML(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+}
+
 // isTableHTML is the cheap candidate filter for table-vs-prose routing: text
 // that opens an outer <table> element, or a bare-row fragment holding <tr>.
 // It only narrows the candidates — the caller decides on tableRows' result —

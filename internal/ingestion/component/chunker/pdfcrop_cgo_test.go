@@ -83,7 +83,7 @@ func TestNeedsCrop(t *testing.T) {
 		{"doc image fallback", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"doc table fallback", schema.ChunkDoc{DocType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"doc text fallback", schema.ChunkDoc{DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		// Heading / table_header / table_row all carry doc_type_kwd "text" but
+		// Heading-tagged blocks carry doc_type_kwd "text" but
 		// must NOT be previewed when CKType is empty — only a plain text body
 		// chunk legitimately has CKType empty AND should be previewed. Since
 		// group/hierarchy cannot distinguish heading from body at this layer,

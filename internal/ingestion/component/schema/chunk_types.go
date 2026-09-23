@@ -123,11 +123,8 @@ type ChunkDoc struct {
 	TopInt        []int                      `json:"top_int,omitempty"`
 	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
 	Positions     json.RawMessage            `json:"positions,omitempty"`
-	TableID       string                     `json:"table_id,omitempty"`
 	Sheet         string                     `json:"sheet,omitempty"`
 	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	Headers       []string                   `json:"headers,omitempty"`
-	Cells         []string                   `json:"cells,omitempty"`
 	RowStart      *int                       `json:"row_start,omitempty"`
 	RowEnd        *int                       `json:"row_end,omitempty"`
 	ColStart      *int                       `json:"col_start,omitempty"`
@@ -155,7 +152,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"table_id", "sheet", "sheet_index", "headers", "cells", "row_start", "row_end", "col_start", "col_end",
+		"sheet", "sheet_index", "row_start", "row_end", "col_start", "col_end",
 	} {
 		delete(raw, key)
 	}

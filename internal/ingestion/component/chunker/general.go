@@ -463,11 +463,11 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		if generalMediaContextCrossesSpreadsheetBoundary(units[index], units[cursor]) {
 			break
 		}
-		if itemDocType(units[cursor]) != "text" {
+		text, ok := generalContextSourceText(units[cursor])
+		if !ok {
 			continue
 		}
-		text := units[cursor].Text
-		tokens := generalUnitTokens(units[cursor])
+		tokens := tokenizeStr(text)
 		if tokens >= remaining {
 			piece := takeContextSentences(text, remaining, above)
 			if above {
@@ -487,6 +487,38 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 	return strings.Join(parts, "\n")
 }
 
+// generalContextSourceText returns the readable text a unit contributes as
+// media context. Text units contribute their body; spreadsheet table
+// segments contribute their data rows' cell text — the row IR's loose text
+// rows were the image context before the HTML wire unification, and the
+// repeating header stays out of the context exactly as it did then.
+func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
+	switch itemDocType(doc) {
+	case "text":
+		return doc.Text, true
+	case "table":
+		if !isTableStrictHTML(doc.Text) {
+			return "", false
+		}
+		rows, headerCount := tableRowsWithHeader(doc.Text)
+		lines := make([]string, 0, len(rows)-headerCount)
+		for _, row := range rows[headerCount:] {
+			cells := make([]string, 0, len(row))
+			for _, cell := range row {
+				if cell != "" {
+					cells = append(cells, cell)
+				}
+			}
+			if len(cells) > 0 {
+				lines = append(lines, strings.Join(cells, " "))
+			}
+		}
+		return strings.Join(lines, "\n"), true
+	default:
+		return "", false
+	}
+}
+
 func generalMediaContextCrossesSpreadsheetBoundary(media, candidate schema.ChunkDoc) bool {
 	if !hasSpreadsheetIdentity(media) && !hasSpreadsheetIdentity(candidate) {
 		return false
@@ -495,7 +527,7 @@ func generalMediaContextCrossesSpreadsheetBoundary(media, candidate schema.Chunk
 }
 
 func hasSpreadsheetIdentity(doc schema.ChunkDoc) bool {
-	return doc.TableID != "" || doc.Sheet != "" || doc.SheetIndex != nil
+	return doc.Sheet != "" || doc.SheetIndex != nil
 }
 
 // takeContextSentences returns the whole sentences at one end of text whose
@@ -815,50 +847,61 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	}
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	chunks := make([]schema.ChunkDoc, 0, len(units))
-	pendingRows := make([]schema.ChunkDoc, 0)
-	var pendingHeader *schema.ChunkDoc
-	flushRows := func() {
-		if len(pendingRows) == 0 {
-			return
-		}
-		chunks = append(chunks, mergeSpreadsheetRows(pendingRows, c.param.ChunkTokenSize)...)
-		pendingRows = pendingRows[:0]
-	}
-	flushHeader := func() {
-		if pendingHeader == nil {
-			return
-		}
-		chunks = append(chunks, cloneChunkDoc(*pendingHeader))
-		pendingHeader = nil
-	}
 	for _, unit := range units {
-		if unit.CKType == "table_header" {
-			flushRows()
-			flushHeader()
-			header := cloneChunkDoc(unit)
-			pendingHeader = &header
+		if itemDocType(unit) == "table" && isTableStrictHTML(unit.Text) {
+			chunks = append(chunks, c.splitSpreadsheetTable(unit)...)
 			continue
 		}
-		if unit.CKType == "table_row" {
-			// A header immediately followed by row units is parser metadata for
-			// that table, not an additional data chunk. If no row follows, the
-			// deferred header is emitted as a header-only table below.
-			pendingHeader = nil
-			pendingRows = append(pendingRows, unit)
-			continue
-		}
-		flushRows()
-		flushHeader()
 		chunks = append(chunks, cloneChunkDoc(unit))
 	}
-	flushRows()
-	flushHeader()
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	chunks = finalizeGeneralChunks(chunks, childrenPattern)
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
 	return chunkOutputs(chunks), nil
+}
+
+// splitSpreadsheetTable enforces the ChunkTokenSize budget on a table
+// segment: sub-tables replicate the caption and header rows, and the
+// row-aligned positions matrix is sliced per sub-table (R11) so each chunk
+// carries exactly its own rows' tuples. A segment that fits is emitted
+// whole; a split whose matrix cannot be aligned to the markup rows drops
+// positions rather than pointing every sub-table row at the full matrix (R1).
+//
+// The legacy path merged adjacent rows by token budget into multi-row chunks
+// and deferred the header; a segment now passes through whole unless the
+// budget forces a cut, and the header repeats in every part.
+func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []schema.ChunkDoc {
+	parts, ranges, headerRows := splitLargeHTMLTable(unit.Text, c.param.ChunkTokenSize, tokenizeStr)
+	if ranges == nil {
+		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+	}
+	var matrix [][]float64
+	if len(unit.Positions) > 0 {
+		if err := json.Unmarshal(unit.Positions, &matrix); err != nil {
+			matrix = nil
+		}
+	}
+	aligned := len(matrix) == len(tableRows(unit.Text))
+	out := make([]schema.ChunkDoc, 0, len(parts))
+	for i, part := range parts {
+		piece := cloneChunkDoc(unit)
+		piece.Text = part
+		piece.Positions = nil
+		lo := headerRows + ranges[i][0]
+		hi := headerRows + ranges[i][1]
+		if aligned && hi <= len(matrix) {
+			sub := make([][]float64, 0, headerRows+hi-lo)
+			sub = append(sub, matrix[:headerRows]...)
+			sub = append(sub, matrix[lo:hi]...)
+			if encoded, err := json.Marshal(sub); err == nil {
+				piece.Positions = encoded
+			}
+		}
+		out = append(out, piece)
+	}
+	return out
 }
 
 func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
@@ -933,32 +976,7 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 	return applyGeneralOverlap(merged, overlapPct, joinSep)
 }
 
-func mergeSpreadsheetRows(rows []schema.ChunkDoc, target int) []schema.ChunkDoc {
-	merged := make([]schema.ChunkDoc, 0, len(rows))
-	current := -1
-	for _, row := range rows {
-		if row.CKType != "table_row" || itemDocType(row) != "text" {
-			merged = append(merged, cloneChunkDoc(row))
-			current = -1
-			continue
-		}
-		count := generalUnitTokens(row)
-		if current < 0 || count > target || !sameSpreadsheetTable(merged[current], row) || intValue(merged[current].TKNums)+count > target {
-			row.TKNums = intPtr(count)
-			merged = append(merged, cloneChunkDoc(row))
-			current = len(merged) - 1
-			continue
-		}
-		mergeGeneralChunk(&merged[current], row, "\n")
-		mergeSpreadsheetRowRange(&merged[current], row)
-	}
-	return merged
-}
-
 func sameSpreadsheetTable(first, second schema.ChunkDoc) bool {
-	if first.TableID != "" || second.TableID != "" {
-		return first.TableID == second.TableID
-	}
 	if first.SheetIndex != nil || second.SheetIndex != nil {
 		return first.SheetIndex != nil && second.SheetIndex != nil && *first.SheetIndex == *second.SheetIndex
 	}
@@ -978,32 +996,6 @@ func spreadsheetPositionSheet(doc schema.ChunkDoc) (float64, bool) {
 		return 0, false
 	}
 	return row[0], true
-}
-
-func mergeSpreadsheetRowRange(dst *schema.ChunkDoc, src schema.ChunkDoc) {
-	dst.RowStart = minSpreadsheetInt(dst.RowStart, src.RowStart, false)
-	dst.RowEnd = minSpreadsheetInt(dst.RowEnd, src.RowEnd, true)
-	dst.ColStart = minSpreadsheetInt(dst.ColStart, src.ColStart, false)
-	dst.ColEnd = minSpreadsheetInt(dst.ColEnd, src.ColEnd, true)
-}
-
-func minSpreadsheetInt(first, second *int, maximum bool) *int {
-	if first == nil {
-		if second == nil {
-			return nil
-		}
-		value := *second
-		return &value
-	}
-	if second == nil {
-		value := *first
-		return &value
-	}
-	value := *first
-	if (maximum && *second > value) || (!maximum && *second < value) {
-		value = *second
-	}
-	return &value
 }
 
 func generalUnitTokens(unit schema.ChunkDoc) int {
