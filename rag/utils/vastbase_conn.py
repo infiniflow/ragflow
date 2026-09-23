@@ -936,6 +936,8 @@ class VBConnection(DocStoreConnection):
                     )
 
         res = concat_dataframes(df_list, output)
+        if PAGERANK_FLD not in res.columns:
+            res[PAGERANK_FLD] = 0
 
         # Total search time: connection checkout (incl. pre_ping) + all SQL +
         # result concat. Per-table breakdown stays at DEBUG below; this TOTAL
