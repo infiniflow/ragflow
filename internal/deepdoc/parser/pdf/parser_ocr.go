@@ -159,12 +159,13 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		for _, t := range best {
 			if strings.TrimSpace(t.Text) != "" {
 				result = append(result, pdf.TextBox{
-					X0:         pb.x0,
-					X1:         pb.x1,
-					Top:        pb.y0,
-					Bottom:     pb.y1,
-					Text:       t.Text,
-					PageNumber: pb.pageNum,
+					X0:            pb.x0,
+					X1:            pb.x1,
+					Top:           pb.y0,
+					Bottom:        pb.y1,
+					Text:          t.Text,
+					PageNumber:    pb.pageNum,
+					HasPageNumber: true,
 				})
 			}
 		}
@@ -385,6 +386,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 		}
 		boxes = append(boxes, ocrDetectBox{box: pdf.TextBox{
 			X0: x0, X1: x1, Top: y0, Bottom: y1, PageNumber: pageNum,
+			HasPageNumber: true,
 		}, x0: x0, y0: y0, x1: x1, y1: y1, srcIdx: i})
 	}
 
