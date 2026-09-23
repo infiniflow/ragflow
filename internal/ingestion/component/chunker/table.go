@@ -20,12 +20,12 @@
 //
 // Unlike TokenChunker (which token-shreds a row's text into multiple
 // pieces) or OneChunker (which merges many rows into a single chunk),
-// TableChunker keeps the row as the unit of chunking. Row-IR records from
-// spreadsheet parsers pass through unchanged — the table parser produced
-// one structured record per row already. HTML table payloads are expanded
-// here: each data row becomes one chunk whose text repeats the column names
-// in the Python "- field: value" line format, carrying its own position
-// tuple when the item's position matrix is row-aligned.
+// TableChunker keeps the row as the unit of chunking. Every table arrives as
+// rendered HTML — the spreadsheet parsers emit captioned table segments — and
+// each data row becomes one chunk whose text repeats the column names in the
+// Python "- field: value" line format, carrying its own position tuple when
+// the item is a spreadsheet item with a row-aligned matrix. A table whose only
+// row is the header stays one whole chunk.
 package chunker
 
 import (

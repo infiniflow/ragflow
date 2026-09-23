@@ -1127,3 +1127,48 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 		}
 	}
 }
+
+// TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions: sub-tables
+// only receive sliced positions when the item carries spreadsheet identity and
+// the matrix is five-field tuples aligned to the splitter's rows; a PDF-style
+// matrix or a short tuple is dropped rather than misattributed.
+func TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions(t *testing.T) {
+	rows := [][]string{{"v0", "p0"}, {"v1", "p1"}, {"v2", "p2"}, {"v3", "p3"}, {"v4", "p4"}, {"v5", "p5"}}
+	cases := []struct {
+		name   string
+		mutate func(item map[string]any)
+	}{
+		{"no spreadsheet identity", func(item map[string]any) { delete(item, "sheet_index") }},
+		{"short tuples", func(item map[string]any) {
+			item["positions"] = [][]float64{{1}, {1}, {1}, {1}, {1}, {1}, {1}}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 20})
+			if err != nil {
+				t.Fatalf("NewGeneralChunker: %v", err)
+			}
+			item := spreadsheetSegmentItem("Sheet1", []string{"name", "price"}, rows, 1, 2)
+			tc.mutate(item)
+			out, err := component.Invoke(t.Context(), nil, map[string]any{
+				"name":          "long.xlsx",
+				"file_type":     "xlsx",
+				"output_format": "json",
+				"json":          []map[string]any{item},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := outputChunks(t, out)
+			if len(chunks) < 2 {
+				t.Fatalf("expected the segment to be split, got %d chunks", len(chunks))
+			}
+			for i, chunk := range chunks {
+				if p, ok := chunk["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
+					t.Errorf("chunk %d kept positions without a usable spreadsheet matrix: %v", i, p)
+				}
+			}
+		})
+	}
+}
