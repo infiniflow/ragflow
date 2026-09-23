@@ -56,11 +56,11 @@ func newXquikTestConnector(t *testing.T, config map[string]any) *XquikConnector 
 func withXquikTestServer(t *testing.T, connector *XquikConnector, handler http.Handler) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(handler)
-	previous := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
+	previous := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
 	connector.baseURL = server.URL
 	t.Cleanup(func() {
-		restAPISSRFAllowLoopback = previous
+		connectorAllowLoopbackForTest = previous
 		server.Close()
 	})
 	return server

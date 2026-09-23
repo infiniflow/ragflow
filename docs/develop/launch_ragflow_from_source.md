@@ -58,6 +58,17 @@ cd ragflow/
    uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
    ```
 
+:::note macOS
+On macOS, some Python dependencies link against native libraries that are not installed by default. Install them with Homebrew before launching the backend service:
+
+   ```bash
+   brew install unixodbc jemalloc pkg-config
+   ```
+
+- `unixodbc` provides `libodbc.2.dylib`, which the `pyodbc` package links against. Without it, `import pyodbc` fails with `Library not loaded: .../libodbc.2.dylib` (the full path is `$(brew --prefix unixodbc)/lib/libodbc.2.dylib`; `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel), and the ExeSQL agent tool fails to load (look for `Warning: Failed to import module exesql` at startup).
+- `jemalloc` and `pkg-config` are required by the preload commands used to launch the task executor; see step 5 of [Launch the RAGFlow Backend Service](#launch-the-ragflow-backend-service).
+:::
+
 ### Launch Third-Party Services
 
 The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
@@ -105,6 +116,14 @@ docker compose -f docker/docker-compose-base.yml up -d
    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
    LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
    ```
+
+   On macOS, use the Homebrew dylib and `DYLD_INSERT_LIBRARIES` instead:
+
+   ```shell
+   JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.2.dylib;
+   DYLD_INSERT_LIBRARIES=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
+   ```
+
    ```shell
    python api/ragflow_server.py;
    ```

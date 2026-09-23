@@ -23,7 +23,7 @@ from datetime import date
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
-from common.misc_utils import pip_install_torch
+from common.misc_utils import env_flag, pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
 import rag.utils
@@ -326,8 +326,7 @@ def init_settings():
         pass
 
     global OAUTH_AUTO_REGISTER
-    env_val = os.environ.get("OAUTH_AUTO_REGISTER", "").lower()
-    OAUTH_AUTO_REGISTER = env_val not in ("0", "false", "no")
+    OAUTH_AUTO_REGISTER = env_flag("OAUTH_AUTO_REGISTER", True)
 
     global DISABLE_PASSWORD_LOGIN
     try:

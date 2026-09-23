@@ -27,15 +27,16 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
-	"log/slog"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
@@ -147,12 +148,13 @@ func (c *GeneralChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, input
 		if fileType == "" {
 			return nil, fmt.Errorf("GeneralChunker: file_type is required when source name has no extension")
 		}
-		slog.Warn("GeneralChunker: missing parser file_type; inferred from source name", "name", upstream.Name, "file_type", fileType)
+		common.Warn("GeneralChunker: missing parser file_type; inferred from source name",
+			zap.String("name", upstream.Name), zap.String("file_type", fileType))
 	}
 
 	strategy := generalStrategyForFileType(fileType)
 	if strategy == generalStrategyText && !isKnownGeneralFileType(fileType) {
-		slog.Debug("GeneralChunker: unknown file_type; using text fallback", "file_type", fileType)
+		common.Debug("GeneralChunker: unknown file_type; using text fallback", zap.String("file_type", fileType))
 	}
 
 	switch strategy {
@@ -231,7 +233,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	units = splitGeneralUnits(units, primaryPattern)
 	units = sortPDFUnits(units)
 	if hasPDFPositions(units) && hasUnpositionedPDFMedia(units) {
-		slog.Warn("GeneralChunker: PDF media is missing position metadata; using degraded context/order fallback")
+		common.Warn("GeneralChunker: PDF media is missing position metadata; using degraded context/order fallback")
 	}
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 
@@ -256,7 +258,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
-		slog.Warn("GeneralChunker: could not open PDF for on-demand cropping", "err", err)
+		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
 	}
 	if engine != nil {
 		defer engine.Close()

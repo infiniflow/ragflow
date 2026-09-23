@@ -113,10 +113,12 @@ export default {
         'Lakukan tes pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring. Secara default, ambang batas diatur ke 20. Itu berarti hanya potongan dengan skor kemiripan hibrida 20 atau lebih tinggi yang akan diambil.',
+        'Saat melakukan pengambilan, RAGFlow menggunakan kombinasi kesamaan kata kunci berbobot dan kesamaan kosinus vektor berbobot, atau kombinasi kesamaan kata kunci berbobot dan skor pemeringkatan ulang berbobot ketika model pemeringkat ulang dipilih. Parameter ini menetapkan ambang kesamaan antara kueri pengguna dan potongan. Potongan dengan skor kesamaan di bawah ambang ini akan dikecualikan dari hasil. Secara default, ambang ditetapkan ke 20. Artinya, hanya potongan dengan skor kesamaan hibrida 20 atau lebih tinggi yang akan diambil. Jika bobot kesamaan vektor ditetapkan ke 0, ambang ini tidak berlaku.',
       vectorSimilarityWeight: 'Bobot kesamaan kata kunci',
       vectorSimilarityWeightTip:
-        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor atau skor rerank (0~1). Jumlah dari kedua bobot adalah 1.0.',
+        'Menetapkan bobot kesamaan vektor dalam skor kesamaan gabungan, baik saat digunakan dengan kesamaan kosinus vektor maupun dengan skor pemeringkatan ulang. Jumlah kedua bobot harus sama dengan 1.0.',
+      keywordSimilarityWeightTip:
+        'Menetapkan bobot kesamaan kata kunci dalam skor kesamaan gabungan. Jumlah bobot vektor dan kata kunci harus sama dengan 1.0.',
       testText: 'Teks uji',
       testTextPlaceholder: 'Silakan masukkan pertanyaan Anda!',
       testingLabel: 'Pengujian',
@@ -160,7 +162,7 @@ export default {
       cancel: 'Batal',
       rerankModel: 'Model Rerank',
       rerankPlaceholder: 'Silakan pilih',
-      rerankTip: `Opsional. Jika dikosongkan, RAGFlow akan menggunakan kombinasi kesamaan kata kunci berbobot dan kesamaan kosinus vektor berbobot; jika model rerank dipilih, skor reranking berbobot akan menggantikan kesamaan kosinus vektor berbobot. Harap diperhatikan bahwa menggunakan model rerank akan secara signifikan meningkatkan waktu respons sistem. Jika Anda ingin menggunakan model rerank, pastikan menggunakan SaaS reranker; jika Anda lebih memilih model rerank yang dijalankan secara lokal, pastikan memulai RAGFlow dengan docker-compose-gpu.yml.`,
+      rerankTip: `Opsional. Jika dikosongkan, RAGFlow akan menggunakan kombinasi kesamaan kata kunci berbobot dan kesamaan kosinus vektor berbobot; jika model rerank dipilih, skor reranking berbobot akan menggantikan kesamaan kosinus vektor berbobot. Harap diperhatikan bahwa menggunakan model rerank akan secara signifikan meningkatkan waktu respons sistem.`,
       topK: 'Top-K',
       topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,

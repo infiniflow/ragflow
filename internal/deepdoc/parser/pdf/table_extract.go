@@ -3,7 +3,6 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
 	"strings"
 
@@ -80,7 +79,7 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	regions, err := p.inferDLA(ctx, docAnalyzer, pageImg)
 	if err != nil {
-		slog.Warn("DLA failed", "page", pg, "err", err)
+		reportPageInferenceFailure(ctx, "DLA failed", pg, err)
 		return pageBoxes, nil, nil
 	}
 	dlaRegions = []pdf.DLAPageRegions{{Page: pg, Regions: regions}}
@@ -98,7 +97,7 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 		// TSR call back to the correct Python intermediate table.
 		tctx := context.WithValue(ctx, tableIdxCtxKey, i)
 		item := p.processOneTable(tctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
-		if item.ImageB64 != "" || len(item.Cells) > 0 || len(item.Positions) > 0 {
+		if len(item.Cells) > 0 || len(item.Positions) > 0 {
 			items = append(items, item)
 		}
 	}
@@ -124,10 +123,6 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		bestAngle = angle
 		tsrImg = rotated
 	}
-	imgB64, encErr := util.EncodeImageToBase64PNG(cropped)
-	if encErr != nil {
-		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
-	}
 	// Hand the crop origin to TSR so a replay TableBuilder can map Python
 	// page-space TSR cells into this exact crop frame. Production callers
 	// (DeepDocTableBuilder) ignore the value and use the cropped image pixels.
@@ -135,7 +130,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	tsrCtx = context.WithValue(tsrCtx, cropOffYKey, cropOffY)
 	cells, tsrErr := p.inferTSR(tsrCtx, tb, tsrImg)
 	if tsrErr != nil {
-		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
+		reportPageInferenceFailure(tsrCtx, "TSR failed", pageNum, tsrErr)
 	}
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {
@@ -212,7 +207,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		}
 	}
 	item := pdf.TableItem{
-		ImageB64: imgB64, Cells: cells, Grid: grid, Positions: positions,
+		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,

@@ -603,6 +603,49 @@ func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing
 	}
 }
 
+// TestExtractorComponent_runEnableMetadata_DropsUndeclaredKeys verifies a model
+// that invents or re-cases a field cannot widen the dataset's metadata schema:
+// only keys from the declared field set survive.
+func TestExtractorComponent_runEnableMetadata_DropsUndeclaredKeys(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance","authors":["李白"],"Category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata[category] = %v, want finance", meta["category"])
+	}
+	if _, leaked := meta["authors"]; leaked {
+		t.Errorf("undeclared key authors leaked into metadata: %v", meta)
+	}
+	if _, leaked := meta["Category"]; leaked {
+		t.Errorf("re-cased key Category leaked into metadata: %v", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_AllKeysUndeclared verifies a response
+// whose every key falls outside the declared set leaves existing metadata intact.
+func TestExtractorComponent_runEnableMetadata_AllKeysUndeclared(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"authors":["李白"]}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{"metadata": map[string]any{"preexisting": "keep"}}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if len(meta) != 1 || meta["preexisting"] != "keep" {
+		t.Errorf("metadata = %v, want only preexisting=keep", meta)
+	}
+}
+
 // TestExtractorComponent_runEnableMetadata_StripsJSONFence verifies the
 // extraction path tolerates a fenced ```json response.
 func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {

@@ -407,6 +407,33 @@ func TestWorkflowOutputs_WithAttachment(t *testing.T) {
 	}
 }
 
+func TestWorkflowOutputsFromTerminalUsesMessageContent(t *testing.T) {
+	output := map[string]any{
+		"content":   "****\nvisible answer\n++++",
+		"downloads": []any{},
+	}
+	if got := workflowOutputsFromTerminal(output); got != "****\nvisible answer\n++++" {
+		t.Fatalf("workflowOutputsFromTerminal = %#v, want complete Message content", got)
+	}
+}
+
+func TestPartialAssistantOutputExcludesMessagePresentation(t *testing.T) {
+	state := canvas.NewCanvasState("run-history", "session-history")
+	appendAssistantHistory(state, partialAssistantOutput("model answer", nil, nil))
+
+	history := state.SnapshotHistory()
+	if len(history) != 1 {
+		t.Fatalf("history length = %d, want 1", len(history))
+	}
+	if history[0]["content"] != "model answer" {
+		t.Fatalf("history content = %#v, want raw Agent answer", history[0]["content"])
+	}
+	payload, _ := history[0]["payload"].(map[string]any)
+	if _, ok := payload["downloads"]; ok {
+		t.Fatalf("history payload unexpectedly contains Message presentation fields: %#v", payload)
+	}
+}
+
 // TestGetVersion_Success verifies getting a specific version by ID.
 func TestGetVersion_Success(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -1972,8 +1999,8 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 // TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
 // template group owned by the caller appears in the merged /agents list
 // (no canvas_category filter), carrying the "compilation_template_group" type
-// discriminator and its title = name. Built-in catalogue groups (empty tenant)
-// must NOT leak in.
+// discriminator and its title = name. Groups without the caller's tenant
+// ownership must NOT leak in.
 func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -1993,7 +2020,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// The caller's own group (must appear), updated before the canvas.
 	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
-	// A built-in catalogue group with empty tenant_id (must NOT appear).
+	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
 		Scope: "file", BaseModel: entity.BaseModel{CreateTime: &base},

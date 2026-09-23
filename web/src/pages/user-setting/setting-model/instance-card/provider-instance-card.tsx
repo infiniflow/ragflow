@@ -124,7 +124,7 @@ const GenericProviderInstanceCard = forwardRef<
     isDraft ? providerName : '',
   );
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
-  const { baseUrlOptions } = useProviderBaseUrlOptions(providerName);
+  const { baseUrlOptions, urlHint } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
     providerName,
     instance.id,
@@ -146,6 +146,7 @@ const GenericProviderInstanceCard = forwardRef<
     initialValues,
     baseUrlOptions,
     hideWhenInstanceExists,
+    urlHint,
   );
   useFormResetOnDetailsLoad(
     formRef,

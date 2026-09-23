@@ -87,6 +87,12 @@ const SERVICE_TYPE_FILTER_OPTIONS = [
   { value: 'message_queue', label: 'message_queue' },
 ];
 
+const AdminServiceKeys = {
+  list: () => ['admin/listServices'] as const,
+  detail: (id: number | string | undefined) =>
+    ['admin/serviceDetails', id] as const,
+};
+
 function AdminServiceStatus() {
   const { t } = useTranslation();
   const [extraInfoModalOpen, setExtraInfoModalOpen] = useState(false);
@@ -95,24 +101,20 @@ function AdminServiceStatus() {
     useState<AdminService.ListServicesItem | null>(null);
 
   const { data: servicesList } = useQuery({
-    queryKey: ['admin/listServices'],
-    queryFn: async () => (await listServices()).data.data,
+    queryKey: AdminServiceKeys.list(),
+    queryFn: listServices,
     retry: false,
   });
 
   const { data: serviceDetails, error: serviceDetailsError } = useQuery({
-    queryKey: ['admin/serviceDetails', itemToMakeAction?.id],
-    queryFn: async () =>
-      (await showServiceDetails(itemToMakeAction!?.id)).data.data,
+    queryKey: AdminServiceKeys.detail(itemToMakeAction?.id),
+    queryFn: () => showServiceDetails(itemToMakeAction!.id),
     enabled: !!(itemToMakeAction && detailModalOpen),
     retry: false,
   });
 
   const columnDefs = useMemo(
     () => [
-      columnHelper.accessor('id', {
-        header: t('admin.id'),
-      }),
       columnHelper.accessor('name', {
         header: t('admin.name'),
       }),
@@ -299,13 +301,12 @@ function AdminServiceStatus() {
           <CardContent>
             <Table>
               <colgroup>
-                <col className="w-[6%]" />
-                <col />
                 <col className="w-[22%]" />
-                <col className="w-[13%]" />
+                <col className="w-[22%]" />
+                <col className="w-[19%]" />
                 <col className="w-[10%]" />
-                <col className="w-[10%]" />
-                <col className="w-52" />
+                <col className="w-[15%]" />
+                <col className="w-[12%]" />
               </colgroup>
 
               <TableHeader>

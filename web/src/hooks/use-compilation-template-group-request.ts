@@ -206,15 +206,35 @@ export const useDeleteCompilationTemplateGroup = () => {
   return { data, loading, deleteGroup };
 };
 
-export const useFetchAllCompilationTemplateGroups = () => {
-  const { data, isFetching: loading } = useQuery<ICompilationTemplateGroup[]>({
-    queryKey: CompilationTemplateGroupKeys.all(),
+export const useFetchAllCompilationTemplateGroups = (
+  ownerTenantId?: string,
+) => {
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+  } = useQuery<ICompilationTemplateGroup[]>({
+    queryKey: [...CompilationTemplateGroupKeys.all(), ownerTenantId],
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
+      const params: {
+        keywords: string;
+        page: number;
+        page_size: number;
+        tenant_id?: string;
+      } = {
+        keywords: '',
+        page: 1,
+        page_size: 100,
+      };
+      // Viewing a shared canvas: fetch the canvas owner's groups instead.
       const { data } = await compilationTemplateGroupService.listGroups(
         {
-          params: { keywords: '', page: 1, page_size: 100 },
+          params: ownerTenantId
+            ? { ...params, tenant_id: ownerTenantId }
+            : params,
         },
         true,
       );
@@ -222,14 +242,38 @@ export const useFetchAllCompilationTemplateGroups = () => {
     },
   });
 
-  return { groups: data ?? [], loading };
+  // `initialData: []` keeps `isLoading` from ever firing and can't tell a real
+  // empty result apart from "fetch hasn't completed yet" — gate on `isFetched`.
+  return { groups: data ?? [], loading, isFetched, isError };
 };
 
-export const useCompilationTemplateGroupOptions = () => {
-  const { groups } = useFetchAllCompilationTemplateGroups();
+export const useCompilationTemplateGroupOptions = (ownerTenantId?: string) => {
+  const { groups, isFetched, isError } =
+    useFetchAllCompilationTemplateGroups(ownerTenantId);
 
-  return useMemo(
+  const options = useMemo(
     () => groups.map((group) => ({ label: group.name, value: group.id })),
     [groups],
   );
+
+  return { options, isFetched, isError };
+};
+
+/**
+ * Ids of template groups visible under the given owner tenant (the current
+ * user's own when omitted). Groups resolve per tenant at run time, so a group
+ * referenced by a shared pipeline only exists under the canvas owner's
+ * tenant. `isFetched` must be checked before trusting `validIds` — the query
+ * seeds `initialData: []`, so every id looks missing while loading.
+ */
+export const useCompilationTemplateGroupValidIds = (ownerTenantId?: string) => {
+  const { groups, isFetched } =
+    useFetchAllCompilationTemplateGroups(ownerTenantId);
+
+  const validIds = useMemo(
+    () => new Set(groups.map((group) => group.id)),
+    [groups],
+  );
+
+  return { validIds, isFetched };
 };
