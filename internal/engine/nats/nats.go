@@ -126,7 +126,7 @@ func (n *NatsEngine) Init() error {
 		}
 		common.Info("NATS stream updated with current config (discard=new, larger limits)")
 	} else {
-		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
+		common.Info("NATS stream create successfully")
 	}
 	common.Info(fmt.Sprintf("NATS stream RAGFLOW_TASKS ready at %s", natsURL))
 

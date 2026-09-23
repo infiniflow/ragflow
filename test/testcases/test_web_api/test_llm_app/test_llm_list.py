@@ -15,13 +15,13 @@
 #
 import pytest
 from test_common import llm_factories, llm_list
-from configs import INVALID_API_TOKEN
+from configs import INVALID_API_TOKEN, IS_GO_PROXY
 from libs.auth import RAGFlowWebApiAuth
 
 
 INVALID_AUTH_CASES = [
-    (None, 401, "<Unauthorized '401: Unauthorized'>"),
-    (RAGFlowWebApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
+    (None, 401, "Missing Authorization header" if IS_GO_PROXY else "<Unauthorized '401: Unauthorized'>"),
+    (RAGFlowWebApiAuth(INVALID_API_TOKEN), 401, "Invalid access token" if IS_GO_PROXY else "<Unauthorized '401: Unauthorized'>"),
 ]
 
 

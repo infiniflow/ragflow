@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 const connectionProbeCode = `import json
@@ -55,7 +58,7 @@ func testConnectionWithProvider(ctx context.Context, provider SandboxProvider) (
 		defer cancel()
 		if err := provider.DestroyInstance(cleanupCtx, inst); err != nil {
 			// Do not include provider configuration or upstream error material.
-			log.Printf("sandbox connection probe cleanup failed: provider=%s", provider.ProviderType())
+			common.Warn("sandbox: connection probe cleanup failed", zap.String("provider", string(provider.ProviderType())))
 		}
 	}()
 

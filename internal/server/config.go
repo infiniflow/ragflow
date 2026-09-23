@@ -136,6 +136,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse log config error: %w", err)
 	}
 
+	err = globalConfig.ParseDeepDocConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse deepdoc config error: %w", err)
+	}
+
 	err = globalConfig.ParseSMTPConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse SMTP config error: %w", err)

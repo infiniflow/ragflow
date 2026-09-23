@@ -88,6 +88,9 @@ type serverArgs struct {
 	name          *string // server name
 	enablePProf   bool    // enable pprof
 
+	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
+	// concurrency from env/config. nil means "unspecified".
+	deepdocInferenceConcurrency *int
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -104,6 +107,16 @@ func parseArgs() (*serverArgs, error) {
 					return nil, err
 				}
 				args.logLevel = &value
+				continue
+			case "--deepdoc-inference-concurrency":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+				}
+				args.deepdocInferenceConcurrency = &n
 				continue
 			}
 		}
@@ -186,6 +199,19 @@ func parseArgs() (*serverArgs, error) {
 			args.name = &os.Args[i]
 		case "--profile":
 			args.enablePProf = true
+		case "--deepdoc-inference-concurrency":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-concurrency requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+			}
+			args.deepdocInferenceConcurrency = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
@@ -207,14 +233,37 @@ func validateLogLevel(level string) error {
 }
 
 func selectedLogLevel(args *serverArgs, configured string) string {
-	level := configured
-	if level == "" {
-		level = "warn"
-	}
 	if args.logLevel != nil {
-		level = *args.logLevel
+		return *args.logLevel
 	}
-	return level
+
+	if configured == "" {
+		return "info"
+	}
+
+	return configured
+}
+
+// resolveDeepDocInferenceConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(4) and returns the
+// resolved DeepDoc inference concurrency budget.
+func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
+	val := 4
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			val = n
+		}
+	}
+	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
+	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
+	// value is already positive; no extra >0 guard is needed here.
+	if args.deepdocInferenceConcurrency != nil {
+		val = *args.deepdocInferenceConcurrency
+	}
+	return val
 }
 
 func printHelp(args *serverArgs) {
@@ -299,7 +348,6 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	}
@@ -340,21 +388,18 @@ func main() {
 	}
 
 	// Temporary logger initialization
-	var logFileName string
 	var serverName string
 	if arguments.name != nil {
 		serverName = *arguments.name
 	} else {
 		serverName = fmt.Sprintf("%s_server", *arguments.mode)
 	}
-	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := selectedLogLevel(arguments, "")
+	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+		logLevel = "info"
+	}
 
-	// Temporary pre-config logger: STDOUT ONLY (empty FileOutput). The port
-	// is not known yet, so a file here would be an orphaned log (e.g.
-	// logs/api_server.log next to the real logs/api_server_9384.log); the
-	// real file sink is attached by the post-config re-initialization below.
 	if err = common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
@@ -423,37 +468,13 @@ func main() {
 	// set server name and log file path
 	server.SetServerName(serverName)
 
-	// rename log filename
-	logFileName = fmt.Sprintf("%s.log", serverName)
-
-	logConfig := globalConfig.GetLogConfig()
-
-	// Reinitialize logger with the configured level and CLI overrides.
-	logLevel = selectedLogLevel(arguments, logConfig.Level)
-
-	globalConfig.SetLogLevel(logLevel)
-
-	fileOut := common.FileOutput{
-		Filename:   logFileName,
-		Path:       logConfig.Path,
-		MaxSize:    logConfig.MaxSize,
-		MaxBackups: logConfig.MaxBackups,
-		MaxAge:     logConfig.MaxAge,
-		Compress:   logConfig.Compress,
-	}
-
-	common.SyncLog()
-	if err = common.InitLogger(logLevel, fileOut, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
-
 	// Wire the in-process DeepDoc backend only after the REAL file-backed
 	// logger exists: its registration lines (and the Fatal abort on a missing
 	// backend) must land in the run's log file, not in the pre-config
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		registerNativeDeepDoc()
+		registerNativeDeepDoc(arguments)
 	default:
 	}
 
@@ -519,33 +540,60 @@ func main() {
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(ctx, arguments); err != nil {
+		if err = runAPI(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(ctx, arguments); err != nil {
+		if err = runAdmin(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
-		if err = runIngestor(ctx, cancel, arguments); err != nil {
+		if err = runIngestor(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
-		if err = runSyncer(ctx, cancel, arguments); err != nil {
+		if err = runSyncer(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
 	case "deepdoc":
-		if err = runDeepDoc(ctx, arguments); err != nil {
+		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
+	}
+}
+
+func setLogger(serverName string, arguments *serverArgs) {
+	// log filename
+	logFileName := fmt.Sprintf("%s.log", serverName)
+
+	globalConfig := server.GetConfig()
+	logConfig := globalConfig.GetLogConfig()
+
+	// Reinitialize logger with the configured level and CLI overrides.
+	logLevel := selectedLogLevel(arguments, logConfig.Level)
+
+	globalConfig.SetLogLevel(logLevel)
+
+	fileOut := common.FileOutput{
+		Filename:   logFileName,
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 }
 
@@ -647,7 +695,7 @@ func runMigrate(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func runAdmin(ctx context.Context, args *serverArgs) error {
+func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -710,6 +758,9 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
+	// Set log level
+	setLogger(serverName, args)
+
 	// Start HTTP server in a goroutine
 	go func() {
 		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
@@ -768,7 +819,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 	return heartbeatReporter
 }
 
-func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName string, args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -838,6 +889,9 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
+	// Set log level
+	setLogger(serverName, args)
+
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
@@ -869,7 +923,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	return nil
 }
 
-func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string, args *serverArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
 	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
@@ -888,6 +942,9 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
+
+	// Set log level
+	setLogger(serverName, args)
 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
@@ -915,7 +972,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 	return nil
 }
 
-func runAPI(ctx context.Context, args *serverArgs) error {
+func runAPI(ctx context.Context, serverName string, args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
@@ -941,7 +998,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	if err := startServer(ctx); err != nil {
+	if err := startServer(ctx, serverName, args); err != nil {
 		return err
 	}
 
@@ -950,7 +1007,7 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func startServer(ctx context.Context) error {
+func startServer(ctx context.Context, serverName string, arguments *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1274,18 +1331,22 @@ func startServer(ctx context.Context) error {
 		}()
 	}
 
+	common.Info(
+		"\n        ____   ___    ______ ______ __\n" +
+			"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
+			"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
+			"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
+			"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
+	)
+	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
+
+	// Set log level
+	setLogger(serverName, arguments)
+
 	// Start server in a goroutine
 	go func() {
-		common.Info(
-			"\n        ____   ___    ______ ______ __\n" +
-				"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
-				"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
-				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
-				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
-		)
-		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
-		serve("API", srv, apiListener)
+		serve(serverName, srv, apiListener)
 	}()
 
 	// Start heartbeat reporter to admin server
@@ -1313,15 +1374,15 @@ func startServer(ctx context.Context) error {
 	defer shutdownCancel()
 
 	if mcpCloser != nil {
-		if err := mcpCloser.Close(); err != nil {
+		if err = mcpCloser.Close(); err != nil {
 			common.Warn("Failed to close MCP handler", zap.Error(err))
 		}
 	}
-	if err := shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
+	if err = shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
 		return err
 	}
 	if mcpSrv != nil {
-		if err := shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
+		if err = shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
 			return err
 		}
 	}
@@ -1415,7 +1476,7 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // Fail-fast contract (P0): the in-process backend must be available at startup
 // (ORT + models present). There is NO silent degradation to an empty analyzer:
 // if the backend is not serving, the server aborts.
-func registerNativeDeepDoc() {
+func registerNativeDeepDoc(arguments *serverArgs) {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1438,13 +1499,15 @@ func registerNativeDeepDoc() {
 		zap.String("model_dir", modelDir))
 
 	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Register it with the native gate every inference
-	// call passes through (internal/deepdoc/native/inference_limit.go); without
-	// this the process would let every page worker call inference at once.
-	limit := pdf.DeepDocConcurrency()
-	native.SetInferenceLimit(limit)
+	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
+	// and register it with the native gate every inference call passes through
+	// (internal/deepdoc/native/inference_limit.go); without this the process
+	// would let every page worker call inference at once.
+	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
+	pdf.SetDeepDocConcurrency(budget)
+	native.SetInferenceLimit(budget)
 	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", limit),
+		zap.Int("max_concurrent_inference", budget),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 }
 

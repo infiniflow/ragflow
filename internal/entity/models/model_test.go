@@ -264,6 +264,36 @@ func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
 	}
 }
 
+// url_hint is a display-only example endpoint: every self-hosted provider
+// advertises one so the UI can hint a base URL, and hosted providers must not
+// (their fixed endpoint comes from `url`).
+func TestProviderConfigsLoadURLHint(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "cohere.json", "ollama.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	pm := GetProviderManager()
+
+	ollama := pm.FindProvider("Ollama")
+	if ollama == nil {
+		t.Fatal("Ollama provider not found")
+	}
+	if ollama.URLHint == "" {
+		t.Error("Ollama url_hint is empty, want an example endpoint")
+	}
+
+	cohere := pm.FindProvider("Cohere")
+	if cohere == nil {
+		t.Fatal("Cohere provider not found")
+	}
+	if cohere.URLHint != "" {
+		t.Errorf("Cohere url_hint=%q, want empty", cohere.URLHint)
+	}
+}
+
 func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 	dir := t.TempDir()
 	config := []byte(`{

@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -32,6 +31,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -261,10 +264,10 @@ func (c *ZoteroConnector) collectPDFRecords(ctx context.Context, request SyncReq
 			}
 			updatedAt, err := zoteroParseTime(item.Data.DateModified)
 			if err != nil {
-				slog.Warn(
+				common.Warn(
 					"zotero: using fallback timestamp for attachment with invalid dateModified",
-					"item_key", item.Key,
-					"error", err,
+					zap.String("item_key", item.Key),
+					zap.Error(err),
 				)
 				updatedAt = time.Unix(0, 0).UTC()
 			}
@@ -620,26 +623,26 @@ func (s *zoteroSyncSession) handleDownloadFailure(
 	record zoteroPDFRecord,
 	reason string,
 	documentsLen int,
-	attrs ...any,
+	attrs ...zap.Field,
 ) (breakBatch bool, advanceIndex bool) {
 	s.downloadFailures++
 	key := record.attachment.Key
 	s.downloadAttempts[key]++
-	args := []any{
-		"item_key", key,
-		"source_id", s.connector.sourceID(key),
-		"attempt", s.downloadAttempts[key],
-		"max_attempts", zoteroMaxDownloadAttemptsPerAttachment,
+	args := []zap.Field{
+		zap.String("item_key", key),
+		zap.String("source_id", s.connector.sourceID(key)),
+		zap.Int("attempt", s.downloadAttempts[key]),
+		zap.Int("max_attempts", zoteroMaxDownloadAttemptsPerAttachment),
 	}
 	args = append(args, attrs...)
-	slog.Warn("zotero: "+reason, args...)
+	common.Warn("zotero: "+reason, args...)
 
 	if s.downloadAttempts[key] >= zoteroMaxDownloadAttemptsPerAttachment {
-		slog.Warn(
+		common.Warn(
 			"zotero: permanently skipping attachment after repeated download failures",
-			"item_key", key,
-			"source_id", s.connector.sourceID(key),
-			"attempts", s.downloadAttempts[key],
+			zap.String("item_key", key),
+			zap.String("source_id", s.connector.sourceID(key)),
+			zap.Int("attempts", s.downloadAttempts[key]),
 		)
 		return false, true
 	}
@@ -667,7 +670,7 @@ func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 				record,
 				"attachment download failed",
 				len(documents),
-				"error", err,
+				zap.Error(err),
 			)
 			if advanceIndex {
 				s.index++
@@ -683,7 +686,7 @@ func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 				record,
 				"skipping oversized attachment",
 				len(documents),
-				"bytes", len(blob),
+				zap.Int("bytes", len(blob)),
 			)
 			if advanceIndex {
 				s.index++
@@ -700,7 +703,8 @@ func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	if len(documents) == 0 {
 		if s.index >= len(s.records) {
 			if s.downloadFailures > 0 {
-				slog.Warn("zotero: sync completed with attachment download failures", "count", s.downloadFailures)
+				common.Warn("zotero: sync completed with attachment download failures",
+					zap.Int("count", s.downloadFailures))
 			}
 			return SyncBatch{}, io.EOF
 		}

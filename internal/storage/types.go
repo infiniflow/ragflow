@@ -78,6 +78,8 @@ type Storage interface {
 
 	// ObjExist checks if an object exists
 	ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool
+	// ObjectExists distinguishes a missing object from a storage error
+	ObjectExists(ctx context.Context, bucket, fnm string) (bool, error)
 
 	// ListObjects list all objects of the bucket
 	ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error)
@@ -88,9 +90,14 @@ type Storage interface {
 
 	// BucketExists checks if a bucket exists
 	BucketExists(ctx context.Context, bucket string) bool
+	// BucketExistsWithError distinguishes a missing bucket from a storage error
+	BucketExistsWithError(ctx context.Context, bucket string) (bool, error)
 
 	// RemoveBucket removes a bucket and all its objects
 	RemoveBucket(ctx context.Context, bucket string) error
+
+	// RemoveEmptyBucket removes a bucket only if it has no objects
+	RemoveEmptyBucket(ctx context.Context, bucket string) error
 
 	// Copy copies an object from source to destination
 	Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool

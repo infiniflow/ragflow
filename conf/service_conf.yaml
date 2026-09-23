@@ -10,6 +10,14 @@ ragflow:
   # or CIDR of a further proxy in front of nginx; an empty list trusts none.
   # trusted_proxies: ['127.0.0.0/8', '::1/128']
 
+# DeepDoc in-process (Go) ONNX inference settings.
+deepdoc:
+  # Max concurrent DeepDoc ONNX inference Runs in this process; each Run uses
+  # exactly one CPU core (intraOpThreads is pinned to 1 in the native package).
+  # Override with the env var RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY, or the CLI
+  # flag --deepdoc-inference-concurrency (highest precedence). Default 4.
+  inference_concurrency: 4
+
 # Optional standalone MCP listener for the Go API server. Uncomment to enable.
 # RAGFLOW_MCP_* environment variables override these settings.
 # mcp:

@@ -34,12 +34,12 @@ func TestIsMessageDocumentNotFound(t *testing.T) {
 
 func TestMemoryIndexNameMatchesPythonPrefix(t *testing.T) {
 	t.Setenv(common.EnvESIndexPrefix, "")
-	if got := memoryIndexName("tenant-1"); got != "memory_tenant-1" {
-		t.Fatalf("memoryIndexName() = %q", got)
+	if got := MemoryIndexName("tenant-1"); got != "memory_tenant-1" {
+		t.Fatalf("MemoryIndexName() = %q", got)
 	}
 	t.Setenv(common.EnvESIndexPrefix, "legacy")
-	if got := memoryIndexName("tenant-1"); got != "memory_legacy_tenant-1" {
-		t.Fatalf("memoryIndexName() with prefix = %q", got)
+	if got := MemoryIndexName("tenant-1"); got != "memory_legacy_tenant-1" {
+		t.Fatalf("MemoryIndexName() with prefix = %q", got)
 	}
 }
 
