@@ -15,6 +15,7 @@ except ImportError:
     # breaking test collection on such runners.
     sys.modules["cv2"] = MagicMock()
 
+import agent.component.llm as llm_module
 from agent.component.agent_with_tools import Agent
 
 SECRET_AGENT_SYSTEM_PROMPT = "SECRET_AGENT1_SYSTEM_PROMPT_s3cr3t"
@@ -33,7 +34,9 @@ class _FakeCanvas:
         self.task_id = "test-task"
 
     def get_component(self, cid):
-        return self.components[cid]
+        # Mirrors real Canvas.get_component: None for a missing ID (a
+        # dangling downstream reference retained by the DSL).
+        return self.components.get(cid)
 
     def get_component_obj(self, cid):
         return self.objs[cid]
@@ -95,6 +98,24 @@ def _make_agent(canvas, cid, param, tools):
     return agent
 
 
+@pytest.fixture
+def no_model_resolution(monkeypatch):
+    """_invoke_async resolves tenant model config through the DB; stub it
+    so the test needs no MySQL/credentials/model (mirrors the LLM suite)."""
+    monkeypatch.setattr(llm_module, "resolve_model_type", lambda tenant, ref: ["chat"])
+    monkeypatch.setattr(llm_module, "resolve_model_config", lambda tenant, mtype, ref: {})
+    monkeypatch.setattr(llm_module, "LLMBundle", lambda *a, **k: SimpleNamespace(max_length=8192))
+
+
+def _set_downstream(canvas, cid, component_name):
+    """Register a downstream component the way real Canvas entries look:
+    the components-dict entry carries the live ``obj`` used by the
+    streaming-eligibility predicate, for both ``get_component`` and
+    ``get_component_obj`` lookup."""
+    canvas.components[cid] = {"downstream": [], "obj": SimpleNamespace(component_name=component_name)}
+    canvas.objs[cid] = SimpleNamespace(component_name=component_name)
+
+
 def _run_agent2_with_upstream(upstream_value):
     """Agent2 references Agent1@content; returns its normalized user input."""
     canvas = _FakeCanvas()
@@ -111,12 +132,12 @@ def _run_agent2_with_upstream(upstream_value):
 
 
 @pytest.mark.p1
-def test_no_message_downstream_yields_eager_answer_string():
+def test_no_message_downstream_yields_eager_answer_string(no_model_resolution):
     """Without a direct Message downstream, Agent content is the eager
     answer string (pre-existing contract)."""
     canvas = _FakeCanvas()
     canvas.components["agent1"] = {"downstream": ["agent2"]}
-    canvas.objs["agent2"] = SimpleNamespace(component_name="Agent")
+    _set_downstream(canvas, "agent2", "Agent")
 
     param = _make_param([{"role": "user", "content": "What is glorp?"}], sys_prompt="SYS")
     agent1 = _make_agent(canvas, "agent1", param, {"retrieval_0": object()})
@@ -135,12 +156,12 @@ def test_no_message_downstream_yields_eager_answer_string():
 
 
 @pytest.mark.p1
-def test_pure_message_downstream_keeps_deferred_streaming_partial():
+def test_pure_message_downstream_keeps_deferred_streaming_partial(no_model_resolution):
     """A sole direct Message downstream still gets the deferred streaming
     partial (streaming behavior preserved, no model call made here)."""
     canvas = _FakeCanvas()
     canvas.components["agent1"] = {"downstream": ["msg1"]}
-    canvas.objs["msg1"] = SimpleNamespace(component_name="Message")
+    _set_downstream(canvas, "msg1", "Message")
 
     param = _make_param(
         [{"role": "user", "content": SECRET_USER_QUESTION}],
@@ -155,7 +176,7 @@ def test_pure_message_downstream_keeps_deferred_streaming_partial():
 
 
 @pytest.mark.p1
-def test_mixed_agent_and_message_downstream_sees_answer_not_partial():
+def test_mixed_agent_and_message_downstream_sees_answer_not_partial(no_model_resolution):
     """Regression for https://github.com/infiniflow/ragflow/issues/19556.
 
     With a mixed graph (Agent1 -> Agent2 plus Agent1 -> Message), Agent1's
@@ -164,8 +185,8 @@ def test_mixed_agent_and_message_downstream_sees_answer_not_partial():
     """
     canvas = _FakeCanvas()
     canvas.components["agent1"] = {"downstream": ["agent2", "msg1"]}
-    canvas.objs["agent2"] = SimpleNamespace(component_name="Agent")
-    canvas.objs["msg1"] = SimpleNamespace(component_name="Message")
+    _set_downstream(canvas, "agent2", "Agent")
+    _set_downstream(canvas, "msg1", "Message")
 
     param = _make_param(
         [{"role": "user", "content": SECRET_USER_QUESTION}],
