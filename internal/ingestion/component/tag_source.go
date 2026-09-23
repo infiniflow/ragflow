@@ -744,11 +744,11 @@ var tagSourceFileRows = &tagSourceFileRowCache{items: make(map[string]tagSourceF
 var errTagSourceNotFound = errors.New("tag source file not found")
 
 // IsTagSourceNotFound reports whether err means this specific tag source file
-// id cannot be resolved, as opposed to the storage layer being unavailable.
-// Callers that treat a source as optional — one inherited from a document,
-// where a stale reference is expected once the file has been deleted — may
-// skip it; a source the dataset configured explicitly, and any storage
-// failure, must still fail loudly.
+// id cannot be resolved, as opposed to a transient database failure or the
+// storage layer being unavailable. Callers that treat a source as optional —
+// one inherited from a document, where a stale reference is expected once the
+// file has been deleted — may skip it; a source the dataset configured
+// explicitly, and any database or storage failure, must still fail loudly.
 func IsTagSourceNotFound(err error) bool {
 	return errors.Is(err, errTagSourceNotFound)
 }
@@ -765,7 +765,13 @@ func resolveTagSourceFile(ctx context.Context, tagFileID, ownerTenantID string) 
 	}
 	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, tagFileID, ownerTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("tag source file %q not found: %w: %w", tagFileID, errTagSourceNotFound, err)
+		// The DAO returns database errors unchanged, and only a genuine miss
+		// means this id is dead: wrapping a transient failure as well would
+		// let a caller skip it and report an incomplete vocabulary as success.
+		if dao.IsNotFoundErr(err) {
+			return nil, fmt.Errorf("tag source file %q not found: %w: %w", tagFileID, errTagSourceNotFound, err)
+		}
+		return nil, fmt.Errorf("resolve tag source file %q: %w", tagFileID, err)
 	}
 	if f == nil {
 		return nil, fmt.Errorf("tag source file %q not found in tenant %q: %w", tagFileID, ownerTenantID, errTagSourceNotFound)
