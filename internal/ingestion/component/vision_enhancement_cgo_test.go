@@ -80,7 +80,7 @@ func TestVisionCropImage_OnDemandFromPositions(t *testing.T) {
 	}
 	defer cropper.Close()
 
-	img, err := cropper.Crop(cgoPositions())
+	img, err := cropper.Crop(context.Background(), cgoPositions())
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestVisionCropImage_RejectsOversizedPageBeforeRendering(t *testing.T) {
 	}
 	defer cropper.Close()
 
-	img, err := cropper.Crop(cgoPositions())
+	img, err := cropper.Crop(context.Background(), cgoPositions())
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestVisionCropImage_PassthroughInline(t *testing.T) {
 	defer cropper.Close()
 
 	const inline = "data:image/png;base64,preinlined"
-	img, err := cropper.Crop(map[string]any{"image": inline})
+	img, err := cropper.Crop(context.Background(), map[string]any{"image": inline})
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestVisionCropImage_NoImageNoPositions(t *testing.T) {
 	}
 	defer cropper.Close()
 
-	img, err := cropper.Crop(map[string]any{"doc_type_kwd": "image"})
+	img, err := cropper.Crop(context.Background(), map[string]any{"doc_type_kwd": "image"})
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestVisionCropImage_NonPDFBytesIsNoOp(t *testing.T) {
 	}
 	defer cropper.Close()
 
-	img, err := cropper.Crop(cgoPositions())
+	img, err := cropper.Crop(context.Background(), cgoPositions())
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestVisionCropImage_EngineClosedAfterUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newVisionImageCropper: %v", err)
 	}
-	if _, err := cropper.Crop(cgoPositions()); err != nil {
+	if _, err := cropper.Crop(context.Background(), cgoPositions()); err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
 	if err := cropper.Close(); err != nil {

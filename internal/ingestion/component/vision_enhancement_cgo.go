@@ -54,7 +54,6 @@ func init() {
 // chunker does at index time. The engine is opened lazily and at most once per
 // vision-enhancement call, then released via Close.
 type visionPDFCropper struct {
-	ctx    context.Context
 	db     *gorm.DB
 	inputs map[string]any
 
@@ -66,11 +65,14 @@ type visionPDFCropper struct {
 // newVisionImageCropper builds the on-demand cropper. It never touches storage
 // here; the source PDF is re-acquired lazily on the first Crop call that needs
 // it.
-func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
-	return &visionPDFCropper{ctx: ctx, db: db, inputs: inputs}, nil
+func newVisionImageCropper(_ context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
+	return &visionPDFCropper{db: db, inputs: inputs}, nil
 }
 
-func (c *visionPDFCropper) Crop(item map[string]any) (*visionImage, error) {
+func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visionImage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Fast path: an inlined image (docx/markdown, or any pre-inlined source)
 	// is used directly — no storage access, no engine.
 	if img, _ := item["image"].(string); img != "" {
@@ -84,7 +86,7 @@ func (c *visionPDFCropper) Crop(item map[string]any) (*visionImage, error) {
 	if len(positions) == 0 {
 		return nil, nil
 	}
-	if err := c.ensureEngine(); err != nil {
+	if err := c.ensureEngine(ctx); err != nil {
 		// Best-effort: a missing/unreadable source PDF means no vision
 		// description for this item, not a hard failure.
 		return nil, nil
@@ -103,6 +105,9 @@ func (c *visionPDFCropper) Crop(item map[string]any) (*visionImage, error) {
 	}
 	single := make(map[int]image.Image, len(pages))
 	for pn := range pages {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !pdfPageRasterWithinOCRLimits(c.engine, pn) {
 			return nil, nil
 		}
@@ -140,9 +145,9 @@ func pdfPageRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNum int) boo
 		widthPixels*heightPixels <= maxOCRImagePixels
 }
 
-func (c *visionPDFCropper) ensureEngine() error {
+func (c *visionPDFCropper) ensureEngine(ctx context.Context) error {
 	c.once.Do(func() {
-		data, err := c.acquireSource()
+		data, err := c.acquireSource(ctx)
 		if err != nil || len(data) == 0 {
 			c.engErr = err
 			return
@@ -162,18 +167,18 @@ func (c *visionPDFCropper) ensureEngine() error {
 	return c.engErr
 }
 
-func (c *visionPDFCropper) acquireSource() ([]byte, error) {
+func (c *visionPDFCropper) acquireSource(ctx context.Context) ([]byte, error) {
 	if bucket, _ := getString(c.inputs, "bucket"); bucket != "" {
 		if path, _ := getString(c.inputs, "path"); path != "" {
-			return visionSourceFetcher(c.ctx, bucket, path)
+			return visionSourceFetcher(ctx, bucket, path)
 		}
 	}
 	if docID, _ := getString(c.inputs, "doc_id"); docID != "" {
-		ref, err := ResolveDocumentStorage(c.ctx, c.db, docID)
+		ref, err := ResolveDocumentStorage(ctx, c.db, docID)
 		if err != nil || ref == nil {
 			return nil, err
 		}
-		return visionSourceFetcher(c.ctx, ref.Bucket, ref.Path)
+		return visionSourceFetcher(ctx, ref.Bucket, ref.Path)
 	}
 	return nil, nil
 }
