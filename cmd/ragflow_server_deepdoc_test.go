@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+	common "ragflow/internal/common"
 	native "ragflow/internal/deepdoc/native"
 	server "ragflow/internal/server/config"
 )
@@ -70,6 +71,145 @@ func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
 	}
 }
 
+// TestResolveIngestorMaxConcurrentWorkers pins the precedence
+// CLI > environment > config file > default(1) and the inclusive [1, 256]
+// range guard. An out-of-range or non-integer value at any layer is a fatal
+// startup error.
+func TestResolveIngestorMaxConcurrentWorkers(t *testing.T) {
+	const envKey = common.EnvIngestorMaxConcurrentWorkers
+
+	cases := []struct {
+		name       string
+		configured int
+		env        string // "" means leave unset
+		cli        *int
+		want       int
+		wantErr    bool
+	}{
+		{"default", 0, "", nil, 1, false},
+		{"config only", 5, "", nil, 5, false},
+		{"env overrides config", 5, "8", nil, 8, false},
+		{"cli overrides env and config", 5, "8", intPtr(12), 12, false},
+		{"env invalid errors", 5, "notanint", nil, 0, true},
+		{"env only", 0, "9", nil, 9, false},
+		{"config above range errors", 300, "", nil, 300, true},
+		{"cli below range errors", 0, "", intPtr(0), 0, true},
+		{"cli above range errors", 0, "", intPtr(1000), 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// t.Setenv restores the previous value after the subtest.
+			t.Setenv(envKey, tc.env)
+			args := &serverArgs{ingestorMaxConcurrentWorkers: tc.cli}
+			got, err := resolveIngestorMaxConcurrentWorkers(args, tc.configured)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q cli=%v)",
+						tc.configured, tc.env, tc.cli)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
+					got, tc.want, tc.configured, tc.env, tc.cli)
+			}
+		})
+	}
+}
+
+// TestResolveIngestorPageConcurrency pins the precedence
+// CLI > environment > config file > default(2) and the inclusive [1, 16]
+// range guard. An out-of-range or non-integer value at any layer is a fatal
+// startup error.
+func TestResolveIngestorPageConcurrency(t *testing.T) {
+	const envKey = common.EnvIngestorPageConcurrency
+
+	cases := []struct {
+		name       string
+		configured int
+		env        string // "" means leave unset
+		cli        *int
+		want       int
+		wantErr    bool
+	}{
+		{"default", 0, "", nil, 2, false},
+		{"config only", 6, "", nil, 6, false},
+		{"env overrides config", 6, "8", nil, 8, false},
+		{"cli overrides env and config", 6, "8", intPtr(12), 12, false},
+		{"env invalid errors", 6, "notanint", nil, 0, true},
+		{"env only", 0, "9", nil, 9, false},
+		{"config above range errors", 20, "", nil, 20, true},
+		{"cli below range errors", 0, "", intPtr(0), 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envKey, tc.env)
+			args := &serverArgs{ingestorPageConcurrency: tc.cli}
+			got, err := resolveIngestorPageConcurrency(args, tc.configured)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q cli=%v)",
+						tc.configured, tc.env, tc.cli)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
+					got, tc.want, tc.configured, tc.env, tc.cli)
+			}
+		})
+	}
+}
+
+// TestParseArgsIngestorMaxConcurrentWorkers pins the contract that the CLI
+// parser rejects a non-positive or non-integer --ingestor-max-concurrent-workers
+// up front (both the "--flag=value" and "--flag value" forms), and accepts a
+// positive value.
+func TestParseArgsIngestorMaxConcurrentWorkers(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		want    int
+	}{
+		{"equals zero", []string{"prog", "--ingestor-max-concurrent-workers=0"}, true, 0},
+		{"equals negative", []string{"prog", "--ingestor-max-concurrent-workers=-3"}, true, 0},
+		{"equals nonint", []string{"prog", "--ingestor-max-concurrent-workers=abc"}, true, 0},
+		{"space zero", []string{"prog", "--ingestor-max-concurrent-workers", "0"}, true, 0},
+		{"space negative", []string{"prog", "--ingestor-max-concurrent-workers", "-3"}, true, 0},
+		{"space nonint", []string{"prog", "--ingestor-max-concurrent-workers", "abc"}, true, 0},
+		{"equals positive", []string{"prog", "--ingestor-max-concurrent-workers=12"}, false, 12},
+		{"space positive", []string{"prog", "--ingestor-max-concurrent-workers", "12"}, false, 12},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			old := os.Args
+			defer func() { os.Args = old }()
+			os.Args = tc.args
+
+			got, err := parseArgs()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseArgs() = nil error, want rejection for %v", tc.args)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseArgs() error = %v, want nil for %v", err, tc.args)
+			}
+			if got.ingestorMaxConcurrentWorkers == nil || *got.ingestorMaxConcurrentWorkers != tc.want {
+				t.Fatalf("ingestorMaxConcurrentWorkers = %v, want %d for %v", got.ingestorMaxConcurrentWorkers, tc.want, tc.args)
+			}
+		})
+	}
+}
+
 // TestParseArgsDeepDocInferenceCPUCores pins the contract that the CLI parser
 // accepts a non-negative --deepdoc-inference-cpu-cores (0 means "all cores"),
 // and rejects a negative or non-integer value (both forms).
@@ -105,6 +245,47 @@ func TestParseArgsDeepDocInferenceCPUCores(t *testing.T) {
 			}
 			if got.deepdocInferenceCPUCores == nil || *got.deepdocInferenceCPUCores != tc.want {
 				t.Fatalf("deepdocInferenceCPUCores = %v, want %d for %v", got.deepdocInferenceCPUCores, tc.want, tc.args)
+			}
+		})
+	}
+}
+
+// TestParseArgsIngestorPageConcurrency pins the same CLI parse contract for
+// --ingestor-page-concurrency.
+func TestParseArgsIngestorPageConcurrency(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantErr bool
+		want    int
+	}{
+		{"equals zero", []string{"prog", "--ingestor-page-concurrency=0"}, true, 0},
+		{"equals negative", []string{"prog", "--ingestor-page-concurrency=-3"}, true, 0},
+		{"equals nonint", []string{"prog", "--ingestor-page-concurrency=abc"}, true, 0},
+		{"space zero", []string{"prog", "--ingestor-page-concurrency", "0"}, true, 0},
+		{"space negative", []string{"prog", "--ingestor-page-concurrency", "-3"}, true, 0},
+		{"space nonint", []string{"prog", "--ingestor-page-concurrency", "abc"}, true, 0},
+		{"equals positive", []string{"prog", "--ingestor-page-concurrency=12"}, false, 12},
+		{"space positive", []string{"prog", "--ingestor-page-concurrency", "12"}, false, 12},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			old := os.Args
+			defer func() { os.Args = old }()
+			os.Args = tc.args
+
+			got, err := parseArgs()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseArgs() = nil error, want rejection for %v", tc.args)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseArgs() error = %v, want nil for %v", err, tc.args)
+			}
+			if got.ingestorPageConcurrency == nil || *got.ingestorPageConcurrency != tc.want {
+				t.Fatalf("ingestorPageConcurrency = %v, want %d for %v", got.ingestorPageConcurrency, tc.want, tc.args)
 			}
 		})
 	}
@@ -185,3 +366,7 @@ func TestInferenceTotalCoresIsCgroupAware(t *testing.T) {
 		t.Fatalf("inferenceTotalCores() = %d, want >= 1", got)
 	}
 }
+
+// intPtr returns a pointer to n, used to build optional CLI override values in
+// the resolver precedence tests.
+func intPtr(n int) *int { return &n }
