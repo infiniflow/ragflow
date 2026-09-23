@@ -105,7 +105,6 @@ func RegisterAgentCancelRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 		return
 	}
 	g.POST("/:session_id/cancel", h.CancelSessionRun)
-	g.PATCH("/:task_id", h.PatchTask)
 }
 
 // registerAnyMethod mirrors the Python

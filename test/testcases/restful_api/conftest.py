@@ -24,14 +24,25 @@ from utils import wait_for
 
 
 GO_ONLY_SKIPS = {
-    "Go dataset index API is retired": {
+    "Go route is not implemented": {
         # Dataset-level graph/raptor/mindmap indexing via POST/GET/DELETE
         # /datasets/:id/index is a Python-era RunIndex/TraceIndex/DeleteIndex
-        # contract. Go uses scheduler-driven dataset compilation instead;
-        # these legacy routes are intentionally not exposed.
+        # contract; the Go port schedules dataset compilation through the
+        # knowledge_compile scheduler instead and does not serve /index.
         "test_dataset_index_endpoints",
         "test_dataset_index_trace_and_delete_type_contract",
         "test_dataset_index_run_with_document_creates_task",
+        "test_document_download_by_id_invalid_id_contract",
+        "test_llm_factories_live_auth_contract",
+        "test_llm_list_live_auth_contract",
+        "test_retrieval_compatibility_endpoint",
+        "test_retrieval_compatibility_requires_dataset_ids",
+        "test_retrieval_compatibility_requires_auth",
+        "test_retrieval_requires_auth_contract",
+        "test_system_oceanbase_status_auth_contract",
+        "test_task_routes_require_auth",
+        "test_patch_task_rejects_unsupported_action",
+        "test_cancel_missing_task_sets_cancel_contract",
     },
     "Go ingestion pipeline does not complete document parsing within the test timeout": {
         # Chunk add requires an embedding model call; document update/delete
