@@ -2111,3 +2111,28 @@ func TestTheLedgerIsRenderedWholeWhereTheModelDecidesAndAnswers(t *testing.T) {
 		t.Errorf("ShownSinceNote = %d after a note, want 0", got)
 	}
 }
+
+// TestTruncateRunesCutsOnRuneBoundaries: the cap counts runes, not bytes. A byte slice would
+// cut a Chinese character in half (the trace then prints an escape instead of the character)
+// and stop a CJK string at a third of the requested length; a non-positive cap yields "".
+func TestTruncateRunesCutsOnRuneBoundaries(t *testing.T) {
+	const s = "曹操是谁？"
+	if got := TruncateRunes(s, 2); got != "曹操" {
+		t.Errorf("TruncateRunes(%q, 2) = %q, want two whole characters", s, got)
+	}
+	for n := 0; n <= utf8.RuneCountInString(s)+1; n++ {
+		got := TruncateRunes(s, n)
+		if !utf8.ValidString(got) {
+			t.Errorf("TruncateRunes(%q, %d) = %q, which is not valid UTF-8", s, n, got)
+		}
+		if utf8.RuneCountInString(got) > n {
+			t.Errorf("TruncateRunes(%q, %d) = %q, longer than asked", s, n, got)
+		}
+	}
+	if got := TruncateRunes(s, 99); got != s {
+		t.Errorf("TruncateRunes beyond the length = %q, want it unchanged", got)
+	}
+	if got := TruncateRunes(s, 0); got != "" {
+		t.Errorf("TruncateRunes(%q, 0) = %q, want the empty string", s, got)
+	}
+}

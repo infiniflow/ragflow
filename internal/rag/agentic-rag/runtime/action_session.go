@@ -2251,7 +2251,7 @@ func (s *sessionState) runActionNode(ctx context.Context) error {
 		// Whether the model used the open-parts protocol is otherwise invisible until the routing
 		// line says a round was reopened for it: log the statement itself.
 		if u := strings.TrimSpace(s.Unresolved); u != "" {
-			_LOG.Printf("[Action Session] answered with an open part (%s)", trunc(u, 200))
+			_LOG.Printf("[Action Session] answered with an open part (%s)", TruncateRunes(u, 200))
 		}
 		if len(newStates) > 0 {
 			// Both blocks in one reply is the finalize shape, so it is worth a line: the answer
@@ -2319,7 +2319,7 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 		q := argQueryString(c.Args["query"])
 		if retrievalTools[c.Name] && q != "" && isNearDup(q, seenQueries) {
 			skipped++
-			_LOG.Printf("[Action Session] skipping near-duplicate retrieval %q (already searched)", trunc(q, 80))
+			_LOG.Printf("[Action Session] skipping near-duplicate retrieval %q (already searched)", TruncateRunes(q, 80))
 			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
 				"kind": c.Name,
 				"note": "This query is a near-duplicate of an earlier retrieval and was skipped to avoid redundant searching. Patch the slot with what you have, or issue a genuinely NEW retrieval angle.",
@@ -2403,7 +2403,7 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 			// continuation hint that got cut is a session that concludes the corpus is short
 			// instead of asking for the next page (measured 2026-09-22, c1 bowling question).
 			payload = oc.Note + "\n" + payload
-			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, trunc(oc.Note, 280))
+			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, TruncateRunes(oc.Note, 280))
 		}
 		// If the session is already heavy, cut this payload proportionally.
 		// -1514 counts len of a str — CODE POINTS, not bytes — so
@@ -2784,7 +2784,7 @@ func (s *sessionState) appendRecordLine(ranAny bool) {
 	// The line the model steers by is message content, so the log could not show
 	// whether a mechanism fired at all: three rounds of analysis here ended up
 	// inferring it from side effects. One truncated line per turn ends that.
-	_LOG.Printf("[Action Session] record line: %s", trunc(rec.Line(), 320))
+	_LOG.Printf("[Action Session] record line: %s", TruncateRunes(rec.Line(), 320))
 	last := &s.Messages[len(s.Messages)-1]
 	if last.Role != schema.Tool || rec.Pool == 0 {
 		// No pool bound (or no tool result to annotate): keep the record, skip the
@@ -2802,7 +2802,7 @@ func (s *sessionState) appendRecordLine(ranAny bool) {
 		if excerpt := s.unreadPoolExcerpt(); excerpt != "" {
 			// Logged as well as delivered: whether the mechanism fired is otherwise
 			// only visible inside the message content.
-			_LOG.Printf("[Action Session] pool excerpt: %s", trunc(excerpt, 240))
+			_LOG.Printf("[Action Session] pool excerpt: %s", TruncateRunes(excerpt, 240))
 			last.Content += "\n" + excerpt
 		}
 	}
@@ -2850,7 +2850,7 @@ func (s *sessionState) offerContinuation() bool {
 	ask := continuationAsk(s.Attempts, s.turnRunCap(), s.Record.Brief(), s.Record.Verbose())
 	s.Messages = appendMessages(s.Messages, *schema.UserMessage(ask))
 	_LOG.Printf("[Action Session] turn %d/%d — the floor is spent; offered the model one more turn while the record says something is missing (%s, %.0fs left).\noffer=%q",
-		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, trunc(ask, 700))
+		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, TruncateRunes(ask, 700))
 	return true
 }
 
@@ -3610,13 +3610,6 @@ func stripUnpairedToolCalls(msgs []schema.Message) []schema.Message {
 		out = append(out, m)
 	}
 	return out
-}
-
-func trunc(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
 
 // sortKeys is a small helper for deterministic map-key iteration in logs.

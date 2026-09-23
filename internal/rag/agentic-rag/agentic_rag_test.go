@@ -26,7 +26,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/rag/agentic-rag/runtime"
@@ -958,28 +957,5 @@ func TestOuterReactSessionSelectEvidenceKeepsUnionWithoutAMatch(t *testing.T) {
 
 	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 1 || got[0] != "a0" {
 		t.Errorf("chunks = %v, want the union kept when no call matches", got)
-	}
-}
-
-// TestTruncCutsOnRuneBoundaries pins the fix for the "\xe3" that showed up in a
-// grep line: trunc used to slice BYTES, cutting a Chinese character in half so
-// the trace printed half a rune as an escape (and for CJK it stopped at a third
-// of the requested length).
-func TestTruncCutsOnRuneBoundaries(t *testing.T) {
-	const s = "曹操是谁？"
-	if got := trunc(s, 2); got != "曹操" {
-		t.Errorf("trunc(%q, 2) = %q, want two whole characters", s, got)
-	}
-	for n := 0; n <= utf8.RuneCountInString(s)+1; n++ {
-		got := trunc(s, n)
-		if !utf8.ValidString(got) {
-			t.Errorf("trunc(%q, %d) = %q, which is not valid UTF-8", s, n, got)
-		}
-		if utf8.RuneCountInString(got) > n {
-			t.Errorf("trunc(%q, %d) = %q, longer than asked", s, n, got)
-		}
-	}
-	if got := trunc(s, 99); got != s {
-		t.Errorf("trunc beyond the length = %q, want it unchanged", got)
 	}
 }

@@ -596,11 +596,11 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	defer cancel()
 
 	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
-		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
+		runtime.TruncateRunes(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
 		runtime.TruncateRunes(record, 3000))
 
 	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
-		trunc(question, 160), len(preSummary), len(prompt.user), runtime.TruncateRunes(preSummary, 3000))
+		runtime.TruncateRunes(question, 160), len(preSummary), len(prompt.user), runtime.TruncateRunes(preSummary, 3000))
 
 	// The composed prompt is fitted ONCE before the call, bounded by the smaller of the
 	// model's window and the evidence budget: msg[0] is the system turn, msg[-1] the user
@@ -748,7 +748,7 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	// reports the record block the answer actually carried.
 	record := composedRecord(kb)
 	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
-		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
+		runtime.TruncateRunes(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
 		runtime.TruncateRunes(record, 3000))
 
 	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))

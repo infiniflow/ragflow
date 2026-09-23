@@ -124,7 +124,7 @@ func (e *searchExecutor) Execute(ctx context.Context, name string, args map[stri
 		// logged as its own line because that is what makes it checkable afterwards: a run's
 		// reasons, read in order, show whether the research was moving or paraphrasing itself.
 		if reason := argString(args, "reason"); reason != "" {
-			logger.Printf("[Function tool] %s reason: %s", name, trunc(reason, 280))
+			logger.Printf("[Function tool] %s reason: %s", name, TruncateRunes(reason, 280))
 		}
 	}
 	if name != "" {

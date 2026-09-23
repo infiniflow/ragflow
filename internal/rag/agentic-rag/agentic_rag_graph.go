@@ -1232,7 +1232,7 @@ func routeResearch(st *AgenticState, maxRounds int) agenticNode {
 		return nodeFormalizeAnswer
 	}
 	_LOG.Printf("[Routing] another round: open part=%q, +%d chunks this round, rounds=%d/%d, research room %.0fs of %.0fs left.",
-		trunc(open, 160), st.LastRoundNew, st.SearchRounds, maxRounds, researchRoomS(st.RemainingS()), st.RemainingS())
+		runtime.TruncateRunes(open, 160), st.LastRoundNew, st.SearchRounds, maxRounds, researchRoomS(st.RemainingS()), st.RemainingS())
 	return nodeRagAgentLoop
 }
 
@@ -1777,13 +1777,13 @@ func formalizeStepLine(asAsked, standalone string) string {
 		if asAsked == "" {
 			return ""
 		}
-		return fmt.Sprintf("Kept the question as asked: %q", trunc(asAsked, 80))
+		return fmt.Sprintf("Kept the question as asked: %q", runtime.TruncateRunes(asAsked, 80))
 	}
 	if asAsked == "" {
-		return fmt.Sprintf("Standalone question for this turn: %q", trunc(standalone, 80))
+		return fmt.Sprintf("Standalone question for this turn: %q", runtime.TruncateRunes(standalone, 80))
 	}
 	return fmt.Sprintf("Rewrote the follow-up into a standalone question: %q → %q",
-		trunc(asAsked, 80), trunc(standalone, 80))
+		runtime.TruncateRunes(asAsked, 80), runtime.TruncateRunes(standalone, 80))
 }
 
 // formalizeQuestionNode is the graph's first node. It resolves pronouns and ellipses from

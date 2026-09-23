@@ -668,7 +668,7 @@ func searchLogLine(verb, question string) string {
 // It is the log line's sibling, not a replacement: StageLineDetail reports this
 // one and logs searchLogLine's, from the same call.
 func searchThinkLine(verb, question string) string {
-	return fmt.Sprintf("%s %q.", verb, trunc(question, 80))
+	return fmt.Sprintf("%s %q.", verb, TruncateRunes(question, 80))
 }
 
 // searchLogger returns the run's logger, falling back to the package logger.
@@ -986,7 +986,7 @@ func MetadataSearch(ctx context.Context, deps SearchDeps, p SearchParams, filter
 	if !ok {
 		return nil, nil
 	}
-	searchLogger(deps).Printf("[Metadata search] %q searching %d matched doc(s) via filters=%v", trunc(p.Question, 80), len(docIDs), filters)
+	searchLogger(deps).Printf("[Metadata search] %q searching %d matched doc(s) via filters=%v", TruncateRunes(p.Question, 80), len(docIDs), filters)
 	return HybridSearch(ctx, deps, SearchParams{
 		Question:    p.Question,
 		Keywords:    p.Keywords,
@@ -1613,7 +1613,7 @@ func grepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 			chars += len(ChunkTextOf(c))
 		}
 		logger.Printf("[Grep search] pattern %q matched %d/%d candidate(s) -> %d chunk(s), %.1fK chars.",
-			trunc(query, 80), matched, len(prose), len(out), float64(chars)/1000.0)
+			TruncateRunes(query, 80), matched, len(prose), len(out), float64(chars)/1000.0)
 		logGrepReach(logger, query, chunks, terms)
 		return out, docAggs
 	}
@@ -2116,10 +2116,10 @@ func DocAggs(chunks []map[string]any) []map[string]any {
 // call.
 func searchResultLine(query string, chunks []map[string]any) string {
 	if len(chunks) == 0 {
-		return fmt.Sprintf("Found nothing for %q.", trunc(query, 80))
+		return fmt.Sprintf("Found nothing for %q.", TruncateRunes(query, 80))
 	}
 	return fmt.Sprintf("Found %s in %s for %q.", CountOf(len(chunks), "passage"),
-		CountOf(len(DocAggs(chunks)), "document"), trunc(query, 80))
+		CountOf(len(DocAggs(chunks)), "document"), TruncateRunes(query, 80))
 }
 
 // searchResultLogLine renders the same result in the log's shape:
@@ -2127,7 +2127,7 @@ func searchResultLine(query string, chunks []map[string]any) string {
 // :471 for grep). The breakdown is dropped when the leg returned nothing, so a
 // zero-result line does not end on a dangling colon.
 func searchResultLogLine(query string, chunks []map[string]any) string {
-	line := fmt.Sprintf("%q -> %d chunk(s)", trunc(query, 80), len(chunks))
+	line := fmt.Sprintf("%q -> %d chunk(s)", TruncateRunes(query, 80), len(chunks))
 	if stats := docStatsLine(chunks); stats != "" {
 		line += ": " + stats
 	}

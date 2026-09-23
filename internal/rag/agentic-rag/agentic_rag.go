@@ -341,7 +341,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// self-contained question risks silently changing its meaning), and extract only the
 	// search keywords.
 	if !isMultiTurn(messages) {
-		_LOG.Printf("[Formalize] Single-turn self-contained question — kept verbatim (no rewrite): %s", trunc(lastUser, 120))
+		_LOG.Printf("[Formalize] Single-turn self-contained question — kept verbatim (no rewrite): %s", runtime.TruncateRunes(lastUser, 120))
 		_, kw := runtime.ExtractWeightedKeywords(ctx, deps.Model, lastUser)
 		return lastUser, kw
 	}
@@ -1267,7 +1267,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	cacheable := deps.TextAttachments == ""
 	if cacheable && cache != nil {
 		if cached, hit := cache.Lookup(req.Question); hit {
-			step(ctx, logger, "Agentic RAG", "Cache hit: reused the answer for the near-identical question %q and skipped research.", trunc(req.Question, 80))
+			step(ctx, logger, "Agentic RAG", "Cache hit: reused the answer for the near-identical question %q and skipped research.", runtime.TruncateRunes(req.Question, 80))
 			return &RunResponse{Answer: cached, Mode: spec}
 		}
 	}
@@ -1278,7 +1278,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	if deps.OriginalQuestion != "" {
 		if effective := resolveEffectiveQuestion(req.Question, deps.OriginalQuestion); effective != req.Question {
 			logger.Printf("[Agentic RAG] using original user question over outer rewrite (original=%q → rewrite=%q)",
-				trunc(deps.OriginalQuestion, 80), trunc(req.Question, 80))
+				runtime.TruncateRunes(deps.OriginalQuestion, 80), runtime.TruncateRunes(req.Question, 80))
 			req.Question = effective
 		}
 	}
@@ -2114,7 +2114,7 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		// itself, i.e. per outer tool call.
 		if effective := resolveEffectiveQuestion(req.Question, s.deps.OriginalQuestion); effective != req.Question {
 			s.logger.Printf("[Agentic RAG] using original user question over outer rewrite (original=%q → rewrite=%q)",
-				trunc(s.deps.OriginalQuestion, 80), trunc(req.Question, 80))
+				runtime.TruncateRunes(s.deps.OriginalQuestion, 80), runtime.TruncateRunes(req.Question, 80))
 			req.Question = effective
 		}
 		// The inner compose is text-only: the outer model already saw the images via

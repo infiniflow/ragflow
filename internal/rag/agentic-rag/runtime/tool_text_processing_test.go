@@ -18,9 +18,7 @@ package runtime
 
 import (
 	"regexp"
-	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
 func TestEscapeTermAsciiWord(t *testing.T) {
@@ -251,25 +249,5 @@ func TestNarrowByTermsNoMatchKeepsOriginalUntouched(t *testing.T) {
 	}
 	if got := ChunkTextOf(res.Kept[1]); got != long {
 		t.Errorf("non-matching chunk was altered (len %d, want %d); grep narrowing must not truncate unmatched evidence", len(got), len(long))
-	}
-}
-
-func TestTruncHeadRuneAware(t *testing.T) {
-	// CJK: 3 bytes per rune. A naive byte slice s[:n] would split a rune and
-	// produce invalid UTF-8; truncHead must keep n codepoints instead.
-	zh := strings.Repeat("中", 50)
-	got := truncHead(zh, 10)
-	if charLen(got) != 10 {
-		t.Errorf("truncHead codepoint count = %d, want 10", charLen(got))
-	}
-	if got != strings.Repeat("中", 10) {
-		t.Errorf("truncHead did not keep the correct rune prefix")
-	}
-	if !utf8.ValidString(got) {
-		t.Error("truncHead produced invalid UTF-8")
-	}
-	// Short input: returned unchanged and byte-identical.
-	if s := "hello"; truncHead(s, 100) != s {
-		t.Errorf("truncHead short input changed: %q", truncHead(s, 100))
 	}
 }

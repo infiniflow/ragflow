@@ -387,9 +387,9 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		}
 		narrowed := strings.TrimSpace(strings.Join(kept, ""))
 		if narrowed != "" {
-			return truncHead(narrowed, headFallbackChars*4), false
+			return TruncateRunes(narrowed, headFallbackChars*4), false
 		}
-		return truncHead(content, headFallbackChars), false
+		return TruncateRunes(content, headFallbackChars), false
 	}
 
 	// Step 2: merge overlapping/adjacent matches.
@@ -442,7 +442,7 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		if p == "" {
 			continue
 		}
-		key := truncHead(p, 200)
+		key := TruncateRunes(p, 200)
 		if seen[key] {
 			continue
 		}
@@ -451,10 +451,10 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 	}
 	narrowed := strings.TrimSpace(strings.Join(outParts, "\n\n"))
 	if charLen(narrowed) > outCharsPerChunk {
-		narrowed = truncHead(narrowed, outCharsPerChunk)
+		narrowed = TruncateRunes(narrowed, outCharsPerChunk)
 	}
 	if narrowed == "" {
-		return truncHead(content, headFallbackChars), true
+		return TruncateRunes(content, headFallbackChars), true
 	}
 	return narrowed, true
 }
@@ -685,7 +685,7 @@ func reachBody(query string, candidates []map[string]any, terms []string) string
 	for i, t := range located {
 		parts = append(parts, fmt.Sprintf("%s(%d)", t, counts[i]))
 	}
-	line := fmt.Sprintf("%d candidate(s) for %q carry: %s", len(candidates), trunc(query, 60), strings.Join(parts, " "))
+	line := fmt.Sprintf("%d candidate(s) for %q carry: %s", len(candidates), TruncateRunes(query, 60), strings.Join(parts, " "))
 	if len(absent) > 0 {
 		line += fmt.Sprintf(" | NOT reached by this query (not necessarily absent from the corpus): %s", strings.Join(absent, " "))
 	}
@@ -827,7 +827,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 					break
 				}
 				if take < charLen(t) {
-					c = withNarrowedText(cloneMap(c), truncHead(t, take))
+					c = withNarrowedText(cloneMap(c), TruncateRunes(t, take))
 				}
 				trimmed = append(trimmed, c)
 				acc += take
@@ -956,16 +956,6 @@ func withNarrowedText(c map[string]any, narrowed string) map[string]any {
 // charLen is the codepoint length. Go's len(string) is bytes, which diverges for CJK; the
 // narrowing caps are codepoint budgets.
 func charLen(s string) int { return utf8.RuneCountInString(s) }
-
-// truncHead keeps the first n codepoints (not bytes) of s. Byte slicing would corrupt
-// multi-byte CJK and mis-size output; rune slicing is faithful to the engine's codepoint
-// budgets.
-func truncHead(s string, n int) string {
-	if charLen(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
-}
 
 func sort2DRanges(ranges [][2]int) {
 	for i := 0; i < len(ranges); i++ {

@@ -1556,7 +1556,7 @@ func computeFromFacts(ctx context.Context, model SessionModel, question string, 
 
 	value, problem := compute(expression)
 	if problem != "" {
-		_LOG.Printf("[Compute] refused %q — %s", trunc(expression, 120), problem)
+		_LOG.Printf("[Compute] refused %q — %s", TruncateRunes(expression, 120), problem)
 		return nil
 	}
 	return &computedFact{
