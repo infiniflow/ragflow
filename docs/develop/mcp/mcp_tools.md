@@ -1,5 +1,5 @@
 ---
-sidebar_position: 12
+sidebar_position: 4
 title: RAGFlow MCP Tools
 sidebar_label: RAGFlow MCP Tools
 slug: /mcp_tools
@@ -10,14 +10,58 @@ sidebar_custom_props: {
 
 # RAGFlow MCP Tools
 
-The Go MCP runtime registers three tools:
+The Go MCP runtime registers three tools. Calls run as the user selected by the endpoint's authentication mode and have a 60-second server-side timeout.
 
-| Tool | Purpose | Main arguments |
-| --- | --- | --- |
-| `ragflow_retrieval` | Retrieve relevant chunks from accessible datasets. | Required `question`; optional `dataset_ids`, `document_ids`, and retrieval controls such as `page`, `page_size`, `similarity_threshold`, `vector_similarity_weight`, `top_k`, `rerank_id`, `keyword`, and `force_refresh`. Omitting or emptying `dataset_ids` searches all accessible datasets. |
-| `ragflow_list_datasets` | List accessible datasets, including IDs, names, and descriptions. | Optional `page` and `page_size`. |
-| `ragflow_list_chats` | List accessible chat assistants, including IDs, names, and descriptions. | Optional `page` and `page_size`. |
+## `ragflow_retrieval`
 
-The `tools/list` response adds the current user's accessible dataset or chat information to tool descriptions. For the authoritative tool schemas, see [Go tool definitions](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/tools.json) and [registration](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/server.go). The [Go MCP handler](https://github.com/infiniflow/ragflow/blob/main/internal/handler/mcp_server.go) connects these tools to RAGFlow services, and the [router](https://github.com/infiniflow/ragflow/blob/main/internal/router/router.go) registers the API endpoint.
+Retrieves relevant chunks from datasets available to the authenticated user. When `dataset_ids` is omitted or empty, RAGFlow searches all datasets that user can access.
 
-For `ragflow_retrieval`, `page × page_size` must not exceed the fixed window of 512 rerank candidates. Requests beyond that window return an error; narrow the page or page size. `ragflow_list_datasets` caps each requested page at 100 results.
+| Argument | Type | Required | Default | Valid values and behavior |
+| --- | --- | --- | --- | --- |
+| `question` | string | Yes | — | Query used for retrieval. |
+| `dataset_ids` | array of strings | No | All accessible datasets | Limits retrieval to the specified datasets. |
+| `document_ids` | array of strings | No | All documents in the selected datasets | Limits retrieval to the specified documents. |
+| `page` | integer | No | `1` | Minimum `1`. |
+| `page_size` | integer | No | `10` | From `1` through `100`; `50` or fewer is recommended to limit response size. |
+| `similarity_threshold` | number | No | `0.2` | From `0.0` through `1.0`. |
+| `vector_similarity_weight` | number | No | `0.3` | From `0.0` through `1.0`; controls the vector-similarity contribution relative to term similarity. |
+| `keyword` | boolean | No | `false` | Enables keyword-based search when true. |
+| `top_k` | integer | No | `1024` | From `1` through `1024`; maximum candidate count considered before ranking. |
+| `rerank_id` | string | No | Empty | Optional reranking model ID. |
+| `force_refresh` | boolean | No | `false` | Passes a metadata refresh request to the retrieval service. |
+
+`page × page_size` must not exceed the fixed window of 512 rerank candidates. Requests beyond that window return an error.
+
+The tool returns one text content item. Its text is a JSON object with:
+
+- `chunks`: the retrieved chunks, supplemented with dataset names, document names, and available document metadata.
+- `pagination`: `page`, `page_size`, `total_chunks`, and `total_pages`.
+- `query_info`: the question, similarity threshold, vector weight, keyword-search setting, and number of searched datasets.
+
+## `ragflow_list_datasets`
+
+Lists datasets available to the authenticated user in descending creation-time order.
+
+| Argument | Type | Required | Default | Valid values and behavior |
+| --- | --- | --- | --- | --- |
+| `page` | integer | No | `1` | Minimum `1`. |
+| `page_size` | integer | No | `100` | Schema accepts `1` through `1000`; the Go connector caps an individual request at 100 results. |
+
+The tool returns one text content item containing one JSON object per line. Each object contains `id`, `name`, and `description`. The text is empty when no datasets are available.
+
+## `ragflow_list_chats`
+
+Lists chat assistants available to the authenticated user in descending creation-time order.
+
+| Argument | Type | Required | Default | Valid values and behavior |
+| --- | --- | --- | --- | --- |
+| `page` | integer | No | `1` | Minimum `1`. |
+| `page_size` | integer | No | `30` | From `1` through `100`. |
+
+The tool returns one text content item containing one JSON object per line. Each object contains `id`, `name`, and `description`. The text is empty when no chat assistants are available.
+
+## Tool discovery
+
+`tools/list` returns the schemas above. RAGFlow also appends the authenticated user's accessible dataset information to the retrieval and dataset-listing descriptions, and accessible chat information to the chat-listing description.
+
+For the authoritative implementation, see the [Go tool schemas](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/tools.json), [tool registration](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/server.go), [service connector](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/connector.go), [MCP protocol handler](https://github.com/infiniflow/ragflow/blob/main/internal/handler/mcp_server.go), and [retrieval result handler](https://github.com/infiniflow/ragflow/blob/main/internal/handler/mcp_retrieval.go).

@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -62,9 +62,7 @@
 - 📌 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系统架构](#-系统架构)
-- 🐳 [Docker 快速部署](#-docker-快速部署)
-- ⚙️ [Docker 配置与调整](#-docker-配置与调整)
-- 🔨 [以源代码启动服务](#-以源代码启动服务)
+- 🏠 [本地部署](#-本地部署)
 - 📚 [技术文档](#-技术文档)
 - 📜 [路线图](#-路线图)
 - 🏄 [贡献指南](#-贡献指南)
@@ -81,7 +79,7 @@
 
 请登录网址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 体验云服务。
 
-如果想在本地部署，请参阅[Docker 快速部署](#-docker-快速部署)。
+如果想在本地部署，请参阅[本地部署](#-本地部署)。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -91,7 +89,7 @@
 ## 🔥 近期更新
 
 - 2026-09-10 支持通过 Sitemap 接入网站内容。
-- 2026-08-19 推出知识编译，支持在文档级和知识库级生成 Wiki、Graph、Tree、PageIndex、思维导图、时间线及 Skills。
+- 2026-08-19 推出知识编译，支持在文档级和知识库级生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
 - 2026-08-19 推出 Agentic RAG，支持 Low、Medium、High、Ultra 四种思考模式。
 - 2026-07-02 支持 Google BigQuery 数据源接入与增量同步。
 - 2026-06-29 支持 WhatsApp、钉钉和企业微信聊天渠道。
@@ -125,7 +123,7 @@
 ### 🧩 **知识编译（Knowledge Compilation）**
 
 - 支持文档级和知识库级编译，将原始内容组织为结构化的知识产物。
-- 通过编译模板生成 Wiki、Graph、Tree、PageIndex、Mindmap、Timeline及 Skills，满足不同的知识组织和复用需求。
+- 通过编译模板生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills，满足不同的知识组织和复用需求。
 - 支持配置编译模型与处理规则，并查看、更新和重新生成知识产物。
 
 ### 🧠 **Agentic Retrieval**
@@ -134,6 +132,13 @@
 - 通过多轮检索与推理获取更完整的上下文，帮助生成有依据的回答。
 - 支持 Low、Medium、High、Ultra 思考模式，可按问题复杂度控制检索和推理深度。
 
+### ⚙️ **Go 原生服务架构**
+
+- API、Admin、Ingestor 和 Syncer 由 Go 服务统一提供。
+- DeepDoc 在 Go 进程内运行，负责版面分析、OCR 和表格识别。
+- Go 服务通过 CGO 调用原生文档解析库和 ONNX Runtime。
+- MCP 和 Sandbox Executor 作为可选能力按需启用。
+
 ### 🌱 **有理有据、最大程度降低幻觉（hallucination）**
 
 - 文本切片过程可视化，支持手动调整。
@@ -141,11 +146,11 @@
 
 ### 🍔 **兼容各类异构数据源**
 
-- 支持丰富的文件类型，包括 Word 文档、PPT、excel 表格、txt 文件、图片、PDF、影印件、复印件、结构化数据等。
+- 支持丰富的文件类型，包括 Word 文档、PPT、Excel 表格、TXT 文件、图片、PDF、影印件、复印件、结构化数据、网页等。
 
 ### 🛀 **全程无忧、自动化的 RAG 工作流**
 
-- 全面优化的 RAG 工作流可以支持从个人应用乃至超大型企业的各类生态系统。
+- 自动化的 RAG 工作流可以支持从个人应用乃至超大型企业的各类生态系统。
 - 大语言模型 LLM 以及向量模型均支持配置。
 - 基于多路召回、融合重排序。
 - 提供易用的 API，可以轻松集成到各类企业系统。
@@ -164,26 +169,30 @@
 - **查询（紫色）：** API service 调用 Retrieval service、Storage service 和 Model provider，组合检索结果并生成回答。
 - **元数据访问（青色）：** Admin service、API service 和 Ingestion service 与 Meta service 交互，维护业务元数据。
 
-图中的 Retrieval service 以 Infinity、Elasticsearch 为例，Storage service 以 MinIO、S3 为例；模型由所配置的 Model provider 提供。这些方框表示功能边界，不代表每个方框都必须单独部署为进程。Go 服务的 API、Admin 和 Ingestion 分别通过 `ragflow_server` 的不同模式启动；DeepDoc 在 Go 进程内运行。实际部署的组件和后端以配置为准。
+图中的 Retrieval service 以 Infinity、Elasticsearch 为例，Storage service 以 MinIO、S3 为例；模型由所配置的 Model provider 提供。这些方框表示功能边界，不代表每个方框都必须单独部署为进程。Go 服务的 API、Admin、Ingestor 和 Syncer 构成完整服务链路，分别通过 `ragflow_server` 的不同模式启动；DeepDoc 在 Go 进程内运行。MCP 和 Sandbox Executor 是可选能力，不属于基础启动链路。
 
-## 🐳 Docker 快速部署
+## 🏠 本地部署
+
+本地部署提供 Docker 部署和源码启动两种方式：Docker 适合快速体验、集成测试和生产部署；源码启动适合 Go 服务开发、调试和二次开发。Docker 部署无需安装 Go，源码启动需要安装 `go.mod` 指定的 Go 版本；前端开发还需要 Node.js 和 npm。
+
+### 🐳 Docker 部署
 
 ### 📝 前提条件
 
-- CPU >= 4 核
-- RAM >= 16 GB
-- Disk >= 50 GB
+- CPU ≥ 4 核
+- RAM ≥ 16 GB
+- 磁盘 ≥ 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): 仅在你打算使用 RAGFlow 的代码执行器（沙箱）功能时才需要安装。
 
-Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的 Go 版本（当前为 1.26.4）、支持 C++20 的 Clang/C++ 工具链、CMake >= 4.0、Linux 上的 lld、PCRE2 开发文件及 CGO 所需的原生库。仅开发前端时需要 Node.js 和 npm。原生库和模型文件的获取方式见下文“以源代码启动服务”。
+Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake >= 4.0、PCRE2 开发文件及 CGO 所需的原生库。仅开发前端时需要 Node.js 和 npm。原生库和模型文件的获取方式见下文“以源代码启动服务”。
 
 > [!TIP]
 > 如果你并没有在本机安装 Docker（Windows、Mac，或者 Linux）, 可以参考文档 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
 
 ### 🚀 启动服务器
 
-1. 确保 `vm.max_map_count` 不小于 262144：
+1. 如果使用 Elasticsearch，将 Docker 主机的 `vm.max_map_count` 设置为至少 262144。使用 Infinity 时通常不需要执行此步骤：
 
    > 如需确认 `vm.max_map_count` 的大小：
    >
@@ -191,7 +200,7 @@ Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的
    > sysctl vm.max_map_count
    > ```
    >
-   > 如果 `vm.max_map_count` 的值小于 262144，可以进行重置：
+   > 如果使用 Elasticsearch 且 `vm.max_map_count` 的值小于 262144，可以进行重置：
    >
    > ```bash
    > # 这里我们设为 262144:
@@ -210,15 +219,19 @@ Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. 进入 **docker** 文件夹，使用 Go 版 Compose 配置启动服务器：
+3. 构建 Go 版镜像并使用 Go 版 Compose 配置启动服务器：
 
 > [!CAUTION]
-> 官方发布的镜像目前面向 x86；ARM64 需要在目标架构上自行构建，并检查所选文档引擎及原生依赖的 ARM64 支持情况。
+> Go 镜像目前面向 `linux/amd64`；CPU 为默认部署方式，GPU 需要 NVIDIA Container Toolkit，ARM64 原生构建暂不支持。详细平台、资源和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
 
-   > 首次运行前，必须在 **docker/.env-go** 中把 `RAGFLOW_IMAGE` 设置为可访问的 Go 镜像。当前默认的 `infiniflow/ragflow:go-test-1` 是测试标签；如果你没有对应镜像，请先按下文构建 `ragflow:go-local`，再填写该标签。
+> 首次部署需要先构建 Go 镜像，构建时间取决于网络和机器性能。
 
    ```bash
-   cd ragflow/docker
+   cd ragflow
+   docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
+   cd docker
+   # 请将 docker/.env-go 中的 RAGFLOW_IMAGE 持久设置为 ragflow:go-local
+   export RAGFLOW_IMAGE=ragflow:go-local
    docker compose --env-file .env-go -f docker-compose-go.yml up -d
    ```
 
@@ -228,13 +241,19 @@ Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的
 
    ```bash
    # CPU 部署
-   docker compose --env-file .env-go -f docker-compose-go.yml logs -f ragflow-cpu
+   docker compose --env-file .env-go -f docker-compose-go.yml logs --tail 50 ragflow-cpu
 
    # GPU 部署
-   # docker compose --env-file .env-go -f docker-compose-go.yml logs -f ragflow-gpu
+   # docker compose --env-file .env-go -f docker-compose-go.yml logs --tail 50 ragflow-gpu
    ```
 
-   使用 `docker compose --env-file .env-go -f docker-compose-go.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，再访问 Web 页面。
+   使用 `docker compose --env-file .env-go -f docker-compose-go.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，执行 API 健康检查：
+
+   ```bash
+   curl -f http://localhost/api/v1/system/healthz
+   ```
+
+   返回 HTTP 200 后，再访问 Web 页面。如果修改了 `SVR_WEB_HTTP_PORT`，请将健康检查地址中的端口替换为对应值。
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
    > 上面这个例子中，您只需输入 http://IP_OF_YOUR_MACHINE 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。
@@ -246,54 +265,15 @@ Docker 部署无需在宿主机安装 Go。源码构建另需 `go.mod` 指定的
 
 详情请见 [快速入门指南](./docs/quickstart.mdx)。
 
-## ⚙️ Docker 配置与调整
+#### ⚙️ Docker 配置与调整
 
-首次启动前，进入 `ragflow/docker` 目录，按部署环境修改 `.env-go` 中的 `RAGFLOW_IMAGE`。默认值 `infiniflow/ragflow:go-test-1` 是测试标签；没有该镜像时，先按下文“源码编译 Docker 镜像”构建，再将其改为 `ragflow:go-local`。不能访问镜像站点或模型站点时，也在 `.env-go` 中配置镜像来源和 `HF_ENDPOINT`。
+Go 版 Docker 部署使用 `docker/.env-go` 和 `docker/docker-compose-go.yml`。镜像、端口、密码、文档引擎、模型镜像源及 GPU 配置请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
-如需修改网页访问端口，调整 `.env-go` 中的 `SVR_WEB_HTTP_PORT`（默认 `80`）。如需修改数据库、对象存储或检索服务的密码及端口，请同时修改 `.env-go` 和 `.env` 中对应的值，并检查 `service_conf.yaml.template` 中的连接配置；Go 服务读取 `.env-go`，基础依赖服务还会读取 `.env`。更多配置项见 [Docker 配置说明](./docker/README.md)。
+切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 
-配置完成后，在 `ragflow/docker` 目录运行：
+### 🔧 源码编译 Docker 镜像
 
-```bash
-docker compose --env-file .env-go -f docker-compose-go.yml up -d
-docker compose --env-file .env-go -f docker-compose-go.yml ps
-```
-
-修改配置后，重新运行上述 `up -d` 命令，让 Compose 重新创建配置发生变化的容器；如果只修改了挂载的 `service_conf.yaml.template`，还需重启 Go 服务容器：
-
-```bash
-docker compose --env-file .env-go -f docker-compose-go.yml restart ragflow-cpu
-```
-
-使用 GPU 部署时，将最后一条命令中的 `ragflow-cpu` 改为 `ragflow-gpu`。
-
-### 把文档引擎从 Elasticsearch 切换成为 Infinity
-
-RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换为 [Infinity](https://github.com/infiniflow/infinity/), 可以按照下面步骤进行:
-
-1. 在 `ragflow/docker` 目录下停止所有容器运行：
-
-   ```bash
-   docker compose --env-file .env-go -f docker-compose-go.yml down
-   ```
-   如需保留已有数据，不要添加 `-v`。
-
-2. 设置 **docker/.env-go** 中的 `DOC_ENGINE` 为 `infinity`。
-
-3. 启动容器:
-
-   ```bash
-   docker compose --env-file .env-go -f docker-compose-go.yml up -d
-   ```
-
-> [!WARNING]
-> Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
-
-详情请见 [Docker 配置说明](./docker/README.md)。
-
-## 🔧 源码编译 Docker 镜像
-
-Go 版镜像使用仓库根目录的 [Dockerfile_go](./Dockerfile_go)。构建需要 Docker BuildKit，并会读取 `infiniflow/ragflow_deps:latest` 中的模型与资源；首次构建须能获取该资源镜像。运行时还需配置外部 LLM 和 Embedding 服务。
+Go 版镜像使用仓库根目录的 [Dockerfile_go](./Dockerfile_go)。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -301,21 +281,11 @@ cd ragflow
 docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
 ```
 
-使用网络代理时，可传递代理构建参数；如需切换 Dockerfile 中的下载镜像源，可使用 `NEED_MIRROR=1`：
+构建依赖、代理参数、平台限制和启动验证步骤请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
-```bash
-docker build --platform linux/amd64 \
-  --build-arg HTTP_PROXY=http://YOUR_PROXY:PORT \
-  --build-arg HTTPS_PROXY=http://YOUR_PROXY:PORT \
-  --build-arg NEED_MIRROR=1 \
-  -f Dockerfile_go -t ragflow:go-local .
-```
+### 🔨 以源代码启动 Go 服务
 
-将 **docker/.env-go** 中的 `RAGFLOW_IMAGE` 设为 `ragflow:go-local`，再按上文启动。CPU 是默认部署方式；仓库也提供 GPU Compose 服务，但需 NVIDIA 容器运行环境。官方未提供 ARM64 镜像；若要尝试 ARM64，请在目标架构上构建，并先确认所选文档引擎及原生库可用。独立的[镜像构建指南](./docs/develop/build_docker_image.mdx)仍含旧构建步骤，以本节的 Go 构建命令为准。
-
-## 🔨 以源代码启动服务
-
-1. 克隆仓库，安装 `go.mod` 指定版本的 Go、支持 C++20 的 Clang、CMake >= 4.0、Linux 上的 lld，以及 PCRE2 开发文件。Go 服务依赖 CGO 和原生静态库；[build.sh](./build.sh) 会设置所需的构建参数。
+1. 克隆仓库，安装 `go.mod` 指定版本的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake >= 4.0，以及 PCRE2 开发文件。Go 服务依赖 CGO 和原生静态库；[build.sh](./build.sh) 会设置所需的构建参数。
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
@@ -326,12 +296,12 @@ docker build --platform linux/amd64 \
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub nltk
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
    bash build.sh --all
    ```
 
-   这里的 Python 只作为构建资源下载辅助工具，不参与 Go 服务运行，也不会启动任何 Python 后端。下载脚本需要 `requests`、`huggingface-hub` 和 `nltk`；如果已通过其他方式准备好相同的原生库和模型，可跳过这一步。
+   这里的 Python 脚本仅用于下载 Go 构建所需的原生库和模型资源；Go 服务运行不依赖 Python。下载脚本需要 `requests` 和 `huggingface-hub`；如果已通过其他方式准备好相同的原生库和模型，可跳过这一步。
 
 3. 启动本地依赖服务，并确认 **conf/service_conf.yaml** 中的主机与端口对应宿主机可访问的地址。此源码示例的 `localhost:6379` 连接 Compose 暴露的 Valkey；Go Docker 服务则在容器网络中连接 Kvrocks。Kvrocks 默认没有向宿主机开放端口，如需让源码服务使用 Kvrocks，必须另行开放端口并修改本地配置。
 
@@ -340,19 +310,34 @@ docker build --platform linux/amd64 \
      --profile ragflow-go --profile elasticsearch --profile metadata-mysql up -d
    ```
 
-4. 先迁移数据库，再分别在独立终端中按顺序启动 Go 服务（命令均在仓库根目录运行）：
+4. 先迁移数据库，再分别在 5 个独立终端中按顺序启动 Go 服务（命令均在仓库根目录运行）。每个终端都需要设置 `RAGFLOW_DEV_MODE=true`。迁移命令执行完成后即可关闭终端；Admin、Ingestor、Syncer 和 API 终端需要保持运行：
 
    ```bash
-   # 源码开发时允许当前构建版本使用开发中的数据库迁移标记
-   export RAGFLOW_DEV_MODE=true
-   ./bin/ragflow_server --migrate
-   ./bin/ragflow_server --admin
-   ./bin/ragflow_server --ingestor
-   ./bin/ragflow_server --syncer
-   ./bin/ragflow_server --api
+   # 终端 1：迁移数据库
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --migrate
+
+   # 终端 2：启动 Admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+
+   # 终端 3：启动 Ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+
+   # 终端 4：启动 Syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+
+   # 终端 5：启动 API
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
-   `RAGFLOW_DEV_MODE=true` 只用于源码开发环境，用来跳过当前代码版本与数据库迁移版本之间的降级保护。生产部署不要设置此变量。Admin 应先于其他服务启动。`bash build.sh --run` 可用于快速启动 Admin、Ingestor 和 API，但当前不会启动 Syncer，也不会代替独立的迁移步骤；需要数据同步时使用上述完整启动顺序。
+   各启动模式的作用如下：
+
+   - `--migrate`：执行数据库迁移，完成后即可退出。
+   - `--admin`：启动 Admin 服务，负责管理和初始化操作。
+   - `--ingestor`：启动 Ingestor 服务，负责数据摄取和解析任务。
+   - `--syncer`：启动 Syncer 服务，负责数据同步任务。
+   - `--api`：启动 API 服务，为 Web、SDK 和外部客户端提供接口。
+
+   `RAGFLOW_DEV_MODE=true` 用于 Go 源码开发时允许执行开发中的数据库迁移，生产部署不要设置此变量。Admin 应先于其他服务启动。`bash build.sh --run` 用于启动完整的 Go 服务链路，包括 Admin、Ingestor、Syncer 和 API；数据库迁移仍需先单独执行。
 
 5. 仅在前端开发时安装 Node.js 和 npm，然后启动 React 前端：
 

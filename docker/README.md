@@ -1,4 +1,6 @@
-# README
+# Go Docker 配置说明
+
+> **Go 版部署入口：** Go 版部署使用 `docker/.env-go` 和 `docker-compose-go.yml`。本文的配置说明以 Go 服务为准；`.env`、Python 镜像和旧 Compose 配置不作为 Go 版启动入口。
 
 <details open>
 <summary></b>📗 Table of Contents</b></summary>
@@ -12,8 +14,8 @@
 
 ## 🐳 Docker Compose
 
-- **docker-compose.yml**
-  Sets up environment for RAGFlow and its dependencies.
+- **docker-compose-go.yml**
+  Starts the Go RAGFlow services together with their dependencies.
 - **docker-compose-base.yml**
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
@@ -22,7 +24,7 @@
 
 ## 🐬 Docker environment variables
 
-The [.env](./.env) file contains important environment variables for Docker.
+The [.env-go](./.env-go) file contains the environment variables used by the Go Docker deployment. The base dependency services also read shared values from [.env](./.env); keep credentials and ports consistent when the same service is configured in both files.
 
 ### Metadata database
 
@@ -86,7 +88,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2`. The RAGFlow Docker image does not include embedding models.
+  The Go Docker image used by `docker-compose-go.yml`. Set it to a verified registry image or to the locally built `ragflow:go-local` tag. The RAGFlow Docker image does not include embedding models.
 
 
 > [!TIP]
@@ -178,7 +180,7 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 
 ## 🐋 Service configuration
 
-[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
+[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
@@ -294,11 +296,11 @@ If you want your instance to be available under `https`, follow these steps:
    - Certificate: `/etc/letsencrypt/live/your-ragflow-domain.com/fullchain.pem`
    - Private key: `/etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem`
 
-3. **Update docker-compose.yml**
-   Add the certificate volumes to the `ragflow` service in your `docker-compose.yml`:
+3. **Update docker-compose-go.yml**
+   Add the certificate volumes to the `ragflow-cpu` or `ragflow-gpu` service in `docker-compose-go.yml`:
    ```yaml
    services:
-     ragflow:
+     ragflow-cpu:
        # ...existing configuration...
        volumes:
          # SSL certificates
@@ -315,8 +317,8 @@ If you want your instance to be available under `https`, follow these steps:
 
 5. **Restart the services**
    ```bash
-   docker-compose down
-   docker-compose up -d
+   docker compose --env-file .env-go -f docker-compose-go.yml down
+   docker compose --env-file .env-go -f docker-compose-go.yml up -d
    ```
 
 
@@ -332,6 +334,6 @@ If you want your instance to be available under `https`, follow these steps:
 If you already have SSL certificates from another provider:
 
 1. Place your certificates in a directory accessible to Docker
-2. Update the volume paths in `docker-compose.yml` to point to your certificate files
+2. Update the volume paths in `docker-compose-go.yml` to point to your certificate files
 3. Ensure the certificate file contains the full certificate chain
 4. Follow steps 4-5 from the Let's Encrypt guide above

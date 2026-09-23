@@ -65,7 +65,7 @@ The optional listener supports two modes:
 | `host` | Every request is authenticated as its client. Prefer `Authorization: Bearer <key>`; `api_key`, `X-API-Key`, and `Api-Key` headers are also accepted. Both Streamable HTTP and SSE work in this mode. |
 | `self-host` (default) | Set `mcp.host_api_key` or `RAGFLOW_MCP_HOST_API_KEY` before startup. Every connected client uses the configured user's identity, regardless of its own headers. Restrict access to trusted clients. |
 
-The configured self-host key is checked at startup and for each request, so revoking it takes effect. Keep keys out of command arguments and committed files. The `/api/v1/mcp` API route always authenticates each client through its own `Authorization` header; listener launch modes do not change that route.
+Enabling the listener with its default `self-host` mode requires `mcp.host_api_key` or `RAGFLOW_MCP_HOST_API_KEY`; startup fails when that key is empty. The configured key is checked at startup and for each request, so revoking it takes effect. Keep keys out of command arguments and committed files. The `/api/v1/mcp` API route always authenticates each client through its own `Authorization` header; listener launch modes do not change that route.
 
 ## Docker
 
@@ -82,14 +82,4 @@ The checked-in Go Compose file does not publish port `9382` by default. `SVR_MCP
 
 ## Verify the endpoint
 
-In `host` mode, send an initialization request to the optional listener:
-
-```bash
-curl -sS http://127.0.0.1:9382/mcp \
-  -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
-```
-
-A successful response contains an MCP `result` with `serverInfo`. To check the API route, use your Go API address ending in `/api/v1/mcp` with the same per-client header. See [RAGFlow MCP Client Examples](./mcp_client_example.md) for Python and tool-call examples, and [RAGFlow MCP Tools](./mcp_tools.md) for the available tools.
+Use [RAGFlow MCP Client Examples](./mcp_client_example.md) to initialize the endpoint, list its tools, and call a tool. A successful initialization response contains an MCP `result` with `serverInfo`. For the API route, use your Go API address ending in `/api/v1/mcp`; for the optional listener, use its `/mcp` URL. See [RAGFlow MCP Tools](./mcp_tools.md) for the available tools.
