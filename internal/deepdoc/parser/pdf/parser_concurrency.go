@@ -26,7 +26,7 @@ import (
 // called by the server's backend wiring) and (b) used to size the page worker
 // pool. It is configurable: the server resolves it once at start from
 // CLI > env (RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY) > config
-// (deepdoc.inference_concurrency) > default 4, then injects it with
+// (ingestor.deepdoc.inference_concurrency) > default 1, then injects it with
 // SetDeepDocConcurrency. Callers read it via DeepDocConcurrency(); they never
 // have to reason about the precedence themselves.
 //

@@ -259,7 +259,7 @@ const (
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
 	// Runs may be in flight at once (each uses one core). It overrides the
-	// deepdoc.inference_concurrency config key and is itself overridden by the
+	// ingestor.deepdoc.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
 )
