@@ -536,6 +536,56 @@ func TestVisionEnhancement_BoundsConcurrentOCRMediaAcrossInvokes(t *testing.T) {
 	}
 }
 
+func TestVisionEnhancement_OCRBudgetBoundsAdmissionWait(t *testing.T) {
+	admission := sharedOCRMediaAdmission()
+	releases := make([]func(), 0, cap(admission.slots))
+	for range cap(admission.slots) {
+		release, err := admission.acquire(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, release)
+	}
+	done := make(chan error, 1)
+	finished := false
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+		if !finished {
+			<-done
+		}
+	}()
+
+	originalInvokeBudget := visionOCRInvokeBudget
+	visionOCRInvokeBudget = 100 * time.Millisecond
+	t.Cleanup(func() { visionOCRInvokeBudget = originalInvokeBudget })
+	result := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"doc_type_kwd": "image",
+			"image":        visionTestPNGBase64(t),
+		}},
+	}
+	go func() {
+		_, _, err := maybeDispatchVisionEnhancement(
+			t.Context(), nil, utility.FileTypeXLSX, result, nil,
+			map[string]schema.ParserSetup{"xlsx": {}},
+		)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		finished = true
+		if err != nil {
+			t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("media admission wait exceeded the 100ms OCR invoke budget")
+	}
+}
+
 func TestVisionEnhancement_OCRInvokeBudgetFallsBackToVLM(t *testing.T) {
 	analyzer := &budgetVisionOCRAnalyzer{}
 	originalFactory := deepdoctype.NativeDocAnalyzerFactory

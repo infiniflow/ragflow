@@ -140,7 +140,7 @@ func isValidBase64(s string) bool {
 // (the only form available without a native renderer). Close releases any
 // re-acquired engine so native handles are not leaked.
 type visionImageCropper interface {
-	Crop(item map[string]any) (*visionImage, error)
+	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
 }
 
@@ -247,6 +247,9 @@ func maybeDispatchVisionEnhancement(
 		if err := ctx.Err(); err != nil {
 			break
 		}
+		if ocrCtx.Err() != nil && !vlmReady {
+			break
+		}
 		vlmSlot := false
 		if vlmReady {
 			select {
@@ -261,23 +264,34 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
-			release, err := sharedOCRMediaAdmission().acquire(ctx)
+			mediaParent := ctx
+			if !vlmReady {
+				mediaParent = ocrCtx
+			}
+			itemCtx, cancelItem := context.WithTimeout(mediaParent, visionOCRItemBudget)
+			defer cancelItem()
+			release, err := sharedOCRMediaAdmission().acquire(itemCtx)
 			if err != nil {
+				if ctx.Err() == nil && vlmReady {
+					if payload, _ := dispatched.JSON[itemIdx]["image"].(string); payload != "" {
+						resource = &visionImage{VLMData: payload}
+					}
+				}
 				return
 			}
 			defer release()
 			item := dispatched.JSON[itemIdx]
 			if imagePayload, _ := item["image"].(string); imagePayload == "" && hasHTMLLocation {
-				resolveHTMLImageSource(ctx, htmlBucket, htmlPath, item)
+				resolveHTMLImageSource(itemCtx, htmlBucket, htmlPath, item)
 			}
-			resource, err = cropper.Crop(item)
+			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				return
 			}
 			if imageWithinOCRLimits(resource.Raster) && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending && ocrCtx.Err() == nil {
-				itemCtx, cancelItem := context.WithTimeout(ocrCtx, visionOCRItemBudget)
-				text, ocrErr := runLocalImageOCRImage(itemCtx, resource.Raster)
-				cancelItem()
+				ocrItemCtx, cancelOCRItem := context.WithTimeout(ocrCtx, visionOCRItemBudget)
+				text, ocrErr := runLocalImageOCRImage(ocrItemCtx, resource.Raster)
+				cancelOCRItem()
 				if ocrErr == nil && strings.TrimSpace(text) != "" {
 					appendItemText(dispatched.JSON[itemIdx], strings.TrimSpace(text))
 					modified = true
