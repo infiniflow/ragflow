@@ -246,6 +246,105 @@ check_ort_version_consistency() {
     echo -e "${GREEN}✓ ONNX Runtime native version consistent: ${env_go}${NC}"
 }
 
+# Check the ONNX Runtime static archive the Go DeepDoc backend links.
+#
+# This mirrors check_office_oxide_deps: it verifies the on-disk archive
+# actually matches the released artifact, so a stale/incompatible .a — one
+# re-issued under the SAME release tag and asset name, or an older download —
+# fails fast HERE with an actionable message, instead of producing a binary
+# that links fine but crashes at runtime when the shared-initializer feature
+# (SessionGetInitializer*, added by infiniflow/ragflow-build) runs.
+#
+# The onnxruntime_go binding reaches ORT purely through the OrtApi
+# function-pointer table (onnxruntime_go/shared_initializer.go ->
+# onnxruntime_wrapper.c -> ort_api->SessionGetInitializer*), so a stale .a
+# that lacks those custom slots links successfully and only fails at runtime.
+# The check below catches that by comparing the local release ZIP against the
+# published {asset}.sha256 sidecar (same source of truth the download scripts
+# use). Devs who ran a download script have the zip under ragflow_deps/; CI
+# seeds from /opt and has no zip, where the bake is authoritative.
+check_onnxruntime_deps() {
+    local ort_version
+    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+        "${PROJECT_ROOT}/internal/common/environments.go" \
+        | sed -E 's/.*"([^"]+)".*/\1/')"
+    if [ -z "$ort_version" ]; then
+        echo -e "${RED}Error: cannot parse DeepDocORTVersion from internal/common/environments.go${NC}" >&2
+        return 1
+    fi
+
+    # Locate the ORT static archives under the version dir. Populate the
+    # globals ORT_A_FILES (space-separated .a paths) and ORT_A_SHA256 (sha256
+    # of the primary libonnxruntime.a) for the caller's version-stamped
+    # cache path.
+    ORT_A_FILES=""
+    local primary=""
+    local f
+    while IFS= read -r f; do
+        case "$(basename "$f")" in
+            *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
+        esac
+        case "$f" in
+            */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
+                ORT_A_FILES="$ORT_A_FILES $f"
+                [ -z "$primary" ] && primary="$f"
+                case "$(basename "$f")" in
+                    libonnxruntime.a) primary="$f" ;;
+                esac
+                ;;
+        esac
+    done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
+
+    if [ -z "$ORT_A_FILES" ]; then
+        local avail
+        avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
+            -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+        echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
+        echo "  available: ${avail:-<none>}" >&2
+        echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
+        echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
+        echo "  or pre-seed /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        return 1
+    fi
+
+    # Pinned sha256 of the published onnxruntime-v${ort_version} archive.
+    #
+    # Upstream does not re-issue this archive, so we pin the digest here and
+    # verify the LOCAL copy against it — no network access at build time. This
+    # replaces the previous check that fetched the .sha256 sidecar over the
+    # network on every build, which hung the build when the machine was offline
+    # or GitHub was unreachable (curl had no connect timeout).
+    #
+    # A mismatch means the local copy is corrupt or stale; we only WARN (not
+    # fail) so a one-off re-issue cannot break the build. The download scripts
+    # (ragflow_deps/download_go_deps.py, download_deps.py) still verify against
+    # the published sidecar at download time, so a re-issued archive is picked
+    # up on the next download.
+    local asset="onnxruntime-v${ort_version}-linux-x86_64.zip"
+    local zip_path="${PROJECT_ROOT}/ragflow_deps/${asset}"
+    local expected="439308c93822d26cf04341cab3e77c595bbe88a12b54043210d14a0ca5574bd1"
+    if [ -f "$zip_path" ]; then
+        local actual
+        actual="$(sha256sum "$zip_path" | awk '{print $1}')"
+        if [ "$actual" != "$expected" ]; then
+            echo -e "${YELLOW}Warning: ONNX Runtime archive ${asset} sha256 mismatch${NC}" >&2
+            echo "  expected sha256: $expected" >&2
+            echo "  local    sha256: $actual" >&2
+            echo "  The local copy may be corrupt or stale. Refresh it with:" >&2
+            echo "    rm -f ${zip_path}" >&2
+            echo "    uv run python3 ragflow_deps/download_go_deps.py   # or ragflow_deps/download_deps.py" >&2
+        else
+            echo "  ✓ ${asset} sha256 matches pinned digest"
+        fi
+    else
+        echo "  (no local ${asset}; skipping sha256 check — CI seed assumed authoritative)"
+    fi
+
+    # Content hash of the primary archive for the version-stamped cache path.
+    ORT_A_SHA256="$(sha256sum "$primary" | awk '{print $1}')"
+    echo "✓ onnxruntime v${ort_version} static lib verified under $ONNXRUNTIME_STATIC_PREFIX"
+}
+
 # Check office_oxide native library
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
@@ -690,82 +789,57 @@ setup_cgo_env() {
     # below. Mirrors the existing _seed_from_system calls for the other
     # native libs so CI never downloads ORT at build/test time.
     _seed_from_system "onnxruntime" || true
-    if [ -d "$ONNXRUNTIME_STATIC_PREFIX" ]; then
-        # Collect every .a, but skip GPU-only providers we never build
-        # against (would pull in CUDA/cuDNN/TensorRT which we don't ship).
-        #
-        # Select the ORT static lib that matches the Go deepdoc backend's
-        # required version (DeepDocORTVersion in internal/common/environments.go).
-        # Go and Python build/link against independent ORT versions, so the
-        # static_lib prefix legitimately holds more than one
-        # onnxruntime-linux-x64-static_lib-* dir at once (e.g. the Python-side
-        # 1.23.x next to the Go-side 1.29.0). We pick the dir that matches
-        # DeepDocORTVersion rather than failing when a second version dir is
-        # present. This avoids silently linking the wrong version while still
-        # keeping the bake self-documenting.
-        local ort_version
-        ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
-            "${PROJECT_ROOT}/internal/common/environments.go" \
-            | sed -E 's/.*"([^"]+)".*/\1/')"
-        if [ -z "$ort_version" ]; then
-            echo "  Error: cannot parse DeepDocORTVersion from internal/common/environments.go" >&2
-            return 1
-        fi
-        local ort_a=""
-        while IFS= read -r f; do
-            case "$(basename "$f")" in
-                *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
-            esac
-            case "$f" in
-                # Only collect .a from the dir matching the required version.
-                */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
-                    ort_a="$ort_a $f" ;;
-            esac
-        done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
+    check_onnxruntime_deps || return 1
 
-        if [ -n "$ort_a" ]; then
-            # Export exactly one symbol (OrtGetApiBase) for the binding's
-            # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
-            # with "local: *", which hides Go's runtime type symbols and breaks
-            # the PIE absolute relocations). No --whole-archive, so GNU ld's
-            # archive-level GC drops any ORT kernel/EP object nothing references.
-            #
-            # The dynamic list is written to a STABLE, project-scoped path (not
-            # mktemp) so CGO_LDFLAGS is reproducible across builds and survives
-            # across invocations; its content never changes, so overwriting is
-            # safe and nothing leaks in /tmp. .cache/ is gitignored.
-            local ort_dynamic_list="${PROJECT_ROOT}/.cache/ort_dynamic_list.txt"
-            mkdir -p "$(dirname "$ort_dynamic_list")"
-            printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
-            # --undefined=OrtGetApiBase force-pulls the archive member that
-            # defines OrtGetApiBase (the Go binding reaches ORT only via
-            # dlsym("OrtGetApiBase"), so nothing references it at link time and
-            # it would otherwise be GC'd). From there the minimal build's CPU-EP
-            # registration call chain pulls in the operators the models use.
-            # The explicit space between $ort_dynamic_list and $ort_a keeps the
-            # two as separate linker arguments regardless of $ort_a's leading
-            # space.
-            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a -lstdc++"
-            echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
-            # The re2 regex-library collision between onnxruntime.a and
-            # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
-            # the tokenizer's bundled re2 symbols are renamed into a private
-            # namespace (ragtokre2_) so the two re2 copies never share a symbol
-            # name. --dynamic-list (above) exports OrtGetApiBase into the process
-            # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
-            # lookup needs at runtime (no --export-dynamic required).
-        else
-            local avail
-            avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
-                -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
-            echo "  Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX" >&2
-            echo "    available: ${avail:-<none>}" >&2
-            echo "    DeepDocORTVersion=${ort_version}; bake/download the matching ORT (or update DeepDocORTVersion)." >&2
-            return 1
-        fi
-    else
-        echo "  onnxruntime static_lib not found ($ONNXRUNTIME_STATIC_PREFIX); the in-process DeepDoc backend cannot link ORT" >&2
-    fi
+    # Version-stamp the archive paths so an in-place .a upgrade invalidates
+    # Go's build cache. Go's cache keys CGO_LDFLAGS as a string and does NOT
+    # hash the referenced .a contents, so swapping the .a in place (same path,
+    # e.g. a re-issue under the same tag/asset name) silently reuses a stale
+    # linked binary. Stamp with the primary archive's sha256 so the flag string
+    # changes when the content changes → automatic relink.
+    local ort_version
+    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+        "${PROJECT_ROOT}/internal/common/environments.go" \
+        | sed -E 's/.*"([^"]+)".*/\1/')"
+    local ort_versioned_dir="${ONNXRUNTIME_STATIC_PREFIX}/v${ort_version}-${ORT_A_SHA256:0:16}"
+    mkdir -p "$ort_versioned_dir"
+    local ort_a_versioned=""
+    local f
+    for f in $ORT_A_FILES; do
+        ln -sf "$f" "$ort_versioned_dir/$(basename "$f")"
+        ort_a_versioned="$ort_a_versioned $ort_versioned_dir/$(basename "$f")"
+    done
+
+    # Export exactly one symbol (OrtGetApiBase) for the binding's
+    # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
+    # with "local: *", which hides Go's runtime type symbols and breaks
+    # the PIE absolute relocations). No --whole-archive, so GNU ld's
+    # archive-level GC drops any ORT kernel/EP object nothing references.
+    #
+    # The dynamic list is written to a STABLE, project-scoped path (not
+    # mktemp) so CGO_LDFLAGS is reproducible across builds and survives
+    # across invocations; its content never changes, so overwriting is
+    # safe and nothing leaks in /tmp. .cache/ is gitignored.
+    local ort_dynamic_list="${PROJECT_ROOT}/.cache/ort_dynamic_list.txt"
+    mkdir -p "$(dirname "$ort_dynamic_list")"
+    printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
+    # --undefined=OrtGetApiBase force-pulls the archive member that
+    # defines OrtGetApiBase (the Go binding reaches ORT only via
+    # dlsym("OrtGetApiBase"), so nothing references it at link time and
+    # it would otherwise be GC'd). From there the minimal build's CPU-EP
+    # registration call chain pulls in the operators the models use.
+    # The explicit space between $ort_dynamic_list and the versioned .a
+    # list keeps the two as separate linker arguments regardless of the
+    # list's leading space.
+    export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a_versioned -lstdc++"
+    echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
+    # The re2 regex-library collision between onnxruntime.a and
+    # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
+    # the tokenizer's bundled re2 symbols are renamed into a private
+    # namespace (ragtokre2_) so the two re2 copies never share a symbol
+    # name. --dynamic-list (above) exports OrtGetApiBase into the process
+    # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
+    # lookup needs at runtime (no --export-dynamic required).
 
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in

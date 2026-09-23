@@ -351,6 +351,241 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	}
 }
 
+// TestListScopesSearchToDocumentDataset pins the dataset scope of the
+// management chunk list: only the document's own KB may be searched. Passing
+// every KB of the tenant made a document of dataset A list chunks that were
+// written under dataset B's KB context (chunk rows carry img_id
+// "<kb_id>-<chunk_id>"), which the UI surfaced as "occasionally seeing another
+// dataset's chunks".
+func TestListScopesSearchToDocumentDataset(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+
+	ctx := t.Context()
+	page := 1
+	size := 30
+	if _, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if !reflect.DeepEqual(engine.searchReq.KbIDs, []string{datasetID}) {
+		t.Fatalf("KbIDs = %#v, want the document's dataset only (%q)", engine.searchReq.KbIDs, datasetID)
+	}
+}
+
+// TestGetScopesChunkLookupToDocumentDataset pins the detail endpoint's scope:
+// the chunk is read from the dataset named in the route only, never from every
+// KB of the tenant.
+func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"id":                  "chunk-1",
+		"doc_id":              documentID,
+		"kb_id":               datasetID,
+		"docnm_kwd":           "doc.txt",
+		"content_with_weight": "invoice body",
+		"content_ltks":        []string{"invoice", "body"},
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	resp, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !reflect.DeepEqual(engine.datasetIDs, []string{datasetID}) {
+		t.Fatalf("datasetIDs = %#v, want the route's dataset only (%q)", engine.datasetIDs, datasetID)
+	}
+	if engine.chunkID != "chunk-1" {
+		t.Fatalf("chunkID = %q, want chunk-1", engine.chunkID)
+	}
+	if engine.indexName != "ragflow_"+tenantID {
+		t.Fatalf("indexName = %q, want ragflow_%s", engine.indexName, tenantID)
+	}
+	if got := resp.Chunk["content_with_weight"]; got != "invoice body" {
+		t.Fatalf("content_with_weight = %#v, want invoice body", got)
+	}
+	// Python returns the stored row (minus runtime fields), so the row identity
+	// fields survive the round trip.
+	if got := resp.Chunk["id"]; got != "chunk-1" {
+		t.Fatalf("id = %#v, want chunk-1", got)
+	}
+	if got := resp.Chunk["docnm_kwd"]; got != "doc.txt" {
+		t.Fatalf("docnm_kwd = %#v, want doc.txt", got)
+	}
+	if _, ok := resp.Chunk["content_ltks"]; ok {
+		t.Fatal("content_ltks should be stripped like Python's _strip_chunk_runtime_fields")
+	}
+}
+
+// TestGetRejectsChunkOfAnotherDocument pins the doc_id guard: holding a chunk id
+// is not authority to read it through a different document.
+func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"doc_id":              "doc-2",
+		"content_with_weight": "other document body",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("Get() error = %v, want chunk not found", err)
+	}
+}
+
+// TestGetRequiresDocumentInRouteDataset pins the document guard: the chunk is
+// only readable through a document that exists in the route's dataset,
+// mirroring Python's DocumentService.query(id=document_id, kb_id=dataset_id).
+func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, "doc-2", otherDatasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"doc_id":              "doc-2",
+		"content_with_weight": "other dataset document body",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: "doc-missing",
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "document not found") {
+		t.Fatalf("Get() error = %v, want document not found", err)
+	}
+
+	_, err = svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: "doc-2",
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "document does not belong to this dataset") {
+		t.Fatalf("Get() error = %v, want document does not belong to this dataset", err)
+	}
+}
+
+// TestIsChunkRuntimeField pins the strip rule's Python-parity semantics
+// (_vec$|_sm_|_tks|_ltks — only _vec is end-anchored): tokenized/vector runtime
+// fields are dropped, stored fields survive.
+func TestIsChunkRuntimeField(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"content_ltks", true},
+		{"content_sm_ltks", true},
+		{"tokenized_content_ltks", true},
+		{"title_tks", true},
+		{"title_sm_tks", true},
+		{"authors_sm_tks", true},
+		{"important_tks", true},
+		{"question_tks", true},
+		{"name_tks", true},
+		{"tags_tks", true},
+		{"q_1024_vec", true},
+		{"q_2_vec", true},
+		// Only _vec is anchored at the end, so an index-shaped name is kept.
+		{"q_2_vec_idx", false},
+		{"content_with_weight", false},
+		{"content", false},
+		{"docnm_kwd", false},
+		{"doc_id", false},
+		{"kb_id", false},
+		{"important_kwd", false},
+		{"question_kwd", false},
+		{"compile_kwd", false},
+		{"tag_kwd", false},
+		{"tag_feas", false},
+		{"mom_id", false},
+		{"position_int", false},
+		{"img_id", false},
+		{"available_int", false},
+	}
+	for _, tc := range cases {
+		if got := isChunkRuntimeField(tc.name); got != tc.want {
+			t.Errorf("isChunkRuntimeField(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
@@ -1275,6 +1510,28 @@ type listChunksSearchEngine struct {
 	searchReq *types.SearchRequest
 }
 
+type getChunkTestEngine struct {
+	parseTestDocEngine
+	chunk      map[string]interface{}
+	err        error
+	indexName  string
+	chunkID    string
+	datasetIDs []string
+}
+
+func (e *getChunkTestEngine) GetChunk(_ context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
+	e.indexName = baseName
+	e.chunkID = chunkID
+	e.datasetIDs = datasetIDs
+	if e.err != nil {
+		return nil, e.err
+	}
+	if e.chunk == nil {
+		return nil, nil
+	}
+	return e.chunk, nil
+}
+
 func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchReq = req
 	return &types.SearchResult{
@@ -1339,8 +1596,15 @@ func (s *chunkImageStorage) ListObjects(ctx context.Context, bucket string, tena
 func (s *chunkImageStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (s *chunkImageStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return s.exists, nil
+}
+func (s *chunkImageStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (s *chunkImageStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	return false
 }

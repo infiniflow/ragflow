@@ -39,7 +39,7 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/rag/agentic-rag"
+	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -65,7 +65,7 @@ import (
 	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
@@ -79,7 +79,6 @@ type serverArgs struct {
 	helpFlag      bool
 	versionFlag   bool
 	logLevel      *string
-	migrateDB     bool    // migrate mode: apply the migrations, then exit
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -88,13 +87,16 @@ type serverArgs struct {
 	name          *string // server name
 	enablePProf   bool    // enable pprof
 
+	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
+	// concurrency from env/config. nil means "unspecified".
+	deepdocInferenceConcurrency *int
 }
 
 func parseArgs() (*serverArgs, error) {
 	args := &serverArgs{}
 
+	// Mode flags share one variable, so the last one passed wins.
 	var serverMode string
-	var serverModeSelected bool
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
@@ -106,34 +108,38 @@ func parseArgs() (*serverArgs, error) {
 				}
 				args.logLevel = &value
 				continue
+			case "--deepdoc-inference-concurrency":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+				}
+				args.deepdocInferenceConcurrency = &n
+				continue
 			}
 		}
 
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--ingestor":
 			serverMode = "ingestor"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--api":
 			serverMode = "api"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--syncer":
 			serverMode = "syncer"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--deepdoc":
 			serverMode = "deepdoc"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--migrate":
 			serverMode = "migrate"
 			args.mode = &serverMode
-			args.migrateDB = true
 		case "-h", "--help":
 			args.helpFlag = true
 		case "-v", "--version":
@@ -194,14 +200,24 @@ func parseArgs() (*serverArgs, error) {
 			args.name = &os.Args[i]
 		case "--profile":
 			args.enablePProf = true
+		case "--deepdoc-inference-concurrency":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-concurrency requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+			}
+			args.deepdocInferenceConcurrency = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
 
-	if args.migrateDB && serverModeSelected {
-		return nil, errors.New("--migrate cannot be combined with a server mode")
-	}
 	return args, nil
 }
 
@@ -224,6 +240,28 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	}
 
 	return configured
+}
+
+// resolveDeepDocInferenceConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(4) and returns the
+// resolved DeepDoc inference concurrency budget.
+func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
+	val := 4
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			val = n
+		}
+	}
+	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
+	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
+	// value is already positive; no extra >0 guard is needed here.
+	if args.deepdocInferenceConcurrency != nil {
+		val = *args.deepdocInferenceConcurrency
+	}
+	return val
 }
 
 func printHelp(args *serverArgs) {
@@ -431,7 +469,7 @@ func main() {
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		registerNativeDeepDoc()
+		registerNativeDeepDoc(arguments)
 	default:
 	}
 
@@ -453,13 +491,14 @@ func main() {
 	// downgrade check nor any of the engines started below, so it can run
 	// before any server mode boots (see docker/entrypoint-go.sh and
 	// docker/launch_backend_service.sh).
-	if arguments.migrateDB {
+	migrate := *arguments.mode == "migrate"
+	if migrate {
 		common.Info("Running database migrations")
 	}
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	if err = dao.InitDB(ctx, migrate); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
-	if arguments.migrateDB {
+	if migrate {
 		common.Info("Database migrations completed")
 		return
 	}
@@ -1391,7 +1430,7 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // Fail-fast contract (P0): the in-process backend must be available at startup
 // (ORT + models present). There is NO silent degradation to an empty analyzer:
 // if the backend is not serving, the server aborts.
-func registerNativeDeepDoc() {
+func registerNativeDeepDoc(arguments *serverArgs) {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1414,13 +1453,15 @@ func registerNativeDeepDoc() {
 		zap.String("model_dir", modelDir))
 
 	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Register it with the native gate every inference
-	// call passes through (internal/deepdoc/native/inference_limit.go); without
-	// this the process would let every page worker call inference at once.
-	limit := pdf.DeepDocConcurrency()
-	native.SetInferenceLimit(limit)
+	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
+	// and register it with the native gate every inference call passes through
+	// (internal/deepdoc/native/inference_limit.go); without this the process
+	// would let every page worker call inference at once.
+	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
+	pdf.SetDeepDocConcurrency(budget)
+	native.SetInferenceLimit(budget)
 	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", limit),
+		zap.Int("max_concurrent_inference", budget),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 }
 

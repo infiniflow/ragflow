@@ -21,6 +21,14 @@ if (typeof globalThis.TransformStream === 'undefined') {
   Object.assign(globalThis, { TransformStream });
 }
 
+// jsdom does not implement CSS.supports; css-support.ts calls it at module scope
+if (typeof globalThis.CSS === 'undefined') {
+  (globalThis as Record<string, unknown>).CSS = {};
+}
+if (typeof globalThis.CSS.supports !== 'function') {
+  globalThis.CSS.supports = () => false;
+}
+
 // Vite's import.meta.glob is rewritten to this stub by jest-esbuild-transformer.cjs
 (globalThis as Record<string, unknown>).jestImportMetaGlob = () => ({});
 

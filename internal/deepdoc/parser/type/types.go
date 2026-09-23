@@ -171,7 +171,6 @@ func CollectFigures(sections []Section) []Section {
 
 // TableItem represents a detected table or figure region.
 type TableItem struct {
-	ImageB64  string
 	Rows      [][]string
 	Cells     []TSRCell
 	Positions []Position

@@ -86,7 +86,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 && \
+    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fonts-noto-cjk fontconfig && \
     rm -rf /var/lib/apt/lists/*
 
 # Download resource from GitHub to /usr/share/infinity

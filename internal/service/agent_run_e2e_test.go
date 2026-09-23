@@ -327,8 +327,8 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	}
 	if !strings.HasPrefix(secondHistory[0], "assistant: ") ||
 		!strings.Contains(secondHistory[0], `'content': '["user: hi"]'`) ||
-		!strings.Contains(secondHistory[0], `'downloads': []`) {
-		t.Fatalf("assistant history entry = %q, want persisted Message content and downloads", secondHistory[0])
+		strings.Contains(secondHistory[0], `'downloads': []`) {
+		t.Fatalf("assistant history entry = %q, want raw Agent output without Message presentation fields", secondHistory[0])
 	}
 	if secondHistory[1] != "user: again" || secondHistory[2] != "user: hi" {
 		t.Fatalf("sorted user history = %#v, want [user: again, user: hi]", secondHistory[1:])

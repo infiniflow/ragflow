@@ -192,6 +192,10 @@ type Provider struct {
 	Features    Features          `json:"features"`
 	Class       string            `json:"class"`
 	ModelDriver ModelDriver
+	// URLHint is a display-only example endpoint shown as the URL input's
+	// placeholder. Unlike URL, it is never used to build requests and never
+	// pre-fills the form.
+	URLHint string `json:"url_hint"`
 }
 
 // ProviderManager manages provider and model operations
@@ -387,6 +391,9 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 			"url":         provider.URL,
 			"model_types": modelTypes,
 			"url_suffix":  provider.URLSuffix,
+		}
+		if provider.URLHint != "" {
+			providerData["url_hint"] = provider.URLHint
 		}
 		providers = append(providers, providerData)
 	}
