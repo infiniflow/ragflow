@@ -1,8 +1,19 @@
 import asyncio
+import sys
 from functools import partial
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+
+try:
+    import cv2  # noqa: F401 — availability probe only
+except ImportError:
+    # Preflight runners may lack the system OpenGL lib (libGL.so.1) required
+    # by the non-headless opencv build pulled in via deepdoc vision OCR.
+    # These tests never touch vision/OCR, so fall back to a stub instead of
+    # breaking test collection on such runners.
+    sys.modules["cv2"] = MagicMock()
 
 from agent.component.agent_with_tools import Agent
 
