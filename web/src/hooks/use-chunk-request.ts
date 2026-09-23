@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { evictDocumentImage } from '@/components/image';
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
@@ -101,6 +102,15 @@ export const useCreateChunk = () => {
       });
       if (data.code === 0) {
         message.success(t('message.created'));
+        const updatedChunkId = payload.chunk_id || payload.id;
+        if (payload.image_base64 && updatedChunkId) {
+          // Replacing a chunk's image keeps its img_id, so every mounted
+          // <Image> would keep showing the previous picture.
+          evictDocumentImage(
+            updatedChunkId,
+            payload.doc_id || payload.document_id,
+          );
+        }
         setTimeout(() => {
           queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
         }, 1000); // Delay to ensure the list is updated
@@ -176,7 +186,9 @@ export const useFetchNextChunkList = (
         kb_id: knowledgeId,
         doc_id: documentId,
         page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length ? chunkIds.length : Math.min(pagination.pageSize, 100),
+        size: chunkIds?.length
+          ? chunkIds.length
+          : Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
         chunk_ids: chunkIds,
