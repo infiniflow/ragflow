@@ -361,6 +361,16 @@ def _ensure_go_model_setup(auth):
     for (provider_name, instance_name), required_models in _GO_REQUIRED_MODELS.items():
         model_names, error = _go_instance_models(auth, provider_name, instance_name)
         if model_names is None:
+            response = requests.put(
+                url=HOST_ADDRESS + "/api/v1/providers",
+                headers=authorization,
+                json={"provider_name": provider_name},
+                timeout=60,
+            )
+            payload = _response_json_or_warning(response, f"add {provider_name} provider")
+            if payload.get("code") != 0:
+                pytest.exit(f"Critical error adding Go model provider {provider_name}: {payload.get('message', error)}")
+
             instance_payload = {
                 "instance_name": instance_name,
                 "api_key": ZHIPU_AI_API_KEY if provider_name == "ZHIPU-AI" else SILICONFLOW_API_KEY,
