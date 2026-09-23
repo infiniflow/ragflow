@@ -1215,7 +1215,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 				// already quoted verbatim by a pooled claim →
 				// skip the full passage (table chunks exempt: their answer rows
 				// survive only in full text). Not pooled, not passed to the model.
-				if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
+				if p.CoveredByClaim(cid, covered, isTableChunk(c)) {
 					continue
 				}
 				seen[cid] = true
@@ -1802,7 +1802,7 @@ func passageFromChunk(c map[string]any) map[string]any {
 // list_chunks used to build its own dict, which is how an 8275-code-point standings table reached
 // the model as raw <table> markup. The shared pool keeps the RAW chunk for citation.
 func passageContent(c map[string]any) string {
-	if IsTableChunk(c) {
+	if isTableChunk(c) {
 		return tableViewOrRaw(ChunkTextOf(c))
 	}
 	return TruncateRunes(ChunkTextOf(c), 1200)

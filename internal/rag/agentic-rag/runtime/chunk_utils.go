@@ -88,10 +88,9 @@ func snippet(s string, limit int) string {
 	return strings.TrimRightFunc(string(r[:limit]), unicode.IsSpace) + "..."
 }
 
-// IsTableChunk: / _is_table_text: a corpus-neutral
-// table detector — HTML table markup, or >=3 pipe rows. Exported so the
-// orchestrator and the bridge share one implementation.
-func IsTableChunk(c map[string]any) bool {
+// isTableChunk: / _is_table_text: a corpus-neutral table detector — HTML table markup, or
+// >=3 pipe rows.
+func isTableChunk(c map[string]any) bool {
 	return isTableText(ChunkTextOf(c))
 }
 

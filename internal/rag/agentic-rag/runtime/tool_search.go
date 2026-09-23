@@ -1517,7 +1517,7 @@ func grepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		// read like a search that ran and came back empty.
 		return nil, nil
 	}
-	terms := GrepTermsFromQuery(query)
+	terms := grepTermsForLocate(query)
 	pattern := grepPatternOf(query)
 	if pattern != nil {
 		// The operands of a pattern ARE its recall terms (see grepPatternOperands):
@@ -1576,7 +1576,7 @@ func grepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 
 	var table, prose []map[string]any
 	for _, c := range chunks {
-		if IsTableChunk(c) {
+		if isTableChunk(c) {
 			table = append(table, c)
 		} else {
 			prose = append(prose, c)
@@ -1755,7 +1755,7 @@ func webSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			// Passage shape: {"id","content"} (no doc_id), non-table text cut to 1200 code
 			// points (plain slice, no ellipsis).
 			content := r
-			if !IsTableChunk(c) {
+			if !isTableChunk(c) {
 				content = TruncateRunes(content, 1200)
 			}
 			payload = append(payload, map[string]any{"id": chunkID, "content": content})
@@ -1863,7 +1863,7 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 			}
 			// already quoted verbatim by a pooled claim →
 			// skip the full passage (table chunks exempt).
-			if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
+			if p.CoveredByClaim(cid, covered, isTableChunk(c)) {
 				continue
 			}
 			seen[cid] = true

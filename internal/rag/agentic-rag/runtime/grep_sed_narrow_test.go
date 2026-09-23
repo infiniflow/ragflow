@@ -21,37 +21,37 @@ import (
 	"testing"
 )
 
-// TestGrepTermsFromQueryCJK pins the derivation a Chinese query needs.
+// TestGrepTermsForLocateCJK pins the derivation a Chinese query needs.
 //
 // The alnum-only original yields NO term for Chinese, and grepSearch's own guard
 // (`if not chunks or not terms: return res`) then returns whole chunks: measured
 // on a Chinese question, the "Keyword-first locate" line was logged, a narrowed
 // line never was, and every hit was a ~1200-char chunk.
-func TestGrepTermsFromQueryCJK(t *testing.T) {
+func TestGrepTermsForLocateCJK(t *testing.T) {
 	// An alternation is the caller's own term list (the count protocol batches its
 	// probes as 名|名|名), so it is split as-is — predicates included.
-	if got := GrepTermsFromQuery("颜良|文丑|荀正"); !cjkTermsEqual(got, []string{"颜良", "文丑", "荀正"}) {
+	if got := grepTermsForLocate("颜良|文丑|荀正"); !cjkTermsEqual(got, []string{"颜良", "文丑", "荀正"}) {
 		t.Errorf("alternation terms = %v, want 颜良 文丑 荀正", got)
 	}
-	if got := GrepTermsFromQuery("关羽|斩"); !cjkTermsEqual(got, []string{"关羽", "斩"}) {
+	if got := grepTermsForLocate("关羽|斩"); !cjkTermsEqual(got, []string{"关羽", "斩"}) {
 		t.Errorf("alternation with a one-rune predicate = %v, want 关羽 斩", got)
 	}
-	if got := GrepTermsFromQuery("关羽|关羽|关羽"); !cjkTermsEqual(got, []string{"关羽"}) {
+	if got := grepTermsForLocate("关羽|关羽|关羽"); !cjkTermsEqual(got, []string{"关羽"}) {
 		t.Errorf("alternation terms = %v, want a single deduped term", got)
 	}
 
 	// Space-separated Chinese keeps its tokens; a lone character is a particle.
-	if got := GrepTermsFromQuery("关羽 斩颜良 文丑"); !cjkTermsEqual(got, []string{"关羽", "斩颜良", "文丑"}) {
+	if got := grepTermsForLocate("关羽 斩颜良 文丑"); !cjkTermsEqual(got, []string{"关羽", "斩颜良", "文丑"}) {
 		t.Errorf("split terms = %v", got)
 	}
-	if got := GrepTermsFromQuery("关羽 斩 文丑"); !cjkTermsEqual(got, []string{"关羽", "文丑"}) {
+	if got := grepTermsForLocate("关羽 斩 文丑"); !cjkTermsEqual(got, []string{"关羽", "文丑"}) {
 		t.Errorf("split terms = %v, want the one-rune particle dropped outside an alternation", got)
 	}
 
 	// An unbroken clause has no token at all, so its two-rune windows stand in:
 	// the names in the clause still locate, and windows that occur nowhere cost
 	// one failed lookup inside the narrowing pass.
-	got := GrepTermsFromQuery("关羽杀了多少有姓名的人物")
+	got := grepTermsForLocate("关羽杀了多少有姓名的人物")
 	if len(got) != grepTermsMax {
 		t.Fatalf("clause windows = %v (%d), want %d windows", got, len(got), grepTermsMax)
 	}
@@ -65,7 +65,7 @@ func TestGrepTermsFromQueryCJK(t *testing.T) {
 			t.Errorf("clause windows = %v, want CJK only (got %q)", got, term)
 		}
 	}
-	if got := GrepTermsFromQuery("   "); got != nil {
+	if got := grepTermsForLocate("   "); got != nil {
 		t.Errorf("blank query = %v, want nil", got)
 	}
 }
@@ -193,13 +193,13 @@ func TestGrepWordsAreTheCallersOwnWords(t *testing.T) {
 	if got := grepWordsFromQuery(clause); len(got) != 0 {
 		t.Errorf("GrepWordsFromQuery(%q) = %v, want none: a clause is not a word to probe", clause, got)
 	}
-	terms := GrepTermsFromQuery(clause)
+	terms := grepTermsForLocate(clause)
 	if len(terms) == 0 {
-		t.Fatalf("GrepTermsFromQuery(%q) = none, want the two-rune windows grep locates with", clause)
+		t.Fatalf("grepTermsForLocate(%q) = none, want the two-rune windows grep locates with", clause)
 	}
 	for _, term := range terms {
 		if term == clause {
-			t.Errorf("GrepTermsFromQuery(%q) returned the whole clause; the point of the windows is that the clause itself locates nothing", clause)
+			t.Errorf("grepTermsForLocate(%q) returned the whole clause; the point of the windows is that the clause itself locates nothing", clause)
 		}
 	}
 

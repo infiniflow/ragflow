@@ -254,7 +254,9 @@ func loadChunksByIDs(ctx context.Context, indexName string, ids []string) []map[
 	return out
 }
 
-func dedupStrings(in []string) []string {
+// Dedupe preserves order and drops empty / repeated entries. The graph package and this one
+// both call it, so it is the single copy.
+func Dedupe(in []string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, s := range in {
@@ -1757,7 +1759,7 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 				TenantID: tenantID,
 				DocScope: deps.DocScope,
 			})
-			docIDs = dedupStrings(routed.DocIDs)
+			docIDs = Dedupe(routed.DocIDs)
 		}
 		if len(docIDs) == 0 {
 			return navResult{

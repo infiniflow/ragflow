@@ -121,7 +121,7 @@ func termsToPatterns(terms []string) []*regexp.Regexp {
 const grepTermsMax = 10
 
 // cjkPhraseRunes is the length at which a CJK token stops being a term and
-// becomes a clause: see GrepTermsFromQuery. Four is the longest Chinese proper
+// becomes a clause: see grepTermsForLocate. Four is the longest Chinese proper
 // name that is still read as one token (成吉思汗), so a longer run is prose.
 const cjkPhraseRunes = 4
 
@@ -131,7 +131,7 @@ const grepOutCharsPerChunk = 700
 // grepOutTotalChars is the grep narrow's total output cap.
 const grepOutTotalChars = 8000
 
-// GrepTermsFromQuery: bare alnum words of
+// grepTermsForLocate: bare alnum words of
 // length>=2, deduped (order-preserving) and capped — and extends it to CJK.
 //
 // An ALNUM-ONLY tokenizer yields no term at all for a Chinese query, and the grep leg's
@@ -152,11 +152,11 @@ const grepOutTotalChars = 8000
 //     token either way, so its two-rune windows are used, left to right: the
 //     names in the clause still locate, and a window that occurs nowhere costs
 //     one failed lookup inside the narrowing pass and nothing else.
-func GrepTermsFromQuery(query string) []string {
+func grepTermsForLocate(query string) []string {
 	return grepTermsFromQuery(query, true)
 }
 
-// grepWordsFromQuery is GrepTermsFromQuery restricted to the caller's OWN words:
+// grepWordsFromQuery is grepTermsForLocate restricted to the caller's OWN words:
 // the pieces of an alternation, and the tokens separated by whitespace or
 // punctuation. It has NO CJK-window fallback.
 //
@@ -291,7 +291,7 @@ func isCJKRune(r rune) bool {
 
 // cjkWindowsOf returns the two-rune windows of a string's CJK runs, in order,
 // deduped and capped. It is the last-resort term derivation for a query that is
-// one unbroken clause (see GrepTermsFromQuery).
+// one unbroken clause (see grepTermsForLocate).
 func cjkWindowsOf(query string, limit int) []string {
 	out := make([]string, 0, limit)
 	run := make([]rune, 0, 16)
@@ -555,7 +555,7 @@ var grepPatternOperators = []string{".*", ".+", "|", ".", "*", "+", "?", "^", "$
 //
 // A pattern's operands are what a keyword leg can search: "华雄|荀正" names two,
 // "关公.*斩" names two, and the operators between them are not terms. They cannot
-// go through the phrase path (GrepTermsFromQuery), which reads an unbroken CJK run
+// go through the phrase path (grepTermsForLocate), which reads an unbroken CJK run
 // as a clause and decomposes it into windows — on "关公.*斩" that yielded 关公 alone
 // and dropped the 斩, so recall never asked about half the pattern.
 //
@@ -700,7 +700,7 @@ func reachTermsOf(query string) []string {
 	if grepPatternOf(query) != nil {
 		return grepPatternOperands(query)
 	}
-	return GrepTermsFromQuery(query)
+	return grepTermsForLocate(query)
 }
 
 // NarrowByTerms narrows retrieval chunks by locating grep terms:
@@ -712,7 +712,7 @@ func reachTermsOf(query string) []string {
 //   - when matched, a total-length budget is distributed across chunks.
 //
 // Table exemption: chunks that look like tables (HTML <table>/<tr> markup, or >=3 pipe
-// rows — see IsTableChunk) are NEVER narrowed, by any caller of this engine, and are
+// rows — see isTableChunk) are NEVER narrowed, by any caller of this engine, and are
 // exempt from the per-chunk/total char budget. Two reasons, both measured: the term
 // window either cuts the <table> opening tag, and then the downstream table view
 // refuses the fragment ("<table" not present) so the model is handed a partial
@@ -750,7 +750,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 	// false = "this chunk was NOT narrowed" -> returned verbatim.
 	tableFlags := make([]bool, len(chunks))
 	for i, c := range chunks {
-		tableFlags[i] = IsTableChunk(c)
+		tableFlags[i] = isTableChunk(c)
 	}
 
 	run := func(active []*regexp.Regexp) ([]map[string]any, []bool, int) {

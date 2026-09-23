@@ -403,7 +403,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 				candidate = *r.FoundAnswer
 			}
 			sessionEvidence[fmt.Sprint(item.slotID)] = SlotEvidence{
-				EvidenceIDs:  dedupe(r.RetrievedEvidenceIDs),
+				EvidenceIDs:  runtime.Dedupe(r.RetrievedEvidenceIDs),
 				TerminalType: terminalType,
 				Candidate:    candidate,
 			}
@@ -447,7 +447,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		ledger = append(ledger, map[string]any{
 			"q":     q,
 			"r":     st.SearchRounds,
-			"bound": len(dedupe(r.RetrievedEvidenceIDs)),
+			"bound": len(runtime.Dedupe(r.RetrievedEvidenceIDs)),
 		})
 	}
 
@@ -618,10 +618,10 @@ func MergeSlotPatch(base, branch runtime.State) *runtime.State {
 				loser = *bv.Candidate
 			}
 		}
-		clues := dedupe(append(append([]string(nil), v.DiscoveredClues...), bv.DiscoveredClues...))
-		alternates := dedupe(append(append([]string(nil), v.Alternates...), bv.Alternates...))
+		clues := runtime.Dedupe(append(append([]string(nil), v.DiscoveredClues...), bv.DiscoveredClues...))
+		alternates := runtime.Dedupe(append(append([]string(nil), v.Alternates...), bv.Alternates...))
 		if loser != "" {
-			alternates = dedupe(append(alternates, loser))
+			alternates = runtime.Dedupe(append(alternates, loser))
 		}
 		if !equalStringPtr(cand, v.Candidate) || !equalStrings(clues, v.DiscoveredClues) || !equalStrings(alternates, v.Alternates) {
 			changed = true

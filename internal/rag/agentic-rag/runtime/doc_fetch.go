@@ -140,7 +140,7 @@ func HeadChunksOfDocument(ctx context.Context, deps SearchDeps, docID string, wa
 	tables := make([]map[string]any, 0, len(page))
 	text := make([]map[string]any, 0, len(page))
 	for _, c := range page {
-		if isTableChunk(c) {
+		if containsHTMLTable(c) {
 			tables = append(tables, c)
 			continue
 		}
@@ -155,9 +155,10 @@ func HeadChunksOfDocument(ctx context.Context, deps SearchDeps, docID string, wa
 	return page
 }
 
-// isTableChunk reports whether a chunk's text carries an HTML table — the shape a document's
-// facts are written in (see renderTables).
-func isTableChunk(c map[string]any) bool {
+// containsHTMLTable reports whether a chunk's text carries an HTML table — the shape a
+// document's facts are written in (see renderTables). Narrower than isTableChunk, which also
+// accepts pipe-row tables.
+func containsHTMLTable(c map[string]any) bool {
 	return strings.Contains(strings.ToLower(ChunkTextOf(c)), "<table")
 }
 

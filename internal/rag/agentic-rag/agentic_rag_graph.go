@@ -73,7 +73,7 @@ func ViewTerms(st *AgenticState) []string {
 	for _, q := range st.CurrentQueries {
 		terms = append(terms, queryToTerms(q)...)
 	}
-	return dedupe(terms)
+	return runtime.Dedupe(terms)
 }
 
 // RemainingS: seconds left in the global budget.
@@ -397,14 +397,14 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 			plan = append(plan, q)
 		}
 	}
-	plan = dedupe(plan)
+	plan = runtime.Dedupe(plan)
 	// The probes the TABLE declared are part of the plan: a member-set slot names the actor and the
 	// words the SOURCE uses for the deed (Variable.Terms/Subject), and combining them is how a passage
 	// phrased in a way no planner query names still gets searched. Nothing read those fields after the
 	// coverage engine went, so the one declaration that exists to reach the source's own wording was
 	// dropped on the floor (measured 2026-09-20, 三国/关羽: the plan was three queries, none of them the
 	// act-word probes the table had already written).
-	plan = dedupe(append(plan, runtime.DeclaredProbes(root)...))
+	plan = runtime.Dedupe(append(plan, runtime.DeclaredProbes(root)...))
 	if len(plan) == 0 {
 		plan = planFromSlots(root)
 	}
@@ -423,7 +423,7 @@ func planFromSlots(root runtime.State) []string {
 			}
 		}
 	}
-	return dedupe(out)
+	return runtime.Dedupe(out)
 }
 
 // prefetchNode mirrors the `prefetch` node: programmatic fan-out
@@ -1958,17 +1958,7 @@ func errorAnswerText(err error) string {
 // final-answer path so the compose model sees images even without the outer
 // react loop.
 func multimodalUserMsg(text string, images []string) *schema.Message {
-	parts := make([]schema.MessageInputPart, 0, 1+len(images))
-	if text != "" {
-		parts = append(parts, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: text})
-	}
-	for i := range images {
-		uri := images[i]
-		parts = append(parts, schema.MessageInputPart{
-			Type:  schema.ChatMessagePartTypeImageURL,
-			Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &uri}},
-		})
-	}
+	parts := imageMessageParts(text, images)
 	if len(parts) == 0 {
 		return nil
 	}

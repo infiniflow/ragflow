@@ -1201,7 +1201,7 @@ func captureLeg(chunks []map[string]any, run func(ctx context.Context, deps Sear
 func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
 	const q = "曹操生平简介"
 	hit := []map[string]any{{"chunk_id": "c1", "doc_id": "d1", "content": "曹操，字孟德。"}}
-	// A >=3-row pipe table: IsTableChunk keeps it whole, so grep has no prose to
+	// A >=3-row pipe table: isTableChunk keeps it whole, so grep has no prose to
 	// locate in and returns it as-is.
 	table := []map[string]any{{"chunk_id": "t1", "doc_id": "d1",
 		"content": "a | b | c\nd | e | f\ng | h | i"}}
@@ -1280,27 +1280,27 @@ func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
 	}
 }
 
-// TestGrepTermsFromQuery mirrors Python _grep_terms_from_query:
+// TestGrepTermsForLocate mirrors Python _grep_terms_from_query:
 // bare alnum words of length>=2, deduped (order-preserving) and capped at 10.
-func TestGrepTermsFromQuery(t *testing.T) {
+func TestGrepTermsForLocate(t *testing.T) {
 	// Proper nouns preserved; stopwords/dupes dropped; bare single chars skipped.
-	got := GrepTermsFromQuery("Where was Culdcept Saga made? culdcept was made by OmiyaSoft.")
+	got := grepTermsForLocate("Where was Culdcept Saga made? culdcept was made by OmiyaSoft.")
 	want := []string{"Where", "was", "Culdcept", "Saga", "made", "by", "OmiyaSoft"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("terms = %v, want %v", got, want)
 	}
 	// Leading/trailing punctuation trimmed from each token.
-	got = GrepTermsFromQuery("apollo.-. 13 mission")
+	got = grepTermsForLocate("apollo.-. 13 mission")
 	if !reflect.DeepEqual(got, []string{"apollo", "13", "mission"}) {
 		t.Errorf("terms = %v, want [apollo 13 mission]", got)
 	}
 	// Capped at 10.
-	got = GrepTermsFromQuery("a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12")
+	got = grepTermsForLocate("a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12")
 	if len(got) != grepTermsMax {
 		t.Errorf("terms = %d, want capped at %d", len(got), grepTermsMax)
 	}
 	// Empty/blank -> nil.
-	if GrepTermsFromQuery("") != nil || GrepTermsFromQuery("   ") != nil {
+	if grepTermsForLocate("") != nil || grepTermsForLocate("   ") != nil {
 		t.Error("blank query must yield nil terms")
 	}
 }

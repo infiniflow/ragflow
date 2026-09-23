@@ -76,23 +76,6 @@ func queryToTerms(q string) []string {
 	return out
 }
 
-// dedupe preserves order and drops empty / repeated entries.
-func dedupe(in []string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if s == "" || seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
-
 // asSliceOfAny coerces a JSON array value to []any.
 //
 // isPoisoned covers the values that equally must never reach a prompt (see its doc
@@ -273,12 +256,4 @@ func stripGenJSONWrappers(s string) string {
 	s = common.StripThinkTrailing(s)
 	s = strings.ReplaceAll(s, "```json\n", "")
 	return genJSONTailFenceRE.ReplaceAllString(s, "")
-}
-
-func toAnySlice(ss []string) []any {
-	out := make([]any, 0, len(ss))
-	for _, s := range ss {
-		out = append(out, s)
-	}
-	return out
 }

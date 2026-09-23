@@ -1574,21 +1574,26 @@ func multimodalUserMessage(question, textAttachments string, imageFiles []string
 		}
 		return []schema.Message{{Role: schema.User, Content: text}}
 	}
-	parts := make([]schema.MessageInputPart, 0, 1+len(imageFiles))
+	return []schema.Message{{Role: schema.User, UserInputMultiContent: imageMessageParts(text, imageFiles)}}
+}
+
+// imageMessageParts is the multimodal part list the two user-message builders share: the text
+// block (when non-empty) followed by one image block per vision-gated data URI. A text-only
+// message does NOT go through here — text-only providers silently drop a content-block array
+// (see multimodalUserMessage), so that path stays a plain Content string.
+func imageMessageParts(text string, images []string) []schema.MessageInputPart {
+	parts := make([]schema.MessageInputPart, 0, 1+len(images))
 	if text != "" {
 		parts = append(parts, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: text})
 	}
-	for i := range imageFiles {
-		uri := imageFiles[i]
+	for i := range images {
+		uri := images[i]
 		parts = append(parts, schema.MessageInputPart{
 			Type:  schema.ChatMessagePartTypeImageURL,
 			Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &uri}},
 		})
 	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return []schema.Message{{Role: schema.User, UserInputMultiContent: parts}}
+	return parts
 }
 
 // multimodalContentBlocks converts schema.MessageInputPart multimodal content
