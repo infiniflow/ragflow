@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 
@@ -339,7 +340,11 @@ func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool 
 			matches++
 		} else {
 			for ht := range headerTexts {
-				if len(ht) > 1 && strings.Contains(t, ht) {
+				// Rune count, not bytes: len() is >=3 for every single CJK
+				// glyph, so a byte guard would let one-character CJK headers
+				// ("价") substring-match unrelated data cells ("价格") and
+				// strip real data rows as "repeated headers".
+				if utf8.RuneCountInString(ht) > 1 && strings.Contains(t, ht) {
 					matches++
 					break
 				}

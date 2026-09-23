@@ -388,32 +388,88 @@ func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []p
 	if len(unmatched) == 0 {
 		return boxes
 	}
-	rescued := lyt.CharsToBoxes(unmatched, pg, false)
 	added := 0
-	for _, rb := range rescued {
-		if strings.TrimSpace(rb.Text) == "" {
-			continue
+	for _, rb := range rescueBoxes(unmatched, pg) {
+		if majorityCovered(rb.chars, boxes) {
+			continue // true duplicate: most constituent glyphs already sit inside a retained box
 		}
-		dup := false
-		rbArea := (rb.X1 - rb.X0) * (rb.Bottom - rb.Top)
-		for _, b := range boxes {
-			bArea := (b.X1 - b.X0) * (b.Bottom - b.Top)
-			inter := util.RectOverlapInter(rb.X0, rb.Top, rb.X1, rb.Bottom, b.X0, b.Top, b.X1, b.Bottom)
-			minA := math.Min(rbArea, bArea)
-			if minA > 0 && inter/minA > 0.5 {
-				dup = true
-				break
-			}
-		}
-		if !dup {
-			boxes = append(boxes, rb)
-			added++
-		}
+		boxes = append(boxes, rb.box)
+		added++
 	}
 	if added > 0 {
 		common.Debug("rescueUnmatchedChars", zap.Int("page", pg), zap.Int("unmatchedChars", len(unmatched)), zap.Int("rescuedBoxes", added))
 	}
 	return boxes
+}
+
+// rescuedBox is a rescue TextBox together with the glyphs it groups, so the
+// redundancy test can run on the actual constituents instead of the bbox.
+type rescuedBox struct {
+	box   pdf.TextBox
+	chars []pdf.TextChar
+}
+
+// rescueBoxes packs unmatched chars into text boxes WITHOUT CharsToBoxes:
+// that builder derives its split threshold from the rescued sample's own
+// inter-char gaps, but rescued chars are by construction sparse (mostly
+// single glyphs in different table cells) — a gap-derived threshold on few
+// samples is meaningless, either merging several cells into one wide box or
+// shredding one value into one box per digit. Instead: group per text line
+// and cut only where a gap exceeds the line's median gap by 8pt — enough to
+// cross a rendered cell whitespace, tight enough to keep a single value
+// ("1", "5") of an interrupted OCR box together.
+func rescueBoxes(chars []pdf.TextChar, pg int) []rescuedBox {
+	var out []rescuedBox
+	for _, line := range lyt.GroupCharsToLines(chars, false) {
+		sorted := append([]pdf.TextChar(nil), line...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].X0 < sorted[j].X0 })
+		var gaps []float64
+		for i := 1; i < len(sorted); i++ {
+			gaps = append(gaps, sorted[i].X0-sorted[i-1].X1)
+		}
+		thr := math.Inf(1)
+		if len(gaps) > 0 {
+			srt := append([]float64(nil), gaps...)
+			sort.Float64s(srt)
+			thr = srt[len(srt)/2] + 8
+		}
+		start := 0
+		flush := func(end int) {
+			sub := sorted[start:end]
+			box := lyt.LineToTextBox(sub)
+			box.PageNumber = pg
+			out = append(out, rescuedBox{box: box, chars: sub})
+		}
+		for i := 1; i < len(sorted); i++ {
+			if sorted[i].X0-sorted[i-1].X1 > thr {
+				flush(i)
+				start = i
+			}
+		}
+		flush(len(sorted))
+	}
+	return out
+}
+
+// majorityCovered reports whether more than half of the glyphs already lie
+// inside a single retained box (over 50% of each glyph's own area). The old
+// bbox-level filter discarded a whole rescued group whenever its SPANNING
+// bbox happened to sit over an existing box — losing the very chars this
+// function exists to rescue (e.g. OCR kept the middle digit "4" of "345" and
+// the rescued "3" and "5" merged into one group straddling it).
+func majorityCovered(chars []pdf.TextChar, boxes []pdf.TextBox) bool {
+	for i := range boxes {
+		covered := 0
+		for _, c := range chars {
+			if charBoxOverlapRatio(c, boxes[i].X0, boxes[i].X1, boxes[i].Top, boxes[i].Bottom) > 0.5 {
+				covered++
+			}
+		}
+		if covered*2 > len(chars) {
+			return true
+		}
+	}
+	return false
 }
 
 // runPageWorkers executes pages through the single process-wide worker

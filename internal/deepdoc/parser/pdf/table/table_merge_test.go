@@ -867,3 +867,22 @@ func TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped(t *testing.T
 		t.Errorf("merged caption = %q, want the anchor caption only (no concatenation)", merged[0].Caption)
 	}
 }
+
+// TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched pins the rune-count
+// guard: a one-character CJK header ("价", 3 bytes) must not substring-match
+// unrelated data cells ("价格"), which would strip real data rows as
+// "repeated headers". Exact text matches still count.
+func TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched(t *testing.T) {
+	cell := func(txt string) pdf.TSRCell {
+		return pdf.TSRCell{Text: txt, X0: 0, X1: 100, Y0: 0, Y1: 10}
+	}
+	header := []pdf.TSRCell{cell("价"), cell("量")}
+	dataRow := []pdf.TSRCell{cell("价格"), cell("数量"), cell("优质")}
+	if isRepeatedHeader(header, dataRow) {
+		t.Error("single-CJK-char header substring-matched an unrelated data row")
+	}
+	repeated := []pdf.TSRCell{cell("价"), cell("量")}
+	if !isRepeatedHeader(header, repeated) {
+		t.Error("exact repeated single-CJK header must still be stripped")
+	}
+}
