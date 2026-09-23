@@ -149,7 +149,7 @@ func buildTableHTMLs(boxes []pdf.TextBox, tables []pdf.TableItem) map[int]string
 				continue
 			}
 			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPosition(boxes[i], tp) {
+				if boxOverlapsPositionPage(boxes[i], tp) {
 					tableBoxes = append(tableBoxes, boxes[i])
 					break
 				}
@@ -214,7 +214,7 @@ func MarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
 			matched := false
 			for ti := range tables {
 				for _, tp := range tables[ti].Positions {
-					if boxOverlapsPosition(boxes[i], tp) {
+					if boxOverlapsPositionPage(boxes[i], tp) {
 						lastTableTI = ti
 						matched = true
 						break
@@ -263,7 +263,7 @@ func buildReplacementsAfterMerge(boxes []pdf.TextBox, tables []pdf.TableItem, re
 				continue
 			}
 			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPosition(boxes[i], tp) {
+				if boxOverlapsPositionPage(boxes[i], tp) {
 					reps = append(reps, replacement{tableIdx: ti, boxIdx: i})
 					break
 				}
@@ -447,6 +447,31 @@ func boxOverlapsPosition(box pdf.TextBox, pos pdf.Position) bool {
 	const margin = 2.0
 	return box.X0 <= pos.Right+margin && box.X1 >= pos.Left-margin &&
 		box.Top <= pos.Bottom+margin && box.Bottom >= pos.Top-margin
+}
+
+// boxOverlapsPositionPage is like boxOverlapsPosition but additionally requires
+// the box to live on a page the position spans. Table positions and
+// table-layout boxes are both stored in page-local coordinates (Y resets to ~0
+// at the top of every page), so a position's Y band is shared by the boxes of
+// every page. Without the page constraint a single page-local position matches
+// the same Y band on all pages, which (a) inflates the table/box replacement
+// cross-product into a multi-GB reps slice and (b) makes a table wrongly claim
+// boxes that live on other pages. When page metadata is missing on either side
+// we fall back to the X/Y-only check so legacy call paths keep working.
+func boxOverlapsPositionPage(box pdf.TextBox, pos pdf.Position) bool {
+	if len(pos.PageNumbers) > 0 && box.PageNumber != 0 {
+		onSamePage := false
+		for _, p := range pos.PageNumbers {
+			if p == box.PageNumber {
+				onSamePage = true
+				break
+			}
+		}
+		if !onSamePage {
+			return false
+		}
+	}
+	return boxOverlapsPosition(box, pos)
 }
 
 // rowsToHTML converts grouped TSR cell rows to an HTML table string.
