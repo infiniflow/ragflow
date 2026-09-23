@@ -38,12 +38,6 @@ func (s *DocumentService) publishKnowledgeCompileStatusChange(ctx context.Contex
 	if err != nil {
 		common.Warn("document mutation: failed to resolve knowledge compile variants",
 			zap.String("document_id", documentID), zap.Error(err))
-		if status == 0 {
-			if publishErr := knowledge_compile.PublishDisabled(ctx, tenantID, datasetID, documentID, nil, nil); publishErr != nil {
-				common.Warn("document mutation: failed to publish fallback knowledge compile disable",
-					zap.String("document_id", documentID), zap.Error(publishErr))
-			}
-		}
 		return
 	}
 	if len(variants) == 0 {
