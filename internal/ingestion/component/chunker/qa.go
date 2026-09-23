@@ -407,16 +407,18 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		if txt == "" {
 			continue
 		}
-		// Route on what the row walker can read, not on the type label. A
-		// doc_type:"table" item whose payload is not markup — a PDF table
-		// item, for instance — used to enter the table extractor, find no
-		// rows, and silently lose every pair; conversely a text-labelled
-		// block holding real table markup is read as a table. isTableHTML is
-		// only the cheap candidate filter: the walker's result decides, so
-		// nothing it can read is denied, and a block that merely opens with
-		// "<table" text (no row) stays on the prose path instead of silently
-		// pairing nothing. (Python's qa.py drops plain-text table payloads
-		// such as PDF tables entirely; the walker keeps their pairs.)
+		// Route on what the row walker can read, not on the type label.
+		// doc_type:"table" is not truthful for every producer: the
+		// opendataloader, tcadp and somark PDF parsers tag text that holds
+		// no <table> markup, so such an item used to enter the table
+		// extractor, find no rows, and silently lose every pair; conversely
+		// a text-labelled block holding real table markup is read as a
+		// table. isTableHTML is only the cheap candidate filter: the
+		// walker's result decides, so nothing it can read is denied, and a
+		// block that merely opens with "<table" text (no row) stays on the
+		// prose path instead of silently pairing nothing. (Python's qa.py
+		// drops plain-text table payloads such as PDF tables entirely; the
+		// walker keeps their pairs.)
 		var rows [][]string
 		if isTableHTML(txt) {
 			rows = tableRows(txt)
