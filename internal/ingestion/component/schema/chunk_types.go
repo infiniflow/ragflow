@@ -125,10 +125,6 @@ type ChunkDoc struct {
 	Positions     json.RawMessage            `json:"positions,omitempty"`
 	Sheet         string                     `json:"sheet,omitempty"`
 	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	RowStart      *int                       `json:"row_start,omitempty"`
-	RowEnd        *int                       `json:"row_end,omitempty"`
-	ColStart      *int                       `json:"col_start,omitempty"`
-	ColEnd        *int                       `json:"col_end,omitempty"`
 	Extra         map[string]json.RawMessage `json:"-"`
 }
 
@@ -152,7 +148,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index", "row_start", "row_end", "col_start", "col_end",
+		"sheet", "sheet_index",
 	} {
 		delete(raw, key)
 	}

@@ -236,17 +236,13 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 }
 
 func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
-	sheetIndex, rowStart, rowEnd, colStart, colEnd := 2, 42, 42, 1, 3
+	sheetIndex := 2
 	original := ChunkDoc{
 		Text:       "<table><tr><th>ID</th></tr></table>",
 		DocType:    "table",
 		CKType:     "table",
 		Sheet:      "Orders",
 		SheetIndex: &sheetIndex,
-		RowStart:   &rowStart,
-		RowEnd:     &rowEnd,
-		ColStart:   &colStart,
-		ColEnd:     &colEnd,
 	}
 
 	data, err := json.Marshal(original)
@@ -263,25 +259,20 @@ func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 	if decoded.SheetIndex == nil || *decoded.SheetIndex != sheetIndex {
 		t.Fatalf("sheet index mismatch: got %v", decoded.SheetIndex)
 	}
-	if decoded.RowStart == nil || *decoded.RowStart != rowStart || decoded.RowEnd == nil || *decoded.RowEnd != rowEnd {
-		t.Fatalf("row range mismatch: start=%v end=%v", decoded.RowStart, decoded.RowEnd)
-	}
-	if decoded.ColStart == nil || *decoded.ColStart != colStart || decoded.ColEnd == nil || *decoded.ColEnd != colEnd {
-		t.Fatalf("column range mismatch: start=%v end=%v", decoded.ColStart, decoded.ColEnd)
-	}
 }
 
 // TestChunkDocLegacyRowIRKeysPassThrough: the deleted row-IR keys (table_id,
-// headers, cells) are no longer typed fields, but payloads that still carry
-// them must survive a decode/encode round trip through Extra.
+// headers, cells and the per-row coordinate fields) are no longer typed
+// fields, but payloads that still carry them must survive a decode/encode
+// round trip through Extra; the index boundary strips them from the store.
 func TestChunkDocLegacyRowIRKeysPassThrough(t *testing.T) {
 	var decoded ChunkDoc
-	raw := `{"text":"row","doc_type_kwd":"text","ck_type":"table_row","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"]}`
+	raw := `{"text":"row","doc_type_kwd":"text","ck_type":"table_row","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"],"row_start":42,"row_end":42,"col_start":1,"col_end":3}`
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	out := decoded.ToMap()
-	for _, key := range []string{"table_id", "headers", "cells"} {
+	for _, key := range []string{"table_id", "headers", "cells", "row_start", "row_end", "col_start", "col_end"} {
 		if _, ok := out[key]; !ok {
 			t.Errorf("legacy key %q lost in round trip: %#v", key, out)
 		}
@@ -628,5 +619,3 @@ func TestContextualTextConcatenatesMediaContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-func ptrString(s string) *string { return &s }

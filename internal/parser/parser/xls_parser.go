@@ -22,7 +22,6 @@ import (
 )
 
 type XLSParser struct {
-	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
 	TCADPAPIServer                 string
@@ -31,12 +30,8 @@ type XLSParser struct {
 	TCADPMarkdownImageResponseType string
 }
 
-func NewXLSParser(libType string) (*XLSParser, error) {
-	if libType == "" {
-		libType = "excelize"
-	}
+func NewXLSParser(_ string) (*XLSParser, error) {
 	return &XLSParser{
-		libType:                        libType,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil

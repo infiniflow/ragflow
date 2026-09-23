@@ -161,7 +161,7 @@ func TestExtractQATableFollowsStructure(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pairs := extractQATable(tc.html, tc.strict, nil)
+			pairs := extractQATable(tc.html, tc.strict)
 			got := make([][2]string, 0, len(pairs))
 			for _, p := range pairs {
 				got = append(got, [2]string{p.Question, p.Answer})
@@ -191,7 +191,7 @@ func BenchmarkExtractQATable(b *testing.B) {
 		b.Run(fmt.Sprintf("%d_rows", rows), func(b *testing.B) {
 			b.SetBytes(int64(len(markup)))
 			for i := 0; i < b.N; i++ {
-				extractQATable(markup, false, nil)
+				extractQATable(markup, false)
 			}
 		})
 	}
