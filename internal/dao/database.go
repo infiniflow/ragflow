@@ -35,11 +35,76 @@ import (
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 var DB *gorm.DB
 var modelProviderManager *models.ProviderManager
 var modelProviderManagerMu sync.Mutex
+
+// migrationAwareDialector hands out a namedIndexMigrator instead of the stock
+// one and keeps everything else the wrapped dialector can do.
+type migrationAwareDialector struct {
+	gorm.Dialector
+}
+
+// The assertions gorm makes on db.Dialector must keep succeeding.
+var (
+	_ gorm.ErrorTranslator               = migrationAwareDialector{}
+	_ gorm.SavePointerDialectorInterface = migrationAwareDialector{}
+)
+
+func (d migrationAwareDialector) Migrator(db *gorm.DB) gorm.Migrator {
+	return namedIndexMigrator{Migrator: d.Dialector.Migrator(db)}
+}
+
+// The three below are forwarded because gorm finds them on db.Dialector by type
+// assertion rather than through gorm.Dialector (gorm.go:361 for Translate,
+// finisher_api.go:713 and :736 for SavePoint/RollbackTo), and embedding an
+// interface only promotes the methods it declares. Dropping Translate would
+// turn gorm.ErrDuplicatedKey back into a raw MySQL error, and dropping the
+// savepoints would silently flatten nested transactions.
+func (d migrationAwareDialector) Translate(err error) error {
+	if translator, ok := d.Dialector.(gorm.ErrorTranslator); ok {
+		return translator.Translate(err)
+	}
+	return err
+}
+
+func (d migrationAwareDialector) SavePoint(tx *gorm.DB, name string) error {
+	if savePointer, ok := d.Dialector.(gorm.SavePointerDialectorInterface); ok {
+		return savePointer.SavePoint(tx, name)
+	}
+	return nil
+}
+
+func (d migrationAwareDialector) RollbackTo(tx *gorm.DB, name string) error {
+	if savePointer, ok := d.Dialector.(gorm.SavePointerDialectorInterface); ok {
+		return savePointer.RollbackTo(tx, name)
+	}
+	return nil
+}
+
+// namedIndexMigrator leaves uniqueness to the named indexes declared with
+// uniqueIndex tags and created by the manual migrations.
+type namedIndexMigrator struct {
+	gorm.Migrator
+}
+
+// MigrateColumnUnique drops a unique constraint only once it exists. The stock
+// implementation equates "this column carries some single-column UNIQUE index"
+// with "this column carries a UNIQUE constraint", derives the matching default
+// name (uni_<table>_<column>) and drops it. Our named indexes are created as
+// indexes and never under that name, so the DROP always targets a missing
+// object and MySQL answers 1091 -- once per column, on every startup. The
+// add-constraint branch is left alone: it names its own object, so it cannot
+// hit the same mismatch.
+func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.Field, columnType gorm.ColumnType) error {
+	if unique, _ := columnType.Unique(); unique && !field.Unique {
+		return nil
+	}
+	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
+}
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -89,7 +154,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 
 	// Connect to database
 	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+	DB, err = gorm.Open(migrationAwareDialector{mysql.Open(dsn)}, &gorm.Config{
 		Logger: gormLogger.Default.LogMode(gormLogLevel),
 		NowFunc: func() time.Time {
 			return time.Now().Local()

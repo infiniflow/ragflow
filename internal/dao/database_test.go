@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
@@ -237,6 +239,128 @@ func TestCreateIngestionLogSchemaObjectsRechecksAfterCreateError(t *testing.T) {
 	migrator := &ingestionLogSchemaMigratorStub{}
 	if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
 		t.Fatalf("createIngestionLogIndexIfMissing: %v", err)
+	}
+}
+
+// uniqueColumnType is a gorm.ColumnType that answers Unique() and nothing
+// else, which is all MigrateColumnUnique branches on.
+type uniqueColumnType struct {
+	unique bool
+}
+
+func (c uniqueColumnType) Name() string                      { return "document_id" }
+func (c uniqueColumnType) DatabaseTypeName() string          { return "VARCHAR" }
+func (c uniqueColumnType) ColumnType() (string, bool)        { return "varchar(32)", true }
+func (c uniqueColumnType) PrimaryKey() (bool, bool)          { return false, true }
+func (c uniqueColumnType) AutoIncrement() (bool, bool)       { return false, true }
+func (c uniqueColumnType) Length() (int64, bool)             { return 32, true }
+func (c uniqueColumnType) DecimalSize() (int64, int64, bool) { return 0, 0, false }
+func (c uniqueColumnType) Nullable() (bool, bool)            { return false, true }
+func (c uniqueColumnType) Unique() (bool, bool)              { return c.unique, true }
+func (c uniqueColumnType) ScanType() reflect.Type            { return reflect.TypeOf("") }
+func (c uniqueColumnType) Comment() (string, bool)           { return "", false }
+func (c uniqueColumnType) DefaultValue() (string, bool)      { return "", false }
+
+type migratorStub struct {
+	gorm.Migrator
+	migrateColumnUniqueCalls int
+}
+
+func (m *migratorStub) MigrateColumnUnique(any, *schema.Field, gorm.ColumnType) error {
+	m.migrateColumnUniqueCalls++
+	return nil
+}
+
+type dialectorStub struct {
+	gorm.Dialector
+	translated bool
+	savePoints int
+	rollbacks  int
+}
+
+func (d *dialectorStub) Translate(error) error {
+	d.translated = true
+	return gorm.ErrDuplicatedKey
+}
+
+func (d *dialectorStub) SavePoint(*gorm.DB, string) error {
+	d.savePoints++
+	return nil
+}
+
+func (d *dialectorStub) RollbackTo(*gorm.DB, string) error {
+	d.rollbacks++
+	return nil
+}
+
+type plainDialector struct {
+	gorm.Dialector
+}
+
+// TestMigrationAwareDialectorForwardsOptionalInterfaces guards the reason the
+// wrapper forwards anything: gorm finds ErrorTranslator and
+// SavePointerDialectorInterface on db.Dialector by type assertion, so a wrapper
+// that drops those methods silently reverts duplicate-key translation and
+// flattens nested transactions.
+func TestMigrationAwareDialectorForwardsOptionalInterfaces(t *testing.T) {
+	inner := &dialectorStub{}
+	dialector := migrationAwareDialector{Dialector: inner}
+
+	translated := dialector.Translate(errors.New("Error 1062: Duplicate entry"))
+	if !errors.Is(translated, gorm.ErrDuplicatedKey) {
+		t.Fatalf("Translate = %v, want the wrapped dialector's translation", translated)
+	}
+	if err := dialector.SavePoint(nil, "sp"); err != nil {
+		t.Fatalf("SavePoint: %v", err)
+	}
+	if err := dialector.RollbackTo(nil, "sp"); err != nil {
+		t.Fatalf("RollbackTo: %v", err)
+	}
+	if !inner.translated || inner.savePoints != 1 || inner.rollbacks != 1 {
+		t.Fatalf("inner calls = translate:%v savePoint:%d rollbackTo:%d, want one each", inner.translated, inner.savePoints, inner.rollbacks)
+	}
+}
+
+// A dialector without those interfaces must not make the wrappers panic; gorm
+// skips the behaviour when it finds no support, and so must we.
+func TestMigrationAwareDialectorToleratesUnsupportedOptionalInterfaces(t *testing.T) {
+	dialector := migrationAwareDialector{Dialector: &plainDialector{}}
+
+	if err := dialector.Translate(errors.New("boom")); err == nil || err.Error() != "boom" {
+		t.Fatalf("Translate = %v, want the original error", err)
+	}
+	if err := dialector.SavePoint(nil, "sp"); err != nil {
+		t.Fatalf("SavePoint = %v, want nil", err)
+	}
+	if err := dialector.RollbackTo(nil, "sp"); err != nil {
+		t.Fatalf("RollbackTo = %v, want nil", err)
+	}
+}
+
+// TestNamedIndexMigratorSkipsPhantomUniqueDrop pins the behaviour that kept
+// failing every startup on MySQL: a unique index created as an index is not a
+// column-level unique constraint, so nothing exists to drop.
+func TestNamedIndexMigratorSkipsPhantomUniqueDrop(t *testing.T) {
+	inner := &migratorStub{}
+	m := namedIndexMigrator{Migrator: inner}
+
+	if err := m.MigrateColumnUnique(nil, &schema.Field{Unique: false}, uniqueColumnType{unique: true}); err != nil {
+		t.Fatalf("MigrateColumnUnique: %v", err)
+	}
+	if inner.migrateColumnUniqueCalls != 0 {
+		t.Fatal("dropped a unique constraint that was never created")
+	}
+}
+
+func TestNamedIndexMigratorDelegatesConstraintCreation(t *testing.T) {
+	inner := &migratorStub{}
+	m := namedIndexMigrator{Migrator: inner}
+
+	if err := m.MigrateColumnUnique(nil, &schema.Field{Unique: true}, uniqueColumnType{unique: false}); err != nil {
+		t.Fatalf("MigrateColumnUnique: %v", err)
+	}
+	if inner.migrateColumnUniqueCalls != 1 {
+		t.Fatalf("migrateColumnUnique calls = %d, want 1", inner.migrateColumnUniqueCalls)
 	}
 }
 
