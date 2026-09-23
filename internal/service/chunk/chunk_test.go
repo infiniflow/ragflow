@@ -1323,6 +1323,70 @@ func TestRemoveChunkImageSkipsMissingObject(t *testing.T) {
 	}
 }
 
+// Every image mode has to serialize on the chunk's per-chunk lock: without it a
+// replace (or a remove) can land between an append's read and write and be
+// overwritten by the merged image.
+func TestChunkImageOperationsShareThePerChunkLock(t *testing.T) {
+	chunkID := "chunk-locked"
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: mustEncodePNG(t, image.Rect(0, 0, 2, 2)),
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	lockKey := "kb-1/" + chunkID
+	lock := acquireChunkImageLock(lockKey)
+	lock.mu.Lock()
+	defer releaseChunkImageLock(lockKey)
+
+	type result struct {
+		op  string
+		err error
+	}
+	svc := &ChunkService{}
+	ctx := t.Context()
+	appendedImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
+	replacedImage := mustEncodePNG(t, image.Rect(0, 0, 3, 3))
+
+	done := make(chan result, 3)
+	run := func(op string, fn func() error) {
+		go func() { done <- result{op: op, err: fn()} }()
+	}
+	run("append", func() error {
+		return svc.storeChunkImage(ctx, "kb-1", chunkID, appendedImage, imageUpdateModeAppend)
+	})
+	run("replace", func() error {
+		return svc.storeChunkImage(ctx, "kb-1", chunkID, replacedImage, imageUpdateModeReplace)
+	})
+	run("remove", func() error {
+		return svc.removeChunkImage(ctx, "kb-1", chunkID)
+	})
+
+	select {
+	case got := <-done:
+		lock.mu.Unlock()
+		t.Fatalf("%s finished while the chunk's image lock was held", got.op)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	lock.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		select {
+		case got := <-done:
+			if got.err != nil {
+				t.Fatalf("%s: %v", got.op, got.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("an image operation did not finish after the lock was released")
+		}
+	}
+}
+
 func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
