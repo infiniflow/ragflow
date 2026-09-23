@@ -145,17 +145,38 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // RAG分词, 三国人物). Geometry (boxInsideTolerant) remains the actual
 // containment proof; whitespace normalization only makes the fragment check
 // robust to the char-vs-OCR space divergence.
+// dedupBucket groups box indices by (page, column) so the substring-overlap scan
+// only walks boxes that can actually be OCR double-detection fragments of one
+// another. The original O(n²) loop skipped every pair whose PageNumber or ColID
+// differed, so restricting each i to its own bucket is exactly equivalent while
+// cutting the inner-loop count from n² to Σ_bucket size²: OCR fragments always
+// share their container's page and column (see the ColID guard below), so no
+// valid comparison pair is lost.
+func dedupBucket(boxes []pdf.TextBox) map[[2]int][]int {
+	byPageCol := make(map[[2]int][]int, len(boxes))
+	for i, b := range boxes {
+		key := [2]int{b.PageNumber, b.ColID}
+		byPageCol[key] = append(byPageCol[key], i)
+	}
+	return byPageCol
+}
+
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
-	// Precompute the whitespace-normalized text once per box. The inner loop
-	// compares every OCR pair, so recomputing norm there would make the O(n²)
-	// loop O(n²·len) in the worst case (a large scan document hits ~3k boxes).
+	// Precompute the whitespace-normalized text once per box. The pair scan
+	// still touches many OCR boxes, so recomputing norm per comparison would
+	// make the worst case O(bucketSize²·len).
 	norm := make([]string, len(boxes))
 	for i, b := range boxes {
 		if b.IsOCR {
 			norm[i] = dedupNormText(strings.TrimSpace(b.Text))
 		}
 	}
+	// Index boxes by (page, column) so each i only compares against same-page,
+	// same-column boxes instead of the whole slice — equivalent to the original
+	// per-pair PageNumber/ColID guards, but O(n) to build and Σ_bucket size² to
+	// scan.
+	byPageCol := dedupBucket(boxes)
 	for i := range boxes {
 		if drop[i] {
 			continue
@@ -169,15 +190,19 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 		if ai == "" {
 			continue
 		}
-		for j := range boxes {
-			if i == j || drop[j] || boxes[i].PageNumber != boxes[j].PageNumber || !boxes[j].IsOCR {
+		ni := norm[i]
+		// Candidates are the boxes sharing i's (page, column). The bucket keeps
+		// the original slice order, so the early `break` (i is a substring of a
+		// larger box) fires at the same point as in the unindexed loop.
+		for _, j := range byPageCol[[2]int{boxes[i].PageNumber, boxes[i].ColID}] {
+			if i == j || drop[j] || !boxes[j].IsOCR {
 				continue
 			}
 			aj := strings.TrimSpace(boxes[j].Text)
 			if aj == "" || ai == aj {
 				continue
 			}
-			ni, nj := norm[i], norm[j]
+			nj := norm[j]
 			// Never collapse a substring across columns. OCR double-detection
 			// fragments always share the SAME column as their container; a
 			// substring in a DIFFERENT column (e.g. the opposite column of a

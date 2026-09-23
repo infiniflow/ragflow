@@ -337,7 +337,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 	if storageImpl == nil {
 		return fmt.Errorf("storage not initialized")
 	}
-	dataset := datasetNameAndID(kb)
+	datasetNameID := datasetNameAndID(kb)
 
 	// Collect document IDs first so engine cleanup can run before the
 	// transaction (engine ops are not transactional).
@@ -351,31 +351,31 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 		if document.Location == nil || *document.Location == "" {
 			continue
 		}
+		docNameID := documentNameAndID(document)
 		exists, err := storageImpl.ObjectExists(cleanupCtx, kb.ID, *document.Location)
 		if err != nil {
 			return fmt.Errorf("check document %s in dataset %s: %w", document.ID, kb.ID, err)
 		}
 		if !exists {
-			common.Warn("Dataset document object already missing", zap.String("document", documentNameAndID(document)), zap.String("document_id", document.ID), zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+			common.Warn("Dataset document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
 			continue
 		}
 		if err := storageImpl.Remove(cleanupCtx, kb.ID, *document.Location); err != nil {
-			return fmt.Errorf("remove document %s from dataset %s: %w", document.ID, kb.ID, err)
+			return fmt.Errorf("remove document %s from dataset %s: %w", docNameID, kb.ID, err)
 		}
-		common.Info("Removed dataset document object", zap.String("document", documentNameAndID(document)), zap.String("document_id", document.ID), zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+		common.Info("Removed dataset document object", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
 	}
 	exists, err := storageImpl.BucketExistsWithError(cleanupCtx, kb.ID)
 	if err != nil {
 		return fmt.Errorf("check dataset bucket %s: %w", kb.ID, err)
 	}
 	if !exists {
-		common.Warn("Dataset bucket already missing", zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+		common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
 	} else {
-		if err := storageImpl.RemoveEmptyBucket(cleanupCtx, kb.ID); err != nil {
-			common.Warn("Unable to remove empty dataset bucket", zap.String("dataset", dataset), zap.String("bucket", kb.ID), zap.Error(err))
-		} else {
-			common.Info("Removed empty dataset bucket", zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+		if err := storageImpl.RemoveBucket(cleanupCtx, kb.ID); err != nil {
+			return fmt.Errorf("remove dataset bucket for dataset %s: %w", datasetNameID, err)
 		}
+		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
 	}
 	docIDs := extractDocIDs(documents)
 	if len(docIDs) > 0 {
@@ -428,7 +428,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 	}); err != nil {
 		return err
 	}
-	common.Info("Deleted dataset", zap.String("dataset", dataset), zap.String("kb_id", kb.ID))
+	common.Info("Deleted dataset", zap.String("dataset", datasetNameID), zap.String("kb_id", kb.ID))
 	return nil
 }
 

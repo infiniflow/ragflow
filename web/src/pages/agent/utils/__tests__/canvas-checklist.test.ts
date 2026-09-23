@@ -82,6 +82,61 @@ describe('collectCanvasIssues: orphan steps', () => {
       expect.objectContaining({ nodeId: 'File', type: CanvasIssueType.Orphan }),
     );
   });
+
+  it('flags pipeline node groups wired to each other but detached from File', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Compiler:cp1', 'Compiler'),
+        makeNode('Indexer:i1', 'Indexer'),
+        makeNode('Extractor:e1', 'Extractor'),
+        makeNode('Extractor:e2', 'Extractor'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Compiler:cp1', 'Indexer:i1'),
+        makeEdge('Extractor:e1', 'Extractor:e2'),
+      ],
+    });
+
+    const orphans = issues
+      .filter((x) => x.type === CanvasIssueType.Orphan)
+      .map((x) => x.nodeId);
+    expect(orphans).toEqual(
+      expect.arrayContaining([
+        'Compiler:cp1',
+        'Indexer:i1',
+        'Extractor:e1',
+        'Extractor:e2',
+      ]),
+    );
+    expect(orphans).not.toContain('File');
+    expect(orphans).not.toContain('Parser:p1');
+    expect(orphans).not.toContain('Chunker:c1');
+  });
+
+  it('flags no orphan on a fully connected pipeline', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Indexer:i1', 'Indexer'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Chunker:c1', 'Indexer:i1'),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.Orphan),
+    ).toHaveLength(0);
+  });
 });
 
 describe('collectCanvasIssues: dangling variable references', () => {
@@ -407,6 +462,20 @@ describe('collectCanvasIssues: missing required fields', () => {
         nodeId: 'Agent:a1',
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.agentModelMissing',
+      }),
+    );
+  });
+
+  it('flags an Extractor node without a model', () => {
+    const issues = collect({
+      nodes: [makeNode('Extractor:e1', 'Extractor', { llm_id: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Extractor:e1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorModelMissing',
       }),
     );
   });

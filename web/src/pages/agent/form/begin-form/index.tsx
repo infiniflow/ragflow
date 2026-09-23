@@ -8,7 +8,6 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
 import { Plus } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -25,15 +24,18 @@ import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 import { WebHook } from './webhook';
 
-const ModeOptions = [
-  { value: AgentDialogueMode.Conversational, label: t('flow.conversational') },
-  { value: AgentDialogueMode.Task, label: t('flow.task') },
-  { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
-];
-
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
+
+  const ModeOptions = useMemo(
+    () => [
+      { value: AgentDialogueMode.Conversational, label: t('flow.conversational') },
+      { value: AgentDialogueMode.Task, label: t('flow.task') },
+      { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
+    ],
+    [t],
+  );
 
   const values = useValues(node);
 

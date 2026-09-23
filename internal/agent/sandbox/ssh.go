@@ -513,12 +513,16 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 			files = append(files, file)
 		}
 	}
-	if p.knownHosts != "" {
-		files = append(files, p.knownHosts)
+	knownHosts := p.knownHosts
+	if knownHosts == "" {
+		knownHosts = common.GetEnv(common.EnvSSHKnownHosts)
+	}
+	if knownHosts != "" {
+		files = append(files, knownHosts)
 	}
 	callback, err := knownhosts.New(files...)
 	if err != nil {
-		return nil, fmt.Errorf("ssh: load known_hosts %q: %w", p.knownHosts, err)
+		return nil, fmt.Errorf("ssh: load known_hosts %q: %w", knownHosts, err)
 	}
 	return callback, nil
 }
