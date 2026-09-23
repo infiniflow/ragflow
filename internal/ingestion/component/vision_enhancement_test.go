@@ -274,11 +274,13 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 	}
 }
 
-func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
+func TestVisionEnhancement_UsesVisualPayloadRegardlessOfFileType(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
-			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+			{"text": "caption", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		},
 	}
 
@@ -291,11 +293,14 @@ func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if handled {
-		t.Error("handled = true, want false for FileTypeOTHER")
+	if !handled {
+		t.Fatal("handled = false, want true for a visual payload in FileTypeOTHER")
 	}
-	if res.JSON[0]["text"] != "" {
-		t.Errorf("text = %q, want empty", res.JSON[0]["text"])
+	if got, want := res.JSON[0]["text"], "caption\na diagram of a pipeline"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
 	}
 }
 
