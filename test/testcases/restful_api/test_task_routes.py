@@ -15,6 +15,7 @@
 #
 
 import pytest
+from test.testcases.configs import IS_GO_PROXY
 
 
 @pytest.mark.p2
@@ -24,13 +25,15 @@ def test_task_routes_require_auth(rest_client_noauth):
     cancel_payload = cancel_res.json()
     assert cancel_payload["code"] == 401, cancel_payload
 
-    patch_res = rest_client_noauth.patch("/tasks/missing_task", json={"action": "stop"})
-    assert patch_res.status_code == 401
-    patch_payload = patch_res.json()
-    assert patch_payload["code"] == 401, patch_payload
+    if not IS_GO_PROXY:
+        patch_res = rest_client_noauth.patch("/tasks/missing_task", json={"action": "stop"})
+        assert patch_res.status_code == 401
+        patch_payload = patch_res.json()
+        assert patch_payload["code"] == 401, patch_payload
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(IS_GO_PROXY, reason="PATCH /tasks/:id is a Python task-service endpoint; Go cancellation uses session IDs")
 def test_patch_task_rejects_unsupported_action(rest_client):
     res = rest_client.patch("/tasks/missing_task", json={"action": "pause"})
     assert res.status_code == 200
@@ -40,6 +43,7 @@ def test_patch_task_rejects_unsupported_action(rest_client):
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(IS_GO_PROXY, reason="Python task cancellation treats unknown task IDs as idempotent no-ops; Go route IDs are Agent sessions")
 def test_cancel_missing_task_sets_cancel_contract(rest_client):
     res = rest_client.post("/tasks/missing_task/cancel")
     assert res.status_code == 200

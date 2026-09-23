@@ -363,6 +363,10 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 
 	// Build response (same as Python _build_chat_response)
 	// The service already returns GetChatResponse with DatasetIDs and KBNames
+	llmID := chat.LLMID
+	if chat.TenantLLMID != nil && strings.TrimSpace(*chat.TenantLLMID) != "" {
+		llmID = *chat.TenantLLMID
+	}
 	result := map[string]interface{}{
 		"id":                       chat.ID,
 		"tenant_id":                chat.TenantID,
@@ -370,7 +374,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"description":              chat.Description,
 		"icon":                     chat.Icon,
 		"language":                 chat.Language,
-		"llm_id":                   chat.LLMID,
+		"llm_id":                   llmID,
 		"llm_setting":              chat.LLMSetting,
 		"prompt_type":              chat.PromptType,
 		"prompt_config":            chat.PromptConfig,

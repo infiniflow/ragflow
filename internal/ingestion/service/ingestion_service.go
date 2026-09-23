@@ -872,7 +872,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
 	}
-	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
+	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task done.")
 	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))

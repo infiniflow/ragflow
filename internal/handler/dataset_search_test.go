@@ -192,7 +192,7 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	}
 }
 
-func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *testing.T) {
+func TestDatasetsHandlerSearchDatasetsValidationErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -229,8 +229,17 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 			}
 			body := decodeSearchResponse(t, rec)
-			if body["code"] != float64(common.CodeArgumentError) {
-				t.Fatalf("code=%v want=%d body=%s", body["code"], common.CodeArgumentError, rec.Body.String())
+			wantCode := common.CodeArgumentError
+			wantMessage := ""
+			if tt.name == "missing dataset ids" {
+				wantCode = common.CodeDataError
+				wantMessage = "`dataset_ids` is required."
+			}
+			if body["code"] != float64(wantCode) {
+				t.Fatalf("code=%v want=%d body=%s", body["code"], wantCode, rec.Body.String())
+			}
+			if wantMessage != "" && body["message"] != wantMessage {
+				t.Fatalf("message=%v want=%q body=%s", body["message"], wantMessage, rec.Body.String())
 			}
 		})
 	}

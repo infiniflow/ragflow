@@ -133,6 +133,26 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
 		return nil, err
 	}
+	if len(documentIDs) > 0 {
+		documents, err := d.documentDAO.GetByIDs(ctx, dao.DB, documentIDs)
+		if err != nil {
+			return nil, err
+		}
+		ownedDocumentIDs := make(map[string]struct{}, len(documents))
+		for _, document := range documents {
+			for _, datasetID := range datasetIDs {
+				if document.KbID == datasetID {
+					ownedDocumentIDs[document.ID] = struct{}{}
+					break
+				}
+			}
+		}
+		for _, documentID := range documentIDs {
+			if _, ok := ownedDocumentIDs[documentID]; !ok {
+				return nil, fmt.Errorf("The datasets don't own the document %s", documentID)
+			}
+		}
+	}
 
 	// Override request fields with values from saved search config
 	var chatID string

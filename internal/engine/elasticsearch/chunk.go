@@ -570,6 +570,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 
 	doc := copyFields(newValue)
 	delete(doc, "id")
+	retryOnConflict := 3
 
 	removeValue, _ := doc["remove"]
 	delete(doc, "remove")
@@ -591,9 +592,10 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 		}
 		body, _ = json.Marshal(scriptBody)
 		req := esapi.UpdateRequest{
-			Index:      indexName,
-			DocumentID: actualID,
-			Body:       bytes.NewReader(body),
+			Index:           indexName,
+			DocumentID:      actualID,
+			RetryOnConflict: &retryOnConflict,
+			Body:            bytes.NewReader(body),
 		}
 		res, err = req.Do(ctx, e.client)
 		if err != nil {
@@ -611,9 +613,10 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 		}
 		body, _ = json.Marshal(scriptBody)
 		req := esapi.UpdateRequest{
-			Index:      indexName,
-			DocumentID: actualID,
-			Body:       bytes.NewReader(body),
+			Index:           indexName,
+			DocumentID:      actualID,
+			RetryOnConflict: &retryOnConflict,
+			Body:            bytes.NewReader(body),
 		}
 		res, err = req.Do(ctx, e.client)
 		if err != nil {
@@ -641,9 +644,10 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 			}
 			body, _ = json.Marshal(scriptBody)
 			req := esapi.UpdateRequest{
-				Index:      indexName,
-				DocumentID: actualID,
-				Body:       bytes.NewReader(body),
+				Index:           indexName,
+				DocumentID:      actualID,
+				RetryOnConflict: &retryOnConflict,
+				Body:            bytes.NewReader(body),
 			}
 			res, err = req.Do(ctx, e.client)
 			if err != nil {
@@ -661,9 +665,11 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 		updateBody := map[string]interface{}{"doc": doc}
 		body, _ := json.Marshal(updateBody)
 		req := esapi.UpdateRequest{
-			Index:      indexName,
-			DocumentID: actualID,
-			Body:       bytes.NewReader(body),
+			Index:           indexName,
+			DocumentID:      actualID,
+			RetryOnConflict: &retryOnConflict,
+			Refresh:         "wait_for",
+			Body:            bytes.NewReader(body),
 		}
 		res, err := req.Do(ctx, e.client)
 		if err != nil {

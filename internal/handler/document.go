@@ -1256,6 +1256,9 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"update_time":            int64(0),
 		"update_date":            "",
 	}
+	if item["progress_msg"] == "" && latestEvent != nil {
+		item["progress_msg"] = latestEvent.Message
+	}
 
 	if doc.CreateTime != nil {
 		item["create_time"] = *doc.CreateTime
@@ -1622,10 +1625,28 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 
 	successCount := 0
+	var invalidIDs []string
+	var otherError string
 	for _, r := range parseResult {
 		if strings.HasPrefix(r.Result, "task_id:") {
 			successCount++
+			continue
 		}
+		if r.Result == "no such document" || r.Result == "document does not belong to dataset" {
+			invalidIDs = append(invalidIDs, r.DocumentID)
+			continue
+		}
+		if otherError == "" {
+			otherError = r.Result
+		}
+	}
+	if len(invalidIDs) > 0 {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Documents not found: ['%s']", strings.Join(invalidIDs, "', '")))
+		return
+	}
+	if otherError != "" {
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, otherError)
+		return
 	}
 	common.SuccessWithData(c, map[string]interface{}{"success_count": successCount}, "success")
 }
@@ -1742,6 +1763,11 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	result, err := h.documentService.StopParseDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
+		var coded service.ErrorCoder
+		if errors.As(err, &coded) {
+			common.ResponseWithCodeData(c, coded.Code(), nil, err.Error())
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
 	}

@@ -322,13 +322,20 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	ctx := t.Context()
 	page := 1
 	size := 30
-	if _, err := svc.List(ctx, &service.ListChunksRequest{
+	resp, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
 		Page:      &page,
 		Size:      &size,
-	}, userID); err != nil {
+	}, userID)
+	if err != nil {
 		t.Fatalf("List() error = %v", err)
+	}
+	if len(resp.Chunks) != 1 || resp.Chunks[0]["id"] != "chunk-1" {
+		t.Fatalf("List() chunks = %#v, want public id field", resp.Chunks)
+	}
+	if _, ok := resp.Chunks[0]["chunk_id"]; ok {
+		t.Fatalf("List() exposed internal chunk_id field: %#v", resp.Chunks[0])
 	}
 
 	if engine.searchReq == nil {
@@ -492,8 +499,8 @@ func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
 		DocumentID: documentID,
 		ChunkID:    "chunk-1",
 	}, userID)
-	if err == nil || !strings.Contains(err.Error(), "chunk not found") {
-		t.Fatalf("Get() error = %v, want chunk not found", err)
+	if err == nil || !strings.Contains(err.Error(), "Chunk not found!") {
+		t.Fatalf("Get() error = %v, want Chunk not found!", err)
 	}
 }
 
@@ -700,8 +707,41 @@ func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected UpdateChunk to reject a chunk from another document")
 	}
-	if !strings.Contains(err.Error(), "chunk not found") {
-		t.Fatalf("UpdateChunk error = %q, want chunk not found", err)
+	if !strings.Contains(err.Error(), "Can't find this chunk chunk-1") {
+		t.Fatalf("UpdateChunk error = %q, want missing chunk message", err)
+	}
+	if len(engine.updateCalls) != 0 {
+		t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+	}
+}
+
+func TestUpdateChunkRejectsEmptyContent(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{existingChunk: map[string]interface{}{
+		"doc_id":              "doc-a",
+		"content_with_weight": "existing content",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+	content := " \n"
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+		Content:    &content,
+	}, "user-1")
+	var coded service.ErrorCoder
+	if !errors.As(err, &coded) || coded.Code() != common.CodeDataError {
+		t.Fatalf("UpdateChunk() error = %v, want CodeDataError", err)
 	}
 	if len(engine.updateCalls) != 0 {
 		t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
@@ -1115,6 +1155,33 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 	}
 }
 
+func TestRemoveChunksRejectsDatasetMismatchBeforeDelete(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+
+	engine := &parseTestDocEngine{deleteChunksCount: 1}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+	_, err := svc.RemoveChunks(t.Context(), &service.RemoveChunksRequest{
+		DatasetID: "other-dataset",
+		DocID:     "doc-1",
+		ChunkIDs:  []string{"chunk-1"},
+	}, "user-1")
+	var coded service.ErrorCoder
+	if !errors.As(err, &coded) || coded.Code() != common.CodeDataError {
+		t.Fatalf("RemoveChunks() error = %v, want CodeDataError", err)
+	}
+	if engine.deleteChunksCalls != 0 {
+		t.Fatalf("DeleteChunks calls = %d, want 0", engine.deleteChunksCalls)
+	}
+}
+
 func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
@@ -1146,6 +1213,34 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 	}
 	if decrementCalls != 0 {
 		t.Fatalf("decrement calls = %d, want 0", decrementCalls)
+	}
+}
+
+func TestRemoveChunksEmptyRequestIsNoop(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+
+	engine := &parseTestDocEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	deleted, err := svc.RemoveChunks(t.Context(), &service.RemoveChunksRequest{
+		DocID: "doc-1",
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("RemoveChunks() error = %v", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("RemoveChunks() deleted = %d, want 0", deleted)
+	}
+	if engine.deleteChunksCalls != 0 {
+		t.Fatalf("DeleteChunks calls = %d, want 0", engine.deleteChunksCalls)
 	}
 }
 

@@ -2683,6 +2683,7 @@ def test_dataset_ingestion_invalid_dataset(rest_client):
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(IS_GO_PROXY, reason="Go uses scheduler-driven dataset compilation instead of the retired /index API")
 def test_dataset_index_endpoints(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_index_endpoints")
 
@@ -2754,6 +2755,7 @@ def test_dataset_graph_endpoint_contract(rest_client, create_dataset):
 
 @pytest.mark.p2
 @pytest.mark.parametrize("index_type", ["graph", "raptor", "mindmap"])
+@pytest.mark.skipif(IS_GO_PROXY, reason="Go uses scheduler-driven dataset compilation instead of the retired /index API")
 def test_dataset_index_trace_and_delete_type_contract(rest_client, create_document, index_type):
     dataset_id, _ = create_document(f"dataset_index_trace_{index_type}.txt")
 
@@ -2783,6 +2785,7 @@ def test_dataset_index_trace_and_delete_type_contract(rest_client, create_docume
 
 @pytest.mark.p2
 @pytest.mark.parametrize("index_type", ["graph", "raptor", "mindmap"])
+@pytest.mark.skipif(IS_GO_PROXY, reason="Go uses scheduler-driven dataset compilation instead of the retired /index API")
 def test_dataset_index_run_with_document_creates_task(rest_client, create_document, index_type):
     dataset_id, _ = create_document("dataset_index_graph_source.txt")
     run_graph = rest_client.post(

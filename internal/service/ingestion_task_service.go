@@ -114,6 +114,13 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 	responses := make([]*ParseDocumentResponse, 0, len(uniqueDocIDs))
 	for _, docID := range uniqueDocIDs {
 		doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+		if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && doc == nil) {
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     "no such document",
+			})
+			continue
+		}
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -121,10 +128,25 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			})
 			continue
 		}
-		if doc == nil {
+		if doc.KbID != datasetID {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     "no such document",
+				Result:     "document does not belong to dataset",
+			})
+			continue
+		}
+		if existing, lookupErr := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID); lookupErr != nil {
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     lookupErr.Error(),
+			})
+			continue
+		} else if existing != nil && common.IsActiveTaskStatus(existing.Status) {
+			// Repeated parse requests are idempotent while a worker owns the
+			// current run; do not enqueue a second task for the same document.
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     fmt.Sprintf("task_id: %s", existing.ID),
 			})
 			continue
 		}
@@ -498,7 +520,7 @@ func validateTransition(from, to string) error {
 		if to == common.STOPPED {
 			return nil
 		}
-	case common.FAILED, common.STOPPED:
+	case common.COMPLETED, common.FAILED, common.STOPPED:
 		if to == common.CREATED {
 			return nil
 		}
@@ -586,7 +608,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				return nil, err
 			}
 			return s.markScheduledAfterPublish(ctx, existing.ID)
-		case common.FAILED, common.STOPPED:
+		case common.COMPLETED, common.FAILED, common.STOPPED:
 			originalStatus := existing.Status
 			existing, err = s.transition(ctx, existing.ID, common.CREATED)
 			if err != nil {
@@ -635,6 +657,16 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
+	if status == common.COMPLETED {
+		updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
+		}
+		return nil
+	}
 	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
 	if err != nil {
 		return err

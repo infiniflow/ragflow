@@ -164,6 +164,43 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	}
 }
 
+func TestUpdateSingleChunkWaitsForRefresh(t *testing.T) {
+	var gotRefresh string
+	var gotRetryOnConflict string
+	var gotUpdate bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/ragflow_tenant":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/ragflow_tenant/_search":
+			_, _ = w.Write([]byte(`{"hits":{"hits":[{"_id":"internal-1"}]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/ragflow_tenant/_update/internal-1":
+			gotRefresh = r.URL.Query().Get("refresh")
+			gotRetryOnConflict = r.URL.Query().Get("retry_on_conflict")
+			gotUpdate = true
+			_, _ = w.Write([]byte(`{"result":"updated"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	if err := engine.UpdateChunks(t.Context(), map[string]interface{}{"id": "chunk-1"},
+		map[string]interface{}{"content_with_weight": "updated"}, "ragflow_tenant", "kb-1"); err != nil {
+		t.Fatalf("UpdateChunks: %v", err)
+	}
+	if !gotUpdate || gotRefresh != "wait_for" || gotRetryOnConflict != "3" {
+		t.Fatalf("update=%v refresh=%q retry_on_conflict=%q, want update, wait_for, and 3 retries", gotUpdate, gotRefresh, gotRetryOnConflict)
+	}
+}
+
 func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 	var deleteQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

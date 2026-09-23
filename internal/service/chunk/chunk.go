@@ -546,17 +546,17 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		}
 	}
 	if targetTenantID == "" {
-		return nil, fmt.Errorf("user does not have access to this dataset")
+		return nil, chunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	// Verify the document belongs to the dataset, mirroring Python's get_chunk
 	// (DocumentService.query(id=document_id, kb_id=dataset_id)).
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, req.DocumentID)
 	if err != nil || doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, chunkError{code: common.CodeDataError, message: "document not found"}
 	}
 	if doc.KbID != req.DatasetID {
-		return nil, fmt.Errorf("document does not belong to this dataset")
+		return nil, chunkError{code: common.CodeDataError, message: "document does not belong to this dataset"}
 	}
 
 	// The lookup stays inside the dataset named in the route, and the row must
@@ -565,17 +565,17 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 	rawChunk, err := s.docEngine.GetChunk(ctx, indexName, req.ChunkID, []string{req.DatasetID})
 	if err != nil {
-		return nil, fmt.Errorf("chunk not found")
+		return nil, chunkError{code: common.CodeDataError, message: "Chunk not found!"}
 	}
 	chunk, ok := rawChunk.(map[string]interface{})
 	if !ok || chunk == nil {
-		return nil, fmt.Errorf("chunk not found")
+		return nil, chunkError{code: common.CodeDataError, message: "Chunk not found!"}
 	}
 	if documentID, _ := chunk["doc_id"].(string); documentID != req.DocumentID {
-		return nil, fmt.Errorf("chunk not found")
+		return nil, chunkError{code: common.CodeDataError, message: "Chunk not found!"}
 	}
 	if !utility.IsEmpty(chunk["compile_kwd"]) {
-		return nil, fmt.Errorf("chunk not found")
+		return nil, chunkError{code: common.CodeDataError, message: "Chunk not found!"}
 	}
 
 	// Return the stored row with only the tokenized/vector runtime fields
@@ -804,16 +804,16 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
-		return nil, fmt.Errorf("document not found")
+		return nil, chunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocID)}
 	}
 	if req.DatasetID != "" && doc.KbID != req.DatasetID {
-		return nil, fmt.Errorf("document not found")
+		return nil, chunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	// Get knowledge base to find tenant
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
-		return nil, fmt.Errorf("knowledge base not found")
+		return nil, chunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	// Find which tenant this document belongs to
@@ -825,7 +825,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		}
 	}
 	if targetTenantID == "" {
-		return nil, fmt.Errorf("user does not have access to this document")
+		return nil, chunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -928,7 +928,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			case "position_int":
 				result["positions"] = v
 			case "id":
-				result["chunk_id"] = v
+				result["id"] = v
 			case "content_with_weight":
 				result["content_with_weight"] = v
 			case "content":
@@ -1093,7 +1093,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 
 	if req.ChunkID == "" {
-		return fmt.Errorf("chunk_id is required")
+		return updateChunkError{code: common.CodeArgumentError, message: "chunk_id is required"}
 	}
 
 	// Get user's tenants
@@ -1115,33 +1115,33 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		}
 	}
 	if targetTenantID == "" {
-		return fmt.Errorf("user does not have access to this dataset")
+		return updateChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	// Verify document belongs to dataset
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocumentID)
 	if err != nil || doc == nil {
-		return fmt.Errorf("document not found")
+		return updateChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
 	}
 	if doc.KbID != req.DatasetID {
-		return fmt.Errorf("document does not belong to this dataset")
+		return updateChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
 	}
 
 	// Fetch existing chunk first
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 	existingChunk, err := s.docEngine.GetChunk(ctx, indexName, req.ChunkID, []string{req.DatasetID})
 	if err != nil {
-		return fmt.Errorf("failed to get existing chunk: %w", err)
+		return updateChunkError{code: common.CodeDataError, message: fmt.Sprintf("Can't find this chunk %s", req.ChunkID)}
 	}
 
 	existing, ok := existingChunk.(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("invalid chunk format")
+		return updateChunkError{code: common.CodeDataError, message: fmt.Sprintf("Can't find this chunk %s", req.ChunkID)}
 	}
 	existingDocumentID, ok := existing["doc_id"].(string)
 	if !ok || existingDocumentID != req.DocumentID {
-		return fmt.Errorf("chunk not found")
+		return updateChunkError{code: common.CodeDataError, message: fmt.Sprintf("Can't find this chunk %s", req.ChunkID)}
 	}
 
 	// Build update dict
@@ -1149,6 +1149,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	// Content - use new value or existing
 	if req.Content != nil {
+		if strings.TrimSpace(*req.Content) == "" {
+			return updateChunkError{code: common.CodeDataError, message: "`content` is required"}
+		}
 		d["content_with_weight"] = *req.Content
 	} else {
 		if v, ok := existing["content_with_weight"].(string); ok {
@@ -1251,7 +1254,10 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
-		return 0, fmt.Errorf("document not found")
+		return 0, chunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocID)}
+	}
+	if req.DatasetID != "" && doc.KbID != req.DatasetID {
+		return 0, chunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	// Find the tenant that owns this document
@@ -1264,7 +1270,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		}
 	}
 	if targetTenantID == "" {
-		return 0, fmt.Errorf("user does not have access to this document")
+		return 0, chunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1286,12 +1292,26 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		// Delete all chunks for this document
 		condition["doc_id"] = req.DocID
 	default:
-		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
+		// Python treats an empty delete request as an idempotent no-op.
+		return 0, nil
 	}
 
 	deletedCount, err := s.docEngine.DeleteChunks(ctx, condition, indexName, doc.KbID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
+	}
+	var partialErr error
+	if len(req.ChunkIDs) > 0 {
+		uniqueIDs := make(map[string]struct{}, len(req.ChunkIDs))
+		for _, id := range req.ChunkIDs {
+			uniqueIDs[id] = struct{}{}
+		}
+		if deletedCount != int64(len(uniqueIDs)) {
+			partialErr = chunkError{
+				code:    common.CodeDataError,
+				message: fmt.Sprintf("rm_chunk deleted chunks %d, expect %d", deletedCount, len(uniqueIDs)),
+			}
+		}
 	}
 
 	if deletedCount > 0 {
@@ -1301,6 +1321,9 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		s.markWikiDirty(ctx, targetTenantID, doc.KbID, req.DocID, req.ChunkIDs)
 	}
 
+	if partialErr != nil {
+		return deletedCount, partialErr
+	}
 	return deletedCount, nil
 }
 
@@ -1470,6 +1493,19 @@ type addChunkError struct {
 type updateChunkError struct {
 	code    common.ErrorCode
 	message string
+}
+
+type chunkError struct {
+	code    common.ErrorCode
+	message string
+}
+
+func (e chunkError) Error() string {
+	return e.message
+}
+
+func (e chunkError) Code() common.ErrorCode {
+	return e.code
 }
 
 func (e updateChunkError) Error() string {

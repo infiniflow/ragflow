@@ -322,11 +322,7 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 		// Mirror the Python parse/stop endpoint's "Documents not found" message.
 		var notInDataset *documentsNotInDatasetError
 		if errors.As(err, &notInDataset) {
-			quoted := make([]string, len(notInDataset.ids))
-			for i, id := range notInDataset.ids {
-				quoted[i] = "'" + id + "'"
-			}
-			return nil, fmt.Errorf("Documents not found: [%s]", strings.Join(quoted, ", "))
+			return nil, documentsNotFoundError{ids: notInDataset.ids}
 		}
 		return nil, err
 	}
@@ -358,6 +354,18 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 type documentsNotInDatasetError struct {
 	datasetID string
 	ids       []string
+}
+
+type documentsNotFoundError struct {
+	ids []string
+}
+
+func (e documentsNotFoundError) Error() string {
+	return fmt.Sprintf("Documents not found: ['%s']", strings.Join(e.ids, "', '"))
+}
+
+func (documentsNotFoundError) Code() common.ErrorCode {
+	return common.CodeDataError
 }
 
 // Error mirrors the Python delete endpoint's message.

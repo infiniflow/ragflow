@@ -133,7 +133,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 	}
 	for _, n := range names {
 		if n == name {
-			return nil, common.CodeDataError, fmt.Errorf("duplicated document name in the same dataset")
+			return nil, common.CodeDataError, fmt.Errorf("duplicated document name in the same dataset.")
 		}
 	}
 

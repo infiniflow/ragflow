@@ -78,6 +78,7 @@ type fakeDocumentService struct {
 	ingestErr              error
 	ingestUserID           string
 	ingestReq              *document.IngestDocumentRequest
+	ingestDocumentsResult  []*service.ParseDocumentResponse
 	listOpts               dao.DocumentListOptions
 	filterOpts             dao.DocumentListOptions
 	filterResult           map[string]interface{}
@@ -101,6 +102,9 @@ func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
 	got, ok := item["latest_ingestion_event"].(*service.IngestionEventItem)
 	if !ok || got != event {
 		t.Fatalf("latest_ingestion_event = %#v, want original event", item["latest_ingestion_event"])
+	}
+	if got := item["progress_msg"]; got != "queued" {
+		t.Fatalf("progress_msg = %v, want latest event message", got)
 	}
 }
 
@@ -285,7 +289,7 @@ func (f *fakeDocumentService) ListIngestionTasks(ctx context.Context, userID str
 	return nil, nil
 }
 func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	return nil, nil
+	return f.ingestDocumentsResult, nil
 }
 func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
 	return f.stopIngestionTasks, f.stopIngestionTaskErr
@@ -1284,6 +1288,46 @@ func TestListDocumentsRejectsInvalidRunFilter(t *testing.T) {
 		if !strings.Contains(msg, "Invalid filter run status conditions: "+invalid) {
 			t.Fatalf("expected error message for %s to contain 'Invalid filter run status conditions: %s', got %q", invalid, invalid, msg)
 		}
+	}
+}
+
+func TestStartIngestionTaskPrioritizesInvalidDocumentIDs(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		ingestDocumentsResult: []*service.ParseDocumentResponse{
+			{DocumentID: "doc-running", Result: "document id doc-running already exists, status: RUNNING, task id: task-1"},
+			{DocumentID: "invalid_id", Result: "no such document"},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser(
+		"POST",
+		"/api/v1/datasets/ds-1/ingestion/tasks",
+		`{"document_ids":["doc-running","invalid_id"]}`,
+	)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.StartIngestionTask(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if got := int(response["code"].(float64)); got != int(common.CodeDataError) {
+		t.Fatalf("code = %d, want %d: %v", got, common.CodeDataError, response)
+	}
+	if got := response["message"]; got != "Documents not found: ['invalid_id']" {
+		t.Fatalf("message = %v, want invalid-document error", got)
 	}
 }
 

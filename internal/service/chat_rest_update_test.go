@@ -169,6 +169,32 @@ func TestChatServiceCreateAcceptsNilMetaDataFilter(t *testing.T) {
 	assertEmptyMetaDataFilter(t, resp["meta_data_filter"])
 }
 
+func TestChatServiceCreateUsesTenantLLMIDForDefault(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	if err := db.Model(&entity.Tenant{}).Where("id = ?", "user-1").Updates(map[string]interface{}{
+		"llm_id":        "gpt-test",
+		"tenant_llm_id": "model-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to set tenant model defaults: %v", err)
+	}
+
+	resp, code, err := NewChatService().Create(t.Context(), "user-1", map[string]interface{}{
+		"name": "default tenant model chat",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("unexpected code: %v", code)
+	}
+	if resp["llm_id"] != "model-a" {
+		t.Fatalf("llm_id = %#v, want tenant model id model-a", resp["llm_id"])
+	}
+	if resp["tenant_llm_id"] != "model-a" {
+		t.Fatalf("tenant_llm_id = %#v, want model-a", resp["tenant_llm_id"])
+	}
+}
+
 func TestChatServiceCreateRejectsInvalidMetaDataFilter(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
@@ -308,6 +334,29 @@ func TestChatServiceUpdateChatBackfillsNilMetaDataFilter(t *testing.T) {
 		t.Fatal("expected meta_data_filter to be backfilled")
 	}
 	assertEmptyMetaDataFilter(t, *chat.MetaDataFilter)
+}
+
+func TestChatServiceUpdateChatNormalizesNumericValues(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	resp, err := NewChatService().UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"similarity_threshold":     "a",
+		"vector_similarity_weight": "a",
+		"top_n":                    "a",
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+	if resp["similarity_threshold"] != float64(0) {
+		t.Fatalf("similarity_threshold = %#v, want 0", resp["similarity_threshold"])
+	}
+	if resp["vector_similarity_weight"] != float64(0) {
+		t.Fatalf("vector_similarity_weight = %#v, want 0", resp["vector_similarity_weight"])
+	}
+	if resp["top_n"] != int64(0) {
+		t.Fatalf("top_n = %#v, want 0", resp["top_n"])
+	}
 }
 
 func TestChatServicePatchChatIgnoresTenantIDAndUpdatesName(t *testing.T) {

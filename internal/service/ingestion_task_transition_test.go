@@ -21,6 +21,7 @@ func TestValidateTransitionAllowsExpectedEdges(t *testing.T) {
 		{from: common.RUNNING, to: common.COMPLETED},
 		{from: common.RUNNING, to: common.FAILED},
 		{from: common.STOPPING, to: common.STOPPED},
+		{from: common.COMPLETED, to: common.CREATED},
 		{from: common.FAILED, to: common.CREATED},
 		{from: common.STOPPED, to: common.CREATED},
 	}

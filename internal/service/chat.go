@@ -241,6 +241,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		}
 		if tenantLLMID != "" {
 			req["tenant_llm_id"] = tenantLLMID
+			req["llm_id"] = tenantLLMID
 		}
 	}
 
@@ -275,9 +276,11 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		req["kb_ids"] = []string{}
 	}
 	if _, ok := req["llm_id"]; !ok || req["llm_id"] == nil {
-		req["llm_id"] = tenant.LLMID
-		if tenant.TenantLLMID != nil {
+		if tenant.TenantLLMID != nil && strings.TrimSpace(*tenant.TenantLLMID) != "" {
+			req["llm_id"] = *tenant.TenantLLMID
 			req["tenant_llm_id"] = *tenant.TenantLLMID
+		} else {
+			req["llm_id"] = tenant.LLMID
 		}
 	}
 	if stringFromValue(req["llm_id"]) != "" && !isTruthy(req["tenant_llm_id"]) {
@@ -288,6 +291,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		}
 		if tenantLLMID != "" {
 			req["tenant_llm_id"] = tenantLLMID
+			req["llm_id"] = tenantLLMID
 		}
 	}
 	if _, ok := req["llm_setting"]; !ok || req["llm_setting"] == nil {
@@ -377,7 +381,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	}
 	values, ok := listFromValue(value)
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list")
+		return nil, errors.New("`dataset_ids` should be a list.")
 	}
 
 	normalizedIDs := make([]string, 0, len(values))
@@ -392,11 +396,11 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 
 	for _, datasetID := range normalizedIDs {
 		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, tenantID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
 			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
@@ -942,6 +946,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		req["meta_data_filter"] = entity.JSONMap{}
 	}
 
+	normalizeRESTChatNumericFields(req)
 	updates := filterRESTChatUpdates(req)
 	if value, ok := updates["name"]; ok {
 		name := value.(string)
@@ -1032,7 +1037,7 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 	}
 	items, ok := value.([]interface{})
 	if !ok {
-		return nil, errors.New("`dataset_ids` should be a list")
+		return nil, errors.New("`dataset_ids` should be a list.")
 	}
 
 	var kbs []*entity.Knowledgebase
@@ -1043,11 +1048,11 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 		}
 		datasetID := fmt.Sprint(item)
 		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
 			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
@@ -1127,6 +1132,19 @@ func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
 	return updates
 }
 
+func normalizeRESTChatNumericFields(req map[string]interface{}) {
+	for _, field := range []string{"similarity_threshold", "vector_similarity_weight"} {
+		if value, ok := req[field]; ok {
+			req[field] = floatFromValue(value)
+		}
+	}
+	for _, field := range []string{"top_n", "rerank_candidates_count", "top_k"} {
+		if value, ok := req[field]; ok {
+			req[field] = int64FromValue(value)
+		}
+	}
+}
+
 func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSONMap {
 	merged := entity.JSONMap{}
 	for key, value := range base {
@@ -1140,6 +1158,10 @@ func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSON
 
 func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Chat) map[string]interface{} {
 	kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
+	llmID := chat.LLMID
+	if chat.TenantLLMID != nil && strings.TrimSpace(*chat.TenantLLMID) != "" {
+		llmID = *chat.TenantLLMID
+	}
 	return map[string]interface{}{
 		"id":                       chat.ID,
 		"tenant_id":                chat.TenantID,
@@ -1147,7 +1169,7 @@ func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Ch
 		"description":              chat.Description,
 		"icon":                     chat.Icon,
 		"language":                 chat.Language,
-		"llm_id":                   chat.LLMID,
+		"llm_id":                   llmID,
 		"tenant_llm_id":            chat.TenantLLMID,
 		"llm_setting":              chat.LLMSetting,
 		"prompt_type":              chat.PromptType,

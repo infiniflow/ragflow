@@ -16,6 +16,7 @@
 
 import pytest
 
+from test.testcases.configs import IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 
 
@@ -123,6 +124,7 @@ def test_system_stats_auth_and_shape(rest_client, rest_client_noauth):
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(IS_GO_PROXY, reason="OceanBase health probing is only exposed by the Python API")
 def test_system_oceanbase_status_auth_contract(rest_client, rest_client_noauth):
     unauth = rest_client_noauth.get("/system/oceanbase/status")
     assert unauth.status_code == 401
