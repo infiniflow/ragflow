@@ -1,5 +1,5 @@
 ---
-sidebar_position: 13
+sidebar_position: 5
 title: RAGFlow MCP Client Examples
 sidebar_label: RAGFlow MCP Client Examples
 slug: /mcp_client
@@ -10,69 +10,93 @@ sidebar_custom_props: {
 
 # RAGFlow MCP Client Examples
 
-These clients call the MCP implementation in RAGFlow's Go API server. The Python code below is a client example; it does not start a Python MCP server. To use external MCP tools inside a RAGFlow Agent, see [Connect external MCP tools](./connect_external_mcp_servers.md).
+These clients call the MCP implementation in RAGFlow's Go API server. The Python code is a client; it does not start a Python MCP server. To use tools from an external MCP server inside a RAGFlow Agent, see [Connect an External MCP Server to RAGFlow](./connect_an_external_mcp_to_ragflow.md).
 
-## Python client: Streamable HTTP
+The examples use the built-in Go API route at `http://127.0.0.1:9384/api/v1/mcp`. Replace the host or port if your API is exposed through a reverse proxy. [Acquire a RAGFlow API key](../acquire_ragflow_api_key.md) and send it as `Authorization: Bearer <RAGFLOW_API_KEY>`.
 
-Install the Python MCP client SDK in your client environment, then connect to either the Go API route or the optional listener. This example uses the optional listener in host mode:
+## Python client
+
+This example targets version 2 of the MCP Python SDK, which requires Python 3.10 or later:
+
+```bash
+python -m pip install 'mcp>=2,<3'
+```
+
+The current SDK uses `streamable_http_client`. HTTP headers belong on an `httpx2.AsyncClient` passed to that transport:
 
 ```python
 import asyncio
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 
 
-async def main():
-    async with streamablehttp_client(
-        "http://127.0.0.1:9382/mcp",
+async def main() -> None:
+    async with httpx2.AsyncClient(
         headers={"Authorization": "Bearer <RAGFLOW_API_KEY>"},
-    ) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
+        timeout=httpx2.Timeout(30.0, read=300.0),
+    ) as http_client:
+        transport = streamable_http_client(
+            "http://127.0.0.1:9384/api/v1/mcp",
+            http_client=http_client,
+        )
+        async with Client(transport) as client:
+            tools = await client.list_tools()
             print([tool.name for tool in tools.tools])
+
+            result = await client.call_tool(
+                "ragflow_retrieval",
+                {"question": "How do I install Neovim?"},
+            )
+            print(result.content)
 
 
 asyncio.run(main())
 ```
 
-To use the API route, change the URL to the Go API address ending in `/api/v1/mcp` and keep the `Authorization` header. The optional listener must be enabled before connecting to port `9382`. A legacy SSE client can use that listener's `/sse` URL when SSE is enabled.
+Entering the `Client` context negotiates the supported MCP protocol automatically. The Go server currently supports `2025-11-25`, `2025-06-18`, `2025-03-26`, and `2024-11-05`.
 
-## curl: Streamable HTTP
+## curl smoke checks
 
-Send each request to the same endpoint. The optional listener is stateless for Streamable HTTP, so no SSE session ID is needed. For the API route, replace the URL with your Go API address ending in `/api/v1/mcp`.
+The Go Streamable HTTP handler is stateless: each POST uses a temporary MCP session with default initialization parameters. The following commands are therefore **independent smoke checks**. The initialization request demonstrates protocol negotiation; it does not create a reusable session for the later commands.
 
-Initialize:
+### Initialize
 
 ```bash
-curl -sS http://127.0.0.1:9382/mcp \
+curl -sS http://127.0.0.1:9384/api/v1/mcp \
   -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
 ```
 
-List tools:
+A successful response contains `result.serverInfo.name` set to `ragflow-mcp-server` and a negotiated `protocolVersion`.
+
+### List tools
 
 ```bash
-curl -sS http://127.0.0.1:9382/mcp \
+curl -sS http://127.0.0.1:9384/api/v1/mcp \
   -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
 
-The list contains `ragflow_retrieval`, `ragflow_list_datasets`, and `ragflow_list_chats`. A full MCP client sends `notifications/initialized` after initialization. The Go Streamable HTTP listener is stateless, so these independent curl requests do not reuse a session.
+The response lists `ragflow_retrieval`, `ragflow_list_datasets`, and `ragflow_list_chats`. A normal MCP SDK client performs initialization and sends the initialized notification automatically; raw stateless smoke checks do not need to reuse that state.
 
-Call a tool:
+### Call a tool
 
 ```bash
-curl -sS http://127.0.0.1:9382/mcp \
+curl -sS http://127.0.0.1:9384/api/v1/mcp \
   -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ragflow_retrieval","arguments":{"question":"How do I install Neovim?"}}}'
 ```
 
-To limit retrieval to particular datasets, add `dataset_ids` to `arguments`. See [RAGFlow MCP Tools](./mcp_tools.md) for all supported arguments.
+The MCP result contains a text content item whose text is the JSON retrieval result. Add `dataset_ids` or other supported arguments under `arguments` when needed. See [RAGFlow MCP Tools](./mcp_tools.md) for the complete schemas.
+
+## Legacy SSE clients
+
+The built-in `/api/v1/mcp` route does not provide SSE. When SSE is enabled on the optional listener, legacy clients connect to `http://127.0.0.1:9382/sse`; the server provides the corresponding `/messages/` URL. Use an MCP SDK to manage the SSE session and include the same authentication header on both requests.
