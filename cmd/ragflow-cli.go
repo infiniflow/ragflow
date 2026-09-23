@@ -42,7 +42,7 @@ func main() {
 	}
 
 	if cli.Arguments.ShowVersion {
-		fmt.Println("RAGFlow CLI version 1.0.0") // Replace with actual version if needed
+		fmt.Println("RAGFlow CLI version ", common.GetRAGFlowVersion())
 		return
 	}
 
