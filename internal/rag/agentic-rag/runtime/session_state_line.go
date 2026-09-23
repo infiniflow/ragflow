@@ -8,7 +8,7 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// SessionRecord is what a session can be told about its OWN progress. Every field is mechanical: the
+// sessionRecord is what a session can be told about its OWN progress. Every field is mechanical: the
 // notes the model itself wrote, and counters about what it has been shown.
 //
 // It used to carry a member list the runtime had DERIVED — the terms probes reached, the names the
@@ -18,12 +18,12 @@ import (
 // is a SEMANTIC judgement and the runtime does not make it. The model's own notes are the ledger (its
 // <state> patches are this loop's scratchpad), and the runtime's job is to render them whole and to
 // say what it has shown.
-type SessionRecord struct {
+type sessionRecord struct {
 	// Pool is the shared evidence pool's size at this turn.
 	Pool int
 	// Notes are the model's OWN notes, verbatim and in the order it wrote them: the slot candidates
 	// its patches produced. Nothing is split, counted, filtered or truncated — the ledger belongs to
-	// the model (see SessionState.noteValues).
+	// the model (see sessionState.noteValues).
 	Notes []string
 	// ShownSinceNote is how many passages the run has shown the model since it last wrote a note: the
 	// mechanical face of "you have read more than you have written down", and the replacement for the
@@ -35,8 +35,8 @@ type SessionRecord struct {
 }
 
 // sessionRecord gathers the record from the live pool plus the session's own notes.
-func (s *SessionState) sessionRecord() SessionRecord {
-	var r SessionRecord
+func (s *sessionState) sessionRecord() sessionRecord {
+	var r sessionRecord
 	if s == nil {
 		return r
 	}
@@ -51,8 +51,8 @@ func (s *SessionState) sessionRecord() SessionRecord {
 
 // noteValues are the values the MODEL has written into the table, verbatim: the candidates its patches
 // produced and the claims they displaced. The table is the session's scratchpad, so this is its
-// notebook — and the runtime reads it only to render it back (see SessionRecord.Notes).
-func (s *SessionState) noteValues(table State) []string {
+// notebook — and the runtime reads it only to render it back (see sessionRecord.Notes).
+func (s *sessionState) noteValues(table State) []string {
 	var out []string
 	for _, v := range table.State {
 		if v.Candidate != nil {
@@ -75,7 +75,7 @@ func (s *SessionState) noteValues(table State) []string {
 // model's own writing is a line the model cannot act on, and that is exactly how recall was lost (see
 // the type's note). The notes themselves are already in the conversation — the model wrote them — and
 // the places that have to account for them render them whole (see Verbose).
-func (r SessionRecord) Line() string {
+func (r sessionRecord) Line() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[record] your notes=%d item(s)", len(r.Notes))
 	if r.ShownSinceNote > 0 {
@@ -90,7 +90,7 @@ func (r SessionRecord) Line() string {
 
 // Verbose renders the model's notes in FULL — one per line, verbatim — for the places where the model
 // is asked to account for what it has: the answer turn, and the composition that follows it.
-func (r SessionRecord) Verbose() string {
+func (r sessionRecord) Verbose() string {
 	if len(r.Notes) == 0 {
 		return ""
 	}
@@ -103,7 +103,7 @@ func (r SessionRecord) Verbose() string {
 }
 
 // Brief is the record's counts, for logs.
-func (r SessionRecord) Brief() string {
+func (r sessionRecord) Brief() string {
 	return fmt.Sprintf("notes=%d shown_since_note=%d pool=%d asked=%d",
 		len(r.Notes), r.ShownSinceNote, r.Pool, len(r.Asked))
 }
@@ -112,7 +112,7 @@ func (r SessionRecord) Brief() string {
 // with the session's own branch patches applied in order. Reading the parent table
 // alone would report the record as it stood when the session started, so a member
 // the session itself just found would still read as missing.
-func (s *SessionState) workingTable() State {
+func (s *sessionState) workingTable() State {
 	t := State{
 		State:                append([]Variable(nil), s.ParentState.State...),
 		Depth:                s.ParentState.Depth,
@@ -171,7 +171,7 @@ const subjectWordsMax = 8
 // session already read, so they score LOW. The
 // words the session itself used are what tells the two apart, and they are the
 // model's words, not a lexicon.
-func (s *SessionState) unreadPoolExcerpt() string {
+func (s *sessionState) unreadPoolExcerpt() string {
 	// ONE per session, and that is deliberate. The premise holds — such a passage really is
 	// in the pool and really is unread — but the selection is not reliable enough to spend
 	// context on every flat turn, so it stays available as the session's last resort rather
@@ -237,14 +237,14 @@ func mentionsAny(text string, words []string) bool {
 //
 // They are the model's (or the planner's) own words, read with the corpus's own
 // tokenizer, so no list of names or verbs is involved anywhere.
-func (s *SessionState) subjectWords() []string {
+func (s *sessionState) subjectWords() []string {
 	var out []string
 	seen := map[string]bool{}
 	add := func(text string) {
 		if text == "" || len(out) >= subjectWordsMax {
 			return
 		}
-		for _, w := range append(GrepWordsFromQuery(text), tokenizerWords(text)...) {
+		for _, w := range append(grepWordsFromQuery(text), tokenizerWords(text)...) {
 			w = strings.TrimSpace(w)
 			if r := utf8.RuneCountInString(w); r < 2 || r > cjkPhraseRunes {
 				continue
@@ -324,7 +324,7 @@ func novelAnchor(text string, known map[string]bool) (string, int) {
 // recordVocabulary is everything the model's OWN record already accounts for: the notes it wrote and
 // the words of the queries it ran. A term in here is not new information — and the judgement is
 // mechanical, because what is "already known" is exactly what the model has written and asked.
-func (s *SessionState) recordVocabulary() map[string]bool {
+func (s *sessionState) recordVocabulary() map[string]bool {
 	out := map[string]bool{}
 	for _, t := range s.Record.Notes {
 		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
@@ -332,7 +332,7 @@ func (s *SessionState) recordVocabulary() map[string]bool {
 		}
 	}
 	for _, q := range s.SearchQueries {
-		for _, w := range GrepWordsFromQuery(q) {
+		for _, w := range grepWordsFromQuery(q) {
 			out[strings.ToLower(w)] = true
 		}
 	}

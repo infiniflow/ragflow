@@ -30,7 +30,7 @@ type ladderExec struct {
 func (e *ladderExec) Execute(_ context.Context, name string, _ map[string]any) (ToolOutcome, error) {
 	e.calls = append(e.calls, name)
 	if e.emptyFor[name] {
-		return ToolOutcome{Status: StatusEmpty, Reason: ReasonNoStructure}, nil
+		return ToolOutcome{Status: StatusEmpty, Reason: reasonNoStructure}, nil
 	}
 	return ToolOutcome{
 		Status:      StatusOK,
@@ -56,7 +56,7 @@ func (e *bigPayloadExec) Execute(_ context.Context, name string, _ map[string]an
 // its first ~800, after which the answer reported the table had only the top four finishers.
 func TestToolPayloadCutIsAnnounced(t *testing.T) {
 	exec := &bigPayloadExec{size: 5000}
-	st := &SessionState{
+	st := &sessionState{
 		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
 		DeadlineLeft: 60,
 		ToolCache:    NewToolCache(),
@@ -85,7 +85,7 @@ func TestConsumeExchangeUsesIdPrefix(t *testing.T) {
 		{"ladder", "ladder_r1"},
 	}
 	for _, c := range cases {
-		ex := &NavExchange{}
+		ex := &navExchange{}
 		ex.consumeExchange("r1", "navigate_tree", map[string]any{"q": 1}, ToolOutcome{Payload: []any{}}, c.idPrefix, 0)
 		if len(ex.Messages) != 2 {
 			t.Fatalf("prefix %q: want 2 messages, got %d", c.idPrefix, len(ex.Messages))
@@ -106,17 +106,17 @@ func TestConsumeExchangeUsesIdPrefix(t *testing.T) {
 // so a later call in the SAME batch resumes from there rather than from the original
 // resting point.
 //
-// Unreachable with the shipped NavRules (all ModeAuto), so this test installs an LLM rung
+// Unreachable with the shipped navRules (all modeAuto), so this test installs an LLM rung
 // to exercise it — the continuation code is what makes a future LLM rung work without
 // another change.
 func TestToolNodeContinuesLadderInCode(t *testing.T) {
 	// Install an LLM rung that falls through to "global" (retrieve) on an empty
 	// result, and remove it afterwards.
 	const llmRung = "test-llm-rung"
-	navRuleByID[llmRung] = &NavRule{
+	navRuleByID[llmRung] = &navRule{
 		ID:   llmRung,
 		Tool: "navigate_structure",
-		Mode: ModeLLM,
+		Mode: modeLLM,
 		Next: map[string]string{StatusEmpty: "global", StatusMiss: "global"},
 	}
 	defer delete(navRuleByID, llmRung)
@@ -125,7 +125,7 @@ func TestToolNodeContinuesLadderInCode(t *testing.T) {
 	ts := &Toolset{Exec: exec, ThinkingMode: "high"}
 
 	// The model issues one call on the rung the chain handed back.
-	st := &SessionState{
+	st := &sessionState{
 		Tools:        ts,
 		DeadlineLeft: 60,
 		Direction:    "who created Culdcept",
@@ -182,7 +182,7 @@ func TestToolNodeContinuesLadderInCode(t *testing.T) {
 func TestToolNodeLeavesLadderAloneWithNoPendingRule(t *testing.T) {
 	exec := &ladderExec{emptyFor: map[string]bool{"retrieve": true}}
 	ts := &Toolset{Exec: exec, ThinkingMode: "high"}
-	st := &SessionState{
+	st := &sessionState{
 		Tools:        ts,
 		DeadlineLeft: 60,
 		Direction:    "who created Culdcept",
@@ -230,7 +230,7 @@ func TestSessionGraphHasNoCheckpointStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sessionGraph: %v", err)
 	}
-	st := &SessionState{
+	st := &sessionState{
 		Tools:        &Toolset{Exec: &ladderExec{}},
 		Model:        &fixedReplyModel{reply: &ModelReply{Content: "ok"}},
 		DeadlineLeft: 30,
@@ -267,10 +267,10 @@ func TestAppendMessagesKeepsRepeatToolCallIDs(t *testing.T) {
 func TestSessionGraphIsSharedAcrossConcurrentSessions(t *testing.T) {
 	const sessions = 16
 
-	states := make([]*SessionState, sessions)
+	states := make([]*sessionState, sessions)
 	for i := 0; i < sessions; i++ {
 		dir := fmt.Sprintf("direction-%02d", i)
-		states[i] = &SessionState{
+		states[i] = &sessionState{
 			Direction:    dir,
 			Tools:        &Toolset{Exec: &ladderExec{}},
 			Model:        &fixedReplyModel{reply: &ModelReply{Content: "answer for " + dir}},
@@ -342,7 +342,7 @@ func (m *failingModel) Complete(_ context.Context, _ []schema.Message, _ []ToolS
 // is also what the reference loops do: the paper stops the RETRIEVAL and demands an answer
 // (submit-now), WeKnora calls the model once more with ToolChoice "none".
 func TestRunActionNodeKeepsTheRecordOnAPromptFailure(t *testing.T) {
-	s := &SessionState{
+	s := &sessionState{
 		Messages:     []schema.Message{*schema.UserMessage("q")},
 		Tools:        &Toolset{},
 		Model:        &failingModel{err: errors.New("provider down")},
@@ -380,7 +380,7 @@ func TestRunActionNodeKeepsTheRecordOnAPromptFailure(t *testing.T) {
 // the last narration survives as a breadcrumb on the first unresolved slot.
 func TestFinalizeNodeHarvestsNarrativeWhenSalvageFails(t *testing.T) {
 	const narration = "The entity was founded in 1865 by a consortium of local merchants."
-	s := &SessionState{
+	s := &sessionState{
 		Messages: []schema.Message{
 			*schema.UserMessage("q"),
 			*schema.AssistantMessage(narration, nil),
@@ -606,13 +606,13 @@ func TestConsumeExchangeCapsPayload(t *testing.T) {
 	big := strings.Repeat("x", 5000)
 	payload := []any{map[string]any{"kind": "navigate_tree", "content": big}}
 
-	capped := &NavExchange{}
+	capped := &navExchange{}
 	capped.consumeExchange("r1", "navigate_tree", map[string]any{"q": 1}, ToolOutcome{Payload: payload}, "ladder", 1000)
 	if got := len(capped.Messages[1].Content); got > 1000 {
 		t.Errorf("tool payload = %d chars, want it capped at 1000", got)
 	}
 
-	uncapped := &NavExchange{}
+	uncapped := &navExchange{}
 	uncapped.consumeExchange("r1", "navigate_tree", map[string]any{"q": 1}, ToolOutcome{Payload: payload}, "nav", 0)
 	if got := len(uncapped.Messages[1].Content); got <= 1000 {
 		t.Errorf("tool payload = %d chars, want 0 to mean uncapped", got)
@@ -749,7 +749,7 @@ func (m *promptRecordingModel) Complete(_ context.Context, msgs []schema.Message
 // with the quoted line behind each, and the answer carried citations for a third of them).
 func TestFinalizeTurnAsksForTheAnswer(t *testing.T) {
 	mdl := &promptRecordingModel{reply: &ModelReply{Content: "<answer>关羽杀了十二人 [ID:0]</answer>"}}
-	s := &SessionState{
+	s := &sessionState{
 		Messages: []schema.Message{
 			*schema.UserMessage("关羽杀了多少有姓名的人物？"),
 			*schema.AssistantMessage("查得：华雄、颜良、文丑。", nil),
@@ -784,7 +784,7 @@ func (m *fixedReplyModel) Complete(_ context.Context, _ []schema.Message, _ []To
 
 func declaredTools() []ToolSpec {
 	return []ToolSpec{{
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name:        "retrieve",
 			Description: "run retrieval",
 			Parameters:  map[string]any{"type": "object"},
@@ -810,7 +810,7 @@ func TestNoPromptBasedToolInstruction(t *testing.T) {
 	// The fallback prompt must never be sent, with native tools or without.
 	if _, err := m.Complete(context.Background(),
 		[]schema.Message{*schema.UserMessage("q")},
-		[]ToolSpec{{Function: ToolFunction{Description: "unnamed"}}}); err != nil {
+		[]ToolSpec{{Function: toolFunction{Description: "unnamed"}}}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	for _, msg := range inv.req.Messages {
@@ -825,7 +825,7 @@ func TestNoPromptBasedToolInstruction(t *testing.T) {
 // id. Passing nil leaves a dangling tool_call, and the next request is rejected with "tool
 // call result does not follow tool call".
 func TestAssistantMessageCarriesToolCalls(t *testing.T) {
-	st := &SessionState{
+	st := &sessionState{
 		Messages: []schema.Message{*schema.SystemMessage("s")},
 		Tools:    &Toolset{Exec: &ladderExec{}},
 		Model: &fixedReplyModel{reply: &ModelReply{Content: "thinking", ToolCalls: []ToolCall{
@@ -868,14 +868,14 @@ func TestAssistantMessageCarriesToolCalls(t *testing.T) {
 // TestDisabledToolIsNotUnknown pins the known-tool check: it is against the STATIC full
 // set, not the active surface, so a tool this session disabled (or hid for lack of a web
 // provider) is still a known tool: the model must get the "unavailable, use this instead"
-// note from ExecuteTool, not an "unknown tool" correction.
+// note from executeTool, not an "unknown tool" correction.
 func TestDisabledToolIsNotUnknown(t *testing.T) {
 	// Sanity: the name must be a real tool for the test to mean anything.
-	if _, ok := ToolMap["graph_explore"]; !ok {
+	if _, ok := toolMap["graph_explore"]; !ok {
 		t.Skip("graph_explore is not a registered tool")
 	}
 	ts := &Toolset{ThinkingMode: "high"}
-	// Disable it: it now drops out of the active surface but stays in ToolMap.
+	// Disable it: it now drops out of the active surface but stays in toolMap.
 	ts.DisableTool("graph_explore")
 	for _, spec := range ts.ActiveToolSpecs() {
 		if spec.Function.Name == "graph_explore" {
@@ -1029,7 +1029,7 @@ func (c *capturingInvoker) Invoke(_ context.Context, _ *gorm.DB, req chat.Reques
 func TestCompleteForwardsNativeToolsAndPrefersNativeCalls(t *testing.T) {
 	tools := []ToolSpec{{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name:        "search",
 			Description: "run a search",
 			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
@@ -1061,7 +1061,7 @@ func TestCompleteReportsNoCallWhenModelSendsNoNativeCall(t *testing.T) {
 	m := &InvokerSessionModel{Invoker: inv}
 	tools := []ToolSpec{{
 		Type:     "function",
-		Function: ToolFunction{Name: "search", Description: "d", Parameters: map[string]any{}},
+		Function: toolFunction{Name: "search", Description: "d", Parameters: map[string]any{}},
 	}}
 
 	// No native tool_calls => the reply stays tool-less. This confirms the runtime still
@@ -1099,7 +1099,7 @@ func (s *streamingCapturingInvoker) Stream(_ context.Context, _ *gorm.DB, req ch
 func TestStreamCompleteForwardsNativeToolsAndPrefersNativeCalls(t *testing.T) {
 	tools := []ToolSpec{{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name:        "search",
 			Description: "run a search",
 			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
@@ -1131,7 +1131,7 @@ func TestStreamCompleteForwardsNativeToolsAndPrefersNativeCalls(t *testing.T) {
 func TestStreamCompleteIgnoresFencedBlockInContent(t *testing.T) {
 	tools := []ToolSpec{{
 		Type:     "function",
-		Function: ToolFunction{Name: "search", Description: "d", Parameters: map[string]any{}},
+		Function: toolFunction{Name: "search", Description: "d", Parameters: map[string]any{}},
 	}}
 	// A fenced block in the content is NOT a tool call: only the reply's tool_calls are
 	// read, and there is no prompt-based parsing path.
@@ -1153,7 +1153,7 @@ func TestStreamCompleteIgnoresFencedBlockInContent(t *testing.T) {
 }
 
 func TestRenderPromptUsesLoader(t *testing.T) {
-	loader := StringPromptLoader{"tpl": "hello {{ name }}!"}
+	loader := stringPromptLoader{"tpl": "hello {{ name }}!"}
 	// Loader resolves the name: variable substituted.
 	if got := prompts.Render(loader, "tpl", "", map[string]string{"name": "world"}); got != "hello world!" {
 		t.Errorf("prompts.Render = %q", got)
@@ -1171,7 +1171,7 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 		t.Error("nil loader did not resolve the embedded action_set template")
 	}
 	// Both {{k}} and {{ k }} are substituted (templates use the spaced form).
-	if got := prompts.Render(StringPromptLoader{"tpl": "a={{x}} b={{ y }}"}, "tpl", "",
+	if got := prompts.Render(stringPromptLoader{"tpl": "a={{x}} b={{ y }}"}, "tpl", "",
 		map[string]string{"x": "1", "y": "2"}); got != "a=1 b=2" {
 		t.Errorf("spaced placeholder not substituted: %q", got)
 	}
@@ -1206,7 +1206,7 @@ var executorSupportedParams = map[string]map[string]bool{
 // 5-section contract, within the token budget (cap 1200 chars).
 func TestToolSpecsHavePlaybookSections(t *testing.T) {
 	for _, name := range allTools {
-		desc := ToolMap[name].Function.Description
+		desc := toolMap[name].Function.Description
 		for _, anchor := range playbookAnchors {
 			if !strings.Contains(desc, anchor) {
 				t.Errorf("%s description missing anchor %q", name, anchor)
@@ -1244,7 +1244,7 @@ func TestActiveToolSpecsToolSurface(t *testing.T) {
 // executor cannot consume (no ghost args).
 func TestSchemaParamsMatchExecutor(t *testing.T) {
 	for _, name := range allTools {
-		props, _ := ToolMap[name].Function.Parameters["properties"].(map[string]any)
+		props, _ := toolMap[name].Function.Parameters["properties"].(map[string]any)
 		supported := executorSupportedParams[name]
 		for param := range props {
 			if param == "decision" {
@@ -1269,8 +1269,8 @@ func TestActionRunPromptHasPlaybook(t *testing.T) {
 			t.Errorf("action_run prompt missing tool %q", tool)
 		}
 	}
-	for _, name := range append(append([]string{}, allTools...), GraphExploreTool) {
-		if _, ok := ToolMap[name]; !ok {
+	for _, name := range append(append([]string{}, allTools...), graphExploreTool) {
+		if _, ok := toolMap[name]; !ok {
 			t.Errorf("%q referenced by the playbook is not in ToolMap", name)
 		}
 	}
@@ -1285,7 +1285,7 @@ func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 
 	// Whitespace answer, no patch: no found answer, no branches — the session
 	// keeps running (runActionNode falls through to the nudge).
-	states, found, tt, _ := ParseTerminal("<answer>{\"answer\": \"   \"}</answer>", parent)
+	states, found, tt, _ := parseTerminal("<answer>{\"answer\": \"   \"}</answer>", parent)
 	if found != nil {
 		t.Errorf("whitespace answer: FoundAnswer = %q, want nil", *found)
 	}
@@ -1297,20 +1297,20 @@ func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 	}
 
 	// Missing answer field, no patch: same.
-	states, found, _, _ = ParseTerminal("<answer>{}</answer>", parent)
+	states, found, _, _ = parseTerminal("<answer>{}</answer>", parent)
 	if found != nil || len(states) != 0 {
 		t.Errorf("missing answer: FoundAnswer=%v branches=%d, want nil/0", found, len(states))
 	}
 
 	// A real answer still parses.
-	_, found, _, _ = ParseTerminal("<answer>{\"answer\": \"  74  \"}</answer>", parent)
+	_, found, _, _ = parseTerminal("<answer>{\"answer\": \"  74  \"}</answer>", parent)
 	if found == nil || *found != "74" {
 		t.Errorf("real answer: FoundAnswer = %v, want 74 (stripped)", found)
 	}
 
 	// Empty answer WITH a new_state patch: the patch is returned as the final state,
 	// terminal type stays "answer", found stays nil.
-	states, found, _, _ = ParseTerminal(
+	states, found, _, _ = parseTerminal(
 		"<answer>{\"answer\": \"\", \"new_state\": [{\"id\": 0, \"candidate\": \"74\", \"candidate_strength\": 0.9}]}</answer>",
 		parent)
 	if found != nil {
@@ -1340,7 +1340,7 @@ func TestParseTerminalReadsTheAnswerWrittenBesideTheStatePatch(t *testing.T) {
 	// The finalize shape, state first: both the patch and the answer come back.
 	reply := `<state>{"new_states": [{"state": [{"id": 0, "candidate": "关羽", "candidate_strength": 0.9}]}]}</state>` +
 		"\n<answer>十二人：关羽 [ID:0]</answer>"
-	states, found, tt, payload := ParseTerminal(reply, parent)
+	states, found, tt, payload := parseTerminal(reply, parent)
 	if found == nil || *found != "十二人：关羽 [ID:0]" {
 		t.Fatalf("FoundAnswer = %v, want the prose answer beside the patch", found)
 	}
@@ -1355,7 +1355,7 @@ func TestParseTerminalReadsTheAnswerWrittenBesideTheStatePatch(t *testing.T) {
 	}
 
 	// Same two blocks, answer written first: order in the reply must not matter.
-	states, found, tt, _ = ParseTerminal(
+	states, found, tt, _ = parseTerminal(
 		"<answer>关羽 [ID:0]</answer>\n<state>{\"new_states\": []}</state>", parent)
 	if found == nil || *found != "关羽 [ID:0]" || tt == nil || *tt != "answer" {
 		t.Errorf("answer-first reply: found=%v type=%v, want the answer", found, tt)
@@ -1365,19 +1365,19 @@ func TestParseTerminalReadsTheAnswerWrittenBesideTheStatePatch(t *testing.T) {
 	}
 
 	// A state block ALONE still reports a state terminal and no answer (unchanged).
-	_, found, tt, _ = ParseTerminal(`<state>{"new_states": []}</state>`, parent)
+	_, found, tt, _ = parseTerminal(`<state>{"new_states": []}</state>`, parent)
 	if found != nil || tt == nil || *tt != "state" {
 		t.Errorf("state-only reply: found=%v type=%v, want nil/state", found, tt)
 	}
 
 	// An answer alone is unchanged.
-	_, found, tt, _ = ParseTerminal("<answer>关羽</answer>", parent)
+	_, found, tt, _ = parseTerminal("<answer>关羽</answer>", parent)
 	if found == nil || *found != "关羽" || tt == nil || *tt != "answer" {
 		t.Errorf("answer-only reply: found=%v type=%v, want 关羽/answer", found, tt)
 	}
 
 	// No terminal at all stays "nothing" — the session nudges and keeps working.
-	states, found, tt, _ = ParseTerminal("still thinking about it", parent)
+	states, found, tt, _ = parseTerminal("still thinking about it", parent)
 	if states != nil || found != nil || tt != nil {
 		t.Errorf("no terminal: states=%v found=%v type=%v, want all nil", states, found, tt)
 	}
@@ -1426,7 +1426,7 @@ func TestSnippetsPerQueryRisesWithModeAndFallsBack(t *testing.T) {
 // names themselves in an alternation, in small batches, guess the next batch
 // yourself, and read a miss as a RESULT rather than as silence.
 func TestRetrieveDescriptionCarriesTheEnumerationContract(t *testing.T) {
-	desc := ToolMap["retrieve"].Function.Description
+	desc := toolMap["retrieve"].Function.Description
 	for _, want := range []string{
 		"ENUMERATING A SET",
 		"alternated with |",
@@ -1513,7 +1513,7 @@ func TestTheSessionsClockAndToolBudgetEndBeforeItsContext(t *testing.T) {
 // a thin citation registry, so the composition that replaced it answered from whatever ranked
 // first. A cut is how a session that spends its clock ends; it is not a reason to discard research.
 func TestSessionResultCarriesWhatACutSessionRead(t *testing.T) {
-	st := &SessionState{
+	st := &sessionState{
 		Messages:     []schema.Message{*schema.UserMessage("q")},
 		NewStates:    []State{NewState([]Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}, 0, nil)},
 		FoundAnswer:  strPtr("1858"),
@@ -1565,7 +1565,7 @@ func TestEverySessionGetsTheModesTurnFloor(t *testing.T) {
 	}
 
 	// A value session: no batch written, and the table asks for a value. Same floor as a set.
-	value := &SessionState{
+	value := &sessionState{
 		Tools:        ts,
 		Direction:    "in what year did the Sikh Empire's capital come under the British Crown",
 		ParentState:  State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1849")}}},
@@ -1583,7 +1583,7 @@ func TestEverySessionGetsTheModesTurnFloor(t *testing.T) {
 	}
 
 	// A mode that declares no count at all still falls back to the value floor.
-	blank := &SessionState{Direction: "q", DeadlineLeft: 70}
+	blank := &sessionState{Direction: "q", DeadlineLeft: 70}
 	if got := blank.actionMaxTurns(); got != valueTurnFloor {
 		t.Errorf("mode with no count turn floor = %d, want the fallback %d", got, valueTurnFloor)
 	}
@@ -1625,14 +1625,14 @@ func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
 	digest := extractRelevantEvidence(kb, "关羽杀了多少有姓名的人物", 4)
 	if !strings.Contains(digest, "砍杨龄于马下") {
 		t.Fatalf("digest = %q…, want the clause that names the member (cap %d)", TruncateRunes(digest, 120),
-			stageBudgets[StageDigest].MaxCharsPerItem)
+			stageBudgets[stageDigest].MaxCharsPerItem)
 	}
-	if got := len([]rune(digest)); got > stageBudgets[StageDigest].MaxCharsPerItem+64 {
+	if got := len([]rune(digest)); got > stageBudgets[stageDigest].MaxCharsPerItem+64 {
 		t.Errorf("digest = %d runes, want no more than one capped chunk plus its id", got)
 	}
-	if stageBudgets[StageDigest].MaxCharsPerItem < 1200 {
+	if stageBudgets[stageDigest].MaxCharsPerItem < 1200 {
 		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries",
-			stageBudgets[StageDigest].MaxCharsPerItem)
+			stageBudgets[stageDigest].MaxCharsPerItem)
 	}
 }
 
@@ -1703,7 +1703,7 @@ func TestTheReadLedgerCountsDistinctChunksPerDocument(t *testing.T) {
 // ended with "session cut … returning the 44 passage(s) and 0 patch(es)" — the answer turn never
 // ran, which is how a run loses its count and every citation at once.
 func TestTheRouteKeepsTheAnswerClockBeforeTheLastToolCall(t *testing.T) {
-	s := &SessionState{
+	s := &sessionState{
 		BudgetS:      100,
 		DeadlineLeft: answerReserveS - 1,
 		PendingCalls: []ToolCall{{ID: "c1", Name: "retrieve"}},
@@ -1713,7 +1713,7 @@ func TestTheRouteKeepsTheAnswerClockBeforeTheLastToolCall(t *testing.T) {
 	}
 
 	// Above the reserve the pending call still runs: the protocol needs its response.
-	s = &SessionState{
+	s = &sessionState{
 		BudgetS:      100,
 		DeadlineLeft: answerReserveS + 30,
 		PendingCalls: []ToolCall{{ID: "c1", Name: "retrieve"}},
@@ -1730,7 +1730,7 @@ func TestTheRouteKeepsTheAnswerClockBeforeTheLastToolCall(t *testing.T) {
 // `session cut` inside the third call, 0 patches, no answer, and a composed answer that named six of
 // the seventeen members.
 func TestTheSessionsClockIsReadNotRemembered(t *testing.T) {
-	s := &SessionState{DeadlineLeft: 99}
+	s := &sessionState{DeadlineLeft: 99}
 	s.refreshClock()
 	if s.DeadlineLeft != 99 {
 		t.Errorf("refreshClock without an armed deadline changed the clock to %v", s.DeadlineLeft)
@@ -1758,7 +1758,7 @@ func TestTheTurnBudgetFollowsTheClockAndTheMeasuredPace(t *testing.T) {
 	// One 74s call already spent: the question's 110s clock fits ONE more search turn at that pace,
 	// and after it the answer turn has its reserve.
 	slowPace, slowLeft := 74.0, 90.0
-	slow := &SessionState{DeadlineLeft: slowLeft, expectedTurnS: slowPace}
+	slow := &sessionState{DeadlineLeft: slowLeft, expectedTurnS: slowPace}
 	wantSlow := int((slowLeft - answerReserveS) / slowPace)
 	if wantSlow < 1 {
 		wantSlow = 1 // the floor: a session always gets a turn to work with
@@ -1776,7 +1776,7 @@ func TestTheTurnBudgetFollowsTheClockAndTheMeasuredPace(t *testing.T) {
 
 	// A faster provider fits more search turns in the same clock.
 	fastPace, fastLeft := 30.0, 130.0
-	fast := &SessionState{DeadlineLeft: fastLeft, expectedTurnS: fastPace}
+	fast := &sessionState{DeadlineLeft: fastLeft, expectedTurnS: fastPace}
 	if got, want := fast.affordableSearchTurns(), int((fastLeft-answerReserveS)/fastPace); got != want {
 		t.Errorf("affordableSearchTurns = %d at a 30s pace, want %d", got, want)
 	}
@@ -1789,13 +1789,13 @@ func TestTheTurnBudgetFollowsTheClockAndTheMeasuredPace(t *testing.T) {
 
 	// Without a completed turn the pace is floored, so a session is never planned around a 3s call.
 	blindLeft := 100.0
-	blind := &SessionState{DeadlineLeft: blindLeft}
+	blind := &sessionState{DeadlineLeft: blindLeft}
 	if got, want := blind.affordableSearchTurns(), int((blindLeft-answerReserveS)/minExpectedTurnS); got != want {
 		t.Errorf("affordableSearchTurns = %d with no measured pace, want %d", got, want)
 	}
 
 	// No room at all: the answer turn is what is left.
-	late := &SessionState{DeadlineLeft: answerReserveS, expectedTurnS: answerReserveS}
+	late := &sessionState{DeadlineLeft: answerReserveS, expectedTurnS: answerReserveS}
 	if got := late.affordableSearchTurns(); got != 0 {
 		t.Errorf("affordableSearchTurns = %d with only the reserve left, want 0", got)
 	}
@@ -1867,23 +1867,23 @@ func TestTheOpeningIsHandedToTheSessionInRankOrder(t *testing.T) {
 	// The list is BOUNDED: the head of the ranking is what the session pays for.
 	big := &Kbinfos{}
 	var ids []string
-	for i := 0; i < StageMaxItems(StageOpening)+5; i++ {
+	for i := 0; i < stageMaxItems(stageOpening)+5; i++ {
 		id := fmt.Sprintf("c-%02d", i)
 		big.Chunks = append(big.Chunks, map[string]any{"chunk_id": id, "doc_id": "d1", "content": "text " + id})
 		ids = append(ids, id)
 	}
 	big.NoteOpening(ids)
-	if got := strings.Count(renderOpening(big, "", 0), "\n"); got != StageMaxItems(StageOpening) {
-		t.Errorf("opening rendered %d preview(s), want the cap %d", got, StageMaxItems(StageOpening))
+	if got := strings.Count(renderOpening(big, "", 0), "\n"); got != stageMaxItems(stageOpening) {
+		t.Errorf("opening rendered %d preview(s), want the cap %d", got, stageMaxItems(stageOpening))
 	}
-	if len(big.SessionEvidenceRefs) != StageMaxItems(StageOpening) {
-		t.Errorf("opening published %d passage(s), want the cap %d", len(big.SessionEvidenceRefs), StageMaxItems(StageOpening))
+	if len(big.SessionEvidenceRefs) != stageMaxItems(stageOpening) {
+		t.Errorf("opening published %d passage(s), want the cap %d", len(big.SessionEvidenceRefs), stageMaxItems(stageOpening))
 	}
 
 	// A DECLARED set raises that bound: an enumerated question has to show every member the plan
 	// named, and those members sit in the ranking past the stage's own number (measured 2026-09-22,
 	// the ten Oscar nominees: eight previews, two members never shown, no child count for either).
-	declared := StageMaxItems(StageOpening) + 4
+	declared := stageMaxItems(stageOpening) + 4
 	wide := &Kbinfos{}
 	var wideIDs []string
 	for i := 0; i < declared+3; i++ {
@@ -1911,7 +1911,7 @@ func TestWhatTheSeedShowedIsInTheCitationRegistry(t *testing.T) {
 		{"chunk_id": "c-prefix", "doc_id": "d2", "content": "关公手起刀落，带头连肩，斩于马下。"},
 		{"chunk_id": "c-tool", "doc_id": "d3", "content": "关公斩蔡阳于古城之下。"},
 	}}
-	st := &SessionState{KB: kb}
+	st := &sessionState{KB: kb}
 
 	// The opening's previews are published while the seed is built, and the session starts from that
 	// registry: its numbering continues the run's instead of restarting at zero.
@@ -1954,7 +1954,7 @@ func TestWhatTheSeedShowedIsInTheCitationRegistry(t *testing.T) {
 	// markers are resolved against. Measured 2026-09-20 (三国/关羽): the last round's session had made
 	// no tool calls, so it published only its prefix's eight passages while the answer carried
 	// [ID:45], and every anchored member came back "->(not-published)".
-	round2 := &SessionState{KB: kb}
+	round2 := &sessionState{KB: kb}
 	round2.loadEvidenceRefs(kb)
 	if want := []string{"c-opening", "c-prefix", "c-tool"}; !reflect.DeepEqual(round2.EvidenceRefs, want) {
 		t.Fatalf("round 2 started from %v, want the run's registry %v", round2.EvidenceRefs, want)
@@ -1975,13 +1975,13 @@ func TestWhatTheSeedShowedIsInTheCitationRegistry(t *testing.T) {
 // "cover" beside the question (measured 2026-09-20, 三国/关羽) — and the sanitizer that exists for
 // exactly this was only wired into the MODEL's calls.
 func TestTheLadderSearchesTheQuestionNotTheSeedBlock(t *testing.T) {
-	nav := &NavContext{Direction: "在《三国演义》中，关羽一共杀了多少有姓名的人物？\n\nClues to cover:\n- 关羽 杀\n- 云长 斩\n\nAn earlier round could not establish: 最后一个被杀者"}
+	nav := &navContext{Direction: "在《三国演义》中，关羽一共杀了多少有姓名的人物？\n\nClues to cover:\n- 关羽 杀\n- 云长 斩\n\nAn earlier round could not establish: 最后一个被杀者"}
 	got := navQuery(nav)
 	if got != "在《三国演义》中，关羽一共杀了多少有姓名的人物？" {
 		t.Errorf("navQuery = %q, want the direction's question", got)
 	}
 	// Every rung uses it — the ladder's own retrieve must not search the scaffolding either.
-	for _, r := range NavRules {
+	for _, r := range navRules {
 		if q, ok := r.Args(nav)["query"]; ok {
 			if fmt.Sprint(q) != got && fmt.Sprint(q) != "["+got+"]" {
 				t.Errorf("rule %q searched %v, want %q", r.ID, q, got)
@@ -1989,7 +1989,7 @@ func TestTheLadderSearchesTheQuestionNotTheSeedBlock(t *testing.T) {
 		}
 	}
 	// A direction that is only a question passes through unchanged.
-	if got := navQuery(&NavContext{Direction: "巴黎 2019 人口"}); got != "巴黎 2019 人口" {
+	if got := navQuery(&navContext{Direction: "巴黎 2019 人口"}); got != "巴黎 2019 人口" {
 		t.Errorf("navQuery = %q, want the question as-is", got)
 	}
 	// No direction at all is not a reason to search the empty string twice.
@@ -2021,7 +2021,7 @@ func (m *flakyModel) Complete(_ context.Context, _ []schema.Message, _ []ToolSpe
 // the six members its own budget happened to admit, and that is what the user saw.
 func TestAFailedAnswerCallIsRetriedOnce(t *testing.T) {
 	mdl := &flakyModel{reply: &ModelReply{Content: "<answer>关羽杀了十六人 [ID:0]</answer>"}, fails: 1}
-	s := &SessionState{
+	s := &sessionState{
 		Messages:     []schema.Message{*schema.UserMessage("关羽杀了多少有姓名的人物？")},
 		Tools:        &Toolset{},
 		Model:        mdl,
@@ -2040,7 +2040,7 @@ func TestAFailedAnswerCallIsRetriedOnce(t *testing.T) {
 
 	// With nothing left but the answer's own margin, a second attempt would only race the wall.
 	none := &flakyModel{reply: &ModelReply{Content: "<answer>16 [ID:0]</answer>"}, fails: 1}
-	s2 := &SessionState{
+	s2 := &sessionState{
 		Messages:     []schema.Message{*schema.UserMessage("q")},
 		Tools:        &Toolset{},
 		Model:        none,
@@ -2072,10 +2072,10 @@ func TestTheLedgerIsRenderedWholeWhereTheModelDecidesAndAnswers(t *testing.T) {
 	kb.Admit(func(p *PoolAdmitter) {
 		// A passage that mentions a name the MODEL never wrote down: the runtime must not add it to
 		// the record, and must not score the model for omitting it. Deciding that is the model's job,
-		// from the passages it is shown (see SessionRecord).
+		// from the passages it is shown (see sessionRecord).
 		p.Add(map[string]any{"chunk_id": "c-x", "content": "关羽斩华雄之外，尚有他人。"})
 	})
-	s := &SessionState{
+	s := &sessionState{
 		KB: kb, BudgetS: 120, DeadlineLeft: 100, Attempts: 2,
 		ParentState:   State{State: vars},
 		SearchQueries: []string{"关羽 斩将 名单"},

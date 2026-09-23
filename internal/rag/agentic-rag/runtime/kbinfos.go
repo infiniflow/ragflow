@@ -61,18 +61,18 @@ type SearchParams struct {
 	TopN int
 	// Channel is retained for backward compatibility with callers that still
 	// poke the unified HybridSearch with an explicit channel. It is DEPRECATED:
-	// each entry point is now its own function (HybridSearch / VectorSearch /
-	// BM25Search / GrepSearch / RetrieveSearch) and selects its vector weight,
+	// each entry point is now its own function (HybridSearch / vectorSearch /
+	// BM25Search / grepSearch / RetrieveSearch) and selects its vector weight,
 	// similarity threshold and compiled-row exclusion internally. New code should
 	// call the specific function instead of setting Channel on HybridSearch.
 	// runSearch does NOT read this field.
-	Channel SearchChannel
+	Channel searchChannel
 }
 
-// SearchFn performs one hybrid search and returns chunks + doc aggs, so the
+// searchFn performs one hybrid search and returns chunks + doc aggs, so the
 // runtime is decoupled from the concrete retrieval backend.
 // It abstracts the concrete retrieval backend.
-type SearchFn func(ctx context.Context, p SearchParams) ([]map[string]any, []map[string]any)
+type searchFn func(ctx context.Context, p SearchParams) ([]map[string]any, []map[string]any)
 
 // Kbinfos is the shared accumulation store.
 //
@@ -113,7 +113,7 @@ type Kbinfos struct {
 	// docRead is the per-document progress behind readChunks: how many pages of a document have
 	// been delivered, how many distinct chunks, where the last page started, and whether the last
 	// page said the document continues.
-	docRead map[string]*DocRead
+	docRead map[string]*docRead
 	// Memory is the lossless store of raw retrieved chunks backing the (lossy)
 	// Chunks list that feeds the LLM; the memory add/grep helpers maintain it.
 	Memory []map[string]any
@@ -151,7 +151,7 @@ type Kbinfos struct {
 	// scanLine is the coverage line of the run's scan channel (see NoteScanLine).
 	scanLine string
 	// scanWindows are the windows that scan delivered (see NoteScanWindows).
-	scanWindows []ScanWindow
+	scanWindows []scanWindow
 	// CiteChunkIDs is the ordered id list of the chunks the final-answer call
 	// rendered as numbered evidence — Python's tools._rag_cite_chunk_ids
 	// (agentic_rag_graph.py:870). The renderer puts the passages behind enumerated
@@ -379,19 +379,19 @@ var scanLineField = struct{}{}
 // matches a probe the plan declared. Kept on the pool because the seed renders them and the answer may
 // cite them — they are the enumeration channel's material, and a window the session never sees is a
 // window no answer can enumerate.
-func (k *Kbinfos) NoteScanWindows(w []ScanWindow) {
+func (k *Kbinfos) NoteScanWindows(w []scanWindow) {
 	if k == nil {
 		return
 	}
-	k.scanWindows = append([]ScanWindow(nil), w...)
+	k.scanWindows = append([]scanWindow(nil), w...)
 }
 
 // ScanWindows are the windows recorded by NoteScanWindows, empty when no scan ran.
-func (k *Kbinfos) ScanWindows() []ScanWindow {
+func (k *Kbinfos) ScanWindows() []scanWindow {
 	if k == nil {
 		return nil
 	}
-	return append([]ScanWindow(nil), k.scanWindows...)
+	return append([]scanWindow(nil), k.scanWindows...)
 }
 
 // NoteScanLine records the scan's coverage line for this run.
@@ -531,8 +531,8 @@ func termReach(chunks []map[string]any, terms []string) (located []string, count
 	return located, counts, absent
 }
 
-// DocRead is how far into ONE document the run has read (see Kbinfos.readChunks).
-type DocRead struct {
+// docRead is how far into ONE document the run has read (see Kbinfos.readChunks).
+type docRead struct {
 	// Pages is how many list_chunks pages this document has been read in.
 	Pages int
 	// Chunks is how many DISTINCT chunks of it have been read.
@@ -557,7 +557,7 @@ func (k *Kbinfos) NoteChunksRead(docID string, offset int, ids []string, continu
 		k.readChunks = map[string]bool{}
 	}
 	if k.docRead == nil {
-		k.docRead = map[string]*DocRead{}
+		k.docRead = map[string]*docRead{}
 	}
 	added := 0
 	for _, id := range ids {
@@ -572,7 +572,7 @@ func (k *Kbinfos) NoteChunksRead(docID string, offset int, ids []string, continu
 	}
 	d := k.docRead[docID]
 	if d == nil {
-		d = &DocRead{}
+		d = &docRead{}
 		k.docRead[docID] = d
 	}
 	d.Pages++
@@ -823,7 +823,7 @@ func chunkText(c map[string]any) string {
 // The content branch reuses chunkText — the SAME alias chain the rest of the
 // runtime reads (content_with_weight -> content -> text). Reading only the first
 // two made two id-less chunks that carry just "text" fall through to the
-// doc-level fallback and share one key, so Merge/MemoryAdd discarded distinct
+// doc-level fallback and share one key, so Merge/memoryAdd discarded distinct
 // evidence.
 //
 // A memory-address fallback is the alternative: with `id(ck)` as the final key, two

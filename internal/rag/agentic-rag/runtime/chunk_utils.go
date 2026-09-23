@@ -32,9 +32,9 @@ import (
 // keeps the dependency graph acyclic (tools must not import the root package the root package
 // imports tools from).
 
-// ChunkAttr returns the first non-empty value among keys.
+// chunkAttr returns the first non-empty value among keys.
 // Truthiness is "not nil and not empty".
-func ChunkAttr(c map[string]any, keys ...string) string {
+func chunkAttr(c map[string]any, keys ...string) string {
 	for _, k := range keys {
 		if v, ok := c[k]; ok && v != nil {
 			if s := fmt.Sprint(v); s != "" {
@@ -52,25 +52,25 @@ func ChunkTextOf(c map[string]any) string { return chunkText(c) }
 
 // DocIDOf: doc_id / docid / document_id.
 func DocIDOf(c map[string]any) string {
-	return ChunkAttr(c, "doc_id", "docid", "document_id")
+	return chunkAttr(c, "doc_id", "docid", "document_id")
 }
 
-// DatasetIDOf: dataset_id / kb_id / knowledgebase_id.
-func DatasetIDOf(c map[string]any) string {
-	return ChunkAttr(c, "dataset_id", "kb_id", "knowledgebase_id")
+// datasetIDOf: dataset_id / kb_id / knowledgebase_id.
+func datasetIDOf(c map[string]any) string {
+	return chunkAttr(c, "dataset_id", "kb_id", "knowledgebase_id")
 }
 
 // DocTitleOf: exactly: docnm_kwd / doc_title / title /
 // document_name (the same four keys, in the same order). Go chunk retrieval
 // carries the title under docnm_kwd, so no extra alias is needed.
 func DocTitleOf(c map[string]any) string {
-	return ChunkAttr(c, "docnm_kwd", "doc_title", "title", "document_name")
+	return chunkAttr(c, "docnm_kwd", "doc_title", "title", "document_name")
 }
 
 // ChunkIDOf: chunk_id / id.
-func ChunkIDOf(c map[string]any) string { return ChunkAttr(c, "chunk_id", "id") }
+func ChunkIDOf(c map[string]any) string { return chunkAttr(c, "chunk_id", "id") }
 
-// Snippet: trim both ends, cut to limit, right-trim ALL
+// snippet: trim both ends, cut to limit, right-trim ALL
 // trailing whitespace (not just spaces), then add an ellipsis marker when the
 // value was actually truncated. The right-trim strips ANY Unicode whitespace (space, tab,
 // newline, ...), so a cut that ends mid-run of whitespace collapses to the same trailing slice
@@ -79,7 +79,7 @@ func ChunkIDOf(c map[string]any) string { return ChunkAttr(c, "chunk_id", "id") 
 // Indexing is by Unicode code point, so the limit and the cut are character-based. Go's
 // len/[:] are byte-based and would split a multibyte (e.g. CJK) rune and emit invalid UTF-8,
 // hence the []rune conversion.
-func Snippet(s string, limit int) string {
+func snippet(s string, limit int) string {
 	t := strings.TrimSpace(s)
 	r := []rune(t)
 	if len(r) <= limit {
@@ -110,11 +110,11 @@ func isTableText(text string) bool {
 	return pipeRows >= 3
 }
 
-// XMLEscape: the four XML entities (&, <, >, ").
+// xmlEscape: the four XML entities (&, <, >, ").
 // The apostrophe is intentionally NOT escaped — values are only ever embedded inside
 // double-quoted XML/Markdown attributes, where a literal ' is valid, so escaping it to &apos;
 // would be wrong.
-func XMLEscape(s string) string {
+func xmlEscape(s string) string {
 	r := strings.NewReplacer(
 		"&", "&amp;",
 		"<", "&lt;",
@@ -165,11 +165,11 @@ func ChunkEvidenceIDs(chunks []map[string]any, limit int) []string {
 	return out
 }
 
-// MergeChunks deduplicates incoming chunks against an existing slice by chunkKey, appending
+// mergeChunks deduplicates incoming chunks against an existing slice by chunkKey, appending
 // only unseen ones — the merge pattern used by the direct and compiled-expansion paths.
 //
 // Returns the merged slice and the global indices of the newly appended chunks.
-func MergeChunks(existing, incoming []map[string]any) ([]map[string]any, []int) {
+func mergeChunks(existing, incoming []map[string]any) ([]map[string]any, []int) {
 	seen := make(map[string]struct{}, len(existing))
 	for _, c := range existing {
 		seen[chunkKey(c)] = struct{}{}

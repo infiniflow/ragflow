@@ -162,9 +162,9 @@ func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
 	deps.Tagger = stubTagger{t: t}
 
 	HybridSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
-	VectorSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
+	vectorSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
 	BM25Search(context.Background(), deps, SearchParams{Question: "who made it?"})
-	GrepSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
+	grepSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
 
 	want := map[string]float64{"definition": 1.0, "entity": 1.0}
 	for i, req := range r.requests {
@@ -235,8 +235,8 @@ func TestHybridSearchCachesIdenticalQuery(t *testing.T) {
 }
 
 func TestSearchCacheKeyIgnoresOrderAndWhitespace(t *testing.T) {
-	a := SearchCacheKey("  Who   Made  It ", []string{"b", "a"}, 12, []string{"d2", "d1"})
-	b := SearchCacheKey("who made it", []string{"a", "b"}, 12, []string{"d1", "d2"})
+	a := searchCacheKey("  Who   Made  It ", []string{"b", "a"}, 12, []string{"d2", "d1"})
+	b := searchCacheKey("who made it", []string{"a", "b"}, 12, []string{"d1", "d2"})
 	if a != b {
 		t.Errorf("cache key not canonical:\n%q\n%q", a, b)
 	}
@@ -283,7 +283,7 @@ func TestNarrowOrKeepIsAllOrNothing(t *testing.T) {
 		{"content": "It was released in 1999."},
 	}
 	// Keywords hit -> narrowed subset (the non-matching chunk is dropped).
-	got := NarrowOrKeep(ctx, chunks, "culdcept", "test", log.New(&logged, "", 0))
+	got := narrowOrKeep(ctx, chunks, "culdcept", "test", log.New(&logged, "", 0))
 	if len(got) != 1 || !strings.Contains(ChunkTextOf(got[0]), "Culdcept") {
 		t.Errorf("narrowed = %v, want only the matching chunk", got)
 	}
@@ -301,7 +301,7 @@ func TestNarrowOrKeepIsAllOrNothing(t *testing.T) {
 	// retriever already ranked them, and dropping everything produced empty
 	// results and unverified claims).
 	logged.Reset()
-	got = NarrowOrKeep(ctx, chunks, "zzz-no-match", "test", log.New(&logged, "", 0))
+	got = narrowOrKeep(ctx, chunks, "zzz-no-match", "test", log.New(&logged, "", 0))
 	if len(got) != len(chunks) {
 		t.Errorf("no-match kept %d, want all %d", len(got), len(chunks))
 	}
@@ -316,7 +316,7 @@ func TestNarrowOrKeepIsAllOrNothing(t *testing.T) {
 	// Empty keywords -> untouched, and silent: nothing was narrowed, so there is
 	// nothing to report.
 	logged.Reset()
-	if got := NarrowOrKeep(ctx, chunks, "", "test", log.New(&logged, "", 0)); len(got) != len(chunks) {
+	if got := narrowOrKeep(ctx, chunks, "", "test", log.New(&logged, "", 0)); len(got) != len(chunks) {
 		t.Error("empty keywords must return chunks unchanged")
 	}
 	if logged.Len() != 0 || len(lines) != 0 {
@@ -326,7 +326,7 @@ func TestNarrowOrKeepIsAllOrNothing(t *testing.T) {
 
 func TestNarrowContentKeepsNeighboursAndHighlights(t *testing.T) {
 	content := "Alpha filler. Culdcept was made by OmiyaSoft. Omega filler."
-	got, ok := NarrowContent(content, []string{"culdcept"})
+	got, ok := narrowContent(content, []string{"culdcept"})
 	if !ok {
 		t.Fatal("NarrowContent must match")
 	}
@@ -340,7 +340,7 @@ func TestNarrowContentKeepsNeighboursAndHighlights(t *testing.T) {
 	if !strings.HasPrefix(got, "...") || !strings.HasSuffix(got, "...") {
 		t.Errorf("narrowed text must be wrapped in ellipses: %q", got)
 	}
-	if _, ok := NarrowContent("nothing relevant here", []string{"culdcept"}); ok {
+	if _, ok := narrowContent("nothing relevant here", []string{"culdcept"}); ok {
 		t.Error("no match must return false")
 	}
 }
@@ -352,7 +352,7 @@ func TestNarrowContentRendersHTMLTablesAsLines(t *testing.T) {
 	content := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
 		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
 		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
-	got, ok := NarrowContent(content, []string{"danilo"})
+	got, ok := narrowContent(content, []string{"danilo"})
 	if !ok {
 		t.Fatal("NarrowContent must keep a table whole")
 	}
@@ -371,23 +371,23 @@ func TestNarrowContentRendersHTMLTablesAsLines(t *testing.T) {
 
 func TestSplitKeywordsFallsBackToBigrams(t *testing.T) {
 	// >=3 comma terms -> used as-is, lower-cased.
-	got := SplitKeywords("Alpha, Beta, Gamma")
+	got := splitKeywords("Alpha, Beta, Gamma")
 	if len(got) != 3 || got[0] != "alpha" {
 		t.Errorf("comma split = %v", got)
 	}
 	// <3 terms -> bigrams are more discriminative than single words.
-	got = SplitKeywords("finale run time")
+	got = splitKeywords("finale run time")
 	if len(got) != 2 || got[0] != "finale run" || got[1] != "run time" {
 		t.Errorf("bigram fallback = %v, want [finale run, run time]", got)
 	}
-	if SplitKeywords("   ") != nil {
+	if splitKeywords("   ") != nil {
 		t.Error("blank keywords must yield no terms")
 	}
 }
 
 func TestHighlightKeywordsPrefersLongestTerm(t *testing.T) {
 	// "new york" must win over "york" so the shorter term cannot split it.
-	got := HighlightKeywords("welcome to New York city", []string{"york", "new york"})
+	got := highlightKeywords("welcome to New York city", []string{"york", "new york"})
 	// The star marker, and ONE span for the multi-word entity — never "*New* *York*".
 	if !strings.Contains(got, "*New York*") {
 		t.Errorf("highlight = %q, want the longest term applied", got)
@@ -404,17 +404,17 @@ func TestHighlightKeywordsPrefersLongestTerm(t *testing.T) {
 // offset taken from the original indexes the folded string at a different
 // position: the loop then runs past its end (panic: slice bounds out of range
 // [10:9]) or cuts a rune in half (invalid UTF-8). Corpus text reaches this via
-// NarrowContent, e.g. a Turkish document.
+// narrowContent, e.g. a Turkish document.
 func TestHighlightKeywordsFoldsWithoutByteOffsets(t *testing.T) {
 	// "İstanbul" is 9 bytes but folds to the 8-byte "istanbul", so the old byte
 	// loop wrote text[0:8] — one byte short, ending mid-word ("İstanbu").
-	if got := HighlightKeywords("İstanbul is here", []string{"istanbul"}); got != "*İstanbul* is here" {
+	if got := highlightKeywords("İstanbul is here", []string{"istanbul"}); got != "*İstanbul* is here" {
 		t.Errorf("highlight = %q, want the whole word wrapped", got)
 	}
 
 	// Two shrunken runes push the byte index one past the end of the folded
 	// string while the original still has a byte left: the old loop panicked.
-	got := HighlightKeywords("İİstanbul", []string{"istanbul"})
+	got := highlightKeywords("İİstanbul", []string{"istanbul"})
 	if !utf8.ValidString(got) {
 		t.Fatalf("highlight is not valid UTF-8 — a span split a rune: %q", got)
 	}
@@ -442,7 +442,7 @@ func TestHighlightKeywordsFoldsUppercaseKeywords(t *testing.T) {
 		{"surrounding spaces are trimmed", "the Rocket launched", []string{"  Rocket  "}, "the *Rocket* launched"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := HighlightKeywords(tc.text, tc.kwds); got != tc.want {
+			if got := highlightKeywords(tc.text, tc.kwds); got != tc.want {
 				t.Errorf("HighlightKeywords(%q, %v) = %q, want %q", tc.text, tc.kwds, got, tc.want)
 			}
 		})
@@ -454,7 +454,7 @@ func TestHighlightKeywordsFoldsUppercaseKeywords(t *testing.T) {
 // standalone "Braves" is
 // left alone and only the "Atlanta Braves" span is starred.
 func TestHighlightKeywordsKeepsPhrasePartsWhole(t *testing.T) {
-	got := HighlightKeywords("Braves lost. Atlanta Braves won.", []string{"Atlanta Braves"})
+	got := highlightKeywords("Braves lost. Atlanta Braves won.", []string{"Atlanta Braves"})
 	if want := "Braves lost. *Atlanta Braves* won."; got != want {
 		t.Errorf("highlight = %q, want %q", got, want)
 	}
@@ -465,7 +465,7 @@ func TestHighlightKeywordsKeepsPhrasePartsWhole(t *testing.T) {
 // shared lowercase pattern matched only the
 // fragment after the capital ("Nominated" -> "ominated"), so nothing was starred.
 func TestHighlightKeywordsStemMatchesCapitalisedWords(t *testing.T) {
-	got := HighlightKeywords("Nominated twice.", []string{"nominations"})
+	got := highlightKeywords("Nominated twice.", []string{"nominations"})
 	if want := "*Nominated* twice."; got != want {
 		t.Errorf("highlight = %q, want %q", got, want)
 	}
@@ -736,7 +736,7 @@ func TestMetadataCatalogForBuildsSortedKeysWithSamples(t *testing.T) {
 		"author": {"Alice": {"d1"}, "Bob": {"d2"}},
 	}}
 
-	cat := MetadataCatalogFor(context.Background(), deps)
+	cat := metadataCatalogFor(context.Background(), deps)
 	if got := strings.Join(cat.Keys, ","); got != "author,title" {
 		t.Fatalf("keys = %q, want author,title (sorted, deterministic)", got)
 	}
@@ -777,7 +777,7 @@ func TestMetadataCatalogForDropsSystemAndLabelKeys(t *testing.T) {
 		"_version":    {"2": {"d1"}},
 	}}
 
-	cat := MetadataCatalogFor(context.Background(), deps)
+	cat := metadataCatalogFor(context.Background(), deps)
 	if got := strings.Join(cat.Keys, ","); got != "title" {
 		t.Fatalf("keys = %q, want only title", got)
 	}
@@ -795,7 +795,7 @@ func TestMetadataCatalogForDegradesToEmpty(t *testing.T) {
 	base, _ := newTestSearchDeps(&stubRetriever{})
 
 	// No resolver wired (deployment without the metadata link).
-	if cat := MetadataCatalogFor(ctx, base); !cat.Empty() {
+	if cat := metadataCatalogFor(ctx, base); !cat.Empty() {
 		t.Errorf("keys = %v, want empty without a resolver", cat.Keys)
 	}
 	if ptr := MetadataCatalogPtr(ctx, base); ptr != nil {
@@ -805,7 +805,7 @@ func TestMetadataCatalogForDegradesToEmpty(t *testing.T) {
 	// Index unreadable.
 	broken := base
 	broken.MetadataResolver = &stubMetadataResolver{flattenErr: errors.New("es down")}
-	if cat := MetadataCatalogFor(ctx, broken); !cat.Empty() {
+	if cat := metadataCatalogFor(ctx, broken); !cat.Empty() {
 		t.Errorf("keys = %v, want empty when the index is unreadable", cat.Keys)
 	}
 
@@ -815,7 +815,7 @@ func TestMetadataCatalogForDegradesToEmpty(t *testing.T) {
 		"_version": {"2": {"d1"}}, // hidden by the blacklist
 		"empty":    {},            // no value to match
 	}}
-	if cat := MetadataCatalogFor(ctx, blank); !cat.Empty() {
+	if cat := metadataCatalogFor(ctx, blank); !cat.Empty() {
 		t.Errorf("keys = %v, want empty when no field is usable", cat.Keys)
 	}
 
@@ -823,7 +823,7 @@ func TestMetadataCatalogForDegradesToEmpty(t *testing.T) {
 	unbound, _ := newTestSearchDeps(&stubRetriever{})
 	unbound.KbIDs = nil
 	unbound.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{"title": {"A": {"d1"}}}}
-	if cat := MetadataCatalogFor(ctx, unbound); !cat.Empty() {
+	if cat := metadataCatalogFor(ctx, unbound); !cat.Empty() {
 		t.Errorf("keys = %v, want empty without datasets", cat.Keys)
 	}
 }
@@ -876,7 +876,7 @@ func TestActiveToolSpecsKeepsStaticSpecWithoutCatalog(t *testing.T) {
 		if !ok {
 			t.Fatal("metadata_search missing from the high-mode surface")
 		}
-		if !reflect.DeepEqual(spec, ToolMap["metadata_search"]) {
+		if !reflect.DeepEqual(spec, toolMap["metadata_search"]) {
 			t.Errorf("catalog %v: an empty catalog must leave the shipped spec untouched", cat)
 		}
 		if got := metadataKeyEnum(spec); len(got) != 0 {
@@ -927,7 +927,7 @@ func TestMetadataCatalogForIncludesDeclaredFields(t *testing.T) {
 		{Key: "question_id", Description: "benchmark label"}, // blacklisted
 	}}
 
-	cat := MetadataCatalogFor(context.Background(), deps)
+	cat := metadataCatalogFor(context.Background(), deps)
 	if got := strings.Join(cat.Keys, ","); got != "author,doc_type" {
 		t.Fatalf("keys = %q, want the declared fields (minus the blacklist), sorted", got)
 	}
@@ -961,7 +961,7 @@ func TestMetadataCatalogForOffersDeclaredFieldWithoutIndexedValues(t *testing.T)
 		{Key: "doc_type", Description: "kind of document", Enum: []string{"report"}},
 	}}
 
-	cat := MetadataCatalogFor(context.Background(), deps)
+	cat := metadataCatalogFor(context.Background(), deps)
 	if got := strings.Join(cat.Keys, ","); got != "doc_type" {
 		t.Fatalf("keys = %q, want the declared field even with no indexed value", got)
 	}
@@ -987,7 +987,7 @@ func TestMetadataCatalogForDegradesWhenDeclaredReadFails(t *testing.T) {
 	deps.MetadataResolver = &stubMetadataResolver{metas: common.MetaData{"title": {"A": {"d1"}}}}
 	deps.DeclaredMetadata = &stubDeclaredMetadata{err: errors.New("kb row unreadable")}
 
-	cat := MetadataCatalogFor(context.Background(), deps)
+	cat := metadataCatalogFor(context.Background(), deps)
 	if got := strings.Join(cat.Keys, ","); got != "title" {
 		t.Errorf("keys = %q, want the observational half alone", got)
 	}
@@ -1035,7 +1035,7 @@ func ptrFloat(t *testing.T, p *float64) float64 {
 func TestVectorSearchBailsWithoutEmbedder(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
-	if got, _ := VectorSearch(context.Background(), deps, SearchParams{Question: "q"}); got != nil {
+	if got, _ := vectorSearch(context.Background(), deps, SearchParams{Question: "q"}); got != nil {
 		t.Error("vector search without embedder must be empty")
 	}
 	if len(r.requests) != 0 {
@@ -1049,7 +1049,7 @@ func TestVectorSearchUsesZeroKeywordWeight(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.HasEmbedder = true
-	VectorSearch(context.Background(), deps, SearchParams{Question: "q"})
+	vectorSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
 	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 0 {
 		t.Errorf("vector search keyword weight = %v, want 0", got)
@@ -1082,7 +1082,7 @@ func TestBM25SearchUsesFullKeywordWeight(t *testing.T) {
 func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "x"}}}
 	deps, _ := newTestSearchDeps(r)
-	GrepSearch(context.Background(), deps, SearchParams{Question: "q", Keywords: "kw"})
+	grepSearch(context.Background(), deps, SearchParams{Question: "q", Keywords: "kw"})
 	req := r.lastReq(t)
 	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1 {
 		t.Errorf("grep search keyword weight = %v, want 1", got)
@@ -1105,7 +1105,7 @@ func TestGrepSearchSearchingLineSplitsAudiences(t *testing.T) {
 	var text []string
 	ctx := WithSteps(context.Background(), StepReporter{Text: func(line string) { text = append(text, line) }})
 
-	GrepSearch(ctx, deps, SearchParams{Question: "曹操是谁"})
+	grepSearch(ctx, deps, SearchParams{Question: "曹操是谁"})
 
 	think := strings.Join(text, "")
 	if !strings.Contains(think, `[Grep search] Searching for the exact words "曹操是谁".`) {
@@ -1141,7 +1141,7 @@ func TestSearchLegsShareOneThinkSentenceFamily(t *testing.T) {
 		},
 			`[Hybrid search] Searching by meaning and keyword for "q".`},
 		{"vector", func(ctx context.Context, d SearchDeps) {
-			VectorSearch(ctx, d, SearchParams{Question: "q"})
+			vectorSearch(ctx, d, SearchParams{Question: "q"})
 		},
 			`[Vector search] Searching by meaning for "q".`},
 		{"bm25", func(ctx context.Context, d SearchDeps) {
@@ -1153,13 +1153,13 @@ func TestSearchLegsShareOneThinkSentenceFamily(t *testing.T) {
 		},
 			`[Retrieve] Searching for "q".`},
 		{"grep", func(ctx context.Context, d SearchDeps) {
-			GrepSearch(ctx, d, SearchParams{Question: "q"})
+			grepSearch(ctx, d, SearchParams{Question: "q"})
 		},
 			`[Grep search] Searching for the exact words "q".`},
 	}
 	for _, tc := range cases {
 		deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "x"}}})
-		// VectorSearch is gated on a configured embedder (Python bm25/vector
+		// vectorSearch is gated on a configured embedder (Python bm25/vector
 		// asymmetry): without this it returns before reporting anything.
 		deps.HasEmbedder = true
 		var text []string
@@ -1179,7 +1179,7 @@ func captureLeg(chunks []map[string]any, run func(ctx context.Context, deps Sear
 	var logBuf bytes.Buffer
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: chunks})
 	deps.Logger = log.New(&logBuf, "", 0)
-	// VectorSearch is gated on a configured embedder; set for every leg, harmless
+	// vectorSearch is gated on a configured embedder; set for every leg, harmless
 	// for the others.
 	deps.HasEmbedder = true
 	var text []string
@@ -1232,7 +1232,7 @@ func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
 		},
 		{
 			name: "vector-hit", chunks: hit,
-			run:       func(ctx context.Context, d SearchDeps) { VectorSearch(ctx, d, SearchParams{Question: q}) },
+			run:       func(ctx context.Context, d SearchDeps) { vectorSearch(ctx, d, SearchParams{Question: q}) },
 			wantThink: `[Vector search] Found 1 passage in 1 document for "` + q + `".`,
 			wantLog:   `[Vector search] "` + q + `" -> 1 chunk(s): d1:1chunk(`,
 		},
@@ -1241,7 +1241,7 @@ func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
 			// prose to locate in: the tables ARE the evidence, so the line counts them.
 			name: "grep-all-tables", chunks: table,
 			run: func(ctx context.Context, d SearchDeps) {
-				GrepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
+				grepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
 			},
 			wantThink: `[Grep search] Found 1 passage in 1 document for "who made Culdcept?".`,
 			wantLog:   `[Grep search] "who made Culdcept?" -> 1 chunk(s): d1:1chunk(`,
@@ -1251,7 +1251,7 @@ func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
 			// — and reports THAT, not "nothing".
 			name: "grep-no-match", chunks: proseNoMatch,
 			run: func(ctx context.Context, d SearchDeps) {
-				GrepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
+				grepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
 			},
 			wantThink: `[Grep search] Found 1 passage in 1 document for "who made Culdcept?".`,
 			wantLog:   `[Grep search] "who made Culdcept?" -> 1 chunk(s): d1:1chunk(`,
@@ -1260,7 +1260,7 @@ func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
 			// Nothing to locate in and nothing returned: still reported.
 			name: "grep-empty-pool", chunks: nil,
 			run: func(ctx context.Context, d SearchDeps) {
-				GrepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
+				grepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
 			},
 			wantThink: `[Grep search] Found nothing for "who made Culdcept?".`,
 			wantLog:   `[Grep search] "who made Culdcept?" -> 0 chunk(s)`,
@@ -1296,8 +1296,8 @@ func TestGrepTermsFromQuery(t *testing.T) {
 	}
 	// Capped at 10.
 	got = GrepTermsFromQuery("a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12")
-	if len(got) != GrepTermsMax {
-		t.Errorf("terms = %d, want capped at %d", len(got), GrepTermsMax)
+	if len(got) != grepTermsMax {
+		t.Errorf("terms = %d, want capped at %d", len(got), grepTermsMax)
 	}
 	// Empty/blank -> nil.
 	if GrepTermsFromQuery("") != nil || GrepTermsFromQuery("   ") != nil {
@@ -1332,7 +1332,7 @@ func TestGrepSearchNarrowsProseViaTermWindow(t *testing.T) {
 	// the prose sentence does. (With "who made Culdcept?" the hint matches the
 	// table alone and the prose is dropped outright — pinned by
 	// TestGrepSearchDerivesKeywordsHint.)
-	chunks, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "Culdcept was made"})
+	chunks, _ := grepSearch(context.Background(), deps, SearchParams{Question: "Culdcept was made"})
 
 	// Order: table chunks first, then narrowed prose (table + kept prose).
 	if len(chunks) != 2 {
@@ -1370,7 +1370,7 @@ func TestGrepSearchKeepsRawCandidatesWhenNoMatch(t *testing.T) {
 	}
 	r := &stubRetriever{chunks: []map[string]any{prose}}
 	deps, _ := newTestSearchDeps(r)
-	chunks, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "who made Culdcept?"})
+	chunks, _ := grepSearch(context.Background(), deps, SearchParams{Question: "who made Culdcept?"})
 	if len(chunks) != 1 || chunks[0]["chunk_id"] != "p1" {
 		t.Fatalf("chunks = %v, want the raw candidate preserved", chunks)
 	}
@@ -1387,7 +1387,7 @@ func TestGrepSearchKeepsRawCandidatesWhenNoMatch(t *testing.T) {
 func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps, _ := newTestSearchDeps(r)
-	GrepSearch(context.Background(), deps, SearchParams{Question: "who made Culdcept?"})
+	grepSearch(context.Background(), deps, SearchParams{Question: "who made Culdcept?"})
 	req := r.lastReq(t)
 	if want := "who made Culdcept? who made Culdcept"; req.Query != want {
 		t.Errorf("query = %q, want %q (question + derived terms)", req.Query, want)
@@ -1402,7 +1402,7 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	table := map[string]any{"chunk_id": "t1", "content": "a | b | c\nd | e | f\ng | h | i"}
 	r2 := &stubRetriever{chunks: []map[string]any{prose, table}}
 	deps2, _ := newTestSearchDeps(r2)
-	got, _ := GrepSearch(context.Background(), deps2, SearchParams{Question: "who made Culdcept?"})
+	got, _ := grepSearch(context.Background(), deps2, SearchParams{Question: "who made Culdcept?"})
 	if len(got) != 1 || got[0]["chunk_id"] != "t1" {
 		t.Errorf("chunks = %v, want only the table chunk", got)
 	}
@@ -1410,7 +1410,7 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	// An explicit hint wins over the derived terms.
 	r3 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps3, _ := newTestSearchDeps(r3)
-	GrepSearch(context.Background(), deps3, SearchParams{Question: "who made Culdcept?", Keywords: "nav summary"})
+	grepSearch(context.Background(), deps3, SearchParams{Question: "who made Culdcept?", Keywords: "nav summary"})
 	if got := r3.lastReq(t).Query; got != "who made Culdcept? nav summary" {
 		t.Errorf("query = %q, want the explicit hint appended", got)
 	}
@@ -1426,7 +1426,7 @@ func TestSearchCacheIsHybridOnly(t *testing.T) {
 	p := SearchParams{Question: "same query"}
 	HybridSearch(context.Background(), deps, p) // fills the cache
 	BM25Search(context.Background(), deps, p)   // must not be served from it
-	GrepSearch(context.Background(), deps, p)   // nor must this one
+	grepSearch(context.Background(), deps, p)   // nor must this one
 	if len(r.requests) != 3 {
 		t.Fatalf("backend calls = %d, want 3 (the search cache is hybrid-only)", len(r.requests))
 	}
@@ -1446,8 +1446,8 @@ func TestHybridSearchExcludesCompiledAndUsesSevenTenthsKeywordWeight(t *testing.
 	deps.HasEmbedder = true
 	HybridSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-HybridSearchDefaultVectorWeight {
-		t.Errorf("hybrid search keyword weight = %v, want %v", got, 1-HybridSearchDefaultVectorWeight)
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-hybridSearchDefaultVectorWeight {
+		t.Errorf("hybrid search keyword weight = %v, want %v", got, 1-hybridSearchDefaultVectorWeight)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("hybrid search must exclude compiled rows")
@@ -1466,8 +1466,8 @@ func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
 	if req.ExcludeCompiled {
 		t.Error("retrieve search must NOT exclude compiled rows")
 	}
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-DefaultHybridVectorWeight {
-		t.Errorf("retrieve search keyword weight = %v, want %v", got, 1-DefaultHybridVectorWeight)
+	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1-defaultHybridVectorWeight {
+		t.Errorf("retrieve search keyword weight = %v, want %v", got, 1-defaultHybridVectorWeight)
 	}
 }
 
@@ -1595,12 +1595,12 @@ func TestQueryToTerms(t *testing.T) {
 func TestAgenticVectorWeightDefaultsToZero(t *testing.T) {
 	// The agentic retrieve runs keyword-only: UsingEmbedding defaults to
 	// False and no caller passes True (agentic_rag.py:retrieve, 643-646).
-	got := floatPtrOrDef(nil, DefaultAgenticVectorWeight)
+	got := floatPtrOrDef(nil, defaultAgenticVectorWeight)
 	if got != 0 {
 		t.Fatalf("default vector weight = %v, want 0 (keyword-only)", got)
 	}
-	if DefaultAgenticVectorWeight != 0 {
-		t.Fatalf("DefaultAgenticVectorWeight = %v, want 0", DefaultAgenticVectorWeight)
+	if defaultAgenticVectorWeight != 0 {
+		t.Fatalf("DefaultAgenticVectorWeight = %v, want 0", defaultAgenticVectorWeight)
 	}
 }
 
@@ -1608,12 +1608,12 @@ func TestVectorWeightHonoursExplicitZero(t *testing.T) {
 	// A pointer keeps "configured 0" distinct from "unset", so keyword-only can
 	// be requested explicitly rather than only by omission.
 	zero := 0.0
-	if got := floatPtrOrDef(&zero, DefaultAgenticVectorWeight); got != 0 {
+	if got := floatPtrOrDef(&zero, defaultAgenticVectorWeight); got != 0 {
 		t.Fatalf("got %v, want 0", got)
 	}
 
 	// Fallback must apply only when unset.
-	if DefaultAgenticVectorWeight != 0 {
+	if defaultAgenticVectorWeight != 0 {
 		t.Fatal("the fallback itself must stay 0")
 	}
 }
@@ -1621,7 +1621,7 @@ func TestVectorWeightHonoursExplicitZero(t *testing.T) {
 func TestVectorWeightCanEnableHybrid(t *testing.T) {
 	// Hybrid retrieval stays available, just not by default.
 	hybrid := 0.3
-	if got := floatPtrOrDef(&hybrid, DefaultAgenticVectorWeight); got != 0.3 {
+	if got := floatPtrOrDef(&hybrid, defaultAgenticVectorWeight); got != 0.3 {
 		t.Fatalf("got %v, want 0.3 when explicitly configured", got)
 	}
 }
@@ -1641,8 +1641,8 @@ func TestResolveKeywordsSimilarityWeightRetrieveMirrorsUsingEmbedding(t *testing
 	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false}, ChannelRetrieve); got != 1 {
 		t.Fatalf("using_embedding=false → %v, want 1 (keyword-only)", got)
 	}
-	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != 1-DefaultHybridVectorWeight {
-		t.Fatalf("using_embedding=true → %v, want %v", got, 1-DefaultHybridVectorWeight)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true}, ChannelRetrieve); got != 1-defaultHybridVectorWeight {
+		t.Fatalf("using_embedding=true → %v, want %v", got, 1-defaultHybridVectorWeight)
 	}
 	override := 0.5
 	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, KeywordsSimilarityWeight: &override}, ChannelRetrieve); got != 0.5 {
@@ -1654,10 +1654,10 @@ func TestResolveKeywordsSimilarityWeightHybridDefaultsToSevenTenths(t *testing.T
 	// Python hybrid_search defaults the vector weight to 0.3, hence its
 	// keyword weight is 0.7.
 	// (_DEFAULT_HYBRID_VECTOR_WEIGHT,), unlike RAGTools.retrieve's 0.7.
-	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: true}, ChannelHybrid); got != 1-HybridSearchDefaultVectorWeight {
-		t.Fatalf("hybrid → %v, want %v", got, 1-HybridSearchDefaultVectorWeight)
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: true}, channelHybrid); got != 1-hybridSearchDefaultVectorWeight {
+		t.Fatalf("hybrid → %v, want %v", got, 1-hybridSearchDefaultVectorWeight)
 	}
-	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: false}, ChannelHybrid); got != 1 {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{HasEmbedder: false}, channelHybrid); got != 1 {
 		t.Fatalf("hybrid with no embedder → %v, want 1 (Python: `if embd_mdl`)", got)
 	}
 }
@@ -1668,9 +1668,9 @@ func TestResolveKeywordsSimilarityWeightHybridDefaultsToSevenTenths(t *testing.T
 // semantic leg for search_chunks — losing recall of passages sharing no surface
 // words. The gate for this channel is the embedder, nothing else.
 func TestResolveKeywordsSimilarityWeightHybridIgnoresUsingEmbedding(t *testing.T) {
-	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, ChannelHybrid); got != 1-HybridSearchDefaultVectorWeight {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: false, HasEmbedder: true}, channelHybrid); got != 1-hybridSearchDefaultVectorWeight {
 		t.Fatalf("hybrid with using_embedding=false → %v, want %v: the vector leg "+
-			"must NOT depend on using_embedding", got, 1-HybridSearchDefaultVectorWeight)
+			"must NOT depend on using_embedding", got, 1-hybridSearchDefaultVectorWeight)
 	}
 }
 
@@ -1679,10 +1679,10 @@ func TestResolveKeywordsSimilarityWeightHybridIgnoresUsingEmbedding(t *testing.T
 // flag can turn one on.
 func TestResolveKeywordsSimilarityWeightGrepIsAlwaysOne(t *testing.T) {
 	override := 0.1
-	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, ChannelGrep); got != 1 {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true}, channelGrep); got != 1 {
 		t.Fatalf("grep → %v, want 1 (grep_search has no vector leg)", got)
 	}
-	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, KeywordsSimilarityWeight: &override}, ChannelGrep); got != 1 {
+	if got := resolveKeywordsSimilarityWeight(SearchDeps{UsingEmbedding: true, HasEmbedder: true, KeywordsSimilarityWeight: &override}, channelGrep); got != 1 {
 		t.Fatalf("grep with override → %v, want 1 (grep_search has no vector leg)", got)
 	}
 }
@@ -1957,7 +1957,7 @@ func TestGrepSearchMatchesPatternOverKeywordCandidates(t *testing.T) {
 	}}
 	deps, _ := newTestSearchDeps(r)
 
-	got, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "华雄|荀正|管亥"})
+	got, _ := grepSearch(context.Background(), deps, SearchParams{Question: "华雄|荀正|管亥"})
 	if len(got) != 2 {
 		t.Fatalf("got %d chunk(s), want 2: only the candidates the pattern matches are evidence", len(got))
 	}
@@ -1979,7 +1979,7 @@ func TestGrepSearchMatchesPatternOverKeywordCandidates(t *testing.T) {
 
 	// Nothing matched: the raw candidates are returned so evidence is never
 	// dropped (and the reach line says what happened).
-	none, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "杨龄|夏侯存"})
+	none, _ := grepSearch(context.Background(), deps, SearchParams{Question: "杨龄|夏侯存"})
 	if len(none) != 3 {
 		t.Errorf("no-match grep returned %d chunk(s), want all 3 raw candidates kept", len(none))
 	}
@@ -2000,7 +2000,7 @@ func TestPatternNeverReachesTheEngine(t *testing.T) {
 	deps, _ := newTestSearchDeps(r)
 
 	for _, q := range []string{"华雄|荀正|管亥", "关公.*斩"} {
-		GrepSearch(context.Background(), deps, SearchParams{Question: q})
+		grepSearch(context.Background(), deps, SearchParams{Question: q})
 		for _, req := range r.requests {
 			for _, bad := range []string{"|", ".*", ".+"} {
 				if strings.Contains(req.Query, bad) {
@@ -2037,7 +2037,7 @@ func TestPatternRecallIsPerOperandAndWide(t *testing.T) {
 	// Structural pattern: one search per operand, each WIDE.
 	wide := &stubRetriever{chunks: answer}
 	deps, _ := newTestSearchDeps(wide)
-	GrepSearch(context.Background(), deps, SearchParams{
+	grepSearch(context.Background(), deps, SearchParams{
 		Question: "关公.*斩|云长.*斩", TopN: 10, KbIDs: []string{"kb1"},
 	})
 	if len(wide.requests) < 2 {
@@ -2053,7 +2053,7 @@ func TestPatternRecallIsPerOperandAndWide(t *testing.T) {
 	// enough, and widening there would only cost the engine.
 	narrow := &stubRetriever{chunks: answer}
 	depsNames, _ := newTestSearchDeps(narrow)
-	GrepSearch(context.Background(), depsNames, SearchParams{
+	grepSearch(context.Background(), depsNames, SearchParams{
 		Question: "华雄|荀正", TopN: 10, KbIDs: []string{"kb1"},
 	})
 	if len(narrow.requests) == 0 {

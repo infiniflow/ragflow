@@ -23,7 +23,7 @@ import (
 
 // TestGrepTermsFromQueryCJK pins the derivation a Chinese query needs.
 //
-// The alnum-only original yields NO term for Chinese, and GrepSearch's own guard
+// The alnum-only original yields NO term for Chinese, and grepSearch's own guard
 // (`if not chunks or not terms: return res`) then returns whole chunks: measured
 // on a Chinese question, the "Keyword-first locate" line was logged, a narrowed
 // line never was, and every hit was a ~1200-char chunk.
@@ -52,8 +52,8 @@ func TestGrepTermsFromQueryCJK(t *testing.T) {
 	// the names in the clause still locate, and windows that occur nowhere cost
 	// one failed lookup inside the narrowing pass.
 	got := GrepTermsFromQuery("关羽杀了多少有姓名的人物")
-	if len(got) != GrepTermsMax {
-		t.Fatalf("clause windows = %v (%d), want %d windows", got, len(got), GrepTermsMax)
+	if len(got) != grepTermsMax {
+		t.Fatalf("clause windows = %v (%d), want %d windows", got, len(got), grepTermsMax)
 	}
 	for _, want := range []string{"关羽", "姓名"} {
 		if !cjkTermsContain(got, want) {
@@ -86,15 +86,15 @@ func TestExecOnTextCJKNarrowsToTheSentenceNotTheWholeChunk(t *testing.T) {
 		t.Fatalf("test content is %d bytes; it must exceed the per-side budget to exercise the fallback", len(content))
 	}
 
-	got, matched := execOnText(content, TermsToPatterns([]string{"荀正"}), 1, 0, GrepOutCharsPerChunk)
+	got, matched := execOnText(content, termsToPatterns([]string{"荀正"}), 1, 0, grepOutCharsPerChunk)
 	if !matched {
 		t.Fatal("荀正 is in the content, the narrow must match")
 	}
 	if !strings.Contains(got, "荀正") {
 		t.Fatalf("window lost the hit: %q", got)
 	}
-	if len(got) > GrepOutCharsPerChunk {
-		t.Errorf("window = %d bytes, want at most %d", len(got), GrepOutCharsPerChunk)
+	if len(got) > grepOutCharsPerChunk {
+		t.Errorf("window = %d bytes, want at most %d", len(got), grepOutCharsPerChunk)
 	}
 	if !strings.Contains(got, "砍荀正于马下") {
 		t.Errorf("window cut the clause mid-sentence: %q", got)
@@ -109,7 +109,7 @@ func TestExecOnTextCJKNarrowsToTheSentenceNotTheWholeChunk(t *testing.T) {
 // (±1 line), which is the behaviour every Latin question already relies on.
 func TestExecOnTextKeepsLineWindowsWhenThereAreLines(t *testing.T) {
 	content := "line one about alpha\nline two about beta\nline three about gamma\nline four about delta"
-	got, matched := execOnText(content, TermsToPatterns([]string{"beta"}), 1, 0, GrepOutCharsPerChunk)
+	got, matched := execOnText(content, termsToPatterns([]string{"beta"}), 1, 0, grepOutCharsPerChunk)
 	if !matched {
 		t.Fatal("beta is in the content, the narrow must match")
 	}
@@ -130,7 +130,7 @@ func TestNarrowByTermsCJKNarrowsThroughTheRealEntry(t *testing.T) {
 	chunks := []map[string]any{{"id": "c1", "content_with_weight": text}}
 
 	res := NarrowByTerms(chunks, []string{"荀正"}, nil, "", NarrowContext{Before: 1, After: 0},
-		GrepOutCharsPerChunk, GrepOutTotalChars)
+		grepOutCharsPerChunk, grepOutTotalChars)
 
 	if !res.Stats.Matched {
 		t.Fatalf("stats = %+v, want a match", res.Stats)
@@ -183,14 +183,14 @@ func TestGrepWordsAreTheCallersOwnWords(t *testing.T) {
 	// particles ("斩" is a predicate, not something to probe as a name; the phrase
 	// search carries it).
 	listed := "关羽 斩 颜良 文丑 车胄"
-	if got := GrepWordsFromQuery(listed); strings.Join(got, "|") != "关羽|颜良|文丑|车胄" {
+	if got := grepWordsFromQuery(listed); strings.Join(got, "|") != "关羽|颜良|文丑|车胄" {
 		t.Errorf("GrepWordsFromQuery(%q) = %v, want the caller's own words (single-rune tokens are particles)", listed, got)
 	}
 
 	// An unbroken clause names no individual: the locate reading decomposes it
 	// into windows, the words reading yields nothing to probe.
 	clause := "关羽斩杀敌将名单温酒斩华雄"
-	if got := GrepWordsFromQuery(clause); len(got) != 0 {
+	if got := grepWordsFromQuery(clause); len(got) != 0 {
 		t.Errorf("GrepWordsFromQuery(%q) = %v, want none: a clause is not a word to probe", clause, got)
 	}
 	terms := GrepTermsFromQuery(clause)
@@ -206,11 +206,11 @@ func TestGrepWordsAreTheCallersOwnWords(t *testing.T) {
 	// The name boundary is the one this file already declares (cjkPhraseRunes):
 	// up to four runes is still a name, past it is prose.
 	for _, name := range []string{"孔秀", "夏侯存", "成吉思汗"} {
-		if got := GrepWordsFromQuery(name); len(got) != 1 || got[0] != name {
+		if got := grepWordsFromQuery(name); len(got) != 1 || got[0] != name {
 			t.Errorf("GrepWordsFromQuery(%q) = %v, want the name itself", name, got)
 		}
 	}
-	if got := GrepWordsFromQuery("成吉思汗东征"); len(got) != 0 {
+	if got := grepWordsFromQuery("成吉思汗东征"); len(got) != 0 {
 		t.Errorf("GrepWordsFromQuery = %v, want none: past the name boundary a CJK token is prose", got)
 	}
 }
@@ -233,7 +233,7 @@ func TestGrepPatternIsAMatchNotATermFilter(t *testing.T) {
 	if re == nil {
 		t.Fatal("关公.*斩 carries pattern syntax and must be read as a pattern")
 	}
-	kept, matched := matchGrepPattern(chunks, re, contextCharBudget, GrepOutTotalChars)
+	kept, matched := matchGrepPattern(chunks, re, contextCharBudget, grepOutTotalChars)
 	if matched != 1 || len(kept) != 1 {
 		t.Fatalf("matched=%d kept=%d, want exactly the chunk whose text has 关公 BEFORE 斩", matched, len(kept))
 	}
@@ -252,7 +252,7 @@ func TestGrepPatternIsAMatchNotATermFilter(t *testing.T) {
 	if alt == nil {
 		t.Fatal("华雄|荀正|管亥 must be a pattern")
 	}
-	keptAlt, matchedAlt := matchGrepPattern(chunks, alt, contextCharBudget, GrepOutTotalChars)
+	keptAlt, matchedAlt := matchGrepPattern(chunks, alt, contextCharBudget, grepOutTotalChars)
 	if matchedAlt != 1 || len(keptAlt) != 1 {
 		t.Fatalf("alternation matched=%d kept=%d, want the one candidate carrying one of the three names", matchedAlt, len(keptAlt))
 	}
@@ -296,7 +296,7 @@ func TestReachLineNamesWhatTheBatchMissed(t *testing.T) {
 		{"chunk_id": "c2", "content": "华雄又斩了潘凤"},
 	}
 	q := "华雄|荀正|管亥"
-	line := GrepReachLine(q, chunks, ReachTermsOf(q))
+	line := grepReachLine(q, chunks, reachTermsOf(q))
 	for _, want := range []string{"[reach]", "华雄(2)", "NOT reached by this query"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line %q missing %q", line, want)
@@ -312,7 +312,7 @@ func TestReachLineNamesWhatTheBatchMissed(t *testing.T) {
 	// A PATTERN reports on its OPERANDS: they are what the keyword leg searched
 	// for, so "关公.*斩" is reported as 关公 and 斩, not as one clause.
 	pq := "关公.*斩|云长.*斩"
-	pline := GrepReachLine(pq, []map[string]any{{"chunk_id": "c3", "content": "关公勒马，一刀斩之"}}, ReachTermsOf(pq))
+	pline := grepReachLine(pq, []map[string]any{{"chunk_id": "c3", "content": "关公勒马，一刀斩之"}}, reachTermsOf(pq))
 	for _, want := range []string{"关公(1)", "云长"} {
 		if !strings.Contains(pline, want) {
 			t.Errorf("pattern line %q missing %q", pline, want)
@@ -320,7 +320,7 @@ func TestReachLineNamesWhatTheBatchMissed(t *testing.T) {
 	}
 
 	// No terms -> no line at all (never an empty "[reach]" heading).
-	if got := GrepReachLine("", chunks, nil); got != "" {
+	if got := grepReachLine("", chunks, nil); got != "" {
 		t.Errorf("empty reach = %q, want no line", got)
 	}
 }

@@ -55,8 +55,8 @@ const (
 // pair; aliases and fact_type find/boost but must not dominate.
 var keywordAspects = []string{"entity", "aliases", "fact_type", "qualifiers"}
 
-// KeywordsSystem mirrors keywords.py::_KEYWORDS_SYSTEM.
-const KeywordsSystem = `You turn ONE question into search terms for a keyword/BM25 search engine.
+// keywordsSystem mirrors keywords.py::_KEYWORDS_SYSTEM.
+const keywordsSystem = `You turn ONE question into search terms for a keyword/BM25 search engine.
 
 Emit the terms that would appear VERBATIM in a document that answers the question, sorted into FOUR
 categories. Every term must come from the question itself or be a surface form of something in it.
@@ -110,7 +110,7 @@ func normKeyword(s string) string {
 // entity and an alias must not collect a second share of the query's mass on the
 // strength of having been named twice.
 func parseAspects(raw string) map[string][]string {
-	data, _ := ExtractJSON(StripThinkAndFences(raw)).(map[string]any)
+	data, _ := ExtractJSON(stripThinkAndFences(raw)).(map[string]any)
 	aspects := map[string][]string{}
 	seen := map[string]bool{}
 	for _, aspect := range keywordAspects {
@@ -154,10 +154,10 @@ func asAspectList(v any) []any {
 // reThinkWrap matches a leading <think>...</think> preamble.
 var reThinkWrap = regexp.MustCompile(`(?s)^.*</think>`)
 
-// StripThinkAndFences removes a leading thinking preamble and Markdown fences.
+// stripThinkAndFences removes a leading thinking preamble and Markdown fences.
 // Exported so the runtime (compute.go, keywords.go) and the agentic_rag package's
 // moved Formalize can share one implementation.
-func StripThinkAndFences(s string) string {
+func stripThinkAndFences(s string) string {
 	s = reThinkWrap.ReplaceAllString(s, "")
 	s = reFencedJSON.ReplaceAllString(s, "$1")
 	return strings.TrimSpace(s)
@@ -182,16 +182,16 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 	if model != nil {
 		// The question is fitted to the model context window before the call, so an over-long
 		// question is trimmed rather than rejected. The context length is exposed via
-		// ContextLengthModel; when none is available the chat.EffectiveContextLength(0)
+		// contextLengthModel; when none is available the chat.EffectiveContextLength(0)
 		// default (8192) applies.
 		budget := 0
-		if cl, ok := model.(ContextLengthModel); ok {
+		if cl, ok := model.(contextLengthModel); ok {
 			budget = cl.ContextLength()
 		}
 		if budget <= 0 {
 			budget = chat.EffectiveContextLength(0)
 		}
-		fitted, fitErr := chat.FitMessages(KeywordsSystem, []schema.Message{
+		fitted, fitErr := chat.FitMessages(keywordsSystem, []schema.Message{
 			*schema.UserMessage(question),
 		}, budget)
 		if fitErr != "" {
@@ -199,7 +199,7 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 		}
 		// FitMessages may prepend/trim a system message; re-extract it so the
 		// model call is exactly [system, user...].
-		systemPrompt := KeywordsSystem
+		systemPrompt := keywordsSystem
 		if len(fitted) > 0 && fitted[0].Role == schema.System {
 			systemPrompt = fitted[0].Content
 		}

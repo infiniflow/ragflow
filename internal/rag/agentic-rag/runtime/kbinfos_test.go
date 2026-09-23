@@ -57,7 +57,7 @@ func TestMergeDedupsSameDocID(t *testing.T) {
 // TestChunkKeyUsesTextFallback pins that the dedup key reads the SAME alias chain
 // as chunkText (content_with_weight -> content -> text). Reading only the first
 // two made two id-less, text-only chunks from one document share the doc-level
-// fallback key, so Merge/MemoryAdd discarded distinct evidence.
+// fallback key, so Merge/memoryAdd discarded distinct evidence.
 func TestChunkKeyUsesTextFallback(t *testing.T) {
 	a := map[string]any{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}
 	b := map[string]any{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"}
@@ -99,14 +99,14 @@ func TestMergeKeepsDistinctTextOnlyChunks(t *testing.T) {
 // lossless memory store.
 func TestMemoryAddKeepsDistinctTextOnlyChunks(t *testing.T) {
 	kb := &Kbinfos{}
-	MemoryAdd(kb, []map[string]any{
+	memoryAdd(kb, []map[string]any{
 		{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"},
 		{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"},
 	})
 	if len(kb.Memory) != 2 {
 		t.Fatalf("memory = %d, want 2 (distinct text-only evidence must not collapse)", len(kb.Memory))
 	}
-	MemoryAdd(kb, []map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}})
+	memoryAdd(kb, []map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}})
 	if len(kb.Memory) != 2 {
 		t.Fatalf("identical text must still dedup, memory = %d", len(kb.Memory))
 	}

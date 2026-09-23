@@ -30,7 +30,7 @@ func TestTableViewInfoboxBecomesFieldObjects(t *testing.T) {
 		<tr><th>Children</th><td>3</td></tr>
 		<tr><th>Spouse</th><td>Jane Doe</td></tr>
 	</table>`
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view for an infobox")
 	}
@@ -52,7 +52,7 @@ func TestTableViewRankedTableIsKeyedByColumns(t *testing.T) {
 		<tr><td>2</td><td>Bob</td><td>88</td></tr>
 		<tr><td>3</td><td>Carol</td><td>71</td></tr>
 	</table>`
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view for a ranked table")
 	}
@@ -74,7 +74,7 @@ func TestTableViewSingleTHNameRowIsNotAHeader(t *testing.T) {
 		<tr><th>Born</th><td>1968</td></tr>
 		<tr><th>Children</th><td>3</td></tr>
 	</table>`
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view")
 	}
@@ -99,7 +99,7 @@ func TestTableViewCaptionAndUnitsRow(t *testing.T) {
 		<tr><td>No.</td><td>%</td><td>#</td></tr>
 		<tr><td>19</td><td>Danilo</td><td>62</td></tr>
 	</table>`
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view")
 	}
@@ -122,7 +122,7 @@ func TestTableViewEscapesValuesAsJSON(t *testing.T) {
 		<tr><td>1</td><td>Alice</td><td>a|b</td></tr>
 		<tr><td>2</td><td>Bob</td><td>c\d</td></tr>
 	</table>`
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view")
 	}
@@ -144,7 +144,7 @@ func TestTableViewKeepsTextOutsideTheTable(t *testing.T) {
 	raw := "Title: Brendan Fraser\nSource: https://en.wikipedia.org/wiki/Brendan_Fraser\n\n" +
 		`<table><tr><th>Born</th><td>1968</td></tr><tr><th>Children</th><td>3</td></tr></table>` +
 		"\n\nNot to be confused with Brandon Frazier."
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view")
 	}
@@ -162,7 +162,7 @@ func TestTableViewKeepsTextOutsideTheTable(t *testing.T) {
 
 // TestTableViewNoopForNonTable pins the no-op contract: plain text, markdown pipe tables and
 // table-less HTML must come back untouched so a caller can route every chunk through
-// TableViewOrRaw.
+// tableViewOrRaw.
 func TestTableViewNoopForNonTable(t *testing.T) {
 	for _, raw := range []string{
 		"",
@@ -170,10 +170,10 @@ func TestTableViewNoopForNonTable(t *testing.T) {
 		"| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |",
 		"<p>html without a table</p>",
 	} {
-		if view, ok := RenderTables(raw); ok {
+		if view, ok := renderTables(raw); ok {
 			t.Errorf("RenderTables(%q) = (%q, true), want no view", raw, view)
 		}
-		if got := TableViewOrRaw(raw); got != raw {
+		if got := tableViewOrRaw(raw); got != raw {
 			t.Errorf("TableViewOrRaw(%q) = %q, want the raw text", raw, got)
 		}
 	}
@@ -187,7 +187,7 @@ func TestTableViewNoopForEmptyTable(t *testing.T) {
 		"<table><tr><td></td><td>   </td></tr></table>",
 		"<table><tr><th>Rank</th></tr></table>",
 	} {
-		if view, ok := RenderTables(raw); ok {
+		if view, ok := renderTables(raw); ok {
 			t.Errorf("RenderTables(%q) = (%q, true), want no view", raw, view)
 		}
 	}
@@ -202,10 +202,10 @@ func TestTableViewTruncatedFragmentDoesNotPanic(t *testing.T) {
 		`row text then a stray <table`,
 		`<tr><td>a</td></tr><tr><td>b</td></tr>`,
 	} {
-		if view, ok := RenderTables(raw); ok && strings.Contains(view, "\n") && !strings.Contains(raw, "<table") {
+		if view, ok := renderTables(raw); ok && strings.Contains(view, "\n") && !strings.Contains(raw, "<table") {
 			t.Errorf("RenderTables(%q) = %q: a table-less fragment must not render", raw, view)
 		}
-		if got := TableViewOrRaw(raw); got == "" && raw != "" {
+		if got := tableViewOrRaw(raw); got == "" && raw != "" {
 			t.Errorf("TableViewOrRaw(%q) returned an empty string", raw)
 		}
 	}
@@ -224,7 +224,7 @@ func TestTableViewJoinsMultipleTables(t *testing.T) {
 		<tr><th>Children</th><td>2</td></tr>
 		<tr><th>Spouse</th><td>John</td></tr>
 	</table>`
-	view, ok := RenderTables(raw)
+	view, ok := renderTables(raw)
 	if !ok {
 		t.Fatalf("RenderTables() reported no view")
 	}
@@ -251,7 +251,7 @@ func TestTableViewCapsRowsAndReportsOmission(t *testing.T) {
 	}
 	b.WriteString("</table>")
 
-	view, ok := RenderTables(b.String())
+	view, ok := renderTables(b.String())
 	if !ok {
 		t.Fatalf("RenderTables() reported no view")
 	}

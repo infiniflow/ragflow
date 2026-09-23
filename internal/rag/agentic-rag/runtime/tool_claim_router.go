@@ -34,7 +34,7 @@ import (
 // hybrid chunk recall rolled up per document).
 //
 // Like chunk_agg (internal/service/nav), the algorithm consumes the agentic
-// claim-recall capability through the NavTreeRouter interface and keeps the
+// claim-recall capability through the navTreeRouter interface and keeps the
 // summarizer injected, so the runtime stays free of the service layer.
 
 // claimAggPool: the per-leg store limit for the
@@ -49,16 +49,16 @@ func claimDocScore(total float64, hits int) float64 {
 	return total / math.Sqrt(float64(hits)+1)
 }
 
-// ClaimAggRouter is a NavTreeRouter that routes documents through the
+// claimAggRouter is a navTreeRouter that routes documents through the
 // compilers' claim rows first, falling back to the chunk_agg router when the
 // claim leg comes back empty (a raptor-less or pre-claim dataset is a
 // legitimate empty leg, not a failure).
-type ClaimAggRouter struct {
+type claimAggRouter struct {
 	// Deps carries the claim-recall wiring (doc engine, embedder, index).
 	// Route overrides only the per-call tenant/dataset.
 	Deps SearchDeps
 	// Fallback is the chunk_agg router used when the claim leg is empty.
-	Fallback NavTreeRouter
+	Fallback navTreeRouter
 	// Summarize loads the nav_doc summary per routed document. Nil leaves the summaries empty.
 	Summarize nav.DocSummarizer
 }
@@ -71,13 +71,13 @@ type claimAggBucket struct {
 	hits  int
 }
 
-// Route implements the agentic NavTreeRouter contract with the claim-first
+// Route implements the agentic navTreeRouter contract with the claim-first
 // strategy. It returns (nil, nil) when the fallback router reports no compiled
 // tree, an empty non-nil slice when a structure exists but nothing routed, and
 // a non-nil error when the fallback's retrieval itself failed — the claim leg
 // never errors (recall failures read as an empty leg, which is exactly the
 // fallback trigger).
-func (r *ClaimAggRouter) Route(ctx context.Context, tenantID, kbID, query string, docScope []string, topK int) ([][2]string, error) {
+func (r *claimAggRouter) Route(ctx context.Context, tenantID, kbID, query string, docScope []string, topK int) ([][2]string, error) {
 	fallback := func() ([][2]string, error) {
 		if r.Fallback == nil {
 			return nil, nil

@@ -41,13 +41,13 @@ func TestStepReporterStageDeliversBothProjections(t *testing.T) {
 	if got := logged.String(); !strings.Contains(got, "[Planner] decomposed into 3 fan-out(s)") {
 		t.Errorf("developer log = %q, want the stage line", got)
 	}
-	if len(text) != 1 || text[0] != "[Planner] decomposed into 3 fan-out(s)"+ThinkLineBreak {
+	if len(text) != 1 || text[0] != "[Planner] decomposed into 3 fan-out(s)"+thinkLineBreak {
 		t.Errorf("text projection = %#v, want the sentence with a block separator", text)
 	}
 	if len(events) != 1 {
 		t.Fatalf("events = %#v, want one stage event", events)
 	}
-	if ev := events[0]; ev.Kind != ThinkKindStage || ev.Stage != "Planner" ||
+	if ev := events[0]; ev.Kind != thinkKindStage || ev.Stage != "Planner" ||
 		ev.Summary != "[Planner] decomposed into 3 fan-out(s)" {
 		t.Errorf("event = %#v", ev)
 	}
@@ -76,7 +76,7 @@ func TestStepReporterStageDetailSplitsTheTwoAudiences(t *testing.T) {
 		t.Errorf("developer log = %q, want the per-document breakdown", got)
 	}
 	want := `[Hybrid search] Found 5 passages in 1 document for "曹操".`
-	if len(text) != 1 || text[0] != want+ThinkLineBreak {
+	if len(text) != 1 || text[0] != want+thinkLineBreak {
 		t.Errorf("text projection = %#v, want %q", text, want)
 	}
 	if len(events) != 1 || events[0].Summary != want {
@@ -92,7 +92,7 @@ func TestStepReporterStageDetailSplitsTheTwoAudiences(t *testing.T) {
 	text = nil
 	r.StageLine(log.New(&logged, "", 0), "Planner", "one sentence")
 	if logged.String() != "[Planner] one sentence\n" ||
-		len(text) != 1 || text[0] != "[Planner] one sentence"+ThinkLineBreak {
+		len(text) != 1 || text[0] != "[Planner] one sentence"+thinkLineBreak {
 		t.Errorf("StageLine split its audiences: log=%q text=%#v", logged.String(), text)
 	}
 }
@@ -117,8 +117,8 @@ func TestStepReporterIndentsNestedSteps(t *testing.T) {
 	StepsFrom(ctx).StageLine(log.New(&logged, "", 0), "Prefetch", "The plan lists 5 sub-questions; searching 3 opening queries up front.")
 	StepsFrom(Nested(ctx)).StageLine(log.New(&logged, "", 0), "BM25 search", `Found 5 passages in 1 document for "q".`)
 
-	wantTop := "[Prefetch] The plan lists 5 sub-questions; searching 3 opening queries up front." + ThinkLineBreak
-	wantNested := StepIndentUnit + `[BM25 search] Found 5 passages in 1 document for "q".` + ThinkLineBreak
+	wantTop := "[Prefetch] The plan lists 5 sub-questions; searching 3 opening queries up front." + thinkLineBreak
+	wantNested := StepIndentUnit + `[BM25 search] Found 5 passages in 1 document for "q".` + thinkLineBreak
 	if len(text) != 2 || text[0] != wantTop || text[1] != wantNested {
 		t.Errorf("text = %#v, want %q then %q", text, wantTop, wantNested)
 	}
@@ -132,13 +132,13 @@ func TestStepReporterIndentsNestedSteps(t *testing.T) {
 	}
 
 	// The cap: a five-level nesting (outer rag → graph → round → tool → leg) must not
-	// walk off the right edge, so past StepMaxDepth the indent stops growing.
+	// walk off the right edge, so past stepMaxDepth the indent stops growing.
 	deep := ctx
-	for i := 0; i < StepMaxDepth+3; i++ {
+	for i := 0; i < stepMaxDepth+3; i++ {
 		deep = Nested(deep)
 	}
 	StepsFrom(deep).StageLine(log.New(&logged, "", 0), "Deep", "x")
-	if got, want := text[len(text)-1], strings.Repeat(StepIndentUnit, StepMaxDepth)+"[Deep] x"+ThinkLineBreak; got != want {
+	if got, want := text[len(text)-1], strings.Repeat(StepIndentUnit, stepMaxDepth)+"[Deep] x"+thinkLineBreak; got != want {
 		t.Errorf("deep text = %q, want %q", got, want)
 	}
 }
@@ -165,7 +165,7 @@ func TestStepReporterEmitLeavesTheLogToTheProducer(t *testing.T) {
 	if logged.Len() != 0 {
 		t.Errorf("Emit must not write the developer log, got %q", logged.String())
 	}
-	if len(text) != 1 || !strings.HasSuffix(text[0], ThinkLineBreak) {
+	if len(text) != 1 || !strings.HasSuffix(text[0], thinkLineBreak) {
 		t.Errorf("text projection = %#v", text)
 	}
 	ev := events[0]
@@ -233,7 +233,7 @@ func TestStepsFromCtx(t *testing.T) {
 	ctx := WithSteps(context.Background(), want)
 	StepsFrom(ctx).Stage(nil, "Planner", "x")
 
-	if len(got) != 1 || got[0] != "[Planner] x"+ThinkLineBreak {
+	if len(got) != 1 || got[0] != "[Planner] x"+thinkLineBreak {
 		t.Errorf("reporter from ctx = %#v, want the bound one", got)
 	}
 
@@ -246,6 +246,6 @@ func TestStepsFromCtx(t *testing.T) {
 
 // TestEmitThinkToleratesNilAndPanickingSink guards the event channel on its own.
 func TestEmitThinkToleratesNilAndPanickingSink(t *testing.T) {
-	EmitThink(nil, ThinkEvent{Summary: "x"}) // must not panic
-	EmitThink(func(ThinkEvent) { panic("boom") }, ThinkEvent{Summary: "x"})
+	emitThink(nil, ThinkEvent{Summary: "x"}) // must not panic
+	emitThink(func(ThinkEvent) { panic("boom") }, ThinkEvent{Summary: "x"})
 }

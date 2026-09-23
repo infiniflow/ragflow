@@ -391,7 +391,7 @@ func TestExecutorCalculate(t *testing.T) {
 	oc, _ = ex.Execute(context.Background(), "calculate", map[string]any{
 		"question": "q", "facts": []any{"a"},
 	})
-	if oc.Status != StatusPoor {
+	if oc.Status != statusPoor {
 		t.Errorf("not needed: status = %s, want poor", oc.Status)
 	}
 
@@ -402,14 +402,14 @@ func TestExecutorCalculate(t *testing.T) {
 	ex = &searchExecutor{deps: SearchDeps{Model: mdl}}
 	if oc, _ = ex.Execute(context.Background(), "calculate", map[string]any{
 		"question": "q", "facts": []any{"a"},
-	}); oc.Status != StatusPoor {
+	}); oc.Status != statusPoor {
 		t.Errorf("unsafe expr: status = %s, want poor (refused)", oc.Status)
 	}
 
 	// No facts → POOR/no_doc, NOT bad_args: nothing is validated and the
 	// compute_from_facts `not facts` guard returns None.
 	ex = &searchExecutor{deps: SearchDeps{Model: &fakeModel{}}}
-	if oc, _ := ex.Execute(context.Background(), "calculate", map[string]any{"question": "q"}); oc.Status != StatusPoor || oc.Reason != ReasonNoDoc {
+	if oc, _ := ex.Execute(context.Background(), "calculate", map[string]any{"question": "q"}); oc.Status != statusPoor || oc.Reason != ReasonNoDoc {
 		t.Errorf("no facts: got (%s,%s), want (poor,no_doc)", oc.Status, oc.Reason)
 	}
 }
@@ -422,7 +422,7 @@ func TestComputeFromFactsAcceptsNonBoolNeeded(t *testing.T) {
 	mdl := &fakeModel{replies: []*ModelReply{{
 		Content: `{"needed": "true", "expression": "2 + 2", "label": "sum"}`,
 	}}}
-	got := ComputeFromFacts(context.Background(), mdl, "q", []string{"two things"}, 0)
+	got := computeFromFacts(context.Background(), mdl, "q", []string{"two things"}, 0)
 	if got == nil {
 		t.Fatal("ComputeFromFacts = nil, want a result for a truthy non-bool needed")
 	}
@@ -489,7 +489,7 @@ type tempRecordingModel struct {
 	calls         int
 }
 
-// ContextLength implements ContextLengthModel; 0 reports "unknown".
+// ContextLength implements contextLengthModel; 0 reports "unknown".
 func (m *tempRecordingModel) ContextLength() int {
 	return m.contextLength
 }
@@ -518,7 +518,7 @@ func TestComputeFromFactsUsesTemperatureZero(t *testing.T) {
 	mdl := &tempRecordingModel{replies: []*ModelReply{{
 		Content: `{"needed": true, "expression": "1998 - 1954", "label": "years", "uses": [0]}`,
 	}}}
-	cf := ComputeFromFacts(context.Background(), mdl, "How many years?", []string{"born 1954", "died 1998"}, 0)
+	cf := computeFromFacts(context.Background(), mdl, "How many years?", []string{"born 1954", "died 1998"}, 0)
 	if cf == nil {
 		t.Fatal("expected a ComputedFact")
 	}
@@ -537,7 +537,7 @@ func TestComputeFromFactsFitsToContextBudget(t *testing.T) {
 	mdl := &tempRecordingModel{contextLength: 0, replies: []*ModelReply{{
 		Content: `{"needed": true, "expression": "1998 - 1954", "label": "years", "uses": [0]}`,
 	}}}
-	cf := ComputeFromFacts(context.Background(), mdl, "How many years?", []string{"born 1954", "died 1998"}, 0)
+	cf := computeFromFacts(context.Background(), mdl, "How many years?", []string{"born 1954", "died 1998"}, 0)
 	if cf == nil {
 		t.Fatal("expected a ComputedFact")
 	}

@@ -84,7 +84,7 @@ func TestRecallDocClaimHitsFiltersAndMaps(t *testing.T) {
 	}}
 	deps := SearchDeps{TenantID: "tenant-1", IndexName: "idx", DocEngine: de, KbIDs: []string{"kb-1"}}
 
-	hits := RecallDocClaimHits(context.Background(), deps, "When did the tower open?", "doc-1", []string{"tree", "raptor"}, nil, 8)
+	hits := recallDocClaimHits(context.Background(), deps, "When did the tower open?", "doc-1", []string{"tree", "raptor"}, nil, 8)
 	if len(hits) != 1 {
 		t.Fatalf("hits = %d, want 1", len(hits))
 	}
@@ -149,7 +149,7 @@ func TestRecallDocClaimHitsDenseLeg(t *testing.T) {
 	de := &recordingClaimEngine{}
 	deps := SearchDeps{TenantID: "tenant-1", DocEngine: de}
 	qvec := []float64{0.1, 0.2, 0.3}
-	RecallDocClaimHits(context.Background(), deps, "q", "doc-1", nil, qvec, 8)
+	recallDocClaimHits(context.Background(), deps, "q", "doc-1", nil, qvec, 8)
 	if len(de.requests) != 2 {
 		t.Fatalf("store calls = %d, want 2 (KNN + BM25 legs)", len(de.requests))
 	}
@@ -184,24 +184,24 @@ func TestRecallDocClaimHitsMemo(t *testing.T) {
 	deps := SearchDeps{TenantID: "tenant-1", DocEngine: de}
 	ctx := context.Background()
 
-	RecallDocClaimHits(ctx, deps, "same query", "doc-1", nil, nil, 8)
-	RecallDocClaimHits(ctx, deps, "Same Query ", "doc-1", nil, nil, 8)
+	recallDocClaimHits(ctx, deps, "same query", "doc-1", nil, nil, 8)
+	recallDocClaimHits(ctx, deps, "Same Query ", "doc-1", nil, nil, 8)
 	if len(de.requests) != 1 {
 		t.Fatalf("store calls after repeat = %d, want 1 (memo hit)", len(de.requests))
 	}
-	RecallDocClaimHits(ctx, deps, "other query", "doc-1", nil, nil, 8)
+	recallDocClaimHits(ctx, deps, "other query", "doc-1", nil, nil, 8)
 	if len(de.requests) != 2 {
 		t.Fatalf("store calls after new query = %d, want 2", len(de.requests))
 	}
-	RecallDocClaimHits(ctx, deps, "same query", "doc-2", nil, nil, 8)
+	recallDocClaimHits(ctx, deps, "same query", "doc-2", nil, nil, 8)
 	if len(de.requests) != 3 {
 		t.Fatalf("store calls after new doc = %d, want 3", len(de.requests))
 	}
 
 	empty := &recordingClaimEngine{}
 	emptyDeps := SearchDeps{TenantID: "tenant-1", DocEngine: empty}
-	RecallDocClaimHits(ctx, emptyDeps, "nothing here", "doc-9", nil, nil, 8)
-	RecallDocClaimHits(ctx, emptyDeps, "nothing here", "doc-9", nil, nil, 8)
+	recallDocClaimHits(ctx, emptyDeps, "nothing here", "doc-9", nil, nil, 8)
+	recallDocClaimHits(ctx, emptyDeps, "nothing here", "doc-9", nil, nil, 8)
 	if len(empty.requests) != 2 {
 		t.Fatalf("empty result must not be memoized; store calls = %d, want 2", len(empty.requests))
 	}
@@ -228,7 +228,7 @@ func TestClaimAggRouterClaimsDecide(t *testing.T) {
 		}
 		return out
 	}
-	r := &ClaimAggRouter{
+	r := &claimAggRouter{
 		Deps:      SearchDeps{TenantID: "tenant-1", DocEngine: de},
 		Fallback:  fallback,
 		Summarize: summaries,
@@ -261,7 +261,7 @@ func TestClaimAggRouterDocScope(t *testing.T) {
 		claimRow("doc-b", "claim b", "", "", 0.8, []string{"c2"}),
 	}}
 	fallback := &fallbackRouter{next: [][2]string{{"doc-fallback", ""}}}
-	r := &ClaimAggRouter{
+	r := &claimAggRouter{
 		Deps:     SearchDeps{TenantID: "tenant-1", DocEngine: de},
 		Fallback: fallback,
 	}
@@ -277,7 +277,7 @@ func TestClaimAggRouterDocScope(t *testing.T) {
 	}
 
 	fallback2 := &fallbackRouter{next: [][2]string{{"doc-fallback", ""}}}
-	r2 := &ClaimAggRouter{Deps: SearchDeps{TenantID: "tenant-1", DocEngine: de}, Fallback: fallback2}
+	r2 := &claimAggRouter{Deps: SearchDeps{TenantID: "tenant-1", DocEngine: de}, Fallback: fallback2}
 	routed2, err := r2.Route(context.Background(), "tenant-1", "kb-1", "q", []string{"doc-elsewhere"}, 8)
 	if err != nil {
 		t.Fatalf("Route: %v", err)
@@ -294,7 +294,7 @@ func TestClaimAggRouterFallsBackOnEmpty(t *testing.T) {
 	resetClaimCaches()
 	de := &recordingClaimEngine{}
 	fallback := &fallbackRouter{next: [][2]string{{"doc-chunk", "chunk summary"}}}
-	r := &ClaimAggRouter{
+	r := &claimAggRouter{
 		Deps:     SearchDeps{TenantID: "tenant-1", DocEngine: de},
 		Fallback: fallback,
 	}
@@ -323,12 +323,12 @@ func (r *fallbackRouter) Route(_ context.Context, _, _, _ string, _ []string, _ 
 
 // TestPublishClaimHits pins the evidence-pool publish: one pseudo chunk per claim under the
 // SAME "claim_"+md5(doc:name) id the session prefetch writes, verbatim evidence capped at
-// ClaimEvidenceChars, the claim's own chunk pointer as source_chunk_ids, deduped against the
+// claimEvidenceChars, the claim's own chunk pointer as source_chunk_ids, deduped against the
 // live pool.
 func TestPublishClaimHits(t *testing.T) {
 	kb := &Kbinfos{}
 	deps := SearchDeps{KB: kb}
-	hits := []DocClaimHit{
+	hits := []docClaimHit{
 		{ChunkID: "c1", Rank: 2, Name: "Claim A", Description: "Claim A", Evidence: []map[string]any{{"quote": strings.Repeat("q", 2000)}}},
 		{ChunkID: "", Rank: 3, Name: "Claim B", Description: "a different description"},
 	}
@@ -342,7 +342,7 @@ func TestPublishClaimHits(t *testing.T) {
 		t.Fatalf("pool = %d entries, want 2", len(kb.Chunks))
 	}
 	a := kb.Chunks[0]
-	if a["chunk_id"] != claimHitID(&ClaimHit{DocID: "doc-1", Name: "Claim A"}) {
+	if a["chunk_id"] != claimHitID(&claimHit{DocID: "doc-1", Name: "Claim A"}) {
 		t.Errorf("chunk_id = %v, want the shared claim id scheme", a["chunk_id"])
 	}
 	content, _ := a["content_with_weight"].(string)

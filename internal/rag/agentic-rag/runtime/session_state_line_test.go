@@ -38,7 +38,7 @@ func typedCountSlot(id int, typ string, n int) Variable {
 // items a slot type declared — and recall was decided by that derivation: a name behind the one-line
 // record's "+15" was a name no answer could have (measured 2026-09-20, 三国/关羽: nineteen names in the
 // derived ledger, ten in the answer). What counts as a member is a SEMANTIC judgement, and the runtime
-// does not make it (see SessionRecord).
+// does not make it (see sessionRecord).
 func TestSessionRecordCarriesTheModelsOwnNotesVerbatim(t *testing.T) {
 	kb := &Kbinfos{}
 	for i := 0; i < 5; i++ {
@@ -47,7 +47,7 @@ func TestSessionRecordCarriesTheModelsOwnNotesVerbatim(t *testing.T) {
 			p.Add(map[string]any{"chunk_id": id, "content": "prose"})
 		})
 	}
-	s := &SessionState{
+	s := &sessionState{
 		KB: kb,
 		ParentState: State{State: []Variable{
 			{ID: 0, Type: "count", Candidate: strPtr("13")},
@@ -93,7 +93,7 @@ func TestSessionRecordCarriesTheModelsOwnNotesVerbatim(t *testing.T) {
 // so no runtime predicate may turn "the pool grew" into "keep going" — and the line may not turn "a
 // passage mentions this name" into "this name is a member" either.
 func TestSessionRecordLineCarriesNoPoolJudgement(t *testing.T) {
-	rec := SessionRecord{Pool: 500, Notes: []string{"华雄"}, ShownSinceNote: 3}
+	rec := sessionRecord{Pool: 500, Notes: []string{"华雄"}, ShownSinceNote: 3}
 	line := rec.Line()
 	if !strings.Contains(line, "pool=500") {
 		t.Fatalf("line %q, want the pool size reported", line)
@@ -109,7 +109,7 @@ func TestSessionRecordLineCarriesNoPoolJudgement(t *testing.T) {
 // session's own branches, or a member the session just found would still read as
 // missing.
 func TestWorkingTableAppliesSessionPatches(t *testing.T) {
-	s := &SessionState{
+	s := &sessionState{
 		ParentState: State{State: []Variable{
 			{ID: 1, Type: "person", Candidate: nil},
 			{ID: 2, Type: "person", Candidate: strPtr("华雄")},
@@ -139,7 +139,7 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 	kb.Admit(func(p *PoolAdmitter) {
 		p.Add(map[string]any{"chunk_id": "c1", "content": "prose"})
 	})
-	s := &SessionState{
+	s := &sessionState{
 		KB: kb,
 		ParentState: State{State: []Variable{
 			typedCountSlot(0, "count", 13),
@@ -171,7 +171,7 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 
 	// No pool bound: the record is kept, the line is skipped rather than inventing
 	// a message for it.
-	empty := &SessionState{Messages: []schema.Message{*schema.ToolMessage("x", "call_2")}}
+	empty := &sessionState{Messages: []schema.Message{*schema.ToolMessage("x", "call_2")}}
 	empty.appendRecordLine(true)
 	if empty.Messages[0].Content != "x" {
 		t.Fatalf("no-pool message = %q, want it untouched", empty.Messages[0].Content)
@@ -246,8 +246,8 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 
 // enumerationSession is a session sent on a SET question — the parent table holds
 // a count slot, which is the shape the continuation offer is gated on.
-func enumerationSession(attempts int, deadlineLeft float64) *SessionState {
-	return &SessionState{
+func enumerationSession(attempts int, deadlineLeft float64) *sessionState {
+	return &sessionState{
 		Attempts:     attempts,
 		DeadlineLeft: deadlineLeft,
 		// What makes this session an ENUMERATING one is the batch the caller wrote, not the type
@@ -269,7 +269,7 @@ func enumerationSession(attempts int, deadlineLeft float64) *SessionState {
 // runtime does not delegate — the run cap and the session clock — and the ask hands the model the
 // record's own brief, so "continue" has to be justified by something the record shows is missing.
 func TestOfferContinuationIsBoundedByTheCapAndTheClockNotByTheShape(t *testing.T) {
-	value := &SessionState{
+	value := &sessionState{
 		Tools:        &Toolset{ThinkingMode: "high"},
 		Attempts:     4,
 		DeadlineLeft: 90,
@@ -291,7 +291,7 @@ func TestOfferContinuationIsBoundedByTheCapAndTheClockNotByTheShape(t *testing.T
 	}
 
 	// The two bounds the runtime keeps. First the run cap: at it, nothing more is offered.
-	capped := &SessionState{
+	capped := &sessionState{
 		Tools: &Toolset{ThinkingMode: "high"}, DeadlineLeft: 90,
 	}
 	capped.Attempts = capped.turnRunCap()
@@ -299,7 +299,7 @@ func TestOfferContinuationIsBoundedByTheCapAndTheClockNotByTheShape(t *testing.T
 		t.Fatal("at the run cap no further turn may be offered")
 	}
 	// Then the clock: below the floor the finalize step must still fit, so nothing is offered.
-	late := &SessionState{
+	late := &sessionState{
 		Tools: &Toolset{ThinkingMode: "high"}, Attempts: 4, DeadlineLeft: turnAskFloorS,
 	}
 	if late.offerContinuation() {
@@ -356,7 +356,7 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 		p.Add(map[string]any{"chunk_id": "offtopic", "content": "那张角本是个不第秀才，因入山采药，遇一老人，碧眼童颜，手执藜杖，唤角至一洞中，以天书三卷授之。"})
 		p.Add(map[string]any{"chunk_id": "unread01", "content": "关公大怒，拍马舞刀，直取管亥，管亥措手不及，被关公一刀劈于马下。"})
 	})
-	s := &SessionState{
+	s := &sessionState{
 		KB:                   kb,
 		Direction:            "关羽斩杀了哪些有名有姓的人物",
 		SearchQueries:        []string{"关公 斩 管亥"},
@@ -394,21 +394,21 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 func TestTheRecordReadsNoTypeWordsAndSplitsNoText(t *testing.T) {
 	for _, typ := range []string{"entity", "count", "number", "dataset", "person"} {
 		for _, value := range []string{"白马坡", "Grace's、High、Falls、Colonial、Creek"} {
-			s := &SessionState{ParentState: State{State: []Variable{{ID: 0, Type: typ, Candidate: strPtr(value)}}}}
+			s := &sessionState{ParentState: State{State: []Variable{{ID: 0, Type: typ, Candidate: strPtr(value)}}}}
 			if got := s.sessionRecord().Notes; len(got) != 1 || got[0] != value {
 				t.Errorf("a %q slot holding %q gave notes %v, want the value verbatim as ONE note", typ, value, got)
 			}
 		}
 	}
 	// The claims a value displaced are the model's writing too, and they are kept.
-	s := &SessionState{ParentState: State{State: []Variable{
+	s := &sessionState{ParentState: State{State: []Variable{
 		{ID: 0, Type: "person", Candidate: strPtr("荀正"), Alternates: []string{"杨龄"}},
 	}}}
 	if got := s.sessionRecord().Notes; !reflect.DeepEqual(got, []string{"荀正", "杨龄"}) {
 		t.Errorf("notes = %v, want the candidate and the claim it displaced", got)
 	}
 	// A table the model wrote nothing into has NO notes: the record never invents one.
-	if got := (&SessionState{ParentState: State{State: []Variable{{ID: 0, Type: "date"}}}}).sessionRecord(); len(got.Notes) != 0 {
+	if got := (&sessionState{ParentState: State{State: []Variable{{ID: 0, Type: "date"}}}}).sessionRecord(); len(got.Notes) != 0 {
 		t.Errorf("notes = %v from an empty table, want none", got.Notes)
 	}
 }
@@ -437,7 +437,7 @@ func TestTheRecordReadsNoTypeWordsAndSplitsNoText(t *testing.T) {
 // first number it was given (the same chunk cited from two calls cites one place), and the
 // registry is that same order — which is the list handed to the citation resolver afterwards.
 func TestSessionStampsEvidenceRefsInFirstSeenOrder(t *testing.T) {
-	s := &SessionState{}
+	s := &sessionState{}
 
 	first := []any{
 		map[string]any{"chunk_id": "c1", "content": "a"},
@@ -489,7 +489,7 @@ func TestSessionStampsEvidenceRefsInFirstSeenOrder(t *testing.T) {
 func TestSessionFoldsEarlierToolResults(t *testing.T) {
 	big := `{"passages":[` + strings.Repeat(`{"ref":0,"chunk_id":"c1","content":"x"},`, 40) + `{"ref":41,"chunk_id":"c2","content":"y"}]}`
 	small := func(id string) string { return `{"passages":[{"ref":0,"chunk_id":"` + id + `","content":"x"}]}` }
-	s := &SessionState{}
+	s := &sessionState{}
 	s.Messages = []schema.Message{
 		*schema.SystemMessage("system"),
 		*schema.UserMessage("q"),
@@ -522,7 +522,7 @@ func TestSessionFoldsEarlierToolResults(t *testing.T) {
 	}
 
 	// A short result is not worth folding: the digest would cost more than it saves.
-	short := &SessionState{Messages: []schema.Message{
+	short := &sessionState{Messages: []schema.Message{
 		*schema.AssistantMessage("a", nil),
 		*schema.ToolMessage(`{"passages":[]}`, "c1"),
 		*schema.AssistantMessage("b", nil),
@@ -556,8 +556,8 @@ func TestSessionFoldsEarlierToolResults(t *testing.T) {
 // questions the caller wrote zero batches, while one 三国 question wrote eighteen.
 func TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch(t *testing.T) {
 	method := "SET / COUNT directions — the member list IS the work"
-	newSession := func(queries ...string) *SessionState {
-		return &SessionState{
+	newSession := func(queries ...string) *sessionState {
+		return &sessionState{
 			SearchQueries:       queries,
 			EnumerationProtocol: method,
 			Messages:            []schema.Message{*schema.ToolMessage(`{"passages": []}`, "call_1")},
@@ -610,7 +610,7 @@ func TestAppendRecordLineReachesValueDirectionsToo(t *testing.T) {
 		p.Add(map[string]any{"chunk_id": "c1", "content": "prose"})
 	})
 	payload := `{"passages": []}`
-	s := &SessionState{
+	s := &sessionState{
 		KB: kb,
 		ParentState: State{State: []Variable{
 			{ID: 0, Type: "date", Candidate: strPtr("1858")},

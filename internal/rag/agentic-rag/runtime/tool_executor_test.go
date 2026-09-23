@@ -332,7 +332,7 @@ func TestRenderToolArgs(t *testing.T) {
 	if strings.Contains(got, long) || !strings.Contains(got, "…") {
 		t.Errorf("long args = %q, want the value capped with an ellipsis", got)
 	}
-	if n := utf8.RuneCountInString(got); n > ThinkLabelMaxRunes+16 {
+	if n := utf8.RuneCountInString(got); n > thinkLabelMaxRunes+16 {
 		t.Errorf("rendered args = %d runes, want one capped value", n)
 	}
 	// Capping must not produce invalid UTF-8 (it cuts on rune boundaries)...
@@ -462,7 +462,7 @@ func TestExecuteNarratesToolOutcome(t *testing.T) {
 			call = ev
 		case ThinkKindToolResult:
 			result = ev
-		case ThinkKindStage:
+		case thinkKindStage:
 			legLines = append(legLines, ev.Summary)
 		}
 	}
@@ -695,7 +695,7 @@ func TestRenderToolOutcomeCoversEveryStatus(t *testing.T) {
 			Payload: []any{map[string]any{"id": "c1"}}},
 			"The list_chunks tool returned 1 result."},
 		// Singular "1 result" must not be followed by "all of them".
-		{"redundant", "retrieve", ` for "q"`, ToolOutcome{Status: StatusRedundant,
+		{"redundant", "retrieve", ` for "q"`, ToolOutcome{Status: statusRedundant,
 			Payload: []any{map[string]any{"id": "c1"}}},
 			`The retrieve tool returned 1 result for "q", already in the evidence pool.`},
 		{"miss", "retrieve", ` for "q"`, ToolOutcome{Status: StatusMiss, Reason: ReasonNoDoc},
@@ -708,13 +708,13 @@ func TestRenderToolOutcomeCoversEveryStatus(t *testing.T) {
 		{"unwired", "time_travel", ` for "q"`, ToolOutcome{Status: StatusMiss, Reason: ReasonUnwired},
 			`The time_travel tool is not wired in this deployment, so nothing ran for "q".`},
 		{"empty-no-structure", "navigate_structure", ` for "曹操是谁"`,
-			ToolOutcome{Status: StatusEmpty, Reason: ReasonNoStructure},
+			ToolOutcome{Status: StatusEmpty, Reason: reasonNoStructure},
 			`The navigate_structure tool has no compiled structure to read for "曹操是谁".`},
-		{"poor", "calculate", ` for "how many people"`, ToolOutcome{Status: StatusPoor, Reason: ReasonNoDoc},
+		{"poor", "calculate", ` for "how many people"`, ToolOutcome{Status: statusPoor, Reason: ReasonNoDoc},
 			`The calculate tool produced a result too weak to use for "how many people".`},
 		// The producer's own diagnostic is the actionable half of a failure; the
 		// reason token stays in the event.
-		{"error-with-cause", "navigate_tree", "", ToolOutcome{Status: StatusError, Reason: ReasonInfra,
+		{"error-with-cause", "navigate_tree", "", ToolOutcome{Status: StatusError, Reason: reasonInfra,
 			Diagnostic: "nav-tree descent failed for kb=kb1"},
 			"The navigate_tree tool could not run: nav-tree descent failed for kb=kb1."},
 	}
@@ -774,7 +774,7 @@ func TestQuoteQueries(t *testing.T) {
 	if !strings.Contains(label, "…") {
 		t.Errorf("quoteQueries(long) = %q, want it capped", label)
 	}
-	if n := utf8.RuneCountInString(label); n > ThinkLabelMaxRunes+4 {
+	if n := utf8.RuneCountInString(label); n > thinkLabelMaxRunes+4 {
 		t.Errorf("quoteQueries(long) = %d runes, want a capped label", n)
 	}
 	if !utf8.ValidString(label) {
@@ -882,7 +882,7 @@ func (s tableChunksStub) DocChunks(_ context.Context, req DocChunksRequest) ([]m
 }
 
 // TestListChunksTablePassageIsRendered pins the SHARED renderer on the list_chunks path: a table
-// chunk must reach the model as the rendered field view — one JSON object per row, see RenderTables —
+// chunk must reach the model as the rendered field view — one JSON object per row, see renderTables —
 // not as raw <table> markup. This path used to build its own passage dict, which is how an
 // 8275-code-point standings table reached the model as raw HTML and then, cut to its first ~800 code
 // points, read as "only the top four finishers". What the assertion is really about is the ROW SET
@@ -1023,7 +1023,7 @@ func TestLargePoolStillAdmitsNewEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve (second): %v", err)
 	}
-	if oc.Status != StatusRedundant && oc.Status != StatusMiss {
+	if oc.Status != statusRedundant && oc.Status != StatusMiss {
 		t.Errorf("status = %s, want REDUNDANT/MISS on the repeated search", oc.Status)
 	}
 	if len(kb.Chunks) != len(pre)+1 {
@@ -1072,7 +1072,7 @@ func TestProbeWindowLandsOnALargePool(t *testing.T) {
 	if len(kb.Chunks) != len(pre)+1 {
 		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), len(pre)+1)
 	}
-	if oc.Status != StatusMiss && oc.Status != StatusRedundant {
+	if oc.Status != StatusMiss && oc.Status != statusRedundant {
 		t.Errorf("status = %s, want MISS/REDUNDANT on the repeated probe", oc.Status)
 	}
 }
@@ -1084,7 +1084,7 @@ func TestWebSearchAdmitsToPool(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"web answer one", "web answer two", "web answer three"}}
 	// The query list is read from args["query"].
-	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
+	oc, err := webSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
 	}
@@ -1114,7 +1114,7 @@ func TestWebSearchDedupsAcrossQueries(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"dup passage", "unique one", "dup passage"}}
 	// Same args["query"] contract as above.
-	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
+	oc, err := webSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
 	}
@@ -1222,7 +1222,7 @@ func (s stubWebSearch) Search(_ context.Context, _ []string) ([]string, error) {
 }
 
 // TestSearchRedundantReturnsFullPayload pins fix #5: when every hit is already in the
-// evidence pool the result is StatusRedundant — but the FULL passages are still returned so
+// evidence pool the result is statusRedundant — but the FULL passages are still returned so
 // the model sees what it already has. Dropping the payload to empty hid the evidence.
 func TestSearchRedundantReturnsFullPayload(t *testing.T) {
 	chunk := map[string]any{"content": "already known passage", "chunk_id": "c1"}
@@ -1234,8 +1234,8 @@ func TestSearchRedundantReturnsFullPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if oc.Status != StatusRedundant {
-		t.Fatalf("status = %s, want %s", oc.Status, StatusRedundant)
+	if oc.Status != statusRedundant {
+		t.Fatalf("status = %s, want %s", oc.Status, statusRedundant)
 	}
 	if len(oc.Payload) != 1 {
 		t.Fatalf("REDUNDANT payload = %v, want 1 full passage", oc.Payload)
@@ -1319,7 +1319,7 @@ func TestSearchExecutorReportsMissAndRedundancy(t *testing.T) {
 
 	// Same query again: every hit is already in the pool -> REDUNDANT, not ok.
 	oc, _ = ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q1"})
-	if oc.Status != StatusRedundant {
+	if oc.Status != statusRedundant {
 		t.Errorf("repeat call status = %s, want redundant", oc.Status)
 	}
 
@@ -1367,8 +1367,8 @@ func TestSearchRecordsDocAggsForReferences(t *testing.T) {
 // fakeWikiRetriever returns a fixed compiled wiki page.
 type fakeWikiRetriever struct{}
 
-func (f *fakeWikiRetriever) SearchWiki(_ context.Context, question string, keywords []string, topN int) ([]WikiPage, error) {
-	return []WikiPage{{
+func (f *fakeWikiRetriever) SearchWiki(_ context.Context, question string, keywords []string, topN int) ([]wikiPage, error) {
+	return []wikiPage{{
 		ChunkID: "w1", DocID: "wdoc1", DocName: "Synthesis", Title: "Culdcept Overview",
 		Content: "Culdcept is a board game by OmiyaSoft.", Score: 0.9,
 	}}, nil
@@ -1440,7 +1440,7 @@ func TestListChunksReadsFromEvidencePool(t *testing.T) {
 	oc, _ := ex.Execute(context.Background(), "list_chunks", map[string]any{"doc_id": "doc-a"})
 	// Already in evidence → REDUNDANT (nothing new admitted), but the passages
 	// are still returned.
-	if oc.Status != StatusRedundant {
+	if oc.Status != statusRedundant {
 		t.Fatalf("status = %s, want redundant", oc.Status)
 	}
 	if len(oc.Payload) != 2 {
@@ -1562,7 +1562,7 @@ func TestMetadataSearchToolInfraWhenIndexUnreadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if out.Status != StatusError || out.Reason != ReasonInfra {
+	if out.Status != StatusError || out.Reason != reasonInfra {
 		t.Errorf("status/reason = %s/%s, want error/infra", out.Status, out.Reason)
 	}
 	if note := toolNote(out); !strings.Contains(note, "NOT a statement about the dataset") {
@@ -1856,7 +1856,7 @@ func TestMetadataSearchSecondFilterRuns(t *testing.T) {
 			"key": "update_time", "op": "start with", "value": day,
 		}}}
 	}
-	st := &SessionState{
+	st := &sessionState{
 		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
 		DeadlineLeft: 60,
 		ToolCache:    NewToolCache(),

@@ -58,7 +58,7 @@ import (
 //   - Variable / State / Result
 //   - tool status constants
 //   - ToolOutcome
-//   - ApplyPatch
+//   - applyPatch
 
 // Variable is one unknown entity to resolve. ID is immutable across patches.
 type Variable struct {
@@ -250,13 +250,13 @@ type Result struct {
 	TerminalPayload map[string]any
 }
 
-// ApplyPatch: ONLY existing
+// applyPatch: ONLY existing
 // ids are patchable; the mutable fields are candidate / candidate_strength /
 // discovered_clues. ID is immutable, so patches may not add variables.
 //
 // Returns nil when a patch entry is malformed (not a map, or missing "id") or when
 // nothing actually changed.
-func ApplyPatch(base State, branchPatches []map[string]any) *State {
+func applyPatch(base State, branchPatches []map[string]any) *State {
 	newVars := make([]Variable, 0, len(base.State))
 	for _, v := range base.State {
 		nv := Variable{
@@ -443,7 +443,7 @@ func parseFloat(s string) (float64, bool) {
 	return f, true
 }
 
-// isTruthy applies bool() truthiness to the JSON-decoded values that reach ApplyPatch:
+// isTruthy applies bool() truthiness to the JSON-decoded values that reach applyPatch:
 // None/nil, empty string/collection, zero number, and False are falsy; everything else
 // (including non-empty objects and any other type) is truthy.
 func isTruthy(v any) bool {
@@ -908,12 +908,12 @@ func tryUnmarshal(s string) any {
 
 var reFencedJSON = regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\}|\\[.*?\\])\\s*```")
 
-// ExtractTag: exact-tag extraction first, then
+// extractTag: exact-tag extraction first, then
 // lenient fallbacks for models that wrap the JSON in code fences or emit bare
 // objects (observed with DeepSeek-class models ignoring the XML protocol).
 //
 // Returns "" when the tag is absent.
-func ExtractTag(text, tag string) string {
+func extractTag(text, tag string) string {
 	if text == "" {
 		return ""
 	}
@@ -956,7 +956,7 @@ func ExtractTag(text, tag string) string {
 //
 // What the session depends on:
 //   - tool specs
-//   - ToolMap (the dispatch registry)
+//   - toolMap (the dispatch registry)
 //   - the active tool surface
 //   - tool disabling
 //   - reason → status mapping
@@ -1019,7 +1019,7 @@ func arrayParamWithReasonAndDocScope(minItems, maxItems int) map[string]any {
 var (
 	retrieveToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "retrieve",
 			Description: `WHEN TO CALL: you know or suspect exact surface terms in the corpus (names, titles, codes, phrases) — the first recall pass; cover different facets.` +
 				`HOW IT WORKS: keyword recall FIRST, then the pattern applies to what came back — ` + "`A.*B`" + ` (A then B, anything between) matches only inside the passages its operands recalled, and the RAREST operand bounds it: put the rare word first. A FULL recall page was truncated.` +
@@ -1035,7 +1035,7 @@ var (
 
 	listChunksToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "list_chunks",
 			Description: `WHEN TO CALL: You need the FULL text of one document (enumeration, counts, arithmetic over many passages) and you already have its doc_id from a prior tool result.` +
 				`DO NOT CALL: When you only need a single passage (use search_chunks or retrieve first); when you have no doc_id yet (locate it via navigate_tree or search_chunks first).` +
@@ -1061,7 +1061,7 @@ var (
 
 	searchChunksToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "search_chunks",
 			Description: `WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries; compiled-structure expansion is automatic (a no-op without compiled structure). ` +
 				`DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve.` +
@@ -1076,7 +1076,7 @@ var (
 
 	metadataSearchToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "metadata_search",
 			Description: `WHEN TO CALL: SELECT the document set by METADATA before searching — call it when the question names explicit entities (a person, a time, a place) or any concrete name a metadata field would carry (a title, a file name, an author, a date), or needs a named subset. Use ONLY the AVAILABLE METADATA fields; prefer 'contains' with a distinctive substring. ` +
 				`ONE FILTER PER CALL (two days = two calls), then spend the returned doc_ids: list_chunks(doc_id), navigate_structure(doc_id, query), or retrieve(query, doc_scope=[ids]). ` +
@@ -1120,7 +1120,7 @@ var (
 
 	webSearchToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "web_search",
 			Description: `WHEN TO CALL: The needed fact is world knowledge, a recent event, or newer than the corpus (a current event, a person's alive-now status, a fresh statistic). This tool only appears when a web provider is configured.` +
 				`DO NOT CALL: When the fact plausibly lives in the fixed corpus — prefer retrieve or search_chunks first. For corpus-only questions this tool is unavailable.` +
@@ -1131,13 +1131,13 @@ var (
 		},
 	}
 
-	// wikiQueryToolSpec is deliberately absent from ToolMap: wiki_query has no caller and is
+	// wikiQueryToolSpec is deliberately absent from toolMap: wiki_query has no caller and is
 	// not part of the action session's dispatch registry, so it stays unregistered. The
 	// handler still lives in tool_exploration.go as an unplugged extension seam.
 
 	navigateTreeToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "navigate_tree",
 			Description: `WHEN TO CALL: The question names a topic, entity, or alias but you do NOT know which document discusses it, especially on a large corpus. Routes by topic or cluster similarity over the compiled navigation tree.` +
 				`DO NOT CALL: When you already hold a doc_id (go straight to navigate_structure); when the answer is likely a single exact passage (use retrieve or search_chunks).` +
@@ -1159,7 +1159,7 @@ var (
 
 	navigateStructureToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "navigate_structure",
 			Description: `WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree.` +
 				`DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document).` +
@@ -1181,7 +1181,7 @@ var (
 
 	calculateToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "calculate",
 			Description: `WHEN TO CALL: The question asks you to DERIVE a number by combining facts you found (sum / difference / percentage / ratio / sort / compare / length / age / price / area / growth). NEVER do arithmetic mentally.` +
 				`DO NOT CALL: When the answer IS one of the stated numbers (no combination needed) — answer directly. When a needed number is still missing — retrieve it first; do not estimate.` +
@@ -1205,7 +1205,7 @@ var (
 
 	graphExploreToolSpec = ToolSpec{
 		Type: "function",
-		Function: ToolFunction{
+		Function: toolFunction{
 			Name: "graph_explore",
 			Description: ("EXPLORE the compiled KNOWLEDGE GRAPH (entities + relations) for a " +
 				"RELATIONAL/multi-hop answer. Different from navigate_*: instead of " +
@@ -1257,7 +1257,7 @@ const (
 // the `key` stays the free-form string the shipped spec carries, which is also how an empty
 // enum is avoided (some providers reject `"enum": []`).
 //
-// The base spec is the shared package-level ToolMap entry, so every map this touches is
+// The base spec is the shared package-level toolMap entry, so every map this touches is
 // COPIED — mutating them in place would leak one session's dataset fields into every other
 // session (and into a session's concurrent rag calls, see Toolset.mu).
 func metadataSearchSpecForCatalog(base ToolSpec, cat *MetadataCatalog) ToolSpec {
@@ -1295,7 +1295,7 @@ func metadataSearchSpecForCatalog(base ToolSpec, cat *MetadataCatalog) ToolSpec 
 }
 
 // copyAnyMap shallow-copies a JSON-shaped map, so a patched tool spec shares no map with
-// ToolMap.
+// toolMap.
 func copyAnyMap(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
@@ -1304,9 +1304,9 @@ func copyAnyMap(m map[string]any) map[string]any {
 	return out
 }
 
-// ToolMap is the multi-tool registry.
+// toolMap is the multi-tool registry.
 // executeTool dispatches by name; add a tool by registering its schema here.
-var ToolMap = map[string]ToolSpec{
+var toolMap = map[string]ToolSpec{
 	"retrieve":           retrieveToolSpec,
 	"search_chunks":      searchChunksToolSpec,
 	"metadata_search":    metadataSearchToolSpec,
@@ -1320,8 +1320,8 @@ var ToolMap = map[string]ToolSpec{
 
 // toolMapNames are the registered tool names, sorted for deterministic output.
 func toolMapNames() []string {
-	names := make([]string, 0, len(ToolMap))
-	for n := range ToolMap {
+	names := make([]string, 0, len(toolMap))
+	for n := range toolMap {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -1330,12 +1330,12 @@ func toolMapNames() []string {
 
 // The per-session tool object
 
-// ToolExecutor runs one tool call by name and reports what happened.
+// toolExecutor runs one tool call by name and reports what happened.
 //
 // Every executor returns a ToolOutcome so the tool node can act on the KIND of
 // result (empty / miss / poor / redundant / error) instead of measuring payload
 // size.
-type ToolExecutor interface {
+type toolExecutor interface {
 	Execute(ctx context.Context, name string, args map[string]any) (ToolOutcome, error)
 }
 
@@ -1350,7 +1350,7 @@ type Toolset struct {
 	// HasWebSearch reports whether a web provider is configured. When false,
 	// web_search is hidden from the surface rather than merely discouraged.
 	HasWebSearch bool
-	// MetadataFields is the session's metadata catalog (see MetadataCatalogFor). It supplies
+	// MetadataFields is the session's metadata catalog (see metadataCatalogFor). It supplies
 	// the metadata_search key enum and rides the session seed, so a filter can name the fields
 	// the dataset really carries. Nil or empty advertises no field at all — there is no field
 	// name baked into the shipped schema to fall back on.
@@ -1363,10 +1363,10 @@ type Toolset struct {
 	// so the map must not be written and read unsynchronized.
 	mu sync.Mutex
 	// Exec runs the tools.
-	Exec ToolExecutor
+	Exec toolExecutor
 }
 
-// GetThinkingMode implements ThinkingModeCarrier so ResolveMode works on *Toolset.
+// GetThinkingMode implements thinkingModeCarrier so ResolveMode works on *Toolset.
 func (t *Toolset) GetThinkingMode() string {
 	if t == nil {
 		return ""
@@ -1397,7 +1397,7 @@ func (t *Toolset) ActiveToolSpecs() []ToolSpec {
 		if t.IsDisabled(name) {
 			continue
 		}
-		if s, ok := ToolMap[name]; ok {
+		if s, ok := toolMap[name]; ok {
 			if name == "metadata_search" {
 				// Per-session rewrite: the catalog names the dataset's real fields. It
 				// returns the shared spec untouched when there is no catalog.
@@ -1411,9 +1411,9 @@ func (t *Toolset) ActiveToolSpecs() []ToolSpec {
 
 // DisableTool: mark a compile-only tool
 // unavailable for the REST of this session, so ActiveToolSpecs stops
-// advertising it and ExecuteTool short-circuits it.
+// advertising it and executeTool short-circuits it.
 func (t *Toolset) DisableTool(name string) {
-	if _, ok := ToolMap[name]; !ok {
+	if _, ok := toolMap[name]; !ok {
 		return
 	}
 	t.mu.Lock()
@@ -1431,7 +1431,7 @@ func (t *Toolset) IsDisabled(name string) bool {
 	return t.DisabledTools[name]
 }
 
-// ReasonStatus: single source of truth for the cause→status mapping, so a tool cannot
+// reasonStatus: single source of truth for the cause→status mapping, so a tool cannot
 // disagree with itself about what its own reason means.
 // The unified tool-result contract shared by the session and the tool implementations
 // (ToolOutcome plus the OK/EMPTY/MISS/POOR/REDUNDANT/ERROR statuses).
@@ -1441,21 +1441,21 @@ const (
 	StatusOK        = "ok"        // normal hit
 	StatusEmpty     = "empty"     // dataset-level: no such compiled structure exists here
 	StatusMiss      = "miss"      // query-level: nothing matched THIS query; tool still valid
-	StatusPoor      = "poor"      // produced output, but too weak to be useful
-	StatusRedundant = "redundant" // ran fine, but added no NEW evidence
+	statusPoor      = "poor"      // produced output, but too weak to be useful
+	statusRedundant = "redundant" // ran fine, but added no NEW evidence
 	StatusError     = "error"     // infra / provider failure
 )
 
-// Machine-readable ToolOutcome reasons. Only ReasonNoStructure is
+// Machine-readable ToolOutcome reasons. Only reasonNoStructure is
 // DATASET-level and may disable a tool; ReasonNoDoc is QUERY-level and must not.
 // ReasonUnwired labels a call to a tool NAME this deployment has no binding for
 // (the model invented it): nothing ran, so it is reported as MISS and never
 // counts toward the strikes that disable a real tool.
 const (
-	ReasonNone        = ""
-	ReasonNoStructure = "no_structure"
+	reasonNone        = ""
+	reasonNoStructure = "no_structure"
 	ReasonNoDoc       = "no_doc"
-	ReasonInfra       = "infra"
+	reasonInfra       = "infra"
 	ReasonBadArgs     = "bad_args"
 	ReasonUnwired     = "unwired"
 )
@@ -1483,12 +1483,12 @@ type ToolOutcome struct {
 	Diagnostic string
 }
 
-// ReasonStatus maps a ToolOutcome reason to the Status it implies.
-func ReasonStatus(reason string) string {
+// reasonStatus maps a ToolOutcome reason to the Status it implies.
+func reasonStatus(reason string) string {
 	switch reason {
-	case ReasonNoStructure:
+	case reasonNoStructure:
 		return StatusEmpty
-	case ReasonBadArgs, ReasonInfra:
+	case ReasonBadArgs, reasonInfra:
 		return StatusError
 	}
 	// ReasonNoDoc: this query reached nothing; the tool itself is fine.
@@ -1527,7 +1527,7 @@ const (
 	// snippetsPerQueryFor(RunRequest.ThinkingMode).
 	snippetsPerQuery = 4
 	// The digest's per-chunk length is the ALREADY RETRIEVED stage's allowance (see
-	// DeliverItemText). It matches what an admitted passage carries (passageFromChunk: 1200), so
+	// deliverItemText). It matches what an admitted passage carries (passageFromChunk: 1200), so
 	// the digest never shows a session LESS of a chunk than the same chunk would carry as a tool
 	// result.
 	//
@@ -1683,9 +1683,9 @@ func argQueryString(v any) string {
 	}
 }
 
-// IsNearDup: true when q shares >=
+// isNearDup: true when q shares >=
 // nearDupJaccard of its tokens with any query in seen.
-func IsNearDup(q string, seen []string) bool {
+func isNearDup(q string, seen []string) bool {
 	if strings.TrimSpace(q) == "" || len(seen) == 0 {
 		return false
 	}
@@ -1762,7 +1762,7 @@ type InvokerSessionModel struct {
 	MaxLength int
 }
 
-// ContextLength implements ContextLengthModel. It returns the model's context
+// ContextLength implements contextLengthModel. It returns the model's context
 // window in tokens when known, otherwise the 8192 default used when the config omits a
 // context length.
 func (m *InvokerSessionModel) ContextLength() int {
@@ -1870,16 +1870,16 @@ func toChatTools(tools []ToolSpec) []chat.Tool {
 }
 
 // knownTool reports whether name is a real tool, judged against the STATIC full set
-// (ToolMap).
+// (toolMap).
 //
 // It deliberately does NOT consult the active surface. Disabled or web-hidden
 // tools are real tools that this session has stopped advertising; a model that
 // still calls one must get the "unavailable, use this instead" note from
-// ExecuteTool, not an "unknown tool" correction. Judging against the active
+// executeTool, not an "unknown tool" correction. Judging against the active
 // surface would turn every disabled call into Unknown and override that
 // deliberately gentler degradation path.
 func knownTool(name string) bool {
-	_, ok := ToolMap[name]
+	_, ok := toolMap[name]
 	return ok
 }
 
@@ -1946,8 +1946,8 @@ func assistantToolCalls(calls []ToolCall) []schema.ToolCall {
 
 // Session state
 
-// SessionState: (the LangGraph TypedDict).
-type SessionState struct {
+// sessionState: (the LangGraph TypedDict).
+type sessionState struct {
 	// Messages is the running conversation (system + user + assistant + tool).
 	Messages []schema.Message
 	// ParentState is the slot table being patched by this session.
@@ -2030,12 +2030,12 @@ type SessionState struct {
 	ToolOutcomes []map[string]any
 
 	// KB is the shared evidence pool. The session reads it for the per-turn
-	// RECORD line (see SessionRecord) and for the names the evidence offers;
+	// RECORD line (see sessionRecord) and for the names the evidence offers;
 	// the tools write it. Nil skips both.
 	KB *Kbinfos
 	// Record is the last turn's record — the facts the continuation decision is
-	// made from (see offerContinuation and SessionRecord).
-	Record SessionRecord
+	// made from (see offerContinuation and sessionRecord).
+	Record sessionRecord
 	// PoolWalk is how many pool chunks this session has already looked at while
 	// choosing an excerpt to show (see unreadPoolExcerpt). The pool only ever
 	// appends, so the watermark is what keeps a session from being shown the same
@@ -2070,7 +2070,7 @@ type SessionState struct {
 	TerminalPayload map[string]any
 
 	// notesAtEvidence is how many passages had been shown when the model last wrote a note (see
-	// SessionRecord.ShownSinceNote). It is the one mechanical fact behind "you have read more than you
+	// sessionRecord.ShownSinceNote). It is the one mechanical fact behind "you have read more than you
 	// have written down" — a COUNT about the session's own behaviour, not a judgement about what the
 	// passages mean.
 	notesAtEvidence int
@@ -2096,12 +2096,12 @@ func appendMessages(dst []schema.Message, msgs ...schema.Message) []schema.Messa
 
 // Tool dispatch
 
-// ExecuteTool: dispatch ONE tool call by name.
+// executeTool: dispatch ONE tool call by name.
 //
 // Returns a ToolOutcome whose status/reason let the caller act on WHAT happened
 // empty payload, query miss, infra failure, or a run that added no new
 // evidence — instead of only counting characters.
-func ExecuteTool(ctx context.Context, tools *Toolset, name string, args map[string]any) ToolOutcome {
+func executeTool(ctx context.Context, tools *Toolset, name string, args map[string]any) ToolOutcome {
 	// Short-circuit a tool already proven unavailable this session (no compiled
 	// structure of its kind). We still return a note, not an error, so the model
 	// learns to switch to the corpus tools rather than loop.
@@ -2113,15 +2113,15 @@ func ExecuteTool(ctx context.Context, tools *Toolset, name string, args map[stri
 				"note": fmt.Sprintf("%s is unavailable in this dataset (no compiled structure of its kind). Use search_chunks / retrieve / list_chunks instead.", name),
 			}},
 			Status: StatusEmpty,
-			Reason: ReasonNoStructure,
+			Reason: reasonNoStructure,
 		}
 	}
 	if tools == nil || tools.Exec == nil {
-		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonInfra}
+		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: reasonInfra}
 	}
 	out, err := tools.Exec.Execute(ctx, name, args)
 	if err != nil {
-		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonInfra}
+		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: reasonInfra}
 	}
 	return out
 }
@@ -2130,7 +2130,7 @@ func ExecuteTool(ctx context.Context, tools *Toolset, name string, args map[stri
 
 // runActionNode: ONE model turn with tools.
 // It appends the assistant message and records any tool calls as pending.
-func (s *SessionState) runActionNode(ctx context.Context) error {
+func (s *sessionState) runActionNode(ctx context.Context) error {
 	s.Attempts++
 	s.refreshClock()
 	// On the LAST search turn this session can afford, say so (see lastSearchTurnNotice): the
@@ -2228,7 +2228,7 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 	// A checkpoint is not an ending. The session keeps working — the model patched what it found and
 	// can go on looking — and what actually stops it is an answer, the turn budget, the clock, or a
 	// round that stops learning (see route/routeAfterTool).
-	newStates, foundAnswer, terminalType, payload := ParseTerminal(reply.Content, s.ParentState)
+	newStates, foundAnswer, terminalType, payload := parseTerminal(reply.Content, s.ParentState)
 	s.TerminalType = terminalType
 	s.TerminalPayload = payload
 	// Recorded on every turn, answer or not: the last statement is the one the round routes on,
@@ -2242,7 +2242,7 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 		s.NewStates = append(s.NewStates, newStates...)
 		// Writing a note resets the "shown since your last note" counter: the fact it reports is about
 		// how much evidence has arrived since the model last spoke, so the model's own writing is what
-		// moves it (see SessionRecord).
+		// moves it (see sessionRecord).
 		s.notesAtEvidence = len(s.RetrievedEvidenceIDs)
 	}
 	if foundAnswer != nil {
@@ -2255,7 +2255,7 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 		}
 		if len(newStates) > 0 {
 			// Both blocks in one reply is the finalize shape, so it is worth a line: the answer
-			// ends the session AND the patches beside it are kept (see ParseTerminal).
+			// ends the session AND the patches beside it are kept (see parseTerminal).
 			_LOG.Printf("[Action Session] answered with %d branch(es) recorded from the same reply (turn %d/%d).",
 				len(newStates), s.Attempts, s.turnRunCap())
 		}
@@ -2273,7 +2273,7 @@ func (s *SessionState) runActionNode(ctx context.Context) error {
 
 // toolNode: execute pending tool calls, append tool
 // responses, and apply the per-outcome policies.
-func (s *SessionState) toolNode(ctx context.Context) error {
+func (s *sessionState) toolNode(ctx context.Context) error {
 	if s.Tools == nil {
 		return nil
 	}
@@ -2301,8 +2301,8 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	// continue from the SAME resting point.
 	//
 	// The continuation is ported but currently UNREACHABLE:
-	// it only runs once a rung leaves the chain in ModeLLM, and every rule in
-	// NavRules is ModeAuto, so the chain always runs to completion in the prefix
+	// it only runs once a rung leaves the chain in modeLLM, and every rule in
+	// navRules is modeAuto, so the chain always runs to completion in the prefix
 	// and PendingRule is "" by the time control reaches here. Adding an LLM rung
 	// makes it live with no further change.
 	pendingRule := s.NavRuleID
@@ -2317,7 +2317,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		// here degrades every array query to "" — seen_queries stays empty, and
 		// the skipped-dup convergence can never trigger.
 		q := argQueryString(c.Args["query"])
-		if retrievalTools[c.Name] && q != "" && IsNearDup(q, seenQueries) {
+		if retrievalTools[c.Name] && q != "" && isNearDup(q, seenQueries) {
 			skipped++
 			_LOG.Printf("[Action Session] skipping near-duplicate retrieval %q (already searched)", trunc(q, 80))
 			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
@@ -2350,7 +2350,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			// FRAMES run happened exactly here — a tool result logged, then "session cut: context
 			// deadline exceeded" (measured 2026-09-20, 20:39).
 			toolCtx, cancelTool := context.WithTimeout(ctx, toolWallS(s.DeadlineLeft))
-			oc = ExecuteTool(toolCtx, s.Tools, c.Name, c.Args)
+			oc = executeTool(toolCtx, s.Tools, c.Name, c.Args)
 			cancelTool()
 			s.ToolCache.Put(cacheKey, oc)
 		}
@@ -2365,7 +2365,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		case oc.Status == StatusOK:
 			// A real hit clears the tool's strike record: it demonstrably works.
 			delete(strikes, c.Name)
-		case oc.Status == StatusEmpty && oc.Reason == ReasonNoStructure:
+		case oc.Status == StatusEmpty && oc.Reason == reasonNoStructure:
 			// Dataset-level dead end. Strike it; disable once the strikes pile up
 			// so one unlucky scope cannot kill the tool.
 			n := strikes[c.Name] + 1
@@ -2374,7 +2374,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 				s.Tools.DisableTool(c.Name)
 				_LOG.Printf("[Action Session] %s disabled after %d dataset-level empty results", c.Name, n)
 			}
-		case oc.Status == StatusRedundant:
+		case oc.Status == statusRedundant:
 			// Ran fine, but every hit was already in the shared evidence pool.
 			// Say so explicitly — otherwise the model sees a normal passage list
 			// and concludes the search succeeded, then re-searches the same ground.
@@ -2436,7 +2436,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		// weak step cascades through the remaining (cheaper, wider) rungs instead
 		// of leaving the model to rediscover the fallback one turn at a time.
 		//
-		// Unreachable with today's NavRules (every rung is ModeAuto, so the chain
+		// Unreachable with today's navRules (every rung is modeAuto, so the chain
 		// always runs to completion in the prefix and PendingRule is ""). It is
 		// ported so an LLM rung resumes from the right place without another
 		// change here.
@@ -2448,7 +2448,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 					// The nav context is rebuilt (direction, known docs) from the live state —
 					// the ladder runs against the CURRENT routed scope, not the one captured at
 					// prefix time.
-					ladderNav := &NavContext{
+					ladderNav := &navContext{
 						Direction: s.Direction,
 						KnownDocs: append([]string(nil), s.RoutedDocs...),
 					}
@@ -2459,7 +2459,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 					// Respect the session's remaining context budget: the ladder
 					// pairs are appended outside this node's own accounting
 					// (max_chars = max(800, budget_chars - used).)
-					ex := RunNavChain(ctx, s.Tools, ladderNav, nxt, ladderBudget, "ladder",
+					ex := runNavChain(ctx, s.Tools, ladderNav, nxt, ladderBudget, "ladder",
 						max(800, budgetChars-used))
 					// The ladder keeps advancing: a later tool_call in the SAME
 					// batch (or the next turn) resumes from where this call left
@@ -2529,7 +2529,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 // their [ID:n] numbers (so an answer written later still cites what it read), and a model that
 // wants to re-read something asks again — which is allowed whenever the query is not a paraphrase
 // of an earlier one (see nearDupJaccard).
-func (s *SessionState) compactEarlierToolResults() {
+func (s *sessionState) compactEarlierToolResults() {
 	// Keep the last `verbatimSessionTurns` turns verbatim: they are what the model is reasoning over.
 	//
 	// One was too few. A multi-hop question holds the hop it just read while it searches the next
@@ -2587,7 +2587,7 @@ func foldedToolResult(content string) string {
 //
 // A chunk already in the registry KEEPS its number: the same passage reached twice is one
 // place, cited the same way, and the registry stays stable across turns.
-func (s *SessionState) stampEvidenceRefs(chunks []any) {
+func (s *sessionState) stampEvidenceRefs(chunks []any) {
 	if s.evidenceRefOf == nil {
 		s.evidenceRefOf = map[string]int{}
 	}
@@ -2626,10 +2626,10 @@ func (s *SessionState) stampEvidenceRefs(chunks []any) {
 // the run's rather than restarting: a marker written in round 1 keeps pointing at the passage it was
 // written for after round 2 has shown its own.
 //
-// Each line shows as much of its passage as the PREFIX stage allows (see DeliverItemText): enough
+// Each line shows as much of its passage as the PREFIX stage allows (see deliverItemText): enough
 // to tell the passages apart and to see which part of each document was read, not a second copy of
 // the payload the ladder already put in the history.
-func (s *SessionState) seedEvidenceRefs(ids []string) []string {
+func (s *sessionState) seedEvidenceRefs(ids []string) []string {
 	if s == nil || s.KB == nil || len(ids) == 0 {
 		return nil
 	}
@@ -2639,7 +2639,7 @@ func (s *SessionState) seedEvidenceRefs(ids []string) []string {
 		if !ok {
 			continue
 		}
-		text := FlattenLine(DeliverItemText(StagePrefix, ChunkTextOf(c), ""))
+		text := FlattenLine(deliverItemText(stagePrefix, ChunkTextOf(c), ""))
 		lines = append(lines, fmt.Sprintf("[ID:%d] %s", n, text))
 	}
 	return lines
@@ -2650,7 +2650,7 @@ func (s *SessionState) seedEvidenceRefs(ids []string) []string {
 //
 // An id the pool holds no chunk for is refused: navigate_tree reports DOC ids, and the client opens
 // chunk ids, so an id with no chunk behind it must not take a number.
-func (s *SessionState) publishEvidenceID(id string) (int, map[string]any, bool) {
+func (s *sessionState) publishEvidenceID(id string) (int, map[string]any, bool) {
 	id = strings.TrimSpace(id)
 	if s == nil || id == "" || s.KB == nil {
 		return 0, nil, false
@@ -2676,7 +2676,7 @@ func (s *SessionState) publishEvidenceID(id string) (int, map[string]any, bool) 
 
 // loadEvidenceRefs starts this session's registry from the run's, so its numbering continues where the
 // last round stopped instead of restarting at zero (see Kbinfos.PublishEvidence).
-func (s *SessionState) loadEvidenceRefs(kb *Kbinfos) {
+func (s *sessionState) loadEvidenceRefs(kb *Kbinfos) {
 	if s == nil || kb == nil || len(kb.SessionEvidenceRefs) == 0 {
 		return
 	}
@@ -2731,7 +2731,7 @@ func markReadState(kb *Kbinfos, chunks []any) {
 	}
 }
 
-func (s *SessionState) appendBatchProtocol(ranAny bool) {
+func (s *sessionState) appendBatchProtocol(ranAny bool) {
 	if s.BatchProtocolShown || !ranAny || s.EnumerationProtocol == "" || len(s.Messages) == 0 {
 		return
 	}
@@ -2766,7 +2766,7 @@ func (s *SessionState) appendBatchProtocol(ranAny bool) {
 //
 // The line is appended ONLY when this node ran at least one tool call, so a turn
 // with no calls cannot accumulate duplicates of the previous line.
-func (s *SessionState) appendRecordLine(ranAny bool) {
+func (s *sessionState) appendRecordLine(ranAny bool) {
 	if !ranAny || len(s.Messages) == 0 {
 		return
 	}
@@ -2809,12 +2809,12 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	// What the model did NOT write down is not the runtime's to reconstruct: the one mechanical signal
 	// that says "you have read more than you have written down" is the count in the line above
 	// (ShownSinceNote). Whether that means anything is the model's judgement, made on its own record
-	// (see SessionRecord).
+	// (see sessionRecord).
 }
 
 // turnRunCap is the hard ceiling on a session's turns: the mode's floor plus the
 // turns the model may add on its own decision (see offerContinuation).
-func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExtra }
+func (s *sessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExtra }
 
 // offerContinuation asks the MODEL whether the session takes another turn.
 //
@@ -2839,7 +2839,7 @@ func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExt
 // turn floor with its clock unspent (see actionMaxTurns). The runtime keeps the two hard bounds
 // it does not delegate — the run cap and the session clock — and the ask hands the model the
 // record's own brief, so "continue" has to be justified by something the record shows is missing.
-func (s *SessionState) offerContinuation() bool {
+func (s *sessionState) offerContinuation() bool {
 	if s.Attempts >= s.turnRunCap() || s.DeadlineLeft <= turnAskFloorS {
 		return false
 	}
@@ -2860,7 +2860,7 @@ func (s *SessionState) offerContinuation() bool {
 // The gate is the caller's own writing, not a guess about the question, because the guess
 // is wrong: a slot TYPE cannot tell "how many people did X kill" from "how many times larger
 // is A than B", and a single phrase's commas make it look like two members.
-func (s *SessionState) wroteBatch() bool {
+func (s *sessionState) wroteBatch() bool {
 	for _, q := range s.SearchQueries {
 		if callerBatch(q) {
 			return true
@@ -2876,7 +2876,7 @@ func (s *SessionState) wroteBatch() bool {
 // had written — and it is gone with the coverage engine: a slot type cannot tell an
 // enumeration from a count of events, and being wrong about it moved the session's turn floor
 // for a question that had no members to assemble.
-func (s *SessionState) enumerating() bool {
+func (s *sessionState) enumerating() bool {
 	return s.wroteBatch()
 }
 
@@ -2905,7 +2905,7 @@ func continuationAsk(taken, cap int, record, notes string) string {
 	if notes = strings.TrimSpace(notes); notes != "" {
 		// The model's OWN notes ride the DECISION, verbatim. The runtime neither summarizes them nor
 		// adds a list of its own: "what is still missing" is read off what the model wrote, which is
-		// the only place that fact exists (see SessionRecord).
+		// the only place that fact exists (see sessionRecord).
 		ask += "\n" + notes
 	}
 	return ask
@@ -2913,7 +2913,7 @@ func continuationAsk(taken, cap int, record, notes string) string {
 
 // finalizeNode: tool budget spent — ONE last call
 // WITHOUT tools, demanding the terminal JSON to salvage whatever was learned.
-func (s *SessionState) finalizeNode(ctx context.Context) error {
+func (s *sessionState) finalizeNode(ctx context.Context) error {
 	// The last turn ASKS FOR THE ANSWER.
 	//
 	// It used to ask for a state patch only ("output now: <state>{...}"), which is why the session
@@ -2957,7 +2957,7 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		budgetPrompt += "\n\n" + rec.Line()
 		// The notes the model wrote are rendered WHOLE here, verbatim: this is the last call that can
 		// answer from them, and the runtime adds no list of its own — what the run holds is what the
-		// model wrote down, plus the passages it was shown (see SessionRecord).
+		// model wrote down, plus the passages it was shown (see sessionRecord).
 		if notes := rec.Verbose(); notes != "" {
 			budgetPrompt += "\n" + notes
 		}
@@ -3005,7 +3005,7 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		// harvest exists for.
 		_LOG.Printf("[Action Session] salvage call failed twice: %v", err)
 	} else {
-		newStates, foundAnswer, terminalType, payload := ParseTerminal(reply.Content, s.ParentState)
+		newStates, foundAnswer, terminalType, payload := parseTerminal(reply.Content, s.ParentState)
 		// APPEND, like every other checkpoint: the answer turn is the last word, not the only
 		// word. Assigning here wiped the record the session had written turn by turn whenever this
 		// reply carried an empty patch — which is exactly what the order above invites ("if NOTHING
@@ -3017,7 +3017,7 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 			s.NewStates = append(s.NewStates, newStates...)
 			// Writing a note resets the "shown since your last note" counter: the fact it reports is about
 			// how much evidence has arrived since the model last spoke, so the model's own writing is what
-			// moves it (see SessionRecord).
+			// moves it (see sessionRecord).
 			s.notesAtEvidence = len(s.RetrievedEvidenceIDs)
 		}
 		s.FoundAnswer = foundAnswer
@@ -3048,10 +3048,10 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 				targetID = -1
 			}
 			if targetID >= 0 {
-				// discovered_clues must be []any: ApplyPatch type-switches on the
+				// discovered_clues must be []any: applyPatch type-switches on the
 				// JSON-decoded shape, so a []string is silently ignored and the whole patch
 				// no-ops.
-				if patched := ApplyPatch(s.ParentState, []map[string]any{
+				if patched := applyPatch(s.ParentState, []map[string]any{
 					{"id": targetID, "discovered_clues": []any{"narrative: " + txt[:min(len(txt), 220)]}},
 				}); patched != nil {
 					s.NewStates = []State{*patched}
@@ -3120,7 +3120,7 @@ const (
 // the pool excerpt for a set that stopped growing (see appendBatchProtocol, appendRecordLine) —
 // stay gated on the shape, because those are about enumeration, not about how long a session may
 // work.
-func (s *SessionState) actionMaxTurns() int {
+func (s *sessionState) actionMaxTurns() int {
 	floor := ResolveMode(s.Tools).ActionMaxTurns
 	if floor <= 0 {
 		floor = valueTurnFloor
@@ -3129,7 +3129,7 @@ func (s *SessionState) actionMaxTurns() int {
 }
 
 // route
-func (s *SessionState) route() routeTarget {
+func (s *sessionState) route() routeTarget {
 	if s.Done {
 		return routeEnd
 	}
@@ -3187,7 +3187,7 @@ func (s *SessionState) route() routeTarget {
 // go back to run_action — that was the Q86 infinite-loop: the model kept
 // emitting tool_calls, PendingCalls stayed non-empty, so the attempts check in
 // route was never reached and the session burned the whole timeout.
-func (s *SessionState) routeAfterTool() routeTarget {
+func (s *sessionState) routeAfterTool() routeTarget {
 	s.refreshClock()
 	// Same reserve as route(): the answer turn needs the clock more than another probe does.
 	if s.ForceAnswer {
@@ -3212,22 +3212,22 @@ func (s *SessionState) routeAfterTool() routeTarget {
 // Session-node adapters: unlike method values (s.runActionNode) these take the
 // state from the graph payload instead of capturing an instance, which is what lets ONE
 // compiled graph serve every session: the session's tools/model arrive in the state
-// (SessionState.Tools / .Model) rather than in a closure.
-func runActionNodeFn(ctx context.Context, st *SessionState) (*SessionState, error) {
+// (sessionState.Tools / .Model) rather than in a closure.
+func runActionNodeFn(ctx context.Context, st *sessionState) (*sessionState, error) {
 	return st, st.runActionNode(ctx)
 }
 
-func toolNodeFn(ctx context.Context, st *SessionState) (*SessionState, error) {
+func toolNodeFn(ctx context.Context, st *sessionState) (*sessionState, error) {
 	return st, st.toolNode(ctx)
 }
 
-func finalizeNodeFn(ctx context.Context, st *SessionState) (*SessionState, error) {
+func finalizeNodeFn(ctx context.Context, st *sessionState) (*sessionState, error) {
 	return st, st.finalizeNode(ctx)
 }
 
 var (
 	sessionGraphOnce sync.Once
-	sessionGraphRun  compose.Runnable[*SessionState, *SessionState]
+	sessionGraphRun  compose.Runnable[*sessionState, *sessionState]
 	sessionGraphErr  error
 )
 
@@ -3239,7 +3239,7 @@ var (
 // concurrently by design. That is safe under three preconditions — break any and the
 // sharing must be revisited:
 //
-//  1. Nodes touch only their own *SessionState; no package-level mutable state inside
+//  1. Nodes touch only their own *sessionState; no package-level mutable state inside
 //     a node.
 //  2. No checkpoint store is configured (compose.WithCheckPointStore) — the
 //     checkPointer lives on the shared runner. Guarded by
@@ -3249,12 +3249,12 @@ var (
 //     (compose/graph_run.go:129-130, :933, :948). Re-check on upgrade.
 //
 // See TestSessionGraphIsSharedAcrossConcurrentSessions.
-func sessionGraph() (compose.Runnable[*SessionState, *SessionState], error) {
+func sessionGraph() (compose.Runnable[*sessionState, *sessionState], error) {
 	sessionGraphOnce.Do(func() {
-		g := compose.NewGraph[*SessionState, *SessionState]()
+		g := compose.NewGraph[*sessionState, *sessionState]()
 
 		var buildErr error
-		addNode := func(name string, fn func(context.Context, *SessionState) (*SessionState, error)) {
+		addNode := func(name string, fn func(context.Context, *sessionState) (*sessionState, error)) {
 			if buildErr != nil {
 				return
 			}
@@ -3266,11 +3266,11 @@ func sessionGraph() (compose.Runnable[*SessionState, *SessionState], error) {
 			}
 			buildErr = g.AddEdge(from, to)
 		}
-		addBranch := func(from string, ends map[string]bool, cond func(*SessionState) routeTarget) {
+		addBranch := func(from string, ends map[string]bool, cond func(*sessionState) routeTarget) {
 			if buildErr != nil {
 				return
 			}
-			buildErr = g.AddBranch(from, compose.NewGraphBranch(func(_ context.Context, st *SessionState) (string, error) {
+			buildErr = g.AddBranch(from, compose.NewGraphBranch(func(_ context.Context, st *sessionState) (string, error) {
 				return routeNodeName(cond(st)), nil
 			}, ends))
 		}
@@ -3284,8 +3284,8 @@ func sessionGraph() (compose.Runnable[*SessionState, *SessionState], error) {
 
 		addBranch("run_action", map[string]bool{
 			"tool": true, "finalize": true, "run_action": true, compose.END: true,
-		}, (*SessionState).route)
-		addBranch("tool", map[string]bool{"run_action": true, "finalize": true}, (*SessionState).routeAfterTool)
+		}, (*sessionState).route)
+		addBranch("tool", map[string]bool{"run_action": true, "finalize": true}, (*sessionState).routeAfterTool)
 
 		if buildErr != nil {
 			sessionGraphErr = buildErr
@@ -3312,7 +3312,7 @@ const maxSessionRunSteps = 256
 //	run_action → route → {END | tool | finalize | run_action}
 //	tool → route_after_tool → {run_action | finalize}
 //	finalize → END
-func (s *SessionState) sessionLoop(ctx context.Context) error {
+func (s *sessionState) sessionLoop(ctx context.Context) error {
 	runnable, err := sessionGraph()
 	if err != nil {
 		return err
@@ -3337,7 +3337,7 @@ func routeNodeName(t routeTarget) string {
 
 // Terminal parsing
 
-// ParseTerminal: parse the two terminal blocks
+// parseTerminal: parse the two terminal blocks
 // (<state> patches → new-state branches; <answer> → final answer).
 //
 // An ANSWER wins, and BOTH blocks are read.
@@ -3356,7 +3356,7 @@ func routeNodeName(t routeTarget) string {
 // Returns (newStates, foundAnswer, terminalType, payload): newStates carries the patches from
 // both blocks, foundAnswer is non-nil only when a NON-EMPTY answer was written, terminalType
 // names the block that decided the outcome, and payload is that block's parsed data.
-func ParseTerminal(content string, parent State) ([]State, *string, *string, map[string]any) {
+func parseTerminal(content string, parent State) ([]State, *string, *string, map[string]any) {
 	stateBranches, statePayload := parseStateBlock(content, parent)
 	answerPresent := strings.Contains(content, "<answer>")
 	found, answerBranches, answerPayload := parseAnswerBlock(content, parent)
@@ -3398,7 +3398,7 @@ func parseStateBlock(content string, parent State) ([]State, map[string]any) {
 	if !strings.Contains(content, "<state>") {
 		return nil, nil
 	}
-	block := ExtractTag(content, "state")
+	block := extractTag(content, "state")
 	if block == "" {
 		block = "{}"
 	}
@@ -3434,7 +3434,7 @@ func parseStateBlock(content string, parent State) ([]State, map[string]any) {
 			continue
 		}
 		patches := toPatchList(br["state"])
-		if ns := ApplyPatch(parent, patches); ns != nil {
+		if ns := applyPatch(parent, patches); ns != nil {
 			branches = append(branches, *ns)
 		}
 	}
@@ -3457,7 +3457,7 @@ func parseAnswerBlock(content string, parent State) (*string, []State, map[strin
 	if !strings.Contains(content, "<answer>") {
 		return nil, nil, nil
 	}
-	block := ExtractTag(content, "answer")
+	block := extractTag(content, "answer")
 	data, _ := ExtractJSON(block).(map[string]any)
 	ans := ""
 	if data != nil {
@@ -3482,7 +3482,7 @@ func parseAnswerBlock(content string, parent State) (*string, []State, map[strin
 	}
 	patches := toPatchList(data["new_state"])
 	var branches []State
-	if ns := ApplyPatch(parent, patches); ns != nil {
+	if ns := applyPatch(parent, patches); ns != nil {
 		branches = append(branches, *ns)
 	}
 	return found, branches, data
@@ -3507,7 +3507,7 @@ func ParseUnresolved(content string) string {
 	if !strings.Contains(content, "<unresolved>") {
 		return ""
 	}
-	return strings.TrimSpace(ExtractTag(content, "unresolved"))
+	return strings.TrimSpace(extractTag(content, "unresolved"))
 }
 
 func toPatchList(v any) []map[string]any {
@@ -3643,13 +3643,13 @@ func sortKeys[V any](m map[string]V) []string {
 
 // Step modes.
 const (
-	// ModeAuto means the orchestrator runs this step itself (no model
+	// modeAuto means the orchestrator runs this step itself (no model
 	// round-trip).
-	ModeAuto = "auto"
-	// ModeLLM means the step needs a decision only the model can make (e.g.
+	modeAuto = "auto"
+	// modeLLM means the step needs a decision only the model can make (e.g.
 	// WHICH routed document to drill into), so the chain stops here and hands
 	// control back.
-	ModeLLM = "llm"
+	modeLLM = "llm"
 )
 
 // Navigation-chain constants.
@@ -3668,43 +3668,43 @@ const (
 	navMinStepBudgetS = 5.0
 )
 
-// NavRulesEnabled
-const NavRulesEnabled = true
+// navRulesEnabled
+const navRulesEnabled = true
 
-// NavContext is the mutable state threaded through the navigation chain.
+// navContext is the mutable state threaded through the navigation chain.
 //
 // KnownDocs is the routed scope (doc_ids). RoutedDocs carries each routed doc's
 // OVERALL SUMMARY — the hint that feeds retrieval as a soft boost instead of a
 // hard filter. NavHint is the joined summaries used as retrieval keywords so
 // routed docs rank up WITHOUT excluding the rest of the corpus.
-type NavContext struct {
+type navContext struct {
 	Direction  string
 	KnownDocs  []string
 	RoutedDocs [][2]string // (doc_id, summary)
 	NavHint    string
 }
 
-// NavRule is one step of the navigation chain.
-type NavRule struct {
+// navRule is one step of the navigation chain.
+type navRule struct {
 	ID   string
 	Tool string
-	// Mode is ModeAuto or ModeLLM.
+	// Mode is modeAuto or modeLLM.
 	Mode string
 	// Run replaces the single-tool path for a step that composes several tools
 	// (drill: retrieve + navigate_structure + merge).
-	Run func(ctx context.Context, ts *Toolset, nav *NavContext, available map[string]bool, budgetS float64) ToolOutcome
-	// Args builds the tool arguments from the running context (ModeAuto only;
+	Run func(ctx context.Context, ts *Toolset, nav *navContext, available map[string]bool, budgetS float64) ToolOutcome
+	// Args builds the tool arguments from the running context (modeAuto only;
 	// also used for display when Run composes internally).
-	Args func(nav *NavContext) map[string]any
+	Args func(nav *navContext) map[string]any
 	// When is an optional guard; the step is skipped when it returns false.
-	When func(nav *NavContext) bool
+	When func(nav *navContext) bool
 	// Next maps status -> next rule id. "" (or a missing key) ends the chain.
 	// Routing on STATUS is what makes "quality poor -> fall back" a code
 	// decision rather than a prompt suggestion.
 	Next map[string]string
 }
 
-// NavRules is the per-slot strategy ladder: "nav is a hint, not a constraint" — no
+// navRules is the per-slot strategy ladder: "nav is a hint, not a constraint" — no
 // rung filters the corpus down to the routed docs. The tree ROUTES (locate), then
 // drill retrieves over the WHOLE corpus while softly boosting the routed-doc chunks,
 // so an answer living outside them survives (ranked lower) instead of being dropped.
@@ -3727,7 +3727,7 @@ type NavRule struct {
 //
 // The direction's first content line IS the question (see graph_slots.go where it is assembled), so
 // the sanitizer's answer is the right probe rather than a heuristic of ours.
-func navQuery(nav *NavContext) string {
+func navQuery(nav *navContext) string {
 	if nav == nil {
 		return ""
 	}
@@ -3737,12 +3737,12 @@ func navQuery(nav *NavContext) string {
 	return strings.TrimSpace(nav.Direction)
 }
 
-var NavRules = []NavRule{
+var navRules = []navRule{
 	{
 		ID:   "locate",
 		Tool: "navigate_tree",
-		Mode: ModeAuto,
-		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": navQuery(nav)} },
+		Mode: modeAuto,
+		Args: func(nav *navContext) map[string]any { return map[string]any{"query": navQuery(nav)} },
 		// Tree missed => no routed hints to merge against; the only useful step
 		// is an unscoped search. — {OK, MISS, EMPTY, POOR, ERROR};
 		// REDUNDANT is deliberately absent: a redundant locate changed nothing,
@@ -3752,16 +3752,16 @@ var NavRules = []NavRule{
 			StatusOK:    "drill",
 			StatusMiss:  "global",
 			StatusEmpty: "global",
-			StatusPoor:  "global",
+			statusPoor:  "global",
 			StatusError: "global",
 		},
 	},
 	{
 		ID:   "drill",
 		Tool: "navigate_structure",
-		Mode: ModeAuto,
+		Mode: modeAuto,
 		Run:  runDrillMerge,
-		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": navQuery(nav)} },
+		Args: func(nav *navContext) map[string]any { return map[string]any{"query": navQuery(nav)} },
 		// drill returns OK with the merged, re-ranked evidence; only an empty
 		// whole-corpus result (MISS) or an infra failure falls through to global.
 		// {OK, MISS, EMPTY, ERROR}; no POOR and no REDUNDANT.
@@ -3775,22 +3775,22 @@ var NavRules = []NavRule{
 	{
 		ID:   "global",
 		Tool: "retrieve",
-		Mode: ModeAuto,
-		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": []string{navQuery(nav)}} },
+		Mode: modeAuto,
+		Args: func(nav *navContext) map[string]any { return map[string]any{"query": []string{navQuery(nav)}} },
 		Next: map[string]string{},
 	},
 }
 
-var navRuleByID = func() map[string]*NavRule {
-	m := make(map[string]*NavRule, len(NavRules))
-	for i := range NavRules {
-		m[NavRules[i].ID] = &NavRules[i]
+var navRuleByID = func() map[string]*navRule {
+	m := make(map[string]*navRule, len(navRules))
+	for i := range navRules {
+		m[navRules[i].ID] = &navRules[i]
 	}
 	return m
 }()
 
-// NavStartRule is the ladder's entry point.
-const NavStartRule = "locate"
+// navStartRule is the ladder's entry point.
+const navStartRule = "locate"
 
 // runDrillMerge is the `drill` rung (AUTO): corpus retrieve for REAL chunks +
 // the root->chunk structure paths from navigate_structure, MERGED on chunk_id
@@ -3802,7 +3802,7 @@ const NavStartRule = "locate"
 // routed-doc chunks float to the top while non-routed chunks stay below. A
 // multi-hop / enumeration answer living OUTSIDE the routed docs therefore
 // survives — it just ranks lower — instead of being filtered out entirely.
-func runDrillMerge(ctx context.Context, ts *Toolset, nav *NavContext, available map[string]bool, budgetS float64) ToolOutcome {
+func runDrillMerge(ctx context.Context, ts *Toolset, nav *navContext, available map[string]bool, budgetS float64) ToolOutcome {
 	var merged []any
 	var evidenceIDs []string
 	seenIDs := map[string]bool{}
@@ -3811,7 +3811,7 @@ func runDrillMerge(ctx context.Context, ts *Toolset, nav *NavContext, available 
 	// The hint is an explicit PARAMETER, passed explicitly here instead of being parked on
 	// the shared executor (which would make the model's own retrieve calls carry a hint they
 	// were never given).
-	retOC := ExecuteTool(ctx, ts, "retrieve", map[string]any{
+	retOC := executeTool(ctx, ts, "retrieve", map[string]any{
 		"query":    []string{nav.Direction},
 		"nav_hint": nav.NavHint,
 	})
@@ -3837,7 +3837,7 @@ func runDrillMerge(ctx context.Context, ts *Toolset, nav *NavContext, available 
 				break
 			default:
 			}
-			sOC := ExecuteTool(stepCtx, ts, "navigate_structure", map[string]any{
+			sOC := executeTool(stepCtx, ts, "navigate_structure", map[string]any{
 				"doc_id": docID, "query": nav.Direction, "kind": "catalog",
 			})
 			for _, d := range sOC.EvidenceIDs {
@@ -3935,7 +3935,7 @@ func sessionClockFor(budgetLeft float64) float64 {
 }
 
 // clockLeftS is what is left of the session's own clock, never negative.
-func (s *SessionState) clockLeftS() float64 {
+func (s *sessionState) clockLeftS() float64 {
 	if s == nil || s.SessionDeadline.IsZero() {
 		return s.DeadlineLeft
 	}
@@ -3947,7 +3947,7 @@ func (s *SessionState) clockLeftS() float64 {
 
 // refreshClock re-reads the session's clock. Called at the top of every turn and every route: the
 // clock is a deadline, and a value read once at the start is not a clock at all.
-func (s *SessionState) refreshClock() {
+func (s *sessionState) refreshClock() {
 	if s == nil || s.SessionDeadline.IsZero() {
 		return
 	}
@@ -3957,7 +3957,7 @@ func (s *SessionState) refreshClock() {
 // paceS is the pace the session's own calls actually take: the longest turn it has completed, or
 // zero before the first one returns. minExpectedTurnS floors it so a session that has not run a
 // turn yet is not planned around a 3-second call.
-func (s *SessionState) paceS() float64 {
+func (s *sessionState) paceS() float64 {
 	if s.expectedTurnS > minExpectedTurnS {
 		return s.expectedTurnS
 	}
@@ -3971,7 +3971,7 @@ func (s *SessionState) paceS() float64 {
 // than assumed — the turn budget used to be the mode's constant (8 on high) whatever the clock or
 // the provider's latency, so a session whose calls take 40s ran until the wall and never reached an
 // answer turn (measured 2026-09-20, 三国: 3 turns of 36s/74s in a 110s clock).
-func (s *SessionState) affordableSearchTurns() int {
+func (s *sessionState) affordableSearchTurns() int {
 	room := s.DeadlineLeft - answerReserveS
 	if room <= 0 {
 		return 0
@@ -3985,7 +3985,7 @@ func (s *SessionState) affordableSearchTurns() int {
 
 // effectiveTurnFloor is the mode's turn floor, capped by what the clock can afford: it is the point
 // where the session stops SEARCHING and the answer turn takes over.
-func (s *SessionState) effectiveTurnFloor() int {
+func (s *sessionState) effectiveTurnFloor() int {
 	affordable := s.affordableSearchTurns()
 	if floor := s.actionMaxTurns(); affordable < floor {
 		if affordable < 1 {
@@ -3998,7 +3998,7 @@ func (s *SessionState) effectiveTurnFloor() int {
 
 // canAffordAnotherTurn reports whether ONE more turn at this session's pace still leaves the answer
 // its share. The answer turn is the one call that must not be raced (see FinaleMinS).
-func (s *SessionState) canAffordAnotherTurn() bool {
+func (s *sessionState) canAffordAnotherTurn() bool {
 	return s.DeadlineLeft-s.paceS() > answerReserveS
 }
 
@@ -4047,8 +4047,8 @@ func (t *Toolset) navToolSurface() map[string]bool {
 	return out
 }
 
-// NavExchange is one completed assistant/tool pair produced by the chain.
-type NavExchange struct {
+// navExchange is one completed assistant/tool pair produced by the chain.
+type navExchange struct {
 	Messages    []schema.Message
 	EvidenceIDs []string
 	Outcomes    []map[string]any
@@ -4059,7 +4059,7 @@ type NavExchange struct {
 	BudgetLeft float64
 }
 
-// RunNavChain: run NavRules from startID, stopping
+// runNavChain: run navRules from startID, stopping
 // at the first LLM step.
 //
 // AUTO steps execute here; an LLM step is returned without being run, because
@@ -4070,9 +4070,9 @@ type NavExchange struct {
 // rule ids never collide: the prefix case emits "nav_<rule_id>" and the in-session ladder
 // fallback emits "ladder_<rule_id>", and the provider rejects a history where two
 // tool_calls share an id.
-func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID string, budgetS float64, idPrefix string, maxChars int) NavExchange {
-	var out NavExchange
-	if !NavRulesEnabled {
+func runNavChain(ctx context.Context, ts *Toolset, nav *navContext, startID string, budgetS float64, idPrefix string, maxChars int) navExchange {
+	var out navExchange
+	if !navRulesEnabled {
 		return out
 	}
 	available := ts.navToolSurface()
@@ -4084,7 +4084,7 @@ func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID stri
 		if !ok || !available[rule.Tool] {
 			break
 		}
-		if rule.Mode == ModeLLM {
+		if rule.Mode == modeLLM {
 			// Hand control back: the model must decide.
 			out.PendingRule = ruleID
 			out.BudgetLeft = budgetS - time.Since(started).Seconds()
@@ -4106,7 +4106,7 @@ func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID stri
 		} else {
 			stepCtx, cancel := context.WithTimeout(ctx, minDuration(stepBudget(remaining),
 				time.Duration(navPrefixCallTimeoutS*float64(time.Second))))
-			oc = ExecuteTool(stepCtx, ts, rule.Tool, rule.Args(nav))
+			oc = executeTool(stepCtx, ts, rule.Tool, rule.Args(nav))
 			cancel()
 		}
 
@@ -4144,7 +4144,7 @@ func RunNavChain(ctx context.Context, ts *Toolset, nav *NavContext, startID stri
 // maxChars caps the serialized payload: the in-session ladder continuation appends these
 // pairs OUTSIDE the tool node's own accounting, so it passes the session's remaining
 // context budget down. 0 means uncapped (the prefix path).
-func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, oc ToolOutcome, idPrefix string, maxChars int) {
+func (e *navExchange) consumeExchange(ruleID, tool string, args map[string]any, oc ToolOutcome, idPrefix string, maxChars int) {
 	callID := fmt.Sprintf("%s_%s", idPrefix, ruleID)
 	rawArgs, err := json.Marshal(args)
 	if err != nil {
@@ -4170,7 +4170,7 @@ func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, 
 	)
 }
 
-// RunNavPrefix: run the navigation ladder up to
+// runNavPrefix: run the navigation ladder up to
 // the first model-driven step.
 //
 // The returned messages are completed assistant/tool pairs ready to seed the
@@ -4179,23 +4179,23 @@ func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, 
 //
 // Returns an empty exchange when navigation is unavailable — the ladder is an
 // optimisation, never a precondition for the session to run.
-func RunNavPrefix(ctx context.Context, ts *Toolset, direction string, deadlineLeft float64, nav *NavContext) NavExchange {
-	if !NavRulesEnabled || ts == nil {
-		return NavExchange{}
+func runNavPrefix(ctx context.Context, ts *Toolset, direction string, deadlineLeft float64, nav *navContext) navExchange {
+	if !navRulesEnabled || ts == nil {
+		return navExchange{}
 	}
 	available := ts.navToolSurface()
 	if len(available) == 0 || !available["navigate_tree"] {
-		return NavExchange{}
+		return navExchange{}
 	}
 	if nav == nil {
-		nav = &NavContext{Direction: direction}
+		nav = &navContext{Direction: direction}
 	}
 	budget := deadlineLeft * navPrefixBudgetRatio
 	if budget < navPrefixMinBudgetS {
 		budget = navPrefixMinBudgetS
 	}
 	// maxChars 0: the prefix runs before the session's context accounting starts.
-	return RunNavChain(ctx, ts, nav, NavStartRule, budget, "nav", 0)
+	return runNavChain(ctx, ts, nav, navStartRule, budget, "nav", 0)
 }
 
 // Payload helpers
@@ -4306,12 +4306,12 @@ type PromptLoader interface {
 	Load(name string) (string, error)
 }
 
-// StringPromptLoader serves templates from an in-memory map. Used by tests and
+// stringPromptLoader serves templates from an in-memory map. Used by tests and
 // as the fallback when no filesystem loader is wired.
-type StringPromptLoader map[string]string
+type stringPromptLoader map[string]string
 
 // Load implements PromptLoader.
-func (p StringPromptLoader) Load(name string) (string, error) {
+func (p stringPromptLoader) Load(name string) (string, error) {
 	if t, ok := p[name]; ok {
 		return t, nil
 	}
@@ -4425,9 +4425,9 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	// ALREADY RETRIEVED: surface the evidence already in the shared pool so the model fills
 	// slots from it instead of re-retrieving the same ground. Without this the ReAct loop
 	// repeatedly searches evidence it already holds. How MANY of them show is the digest stage's
-	// item bound, and how much of each shows is its item allowance (see StageMaxItems /
-	// DeliverItemText) — neither is a count chosen at this call site.
-	if existing := extractRelevantEvidence(deps.KB, direction, StageMaxItems(StageDigest)); existing != "" {
+	// item bound, and how much of each shows is its item allowance (see stageMaxItems /
+	// deliverItemText) — neither is a count chosen at this call site.
+	if existing := extractRelevantEvidence(deps.KB, direction, stageMaxItems(stageDigest)); existing != "" {
 		seedUser += "\n\nALREADY RETRIEVED (do NOT re-retrieve these — use them to fill slots or identify gaps):\n" + existing
 	}
 
@@ -4439,7 +4439,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	// list (the paper's o_1), not the pool's insertion order and not a search of its own. Measured
 	// 2026-09-20 (三国/关羽): the session spent its only two calls searching a sixty-passage pool and
 	// never answered, while the passages its answer needed were reachable but unnamed.
-	// The opening shows every member the plan declared (see StageMaxItemsFor), so how many previews it
+	// The opening shows every member the plan declared (see stageMaxItemsFor), so how many previews it
 	// carries comes from the slot table's subjects — the same list the entity-title channel reads.
 	if opening := renderOpening(deps.KB, direction, len(DeclaredProbes(parent))); opening != "" {
 		seedUser += "\n\nOPENING (candidates for this question in RANKED order, best first — these are PREVIEWS: read a passage before you cite or answer from it):\n" + opening
@@ -4483,7 +4483,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	}
 	sessionClock := sessionClockFor(budgetLeft)
 
-	st := &SessionState{
+	st := &sessionState{
 		Messages: []schema.Message{
 			*schema.SystemMessage(system),
 			*schema.UserMessage(seedUser),
@@ -4533,10 +4533,10 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	// conversation with the completed exchanges, so the model starts on top of a
 	// guaranteed-correct opening instead of being merely *told* the routing rule.
 	// The prefix shares the ladder with the in-session fallback, and its pending
-	// rule becomes the session's resting point (see SessionState.NavRuleID).
-	nav := &NavContext{Direction: direction}
+	// rule becomes the session's resting point (see sessionState.NavRuleID).
+	nav := &navContext{Direction: direction}
 	prefixStarted := time.Now()
-	prefix := RunNavPrefix(runCtx, deps.Tools, direction, budgetLeft, nav)
+	prefix := runNavPrefix(runCtx, deps.Tools, direction, budgetLeft, nav)
 	// The prefix's elapsed time is charged to the session through the CLOCK, which is an absolute
 	// deadline from here on (see refreshClock): the assignment that used to live here subtracted
 	// the prefix from a value nothing ever decremented again, so the loop ran on a stale number.
@@ -4579,7 +4579,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 // read (the registry its own [ID:n] markers index into), the answer when it got that far, and the
 // parts it said were still open. One mapping for both exits, so a cut cannot silently produce
 // nothing while a completed session produces everything.
-func sessionResult(st *SessionState) Result {
+func sessionResult(st *sessionState) Result {
 	return Result{
 		Messages:             st.Messages,
 		NewStates:            st.NewStates,
@@ -4597,9 +4597,9 @@ func sessionResult(st *SessionState) Result {
 	}
 }
 
-// InitResult: tuple return: the root slot
+// initResult: tuple return: the root slot
 // table plus the queries for the first round.
-type InitResult struct {
+type initResult struct {
 	Root         State
 	FirstQueries []string
 }
@@ -4609,7 +4609,7 @@ type InitResult struct {
 // fails.
 //
 // deadlineLeft bounds the decomposition call.
-func InitializeState(ctx context.Context, deps SessionDeps, question string, fanoutHint []string, deadlineLeft float64) InitResult {
+func InitializeState(ctx context.Context, deps SessionDeps, question string, fanoutHint []string, deadlineLeft float64) initResult {
 	system := loadPrompt(deps.Prompts, "action_initialize_state")
 	user := sessionDateLine() + "\nQuestion: " + question
 	if len(fanoutHint) > 0 {
@@ -4657,7 +4657,7 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			id, ok := asInt(rawID)
 			if !ok {
 				_LOG.Printf("[Action Session:init] slot %d has a non-integer id (%v); discarding the decomposition", i, rawID)
-				return InitResult{}
+				return initResult{}
 			}
 			// `str(s.get("type") or "entity")`: a falsy type is replaced, any
 			// other value is STRINGIFIED (never rejected).
@@ -4668,7 +4668,7 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			clues, ok := asStringList(m["clues"])
 			if !ok {
 				_LOG.Printf("[Action Session:init] slot %d has non-iterable clues (%v); discarding the decomposition", i, m["clues"])
-				return InitResult{}
+				return initResult{}
 			}
 			if len(clues) > 4 {
 				clues = clues[:4]
@@ -4707,7 +4707,7 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 	rawFirst, ok := asStringList(data["first_queries"])
 	if !ok {
 		_LOG.Printf("[Action Session:init] first_queries is not iterable (%v); discarding the decomposition", data["first_queries"])
-		return InitResult{}
+		return initResult{}
 	}
 	var firstQueries []string
 	for j, q := range rawFirst {
@@ -4749,7 +4749,7 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 
 	root := NewState(slots, 0, nil)
 	_LOG.Printf("[Action Session:init] %s\n%s", root.Brief(), root.RenderSlots())
-	return InitResult{Root: root, FirstQueries: firstQueries}
+	return initResult{Root: root, FirstQueries: firstQueries}
 }
 
 // initRetryTimeout: the
@@ -4796,8 +4796,8 @@ func initChat(ctx context.Context, deps SessionDeps, system, user string, tmo fl
 
 // Model / tool-calling seam: tool specs, parsed tool calls, and the completion call.
 
-// ToolFunction is the OpenAI-style function descriptor.
-type ToolFunction struct {
+// toolFunction is the OpenAI-style function descriptor.
+type toolFunction struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
@@ -4806,7 +4806,7 @@ type ToolFunction struct {
 // ToolSpec is an OpenAI-style tool schema.
 type ToolSpec struct {
 	Type     string       `json:"type"`
-	Function ToolFunction `json:"function"`
+	Function toolFunction `json:"function"`
 }
 
 // ToolCall is one tool invocation requested by the model.
@@ -4814,7 +4814,7 @@ type ToolCall struct {
 	ID      string
 	Name    string
 	Args    map[string]any
-	Unknown bool // name is not in ToolMap — answer with a correction, never execute
+	Unknown bool // name is not in toolMap — answer with a correction, never execute
 }
 
 // ModelReply is one model turn: either free text, or tool calls, or both.
@@ -4838,12 +4838,12 @@ type TemperatureModel interface {
 	CompleteWithTemperature(ctx context.Context, messages []schema.Message, tools []ToolSpec, temp float64) (*ModelReply, error)
 }
 
-// ContextLengthModel is implemented by models that can report their context window in
+// contextLengthModel is implemented by models that can report their context window in
 // tokens, which message-fitting nodes use as the budget for chat.FitMessages. Callers
 // type-assert for it and fall back to chat.EffectiveContextLength's 8192 default when it
 // is absent, i.e. when the model config omits a context length. This is the fitting
 // counterpart to the TemperatureModel seam.
-type ContextLengthModel interface {
+type contextLengthModel interface {
 	ContextLength() int
 }
 
@@ -4876,10 +4876,10 @@ type StreamingSessionModel interface {
 
 var reFence = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
 
-// UnmarshalModelJSON strips any thinking preamble and Markdown fences, then parses JSON.
+// unmarshalModelJSON strips any thinking preamble and Markdown fences, then parses JSON.
 // An empty result parses as an empty object so callers can index into `out` without a nil
 // check.
-func UnmarshalModelJSON(text string, out any) error {
+func unmarshalModelJSON(text string, out any) error {
 	text = common.StripThinkTrailing(text)
 	text = reFence.ReplaceAllString(text, "")
 	text = strings.TrimSpace(text)
@@ -4938,7 +4938,7 @@ func DeadlineToDuration(seconds float64) time.Duration {
 
 // The seed's scan material is bounded by CHARACTERS — the one bound, rather than a line cap, because
 // the point of the block is that it is the whole delivered material (see renderScanWindows) — and the
-// bound itself is the SCAN stage's block bound (see StageChars(StageScan)), not a constant here.
+// bound itself is the SCAN stage's block bound (see StageChars(stageScan)), not a constant here.
 //
 // 40000 is about 20-30k tokens of Chinese, the same order as what a WeKnora-style pipeline hands its
 // answerer in one pass. The block is a PAGE, not the pool: a bigger one does not buy members — measured
@@ -4997,7 +4997,7 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 	var b strings.Builder
 	b.WriteString("SCAN WINDOWS (the run's own declared probes matched these passages; each line is the " +
 		"sentence around the match — the material to enumerate from):\n")
-	budget := StageChars(StageScan)
+	budget := StageChars(stageScan)
 	shown, chars, repeated := 0, 0, 0
 	seen := map[string]bool{}
 	for _, w := range windows {
@@ -5041,8 +5041,8 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 // stays bounded.
 //
 // How much of the opening reaches the model has TWO halves and neither is decided here: the LENGTH
-// of a preview is the stage's item allowance (see DeliverItemText) and the NUMBER of previews is the
-// stage's item bound (see StageMaxItems). They used to be a constant pair — an item allowance and a
+// of a preview is the stage's item allowance (see deliverItemText) and the NUMBER of previews is the
+// stage's item bound (see stageMaxItems). They used to be a constant pair — an item allowance and a
 // separate count of 8 — kept in step by hand at this call site.
 
 // renderOpening renders the opening's ranked union as a bounded, ranked preview list, publishing each
@@ -5053,7 +5053,7 @@ func renderScanWindows(kb *Kbinfos, max int) string {
 // opening's passages stay in the pool and reachable through the tools.
 //
 // How MANY it shows is the opening stage's item bound raised to the number of entities the plan
-// declared (see StageMaxItemsFor and declaredSubjects): on an enumerated question the preview list is
+// declared (see stageMaxItemsFor and declaredSubjects): on an enumerated question the preview list is
 // the members themselves, and a member past the bound is a member no answer can name.
 //
 // Each line carries the citation handle of its passage, taken from the registry the answer's markers
@@ -5070,7 +5070,7 @@ func renderOpening(kb *Kbinfos, direction string, declaredSubjects int) string {
 	}
 	var b strings.Builder
 	shown := 0
-	limit := StageMaxItemsFor(StageOpening, declaredSubjects)
+	limit := stageMaxItemsFor(stageOpening, declaredSubjects)
 	for _, id := range ids {
 		if shown >= limit {
 			break
@@ -5080,9 +5080,9 @@ func renderOpening(kb *Kbinfos, direction string, declaredSubjects int) string {
 			continue
 		}
 		// The preview is one line per candidate, so the chosen lines are folded to a single
-		// line: what the stage's allowance buys is WHICH lines (see Deliverable), not how they
+		// line: what the stage's allowance buys is WHICH lines (see deliverable), not how they
 		// wrap.
-		text := FlattenLine(DeliverItemText(StageOpening, ChunkTextOf(c), direction))
+		text := FlattenLine(deliverItemText(stageOpening, ChunkTextOf(c), direction))
 		if text == "" {
 			continue
 		}
@@ -5143,9 +5143,9 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 	var b strings.Builder
 	for _, c := range ranked {
 		// One line per chunk, showing the same kind of view the opening preview shows (see
-		// DeliverItemText): the LINES that answer the direction, in the chunk's own order,
+		// deliverItemText): the LINES that answer the direction, in the chunk's own order,
 		// rather than its first N characters.
-		content := FlattenLine(DeliverItemText(StageDigest, ChunkTextOf(c), direction))
+		content := FlattenLine(deliverItemText(stageDigest, ChunkTextOf(c), direction))
 		if content == "" {
 			continue
 		}

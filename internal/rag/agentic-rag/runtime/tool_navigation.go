@@ -109,10 +109,10 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 	if err != nil {
 		return nil, nil
 	}
-	rows := make([]StructureRow, 0, len(res.Chunks))
+	rows := make([]structureRow, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
 		kg, _ := row["knowledge_graph_kwd"].(string)
-		sr := StructureRow{
+		sr := structureRow{
 			CompileKwd:        fmt.Sprint(row["compile_kwd"]),
 			TemplateKind:      fmt.Sprint(row["compilation_template_kind_kwd"]),
 			KnowledgeGraphKwd: kg,
@@ -129,11 +129,11 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 	for k := range kinds {
 		kindList = append(kindList, k)
 	}
-	rawEntities, rawRels := ParseCompiledStructure(rows, kindList)
+	rawEntities, rawRels := parseCompiledStructure(rows, kindList)
 	return structureGraphFromRaw(rawEntities, rawRels)
 }
 
-// structureGraphFromRaw maps what ParseCompiledStructure returns onto the typed
+// structureGraphFromRaw maps what parseCompiledStructure returns onto the typed
 // entities/relations the drill-down consumes.
 //
 // A field the compiled payload omits must read as ABSENT, not as its Go
@@ -283,12 +283,12 @@ func indexNameFor(tenantID, configured string) string {
 	return "ragflow_" + tenantID
 }
 
-// The routing seam + NavResult payload
+// The routing seam + navResult payload
 
 // Compiled-navigation tools: locate (dataset tree routing) and drill
 // (in-document structure pinpointing).
 //
-// Covers the tree walk, the titled search, the NavResult payload, the compiled-structure
+// Covers the tree walk, the titled search, the navResult payload, the compiled-structure
 // reader and the kind normalization.
 //
 // These are the payload builders; the tool dispatch lives in tool_executor.go.
@@ -303,7 +303,7 @@ const (
 	navTreeMaxDocs = 8
 )
 
-// NavResult: the structured outcome of ONE
+// navResult: the structured outcome of ONE
 // compiled-navigation call.
 //
 // Text is what the MODEL sees (XML, unchanged). The remaining fields are the
@@ -311,7 +311,7 @@ const (
 // all, did THIS query reach anything, and was the result worth using? Without
 // them the caller can only regex the XML — which is how a `count="1"
 // entities="0"` empty shell used to read as a successful hit.
-type NavResult struct {
+type navResult struct {
 	// Text is the XML the model consumes.
 	Text string
 	// DocIDs are the documents reached (the routing result).
@@ -341,22 +341,22 @@ type NavResult struct {
 
 // HasStructure reports whether the dataset has the compiled structure at all.
 // A query-level miss is not a structure absence.
-func (n NavResult) HasStructure() bool { return n.EmptyReason != ReasonNoStructure }
+func (n navResult) HasStructure() bool { return n.EmptyReason != reasonNoStructure }
 
-// navEmpty returns an empty NavResult carrying the <tree_navigation> text:
+// navEmpty returns an empty navResult carrying the <tree_navigation> text:
 // count="0" plus an error="<label>" attribute, omitted when label is empty —
 // exactly the shapes navigation.py builds (:877 "no retriever", :880 "query is
 // required", :899 no attribute at all for a query-level miss). That text is not
 // what the model reads for an empty result — both sides substitute their own
 // note for every empty_reason (, tool_executor.go:402)
-// but the NavResult must still carry it. The status is derived from the reason
-// by ReasonStatus.
-func navEmpty(reason, label string) NavResult {
+// but the navResult must still carry it. The status is derived from the reason
+// by reasonStatus.
+func navEmpty(reason, label string) navResult {
 	attr := ""
 	if label != "" {
-		attr = ` error="` + XMLEscape(label) + `"`
+		attr = ` error="` + xmlEscape(label) + `"`
 	}
-	return NavResult{
+	return navResult{
 		EmptyReason: reason,
 		Text:        "<tree_navigation count=\"0\"" + attr + ">\n</tree_navigation>",
 	}
@@ -364,7 +364,7 @@ func navEmpty(reason, label string) NavResult {
 
 // The routing seam
 
-// NavTreeRouter descends a dataset's compiled navigation tree and returns the
+// navTreeRouter descends a dataset's compiled navigation tree and returns the
 // routed documents.
 //
 // A hybrid BFS beam descent (vector + BM25) from the root clusters down to the nav_doc
@@ -375,15 +375,15 @@ func navEmpty(reason, label string) NavResult {
 // direct call) for two reasons: the runtime must not import the service layer,
 // and a dataset without a compiled tree must be distinguishable from a query
 // that routed to nothing.
-type NavTreeRouter interface {
+type navTreeRouter interface {
 	// Route descends the nav tree for one dataset and returns the routed
 	// documents with their summaries, ordered by descending score.
 	// Returns (nil, nil) when the dataset has no compiled tree at all.
 	Route(ctx context.Context, tenantID, kbID, query string, docScope []string, topK int) ([][2]string, error)
 }
 
-// NavTreeInput is one navigate_tree call.
-type NavTreeInput struct {
+// navTreeInput is one navigate_tree call.
+type navTreeInput struct {
 	Query    string
 	Keywords string
 	DocScope []string
@@ -392,7 +392,7 @@ type NavTreeInput struct {
 	KbIDs    []string
 }
 
-// NavigateTree: locate the document(s) most
+// navigateTree: locate the document(s) most
 // likely to hold the answer by descending the compiled navigation tree.
 //
 // This tool ROUTES, it does not retrieve. It deliberately does NOT fetch
@@ -406,7 +406,7 @@ type NavTreeInput struct {
 // There is deliberately NO chunk-retrieval fallback: when routing misses, the
 // caller falls back to retrieve/search_chunks — the same work, owned by the
 // orchestrator instead of hidden inside a "route" call.
-func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) NavResult {
+func navigateTree(ctx context.Context, router navTreeRouter, in navTreeInput) navResult {
 	query := strings.TrimSpace(in.Query)
 	if query == "" {
 		return navEmpty(ReasonBadArgs, "query is required")
@@ -417,7 +417,7 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 		//
 		// The label is also carried as the Diagnostic: "infra" alone tells a client
 		// nothing about what actually broke.
-		res := navEmpty(ReasonInfra, "no retriever")
+		res := navEmpty(reasonInfra, "no retriever")
 		res.Diagnostic = "no retriever"
 		return res
 	}
@@ -468,7 +468,7 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 			// read found zero entities.
 			//
 			// The error travels as the Diagnostic: "infra" alone does not say what broke.
-			res := navEmpty(ReasonInfra, "nav tree descent failed")
+			res := navEmpty(reasonInfra, "nav tree descent failed")
 			res.Diagnostic = anyError.Error()
 			return res
 		}
@@ -480,7 +480,7 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 		// verdict lets the session disable the tool.
 		// Every dataset lacks a compiled tree — a DATASET-level fact, so the
 		// caller may disable the tool for the session.
-		return navEmpty(ReasonNoStructure, "no compiled navigation tree")
+		return navEmpty(reasonNoStructure, "no compiled navigation tree")
 	}
 	if len(ordered) == 0 {
 		// Structure exists but THIS query reached nothing: a query-level miss.
@@ -502,20 +502,20 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 	}
 
 	var parts []string
-	parts = append(parts, fmt.Sprintf(`<tree_navigation count="%d" query="%s">`, len(ordered), XMLEscape(query)))
+	parts = append(parts, fmt.Sprintf(`<tree_navigation count="%d" query="%s">`, len(ordered), xmlEscape(query)))
 	for i, pair := range ordered {
 		if pair[1] != "" {
 			parts = append(parts,
-				fmt.Sprintf(`  <doc rank="%d" doc_id="%s">`, i+1, XMLEscape(pair[0])),
-				fmt.Sprintf("    <summary>%s</summary>", XMLEscape(pair[1])),
+				fmt.Sprintf(`  <doc rank="%d" doc_id="%s">`, i+1, xmlEscape(pair[0])),
+				fmt.Sprintf("    <summary>%s</summary>", xmlEscape(pair[1])),
 				"  </doc>")
 		} else {
-			parts = append(parts, fmt.Sprintf(`  <doc rank="%d" doc_id="%s"/>`, i+1, XMLEscape(pair[0])))
+			parts = append(parts, fmt.Sprintf(`  <doc rank="%d" doc_id="%s"/>`, i+1, xmlEscape(pair[0])))
 		}
 	}
 	parts = append(parts, "</tree_navigation>")
 
-	return NavResult{
+	return navResult{
 		Text:       strings.Join(parts, "\n"),
 		DocIDs:     docs,
 		RoutedDocs: ordered,
@@ -524,9 +524,9 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 
 // Compiled-structure reading (in-document)
 
-// StructureRow is one compiled-structure row: the doc-store fields the structure reader
+// structureRow is one compiled-structure row: the doc-store fields the structure reader
 // reads.
-type StructureRow struct {
+type structureRow struct {
 	// CompileKwd distinguishes the COMPILE TYPE (tree / page_index / timeline /
 	// ...). NOT knowledge_graph_kwd.
 	CompileKwd string
@@ -547,7 +547,7 @@ type StructureRow struct {
 	Vec []float64
 }
 
-// StructureReader reads a document's compiled structure rows.
+// structureReader reads a document's compiled structure rows.
 //
 // It issues one doc-store query over the per-entity/relation rows and merges the matching
 // buckets (the graph blob and the raptor_graph projection are gone from the storage
@@ -559,22 +559,22 @@ type StructureRow struct {
 // implementation is wired, navigate_structure reports EMPTY/no_structure and the
 // navigation ladder falls through to `global` — the same behaviour as a dataset
 // with no compiled structures.
-type StructureReader interface {
+type structureReader interface {
 	// ReadStructure returns the compiled rows for a document. Returns nil when
 	// the backend has no compiled-structure support at all.
-	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]StructureRow, error)
+	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]structureRow, error)
 }
 
-// normalizeKind is defined above; rowKind projects a StructureRow into that shape, applying
+// normalizeKind is defined above; rowKind projects a structureRow into that shape, applying
 // the API's kind normalization (page_index / knowledge_graph → timeline).
-func rowKind(row StructureRow) string {
+func rowKind(row structureRow) string {
 	return normalizeKind(map[string]any{
 		"compile_kwd":                   row.CompileKwd,
 		"compilation_template_kind_kwd": row.TemplateKind,
 	})
 }
 
-// ParseCompiledStructure: merge step
+// parseCompiledStructure: merge step
 // (navigation.py:_query): keep rows whose compile TYPE is in kinds, then split
 // by row shape into entities / relations.
 //
@@ -587,7 +587,7 @@ func rowKind(row StructureRow) string {
 //
 // Reading BOTH and merging is what makes navigation work regardless of which
 // shape a compile type produced.
-func ParseCompiledStructure(rows []StructureRow, kinds []string) ([]map[string]any, []map[string]any) {
+func parseCompiledStructure(rows []structureRow, kinds []string) ([]map[string]any, []map[string]any) {
 	want := map[string]bool{}
 	for _, k := range kinds {
 		if k != "" {
@@ -651,7 +651,7 @@ func objectList(v any) []map[string]any {
 // In-document structure drill-down (mirrors navigation.py, distributed helpers)
 //
 // These functions reuse primitives imported from elsewhere: cosine / appendUnique
-// (compiled_expansion.go, action_session.go), XMLEscape / Snippet / ChunkTextOf
+// (compiled_expansion.go, action_session.go), xmlEscape / snippet / ChunkTextOf
 // (chunk_utils.go). They stay here so navigation.go owns the navigate-tree /
 // navigate-structure algorithm while importing its primitives.
 
@@ -1132,7 +1132,7 @@ func navTypeOr(t string) string {
 func navOutlineLine(indent, name, nodeType, desc string, chunks []string) string {
 	line := indent + "- " + name + " (" + navTypeOr(nodeType) + ")"
 	if desc != "" {
-		line += ": " + Snippet(desc, structDescSnippet)
+		line += ": " + snippet(desc, structDescSnippet)
 	}
 	if c := chunkPtrs(chunks); c != "" {
 		line += " [chunks: " + c + "]"
@@ -1292,7 +1292,7 @@ func drillWithAncestors(names map[string]bool, parents map[string]string) map[st
 // When no terms/vector and neither selection is provided it falls back to the flat
 // outline. loader, when non-nil, fetches chunk texts so short snippets can be
 // appended; a nil loader skips the snippet pass.
-func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText, chunkHits []chunkHit, selected []string, claimHits []DocClaimHit) structureDrillout {
+func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText, chunkHits []chunkHit, selected []string, claimHits []docClaimHit) structureDrillout {
 	flat := func() structureDrillout {
 		out := renderOutline(nodes, rels)
 		n, p := outlineStats(nodes)
@@ -1468,7 +1468,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		claimed[cid] = true
 		line := "- [claim] " + strings.TrimSpace(hit.Name)
 		if quote := docClaimQuote(hit); quote != "" {
-			line += " | Evidence: \"" + Snippet(quote, ClaimEvidenceChars) + "\""
+			line += " | Evidence: \"" + snippet(quote, claimEvidenceChars) + "\""
 		}
 		line += " [chunks: " + cid + "]"
 		lines = append(lines, line)
@@ -1535,7 +1535,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 				if text == "" {
 					continue
 				}
-				lines = append(lines, "- [chunk "+c.id+"]: "+Snippet(text, 300))
+				lines = append(lines, "- [chunk "+c.id+"]: "+snippet(text, 300))
 			}
 		}
 	}
@@ -1634,7 +1634,7 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 	// A document that is not in the bound datasets yields an empty structure rather than an
 	// unscoped read, so a stale doc_id cannot pull in another dataset's outline.
 	if belongs, verified := docInDatasets(ctx, deps, docID); verified && !belongs {
-		return none, nil, nil, ReasonNoStructure
+		return none, nil, nil, reasonNoStructure
 	}
 	kinds := structureKindsFor(kind)
 	indexName := indexNameFor(tenantID, deps.IndexName)
@@ -1650,21 +1650,21 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 	entities, rels := loadStructureGraph(ctx, indexName, docID, kinds, vecField)
 	nodes := structureNodesFromEntities(entities)
 	if len(nodes) == 0 {
-		return none, nil, nil, ReasonNoStructure
+		return none, nil, nil, reasonNoStructure
 	}
 	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, indexName, ids) }
 
 	// Claim leg: flat hybrid claim recall
 	// for this document. Selection priority: claims when they hit, then
 	// whatever the tree's own shape supports.
-	var claimHits []DocClaimHit
+	var claimHits []docClaimHit
 	if structClaimLeg {
 		kindList := make([]string, 0, len(kinds))
 		for k := range kinds {
 			kindList = append(kindList, k)
 		}
 		sort.Strings(kindList)
-		claimHits = RecallDocClaimHits(ctx, deps, query, docID, kindList, qvec, structClaimTopN)
+		claimHits = recallDocClaimHits(ctx, deps, query, docID, kindList, qvec, structClaimTopN)
 	}
 	// Claim-first: the claims decide, so nothing is drilled and no chunks are
 	// recalled to choose.
@@ -1702,7 +1702,7 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 // structureDocSegment renders one <doc> element (doc_id / doc_title="" / entities /
 // relations plus the <structure> outline); doc_title is always empty.
 func structureDocSegment(docID, query, kind string, rank int, nodes []structureNode, rels []structureRel, drill structureDrillout) string {
-	esc := func(s string) string { return XMLEscape(s) }
+	esc := func(s string) string { return xmlEscape(s) }
 	var b strings.Builder
 	fmt.Fprintf(&b, `  <doc rank="%d" doc_id="%s" doc_title="" entities="%d" relations="%d">`, rank, esc(docID), len(nodes), len(rels))
 	if drill.outline != "" {
@@ -1741,7 +1741,7 @@ func emptyReasonLabel(reason string) string {
 // tree) and then drills those — so a direct call need not rely on its caller pre-routing.
 // The navigate_structure TOOL already routes before calling this, so in the tool path
 // docIDs is non-empty and routing here is a no-op.
-func navigateStructures(ctx context.Context, tenantID, query string, docIDs []string, kind string, router NavTreeRouter, deps SearchDeps) (NavResult, structureDrillout) {
+func navigateStructures(ctx context.Context, tenantID, query string, docIDs []string, kind string, router navTreeRouter, deps SearchDeps) (navResult, structureDrillout) {
 	agg := structureDrillout{chunkPaths: map[string]string{}}
 	var segs []string
 	var docIDsSeen []string
@@ -1751,7 +1751,7 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 		// reaches nothing is it a MISS.
 		if router != nil {
 			// DocScope: the session ceiling applied when doc_ids is empty.
-			routed := NavigateTree(ctx, router, NavTreeInput{
+			routed := navigateTree(ctx, router, navTreeInput{
 				Query:    query,
 				KbIDs:    deps.KbIDs,
 				TenantID: tenantID,
@@ -1760,7 +1760,7 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 			docIDs = dedupStrings(routed.DocIDs)
 		}
 		if len(docIDs) == 0 {
-			return NavResult{
+			return navResult{
 				Text:        `<structure_navigation count="0" error="no document located">` + "\n</structure_navigation>",
 				EmptyReason: ReasonNoDoc,
 			}, agg
@@ -1791,17 +1791,17 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 		// doc_ids were given but none carried a compiled structure of this kind:
 		// empty_reason is "no_structure" when total_entities == 0 (the count="0"
 		// <structure_navigation> carries no <doc> elements).
-		return NavResult{
+		return navResult{
 			Text:        `<structure_navigation count="0" error="no structure">` + "\n</structure_navigation>",
-			EmptyReason: ReasonNoStructure,
+			EmptyReason: reasonNoStructure,
 		}, agg
 	}
-	esc := func(s string) string { return XMLEscape(s) }
+	esc := func(s string) string { return xmlEscape(s) }
 	parts := append([]string{
 		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), esc(query), esc(kind)),
 	}, segs...)
 	parts = append(parts, "</structure_navigation>")
-	return NavResult{
+	return navResult{
 		Text:        strings.Join(parts, "\n"),
 		DocIDs:      docIDsSeen,
 		Entities:    entities,
@@ -1811,7 +1811,7 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 }
 
 // entityMaps renders drill nodes back to the generic maps the orchestrator's
-// NavResult.Entities slice carries.
+// navResult.Entities slice carries.
 func entityMaps(nodes []structureNode) []map[string]any {
 	out := make([]map[string]any, 0, len(nodes))
 	for _, n := range nodes {

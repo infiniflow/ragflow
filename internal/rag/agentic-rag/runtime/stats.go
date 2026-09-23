@@ -63,19 +63,19 @@ var phaseOrder = []string{
 // Phase names used by the retrieval.
 const (
 	PhaseFormalize     = "formalize"
-	PhaseRoute         = "route"
-	PhasePlanner       = "planner"
-	PhaseDecompose     = "decompose"
-	PhaseDynamic       = "dynamic"
+	phaseRoute         = "route"
+	phasePlanner       = "planner"
+	phaseDecompose     = "decompose"
+	phaseDynamic       = "dynamic"
 	PhaseDirect        = "direct"
-	PhaseOrchestrator  = "orchestrator"
-	PhaseClaimResearch = "claim_research"
+	phaseOrchestrator  = "orchestrator"
+	phaseClaimResearch = "claim_research"
 	// The "draft", "sufficiency" and "sca" phases are gone with the SCA stage: a round is one
 	// session (rag_agent) that reads the evidence and writes its answer, so there is no separate
 	// draft to write, no review to run, and no phase ledger row for either.
-	PhaseRewrite  = "rewrite"
-	PhaseCompute  = "compute"
-	PhaseGrounded = "grounded"
+	phaseRewrite  = "rewrite"
+	phaseCompute  = "compute"
+	phaseGrounded = "grounded"
 	PhaseFinalize = "finalize"
 )
 
@@ -243,7 +243,7 @@ func (s *LLMUsageStats) notePhaseExit(phaseName string, entryRound int) {
 				s.roundTimes[phaseName] = append(s.roundTimes[phaseName], max(0.0, s.phaseTimeMs[phaseName]-settled))
 				delete(s.roundStarts, phaseName)
 			}
-			if phaseName == PhaseOrchestrator {
+			if phaseName == phaseOrchestrator {
 				s.currentRound = 0
 			}
 		} else {
@@ -377,18 +377,18 @@ func Phase(ctx context.Context, name string) (context.Context, func()) {
 	}
 }
 
-// InPhase runs fn inside Phase(name).
-func InPhase(ctx context.Context, name string, fn func(context.Context) error) error {
+// inPhase runs fn inside Phase(name).
+func inPhase(ctx context.Context, name string, fn func(context.Context) error) error {
 	ctx, done := Phase(ctx, name)
 	defer done()
 	return fn(ctx)
 }
 
-// RecordExternalResponse: records a raw
+// recordExternalResponse: records a raw
 // completion response that bypasses CountingInvoker, including token usage.
 // action_session calls this for the two raw model calls it makes directly
 // (action_session.py:_acompletion/1086).
-func RecordExternalResponse(ctx context.Context, resp *chat.Response) {
+func recordExternalResponse(ctx context.Context, resp *chat.Response) {
 	stats := CurrentStats(ctx)
 	if stats == nil {
 		return
@@ -467,7 +467,7 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 
 	// Per-round structure, read from the locked snapshot.
 	orchRT := []float64{}
-	if orchRow, ok := rows[PhaseOrchestrator]; ok {
+	if orchRow, ok := rows[phaseOrchestrator]; ok {
 		if v, ok := orchRow["round_times"].([]float64); ok {
 			orchRT = v
 		}
@@ -494,7 +494,7 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 	// known.
 	phaseLabel := func(p string, r map[string]any, roundIdx int) string {
 		label := p
-		if p == PhaseClaimResearch {
+		if p == phaseClaimResearch {
 			if counts, ok := r["round_claim_counts"].([]int); ok && roundIdx < len(counts) && counts[roundIdx] > 0 {
 				label = fmt.Sprintf("%s (%d)", p, counts[roundIdx])
 			}
@@ -515,7 +515,7 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 	}
 
 	for _, p := range phases {
-		if p == PhaseOrchestrator && nRounds > 0 {
+		if p == phaseOrchestrator && nRounds > 0 {
 			for i := 0; i < nRounds; i++ {
 				orchT := 0.0
 				if i < len(orchRT) {
@@ -525,7 +525,7 @@ func (s *LLMUsageStats) Log(logger *log.Logger) {
 				}
 				lines = append(lines, row("  ", fmt.Sprintf("orchestrator round %d", i+1), p, orchT))
 				for _, sub := range phases {
-					if sub == PhaseOrchestrator {
+					if sub == phaseOrchestrator {
 						continue
 					}
 					v, ok := perRound[sub]

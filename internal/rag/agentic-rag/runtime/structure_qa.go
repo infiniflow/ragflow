@@ -41,7 +41,7 @@ import (
 // structureQATemperature pins the temperature for the outline-verdict call.
 const structureQATemperature = 0.2
 
-// RenderStructure renders a compiled structure (entities + relations) as a
+// renderStructure renders a compiled structure (entities + relations) as a
 // compact outline for the prompt:
 //
 //	Entities:
@@ -53,7 +53,7 @@ const structureQATemperature = 0.2
 // Both lists are capped at maxStructureEntities / maxStructureRelations; empty
 // names and empty relation endpoints are dropped. Entities with no type fall
 // back to "other"; relations with no type fall back to "related".
-func RenderStructure(entities, relations []map[string]any) string {
+func renderStructure(entities, relations []map[string]any) string {
 	var lines []string
 	if len(entities) > 0 {
 		lines = append(lines, "Entities:")
@@ -94,7 +94,7 @@ func RenderStructure(entities, relations []map[string]any) string {
 	return strings.Join(lines, "\n")
 }
 
-// AskStructure asks the chat model to answer `topic` from the rendered outline.
+// askStructure asks the chat model to answer `topic` from the rendered outline.
 //
 // Returns (answer, relevant_entity_names): answer is empty unless the model judged the
 // outline sufficient; the names are always returned so the caller can pull the underlying
@@ -103,19 +103,19 @@ func RenderStructure(entities, relations []map[string]any) string {
 // the log tag. `model` is the request-scoped chat model; a nil model means no model is
 // available and the call skips. Never raises: on any chat/parse failure both results are
 // empty.
-func AskStructure(ctx context.Context, model SessionModel, topic, noun, label string, entities, relations []map[string]any) (string, []string) {
+func askStructure(ctx context.Context, model SessionModel, topic, noun, label string, entities, relations []map[string]any) (string, []string) {
 	if model == nil {
 		_LOG.Printf("[%s] structure QA skipped (no chat model)", label)
 		return "", nil
 	}
 	system := strings.ReplaceAll(navSystemPrompt, "{noun}", "the "+noun)
-	rendered := RenderStructure(entities, relations)
+	rendered := renderStructure(entities, relations)
 	user := fmt.Sprintf("Question:\n%s\n\n%s:\n%s\n\nOutput JSON:", topic, capitalizeWord(noun), rendered)
 
-	// The context length is exposed via ContextLengthModel; when absent, the 8192 default
+	// The context length is exposed via contextLengthModel; when absent, the 8192 default
 	// (chat.EffectiveContextLength) applies, i.e. when the model config omits it.
 	budget := 0
-	if cl, ok := model.(ContextLengthModel); ok {
+	if cl, ok := model.(contextLengthModel); ok {
 		budget = cl.ContextLength()
 	}
 	if budget <= 0 {
@@ -157,7 +157,7 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	}
 
 	var verdict structureNavVerdict
-	if err := UnmarshalModelJSON(resp.Content, &verdict); err != nil {
+	if err := unmarshalModelJSON(resp.Content, &verdict); err != nil {
 		_LOG.Printf("[%s] could not parse the outline verdict: %v", label, err)
 		return "", nil
 	}

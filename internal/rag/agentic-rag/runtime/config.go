@@ -24,7 +24,7 @@ import "strings"
 // from a thinking_mode
 // string, so tuning a mode is a one-table edit.
 //
-// Unknown labels fall back to NAIVE rather than erroring: the label comes from
+// Unknown labels fall back to naive rather than erroring: the label comes from
 // user input at request time, and failing here would fail the whole request.
 
 // allTools are the tools the action session can bind, in declaration order.
@@ -40,8 +40,8 @@ var allTools = []string{
 	"web_search",
 }
 
-// GraphExploreTool is the relational exploration tool reserved for ultra.
-const GraphExploreTool = "graph_explore"
+// graphExploreTool is the relational exploration tool reserved for ultra.
+const graphExploreTool = "graph_explore"
 
 // ModeSpec: (a frozen dataclass). Everything that
 // varies between thinking modes lives here.
@@ -118,13 +118,13 @@ var THINKING_MODES = map[string]ModeSpec{
 		Label: "ultra", Agentic: true,
 		MaxRounds: 5, ActionMaxTurns: 10,
 		SnippetsPerQuery: 10,
-		Tools:            toolsOf(append(append([]string{}, allTools...), GraphExploreTool)...),
+		Tools:            toolsOf(append(append([]string{}, allTools...), graphExploreTool)...),
 	},
 }
 
-// NAIVE is the fallback for an unrecognised mode label. It is not agentic — the
+// naive is the fallback for an unrecognised mode label. It is not agentic — the
 // caller answers with plain retrieval rather than failing the request.
-var NAIVE = ModeSpec{
+var naive = ModeSpec{
 	Label: "naive", Agentic: false,
 	MaxRounds: 0, ActionMaxTurns: 4,
 	Tools: map[string]bool{},
@@ -142,34 +142,34 @@ func (m ModeSpec) ToolNames() []string {
 			out = append(out, n)
 		}
 	}
-	if m.Tools[GraphExploreTool] {
-		out = append(out, GraphExploreTool)
+	if m.Tools[graphExploreTool] {
+		out = append(out, graphExploreTool)
 	}
 	return out
 }
 
-// GetMode: (label): unknown labels fall back to NAIVE.
+// GetMode: (label): unknown labels fall back to naive.
 // The label arrives from user input, so erroring here would fail the request.
 func GetMode(label string) ModeSpec {
 	m, ok := THINKING_MODES[strings.ToLower(strings.TrimSpace(label))]
 	if !ok {
-		return NAIVE
+		return naive
 	}
 	return m
 }
 
-// ThinkingModeCarrier is implemented by the RAGTools-like object that owns the
+// thinkingModeCarrier is implemented by the RAGTools-like object that owns the
 // request-scoped retrieval context (its thinking mode).
-type ThinkingModeCarrier interface {
+type thinkingModeCarrier interface {
 	GetThinkingMode() string
 }
 
 // ResolveMode: (tools): reads a RAGTools-like
 // object's thinking mode into its spec. Values that do not implement
-// ThinkingModeCarrier fall back to NAIVE.
+// thinkingModeCarrier fall back to naive.
 func ResolveMode(tools any) ModeSpec {
-	if c, ok := tools.(ThinkingModeCarrier); ok {
+	if c, ok := tools.(thinkingModeCarrier); ok {
 		return GetMode(c.GetThinkingMode())
 	}
-	return NAIVE
+	return naive
 }

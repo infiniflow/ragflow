@@ -156,7 +156,7 @@ func HeadChunksOfDocument(ctx context.Context, deps SearchDeps, docID string, wa
 }
 
 // isTableChunk reports whether a chunk's text carries an HTML table — the shape a document's
-// facts are written in (see RenderTables).
+// facts are written in (see renderTables).
 func isTableChunk(c map[string]any) bool {
 	return strings.Contains(strings.ToLower(ChunkTextOf(c)), "<table")
 }

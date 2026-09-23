@@ -70,7 +70,7 @@ func TestTheScanMatchesContainmentNotRankPosition(t *testing.T) {
 //
 // This is the number an enumeration cannot see for itself — how much of the corpus's matching material
 // it has NOT been shown — and reporting it is what stops a delivery cut from reading as "the corpus
-// does not carry them" (see ScanResult.Line).
+// does not carry them" (see scanResult.Line).
 func TestTheScanTruncatesByBudgetAndSaysHowMuchIsLeft(t *testing.T) {
 	var chunks []map[string]any
 	for i := 0; i < 40; i++ {
@@ -221,9 +221,9 @@ func TestTheScanFallsBackToTheActWordsWhenTheSpellingDiffers(t *testing.T) {
 // and the pool is not a prompt.
 func TestTheScanWindowsReachTheSessionAsMaterial(t *testing.T) {
 	kb := &Kbinfos{}
-	var windows []ScanWindow
+	var windows []scanWindow
 	for i := 0; i < 5; i++ {
-		windows = append(windows, ScanWindow{
+		windows = append(windows, scanWindow{
 			ChunkID: fmt.Sprintf("c%d", i),
 			DocID:   "d1",
 			Text:    fmt.Sprintf("%d 云长手起刀落，斩之于马下。", i),
@@ -255,7 +255,7 @@ func TestTheScanWindowsReachTheSessionAsMaterial(t *testing.T) {
 	// An identical window is shown once: overlapping windows repeat a sentence, and a repeat is not a
 	// second member.
 	dup := &Kbinfos{}
-	dup.NoteScanWindows([]ScanWindow{
+	dup.NoteScanWindows([]scanWindow{
 		{ChunkID: "c-a", DocID: "d1", Text: "云长手起刀落，斩之于马下。"},
 		{ChunkID: "c-b", DocID: "d1", Text: "云长手起刀落，斩之于马下。"},
 	})

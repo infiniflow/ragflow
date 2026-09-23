@@ -24,40 +24,40 @@ func TestLogHierarchicalRounds(t *testing.T) {
 
 	// Flat phases before the orchestrator loop.
 	func() {
-		_, done := Phase(ctx, PhaseRoute)
+		_, done := Phase(ctx, phaseRoute)
 		defer done()
-		s.RecordCall(PhaseRoute)
+		s.RecordCall(phaseRoute)
 	}()
 	func() {
-		_, done := Phase(ctx, PhasePlanner)
+		_, done := Phase(ctx, phasePlanner)
 		defer done()
-		s.RecordCall(PhasePlanner)
+		s.RecordCall(phasePlanner)
 	}()
 
 	// Orchestrator loop: two rounds, each doing claim_research + sufficiency.
 	func() {
-		c, done := Phase(ctx, PhaseOrchestrator)
+		c, done := Phase(ctx, phaseOrchestrator)
 		defer done()
 
-		RecordRound(c, PhaseOrchestrator)
+		RecordRound(c, phaseOrchestrator)
 		func() {
-			_, d := Phase(c, PhaseClaimResearch)
+			_, d := Phase(c, phaseClaimResearch)
 			defer d()
-			s.RecordCall(PhaseClaimResearch)
-			s.RecordUsage(PhaseClaimResearch, 0, 0, 120)
+			s.RecordCall(phaseClaimResearch)
+			s.RecordUsage(phaseClaimResearch, 0, 0, 120)
 		}()
 		func() {
-			_, d := Phase(c, PhaseRewrite)
+			_, d := Phase(c, phaseRewrite)
 			defer d()
-			s.RecordCall(PhaseRewrite)
+			s.RecordCall(phaseRewrite)
 		}()
 
-		RecordRound(c, PhaseOrchestrator)
+		RecordRound(c, phaseOrchestrator)
 		func() {
-			_, d := Phase(c, PhaseClaimResearch)
+			_, d := Phase(c, phaseClaimResearch)
 			defer d()
-			s.RecordCall(PhaseClaimResearch)
-			s.RecordUsage(PhaseClaimResearch, 0, 0, 80)
+			s.RecordCall(phaseClaimResearch)
+			s.RecordUsage(phaseClaimResearch, 0, 0, 80)
 		}()
 	}()
 

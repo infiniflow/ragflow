@@ -72,9 +72,9 @@ const (
 	scanTermsMax = 24
 )
 
-// ScanWindow is one delivered match: the passage's id, its document, and the window of text around the
+// scanWindow is one delivered match: the passage's id, its document, and the window of text around the
 // term that matched.
-type ScanWindow struct {
+type scanWindow struct {
 	ChunkID string
 	DocID   string
 	Text    string
@@ -85,8 +85,8 @@ type ScanWindow struct {
 	Full map[string]any
 }
 
-// ScanResult is what one scan produced, including how much of it was DELIVERED.
-type ScanResult struct {
+// scanResult is what one scan produced, including how much of it was DELIVERED.
+type scanResult struct {
 	// Probes are the probes as given (the plan's declaration), and Recalled is how many candidate
 	// passages the keyword legs returned in total before matching — the two numbers that tell a blind
 	// "no window carries the probes" apart from "the index recalled nothing".
@@ -103,7 +103,7 @@ type ScanResult struct {
 	// stays with the model.
 	ActOnly   bool
 	Terms     []string
-	Windows   []ScanWindow
+	Windows   []scanWindow
 	Matched   int      // windows that carry one of the terms, in the recalled candidate set
 	Delivered int      // of those, the ones this call delivers
 	Remaining int      // Matched - Delivered: still in the corpus, not in the answer's hands
@@ -113,8 +113,8 @@ type ScanResult struct {
 // Line renders the scan's coverage as ONE line, for the log and for the tool result.
 //
 // It is the mechanical half of "you have not seen it all": the numbers are counts about the delivery,
-// and deciding whether the remaining windows matter is the model's (see the note on SessionRecord).
-func (r ScanResult) Line() string {
+// and deciding whether the remaining windows matter is the model's (see the note on sessionRecord).
+func (r scanResult) Line() string {
 	if r.Matched == 0 {
 		if r.Recalled == 0 {
 			return "[scan] the declared probe(s) recalled no passage at all from the keyword leg: " +
@@ -218,8 +218,8 @@ func DeclaredActWords(table State) []string {
 //
 // The keyword call is the DENSE-LEG-FREE one (BM25Search): a scan must not depend on an embedding
 // service, and containment is a lexical question. docScope restricts it to the documents in play.
-func ScanMatchAny(ctx context.Context, deps SearchDeps, terms []string, acts []string, docScope []string, budgetChars int) ScanResult {
-	var res ScanResult
+func ScanMatchAny(ctx context.Context, deps SearchDeps, terms []string, acts []string, docScope []string, budgetChars int) scanResult {
+	var res scanResult
 	terms = dedupeTerms(terms, scanTermsMax)
 	if len(terms) == 0 || deps.Backend == nil {
 		return res
@@ -354,7 +354,7 @@ func ScanMatchAny(ctx context.Context, deps SearchDeps, terms []string, acts []s
 			continue
 		}
 		id := ChunkIDOf(c)
-		res.Windows = append(res.Windows, ScanWindow{
+		res.Windows = append(res.Windows, scanWindow{
 			ChunkID: id,
 			DocID:   DocIDOf(c),
 			Text:    text,

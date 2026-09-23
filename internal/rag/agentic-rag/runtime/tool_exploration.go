@@ -33,7 +33,7 @@ import (
 // Exploration providers: knowledge-graph walks (graph_explore) and wiki page drill-downs
 // (wiki_query), plus the open-web search provider seam.
 //
-// graph_explore walks the compiled knowledge graph (see ExploreGraph): it seeds entities by
+// graph_explore walks the compiled knowledge graph (see exploreGraph): it seeds entities by
 // dense similarity, hops out over relations, then asks the model whether the subgraph
 // answers the question. wiki_query searches the compiled wiki_page_draft rows.
 //
@@ -46,10 +46,10 @@ type WebSearcher interface {
 	Search(ctx context.Context, queries []string) ([]string, error)
 }
 
-// WikiPage is one compiled wiki page returned by WikiRetriever: the parsed page markdown
+// wikiPage is one compiled wiki page returned by WikiRetriever: the parsed page markdown
 // plus the
 // originating row identity so the runtime can cite/load it.
-type WikiPage struct {
+type wikiPage struct {
 	ChunkID string
 	DocID   string
 	DocName string
@@ -66,7 +66,7 @@ type WikiPage struct {
 type WikiRetriever interface {
 	// SearchWiki returns up to topN compiled wiki pages for the question,
 	// biased toward the optional keywords.
-	SearchWiki(ctx context.Context, question string, keywords []string, topN int) ([]WikiPage, error)
+	SearchWiki(ctx context.Context, question string, keywords []string, topN int) ([]wikiPage, error)
 }
 
 // wikiQuery implements the `wiki_query` tool.
@@ -141,7 +141,7 @@ func (e *searchExecutor) wikiQuery(ctx context.Context, args map[string]any) (To
 	return ToolOutcome{
 		Payload: passages,
 		Status:  StatusOK,
-		Reason:  ReasonNone,
+		Reason:  reasonNone,
 		Metrics: map[string]any{"n_hits": len(passages)},
 	}, nil
 }
@@ -169,7 +169,7 @@ const (
 )
 
 // graphExplore explores the compiled knowledge graph for a relational / multi-hop answer
-// (ultra only), delegating to ExploreGraph: seed entities for the query, hop along their
+// (ultra only), delegating to exploreGraph: seed entities for the query, hop along their
 // relations, and return either a direct answer or the source passages behind the relevant
 // entities.
 //
@@ -197,13 +197,13 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 		// resolveDocScope, downstream of here.)
 		docScope = nil
 	}
-	res, err := ExploreGraph(ctx, e.deps, e.deps.TenantID, e.deps.KbIDs, query, "", docScope)
+	res, err := exploreGraph(ctx, e.deps, e.deps.TenantID, e.deps.KbIDs, query, "", docScope)
 	if err != nil {
 		// The failure is swallowed (res = {}) and falls into
 		// the empty branch below — an infra failure here is reported as a
 		// dataset-level EMPTY/no_structure, never an ERROR.
 		_LOG.Printf("[graph_explore] failed: %v", err)
-		res = ExploreResult{}
+		res = exploreResult{}
 	}
 	answer := strings.TrimSpace(res.Answer)
 	if answer != "" {
@@ -211,7 +211,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 		return ToolOutcome{
 			Payload: []any{map[string]any{"kind": "graph_explore", "answer": answer}},
 			Status:  StatusOK,
-			Reason:  ReasonNone,
+			Reason:  reasonNone,
 			Metrics: map[string]any{"hits": 0},
 		}, nil
 	}
@@ -224,7 +224,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 				"note": "This dataset has NO compiled knowledge graph (or none in the given scope). graph_explore is unavailable; use search_chunks / navigate_structure / retrieve instead.",
 			}},
 			Status:  StatusEmpty,
-			Reason:  ReasonNoStructure,
+			Reason:  reasonNoStructure,
 			Metrics: map[string]any{},
 		}, nil
 	}
@@ -243,14 +243,14 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 	return ToolOutcome{
 		Payload: []any{map[string]any{"kind": "graph_explore", "chunks": snippet}},
 		Status:  StatusOK,
-		Reason:  ReasonNone,
+		Reason:  reasonNone,
 		Metrics: map[string]any{"hits": 0},
 	}, nil
 }
 
 // graph_explore (knowledge-graph walk) — mirrors exploration.py::graph_explore
 
-// ExploreGraph walks the compiled knowledge graph: seed entities for the query
+// exploreGraph walks the compiled knowledge graph: seed entities for the query
 // by dense similarity, hop kgHops out over their relations, then ask the model
 // whether the resulting subgraph answers the question directly. When it does the
 // answer is returned; when it doesn't, the source passages behind the relevant
@@ -388,17 +388,17 @@ type kgRelation struct {
 	DocID          string   `json:"doc_id"`
 }
 
-// ExploreResult is the graph_explore output: exactly one of Answer / Chunks is populated,
+// exploreResult is the graph_explore output: exactly one of Answer / Chunks is populated,
 // and DocAggs always reflects the returned set.
-type ExploreResult struct {
+type exploreResult struct {
 	Answer  string
 	Chunks  []map[string]interface{}
 	DocAggs []map[string]interface{}
 }
 
-// ExploreGraph implements graph_explore.
-func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, datasetIDs []string, query, keywords string, docScope []string) (ExploreResult, error) {
-	empty := ExploreResult{}
+// exploreGraph implements graph_explore.
+func exploreGraph(ctx context.Context, deps SearchDeps, tenantID string, datasetIDs []string, query, keywords string, docScope []string) (exploreResult, error) {
+	empty := exploreResult{}
 	text := strings.TrimSpace(query + " " + keywords)
 	if text == "" || len(datasetIDs) == 0 {
 		return empty, nil
@@ -538,11 +538,11 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 	answer, relevant := askStructureAnswer(ctx, deps.Model, query, entities, relations)
 	// (4a) Sufficient — return the answer, no chunks.
 	if answer != "" {
-		return ExploreResult{Answer: answer, DocAggs: []map[string]interface{}{}}, nil
+		return exploreResult{Answer: answer, DocAggs: []map[string]interface{}{}}, nil
 	}
 
 	// (4b) Insufficient — return source passages behind the relevant nodes, narrowed to the
-	// sentences that carry the keywords. NarrowByKeywords keeps the whole set when keywords
+	// sentences that carry the keywords. narrowByKeywords keeps the whole set when keywords
 	// is empty, so the strict narrow is gated on a non-empty keyword string to avoid
 	// emptying the evidence. doc_aggs is computed from the resulting set. The evidence
 	// groups are iterated in FIRST-SEEN order (the order each doc was first reached), so
@@ -555,9 +555,9 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 		}
 	}
 	if strings.TrimSpace(keywords) != "" {
-		chunks = NarrowByKeywords(chunks, keywords)
+		chunks = narrowByKeywords(chunks, keywords)
 	}
-	return ExploreResult{Chunks: chunks, DocAggs: DocAggs(chunks)}, nil
+	return exploreResult{Chunks: chunks, DocAggs: DocAggs(chunks)}, nil
 }
 
 // seedEncoder encodes a seed text into a dense vector. It is a package seam so
@@ -567,7 +567,7 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 // Returning nil is always valid: every caller falls back to keyword matching.
 var seedEncoder = defaultSeedEncoder
 
-// encodeSeedVector encodes the seed text once for the whole ExploreGraph call.
+// encodeSeedVector encodes the seed text once for the whole exploreGraph call.
 // Returns nil when the tenant embedding model is unavailable (or encoding fails).
 //
 // An embedder passed in via SearchDeps.Embedder (the external embed handle) is used when
@@ -696,7 +696,7 @@ func mentionCount(row map[string]interface{}) int {
 // extra filter keys (e.g. from_entity_kwd/to_entity_kwd/name_kwd).
 //
 // indexName is the caller's configured index override (deps.IndexName): the KG
-// rows are written to the same index the chunk loads read (ExploreGraph loads
+// rows are written to the same index the chunk loads read (exploreGraph loads
 // its evidence with indexNameFor(deps.TenantID, deps.IndexName)), so a tenant
 // that overrides the name must have it honoured here too — otherwise the walk
 // queries one index and loads passages from another. Empty falls back to
@@ -899,7 +899,7 @@ func intersects(a, b map[string]bool) bool {
 }
 
 // askStructureAnswer asks the chat model whether the subgraph answers the query,
-// returning (answer, relevant_names). Delegates to AskStructure (structure_qa.go).
+// returning (answer, relevant_names). Delegates to askStructure (structure_qa.go).
 // `model` is the request-scoped chat model; a nil model simply skips the verdict and
 // yields no answer.
 func askStructureAnswer(ctx context.Context, model SessionModel, query string, entities []kgEntity, relations []kgRelation) (string, []string) {
@@ -913,7 +913,7 @@ func askStructureAnswer(ctx context.Context, model SessionModel, query string, e
 	for _, r := range relations {
 		rms = append(rms, map[string]any{"from": r.From, "to": r.To, "type": r.Type})
 	}
-	return AskStructure(ctx, model, query, "knowledge graph", "Graph exploration", ems, rms)
+	return askStructure(ctx, model, query, "knowledge graph", "Graph exploration", ems, rms)
 }
 
 func strOr(v interface{}, def string) string {

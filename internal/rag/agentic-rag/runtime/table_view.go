@@ -41,7 +41,7 @@ import (
 //
 // A row is a set of field/value pairs, so it is rendered as one; a "key: value" line would have
 // put the FIRST CELL in the key slot and demoted the real column names into value text. Because
-// one row is still one line, one line-level cutter serves every chunk (see Deliverable) while
+// one row is still one line, one line-level cutter serves every chunk (see deliverable) while
 // still being able to match a question against a FIELD rather than against a string of words.
 //
 // Values are kept VERBATIM, entities/whitespace are collapsed, units rows are dropped, a
@@ -71,7 +71,7 @@ var tableViewUnitTokens = map[string]struct{}{
 	"—": {}, "-": {}, "•": {}, "·": {},
 }
 
-// RenderTables replaces every HTML table in text with the FIELD view — one JSON object per row
+// renderTables replaces every HTML table in text with the FIELD view — one JSON object per row
 // (`{"Children": "3"}`; the object's keys are the table's columns) — KEEPING the text that lives
 // outside the tables in document order.
 //
@@ -80,7 +80,7 @@ var tableViewUnitTokens = map[string]struct{}{
 // partial view. A table that renders to nothing (no readable row) contributes nothing and
 // its surrounding text still comes back — a chunk whose metadata lines precede its table
 // keeps those lines, which is what makes the Source URL still citable after rendering.
-func RenderTables(text string) (string, bool) {
+func renderTables(text string) (string, bool) {
 	if text == "" || !strings.Contains(strings.ToLower(text), "<table") {
 		return "", false
 	}
@@ -103,7 +103,7 @@ func RenderTables(text string) (string, bool) {
 	// The views come FIRST and the surrounding text after them: a chunk that carries a table
 	// carries its FACTS there (an infobox's rows, a standings table's rows), while the text
 	// around it is the header (Title/Source/Prepared-Format) and the section that follows. A
-	// line-level cutter spends a bounded budget (see Deliverable), and with the header in
+	// line-level cutter spends a bounded budget (see deliverable), and with the header in
 	// front the budget went to "Title: …" and "Source: …" while the field the question asked
 	// for was cut — measured 2026-09-22 on a ten-member question, every member's preview led
 	// with its metadata lines and carried no fact at all.
@@ -145,14 +145,14 @@ func RenderTables(text string) (string, bool) {
 	return strings.Join(parts, "\n"), true
 }
 
-// TableViewOrRaw is RenderTables when it produces something, else the text unchanged.
+// tableViewOrRaw is renderTables when it produces something, else the text unchanged.
 //
 // Small convenience for the call sites that only want "the best available
 // model-visible form of this chunk". A view that comes back blank (a table with no readable
 // row, and no text around it) falls back to the raw text rather than handing the caller an
 // empty string.
-func TableViewOrRaw(text string) string {
-	if view, ok := RenderTables(text); ok {
+func tableViewOrRaw(text string) string {
+	if view, ok := renderTables(text); ok {
 		if strings.TrimSpace(view) != "" {
 			return view
 		}
@@ -164,7 +164,7 @@ func TableViewOrRaw(text string) string {
 // readable row.
 //
 // Why objects and not "key: value" lines: a table row IS a set of field/value pairs, and the FIELD
-// NAME is what a reader — and the line-level cutter (see Deliverable) — matches a question against.
+// NAME is what a reader — and the line-level cutter (see deliverable) — matches a question against.
 // Flattening a row into "Rank: Rider | Points" put the FIRST CELL in the key slot and demoted the
 // real column names into value text, so a question about "Points" had no field to match.
 //
@@ -183,7 +183,7 @@ func TableViewOrRaw(text string) string {
 // column order (see jsonObject), never sorted.
 //
 // A table with fewer than two rows renders to nothing: one line carries no relation, and the
-// caller then keeps its raw text (see RenderTables).
+// caller then keeps its raw text (see renderTables).
 func renderOneTable(table *html.Node) string {
 	rows := tableRowNodes(table)
 	if len(rows) < 2 {

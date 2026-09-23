@@ -33,14 +33,14 @@ import (
 	"ragflow/internal/service"
 )
 
-// ThinkLineBreak separates two steps inside the think block.
+// thinkLineBreak separates two steps inside the think block.
 //
 // The block is delivered to the client as inline HTML (the chat UI wraps it in
 // <details class="think"> and renders the message as markdown), where a newline
 // is just whitespace. Mirrors Python think_log.py:69 ("<br>").
-const ThinkLineBreak = "<br>"
+const thinkLineBreak = "<br>"
 
-// StepIndentUnit and StepMaxDepth shape the think block's nesting.
+// StepIndentUnit and stepMaxDepth shape the think block's nesting.
 //
 // A step is INDENTED when it is reported beneath the step that launched it: a
 // prefetch's search legs under the "[Prefetch] … up front." line that opened them,
@@ -64,7 +64,7 @@ const ThinkLineBreak = "<br>"
 //	level 2  a tool call the round launches, and a prefetch's search legs
 //	level 3  the search leg a tool runs (grep / bm25 / hybrid under `retrieve`)
 //
-// A leg that DELEGATES adds no level of its own: GrepSearch hands the pool build to
+// A leg that DELEGATES adds no level of its own: grepSearch hands the pool build to
 // BM25Search with the same context, so "[BM25 search]" prints beside the
 // "[Grep search]" line that called it rather than under it. Without an outer loop —
 // the direct-graph path — every level shifts up by one: the graph's own steps sit at
@@ -73,7 +73,7 @@ const ThinkLineBreak = "<br>"
 // if a future layer nests deeper or a path recurses.
 const (
 	StepIndentUnit = "&nbsp;&nbsp;&nbsp;&nbsp;"
-	StepMaxDepth   = 5
+	stepMaxDepth   = 5
 )
 
 // stepsDepthKey carries the current step nesting depth.
@@ -92,7 +92,7 @@ func stepDepth(ctx context.Context) int {
 	return d
 }
 
-// indentStep prefixes line with depth indentation units, capped at StepMaxDepth.
+// indentStep prefixes line with depth indentation units, capped at stepMaxDepth.
 // Only the TEXT projection is indented: the log stays flush (it is grepped, and
 // its lines double as the Python-parity record) and the event Summary stays clean
 // (a client renders structure, not entities).
@@ -100,8 +100,8 @@ func indentStep(line string, depth int) string {
 	if depth <= 0 {
 		return line
 	}
-	if depth > StepMaxDepth {
-		depth = StepMaxDepth
+	if depth > stepMaxDepth {
+		depth = stepMaxDepth
 	}
 	return strings.Repeat(StepIndentUnit, depth) + line
 }
@@ -120,8 +120,8 @@ type ThinkEvent = service.ThinkEvent
 
 // ThinkEvent kinds.
 const (
-	// ThinkKindStage is one narrative pipeline stage.
-	ThinkKindStage = "stage"
+	// thinkKindStage is one narrative pipeline stage.
+	thinkKindStage = "stage"
 	// ThinkKindToolCall is a tool about to run, with its arguments.
 	ThinkKindToolCall = "tool_call"
 	// ThinkKindToolResult is a tool's outcome, with its result metadata.
@@ -132,10 +132,10 @@ const (
 // is a pointer into the evidence, not a dump of it.
 const ThinkMaxSources = 12
 
-// ThinkSink receives one ThinkEvent per reasoning step. The sink is per request,
+// thinkSink receives one ThinkEvent per reasoning step. The sink is per request,
 // so concurrent requests stay isolated. Nil means no client asked for structured
 // steps: emission is a no-op and only the human text is produced.
-type ThinkSink func(ThinkEvent)
+type thinkSink func(ThinkEvent)
 
 // StepReporter delivers one reasoning step to its two projections.
 //
@@ -148,7 +148,7 @@ type StepReporter struct {
 	// Text is the human-sentence projection (the <think> block). Nil = no block.
 	Text func(line string)
 	// Events is the structured projection. Nil = no structured client.
-	Events ThinkSink
+	Events thinkSink
 	// depth is the nesting level this copy reports at. It is stamped by StepsFrom
 	// from the caller's context (Nested) and never set by the caller, so the two
 	// projections stay independent: a run that indents its text does not indent its
@@ -194,7 +194,7 @@ func (r StepReporter) StageLineDetail(log *log.Logger, stage, summary, detail st
 	if log != nil {
 		log.Printf("[%s] %s", stage, detail)
 	}
-	r.Emit(ThinkEvent{Kind: ThinkKindStage, Stage: stage, Summary: "[" + stage + "] " + summary})
+	r.Emit(ThinkEvent{Kind: thinkKindStage, Stage: stage, Summary: "[" + stage + "] " + summary})
 }
 
 // Emit reports a fully-formed step. The developer log is deliberately NOT
@@ -213,15 +213,15 @@ func (r StepReporter) Emit(ev ThinkEvent) {
 			// A broken sink must never break the run (Python wrapped its sink
 			// call in a bare try/except for the same reason).
 			defer func() { _ = recover() }()
-			text(line + ThinkLineBreak)
+			text(line + thinkLineBreak)
 		}()
 	}
-	EmitThink(r.Events, ev)
+	emitThink(r.Events, ev)
 }
 
-// EmitThink delivers one event to sink. A nil sink and a panicking sink are both
+// emitThink delivers one event to sink. A nil sink and a panicking sink are both
 // tolerated: think narration must never break the request or the run.
-func EmitThink(sink ThinkSink, event ThinkEvent) {
+func emitThink(sink thinkSink, event ThinkEvent) {
 	if sink == nil {
 		return
 	}

@@ -50,7 +50,7 @@ func TestSnippet(t *testing.T) {
 		{"中文abc", 2, "中文..."},
 	}
 	for _, c := range cases {
-		if got := Snippet(c.in, c.n); got != c.want {
+		if got := snippet(c.in, c.n); got != c.want {
 			t.Errorf("Snippet(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
 		}
 	}

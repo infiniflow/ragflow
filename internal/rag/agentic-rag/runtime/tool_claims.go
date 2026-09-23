@@ -25,23 +25,23 @@ import (
 )
 
 const (
-	// ClaimPrefetchTopN
-	ClaimPrefetchTopN = 6
-	// ClaimEvidenceChars caps the rendered verbatim quote. 1200 over 600: the quote must be
+	// claimPrefetchTopN
+	claimPrefetchTopN = 6
+	// claimEvidenceChars caps the rendered verbatim quote. 1200 over 600: the quote must be
 	// self-sufficient in ONE shot — a thin quote makes the SCA judge the
 	// context insufficient, and one extra re-search turn costs a full
 	// 10k+-token prompt.
-	ClaimEvidenceChars = 1200
+	claimEvidenceChars = 1200
 	// claimRecallLegFloor is the per-leg store limit floor (max(top_n, 32)).
 	claimRecallLegFloor = 32
 	// claimPrefetchCacheTTL / claimPrefetchCacheCap: the agent re-issues near-identical
 	// queries across turns and each miss costs one KNN round-trip per KB.
 	claimPrefetchCacheTTL = 300.0
 	claimPrefetchCacheCap = 64
-	// EvidenceQuoteChars caps the verbatim quote in the GRAPH fan-out's channel-0 pseudo
-	// chunks. The action-session prefetch uses the longer ClaimEvidenceChars (1200) — the two
+	// evidenceQuoteChars caps the verbatim quote in the GRAPH fan-out's channel-0 pseudo
+	// chunks. The action-session prefetch uses the longer claimEvidenceChars (1200) — the two
 	// conventions are deliberately different and must not be conflated.
-	EvidenceQuoteChars = 400
+	evidenceQuoteChars = 400
 )
 
 // claimRowTypes lists the entity_type_kwd values that carry a claim: every compiler writes
@@ -53,8 +53,8 @@ var claimRowTypes = []string{"claim"}
 // the knowledge-compilation paths write, used by the has-compilation probe.
 var compilationKwds = []string{"tree", "page_index", "pageindex", "timeline", "dataset_nav"}
 
-// ClaimHit is one recalled claim.
-type ClaimHit struct {
+// claimHit is one recalled claim.
+type claimHit struct {
 	Name        string
 	Description string
 	Quote       string
@@ -66,7 +66,7 @@ type ClaimHit struct {
 
 type claimCacheEntry struct {
 	at   time.Time
-	hits []*ClaimHit
+	hits []*claimHit
 }
 
 var (
@@ -140,7 +140,7 @@ func DatasetHasCompilation(ctx context.Context, deps SearchDeps) bool {
 // RecallDatasetClaims runs the two-leg hybrid claim recall and returns up to
 // topN fused hits. Empty (never an error) on any failure — the prefetch can
 // only ever add to a search result.
-func RecallDatasetClaims(ctx context.Context, deps SearchDeps, query string, topN int) []*ClaimHit {
+func RecallDatasetClaims(ctx context.Context, deps SearchDeps, query string, topN int) []*claimHit {
 	return recallDatasetClaimsFiltered(ctx, deps, query, topN, nil, nil)
 }
 
@@ -148,7 +148,7 @@ func RecallDatasetClaims(ctx context.Context, deps SearchDeps, query string, top
 // entity_type_kwd pinning: the pinning queries ("tree","claim") and ("page_index","claim")
 // run as two separate passes, while the session-level recall passes nil/nil and matches
 // row_types=("claim",) unconditionally.
-func recallDatasetClaimsFiltered(ctx context.Context, deps SearchDeps, query string, topN int, compileKwds, rowTypes []string) []*ClaimHit {
+func recallDatasetClaimsFiltered(ctx context.Context, deps SearchDeps, query string, topN int, compileKwds, rowTypes []string) []*claimHit {
 	de := claimEngine(deps)
 	if de == nil || deps.TenantID == "" || len(deps.KbIDs) == 0 {
 		return nil
@@ -188,7 +188,7 @@ func recallDatasetClaimsFiltered(ctx context.Context, deps SearchDeps, query str
 	fields := []string{"content_with_weight", "source_chunk_ids", "doc_id"}
 
 	// KNN leg (needs an embedder); BM25 leg always runs.
-	var denseLeg, textLeg []*ClaimHit
+	var denseLeg, textLeg []*claimHit
 	if deps.HasEmbedder && deps.Embedder != nil {
 		if vecs := mustEncodeQueries(deps, ctx, query); len(vecs) > 0 && len(vecs[0]) > 0 {
 			qvec := vecs[0]
@@ -228,7 +228,7 @@ func recallDatasetClaimsFiltered(ctx context.Context, deps SearchDeps, query str
 }
 
 // claimSearchLeg runs one store search and parses the claim hits.
-func claimSearchLeg(ctx context.Context, de engine.DocEngine, deps SearchDeps, filter map[string]interface{}, fields []string, exprs []interface{}, limit int) []*ClaimHit {
+func claimSearchLeg(ctx context.Context, de engine.DocEngine, deps SearchDeps, filter map[string]interface{}, fields []string, exprs []interface{}, limit int) []*claimHit {
 	res, err := de.Search(ctx, &types.SearchRequest{
 		IndexNames:   []string{claimIndexName(deps)},
 		KbIDs:        deps.KbIDs,
@@ -241,7 +241,7 @@ func claimSearchLeg(ctx context.Context, de engine.DocEngine, deps SearchDeps, f
 	if err != nil || res == nil {
 		return nil
 	}
-	hits := make([]*ClaimHit, 0, len(res.Chunks))
+	hits := make([]*claimHit, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
 		if hit := parseClaimHit(row); hit != nil {
 			hits = append(hits, hit)
@@ -252,7 +252,7 @@ func claimSearchLeg(ctx context.Context, de engine.DocEngine, deps SearchDeps, f
 
 // parseClaimHit extracts one claim hit from a store row. Nil when the row is
 // not a usable claim (bad payload, unnamed, or no chunk pointer).
-func parseClaimHit(row map[string]interface{}) *ClaimHit {
+func parseClaimHit(row map[string]interface{}) *claimHit {
 	raw, _ := row["content_with_weight"].(string)
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil || payload == nil {
@@ -279,7 +279,7 @@ func parseClaimHit(row map[string]interface{}) *ClaimHit {
 			}
 		}
 	}
-	hit := &ClaimHit{
+	hit := &claimHit{
 		Name:        name,
 		Description: strings.TrimSpace(claimStr(payload["description"])),
 		Quote:       quote,
@@ -294,13 +294,13 @@ func parseClaimHit(row map[string]interface{}) *ClaimHit {
 
 // rrfFuseClaims fuses the retrieval legs by reciprocal rank (k=60): each fused hit keeps
 // its best leg score and gains a 1-based rank.
-func rrfFuseClaims(legs ...[]*ClaimHit) []*ClaimHit {
+func rrfFuseClaims(legs ...[]*claimHit) []*claimHit {
 	const k = 60
 	type key struct {
 		docID string
 		name  string
 	}
-	best := map[key]*ClaimHit{}
+	best := map[key]*claimHit{}
 	fused := map[key]float64{}
 	for _, leg := range legs {
 		for rank, hit := range leg {
@@ -311,7 +311,7 @@ func rrfFuseClaims(legs ...[]*ClaimHit) []*ClaimHit {
 			}
 		}
 	}
-	out := make([]*ClaimHit, 0, len(best))
+	out := make([]*claimHit, 0, len(best))
 	for hk, hit := range best {
 		hit.Rank = 0 // set below, after sorting
 		_ = fused[hk]
@@ -330,14 +330,14 @@ func rrfFuseClaims(legs ...[]*ClaimHit) []*ClaimHit {
 
 // ClaimPseudoChunks renders recalled claims as the pool-shaped pseudo chunks the GRAPH
 // fan-out's channel 0 admits: the row leads with the literal "[evidence]" prefix, the quote
-// is a LITERAL quoted span capped at EvidenceQuoteChars (400), and the whole content is
+// is a LITERAL quoted span capped at evidenceQuoteChars (400), and the whole content is
 // capped at 1200. source_chunk_ids ride along so the directional top-up and the slot prefill
 // can find the underlying chunks.
 //
 // This is NOT the action-session prefetch's format — that one renders "[claim #rank]" with a
-// 1200-char quote and is built inline by ClaimPrefetch. The two formats are deliberately
+// 1200-char quote and is built inline by claimPrefetch. The two formats are deliberately
 // distinct.
-func ClaimPseudoChunks(claims []*ClaimHit) []map[string]interface{} {
+func ClaimPseudoChunks(claims []*claimHit) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(claims))
 	for _, c := range claims {
 		cid := claimHitID(c)
@@ -347,7 +347,7 @@ func ClaimPseudoChunks(claims []*ClaimHit) []map[string]interface{} {
 		}
 		if c.Quote != "" {
 			// The cap counts CODE POINTS.
-			quote := TruncateRunes(c.Quote, EvidenceQuoteChars)
+			quote := TruncateRunes(c.Quote, evidenceQuoteChars)
 			content += "\nEvidence (verbatim): \"" + quote + "\""
 		}
 		// The content cap counts CODE POINTS, not bytes.
@@ -363,21 +363,21 @@ func ClaimPseudoChunks(claims []*ClaimHit) []map[string]interface{} {
 }
 
 // claimHitID is the pool id: "claim_" + md5(doc_id+":"+name)[:12].
-func claimHitID(c *ClaimHit) string {
+func claimHitID(c *claimHit) string {
 	return "claim_" + fmt.Sprintf("%x", md5.Sum([]byte(c.DocID+":"+c.Name)))[:12]
 }
 
-// ClaimPrefetch runs the gated prefetch for one corpus search: the has-compilation gate,
+// claimPrefetch runs the gated prefetch for one corpus search: the has-compilation gate,
 // the recall, and the exclusive passage build. ok is false when the caller must fall through
 // to the plain chunk search.
-func ClaimPrefetch(ctx context.Context, deps SearchDeps, query string, seen map[string]bool) ([]map[string]any, []string, []map[string]interface{}, bool) {
+func claimPrefetch(ctx context.Context, deps SearchDeps, query string, seen map[string]bool) ([]map[string]any, []string, []map[string]interface{}, bool) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil, nil, false
 	}
 	if !DatasetHasCompilation(ctx, deps) {
 		return nil, nil, nil, false
 	}
-	claims := RecallDatasetClaims(ctx, deps, query, ClaimPrefetchTopN)
+	claims := RecallDatasetClaims(ctx, deps, query, claimPrefetchTopN)
 	if len(claims) == 0 {
 		return nil, nil, nil, false
 	}
@@ -395,7 +395,7 @@ func ClaimPrefetch(ctx context.Context, deps SearchDeps, query string, seen map[
 		}
 		if c.Quote != "" {
 			// The cap counts CODE POINTS.
-			quote := TruncateRunes(c.Quote, ClaimEvidenceChars)
+			quote := TruncateRunes(c.Quote, claimEvidenceChars)
 			content += fmt.Sprintf("\nEvidence (verbatim): %q", quote)
 		}
 		// The content cap counts CODE POINTS, not bytes.
@@ -470,10 +470,10 @@ func claimStr(v interface{}) string {
 
 // Document-level claim recall.
 
-// DocClaimHit is one claim recalled for a SINGLE document: the source chunk pointer, the
+// docClaimHit is one claim recalled for a SINGLE document: the source chunk pointer, the
 // fused rank/score, the statement and its verbatim evidence ([{"quote": ...}] when the claim
 // carries one, else empty).
-type DocClaimHit struct {
+type docClaimHit struct {
 	ChunkID     string
 	Score       float64
 	Rank        int
@@ -505,7 +505,7 @@ func evidenceRowTypes(kinds []string) []string {
 // same pair recurs within a session; each miss costs two store round-trips.
 type docClaimCacheEntry struct {
 	at   time.Time
-	hits []DocClaimHit
+	hits []docClaimHit
 }
 
 var (
@@ -513,14 +513,14 @@ var (
 	docClaimCache = map[string]docClaimCacheEntry{}
 )
 
-// RecallDocClaimHits runs the two-leg hybrid claim recall for ONE document and
+// recallDocClaimHits runs the two-leg hybrid claim recall for ONE document and
 // returns up to topN fused hits:
 // a KNN leg over the claim rows' q_<dim>_vec (when qvec is available) and a
 // BM25 leg over content_ltks/content_sm_ltks, fused by reciprocal rank. No
 // similarity threshold: the store ranks, the top-N ARE the hit set. Empty —
 // never an error — when the document has no compiled claims or the store
 // fails; a failed recall simply leaves the drill-down in charge.
-func RecallDocClaimHits(ctx context.Context, deps SearchDeps, query, docID string, kinds []string, qvec []float64, topN int) []DocClaimHit {
+func recallDocClaimHits(ctx context.Context, deps SearchDeps, query, docID string, kinds []string, qvec []float64, topN int) []docClaimHit {
 	if docID == "" || topN <= 0 {
 		return nil
 	}
@@ -568,7 +568,7 @@ func RecallDocClaimHits(ctx context.Context, deps SearchDeps, query, docID strin
 	fields := []string{"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd"}
 
 	// KNN leg (needs a query vector); BM25 leg always runs.
-	var denseLeg, textLeg []*ClaimHit
+	var denseLeg, textLeg []*claimHit
 	if len(qvec) > 0 {
 		exprs := []interface{}{&types.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(qvec)),
@@ -593,9 +593,9 @@ func RecallDocClaimHits(ctx context.Context, deps SearchDeps, query, docID strin
 	if len(fused) > topN {
 		fused = fused[:topN]
 	}
-	out := make([]DocClaimHit, 0, len(fused))
+	out := make([]docClaimHit, 0, len(fused))
 	for _, h := range fused {
-		hit := DocClaimHit{
+		hit := docClaimHit{
 			ChunkID:     "",
 			Score:       h.Score,
 			Rank:        h.Rank,
@@ -624,7 +624,7 @@ func RecallDocClaimHits(ctx context.Context, deps SearchDeps, query, docID strin
 
 // docClaimQuote returns the first non-empty verbatim quote of a hit's evidence
 // list.
-func docClaimQuote(h DocClaimHit) string {
+func docClaimQuote(h docClaimHit) string {
 	for _, ev := range h.Evidence {
 		if q, ok := ev["quote"].(string); ok {
 			if s := strings.TrimSpace(q); s != "" {
@@ -642,7 +642,7 @@ func docClaimQuote(h DocClaimHit) string {
 // suppressed, entries dedup by the SAME "claim_"+md5(doc_id:name) id the
 // session prefetch writes, so a claim found by either path is one entry.
 // Returns how many NEW entries the pool gained.
-func publishClaimHits(deps SearchDeps, hits []DocClaimHit, docID string) int {
+func publishClaimHits(deps SearchDeps, hits []docClaimHit, docID string) int {
 	if deps.KB == nil || len(hits) == 0 {
 		return 0
 	}
@@ -653,7 +653,7 @@ func publishClaimHits(deps SearchDeps, hits []DocClaimHit, docID string) int {
 			if name == "" {
 				continue
 			}
-			cid := claimHitID(&ClaimHit{DocID: docID, Name: name})
+			cid := claimHitID(&claimHit{DocID: docID, Name: name})
 			rank := "?"
 			if h.Rank > 0 {
 				rank = fmt.Sprint(h.Rank)
@@ -664,7 +664,7 @@ func publishClaimHits(deps SearchDeps, hits []DocClaimHit, docID string) int {
 			}
 			if quote := docClaimQuote(h); quote != "" {
 				// The cap counts CODE POINTS.
-				quote := TruncateRunes(docClaimQuote(h), ClaimEvidenceChars)
+				quote := TruncateRunes(docClaimQuote(h), claimEvidenceChars)
 				content += "\nEvidence (verbatim): \"" + quote + "\""
 			}
 			// The content cap counts CODE POINTS.
