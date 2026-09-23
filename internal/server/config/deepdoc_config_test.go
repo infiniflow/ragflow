@@ -17,6 +17,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -67,6 +68,34 @@ func TestParseIngestorConfigDeepDocIgnoresEnvVar(t *testing.T) {
 	}
 	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 1 {
 		t.Fatalf("inference concurrency with only env set = %d, want default 1 (env applied later)", got)
+	}
+}
+
+// TestParseIngestorConfigDeepDocIgnoresAutoEnvVar pins that the auto-derived
+// (undocumented) env var RAGFLOW_INGESTOR_DEEPDOC_INFERENCE_CONCURRENCY does
+// NOT override the YAML ingestor.deepdoc.inference_concurrency. viper's Sub()
+// inherits AutomaticEnv, so a plain GetInt would consult that variable before
+// the file value. The config parse must be file-only; env precedence is
+// applied later by ResolveDeepDocInferenceConcurrency via os.Getenv. This test
+// uses the production Viper settings (env prefix + replacer + AutomaticEnv) to
+// reproduce the real precedence resolution path.
+func TestParseIngestorConfigDeepDocIgnoresAutoEnvVar(t *testing.T) {
+	t.Setenv("RAGFLOW_INGESTOR_DEEPDOC_INFERENCE_CONCURRENCY", "bad")
+
+	v := viper.New()
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	v.Set("ingestor", map[string]any{
+		"deepdoc": map[string]any{"inference_concurrency": 6},
+	})
+
+	c := &Config{}
+	if err := c.ParseIngestorConfig(v); err != nil {
+		t.Fatalf("ParseIngestorConfig: %v", err)
+	}
+	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 6 {
+		t.Fatalf("inference concurrency = %d, want 6 (auto-env must not override YAML)", got)
 	}
 }
 

@@ -70,8 +70,19 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
 	}
 
-	if ds := sub.Sub("deepdoc"); ds != nil && ds.IsSet("inference_concurrency") {
-		c.ingestor.DeepDoc.InferenceConcurrency = ds.GetInt("inference_concurrency")
+	// Read the DeepDoc leaf from FILE-ONLY data. sub.Sub("deepdoc") inherits
+	// AutomaticEnv (viper's Sub copies automaticEnvApplied/envPrefix/
+	// envKeyReplacer), so a plain ds.GetInt would also consult the auto-derived
+	// env var RAGFLOW_INGESTOR_DEEPDOC_INFERENCE_CONCURRENCY and could override
+	// or (on a non-integer value) clobber the YAML setting. Env precedence
+	// belongs exclusively to ResolveDeepDocInferenceConcurrency (os.Getenv), so
+	// the config tier must be the raw file value. Repoint the env prefix at an
+	// impossible token to deterministically disable AutomaticEnv for this read.
+	if ds := sub.Sub("deepdoc"); ds != nil {
+		ds.SetEnvPrefix("__DISABLED__")
+		if ds.IsSet("inference_concurrency") {
+			c.ingestor.DeepDoc.InferenceConcurrency = ds.GetInt("inference_concurrency")
+		}
 	}
 
 	return nil
