@@ -1380,7 +1380,9 @@ class BedrockCV(Base):
     _FACTORY_NAME = "Bedrock"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
-        self.model_name = f"bedrock/{model_name}"
+        from rag.llm.chat_model import _bedrock_litellm_model
+
+        self.model_name = _bedrock_litellm_model(model_name)
         self.lang = lang
         self._parse_credentials(key)
         Base.__init__(self, **kwargs)
