@@ -151,14 +151,18 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		return
 	}
 
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
 	chunkID := c.Param("chunk_id")
-	if chunkID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "chunk_id is required")
+	if datasetID == "" || documentID == "" || chunkID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "dataset_id, document_id and chunk_id are required")
 		return
 	}
 
 	req := &service.GetChunkRequest{
-		ChunkID: chunkID,
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    chunkID,
 	}
 
 	ctx := c.Request.Context()

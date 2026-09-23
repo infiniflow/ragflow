@@ -681,36 +681,6 @@ func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
-// PatchTask preserves the legacy task cancellation contract.
-func (h *AgentHandler) PatchTask(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
-	var req struct {
-		Action string `json:"action"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
-		return
-	}
-	if req.Action != "stop" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Invalid action '%s'. Only 'stop' is supported.", req.Action))
-		return
-	}
-	if h.agentService == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "agent service unavailable")
-		return
-	}
-	if err := h.agentService.CancelSessionRun(c.Request.Context(), user.ID, c.Param("task_id")); err != nil {
-		ec, em := mapAgentError(err)
-		common.ResponseWithCodeData(c, ec, nil, em)
-		return
-	}
-	common.SuccessWithData(c, true, "success")
-}
-
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
 type publishAgentRequest struct {
 	Title       *string        `json:"title,omitempty"`
