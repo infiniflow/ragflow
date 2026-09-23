@@ -24,17 +24,17 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
-	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
 
-	"ragflow/internal/utility"
-
+	"go.uber.org/zap"
 	"golang.org/x/net/html"
+
+	"ragflow/internal/common"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -206,7 +206,8 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 			}
 			body, contentType, err := c.fetch(ctx, entry.loc)
 			if err != nil {
-				slog.Warn("sitemap prune: failed to fetch page for PDF discovery", "url", entry.loc, "error", err)
+				common.Warn("sitemap prune: failed to fetch page for PDF discovery",
+					zap.String("url", entry.loc), zap.Error(err))
 				continue
 			}
 			if isPDFResponse(contentType, body) {
@@ -242,23 +243,25 @@ func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, err
 	var walk func(sitemapURL string, depth int) error
 	walk = func(sitemapURL string, depth int) error {
 		if depth > maxSitemapDepth {
-			slog.Warn("sitemap: max depth reached, stopping", "url", sitemapURL)
+			common.Warn("sitemap: max depth reached, stopping", zap.String("url", sitemapURL))
 			return nil
 		}
 		if _, done := visited[sitemapURL]; done {
-			slog.Warn("sitemap: nested sitemap already visited, skipping", "url", sitemapURL)
+			common.Warn("sitemap: nested sitemap already visited, skipping", zap.String("url", sitemapURL))
 			return nil
 		}
 		visited[sitemapURL] = struct{}{}
 		if fetched >= maxSitemapFetches {
-			slog.Warn("sitemap: maximum number of sitemap fetches reached, stopping", "url", sitemapURL, "max", maxSitemapFetches)
+			common.Warn("sitemap: maximum number of sitemap fetches reached, stopping",
+				zap.String("url", sitemapURL), zap.Int("max", maxSitemapFetches))
 			return nil
 		}
 		if err := validateSitemapURL(sitemapURL); err != nil {
 			if depth == 0 {
 				return err
 			}
-			slog.Warn("sitemap: skipping invalid nested sitemap URL", "url", sitemapURL, "error", err)
+			common.Warn("sitemap: skipping invalid nested sitemap URL",
+				zap.String("url", sitemapURL), zap.Error(err))
 			return nil
 		}
 		body, _, err := c.fetch(ctx, sitemapURL)
@@ -266,7 +269,8 @@ func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, err
 			if depth == 0 {
 				return fmt.Errorf("failed to fetch sitemap %s: %w", sitemapURL, err)
 			}
-			slog.Warn("sitemap: failed to fetch nested sitemap", "url", sitemapURL, "error", err)
+			common.Warn("sitemap: failed to fetch nested sitemap",
+				zap.String("url", sitemapURL), zap.Error(err))
 			return nil
 		}
 		fetched++
@@ -310,12 +314,12 @@ func (c *SitemapConnector) urlMatches(rawURL string) bool {
 // It returns nil when the page must be skipped (fetch error or empty content).
 func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, lastmod time.Time, parentURL string) (*SourceDocument, []string) {
 	if err := validateSitemapURL(rawURL); err != nil {
-		slog.Warn("sitemap: skipping invalid page URL", "url", rawURL, "error", err)
+		common.Warn("sitemap: skipping invalid page URL", zap.String("url", rawURL), zap.Error(err))
 		return nil, nil
 	}
 	body, contentType, err := c.fetch(ctx, rawURL)
 	if err != nil {
-		slog.Warn("sitemap: failed to fetch page", "url", rawURL, "error", err)
+		common.Warn("sitemap: failed to fetch page", zap.String("url", rawURL), zap.Error(err))
 		return nil, nil
 	}
 
@@ -331,7 +335,7 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 	)
 	if isPDFResponse(contentType, body) {
 		if len(body) == 0 {
-			slog.Debug("sitemap: empty PDF, skipping", "url", rawURL)
+			common.Debug("sitemap: empty PDF, skipping", zap.String("url", rawURL))
 			return nil, nil
 		}
 		blob = body
@@ -342,11 +346,11 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 		}
 		text, err := sitemapHTMLToMarkdown(body)
 		if err != nil {
-			slog.Warn("sitemap: failed to parse page", "url", rawURL, "error", err)
+			common.Warn("sitemap: failed to parse page", zap.String("url", rawURL), zap.Error(err))
 			return nil, pdfLinks
 		}
 		if strings.TrimSpace(text) == "" {
-			slog.Debug("sitemap: empty content, skipping", "url", rawURL)
+			common.Debug("sitemap: empty content, skipping", zap.String("url", rawURL))
 			return nil, pdfLinks
 		}
 		blob = []byte(text)
@@ -665,7 +669,7 @@ func parseSitemapLastmod(value string) time.Time {
 			return parsed.UTC()
 		}
 	}
-	slog.Debug("sitemap: unrecognised lastmod format", "value", value)
+	common.Debug("sitemap: unrecognised lastmod format", zap.String("value", value))
 	return time.Time{}
 }
 

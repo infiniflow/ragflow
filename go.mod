@@ -45,7 +45,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/infiniflow/infinity-go-sdk v0.0.0-00010101000000-000000000000
-	github.com/infiniflow/onnxruntime_go v1.23.1
+	github.com/infiniflow/onnxruntime_go v1.29.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/kaptinlin/jsonrepair v0.4.8
 	github.com/larksuite/oapi-sdk-go/v3 v3.9.9

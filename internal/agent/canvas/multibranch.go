@@ -74,14 +74,13 @@ func isBranchableControl(name string) bool {
 }
 
 // wireMultiBranches registers an eino MultiBranch on every
-// branchable parent that has at least two declared downstream
-// children. Pass-2 already wired AddInput edges from parent to each
+// branchable parent that has at least one declared downstream
+// child. Pass-2 already wired AddInput edges from parent to each
 // child; the branch adds the control-only gating so only the
 // chosen child fires at runtime.
 //
 // The function is a no-op for:
-//   - parents with < 2 downstreams (a single-child "switch" is
-//     degenerate — no branching needed, AddInput is enough)
+//   - parents with no downstreams
 //   - parents inside loop subgraphs (their children live in the
 //     loop's sub-workflow; the outer graph can't see them)
 //   - Loop cpns themselves (their children are inside the loop
@@ -122,13 +121,8 @@ func wireMultiBranches(
 			}
 			endNodes[child] = true
 		}
-		if len(endNodes) < 2 {
-			// Either no outer-graph children, or fewer than
-			// two — a MultiBranch with < 2 end-nodes is
-			// either meaningless (0/1 end-nodes) or
-			// equivalent to plain AddInput. Skip it so we
-			// don't pay the branch-evaluation cost when the
-			// DSL doesn't actually branch.
+		if len(endNodes) == 0 {
+			// There is no valid outer-graph child to route to.
 			continue
 		}
 		endNodesList := make([]string, 0, len(endNodes))
