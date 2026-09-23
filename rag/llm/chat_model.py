@@ -1359,11 +1359,22 @@ class MWSChat(Base):
 
             if role == "assistant":
                 tool_calls = message.get("tool_calls")
+                if tool_calls is not None and not isinstance(tool_calls, list):
+                    raise ValueError("MWS assistant message tool_calls must be a list")
                 if tool_calls:
-                    if not isinstance(tool_calls, list):
-                        raise ValueError("MWS assistant message tool_calls must be a list")
                     if content is not None and not isinstance(content, str):
                         raise ValueError("MWS assistant message content must be a string")
+                    for tool_call in tool_calls:
+                        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+                        arguments = function.get("arguments") if isinstance(function, dict) else None
+                        if not isinstance(arguments, str):
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string")
+                        try:
+                            parsed_arguments = json.loads(arguments)
+                        except json.JSONDecodeError as exc:
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string") from exc
+                        if not isinstance(parsed_arguments, dict):
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string")
                     serialized_calls = json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
                     serialized_content = f"<tool_calls>{serialized_calls}</tool_calls>"
                     if isinstance(content, str) and content:
