@@ -115,9 +115,6 @@ function AdminServiceStatus() {
 
   const columnDefs = useMemo(
     () => [
-      columnHelper.accessor('id', {
-        header: t('admin.id'),
-      }),
       columnHelper.accessor('name', {
         header: t('admin.name'),
       }),
@@ -302,15 +299,14 @@ function AdminServiceStatus() {
           </CardHeader>
 
           <CardContent>
-            <Table>
+            <Table className="table-fixed">
               <colgroup>
-                <col className="w-[6%]" />
-                <col />
                 <col className="w-[22%]" />
-                <col className="w-[13%]" />
+                <col className="w-[22%]" />
+                <col className="w-[19%]" />
                 <col className="w-[10%]" />
-                <col className="w-[10%]" />
-                <col className="w-52" />
+                <col className="w-[15%]" />
+                <col className="w-[12%]" />
               </colgroup>
 
               <TableHeader>

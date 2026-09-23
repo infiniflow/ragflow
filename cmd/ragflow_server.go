@@ -849,7 +849,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
+		"ingestor",
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
@@ -903,7 +903,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
-		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
+		"syncer",
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
