@@ -41,7 +41,19 @@ func TestTableWireHasNoRowIRChunkTypes(t *testing.T) {
 			t.Logf("skipping %s: %v", name, err)
 			continue
 		}
-		chunks, _ := out["chunks"].([]map[string]any)
+		if out["_ERROR"] != nil {
+			t.Logf("skipping %s: %v", name, out["_ERROR"])
+			continue
+		}
+		chunks, ok := out["chunks"].([]map[string]any)
+		if !ok {
+			t.Errorf("%s returned chunks of type %T, want []map[string]any", name, out["chunks"])
+			continue
+		}
+		if len(chunks) == 0 {
+			t.Logf("skipping %s: no chunks for the fixture", name)
+			continue
+		}
 		for i, chunk := range chunks {
 			kind, _ := chunk["ck_type"].(string)
 			if kind == "table_header" || kind == "table_row" {

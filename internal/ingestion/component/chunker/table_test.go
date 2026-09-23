@@ -139,6 +139,7 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 				"text":         table,
 				"doc_type_kwd": "table",
 				"ck_type":      "table",
+				"sheet_index":  1,
 				"positions":    [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 2}},
 			},
 		},
@@ -174,6 +175,7 @@ func TestTableChunker_WholeTableTupleNotCopiedToRows(t *testing.T) {
 			{
 				"text":         table,
 				"doc_type_kwd": "table",
+				"sheet_index":  1,
 				"positions":    [][]float64{{1, 1, 2, 1, 1}},
 			},
 		},
@@ -184,6 +186,34 @@ func TestTableChunker_WholeTableTupleNotCopiedToRows(t *testing.T) {
 	for i, c := range chunks {
 		if p, ok := c["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
 			t.Errorf("chunk %d leaked whole-table positions: %v", i, p)
+		}
+	}
+}
+
+// TestTableChunker_NonSpreadsheetPositionsNotAttached: a markup item without
+// spreadsheet identity must not have its positions read as per-row tuples —
+// PDF items write layout boxes into the same field, so a five-field matrix
+// that happens to align must still be ignored.
+func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
+	table := "<table><tr><th>ID</th></tr><tr><td>a</td></tr><tr><td>b</td></tr></table>"
+	chunks := tableChunksOf(t, map[string]any{
+		"name":          "document.docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text":         table,
+				"doc_type_kwd": "table",
+				"ck_type":      "table",
+				"positions":    [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 1}, {1, 3, 3, 1, 1}},
+			},
+		},
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want one per data row", len(chunks))
+	}
+	for i, c := range chunks {
+		if p, ok := c["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
+			t.Errorf("chunk %d kept positions without spreadsheet identity: %v", i, p)
 		}
 	}
 }

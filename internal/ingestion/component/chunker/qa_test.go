@@ -524,3 +524,39 @@ func TestQAChunker_RowlessTableTextStaysProse(t *testing.T) {
 		}
 	}
 }
+
+// TestQAChunkerPositionsRequireSpreadsheetIdentityAndFiveFields: a positions
+// matrix is read as per-row spreadsheet tuples only when the item carries
+// spreadsheet identity and every tuple has the five wire fields. A short tuple
+// must not panic the pair builder, and a matrix without identity must not move
+// the row numbers (PDF items write layout boxes into the same field).
+func TestQAChunkerPositionsRequireSpreadsheetIdentityAndFiveFields(t *testing.T) {
+	table := "<table><tr><th>q</th><th>a</th></tr></table>"
+	cases := []struct {
+		name       string
+		positions  string
+		sheetIndex *int
+		wantRowNum int
+	}{
+		{"aligned sheet matrix", `[[1,5,5,1,2]]`, intPtr(1), 4},
+		{"short tuple", `[[1]]`, intPtr(1), 0},
+		{"sheet matrix without identity", `[[1,5,5,1,2]]`, nil, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item := schema.ChunkDoc{
+				Text:       table,
+				DocType:    "table",
+				Positions:  json.RawMessage(tc.positions),
+				SheetIndex: tc.sheetIndex,
+			}
+			pairs := extractQAJSON([]schema.ChunkDoc{item}, "")
+			if len(pairs) != 1 {
+				t.Fatalf("got %d pairs, want 1", len(pairs))
+			}
+			if pairs[0].RowNum != tc.wantRowNum {
+				t.Errorf("RowNum = %d, want %d", pairs[0].RowNum, tc.wantRowNum)
+			}
+		})
+	}
+}

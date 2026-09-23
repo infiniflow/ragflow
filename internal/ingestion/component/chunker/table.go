@@ -148,14 +148,22 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	}
 	names := rows[0]
 	// R1: a row chunk must carry only its own tuple. That is only sound when
-	// the item's matrix was built row-aligned (one tuple per <tr>, header
-	// included); a whole-table tuple must not be copied onto every row, so
-	// misaligned payloads get no positions at all.
+	// the item carries spreadsheet identity and its matrix was built
+	// row-aligned (one five-field tuple per <tr>, header included); a
+	// whole-table tuple must not be copied onto every row, and PDF items write
+	// layout boxes into the same field, so misaligned or non-spreadsheet
+	// payloads get no positions at all.
 	var matrix [][]float64
 	aligned := false
-	if len(item.Positions) > 0 {
+	if item.SheetIndex != nil && len(item.Positions) > 0 {
 		if err := json.Unmarshal(item.Positions, &matrix); err == nil && len(matrix) == len(rows) {
 			aligned = true
+			for _, tuple := range matrix {
+				if len(tuple) != 5 {
+					aligned = false
+					break
+				}
+			}
 		}
 	}
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
