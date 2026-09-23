@@ -675,49 +675,81 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
-	// Add models to the instance.
-	if len(modelInfo) > 0 {
-		for _, model := range modelInfo {
-			if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
-				return common.CodeServerError, err
-			}
+	// Add models to the instance. The instance row above is already committed
+	// (TenantModelInstanceDAO.Create owns its own transaction), so a failure
+	// here has to be undone explicitly or the tenant keeps a half-populated
+	// instance and can no longer reuse the instance name.
+	if err = m.addModelsToNewInstance(ctx, tenantID, providerName, instanceName, region, modelInfo, bedrockAPIKeyAuth); err != nil {
+		if rollbackErr := m.rollbackCreatedInstance(ctx, instanceID); rollbackErr != nil {
+			common.Logger.Error("failed to roll back model instance after model creation failure",
+				zap.String("instance_id", instanceID), zap.Error(rollbackErr))
 		}
-	} else if !bedrockAPIKeyAuth {
-		// model_info not provided — add all factory default models.
-		// Mirrors Python's create_provider_instance
-		// (api/apps/services/provider_api_service.py:506-531).
-		targetFactoryName := providerName
-		if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-			targetFactoryName = "siliconflow_intl"
-		}
-		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
-		if factoryProvider != nil {
-			for _, llm := range factoryProvider.Models {
-				extraMap := make(map[string]interface{})
-				if llm.Tools != nil {
-					extraMap["is_tools"] = llm.Tools.Support
-				}
-				if llm.Thinking != nil {
-					extraMap["thinking"] = llm.Thinking.DefaultValue
-				}
-				if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
-					ModelName:  llm.Name,
-					ModelTypes: llm.ModelTypes,
-					MaxTokens: func() int {
-						if llm.MaxOutput != nil {
-							return *llm.MaxOutput
-						}
-						return 8192
-					}(),
-					Extra: extraMap,
-				}); err != nil {
-					return common.CodeServerError, err
-				}
-			}
-		}
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
+}
+
+// addModelsToNewInstance creates the models of a freshly created provider
+// instance, either the requested ones or the provider's factory defaults.
+func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenantID, providerName, instanceName, region string, modelInfo []CreateInstanceModelInfo, bedrockAPIKeyAuth bool) error {
+	if len(modelInfo) > 0 {
+		for _, model := range modelInfo {
+			if err := m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if bedrockAPIKeyAuth {
+		return nil
+	}
+	// model_info not provided — add all factory default models.
+	// Mirrors Python's create_provider_instance
+	// (api/apps/services/provider_api_service.py:506-531).
+	targetFactoryName := providerName
+	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
+		targetFactoryName = "siliconflow_intl"
+	}
+	factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	if factoryProvider == nil {
+		return nil
+	}
+	for _, llm := range factoryProvider.Models {
+		extraMap := make(map[string]interface{})
+		if llm.Tools != nil {
+			extraMap["is_tools"] = llm.Tools.Support
+		}
+		if llm.Thinking != nil {
+			extraMap["thinking"] = llm.Thinking.DefaultValue
+		}
+		if err := m.addModelToInstance(ctx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
+			ModelName:  llm.Name,
+			ModelTypes: llm.ModelTypes,
+			MaxTokens: func() int {
+				if llm.MaxOutput != nil {
+					return *llm.MaxOutput
+				}
+				return 8192
+			}(),
+			Extra: extraMap,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rollbackCreatedInstance removes a provider instance together with any models
+// already created under it, so a failed instance creation leaves nothing behind.
+func (m *ModelProviderService) rollbackCreatedInstance(ctx context.Context, instanceID string) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := m.modelDAO.DeleteByInstanceIDs(ctx, tx, []string{instanceID}); err != nil {
+			return err
+		}
+		_, err := m.modelInstanceDAO.DeleteByIDs(ctx, tx, []string{instanceID})
+		return err
+	})
 }
 
 // CreateNameOnlyProviderInstance creates a provider instance with only a name,

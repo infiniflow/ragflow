@@ -456,6 +456,45 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 	}
 }
 
+func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	// The second entry duplicates the first one, so model creation fails after
+	// the instance row has already been committed.
+	duplicated := CreateInstanceModelInfo{ModelName: "gpt-duplicate", ModelTypes: []string{"chat"}, MaxTokens: 8192}
+	code, err := NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"OpenAI",
+		"broken-instance",
+		"sk-rollback",
+		"",
+		"default",
+		"user-1",
+		[]CreateInstanceModelInfo{duplicated, duplicated},
+	)
+	if code != common.CodeServerError || err == nil {
+		t.Fatalf("CreateProviderInstance() = (%v, %v), want server error", code, err)
+	}
+
+	var instanceCount int64
+	if err := db.Model(&entity.TenantModelInstance{}).Where("instance_name = ?", "broken-instance").Count(&instanceCount).Error; err != nil {
+		t.Fatalf("count instances: %v", err)
+	}
+	if instanceCount != 0 {
+		t.Fatalf("instances = %d, want 0 after rollback", instanceCount)
+	}
+
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("model_name = ?", "gpt-duplicate").Count(&modelCount).Error; err != nil {
+		t.Fatalf("count models: %v", err)
+	}
+	if modelCount != 0 {
+		t.Fatalf("models = %d, want 0 after rollback", modelCount)
+	}
+}
+
 func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
