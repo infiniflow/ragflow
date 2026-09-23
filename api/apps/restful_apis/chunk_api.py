@@ -541,6 +541,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             trace_id=search_id,
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
+            debug=bool(req.get("debug", False)),
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)

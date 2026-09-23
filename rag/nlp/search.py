@@ -48,6 +48,55 @@ def index_name(uid):
     return f"ragflow_{uid}"
 
 
+def build_retrieval_debug(
+    *,
+    candidate_ids: list,
+    sorted_ids: list,
+    sorted_scores: list,
+    sorted_term_scores: list,
+    sorted_vector_scores: list,
+    valid_ids: list,
+    returned_ids: list,
+    similarity_threshold: float,
+    vector_similarity_weight: float,
+    max_dropped: int = 50,
+) -> dict:
+    """Shape the opt-in retrieval diagnosis payload.
+
+    Reports the candidate -> threshold -> returned funnel and, for chunks
+    dropped by the similarity threshold, their per-signal scores and the
+    reason they were removed. This only reshapes values the retrieval path
+    already computed; it changes no retrieval behaviour and is only produced
+    when a caller opts in with ``debug=True``.
+    """
+    returned = set(returned_ids)
+    dropped = []
+    for cid, score, term_score, vector_score in zip(sorted_ids, sorted_scores, sorted_term_scores, sorted_vector_scores):
+        if cid in returned:
+            continue
+        if score < similarity_threshold:
+            dropped.append(
+                {
+                    "chunk_id": cid,
+                    "similarity": float(score),
+                    "term_similarity": float(term_score),
+                    "vector_similarity": float(vector_score),
+                    "reason": "below_similarity_threshold",
+                }
+            )
+    return {
+        "funnel": {
+            "candidates": len(candidate_ids),
+            "after_threshold": len(valid_ids),
+            "returned": len(returned_ids),
+        },
+        "similarity_threshold": float(similarity_threshold),
+        "vector_similarity_weight": float(vector_similarity_weight),
+        "dropped_total": len(dropped),
+        "dropped": dropped[:max_dropped],
+    }
+
+
 def _chunk_scalar(value) -> str:
     """Normalize a doc-store scalar that Infinity may return as a one-item list."""
     if isinstance(value, (list, tuple)):
@@ -726,6 +775,7 @@ class Dealer:
         knn_top_k=1024,  # Advanced knn parameter
         knn_num_candidates=2048,  # Advanced knn parameter
         allow_dense_fallback=True,
+        debug: bool = False,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
@@ -856,11 +906,36 @@ class Dealer:
 
         if filtered_count == 0:
             ranks["doc_aggs"] = []
+            if debug:
+                ranks["debug"] = build_retrieval_debug(
+                    candidate_ids=[sres.ids[i] for i in sorted_idx],
+                    sorted_ids=[sres.ids[i] for i in sorted_idx],
+                    sorted_scores=[float(sim_np[i]) for i in sorted_idx],
+                    sorted_term_scores=[float(tsim[i]) for i in sorted_idx],
+                    sorted_vector_scores=[float(vsim[i]) for i in sorted_idx],
+                    valid_ids=[],
+                    returned_ids=[],
+                    similarity_threshold=post_threshold,
+                    vector_similarity_weight=vector_similarity_weight,
+                )
             return ranks
 
         begin = (page - 1) * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
+
+        if debug:
+            ranks["debug"] = build_retrieval_debug(
+                candidate_ids=[sres.ids[i] for i in sorted_idx],
+                sorted_ids=[sres.ids[i] for i in sorted_idx],
+                sorted_scores=[float(sim_np[i]) for i in sorted_idx],
+                sorted_term_scores=[float(tsim[i]) for i in sorted_idx],
+                sorted_vector_scores=[float(vsim[i]) for i in sorted_idx],
+                valid_ids=[sres.ids[i] for i in valid_idx],
+                returned_ids=[sres.ids[i] for i in page_idx],
+                similarity_threshold=post_threshold,
+                vector_similarity_weight=vector_similarity_weight,
+            )
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
