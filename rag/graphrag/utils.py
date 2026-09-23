@@ -344,7 +344,7 @@ def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
 
 def record_entity_resolution_aliases(graph: nx.Graph, canonical: str, merged_nodes: list[str]):
     """Record entity names merged into *canonical* for future graph rebuilds."""
-    aliases = graph.graph.setdefault(ENTITY_RESOLUTION_ALIASES_KEY, {})
+    aliases = dict(graph.graph.get(ENTITY_RESOLUTION_ALIASES_KEY) or {})
     merged = set(merged_nodes)
     for alias, target in list(aliases.items()):
         if target in merged:
@@ -353,6 +353,7 @@ def record_entity_resolution_aliases(graph: nx.Graph, canonical: str, merged_nod
         if alias != canonical:
             aliases[alias] = canonical
     aliases.pop(canonical, None)
+    graph.graph[ENTITY_RESOLUTION_ALIASES_KEY] = aliases
 
 
 def apply_entity_resolution_aliases(graph: nx.Graph, aliases: dict[str, str]):

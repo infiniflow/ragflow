@@ -61,3 +61,35 @@ async def test_merge_graph_nodes_preserves_existing_canonical(monkeypatch):
     }
     assert change.removed_nodes == {"ALIAS"}
     assert change.added_updated_nodes == {"CANONICAL"}
+
+
+@pytest.mark.asyncio
+async def test_failed_resolution_attempt_does_not_leak_aliases_to_retry(monkeypatch):
+    resolver = _resolver()
+
+    async def keep_description(_name, description, task_id=""):
+        return description
+
+    monkeypatch.setattr(resolver, "_handle_entity_relation_summary", keep_description)
+    original = nx.Graph()
+    for name in ("CANONICAL", "MERGED", "OTHER"):
+        original.add_node(name, entity_type="ORG", description=name, source_id=[name])
+    original.graph[ENTITY_RESOLUTION_ALIASES_KEY] = {"PREVIOUS": "CANONICAL"}
+
+    # A resolution attempt merges MERGED, then fails before its graph is committed.
+    failed_attempt = original.copy()
+    await resolver._merge_graph_nodes(failed_attempt, ["CANONICAL", "MERGED"], GraphChange())
+    assert failed_attempt.graph[ENTITY_RESOLUTION_ALIASES_KEY] == {
+        "PREVIOUS": "CANONICAL",
+        "MERGED": "CANONICAL",
+    }
+
+    # The next attempt starts from the original and merges a different entity.
+    retry = original.copy()
+    assert retry.graph[ENTITY_RESOLUTION_ALIASES_KEY] == {"PREVIOUS": "CANONICAL"}
+    await resolver._merge_graph_nodes(retry, ["CANONICAL", "OTHER"], GraphChange())
+    assert original.graph[ENTITY_RESOLUTION_ALIASES_KEY] == {"PREVIOUS": "CANONICAL"}
+    assert retry.graph[ENTITY_RESOLUTION_ALIASES_KEY] == {
+        "PREVIOUS": "CANONICAL",
+        "OTHER": "CANONICAL",
+    }
