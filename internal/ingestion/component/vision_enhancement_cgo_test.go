@@ -68,8 +68,11 @@ func TestVisionCropImage_OnDemandFromPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
-	if img == "" {
-		t.Fatal("Crop returned empty; expected an on-demand cropped base64 image")
+	if img == nil || img.Raster == nil {
+		t.Fatal("Crop returned no raster; expected an on-demand cropped image")
+	}
+	if img.Raster.Bounds().Empty() {
+		t.Fatal("Crop returned an empty raster")
 	}
 	if closed {
 		t.Fatal("engine closed before use completed")
@@ -99,8 +102,8 @@ func TestVisionCropImage_PassthroughInline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
-	if img != inline {
-		t.Fatalf("Crop = %q, want passthrough %q", img, inline)
+	if img == nil || img.VLMData != inline {
+		t.Fatalf("Crop = %#v, want VLM payload %q", img, inline)
 	}
 	if fetchCalled {
 		t.Fatal("storage fetch must not be called for an inlined image")
@@ -128,8 +131,8 @@ func TestVisionCropImage_NoImageNoPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
-	if img != "" {
-		t.Fatalf("Crop = %q, want empty (no image, no positions)", img)
+	if img != nil {
+		t.Fatalf("Crop = %#v, want nil (no image, no positions)", img)
 	}
 	if fetchCalled {
 		t.Fatal("storage fetch must not be called without positions")
@@ -165,8 +168,8 @@ func TestVisionCropImage_NonPDFBytesIsNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Crop: %v", err)
 	}
-	if img != "" {
-		t.Fatalf("Crop = %q, want empty for non-PDF bytes", img)
+	if img != nil {
+		t.Fatalf("Crop = %#v, want nil for non-PDF bytes", img)
 	}
 	if openerCalled {
 		t.Fatal("engine opener must not run on non-PDF bytes")

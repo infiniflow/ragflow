@@ -26,7 +26,6 @@
 package component
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -465,14 +464,23 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(ctx context.Context, binary []byte) (string, error) {
+	img, _, err := decodeOCRImage(binary)
+	if err != nil {
+		return "", err
+	}
+	return runLocalImageOCRImage(ctx, img)
+}
+
+func runLocalImageOCRImage(ctx context.Context, img image.Image) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	analyzer, err := parser.GetDocAnalyzer()
 	if err != nil {
 		return "", fmt.Errorf("local OCR: %w", err)
 	}
-
-	img, _, err := image.Decode(bytes.NewReader(binary))
-	if err != nil {
-		return "", fmt.Errorf("local OCR: decode image: %w", err)
+	if img == nil {
+		return "", fmt.Errorf("local OCR: nil image")
 	}
 
 	// Step 1: Detect text regions.

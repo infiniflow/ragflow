@@ -39,7 +39,18 @@ import (
 type requestContextKey struct{}
 
 type requestContextAnalyzer struct {
-	value any
+	value          any
+	detectCalls    int
+	recognizeCalls int
+}
+
+func useRequestContextAnalyzer(t *testing.T, analyzer *requestContextAnalyzer) {
+	t.Helper()
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		return analyzer, true
+	}
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
 }
 
 func (a *requestContextAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
@@ -51,11 +62,13 @@ func (a *requestContextAnalyzer) TSR(context.Context, image.Image) ([]deepdoctyp
 }
 
 func (a *requestContextAnalyzer) OCRDetect(ctx context.Context, _ image.Image) ([]deepdoctype.OCRBox, error) {
+	a.detectCalls++
 	a.value = ctx.Value(requestContextKey{})
 	return []deepdoctype.OCRBox{{X0: 1, Y0: 1, X1: 19, Y1: 1, X2: 19, Y2: 19, X3: 1, Y3: 19}}, nil
 }
 
 func (a *requestContextAnalyzer) OCRRecognize(ctx context.Context, _ image.Image) ([]deepdoctype.OCRText, error) {
+	a.recognizeCalls++
 	a.value = ctx.Value(requestContextKey{})
 	return []deepdoctype.OCRText{{Text: strings.Repeat("recognized ", 4)}}, nil
 }
@@ -167,11 +180,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 
 func TestMaybeDispatchImage_PassesRequestContextToLocalOCR(t *testing.T) {
 	analyzer := &requestContextAnalyzer{}
-	originalFactory := deepdoctype.NativeDocAnalyzerFactory
-	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
-		return analyzer, true
-	}
-	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+	useRequestContextAnalyzer(t, analyzer)
 
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
