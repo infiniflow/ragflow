@@ -104,11 +104,6 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 			wantTexts: []string{"loose text"},
 		},
 		{
-			name:      "image-only slide yields empty text",
-			irJSON:    `{"sections":[{"elements":[{"type":"image","data":"aGVsbG8="}]}]}`,
-			wantTexts: []string{""},
-		},
-		{
 			// bwbd.pptx regression: office_oxide wraps grouped slide shapes
 			// (graphicFrame tables) in a text_box, so the slide's text_box
 			// content is a table, not paragraphs. Previously flattened to "".
@@ -204,6 +199,47 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 	}
 }
 
+func TestBuildPPTXJSONSections_ExtractsSlideImagesInOrder(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"slide text"}]},
+		{"type":"image","data":"aGVsbG8="},
+		{"type":"table","rows":[{"cells":[{"content":[{"type":"image","data":"aW1hZ2U="}]}]}]}
+	]},{"elements":[{"type":"image","data":"c2Vjb25k"}]}]}`
+
+	items, err := buildPPTXJSONSections(irJSON)
+	if err != nil {
+		t.Fatalf("buildPPTXJSONSections: %v", err)
+	}
+	want := []struct {
+		docType string
+		text    string
+		image   string
+		slide   int
+		order   int
+	}{
+		{docType: "text", text: "slide text", slide: 1},
+		{docType: "image", image: "aGVsbG8=", slide: 1, order: 1},
+		{docType: "image", image: "aW1hZ2U=", slide: 1, order: 2},
+		{docType: "text", slide: 2},
+		{docType: "image", image: "c2Vjb25k", slide: 2, order: 1},
+	}
+	if len(items) != len(want) {
+		t.Fatalf("items = %+v, want %d slide/text and image items", items, len(want))
+	}
+	for i, w := range want {
+		item := items[i]
+		if item["doc_type_kwd"] != w.docType || item["slide_number"] != w.slide {
+			t.Errorf("item %d identity = %+v, want type %q slide %d", i, item, w.docType, w.slide)
+		}
+		if w.docType == "image" && (item["image"] != w.image || item["media_order"] != w.order) {
+			t.Errorf("item %d image = %+v, want payload %q order %d", i, item, w.image, w.order)
+		}
+		if w.docType == "text" && item["text"] != w.text {
+			t.Errorf("item %d text = %v, want %q", i, item["text"], w.text)
+		}
+	}
+}
+
 // TestItemsAllEmpty pins the all-empty fallback gate: empty and whitespace
 // items trigger the PlainText salvage, any non-empty item does not.
 func TestItemsAllEmpty(t *testing.T) {
@@ -222,6 +258,11 @@ func TestItemsAllEmpty(t *testing.T) {
 		{
 			name:  "one non-empty",
 			items: []map[string]any{{"text": ""}, {"text": "hello"}},
+			want:  false,
+		},
+		{
+			name:  "image payload",
+			items: []map[string]any{{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"}},
 			want:  false,
 		},
 	}

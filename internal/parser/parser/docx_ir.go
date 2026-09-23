@@ -27,6 +27,7 @@ package parser
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"html"
 	"strings"
 )
@@ -204,6 +205,64 @@ func docxIRTableToHTML(el docxIRElement) string {
 	return sb.String()
 }
 
+type docxTableImage struct {
+	data   []byte
+	row    int
+	column int
+}
+
+func docxIRTableImages(el docxIRElement) []docxTableImage {
+	var images []docxTableImage
+	for rowIndex, row := range el.Rows {
+		for columnIndex, cell := range row.Cells {
+			for _, data := range docxIRImagesInElements(cell.Content) {
+				images = append(images, docxTableImage{data: data, row: rowIndex + 1, column: columnIndex + 1})
+			}
+		}
+	}
+	return images
+}
+
+func docxIRImagesInElements(elements []docxIRElement) [][]byte {
+	var images [][]byte
+	for _, el := range elements {
+		switch el.Type {
+		case "image":
+			if len(el.Data) > 0 {
+				images = append(images, el.Data)
+			}
+		case "paragraph", "heading":
+			for _, run := range el.contentRuns() {
+				if run.Type == "image" && len(run.Data) > 0 {
+					images = append(images, run.Data)
+				}
+			}
+		case "table":
+			for _, row := range el.Rows {
+				for _, cell := range row.Cells {
+					images = append(images, docxIRImagesInElements(cell.Content)...)
+				}
+			}
+		case "list":
+			images = append(images, docxIRImagesInList(docxIRList{Items: el.Items})...)
+		case "text_box":
+			images = append(images, docxIRImagesInElements(el.contentBlocks())...)
+		}
+	}
+	return images
+}
+
+func docxIRImagesInList(list docxIRList) [][]byte {
+	var images [][]byte
+	for _, item := range list.Items {
+		images = append(images, docxIRImagesInElements(item.Content)...)
+		if item.Nested != nil {
+			images = append(images, docxIRImagesInList(*item.Nested)...)
+		}
+	}
+	return images
+}
+
 // docxElementText returns the plain-text rendering of any supported
 // IR element type. Used by buildPPTXJSONSections to flatten one slide
 // section, and by extractDOCXFiguresFromIR so that tables, lists, and
@@ -259,6 +318,7 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 		return nil
 	}
 	var sections []map[string]any
+	tableSequence := 0
 	for _, sec := range ir.Sections {
 		for _, el := range sec.Elements {
 			switch el.Type {
@@ -274,15 +334,34 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 				})
 
 			case "table":
+				tableSequence++
 				html := docxIRTableToHTML(el)
 				if html == "<table></table>" {
 					continue
 				}
-				sections = append(sections, map[string]any{
+				table := map[string]any{
 					"text":         html,
 					"image":        nil,
 					"doc_type_kwd": "table",
-				})
+				}
+				images := docxIRTableImages(el)
+				tableID := ""
+				if len(images) > 0 {
+					tableID = fmt.Sprintf("docx-table-%d", tableSequence)
+					table["source_table_id"] = tableID
+				}
+				sections = append(sections, table)
+				for mediaOrder, tableImage := range images {
+					sections = append(sections, map[string]any{
+						"text":            "",
+						"image":           base64.StdEncoding.EncodeToString(tableImage.data),
+						"doc_type_kwd":    "image",
+						"parent_table_id": tableID,
+						"row_index":       tableImage.row,
+						"column_index":    tableImage.column,
+						"media_order":     mediaOrder + 1,
+					})
+				}
 
 			case "list":
 				for _, item := range el.Items {
