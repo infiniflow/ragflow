@@ -304,7 +304,7 @@ func TestDeleteUserKeepsUserWhenDatasetBucketRemovalFails(t *testing.T) {
 	service := NewService()
 	service.deleteEngine = &deletionEngine{}
 	service.deleteStorage = &deletionStorage{bucketErr: errors.New("storage unavailable")}
-	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err == nil || !strings.Contains(err.Error(), "remove dataset bucket dataset: storage unavailable") {
+	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err == nil || !strings.Contains(err.Error(), "remove dataset bucket Dataset (dataset): storage unavailable") {
 		t.Fatalf("DeleteUser error = %v", err)
 	}
 	var count int64
