@@ -33,8 +33,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
-	native "ragflow/internal/deepdoc/native"
-	pdf "ragflow/internal/deepdoc/parser/pdf"
+	"ragflow/internal/deepdoc/native"
+	"ragflow/internal/deepdoc/parser/pdf"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -44,7 +44,7 @@ import (
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
-	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
@@ -97,6 +97,9 @@ type serverArgs struct {
 	// ingestorPageConcurrency, when set, overrides the per-document page
 	// concurrency (N) from env/config. nil means "unspecified".
 	ingestorPageConcurrency *int
+	// deepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
+	// budget from env/config. nil means "unspecified" (0 means "all cores").
+	deepdocInferenceCPUCores *int
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -144,6 +147,16 @@ func parseArgs() (*serverArgs, error) {
 					return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
 				}
 				args.ingestorPageConcurrency = &n
+				continue
+			case "--deepdoc-inference-cpu-cores":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
+				}
+				if n < 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
+				}
+				args.deepdocInferenceCPUCores = &n
 				continue
 			}
 		}
@@ -266,6 +279,19 @@ func parseArgs() (*serverArgs, error) {
 				return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
 			}
 			args.ingestorPageConcurrency = &n
+		case "--deepdoc-inference-cpu-cores":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-cpu-cores requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
+			}
+			if n < 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
+			}
+			args.deepdocInferenceCPUCores = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
@@ -293,28 +319,6 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	}
 
 	return configured
-}
-
-// resolveDeepDocInferenceConcurrency applies the precedence
-// CLI flag > environment variable > config file > default(4) and returns the
-// resolved DeepDoc inference concurrency budget.
-func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
-	val := 4
-	if configured > 0 {
-		val = configured
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			val = n
-		}
-	}
-	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
-	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
-	// value is already positive; no extra >0 guard is needed here.
-	if args.deepdocInferenceConcurrency != nil {
-		val = *args.deepdocInferenceConcurrency
-	}
-	return val
 }
 
 // resolveIngestorMaxConcurrentWorkers applies the precedence
@@ -796,7 +800,7 @@ func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
-	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every peer.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
 		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
@@ -1308,7 +1312,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
-	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every
 	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
 	// login audit records, so gin's trust-everything default would let any
@@ -1536,6 +1540,23 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
 }
 
+// inferenceTotalCores returns the CPU budget the DeepDoc inference config is
+// validated against. It uses runtime.GOMAXPROCS(0) instead of runtime.NumCPU()
+// so the budget reflects the cgroup CPU quota inside containers: Go 1.25+ derives
+// GOMAXPROCS from the quota (CGroups v2 cpu.max / v1 cpu.cfs_quota_us), whereas
+// runtime.NumCPU() reports the host's affinity-mask core count and ignores a
+// container's CPU limit. Without this, a 2-CPU-limit pod on a 64-core host would
+// "resolve" inference_cpu_cores: 0 to 64 and let inference_concurrency: 16 pass
+// validation, oversubscribing the box the fail-fast guard in
+// native.ValidateInferenceConfig exists to prevent.
+func inferenceTotalCores() int {
+	n := goruntime.GOMAXPROCS(0)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
 // inference backend. The server is built with -tags cgo and links ONNX Runtime
 // statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
@@ -1568,16 +1589,49 @@ func registerNativeDeepDoc(arguments *serverArgs) error {
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
 
-	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
-	// and register it with the native gate every inference call passes through
-	// (internal/deepdoc/native/inference_limit.go); without this the process
-	// would let every page worker call inference at once.
-	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
-	pdf.SetDeepDocConcurrency(budget)
-	native.SetInferenceLimit(budget)
+	// Resolve the DeepDoc in-process inference configuration: the concurrency
+	// budget K (max in-flight Runs) and the CPU-core budget N (max cores
+	// inference may occupy). Both resolve from CLI > env > config > default. K
+	// defaults to 1; N defaults to "unset", which is derived from K so each Run
+	// stays single-threaded by default (the prior behaviour). An explicit N = 0
+	// means "all cores". All values are fail-fast validated against the process's
+	// cgroup-aware CPU budget at startup (see native.ValidateInferenceConfig and
+	// inferenceTotalCores), so a misconfiguration aborts rather than silently
+	// oversubscribing the box.
+	cfg := server.GetConfig()
+	K, _, errK := cfg.ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
+	if errK != nil {
+		common.Fatal("invalid deepdoc inference concurrency", zap.Error(errK))
+	}
+	rawN, explicitN, errN := cfg.ResolveDeepDocInferenceCPUCores(arguments.deepdocInferenceCPUCores)
+	if errN != nil {
+		common.Fatal("invalid deepdoc inference cpu cores", zap.Error(errN))
+	}
+	// When N is unset, derive it from K so each Run opens with a single intra-op
+	// thread (coresPerInference = max(1, K/K) = 1), preserving the prior
+	// single-core-per-run semantics. An explicit N (including 0 = all cores) is
+	// honoured as-is below.
+	resolvedN := rawN
+	if !explicitN {
+		resolvedN = K
+	}
+	totalCores := inferenceTotalCores()
+	// Validate K and N against the process's CPU budget (cgroup-aware) and
+	// derive the per-Run intra-op thread count (max(1, N/K)). N == 0 resolves to
+	// all cores here.
+	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
+	if errV != nil {
+		common.Fatal("invalid deepdoc inference configuration", zap.Error(errV))
+	}
+	// Register the per-session intra-op thread count before any model session is
+	// created (the native package reads it on every SessionOptions build).
+	native.SetIntraOpThreads(coresPerInference)
+	pdf.SetDeepDocConcurrency(K)
+	native.SetInferenceLimit(K)
 	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", budget),
+		zap.Int("max_concurrent_inference", K),
+		zap.Int("cpu_cores_per_inference", coresPerInference),
+		zap.Int("total_cpu_cores_budget", totalCPUCores),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
