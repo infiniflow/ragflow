@@ -53,7 +53,9 @@ type RetrievalTestResponse struct {
 
 // GetChunkRequest request for getting a chunk by ID
 type GetChunkRequest struct {
-	ChunkID string `json:"chunk_id"`
+	DatasetID  string `json:"dataset_id"`
+	DocumentID string `json:"document_id"`
+	ChunkID    string `json:"chunk_id"`
 }
 
 // GetChunkResponse response for getting a chunk

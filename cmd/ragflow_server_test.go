@@ -34,16 +34,13 @@ func parseArgsForTest(t *testing.T, argv ...string) (*serverArgs, error) {
 	return parseArgs()
 }
 
-func TestParseArgsMigrateIsStandalone(t *testing.T) {
+func TestParseArgsMigrateSelectsMode(t *testing.T) {
 	args, err := parseArgsForTest(t, "--migrate")
 	if err != nil {
 		t.Fatalf("parseArgs(--migrate) error = %v", err)
 	}
-	if !args.migrateDB {
-		t.Fatal("migrateDB = false, want true")
-	}
-	if args.mode != nil {
-		t.Fatalf("mode = %q, want nil: --migrate must not select a server mode", *args.mode)
+	if args.mode == nil || *args.mode != "migrate" {
+		t.Fatalf("mode = %v, want migrate", args.mode)
 	}
 }
 
@@ -91,27 +88,28 @@ func TestSelectedLogLevelPrecedence(t *testing.T) {
 	}
 }
 
-func TestParseArgsMigrateRejectsMode(t *testing.T) {
+// Mode flags share a single slot, so the last one passed wins. Putting
+// --migrate next to a server mode is not a runtime conflict, so it must not
+// be rejected.
+func TestParseArgsMigrateFollowsLastModeWins(t *testing.T) {
 	for _, mode := range []string{"--api", "--admin", "--ingestor", "--syncer"} {
-		if _, err := parseArgsForTest(t, mode, "--migrate"); err == nil {
-			t.Errorf("parseArgs(%s --migrate) error = nil, want error", mode)
-		}
-		if _, err := parseArgsForTest(t, "--migrate", mode); err == nil {
-			t.Errorf("parseArgs(--migrate %s) error = nil, want error", mode)
-		}
-	}
-}
+		want := strings.TrimPrefix(mode, "--")
 
-func TestParseArgsModeResetsMigrate(t *testing.T) {
-	args, err := parseArgsForTest(t, "--api")
-	if err != nil {
-		t.Fatalf("parseArgs(--api) error = %v", err)
-	}
-	if args.mode == nil || *args.mode != "api" {
-		t.Fatalf("mode = %v, want api", args.mode)
-	}
-	if args.migrateDB {
-		t.Fatal("migrateDB = true, want false")
+		args, err := parseArgsForTest(t, mode, "--migrate")
+		if err != nil {
+			t.Fatalf("parseArgs(%s --migrate) error = %v", mode, err)
+		}
+		if args.mode == nil || *args.mode != "migrate" {
+			t.Errorf("parseArgs(%s --migrate) mode = %v, want migrate", mode, args.mode)
+		}
+
+		args, err = parseArgsForTest(t, "--migrate", mode)
+		if err != nil {
+			t.Fatalf("parseArgs(--migrate %s) error = %v", mode, err)
+		}
+		if args.mode == nil || *args.mode != want {
+			t.Errorf("parseArgs(--migrate %s) mode = %v, want %s", mode, args.mode, want)
+		}
 	}
 }
 
