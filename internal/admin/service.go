@@ -901,8 +901,8 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	// compatibility with the shared service_conf.yaml.template; both map to
 	// the same Kvrocks backend, so probe the same connection.
 	case "redis", "kvrocks":
-		mysqlStatus := s.getRedisInfo(ctx)
-		results = append(results, mysqlStatus)
+		kvrocksStatus := s.getKvrocksStatus(ctx)
+		results = append(results, kvrocksStatus)
 	default:
 		redisConfig := globalConfig.GetKvrocksConfig()
 		results = append(results, newServiceStatus("cache", cacheType, redisConfig.Host, redisConfig.Port, "not available", time.Now(), "not supported cache type"))
@@ -911,6 +911,9 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	// message queue
 	messageQueueImpl := engine.GetMessageQueueEngine()
 	messageQueueStatus := messageQueueImpl.CheckStatus()
+	if messageQueueStatus == "CONNECTED" {
+		messageQueueStatus = "alive"
+	}
 	natsConfig := globalConfig.GetNATSConfig()
 	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), natsConfig.Host, natsConfig.Port, messageQueueStatus, time.Now(), ""))
 
@@ -948,7 +951,7 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]Servic
 	//case "meta_data":
 	//	return s.getMySQLStatus(ctx), nil
 	//case "cache":
-	//	return s.getRedisInfo(ctx), nil
+	//	return s.getKvrocksStatus(ctx), nil
 	//case "message_queue":
 	//	host := configDict["host"].(string)
 	//	port := configDict["port"].(int)
@@ -1001,21 +1004,21 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
 }
 
-// getRedisInfo gets Redis service info
-func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
+// getKvrocksStatus gets the Kvrocks service status.
+func (s *Service) getKvrocksStatus(ctx context.Context) ServiceStatus {
 
 	serviceType := "cache"
-	name := "redis"
+	name := "kvrocks"
 
 	startTime := time.Now()
-	redisConfig := server.GetConfig().GetKvrocksConfig()
+	kvrocksConfig := server.GetConfig().GetKvrocksConfig()
 
-	redisClient := kvrocks.Get()
-	if redisClient.Health(ctx) {
-		return newServiceStatus(serviceType, name, redisConfig.Host, redisConfig.Port, "alive", startTime, "")
+	kvrocksClient := kvrocks.Get()
+	if kvrocksClient.Health(ctx) {
+		return newServiceStatus(serviceType, name, kvrocksConfig.Host, kvrocksConfig.Port, "alive", startTime, "")
 	}
 
-	return newServiceStatus(serviceType, name, redisConfig.Host, redisConfig.Port, "timeout", startTime, "Redis health check failed")
+	return newServiceStatus(serviceType, name, kvrocksConfig.Host, kvrocksConfig.Port, "timeout", startTime, "Kvrocks health check failed")
 }
 
 // getESClusterStats gets Elasticsearch cluster stats
