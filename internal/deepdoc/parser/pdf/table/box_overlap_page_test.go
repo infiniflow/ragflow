@@ -53,3 +53,42 @@ func TestBoxOverlapsPositionPage(t *testing.T) {
 		t.Errorf("fallback to X/Y-only expected when box has no page number")
 	}
 }
+
+// TestBoxOverlapsPositionPage_MergedTable locks that a table merged across
+// consecutive pages (MergeTablesAcrossPages appends every spanned page into
+// Position.PageNumbers, see table_merge.go) still claims the per-page
+// table-layout box that sits on one of its continuation pages. The page check
+// must accept the box when its single page is a member of the merged
+// position's multi-page PageNumbers set — not reject it just because the
+// position is no longer single-page. This is the cross-page-merge counterpart
+// of TestBoxOverlapsPositionPage: it guards against the page constraint
+// accidentally breaking legitimate cross-page merges while still rejecting
+// boxes on pages the merged table does not occupy.
+func TestBoxOverlapsPositionPage_MergedTable(t *testing.T) {
+	// A table merged across pages 4 and 5. Both positions share the same
+	// page-local X/Y band (Y resets near 0 on every page), so the only thing
+	// distinguishing them is the page set.
+	merged := pdf.Position{PageNumbers: []int{4, 5}, Left: 10, Right: 400, Top: 60, Bottom: 200}
+
+	// Box on the anchor page (4) -> must match.
+	anchorBox := pdf.TextBox{PageNumber: 4, X0: 10, X1: 400, Top: 60, Bottom: 200}
+	if !boxOverlapsPositionPage(anchorBox, merged) {
+		t.Errorf("anchor-page box of a merged table should match")
+	}
+
+	// Box on the continuation page (5) -> must still match. This is the case
+	// that proves the page constraint uses membership, not equality with a
+	// single page, so cross-page merges keep their boxes.
+	continuationBox := pdf.TextBox{PageNumber: 5, X0: 10, X1: 400, Top: 60, Bottom: 200}
+	if !boxOverlapsPositionPage(continuationBox, merged) {
+		t.Errorf("continuation-page box of a merged table should match")
+	}
+
+	// Box on a page the merged table does NOT span (6) -> must be rejected,
+	// even though the page-local X/Y band is identical. Without membership
+	// semantics this would wrongly inflate reps on large documents.
+	outsideBox := pdf.TextBox{PageNumber: 6, X0: 10, X1: 400, Top: 60, Bottom: 200}
+	if boxOverlapsPositionPage(outsideBox, merged) {
+		t.Errorf("box on a non-spanned page must be rejected even for a merged table")
+	}
+}
