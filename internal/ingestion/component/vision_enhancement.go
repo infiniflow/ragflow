@@ -335,6 +335,16 @@ const (
 )
 
 func mediaOCRStatus(fileType utility.FileType, parseMethod string, item map[string]any) ocrStatus {
+	if marker, ok := item["ocr_status_kwd"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(marker)) {
+		case "pending":
+			return ocrPending
+		case "attempted":
+			return ocrAttempted
+		case "unknown":
+			return ocrUnknown
+		}
+	}
 	if fileType != utility.FileTypePDF {
 		return ocrPending
 	}

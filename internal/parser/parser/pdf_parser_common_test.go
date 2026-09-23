@@ -821,6 +821,81 @@ func TestExtractPDFPositions(t *testing.T) {
 	}
 }
 
+func TestMarkPDFVisionMetadata(t *testing.T) {
+	tests := []struct {
+		name         string
+		outputFormat string
+		parseMethod  string
+		item         map[string]any
+		wantSource   any
+		wantStatus   any
+	}{
+		{
+			name:         "deepdoc image payload remains pending",
+			outputFormat: "json",
+			parseMethod:  "DeepDoc",
+			item:         map[string]any{"doc_type_kwd": "image", "image": "aGVsbG8="},
+			wantSource:   "deepdoc",
+			wantStatus:   "pending",
+		},
+		{
+			name:         "deepdoc table region was already attempted",
+			outputFormat: "json",
+			parseMethod:  "deepdoc",
+			item:         map[string]any{"doc_type_kwd": "table", "positions": [][]any{{1.0}}},
+			wantSource:   "deepdoc",
+			wantStatus:   "attempted",
+		},
+		{
+			name:         "external image source is unknown",
+			outputFormat: "json",
+			parseMethod:  "MinerU",
+			item:         map[string]any{"doc_type_kwd": "image", "positions": [][]any{{1.0}}},
+			wantSource:   "mineru",
+			wantStatus:   "unknown",
+		},
+		{
+			name:         "table without visual payload is not marked",
+			outputFormat: "json",
+			parseMethod:  "deepdoc",
+			item:         map[string]any{"doc_type_kwd": "table", "text": "<table></table>"},
+		},
+		{
+			name:         "image without a payload or PDF region is not marked",
+			outputFormat: "json",
+			parseMethod:  "deepdoc",
+			item:         map[string]any{"doc_type_kwd": "image", "text": "caption"},
+		},
+		{
+			name:         "markdown output is not marked",
+			outputFormat: "markdown",
+			parseMethod:  "deepdoc",
+			item:         map[string]any{"doc_type_kwd": "image", "image": "aGVsbG8="},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseResult{OutputFormat: tt.outputFormat, JSON: []map[string]any{tt.item}}
+			got := markPDFVisionMetadata(result, tt.parseMethod)
+			if tt.wantSource != nil && got.JSON[0]["vision_source_kwd"] != tt.wantSource {
+				t.Errorf("vision_source_kwd = %v, want %v", got.JSON[0]["vision_source_kwd"], tt.wantSource)
+			}
+			if tt.wantStatus != nil && got.JSON[0]["ocr_status_kwd"] != tt.wantStatus {
+				t.Errorf("ocr_status_kwd = %v, want %v", got.JSON[0]["ocr_status_kwd"], tt.wantStatus)
+			}
+			if tt.wantSource == nil {
+				if _, ok := got.JSON[0]["vision_source_kwd"]; ok {
+					t.Errorf("unexpected vision_source_kwd = %v", got.JSON[0]["vision_source_kwd"])
+				}
+				if _, ok := got.JSON[0]["ocr_status_kwd"]; ok {
+					t.Errorf("unexpected ocr_status_kwd = %v", got.JSON[0]["ocr_status_kwd"])
+				}
+			}
+		})
+	}
+}
+
 // TestNormalizePDFDocType_FigureCaptionPositionsGate proves Finding B: a figure
 // caption is only promoted to doc_type_kwd "image" (which lights up the
 // on-demand VLM/chunker crop) when it actually carries a usable positions

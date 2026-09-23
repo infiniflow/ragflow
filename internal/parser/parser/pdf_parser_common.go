@@ -326,6 +326,49 @@ func normalizePDFParseMethod(raw string) string {
 	return method
 }
 
+func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	result := p.parseWithResult(ctx, filename, data)
+	return markPDFVisionMetadata(result, p.ParseMethod)
+}
+
+func markPDFVisionMetadata(result ParseResult, parseMethod string) ParseResult {
+	if result.Err != nil || result.OutputFormat != "json" {
+		return result
+	}
+
+	source := normalizePDFParseMethod(parseMethod)
+	if source == "" {
+		source = "deepdoc"
+	}
+	status := "unknown"
+	if source == "deepdoc" {
+		status = "pending"
+	}
+
+	for _, item := range result.JSON {
+		if item == nil {
+			continue
+		}
+		kind, _ := item[DocTypeKey].(string)
+		if kind != DocTypeImage && kind != DocTypeTable {
+			continue
+		}
+		imagePayload, _ := item["image"].(string)
+		_, hasPositions := ExtractPDFPositions(item)
+		if strings.TrimSpace(imagePayload) == "" && !hasPositions {
+			continue
+		}
+
+		item["vision_source_kwd"] = source
+		itemStatus := status
+		if source == "deepdoc" && kind == DocTypeTable {
+			itemStatus = "attempted"
+		}
+		item["ocr_status_kwd"] = itemStatus
+	}
+	return result
+}
+
 func (p *PDFParser) validateParseMethod() error {
 	method := normalizePDFParseMethod(p.ParseMethod)
 	if _, ok := supportedPDFParseMethods[method]; ok {
