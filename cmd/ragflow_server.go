@@ -71,6 +71,7 @@ import (
 	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/utility"
 )
 
@@ -90,6 +91,12 @@ type serverArgs struct {
 	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".
 	deepdocInferenceConcurrency *int
+	// ingestorMaxConcurrentWorkers, when set, overrides the ingestor worker
+	// count (NATS consumer count K) from env/config. nil means "unspecified".
+	ingestorMaxConcurrentWorkers *int
+	// ingestorPageConcurrency, when set, overrides the per-document page
+	// concurrency (N) from env/config. nil means "unspecified".
+	ingestorPageConcurrency *int
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -117,6 +124,26 @@ func parseArgs() (*serverArgs, error) {
 					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
 				}
 				args.deepdocInferenceConcurrency = &n
+				continue
+			case "--ingestor-max-concurrent-workers":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", n)
+				}
+				args.ingestorMaxConcurrentWorkers = &n
+				continue
+			case "--ingestor-page-concurrency":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --ingestor-page-concurrency: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
+				}
+				args.ingestorPageConcurrency = &n
 				continue
 			}
 		}
@@ -213,6 +240,32 @@ func parseArgs() (*serverArgs, error) {
 				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
 			}
 			args.deepdocInferenceConcurrency = &n
+		case "--ingestor-max-concurrent-workers":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--ingestor-max-concurrent-workers requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", n)
+			}
+			args.ingestorMaxConcurrentWorkers = &n
+		case "--ingestor-page-concurrency":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--ingestor-page-concurrency requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --ingestor-page-concurrency: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
+			}
+			args.ingestorPageConcurrency = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
@@ -264,6 +317,60 @@ func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
 	return val
 }
 
+// resolveIngestorMaxConcurrentWorkers applies the precedence
+// CLI flag > environment variable > config file > default(1) and returns the
+// resolved ingestor worker count (K), validating it against the inclusive
+// range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range or
+// non-integer value at any layer is a fatal startup error.
+func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int, error) {
+	val := config.MinIngestorWorkers
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorMaxConcurrentWorkers)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorMaxConcurrentWorkers, v, err)
+		}
+		val = n
+	}
+	if args.ingestorMaxConcurrentWorkers != nil {
+		val = *args.ingestorMaxConcurrentWorkers
+	}
+	if val < config.MinIngestorWorkers || val > config.MaxIngestorWorkers {
+		return 0, fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
+			val, config.MinIngestorWorkers, config.MaxIngestorWorkers)
+	}
+	return val, nil
+}
+
+// resolveIngestorPageConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(2) and returns the
+// resolved per-document page concurrency (N), validating it against the
+// inclusive range [MinPageConcurrency, MaxPageConcurrency]. An out-of-range or
+// non-integer value at any layer is a fatal startup error.
+func resolveIngestorPageConcurrency(args *serverArgs, configured int) (int, error) {
+	val := 2 // default page concurrency
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
+		}
+		val = n
+	}
+	if args.ingestorPageConcurrency != nil {
+		val = *args.ingestorPageConcurrency
+	}
+	if val < config.MinPageConcurrency || val > config.MaxPageConcurrency {
+		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
+			val, config.MinPageConcurrency, config.MaxPageConcurrency)
+	}
+	return val, nil
+}
+
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil || *args.mode == "migrate":
@@ -283,6 +390,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
 		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tPer-document page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
@@ -322,6 +431,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tPer-document page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
@@ -469,7 +580,10 @@ func main() {
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		registerNativeDeepDoc(arguments)
+		if err := registerNativeDeepDoc(arguments); err != nil {
+			common.Error("Failed to register in-process DeepDoc backend", err)
+			os.Exit(1)
+		}
 	default:
 	}
 
@@ -799,14 +913,16 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// the consumer is available.
 	globalConfig := server.GetConfig()
 	ingestorCfg := globalConfig.GetIngestorConfig()
-	const maxIngestorConcurrency = int32(1<<30 - 1)
-	if ingestorCfg.MaxConcurrentWorkers > int(maxIngestorConcurrency) {
-		return fmt.Errorf("ingestor max_concurrent_workers %d exceeds maximum %d", ingestorCfg.MaxConcurrentWorkers, maxIngestorConcurrency)
+	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
+	// and fail fast on an out-of-range value.
+	workers, err := resolveIngestorMaxConcurrentWorkers(args, ingestorCfg.MaxConcurrentWorkers)
+	if err != nil {
+		return err
 	}
 	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
 	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
 	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
-	ingestor := ingestion.NewIngestor(*args.name, int32(ingestorCfg.MaxConcurrentWorkers), []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, int32(workers), []string{"pdf", "docx", "txt"})
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
@@ -1430,7 +1546,7 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // Fail-fast contract (P0): the in-process backend must be available at startup
 // (ORT + models present). There is NO silent degradation to an empty analyzer:
 // if the backend is not serving, the server aborts.
-func registerNativeDeepDoc(arguments *serverArgs) {
+func registerNativeDeepDoc(arguments *serverArgs) error {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1463,6 +1579,18 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 	common.Info("in-process DeepDoc inference limit registered",
 		zap.Int("max_concurrent_inference", budget),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
+
+	// Resolve the per-document page concurrency (N) from CLI > env > config >
+	// default(2) and register it with the shared page worker pool. Fail fast on
+	// an out-of-range value.
+	pageConcurrency, err := resolveIngestorPageConcurrency(arguments, server.GetConfig().GetIngestorConfig().PageConcurrency)
+	if err != nil {
+		return err
+	}
+	pdf.SetPageConcurrency(pageConcurrency)
+	common.Info("in-process DeepDoc page worker pool registered",
+		zap.Int("page_concurrency", pageConcurrency))
+	return nil
 }
 
 // logTokenizerCounters reports, once at startup, which embedding tokenizers this process

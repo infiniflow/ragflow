@@ -102,7 +102,16 @@ otel:
   enable: false
 ingestor:
   mq_type: 'nats'
-  max_concurrent_workers: 2
+  # NATS consumer worker count (K). How many ingestion tasks run in parallel.
+  # Override with the env var RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS, or the
+  # CLI flag --ingestor-max-concurrent-workers (highest precedence).
+  # Valid range [1, 256]. Default 1.
+  max_concurrent_workers: 1
+  # Per-document page concurrency (N). How many pages of one document are parsed
+  # concurrently inside a single ingestor worker. Override with the env var
+  # RAGFLOW_INGESTOR_PAGE_CONCURRENCY, or the CLI flag --ingestor-page-concurrency
+  # (highest precedence). Valid range [1, 16]. Default 2.
+  page_concurrency: 2
   compiler_pool_size: 0
 file_syncer:
   max_concurrent_syncs: 5

@@ -51,14 +51,61 @@ func TestSetDeepDocConcurrencyClampsToAtLeastOne(t *testing.T) {
 	}
 }
 
-// TestPageWorkerPoolTracksInferenceBudget pins the invariant that the shared
-// page worker pool never exceeds the process inference budget.
-func TestPageWorkerPoolTracksInferenceBudget(t *testing.T) {
-	orig := DeepDocConcurrency()
-	t.Cleanup(func() { SetDeepDocConcurrency(orig) })
+// TestPageConcurrencyDefaultsToTwo pins the per-document page concurrency
+// default: when nothing configures it, PageConcurrency() returns 2.
+func TestPageConcurrencyDefaultsToTwo(t *testing.T) {
+	orig := PageConcurrency()
+	t.Cleanup(func() { SetPageConcurrency(orig) })
 
-	SetDeepDocConcurrency(7)
-	if got, budget := defaultPageWorkerCount(), DeepDocConcurrency(); got > budget {
-		t.Fatalf("defaultPageWorkerCount() = %d > DeepDocConcurrency() = %d", got, budget)
+	SetPageConcurrency(2)
+	if got := PageConcurrency(); got != 2 {
+		t.Fatalf("PageConcurrency() = %d, want 2", got)
+	}
+}
+
+// TestSetPageConcurrency pins the setter's clamp: a non-positive value is
+// floored to 1, a value above the max is clamped to MaxPageConcurrency, and a
+// value inside the range is honoured exactly.
+func TestSetPageConcurrency(t *testing.T) {
+	orig := PageConcurrency()
+	t.Cleanup(func() { SetPageConcurrency(orig) })
+
+	SetPageConcurrency(0)
+	if got := PageConcurrency(); got != 1 {
+		t.Fatalf("PageConcurrency() after SetPageConcurrency(0) = %d, want 1", got)
+	}
+	SetPageConcurrency(-5)
+	if got := PageConcurrency(); got != 1 {
+		t.Fatalf("PageConcurrency() after SetPageConcurrency(-5) = %d, want 1", got)
+	}
+	SetPageConcurrency(maxPageConcurrency + 10)
+	if got := PageConcurrency(); got != maxPageConcurrency {
+		t.Fatalf("PageConcurrency() after SetPageConcurrency(max+10) = %d, want %d", got, maxPageConcurrency)
+	}
+	SetPageConcurrency(7)
+	if got := PageConcurrency(); got != 7 {
+		t.Fatalf("PageConcurrency() after SetPageConcurrency(7) = %d, want 7", got)
+	}
+}
+
+// TestPageConcurrencyIndependentOfInferenceBudget pins that the shared page
+// worker pool is sized from the per-document page concurrency (N), not the
+// process inference budget: N may exceed the inference budget, and the pool is
+// still created at N (extra workers merely queue rendered bitmaps).
+func TestPageConcurrencyIndependentOfInferenceBudget(t *testing.T) {
+	origBudget := DeepDocConcurrency()
+	origPage := PageConcurrency()
+	t.Cleanup(func() {
+		SetDeepDocConcurrency(origBudget)
+		SetPageConcurrency(origPage)
+	})
+
+	SetDeepDocConcurrency(1)
+	SetPageConcurrency(8)
+	if got := defaultPageWorkerCount(); got != 8 {
+		t.Fatalf("defaultPageWorkerCount() = %d, want 8 (page concurrency independent of inference budget)", got)
+	}
+	if got := PageConcurrency(); got != 8 {
+		t.Fatalf("PageConcurrency() = %d, want 8", got)
 	}
 }

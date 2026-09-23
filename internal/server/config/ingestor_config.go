@@ -16,23 +16,45 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/spf13/viper"
 )
 
 type IngestorConfig struct {
 	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
-	// parallel (and dataset-level compile worker count defaults to this value).
-	// 0/negative falls back to runtime.NumCPU().
+	// parallel — it is the NATS consumer worker count. Valid range [1, 256],
+	// enforced at startup by the CLI/env/config resolver (ResolveIngestor*); a
+	// value outside that range is a fatal startup error. Default 1.
 	MaxConcurrentWorkers int `mapstructure:"max_concurrent_workers"`
+	// PageConcurrency bounds how many pages of a single document are parsed
+	// concurrently inside one ingestor worker. Valid range [1, 16], enforced at
+	// startup by the CLI/env/config resolver; a value outside that range is a
+	// fatal startup error. Default 2.
+	PageConcurrency int `mapstructure:"page_concurrency"`
 	// CompilerPoolSize bounds the process-wide knowledge-compilation worker
 	// pool that drives the cross-doc KNN / LLM-merge / write stages. 0/negative
 	// falls back to runtime.NumCPU() (or KC_COMPILE_CONCURRENCY if set).
 	CompilerPoolSize int `mapstructure:"compiler_pool_size"`
 }
 
+// Ingestor concurrency bounds, shared by the CLI/env/config resolver so the
+// configured values can be validated against a single source of truth.
+const (
+	// MinIngestorWorkers / MaxIngestorWorkers are the inclusive bounds for
+	// ingestor.max_concurrent_workers (the NATS consumer count K).
+	MinIngestorWorkers = 1
+	MaxIngestorWorkers = 256
+	// MinPageConcurrency / MaxPageConcurrency are the inclusive bounds for
+	// ingestor.page_concurrency (per-document page parallelism N).
+	MinPageConcurrency = 1
+	MaxPageConcurrency = 16
+)
+
 func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
-	// Default Ingestor config
-	c.ingestor.MaxConcurrentWorkers = 2
+	// Default Ingestor config.
+	c.ingestor.MaxConcurrentWorkers = 1
+	c.ingestor.PageConcurrency = 2
 	c.ingestor.CompilerPoolSize = 0
 
 	if !v.IsSet("ingestor") {
@@ -45,8 +67,18 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 
 	if sub.IsSet("max_concurrent_workers") {
 		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
+		if c.ingestor.MaxConcurrentWorkers < MinIngestorWorkers || c.ingestor.MaxConcurrentWorkers > MaxIngestorWorkers {
+			return fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
+				c.ingestor.MaxConcurrentWorkers, MinIngestorWorkers, MaxIngestorWorkers)
+		}
 	}
-
+	if sub.IsSet("page_concurrency") {
+		c.ingestor.PageConcurrency = sub.GetInt("page_concurrency")
+		if c.ingestor.PageConcurrency < MinPageConcurrency || c.ingestor.PageConcurrency > MaxPageConcurrency {
+			return fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
+				c.ingestor.PageConcurrency, MinPageConcurrency, MaxPageConcurrency)
+		}
+	}
 	if sub.IsSet("compiler_pool_size") {
 		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
 	}
