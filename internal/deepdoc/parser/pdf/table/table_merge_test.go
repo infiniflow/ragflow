@@ -843,9 +843,9 @@ func TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX(t *testing.T) {
 }
 
 // TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped pins the
-// 江西 price-list shape: every continuation page carries a page-header block
-// that TSR labels as a caption; the merged table keeps only the anchor's
-// caption instead of concatenating every page's section name.
+// Jiangxi price-list shape: every continuation page carries a page-header
+// block that TSR labels as a caption; the merged table keeps only the
+// anchor's caption instead of concatenating every page's section name.
 func TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped(t *testing.T) {
 	anchor := pdf.TableItem{
 		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
@@ -869,9 +869,9 @@ func TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped(t *testing.T
 }
 
 // TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched pins the rune-count
-// guard: a one-character CJK header ("价", 3 bytes) must not substring-match
-// unrelated data cells ("价格"), which would strip real data rows as
-// "repeated headers". Exact text matches still count.
+// guard: a one-character CJK header (3 bytes per len()) must not
+// substring-match data cells that merely contain that character, which would
+// strip real data rows as "repeated headers". Exact matches still count.
 func TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched(t *testing.T) {
 	cell := func(txt string) pdf.TSRCell {
 		return pdf.TSRCell{Text: txt, X0: 0, X1: 100, Y0: 0, Y1: 10}

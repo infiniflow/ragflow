@@ -177,9 +177,9 @@ func TestPickMergedCaption(t *testing.T) {
 	}
 }
 
-// TestMergeCaptions_CrossPageCaptionsFollowPageOrder pins the 江西 fix: a
-// continuation page's caption sits at a SMALL page-local top, so sorting by
-// top alone merged "八、电管类" (page 2) ahead of "一、阀门类" (page 1).
+// TestMergeCaptions_CrossPageCaptionsFollowPageOrder pins the cross-page
+// ordering fix: a continuation page's caption sits at a small page-local top,
+// so sorting by top alone interleaved later pages ahead of the anchor page.
 // Captions must concatenate in (page, top) document order.
 func TestMergeCaptions_CrossPageCaptionsFollowPageOrder(t *testing.T) {
 	sections := []pdf.Section{

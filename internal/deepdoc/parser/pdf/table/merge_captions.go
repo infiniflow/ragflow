@@ -13,8 +13,7 @@ import (
 // concatenation: page first, then top→bottom within the page. Sorting by the
 // page-local top edge ALONE scrambles a cross-page table: every continuation
 // page's header block sits near its page top (small local Y), so its caption
-// interleaved ahead of the anchor page's ("八、电管类二、卫生洁具类…" before
-// "一、阀门类" on the 江西 price list).
+// interleaved ahead of the anchor page's, breaking document order.
 type captionText struct {
 	page int
 	top  float64
@@ -82,17 +81,15 @@ func dedupCaptions(captions []string) []string {
 	return seen
 }
 
-// pickMergedCaption decides the caption of a cross-page merged table. A
-// merged table is ONE logical table with ONE caption: the anchor page's.
-// Continuation pages of such documents typically repeat the whole page-header
-// block (report title + that page's section names) and TSR hands each repeat
-// over as a caption. Only the longest rendering of the SAME text is a
-// caption variant and may replace the anchor's (TSR splitting differs per
-// page); an UNRELATED continuation text is dropped instead of concatenated —
-// concatenation produced a 150-char scrambled mega-caption ("…八、电管类二、
-// 卫生洁具类十二、…一、阀门类…") on the 江西 price list, bloating every
-// chunk that carries the table. Nothing is lost: the continuation pages'
-// section names also appear inside the merged table as their own banner rows.
+// pickMergedCaption decides the caption of a cross-page merged table: ONE
+// logical table keeps ONE caption, the anchor page's. Continuation pages
+// typically repeat the page-header block (title + that page's section names)
+// and TSR hands each repeat over as a caption. A continuation caption only
+// replaces the anchor's when it is a longer rendering of the SAME text (TSR
+// splitting differs per page); unrelated text is dropped, never concatenated
+// — concatenating per-page header blocks produced a 150-char scrambled
+// mega-caption on the Jiangxi price-list sample. Nothing is lost: section
+// names also appear inside the merged table as their own banner rows.
 func pickMergedCaption(anchor, continuation string) string {
 	a := strings.TrimSpace(anchor)
 	c := strings.TrimSpace(continuation)
