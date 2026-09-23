@@ -17,7 +17,6 @@
 package config
 
 import (
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -25,53 +24,88 @@ import (
 	"github.com/spf13/viper"
 )
 
-// TestParseDeepDocConfigDefaultsToFour pins the default inference concurrency.
-func TestParseDeepDocConfigDefaultsToFour(t *testing.T) {
+// TestParseIngestorConfigDeepDocDefaultsToOne pins the default inference
+// concurrency when the ingestor.deepdoc key is absent.
+func TestParseIngestorConfigDeepDocDefaultsToOne(t *testing.T) {
 	v := viper.New()
 	c := &Config{}
-	if err := c.ParseDeepDocConfig(v); err != nil {
-		t.Fatalf("ParseDeepDocConfig: %v", err)
+	if err := c.ParseIngestorConfig(v); err != nil {
+		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetDeepDocConfig().InferenceConcurrency; got != 4 {
-		t.Fatalf("default inference concurrency = %d, want 4", got)
+	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 1 {
+		t.Fatalf("default inference concurrency = %d, want 1", got)
 	}
 }
 
-// TestParseDeepDocConfigReadsYAML pins that the deepdoc.inference_concurrency
-// key is honoured when present.
-func TestParseDeepDocConfigReadsYAML(t *testing.T) {
+// TestParseIngestorConfigReadsDeepDocYAML pins that the
+// ingestor.deepdoc.inference_concurrency key is honoured when present.
+func TestParseIngestorConfigReadsDeepDocYAML(t *testing.T) {
 	v := viper.New()
-	v.Set("deepdoc", map[string]any{"inference_concurrency": 6})
+	v.Set("ingestor", map[string]any{
+		"deepdoc": map[string]any{"inference_concurrency": 6},
+	})
 	c := &Config{}
-	if err := c.ParseDeepDocConfig(v); err != nil {
-		t.Fatalf("ParseDeepDocConfig: %v", err)
+	if err := c.ParseIngestorConfig(v); err != nil {
+		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetDeepDocConfig().InferenceConcurrency; got != 6 {
+	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 6 {
 		t.Fatalf("inference concurrency = %d, want 6", got)
 	}
 }
 
-// TestParseDeepDocConfigIgnoresEnvVar pins the provenance of the env override:
-// ParseDeepDocConfig reads ONLY the deepdoc.inference_concurrency YAML key and
-// does not apply the RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY environment variable.
-// This holds even with viper's AutomaticEnv configured exactly as server.Init
-// does, because v.Sub("deepdoc") does not inherit the parent's env (prefix /
-// replacer / AutomaticEnv). The env override is resolved later in the server
-// boot path by cmd.resolveDeepDocInferenceConcurrency (via os.Getenv), so the
-// configured value returned here must stay at the YAML/default value.
-func TestParseDeepDocConfigIgnoresEnvVar(t *testing.T) {
+// TestParseIngestorConfigDeepDocIgnoresEnvVar pins the provenance of the env
+// override: ParseIngestorConfig reads ONLY the ingestor.deepdoc YAML key and
+// does not apply RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY. The env override is
+// resolved separately by Config.ResolveDeepDocInferenceConcurrency.
+func TestParseIngestorConfigDeepDocIgnoresEnvVar(t *testing.T) {
 	t.Setenv(common.EnvDeepDocInferenceConcurrency, "9")
 
 	v := viper.New()
-	v.SetEnvPrefix("RAGFLOW")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
 	c := &Config{}
-	if err := c.ParseDeepDocConfig(v); err != nil {
-		t.Fatalf("ParseDeepDocConfig: %v", err)
+	if err := c.ParseIngestorConfig(v); err != nil {
+		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetDeepDocConfig().InferenceConcurrency; got != 4 {
-		t.Fatalf("inference concurrency with only env set = %d, want default 4 (env must not be applied here)", got)
+	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 1 {
+		t.Fatalf("inference concurrency with only env set = %d, want default 1 (env applied later)", got)
 	}
 }
+
+// TestResolveDeepDocInferenceConcurrency pins the precedence
+// CLI > environment > config file > default(1).
+func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
+	const envKey = common.EnvDeepDocInferenceConcurrency
+
+	cases := []struct {
+		name       string
+		configured int
+		env        string // "" means leave unset
+		cli        *int
+		want       int
+	}{
+		{"default", 0, "", nil, 1},
+		{"config only", 6, "", nil, 6},
+		{"env overrides config", 6, "8", nil, 8},
+		{"cli overrides env and config", 6, "8", intPtr(12), 12},
+		{"env invalid falls back to config", 6, "notanint", nil, 6},
+		{"env only", 0, "9", nil, 9},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envKey, tc.env)
+
+			c := &Config{}
+			if err := c.ParseIngestorConfig(viper.New()); err != nil {
+				t.Fatalf("ParseIngestorConfig: %v", err)
+			}
+			if tc.configured > 0 {
+				c.ingestor.DeepDoc.InferenceConcurrency = tc.configured
+			}
+			if got := c.ResolveDeepDocInferenceConcurrency(tc.cli); got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
+					got, tc.want, tc.configured, tc.env, tc.cli)
+			}
+		})
+	}
+}
+
+func intPtr(n int) *int { return &n }

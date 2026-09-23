@@ -242,28 +242,6 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	return configured
 }
 
-// resolveDeepDocInferenceConcurrency applies the precedence
-// CLI flag > environment variable > config file > default(4) and returns the
-// resolved DeepDoc inference concurrency budget.
-func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
-	val := 4
-	if configured > 0 {
-		val = configured
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			val = n
-		}
-	}
-	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
-	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
-	// value is already positive; no extra >0 guard is needed here.
-	if args.deepdocInferenceConcurrency != nil {
-		val = *args.deepdocInferenceConcurrency
-	}
-	return val
-}
-
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil || *args.mode == "migrate":
@@ -1453,11 +1431,11 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 		zap.String("model_dir", modelDir))
 
 	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
+	// plain concurrency cap. Resolve it from CLI > env > config > default(1)
 	// and register it with the native gate every inference call passes through
 	// (internal/deepdoc/native/inference_limit.go); without this the process
 	// would let every page worker call inference at once.
-	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
+	budget := server.GetConfig().ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
 	pdf.SetDeepDocConcurrency(budget)
 	native.SetInferenceLimit(budget)
 	common.Info("in-process DeepDoc inference limit registered",

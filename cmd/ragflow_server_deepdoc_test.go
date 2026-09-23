@@ -19,48 +19,12 @@ package main
 import (
 	"os"
 	"testing"
-
-	"ragflow/internal/common"
 )
-
-// TestResolveDeepDocInferenceConcurrency pins the precedence
-// CLI > environment > config file > default(4).
-func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
-	const envKey = common.EnvDeepDocInferenceConcurrency
-
-	cases := []struct {
-		name       string
-		configured int
-		env        string // "" means leave unset
-		cli        *int
-		want       int
-	}{
-		{"default", 0, "", nil, 4},
-		{"config only", 6, "", nil, 6},
-		{"env overrides config", 6, "8", nil, 8},
-		{"cli overrides env and config", 6, "8", intPtr(12), 12},
-		{"env invalid falls back to config", 6, "notanint", nil, 6},
-		{"env only", 0, "9", nil, 9},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			// t.Setenv restores the previous value after the subtest.
-			t.Setenv(envKey, tc.env)
-			args := &serverArgs{deepdocInferenceConcurrency: tc.cli}
-			if got := resolveDeepDocInferenceConcurrency(args, tc.configured); got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.env, tc.cli)
-			}
-		})
-	}
-}
-
-func intPtr(n int) *int { return &n }
 
 // TestParseArgsDeepDocInferenceConcurrency pins the contract that the CLI parser
 // rejects a non-positive or non-integer --deepdoc-inference-concurrency up front
 // (both the "--flag=value" and "--flag value" forms), and accepts a positive
-// value. Because the parser guarantees a positive value, resolveDeepDocInference
+// value. Because the parser guarantees a positive value, ResolveDeepDocInference
 // Concurrency can trust the parsed pointer and needs no extra >0 guard.
 func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
 	cases := []struct {

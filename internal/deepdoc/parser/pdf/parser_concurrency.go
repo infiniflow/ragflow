@@ -41,7 +41,9 @@ import (
 // set once at server start via SetDeepDocConcurrency. It is the maximum number
 // of Runs in flight; each Run is single-threaded (intraOpThreads = 1 in the
 // native package), so it is also the number of cores inference may occupy.
-var deepDocInferenceConcurrency = 4
+// The default (1) is the conservative floor; the server overrides it from
+// CLI/env/config at boot via SetDeepDocConcurrency.
+var deepDocInferenceConcurrency = 1
 
 // SetDeepDocConcurrency sets the process inference budget. It is called exactly
 // once at server boot after CLI/env/config resolution. Non-positive values are
