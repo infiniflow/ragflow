@@ -32,12 +32,36 @@ type LLMService struct {
 	llmDAO       *dao.LLMDAO
 }
 
+type FactoryInfo struct {
+	Name       string   `json:"name"`
+	Logo       string   `json:"logo"`
+	Tags       string   `json:"tags"`
+	Status     string   `json:"status"`
+	Rank       string   `json:"rank"`
+	ModelTypes []string `json:"model_types"`
+}
+
 // NewLLMService create LLM service
 func NewLLMService() *LLMService {
 	return &LLMService{
 		tenantLLMDAO: dao.NewTenantLLMDAO(),
 		llmDAO:       dao.NewLLMDAO(),
 	}
+}
+
+func (s *LLMService) ListFactories(ctx context.Context) ([]FactoryInfo, error) {
+	factories, err := dao.NewLLMFactoryDAO().GetAllValid(ctx, dao.DB)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]FactoryInfo, 0, len(factories))
+	for _, f := range factories {
+		result = append(result, FactoryInfo{
+			Name: f.Name, Logo: getStringValue(f.Logo), Tags: f.Tags,
+			Status: getStringValueDefault(f.Status, "1"), Rank: strconv.FormatInt(f.Rank, 10),
+		})
+	}
+	return result, nil
 }
 
 // MyLLMItem represents a single LLM item in the response

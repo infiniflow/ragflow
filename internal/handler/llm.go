@@ -148,3 +148,17 @@ func (h *LLMHandler) ListApp(c *gin.Context) {
 
 	common.SuccessWithData(c, llms, "success")
 }
+
+func (h *LLMHandler) Factories(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	factories, err := h.llmService.ListFactories(c.Request.Context())
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
+		return
+	}
+	common.SuccessWithData(c, factories, "success")
+}
