@@ -26,9 +26,11 @@ Tests cover:
 """
 
 import importlib.util
+import lzma
 import os
 import sys
 import zipfile
+import zlib
 from io import BytesIO
 from unittest import mock
 
@@ -89,7 +91,7 @@ _epub_spec.loader.exec_module(_epub_mod)
 RAGFlowEpubParser = _epub_mod.RAGFlowEpubParser
 
 
-def _make_epub(chapters, include_container=True, spine_order=None):
+def _make_epub(chapters, include_container=True, spine_order=None, compression=zipfile.ZIP_DEFLATED):
     """Build a minimal EPUB ZIP in memory.
 
     Args:
@@ -97,9 +99,10 @@ def _make_epub(chapters, include_container=True, spine_order=None):
         include_container: whether to include META-INF/container.xml.
         spine_order: optional list of filenames for spine ordering.
                      Defaults to the order of `chapters`.
+        compression: the zipfile compression method for every member.
     """
     buf = BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(buf, "w", compression) as zf:
         zf.writestr("mimetype", "application/epub+zip")
 
         if include_container:
@@ -381,6 +384,37 @@ def _set_encrypted_flag(payload: bytes, member: bytes) -> bytes:
     return bytes(data)
 
 
+def _damage_member_data(payload: bytes, member: str, position: int, value: int) -> bytes:
+    """Overwrite one byte of `member`'s compressed data, just past its local file header."""
+    import struct
+
+    with zipfile.ZipFile(BytesIO(payload)) as zf:
+        header_offset = zf.getinfo(member).header_offset
+    data = bytearray(payload)
+    name_len, extra_len = struct.unpack_from("<HH", data, header_offset + 26)
+    data[header_offset + 30 + name_len + extra_len + position] = value
+    return bytes(data)
+
+
+# Per compression method zipfile implements: a byte that breaks the stream, and the
+# error its decompressor raises for it before any CRC is checked.
+_DAMAGED_STREAMS = [
+    pytest.param(zipfile.ZIP_DEFLATED, 0, 0x07, zlib.error, id="deflate-reserved-block-type"),
+    pytest.param(zipfile.ZIP_BZIP2, 0, 0x00, OSError, id="bzip2-no-magic"),
+    pytest.param(zipfile.ZIP_LZMA, 4, 0xFF, lzma.LZMAError, id="lzma-invalid-properties"),
+]
+
+
+def _damaged_epub(chapters, damaged, compression, position, value, error):
+    """Build an EPUB whose `damaged` chapters fail to decompress, and check that they do."""
+    epub_bytes = _make_epub(chapters, compression=compression)
+    for name in damaged:
+        epub_bytes = _damage_member_data(epub_bytes, f"OEBPS/{name}", position, value)
+        with zipfile.ZipFile(BytesIO(epub_bytes)) as zf, pytest.raises(error):
+            zf.read(f"OEBPS/{name}")
+    return epub_bytes
+
+
 class TestEpubParserUnreadableChapter:
     """One chapter the parser cannot read must not cost the whole book."""
 
@@ -434,6 +468,17 @@ class TestEpubParserUnreadableChapter:
         payload[index] ^= 0xFF
 
         combined = self._parse(bytes(payload))
+
+        assert "ALPHA" in combined
+        assert "CHARLIE" in combined
+        assert "BRAVO" not in combined
+
+    @pytest.mark.parametrize(("compression", "position", "value", "error"), _DAMAGED_STREAMS)
+    def test_a_chapter_whose_compressed_stream_is_damaged_is_skipped(self, compression, position, value, error):
+        """The decompressor fails before the CRC check, with an error of its own."""
+        epub_bytes = _damaged_epub(self._CHAPTERS, ["ch2.xhtml"], compression, position, value, error)
+
+        combined = self._parse(epub_bytes)
 
         assert "ALPHA" in combined
         assert "CHARLIE" in combined
@@ -527,6 +572,15 @@ class TestEpubParserNothingReadable:
             epub_bytes = _set_encrypted_flag(epub_bytes, f"OEBPS/{name}".encode())
 
         with pytest.raises(ValueError, match=r"No readable content in EPUB: 3 of 3 content items .* is encrypted"):
+            self._parse(epub_bytes)
+
+    @pytest.mark.parametrize(("compression", "position", "value", "error"), _DAMAGED_STREAMS)
+    def test_a_book_with_every_compressed_stream_damaged_raises(self, compression, position, value, error):
+        """Read failures from the decompressor count like any other."""
+        names = [name for name, _ in self._CHAPTERS]
+        epub_bytes = _damaged_epub(self._CHAPTERS, names, compression, position, value, error)
+
+        with pytest.raises(ValueError, match="No readable content in EPUB: 3 of 3 content items"):
             self._parse(epub_bytes)
 
     def test_a_book_with_every_chapter_undecodable_raises(self):

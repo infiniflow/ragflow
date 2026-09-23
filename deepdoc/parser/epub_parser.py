@@ -15,8 +15,10 @@
 #
 
 import logging
+import lzma
 import warnings
 import zipfile
+import zlib
 from io import BytesIO
 from xml.etree import ElementTree
 
@@ -67,10 +69,12 @@ class RAGFlowEpubParser:
             for item_path in content_items:
                 try:
                     html_bytes = zf.read(item_path)
-                except (KeyError, RuntimeError, zipfile.BadZipFile, NotImplementedError, EOFError) as e:
+                except (KeyError, RuntimeError, zipfile.BadZipFile, NotImplementedError, EOFError, zlib.error, OSError, lzma.LZMAError) as e:
                     # A spine item can be missing, encrypted, damaged, or stored with a
-                    # compression method zipfile does not implement. Only that chapter is
-                    # unreadable; the rest of the book still parses.
+                    # compression method zipfile does not implement. A damaged item fails
+                    # its CRC check or, before that, its decompressor, which raises its own
+                    # error: zlib.error for Deflate, OSError for bzip2, LZMAError for LZMA.
+                    # Only that chapter is unreadable; the rest of the book still parses.
                     logger.warning("Skipping unreadable EPUB content item '%s': %s", item_path, e)
                     failures.append(f"{item_path}: {e}")
                     continue
