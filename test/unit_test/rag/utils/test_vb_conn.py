@@ -229,6 +229,10 @@ class TestEquivalentConditionToStr:
         result = equivalent_condition_to_str({"doc_id": ["b'c"]}, _chunk_table_instance())
         assert result == "\"doc_id\" IN ('b''c')"
 
+    def test_scalar_string_with_quotes_is_escaped(self):
+        result = equivalent_condition_to_str({"docnm_kwd": "it's"}, _chunk_table_instance())
+        assert result == "\"docnm_kwd\"='it''s'"
+
     def test_exists_on_text_column_excludes_empty_string(self):
         """Unset text columns hold DEFAULT '' (not NULL), so '' plays the role of ES's field absent."""
         result = equivalent_condition_to_str({"exists": "docnm_kwd"}, _chunk_table_instance())
@@ -512,9 +516,9 @@ class TestUpdate:
         connection, conn = _make_connection()
         monkeypatch.setattr(vastbase_conn_module, "get_table_instance", lambda c, t: _chunk_table_instance())
         assert connection.update({"id": "c1"}, {"remove": "removed_kwd"}, "test_table", "kb1") is True
-        # The literal "remove" key must NOT survive into the SET clause. The
-        # column is reset to its information_schema default, passed through raw.
-        assert _render(conn.executed[0][0]) == 'UPDATE "test_table_kb1" SET "removed_kwd"="\'N\'" WHERE "id"=\'c1\''
+        # The literal "remove" key must NOT survive into the SET clause; the
+        # column is reset to its DDL default via the SQL DEFAULT keyword.
+        assert _render(conn.executed[0][0]) == 'UPDATE "test_table_kb1" SET "removed_kwd"=DEFAULT WHERE "id"=\'c1\''
 
     def test_remove_unknown_column_is_rejected_without_sql(self, monkeypatch):
         connection, conn = _make_connection()
@@ -595,6 +599,22 @@ class TestInsert:
         assert documents[0]["important_kwd"] == ["a", "b"]
         assert documents[0]["position_int"] == [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]]
         assert documents[0]["metadata"] == {"a": 1}
+
+    def test_missing_vector_columns_are_backfilled_with_zeroes(self, monkeypatch):
+        """Docs lacking the table's vector column must be backfilled with zero
+        vectors — and the backfill must not run inside the per-field loop it
+        used to share (mutating the dict during items() iteration)."""
+        connection, _ = _make_connection()
+        monkeypatch.setattr(vastbase_conn_module, "get_table_instance", lambda c, t: _chunk_table_instance())
+        captured = {}
+        monkeypatch.setattr(vastbase_conn_module, "execute_values", lambda cur, insert_sql, values: captured.update(values=list(values)))
+
+        documents = [{"id": "c1", "doc_id": "d1"}]
+        connection.insert(documents, "vb", "kb1")
+
+        assert len(captured["values"]) == 1
+        # column order follows docs[0].keys() after backfill: id, doc_id, q_3_vec
+        assert captured["values"][0] == ("c1", "d1", [0, 0, 0])
 
 
 @pytest.fixture

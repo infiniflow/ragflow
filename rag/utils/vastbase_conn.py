@@ -191,6 +191,11 @@ def quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+# Sentinel for update({"remove": col}) — rendered as `SET col = DEFAULT` instead
+# of interpolating information_schema's raw column_default expression as a literal.
+_COLUMN_DEFAULT = object()
+
+
 def _text_column(ty: str | None) -> bool:
     """Whether a column type is text-ish (varchar/char/text)."""
     return bool(ty) and any(t in ty.lower() for t in ("varchar", "char", "text"))
@@ -255,6 +260,7 @@ def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | N
         elif k == "exists":
             cond.append(exists(v))
         elif isinstance(v, str):
+            v = v.replace("'", "''")
             cond.append(f"{quote_ident(k)}='{v}'")
         else:
             cond.append(f"{quote_ident(k)}={str(v)}")
@@ -1004,10 +1010,10 @@ class VBConnection(DocStoreConnection):
             # embedding fields can't have a default value....
             embedding_clmns = []
             for n, ty, _, _ in table_instance:
-                r = re.search(r"Embedding\([a-z]+,([0-9]+)\)", ty)
-                if not r:
+                m = re.match(r"q_(\d+)_vec$", n)
+                if not m:
                     continue
-                embedding_clmns.append((n, int(r.group(1))))
+                embedding_clmns.append((n, int(m.group(1))))
 
             docs = copy.deepcopy(documents)
             for d in docs:
@@ -1038,10 +1044,10 @@ class VBConnection(DocStoreConnection):
                         else:
                             d[k] = v
 
-                    for n, vs in embedding_clmns:
-                        if n in d:
-                            continue
-                        d[n] = [0] * vs
+                for n, vs in embedding_clmns:
+                    if n in d:
+                        continue
+                    d[n] = [0] * vs
             ids = [d["id"] for d in docs]
             with vb_conn.cursor() as cur:
                 cur.execute(sql.SQL("DELETE FROM {} WHERE id IN %s").format(sql.Identifier(table_name)), (tuple(ids),))
@@ -1085,11 +1091,7 @@ class VBConnection(DocStoreConnection):
                 elif k == "remove":
                     if isinstance(v, str):
                         assert v in clmns, f"'{v}' should be in '{clmns}'."
-                        ty, de = clmns[v]
-                        if ty.lower().find("cha"):
-                            if not de:
-                                de = ""
-                        new_value[v] = de
+                        new_value[v] = _COLUMN_DEFAULT
                         del new_value[k]
                     else:
                         for kk, vv in v.items():
@@ -1133,7 +1135,7 @@ class VBConnection(DocStoreConnection):
                 cur.execute(
                     sql.SQL("UPDATE {table_name} SET {set_clause} WHERE {filter_clause}").format(
                         table_name=sql.Identifier(table_name),
-                        set_clause=sql.SQL(", ").join([sql.SQL("{k}={v}").format(k=sql.Identifier(k), v=sql.Literal(v)) for k, v in new_value.items()]),
+                        set_clause=sql.SQL(", ").join([sql.SQL("{k}={v}").format(k=sql.Identifier(k), v=sql.SQL("DEFAULT") if v is _COLUMN_DEFAULT else sql.Literal(v)) for k, v in new_value.items()]),
                         filter_clause=sql.SQL(filter),
                     )
                 )

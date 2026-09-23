@@ -13,7 +13,10 @@ VB_PASS="${VB_PASSWORD:-Infini_Rag@123}"
 VB_VEC_DB="${VB_VEC_DBNAME:-ragflow}"
 
 # ── Step 1: Create user (must be in a DO block) ──────────────────────────
-SQL_FILE="/tmp/init_vastbase_$$.sql"
+# Contains the password in cleartext: mktemp gives 0600 perms, and the EXIT
+# trap removes it even when `set -e` aborts on a failed vsql call.
+SQL_FILE="$(mktemp /tmp/init_vastbase.XXXXXX.sql)"
+trap 'rm -f "${SQL_FILE}"' EXIT
 
 cat > "${SQL_FILE}" << SQL
 DO \$\$
@@ -27,7 +30,6 @@ SQL
 
 echo "Creating user ${VB_USER}..."
 vsql -f "${SQL_FILE}"
-rm -f "${SQL_FILE}"
 
 # ── Step 2: Create databases (outside DO block — CREATE DATABASE requires
 #            a transaction commit and cannot run inside a PL/pgSQL block) ──

@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import json
 import logging
 import re
 import threading
@@ -182,7 +181,7 @@ class VBConnection:
                     "tokenized_content_ltks TEXT",
                 ]
                 if vector_size > 0:
-                    columns.append(f"q_{vector_size}_vec vector({vector_size})")
+                    columns.append(f"q_{vector_size}_vec floatvector({vector_size})")
 
                 create_sql = (
                     f"CREATE TABLE IF NOT EXISTS {table_name} (\n  "
@@ -223,7 +222,7 @@ class VBConnection:
                 if not cur.fetchone():
                     cur.execute(
                         f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS "
-                        f"{col_name} vector({vector_size})"
+                        f"{col_name} floatvector({vector_size})"
                     )
                     conn.commit()
                     self.logger.info(f"Added vector column {col_name} to {table_name}")
@@ -405,7 +404,7 @@ class VBConnection:
 
                     elif search_type == "vector" and vector_data is not None and vector_column_name:
                         vector_str = "[" + ",".join(str(v) for v in vector_data) + "]"
-                        score_expr = f"(1 - (cosine_distance({vector_column_name}, '{vector_str}'::vector)))"
+                        score_expr = f"(1 - (cosine_distance({vector_column_name}, '{vector_str}'::floatvector)))"
                         limit_expr = f"LIMIT {limit}" if limit > 0 else ""
                         offset_expr = f"OFFSET {offset}" if offset > 0 else ""
                         sim_filter = f"AND {score_expr} >= {vector_similarity_threshold}" if vector_similarity_threshold > 0 else ""
@@ -447,7 +446,7 @@ class VBConnection:
 
                     elif search_type == "fusion" and fulltext_query and vector_data is not None and vector_column_name:
                         vector_str = "[" + ",".join(str(v) for v in vector_data) + "]"
-                        vector_score = f"(1 - cosine_distance({vector_column_name}, '{vector_str}'::vector))"
+                        vector_score = f"(1 - cosine_distance({vector_column_name}, '{vector_str}'::floatvector))"
                         tsquery = " & ".join(_escape_value(fulltext_query).split())
                         num_candidates = (vector_topn or limit) + (fulltext_topn or limit)
                         score_expr = (
@@ -618,7 +617,7 @@ class VBConnection:
             if k == "remove":
                 if isinstance(v, str):
                     set_values.append(f"{v} = NULL")
-            elif k == "status":
+            elif k == "status_int":
                 set_values.append(f"status_int = {1 if v else 0}")
             else:
                 set_values.append(f"{k} = %(val_{i})s")
