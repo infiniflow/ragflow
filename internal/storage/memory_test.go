@@ -156,6 +156,29 @@ func TestMemoryStorage_RemoveBucket(t *testing.T) {
 	}
 }
 
+func TestMemoryStorage_RemoveEmptyBucket(t *testing.T) {
+	ms := newTestMemory(t)
+	ctx := t.Context()
+	if err := ms.Put(ctx, "bucket", "file", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ms.RemoveEmptyBucket(ctx, "bucket"); err == nil {
+		t.Fatal("RemoveEmptyBucket removed a nonempty bucket")
+	}
+	if !ms.ObjExist(ctx, "bucket", "file") {
+		t.Fatal("RemoveEmptyBucket removed the file")
+	}
+	if err := ms.Remove(ctx, "bucket", "file"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ms.RemoveEmptyBucket(ctx, "bucket"); err != nil {
+		t.Fatal(err)
+	}
+	if ms.BucketExists(ctx, "bucket") {
+		t.Fatal("RemoveEmptyBucket retained an empty bucket")
+	}
+}
+
 func TestMemoryStorage_CopyMove(t *testing.T) {
 	ms := newTestMemory(t)
 	ctx := t.Context()

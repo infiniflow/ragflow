@@ -1339,8 +1339,15 @@ func (s *chunkImageStorage) ListObjects(ctx context.Context, bucket string, tena
 func (s *chunkImageStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (s *chunkImageStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return s.exists, nil
+}
+func (s *chunkImageStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (s *chunkImageStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	return false
 }

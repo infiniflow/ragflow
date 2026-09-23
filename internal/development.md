@@ -117,6 +117,31 @@ python3 ragflow_deps/download_go_deps.py
 > `pyproject.toml` is versioned independently and is intentionally not part of
 > this check.
 
+> **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
+> **link cache**, because a silently-stale `.a` is easy to miss:
+> - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
+>   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the published
+>   `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar — the same source of
+>   truth the download scripts use. If they differ (the archive was re-issued
+>   under the same tag/asset name, or an older download is present) the build
+>   fails fast with `Error: ONNX Runtime archive ... is stale`, printing the
+>   expected/actual sha256 and the exact refresh command
+>   (`rm -f <zip>` + `uv run python3 ragflow_deps/download_go_deps.py`). CI seeds
+>   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
+>   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   ORT only through the OrtApi function-pointer table
+>   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
+>   successfully and only crashes at runtime — not at link time.
+> - The link passes `CGO_LDFLAGS` a version-stamped path
+>   `onnxruntime/static_lib/v<ver>-<sha256:0:16>/libonnxruntime.a`. Go's build
+>   cache keys `CGO_LDFLAGS` as a string and does NOT hash the referenced `.a`,
+>   so swapping the `.a` in place (same path, re-issued under the same name)
+>   would otherwise silently reuse a stale linked binary. Stamping the path with
+>   the archive's sha256 changes the flag string whenever the content changes →
+>   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
+>   re-run `uv run python3 ragflow_deps/download_go_deps.py` (or `download_deps.py`)
+>   so the stamp moves; a plain `go clean -cache` also forces it.
+
 ### 1.5 Build RAGFlow
 
 - Build binary
