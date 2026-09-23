@@ -10,9 +10,9 @@ sidebar_custom_props: {
 
 # RAGFlow MCP Client Examples
 
-These clients call the MCP implementation in RAGFlow's Go API server. The Python code is a client; it does not start a Python MCP server. To use tools from an external MCP server inside a RAGFlow Agent, see [Connect an External MCP Server to RAGFlow](./connect_an_external_mcp_to_ragflow.md).
+These clients call the MCP endpoint provided by RAGFlow's Go API server. To use tools from an external MCP server inside a RAGFlow Agent, see [Connect an External MCP Server to RAGFlow](./connect_an_external_mcp_to_ragflow.md).
 
-The examples use the built-in Go API route at `http://127.0.0.1:9384/api/v1/mcp`. Replace the host or port if your API is exposed through a reverse proxy. [Acquire a RAGFlow API key](../acquire_ragflow_api_key.md) and send it as `Authorization: Bearer <RAGFLOW_API_KEY>`.
+The examples use the built-in Go API route at `http://127.0.0.1:9380/api/v1/mcp`. Replace the host or port if your API is exposed through a reverse proxy. [Acquire a RAGFlow API key](../acquire_ragflow_api_key.md) and send it as `Authorization: Bearer <RAGFLOW_API_KEY>`.
 
 ## Python client
 
@@ -38,7 +38,7 @@ async def main() -> None:
         timeout=httpx2.Timeout(30.0, read=300.0),
     ) as http_client:
         transport = streamable_http_client(
-            "http://127.0.0.1:9384/api/v1/mcp",
+            "http://127.0.0.1:9380/api/v1/mcp",
             http_client=http_client,
         )
         async with Client(transport) as client:
@@ -64,7 +64,7 @@ The Go Streamable HTTP handler is stateless: each POST uses a temporary MCP sess
 ### Initialize
 
 ```bash
-curl -sS http://127.0.0.1:9384/api/v1/mcp \
+curl -sS http://127.0.0.1:9380/api/v1/mcp \
   -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
@@ -76,7 +76,7 @@ A successful response contains `result.serverInfo.name` set to `ragflow-mcp-serv
 ### List tools
 
 ```bash
-curl -sS http://127.0.0.1:9384/api/v1/mcp \
+curl -sS http://127.0.0.1:9380/api/v1/mcp \
   -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
@@ -88,7 +88,7 @@ The response lists `ragflow_retrieval`, `ragflow_list_datasets`, and `ragflow_li
 ### Call a tool
 
 ```bash
-curl -sS http://127.0.0.1:9384/api/v1/mcp \
+curl -sS http://127.0.0.1:9380/api/v1/mcp \
   -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \

@@ -9,7 +9,7 @@ sidebar_custom_props:
 
 # Use RAGFlow as an MCP Server
 
-RAGFlow's Go API server exposes MCP tools through Go services. It does not need a separate Python MCP server or a RAGFlow base URL.
+RAGFlow's Go API server exposes MCP tools through its built-in MCP endpoint.
 
 ```text
 External MCP client → Go MCP endpoint → RAGFlow services
@@ -22,7 +22,7 @@ External MCP client → Go MCP endpoint → RAGFlow services
 | `POST /api/v1/mcp` on the Go API port | Available while the Go API runs | Streamable HTTP with JSON responses | Each client sends its RAGFlow credential in `Authorization`. |
 | `/mcp` on the optional MCP listener | Enable `mcp.enabled` or `RAGFLOW_MCP_ENABLED` | Streamable HTTP; legacy SSE at `/sse` and `/messages/` when enabled | `host` mode authenticates each request; `self-host` mode uses one configured key for all clients. |
 
-For a local binary, start the API with `bin/ragflow_server --api --config conf/service_conf.yaml`. With the checked-in configuration, the Go API listens on port `9384`, so its direct endpoint is `http://127.0.0.1:9384/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
+For a local binary, start the API with `bin/ragflow_server --api --config conf/service_conf.yaml`. The target Go API port is `9380`, so its direct endpoint is `http://127.0.0.1:9380/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
 
 ## Enable the optional MCP listener
 

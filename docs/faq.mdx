@@ -47,7 +47,7 @@ For example, `v0.27.1-14-g6daae7f2` means 14 commits after the `v0.27.1` tag, at
 
 Elasticsearch meets RAGFlow's core hybrid search requirements, including full-text search, vector search, phrase search, and advanced ranking capabilities.
 
-The current Go backend also supports [Infinity](https://github.com/infiniflow/infinity), OceanBase, and SeekDB as document engines. Infinity is an AI-native database developed by InfiniFlow and optimized for RAG workloads. Support levels and available features may vary between document engines. OpenSearch and GaussDB are not currently available as document engines in the Go backend.
+The Go backend also supports [Infinity](https://github.com/infiniflow/infinity), OceanBase, and SeekDB as document engines. Infinity is an AI-native database developed by InfiniFlow and optimized for RAG workloads. Support levels and available features may vary between document engines.
 
 ---
 
@@ -61,7 +61,7 @@ REST API access on cloud.ragflow.io depends on the subscription plan. Check the 
 
 ### Why does RAGFlow require substantial system resources?
 
-RAGFlow runs multiple components for document parsing, embedding, full-text and vector indexing, retrieval, task processing, metadata storage, caching, and object storage. Some document parsers also load or download machine-learning models and may require significant memory or GPU resources.
+RAGFlow runs multiple components for document parsing, embedding, full-text and vector indexing, retrieval, task processing, metadata storage, caching, and object storage. Some document parsers also load or download machine-learning models and may require significant CPU and memory resources. External model or parser services may additionally require GPU resources.
 
 Actual resource usage depends on the selected document engine, parser, model provider, document volume, and workload. See the [quickstart prerequisites](./quickstart.mdx#prerequisites) for the current minimum requirements.
 
@@ -69,7 +69,7 @@ Actual resource usage depends on the selected document engine, parser, model pro
 
 ### Which architectures or devices does RAGFlow support?
 
-The documented Go image build targets Linux AMD64 and supports CPU deployments and NVIDIA GPU deployments. RAGFlow does not currently publish a maintained ARM64 Go image or a complete ARM64 build procedure. Building on ARM64 requires an ARM64-compatible dependency image and native libraries, and you must also confirm that the selected document engine supports ARM64. The AMD64 command in the [quickstart guide](./quickstart.mdx#start-up-the-server) cannot be used unchanged to produce an ARM64 image.
+The documented Go image build targets Linux AMD64 and supports CPU deployments and NVIDIA GPU deployments. Building on another architecture requires a matching dependency image and native libraries, and the selected document engine must support that architecture. The commands in the [quickstart guide](./quickstart.mdx#start-up-the-server) target AMD64.
 
 ---
 
@@ -116,6 +116,16 @@ The Go API and ingestor initialize the in-process DeepDoc backend. Check their l
 
 ---
 
+### Does the open-source 1.0 Go DeepDoc backend support GPU inference?
+
+No. The RAGFlow open-source 1.0 Go DeepDoc backend runs layout analysis, OCR,
+and table recognition on CPU. Starting the `ragflow-gpu` Compose service or
+installing NVIDIA Container Toolkit does not enable DeepDoc GPU inference. GPU
+resources remain available only to other components or external model services
+that explicitly support them.
+
+---
+
 ### Why can't RAGFlow access my Ollama model?
 
 Check that Ollama is running, the model has been downloaded, the model name is correct, and the Ollama Base URL is reachable from the RAGFlow container.
@@ -130,7 +140,7 @@ For setup instructions, see [How do I use Ollama with RAGFlow for local LLM infe
 
 ### Why can't Nginx reach the Go API?
 
-Check that the Go API and admin services started, then review the RAGFlow container and Nginx logs. In the Go configuration, Nginx forwards API requests to port `9384` and admin requests to port `9383`. Check the active `ragflow.conf` against `docker/nginx/ragflow.conf.golang` and verify that those services are listening before changing the proxy configuration.
+Check that the Go API and Admin services started, then review the RAGFlow container and Nginx logs. In the target Go configuration, Nginx forwards API requests to port `9380` and Admin requests to port `9381`. Check the active `ragflow.conf` against `docker/nginx/ragflow.conf.golang` and verify that those services are listening before changing the proxy configuration.
 
 ---
 
@@ -142,9 +152,9 @@ You cannot log in until the services are initialized. Review the RAGFlow contain
 
 ```text
 Starting api server: ...
-Server starting on port: 9384
+Server starting on port: 9380
 Starting admin server: ...
-Starting RAGFlow admin HTTP server on port: 9383
+Starting RAGFlow admin HTTP server on port: 9381
 Starting ingestor server: ...
 Ingestor ... initialized
 RAGFlow ingestion service version: ...
@@ -166,7 +176,7 @@ The Go deployment uses Kvrocks as its Redis-compatible cache, although this warn
    ```bash
    docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml logs kvrocks
    ```
-3. Check the Go service logs for connection-refused, authentication, or DNS errors. The standard Go Compose deployment connects to `kvrocks:6379`; for a custom deployment, verify that `KVROCKS_HOST` and `KVROCKS_PORT` point to a reachable service.
+3. Check the Go service logs for connection-refused, authentication, or DNS errors. The standard Go Compose deployment connects to `kvrocks:6379`; for a customized Docker deployment, verify `KVROCKS_HOST` and `KVROCKS_PORT` in the container configuration. For Go processes launched directly on the host, set the reachable `host:port` value in `conf/service_conf.yaml` under `kvrocks.host`; do not rely on the Docker environment variables to override that source configuration.
 4. Call the [system health API](./references/http_api_reference.md#check-system-health). Its `redis` field reports the health of the Redis-compatible Kvrocks connection.
 
 Do not assume this warning is harmless: features that depend on the cache, including real-time synonym updates, may be unavailable until the connection is restored.
@@ -337,9 +347,9 @@ colima start
 
 The Go API returns HTTP 404 with `Not Found: <path>` when a request does not match a route. Your URL may point to the wrong service.
 
-For normal UI and API access, use `http://<IP_OF_YOUR_MACHINE>` when `SVR_WEB_HTTP_PORT` is 80, or include the configured web port. Nginx forwards API traffic to the Go API on internal port `9384` and admin traffic to internal port `9383`.
+For normal UI and API access, use `http://<IP_OF_YOUR_MACHINE>` when `SVR_WEB_HTTP_PORT` is 80, or include the configured web port. Nginx forwards API traffic to the Go API on internal port `9380` and Admin traffic to internal port `9381`.
 
-The CPU Compose service also publishes these ports directly through `GO_HTTP_PORT` and `GO_ADMIN_PORT`. The GPU Compose service does not publish them directly, so access it through the Nginx web port unless you add explicit port mappings. Do not use `SVR_HTTP_PORT` or `ADMIN_SVR_HTTP_PORT` to reach the Go servers; those variables publish compatibility ports on which the Go processes do not listen.
+The Go Compose deployment uses `SVR_HTTP_PORT` and `ADMIN_SVR_HTTP_PORT` for the directly published API and Admin host ports. For normal browser and API access, prefer the Nginx web port so the same public URL works for CPU and GPU deployments.
 
 ---
 
@@ -458,7 +468,7 @@ Existing document indexes are not transferred to Infinity automatically. Back up
 
 ### Where are uploaded files stored in RAGFlow?
 
-Uploaded files are stored in the configured object storage backend. The current Go backend uses MinIO by default and also supports Amazon S3, Alibaba Cloud OSS, and Google Cloud Storage. Azure Blob Storage and OpenDAL are not currently implemented by the Go storage factory.
+Uploaded files are stored in the configured object storage backend. The Go backend uses MinIO by default and also supports Amazon S3, Alibaba Cloud OSS, and Google Cloud Storage.
 
 The internal bucket and object path depend on how and where the file was uploaded. Manage uploaded files through RAGFlow instead of relying on a fixed storage path.
 

@@ -13,37 +13,71 @@ RAGFlow CLI is the Go command-line client for administering RAGFlow. In Admin mo
 
 ## Install and start
 
-Build the Go server and CLI binaries from the repository root:
+For regular use, install the prebuilt Go CLI from the latest RAGFlow GitHub Release. The installer detects the operating system and CPU architecture, downloads the matching binary, verifies it against `SHA256SUMS`, and then installs it.
+
+On Linux or macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | sh
+```
+
+The default installation path is `/usr/local/bin/ragflow-cli`. If the current user cannot write to that directory, the installer requests `sudo` permission. To install into a user-writable directory instead, set `INSTALL_DIR` and ensure that directory is on `PATH`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+On Windows, run the following command in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 | iex
+```
+
+The Windows installer installs `ragflow-cli.exe` under `%LOCALAPPDATA%\Programs\RAGFlow` by default and adds that directory to the user `PATH`. Restart the terminal if the installer reports that `PATH` was updated.
+
+Verify the installation:
+
+```bash
+ragflow-cli --version
+```
+
+The installation scripts are maintained in [`tools/scripts/install.sh`](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/install.sh) and [`tools/scripts/install.ps1`](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/install.ps1).
+
+If you are developing or modifying the CLI, build the Go server and CLI binaries from the repository root instead:
 
 ```bash
 bash build.sh --go
 ```
 
-Start the Admin Service before the API server, ingestors, and syncers:
+Before starting Admin, start the required dependencies and complete the standalone database migration as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) and [Migrate and launch the Go backend](../../develop/launch_ragflow_from_source.md#3-migrate-and-launch-the-go-backend). The CLI does not start or migrate the server for you.
+
+For a source-development checkout, start the Admin Service with the same `RAGFLOW_DEV_MODE=true` setting used for the migration. Do not set this variable in production. Start Admin before the API server, ingestors, and syncers:
 
 ```bash
-./bin/ragflow_server --admin --init-superuser
+RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
 ```
 
 If this creates the first superuser, its email is `admin@ragflow.io` and its initial password is `admin`. Change that password immediately after the first login. The option does not reset an existing superuser's password.
 
-Then start the CLI in Admin mode. It connects to `127.0.0.1:9383` by default:
+Then start the CLI in Admin mode. It connects to `127.0.0.1:9381` by default:
 
 ```bash
-./bin/ragflow-cli --admin
+ragflow-cli --admin
 ```
+
+When using a binary built from source, replace `ragflow-cli` with `./bin/ragflow-cli` in the following examples.
 
 To connect to another Admin Service, pass a `host:port` value:
 
 ```bash
-./bin/ragflow-cli --admin --host 192.0.2.10:9383
+ragflow-cli --admin --host 192.0.2.10:9381
 ```
 
 To log in when starting the CLI, provide the administrator email address and enter the password at the prompt:
 
 ```bash
-./bin/ragflow-cli --admin \
-  --host 127.0.0.1:9383 \
+ragflow-cli --admin \
+  --host 127.0.0.1:9381 \
   --user admin@ragflow.io
 ```
 
@@ -52,7 +86,7 @@ Avoid passing a real password with `--password`: command-line arguments can be v
 | Option | Description |
 | --- | --- |
 | `--admin`, `-admin` | Start in Admin mode. |
-| `-h`, `--host <host:port>` | Admin Service address. The default is `127.0.0.1:9383`. |
+| `-h`, `--host <host:port>` | Admin Service address. The default is `127.0.0.1:9381`. |
 | `-u`, `--user <email>` | Administrator email address. |
 | `-p`, `--password <password>` | Administrator password. Prefer the interactive prompt to avoid exposing it in command-line arguments. |
 | `-k`, `--key <path>` | Key file used by the client. |

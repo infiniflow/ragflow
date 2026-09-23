@@ -55,7 +55,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    docker compose --env-file .env-go -f docker-compose-go.yml up -d
    ```
 
-   The default `DEVICE=cpu` selects `ragflow-cpu`. For the GPU Compose service, set `DEVICE=gpu` in `.env-go` and configure the NVIDIA container runtime on the host.
+   The default `DEVICE=cpu` selects `ragflow-cpu`. For the GPU Compose service, set `DEVICE=gpu` in `.env-go` and configure the NVIDIA container runtime on the host. In the RAGFlow open-source 1.0 release, the Go DeepDoc backend is CPU-only and does not support GPU inference; selecting `DEVICE=gpu` does not accelerate DeepDoc layout analysis, OCR, or table recognition.
 
    :::caution Development checkouts
    A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the Go server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env-go` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
