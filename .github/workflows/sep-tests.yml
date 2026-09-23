@@ -2270,8 +2270,8 @@ jobs:
           # collides with whatever already holds it ("port is already allocated").
           # The offset reservation only guards 6379+offset, never bare 6379, so the
           # guard cannot catch this. Fail loudly here instead of at compose up.
-          grep -q '^KVROCKS_PORT=' .env || {
-            echo "KVROCKS_PORT missing from .env — compose would fall back to host 6379" >&2
+          grep -q '^KVROCKS_PORT=' docker/.env || {
+            echo "KVROCKS_PORT missing from docker/.env — compose would fall back to host 6379" >&2
             exit 1
           }
           COMPOSE_FILE=docker/docker-compose-go.yml
