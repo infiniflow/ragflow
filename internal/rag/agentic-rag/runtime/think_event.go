@@ -27,9 +27,11 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
@@ -143,7 +145,7 @@ type thinkSink func(ThinkEvent)
 // every stage and tool reports through StepsFrom(ctx) — the same per-request
 // shape Python's ContextVar had, which the async task tree inherited. A
 // projection the caller left nil is skipped, so a run without a think block
-// still logs, and a run without a logger still narrates.
+// still logs, and a run without a structured client still narrates.
 type StepReporter struct {
 	// Text is the human-sentence projection (the <think> block). Nil = no block.
 	Text func(line string)
@@ -165,15 +167,15 @@ func (r StepReporter) Enabled() bool { return r.Text != nil || r.Events != nil }
 //
 // The log write lives here (rather than at each call site) because a stage line
 // has no other developer-facing home: it IS the record.
-func (r StepReporter) Stage(log *log.Logger, stage, format string, args ...any) {
-	r.StageLine(log, stage, fmt.Sprintf(format, args...))
+func (r StepReporter) Stage(stage, format string, args ...any) {
+	r.StageLine(stage, fmt.Sprintf(format, args...))
 }
 
 // StageLine is Stage for an already-rendered sentence, so a caller that built
 // its message elsewhere (a helper that formats the whole line) does not have to
 // route it through a "%s" format verb.
-func (r StepReporter) StageLine(log *log.Logger, stage, message string) {
-	r.StageLineDetail(log, stage, message, message)
+func (r StepReporter) StageLine(stage, message string) {
+	r.StageLineDetail(stage, message, message)
 }
 
 // StageLineDetail is StageLine for the steps whose two audiences need different
@@ -190,10 +192,8 @@ func (r StepReporter) StageLine(log *log.Logger, stage, message string) {
 // site from the same chunks, so a reader and a developer can never be told
 // different stories about what a step saw. A step whose two audiences want the
 // same sentence uses StageLine, which is this function with one message.
-func (r StepReporter) StageLineDetail(log *log.Logger, stage, summary, detail string) {
-	if log != nil {
-		log.Printf("[%s] %s", stage, detail)
-	}
+func (r StepReporter) StageLineDetail(stage, summary, detail string) {
+	common.Info("stage line", zap.String("stage", stage), zap.String("detail", detail))
 	r.Emit(ThinkEvent{Kind: thinkKindStage, Stage: stage, Summary: "[" + stage + "] " + summary})
 }
 

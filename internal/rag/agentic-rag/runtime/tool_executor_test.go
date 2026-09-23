@@ -31,6 +31,9 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -425,6 +428,10 @@ func TestCountOfPluralizes(t *testing.T) {
 // gets the tool name, arguments, status, result/document counts and evidence
 // anchors without parsing the sentences.
 func TestExecuteNarratesToolOutcome(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
 	var buf bytes.Buffer
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
 		{"chunk_id": "c1", "doc_id": "d1", "content": "hit one"},
@@ -441,7 +448,7 @@ func TestExecuteNarratesToolOutcome(t *testing.T) {
 	if _, err := ex.Execute(ctx, "search_chunks", map[string]any{"query": "q"}); err != nil {
 		t.Fatalf("search_chunks: %v", err)
 	}
-	out := buf.String()
+	out := stageLogText(logs) + buf.String()
 	for _, want := range []string{
 		"[Function tool] Running the search_chunks tool with: ",
 		`[Function tool] The search_chunks tool returned 3 results from 2 documents for "q".`,

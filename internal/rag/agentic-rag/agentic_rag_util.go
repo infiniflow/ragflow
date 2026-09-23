@@ -16,5 +16,5 @@ import (
 // that must never reach the user — no allowlist of tags, and rewording a log
 // line can never hide (or leak) a step.
 func step(ctx context.Context, logger *log.Logger, stage, format string, args ...any) {
-	runtime.StepsFrom(ctx).Stage(logger, stage, format, args...)
+	runtime.StepsFrom(ctx).Stage(stage, format, args...)
 }

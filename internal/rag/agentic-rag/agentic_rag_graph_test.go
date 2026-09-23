@@ -29,6 +29,24 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+// stageLogText renders the developer-log half of the captured stage lines in the shape the old
+// *log.Logger wrote them ("[stage] detail"), so a test that read that buffer can keep asserting on
+// text.
+func stageLogText(logs *observer.ObservedLogs) string {
+	var b strings.Builder
+	for _, e := range logs.All() {
+		cm := e.ContextMap()
+		detail, _ := cm["detail"].(string)
+		if stage, ok := cm["stage"].(string); ok {
+			b.WriteString("[" + stage + "] " + detail)
+		} else {
+			b.WriteString(e.Message)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // Test doubles
 
 // scriptedModel answers with a fixed set of canned replies, one per call,
@@ -1121,6 +1139,11 @@ func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 	req := runtime.RunRequest{Question: "when was it made?", TopN: 8}
 
 	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	logged := func() string { return stageLogText(logs) + buf.String() }
 	BuildLowGraph(ctx, RAGTools{
 		Model: mdl,
 		Messages: []schema.Message{
@@ -1133,13 +1156,13 @@ func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 
 	// direct_search ran and merged evidence into the shared kbinfos.
 	if !kb.HasChunks() {
-		t.Fatalf("direct_search did not deposit any chunk; log:\n%s", buf.String())
+		t.Fatalf("direct_search did not deposit any chunk; log:\n%s", logged())
 	}
 	// formalize ran and rewrote the follow-up (the graph's first node), reported
 	// under its own [Formalize] stage with BOTH the question asked and the one
 	// actually searched.
-	if want := `[Formalize] Rewrote the follow-up into a standalone question: "when was it made?" → "When was Culdcept released?"`; !strings.Contains(buf.String(), want) {
-		t.Errorf("formalize_question node did not narrate its rewrite; log:\n%s", buf.String())
+	if want := `[Formalize] Rewrote the follow-up into a standalone question: "when was it made?" → "When was Culdcept released?"`; !strings.Contains(logged(), want) {
+		t.Errorf("formalize_question node did not narrate its rewrite; log:\n%s", logged())
 	}
 }
 
@@ -1182,6 +1205,11 @@ func TestBuildLowGraphNarratesAnUnchangedQuestion(t *testing.T) {
 	req := runtime.RunRequest{Question: "when was Culdcept made?", TopN: 8}
 
 	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	logged := func() string { return stageLogText(logs) + buf.String() }
 	BuildLowGraph(ctx, RAGTools{
 		Model: mdl,
 		Messages: []schema.Message{
@@ -1191,11 +1219,11 @@ func TestBuildLowGraphNarratesAnUnchangedQuestion(t *testing.T) {
 		Logger: log.New(&buf, "", 0),
 	}, req, sd, kb, resp, log.New(&buf, "", 0))
 
-	if want := `[Formalize] Kept the question as asked: "when was Culdcept made?"`; !strings.Contains(buf.String(), want) {
-		t.Errorf("formalize did not name the unchanged question; log:\n%s", buf.String())
+	if want := `[Formalize] Kept the question as asked: "when was Culdcept made?"`; !strings.Contains(logged(), want) {
+		t.Errorf("formalize did not name the unchanged question; log:\n%s", logged())
 	}
-	if strings.Contains(buf.String(), "Rewrote") {
-		t.Errorf("no rewrite happened, the step must not say so; log:\n%s", buf.String())
+	if strings.Contains(logged(), "Rewrote") {
+		t.Errorf("no rewrite happened, the step must not say so; log:\n%s", logged())
 	}
 }
 
@@ -2084,6 +2112,11 @@ func TestRunUnknownModeReturnsComposedAnswer(t *testing.T) {
 func TestRunEmptyResponseShortCircuits(t *testing.T) {
 	mdl := &fakeModel{}
 	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	logged := func() string { return stageLogText(logs) + buf.String() }
 	resp := Rag(context.Background(), RAGTools{
 		Retriever:     &emptyRetriever{},
 		Model:         mdl,
@@ -2107,14 +2140,14 @@ func TestRunEmptyResponseShortCircuits(t *testing.T) {
 	// no model was called — the two facts a reader needs to know why there is no
 	// composed answer.
 	want := "[Composing the answer] No supporting evidence was found, so the configured empty response is returned without calling the model."
-	if !strings.Contains(buf.String(), want) {
-		t.Errorf("think line missing %q; log:\n%s", want, buf.String())
+	if !strings.Contains(logged(), want) {
+		t.Errorf("think line missing %q; log:\n%s", want, logged())
 	}
 	// This is the LOW graph, whose last node has no [Finalize] step of its own, so
 	// the compose kickoff is the only line saying an answer is being written — it
 	// must stay. The question used to be quoted here too, which in this branch (no
 	// question threaded through) rendered as an empty "".
-	if got := buf.String(); !strings.Contains(got, "[Composing the answer] Composing the answer from 0 gathered passages.") {
+	if got := logged(); !strings.Contains(got, "[Composing the answer] Composing the answer from 0 gathered passages.") {
 		t.Errorf("compose kickoff line missing; log:\n%s", got)
 	}
 }

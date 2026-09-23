@@ -659,7 +659,7 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 		// developer log line stays byte-for-byte what it was (the detail half of
 		// StageLineDetail).
 		summary := providerErrorSummary(err)
-		runtime.StepsFrom(ctx).StageLineDetail(logger, composeStage,
+		runtime.StepsFrom(ctx).StageLineDetail(composeStage,
 			"Composing the answer failed: "+summary,
 			fmt.Sprintf("composition failed: %v", err))
 		return AnswerResult{Answer: errorAnswerText(err), Failed: true}

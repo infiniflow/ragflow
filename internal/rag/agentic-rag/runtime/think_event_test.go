@@ -17,18 +17,51 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
-	"log"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 )
+
+// captureLogger routes the package developer log into an observer for the duration of the
+// test, so a stage line can be asserted on its message and fields.
+func captureLogger(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	return logs
+}
+
+// stageLogText renders the developer-log half of the captured stage lines in the shape the old
+// *log.Logger wrote them ("[stage] detail"), so a test that read that buffer can keep asserting on
+// text.
+func stageLogText(logs *observer.ObservedLogs) string {
+	var b strings.Builder
+	for _, e := range logs.All() {
+		cm := e.ContextMap()
+		detail, _ := cm["detail"].(string)
+		if stage, ok := cm["stage"].(string); ok {
+			b.WriteString("[" + stage + "] " + detail)
+		} else {
+			b.WriteString(e.Message)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
 
 // TestStepReporterStageDeliversBothProjections is the core contract of the
 // explicit-step design: one call writes the developer log line AND delivers the
 // same sentence to the think block and to structured clients.
 func TestStepReporterStageDeliversBothProjections(t *testing.T) {
-	var logged bytes.Buffer
+	logs := captureLogger(t)
 	var text []string
 	var events []ThinkEvent
 	r := StepReporter{
@@ -36,10 +69,11 @@ func TestStepReporterStageDeliversBothProjections(t *testing.T) {
 		Events: func(ev ThinkEvent) { events = append(events, ev) },
 	}
 
-	r.Stage(log.New(&logged, "", 0), "Planner", "decomposed into %d fan-out(s)", 3)
+	r.Stage("Planner", "decomposed into %d fan-out(s)", 3)
 
-	if got := logged.String(); !strings.Contains(got, "[Planner] decomposed into 3 fan-out(s)") {
-		t.Errorf("developer log = %q, want the stage line", got)
+	if got := logs.FilterMessage("stage line").All(); len(got) != 1 ||
+		got[0].ContextMap()["stage"] != "Planner" || got[0].ContextMap()["detail"] != "decomposed into 3 fan-out(s)" {
+		t.Errorf("developer log = %v, want the stage line", logs.All())
 	}
 	if len(text) != 1 || text[0] != "[Planner] decomposed into 3 fan-out(s)"+thinkLineBreak {
 		t.Errorf("text projection = %#v, want the sentence with a block separator", text)
@@ -60,7 +94,7 @@ func TestStepReporterStageDeliversBothProjections(t *testing.T) {
 // things about what a step saw.
 func TestStepReporterStageDetailSplitsTheTwoAudiences(t *testing.T) {
 	const docID = "95a7aee3f11143e69dc9fa5b7bad3a14"
-	var logged bytes.Buffer
+	logs := captureLogger(t)
 	var text []string
 	var events []ThinkEvent
 	r := StepReporter{
@@ -68,12 +102,13 @@ func TestStepReporterStageDetailSplitsTheTwoAudiences(t *testing.T) {
 		Events: func(ev ThinkEvent) { events = append(events, ev) },
 	}
 
-	r.StageLineDetail(log.New(&logged, "", 0), "Hybrid search",
+	r.StageLineDetail("Hybrid search",
 		`Found 5 passages in 1 document for "曹操".`,
 		`"曹操" -> 5 chunk(s): `+docID+`:5chunk(4963chars)`)
 
-	if got := logged.String(); !strings.Contains(got, docID+":5chunk(4963chars)") {
-		t.Errorf("developer log = %q, want the per-document breakdown", got)
+	entries := logs.FilterMessage("stage line").All()
+	if len(entries) != 1 || !strings.Contains(entries[0].ContextMap()["detail"].(string), docID+":5chunk(4963chars)") {
+		t.Errorf("developer log = %v, want the per-document breakdown", logs.All())
 	}
 	want := `[Hybrid search] Found 5 passages in 1 document for "曹操".`
 	if len(text) != 1 || text[0] != want+thinkLineBreak {
@@ -82,18 +117,20 @@ func TestStepReporterStageDetailSplitsTheTwoAudiences(t *testing.T) {
 	if len(events) != 1 || events[0].Summary != want {
 		t.Errorf("event = %#v, want the reader's sentence", events)
 	}
-	if strings.Contains(text[0], docID) || strings.Contains(logged.String(), "Found 5 passages") {
+	if strings.Contains(text[0], docID) || strings.Contains(entries[0].ContextMap()["detail"].(string), "Found 5 passages") {
 		t.Error("the two projections must not swap their sentences")
 	}
 
 	// StageLine is this same function with one message: its projections cannot
 	// diverge either.
-	logged.Reset()
+	core2, logs2 := observer.New(zapcore.DebugLevel)
+	common.Logger = zap.New(core2)
 	text = nil
-	r.StageLine(log.New(&logged, "", 0), "Planner", "one sentence")
-	if logged.String() != "[Planner] one sentence\n" ||
+	r.StageLine("Planner", "one sentence")
+	second := logs2.FilterMessage("stage line").All()
+	if len(second) != 1 || second[0].ContextMap()["detail"] != "one sentence" ||
 		len(text) != 1 || text[0] != "[Planner] one sentence"+thinkLineBreak {
-		t.Errorf("StageLine split its audiences: log=%q text=%#v", logged.String(), text)
+		t.Errorf("StageLine split its audiences: log=%v text=%#v", second, text)
 	}
 }
 
@@ -105,7 +142,7 @@ func TestStepReporterStageDetailSplitsTheTwoAudiences(t *testing.T) {
 // The depth rides on the context, so a layer opts in by calling Nested around the
 // work it launches after reporting its own step.
 func TestStepReporterIndentsNestedSteps(t *testing.T) {
-	var logged bytes.Buffer
+	logs := captureLogger(t)
 	var text []string
 	var events []ThinkEvent
 	r := StepReporter{
@@ -114,16 +151,19 @@ func TestStepReporterIndentsNestedSteps(t *testing.T) {
 	}
 	ctx := WithSteps(context.Background(), r)
 
-	StepsFrom(ctx).StageLine(log.New(&logged, "", 0), "Prefetch", "The plan lists 5 sub-questions; searching 3 opening queries up front.")
-	StepsFrom(Nested(ctx)).StageLine(log.New(&logged, "", 0), "BM25 search", `Found 5 passages in 1 document for "q".`)
+	StepsFrom(ctx).StageLine("Prefetch", "The plan lists 5 sub-questions; searching 3 opening queries up front.")
+	StepsFrom(Nested(ctx)).StageLine("BM25 search", `Found 5 passages in 1 document for "q".`)
 
 	wantTop := "[Prefetch] The plan lists 5 sub-questions; searching 3 opening queries up front." + thinkLineBreak
 	wantNested := StepIndentUnit + `[BM25 search] Found 5 passages in 1 document for "q".` + thinkLineBreak
 	if len(text) != 2 || text[0] != wantTop || text[1] != wantNested {
 		t.Errorf("text = %#v, want %q then %q", text, wantTop, wantNested)
 	}
-	if got := logged.String(); !strings.Contains(got, "\n[BM25 search] Found 5 passages in 1 document") {
-		t.Errorf("the log must stay flush:\n%s", got)
+	for _, entry := range logs.FilterMessage("stage line").All() {
+		detail, _ := entry.ContextMap()["detail"].(string)
+		if strings.Contains(detail, StepIndentUnit) || strings.Contains(detail, "&nbsp;") {
+			t.Errorf("the log must stay flush, got %q", detail)
+		}
 	}
 	for _, ev := range events {
 		if strings.Contains(ev.Summary, "&nbsp;") {
@@ -137,7 +177,7 @@ func TestStepReporterIndentsNestedSteps(t *testing.T) {
 	for i := 0; i < stepMaxDepth+3; i++ {
 		deep = Nested(deep)
 	}
-	StepsFrom(deep).StageLine(log.New(&logged, "", 0), "Deep", "x")
+	StepsFrom(deep).StageLine("Deep", "x")
 	if got, want := text[len(text)-1], strings.Repeat(StepIndentUnit, stepMaxDepth)+"[Deep] x"+thinkLineBreak; got != want {
 		t.Errorf("deep text = %q, want %q", got, want)
 	}
@@ -147,7 +187,7 @@ func TestStepReporterIndentsNestedSteps(t *testing.T) {
 // executor logs its own two sentences (Python tool_decorator parity), so Emit
 // must not write them again — but it still delivers both user projections.
 func TestStepReporterEmitLeavesTheLogToTheProducer(t *testing.T) {
-	var logged bytes.Buffer
+	logs := captureLogger(t)
 	var text []string
 	var events []ThinkEvent
 	r := StepReporter{
@@ -162,8 +202,8 @@ func TestStepReporterEmitLeavesTheLogToTheProducer(t *testing.T) {
 		Summary: "[Function tool] The retrieve tool returned 3 results from 2 documents.",
 	})
 
-	if logged.Len() != 0 {
-		t.Errorf("Emit must not write the developer log, got %q", logged.String())
+	if n := logs.Len(); n != 0 {
+		t.Errorf("Emit must not write the developer log, got %v", logs.All())
 	}
 	if len(text) != 1 || !strings.HasSuffix(text[0], thinkLineBreak) {
 		t.Errorf("text projection = %#v", text)
@@ -176,12 +216,12 @@ func TestStepReporterEmitLeavesTheLogToTheProducer(t *testing.T) {
 }
 
 // TestStepReporterOptionalProjections pins that either projection may be absent:
-// a run with no think block still logs, a run with no logger still narrates, and
+// a run with no think block still logs, a run with no structured client still narrates, and
 // the zero reporter is inert rather than a crash.
 func TestStepReporterOptionalProjections(t *testing.T) {
 	var events []ThinkEvent
 	eventsOnly := StepReporter{Events: func(ev ThinkEvent) { events = append(events, ev) }}
-	eventsOnly.Stage(nil, "SCA", "verdict=%s", "SUFFICIENT") // nil logger must be tolerated
+	eventsOnly.Stage("SCA", "verdict=%s", "SUFFICIENT") // no logger argument any more
 	eventsOnly.Emit(ThinkEvent{Summary: "x"})
 	if len(events) != 2 {
 		t.Errorf("events = %#v, want both steps", events)
@@ -198,8 +238,8 @@ func TestStepReporterOptionalProjections(t *testing.T) {
 	if zero.Enabled() {
 		t.Error("the zero reporter must report itself disabled")
 	}
-	zero.Stage(log.New(&bytes.Buffer{}, "", 0), "Planner", "x") // must not panic
-	zero.Emit(ThinkEvent{Summary: "x"})                         // must not panic
+	zero.Stage("Planner", "x")          // must not panic
+	zero.Emit(ThinkEvent{Summary: "x"}) // must not panic
 }
 
 // TestStepReporterSurvivesPanickingText mirrors Python's bare try/except around
@@ -212,7 +252,7 @@ func TestStepReporterSurvivesPanickingText(t *testing.T) {
 		Events: func(ev ThinkEvent) { events = append(events, ev) },
 	}
 
-	r.Stage(nil, "Planner", "x") // must not panic
+	r.Stage("Planner", "x") // must not panic
 	r.Emit(ThinkEvent{Summary: "y"})
 
 	if len(events) != 2 {
@@ -231,7 +271,7 @@ func TestStepsFromCtx(t *testing.T) {
 	var got []string
 	want := StepReporter{Text: func(line string) { got = append(got, line) }}
 	ctx := WithSteps(context.Background(), want)
-	StepsFrom(ctx).Stage(nil, "Planner", "x")
+	StepsFrom(ctx).Stage("Planner", "x")
 
 	if len(got) != 1 || got[0] != "[Planner] x"+thinkLineBreak {
 		t.Errorf("reporter from ctx = %#v, want the bound one", got)

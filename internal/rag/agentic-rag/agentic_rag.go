@@ -1507,7 +1507,7 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 			// think block reports the provider's own error (bounded): on a dead
 			// provider this is the first failure a user would otherwise never
 			// see, and the one-shot retry below fails the same way.
-			runtime.StepsFrom(ctx).StageLineDetail(logger, "Agentic RAG",
+			runtime.StepsFrom(ctx).StageLineDetail("Agentic RAG",
 				"Streaming generation failed; falling back to a single call: "+providerErrorSummary(err),
 				fmt.Sprintf("streaming compose failed (%v); falling back to a single call", err))
 			deps.AnswerSink.reset()
@@ -1841,11 +1841,11 @@ func runOuterReact(ctx context.Context, deps RAGTools, req runtime.RunRequest, l
 	// research came from the direct graph: the trace described a loop that had
 	// not happened.
 	loop := runtime.StepsFrom(ctx)
-	loop.Stage(logger, "Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
+	loop.Stage("Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
 
 	answer, _, err := outer.ChatWithTools(ctx, p.system, p.history, &models.ChatConfig{})
 	if err != nil {
-		loop.StageLine(logger, "Tool loop", "The outer model call failed; running the research graph directly.")
+		loop.StageLine("Tool loop", "The outer model call failed; running the research graph directly.")
 		logger.Printf("[Agentic RAG] outer react failed: %v; falling back to direct graph", err)
 		// Fall back to the inner graph directly so the user still gets an
 		// answer. The graph composes inside its last node with the FORMALIZED question
@@ -1877,7 +1877,7 @@ func runOuterReact(ctx context.Context, deps RAGTools, req runtime.RunRequest, l
 	// instead — the citation then opens whatever passage happens to sit at that position.
 	p.resp.CiteChunkIDs = append([]string(nil), p.kb.CiteChunkIDs...)
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
-	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
+	loop.StageLine("Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
 }
 
@@ -1920,12 +1920,12 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req runtime.RunRequ
 
 	// Same opening step as runOuterReact, reported where the loop is.
 	loop := runtime.StepsFrom(ctx)
-	loop.Stage(logger, "Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
+	loop.Stage("Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
 
 	stream := true
 	_, err := outer.ChatStreamlyWithTools(ctx, p.system, p.history, &models.ChatConfig{Stream: &stream}, mux.sender)
 	if err != nil {
-		loop.StageLine(logger, "Tool loop", "The outer model call failed; running the research graph directly.")
+		loop.StageLine("Tool loop", "The outer model call failed; running the research graph directly.")
 		logger.Printf("[Agentic RAG] outer react stream failed: %v; falling back to direct graph", err)
 		// Fall back with the caller's own sink so the answer still streams out.
 		// Same guarded compose as runOuterReact: the graph composes inside its
@@ -1965,7 +1965,7 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req runtime.RunRequ
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
-	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
+	loop.StageLine("Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
 }
 

@@ -409,7 +409,7 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 	}
 	st.Plan = plan
 	st.CurrentQueries = append([]string(nil), plan...)
-	runtime.StepsFrom(ctx).StageLine(logger, "Planner", fanoutSummary(st.Question, plan))
+	runtime.StepsFrom(ctx).StageLine("Planner", fanoutSummary(st.Question, plan))
 }
 
 // planFromSlots is the plan of last resort: the slots' own question clues, in slot order.
@@ -951,7 +951,7 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	// the query-rewrite node, after its own retrieval; with that node gone the round that did the
 	// work is the one that counts it.
 	st.SearchRounds++
-	runtime.StepsFrom(ctx).StageLine(logger, "RAGAgent",
+	runtime.StepsFrom(ctx).StageLine("RAGAgent",
 		ragRoundEndLine(roundNo, st.LastRoundNew, len(st.KB.Chunks), len(res.UnresolvedSlots)))
 }
 
@@ -1741,7 +1741,7 @@ func formalizeQuestionNode(ctx context.Context, deps RAGTools, st *AgenticState,
 	if logger != nil {
 		asAsked, _ := transcriptOf(st.Messages)
 		if line := formalizeStepLine(asAsked, q); line != "" {
-			runtime.StepsFrom(ctx).StageLine(logger, "Formalize", line)
+			runtime.StepsFrom(ctx).StageLine("Formalize", line)
 		}
 	}
 }
@@ -1775,7 +1775,7 @@ func formalizeQuestion(ctx context.Context, deps RAGTools, req *runtime.RunReque
 	if logger != nil {
 		asAsked, _ := transcriptOf(deps.Messages)
 		if line := formalizeStepLine(asAsked, q); line != "" {
-			runtime.StepsFrom(ctx).StageLine(logger, "Formalize", line)
+			runtime.StepsFrom(ctx).StageLine("Formalize", line)
 		}
 	}
 }

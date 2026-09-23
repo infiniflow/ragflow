@@ -32,6 +32,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
@@ -1099,6 +1102,10 @@ func TestGrepSearchDelegatesToBM25(t *testing.T) {
 // own phrasing ("Keyword-first locate for …", search.py:418), so a log diff against
 // Python still lines up.
 func TestGrepSearchSearchingLineSplitsAudiences(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
 	var logged bytes.Buffer
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "x"}}})
 	deps.Logger = log.New(&logged, "", 0)
@@ -1114,8 +1121,8 @@ func TestGrepSearchSearchingLineSplitsAudiences(t *testing.T) {
 	if strings.Contains(think, "Keyword-first") {
 		t.Errorf("the implementation phrasing must not reach the think block: %q", think)
 	}
-	if !strings.Contains(logged.String(), `[Grep search] Keyword-first locate for "曹操是谁"`) {
-		t.Errorf("log = %q, want Python's line kept verbatim", logged.String())
+	if got := stageLogText(logs) + logged.String(); !strings.Contains(got, `[Grep search] Keyword-first locate for "曹操是谁"`) {
+		t.Errorf("log = %q, want Python's line kept verbatim", got)
 	}
 }
 
@@ -1177,6 +1184,10 @@ func TestSearchLegsShareOneThinkSentenceFamily(t *testing.T) {
 // log and the think text.
 func captureLeg(chunks []map[string]any, run func(ctx context.Context, deps SearchDeps)) (logged, think string) {
 	var logBuf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = prev }()
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: chunks})
 	deps.Logger = log.New(&logBuf, "", 0)
 	// vectorSearch is gated on a configured embedder; set for every leg, harmless
@@ -1186,7 +1197,9 @@ func captureLeg(chunks []map[string]any, run func(ctx context.Context, deps Sear
 	ctx := WithSteps(context.Background(), StepReporter{Text: func(line string) { text = append(text, line) }})
 
 	run(ctx, deps)
-	return logBuf.String(), strings.Join(text, "")
+	// The developer log of a leg is two halves: its stage lines (now through common.Info) and
+	// whatever it wrote through the *log.Logger it was handed.
+	return stageLogText(logs) + logBuf.String(), strings.Join(text, "")
 }
 
 // TestSearchLegResultLinesReportEveryOutcome pins the second half of a leg's step:

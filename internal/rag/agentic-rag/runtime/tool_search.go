@@ -774,7 +774,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	if thinkVerb == "" {
 		thinkVerb = opts.logVerb
 	}
-	StepsFrom(ctx).StageLineDetail(logger, opts.logLabel,
+	StepsFrom(ctx).StageLineDetail(opts.logLabel,
 		searchThinkLine(thinkVerb, p.Question), searchLine)
 
 	// 3. Per-request dedup: an identical query+scope is retrieved at most once,
@@ -1499,7 +1499,7 @@ func grepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// locate for", search.py:418) and the think block says what the leg does — find
 	// these exact words — in the family the other legs use. "Keyword-first locate"
 	// was a noun phrase naming the implementation, not an action a reader could read.
-	StepsFrom(ctx).StageLineDetail(logger, "Grep search",
+	StepsFrom(ctx).StageLineDetail("Grep search",
 		searchThinkLine("Searching for the exact words", query),
 		searchLogLine("Keyword-first locate for", query))
 	// Python prints its result line at the END of grep_search, reading whatever the
@@ -2146,7 +2146,7 @@ func searchResultLogLine(query string, chunks []map[string]any) string {
 // (search.py:215/252), and Go deliberately adds the result line, because those legs
 // are the ones whose pool size a reader most needs.
 func reportSearchResult(ctx context.Context, logger *log.Logger, label, query string, chunks []map[string]any) {
-	StepsFrom(ctx).StageLineDetail(logger, label,
+	StepsFrom(ctx).StageLineDetail(label,
 		searchResultLine(query, chunks), searchResultLogLine(query, chunks))
 }
 
