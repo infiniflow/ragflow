@@ -1892,6 +1892,37 @@ def test_check_installation_official_token_rejects_unauthorized(monkeypatch):
     assert "openapi.json" not in reason
 
 
+def test_check_installation_official_token_rejects_server_error(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://mineru.net", mineru_api_token="tok")
+
+    monkeypatch.setattr(module.requests, "get", lambda *a, **k: _HttpResponse(status_code=503, text="unavailable"))
+    ok, reason = parser.check_installation()
+
+    assert not ok
+    assert "official precise API not accessible" in reason
+    assert "HTTP 503" in reason
+
+
+def test_check_installation_official_rejects_http_scheme(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.net", mineru_api_token="tok")
+
+    ok, reason = parser.check_installation()
+
+    assert not ok
+    assert "requires HTTPS" in reason
+
+
+def test_is_official_cloud_requires_mineru_host(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+
+    assert module.MinerUParser(mineru_api="https://mineru.net")._is_official_cloud()
+    assert module.MinerUParser(mineru_api="https://api.mineru.net")._is_official_cloud()
+    assert not module.MinerUParser(mineru_api="https://internal.example/api/v4/extract/task")._is_official_cloud()
+    assert not module.MinerUParser(mineru_api="https://internal.example/api/v1/agent/parse/file")._is_official_cloud()
+
+
 def test_check_installation_local_still_requires_openapi(monkeypatch):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser(mineru_api="http://mineru.local")
@@ -1901,6 +1932,17 @@ def test_check_installation_local_still_requires_openapi(monkeypatch):
 
     assert not ok
     assert "http://mineru.local/openapi.json" in reason
+
+
+def test_check_installation_path_only_v4_still_uses_local_openapi(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="https://internal.example/api/v4")
+
+    monkeypatch.setattr(module.requests, "head", lambda *a, **k: _HttpResponse(status_code=404, text="missing"))
+    ok, reason = parser.check_installation()
+
+    assert not ok
+    assert "https://internal.example/api/v4/openapi.json" in reason
 
 
 def test_official_page_ranges_and_model_version(monkeypatch):
@@ -1942,13 +1984,21 @@ def test_run_mineru_official_precise_uploads_and_extracts_zip(monkeypatch, tmp_p
     monkeypatch.setattr(module.MinerUParser, "_extract_zip_no_root", lambda self, zip_path, dest, root: extracted.update(zip=str(zip_path), dest=str(dest)))
     monkeypatch.setattr(module.time, "sleep", lambda _s: None)
 
-    out = parser._run_mineru_api(pdf_path, tmp_path, module.MinerUParseOptions(backend=module.MinerUBackend.VLM_HTTP_CLIENT), page_from=0, page_to=13)
+    out = parser._run_mineru_api(
+        pdf_path,
+        tmp_path,
+        module.MinerUParseOptions(backend=module.MinerUBackend.VLM_HTTP_CLIENT, method=module.MinerUParseMethod.OCR),
+        page_from=0,
+        page_to=13,
+    )
 
     assert Path(out).is_dir()
     assert calls[0][0] == "post"
     assert calls[0][1] == "https://mineru.net/api/v4/file-urls/batch"
     assert calls[0][2]["model_version"] == "vlm"
     assert calls[0][2]["files"][0]["page_ranges"] == "1-13"
+    assert calls[0][2]["files"][0]["is_ocr"] is True
+    assert "is_ocr" not in calls[0][2]
     assert calls[0][3] == "Bearer tok"
     assert calls[1] == ("put", "https://upload.example/file", b"%PDF-1.4")
     assert extracted["dest"] == str(out)
@@ -1959,10 +2009,12 @@ def test_run_mineru_official_agent_writes_markdown_as_content_list(monkeypatch, 
     parser = module.MinerUParser(mineru_api="https://mineru.net")
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_bytes(b"%PDF-1.4")
+    posted = {}
 
     def fake_post(url, json=None, headers=None, timeout=None):
         assert url == "https://mineru.net/api/v1/agent/parse/file"
         assert "Authorization" not in (headers or {})
+        posted["body"] = json
         return _HttpResponse(json_body={"code": 0, "data": {"task_id": "task-1", "file_url": "https://upload.example/agent"}})
 
     def fake_put(url, data=None, timeout=None):
@@ -1979,9 +2031,10 @@ def test_run_mineru_official_agent_writes_markdown_as_content_list(monkeypatch, 
     monkeypatch.setattr(module.requests, "get", fake_get)
     monkeypatch.setattr(module.time, "sleep", lambda _s: None)
 
-    out = parser._run_mineru_api(pdf_path, tmp_path, module.MinerUParseOptions())
+    out = parser._run_mineru_api(pdf_path, tmp_path, module.MinerUParseOptions(method=module.MinerUParseMethod.OCR))
     content = json.loads((Path(out) / "sample_content_list.json").read_text(encoding="utf-8"))
 
+    assert posted["body"]["is_ocr"] is True
     assert content == [{"type": "text", "text": "# hello", "page_idx": 0}]
 
 

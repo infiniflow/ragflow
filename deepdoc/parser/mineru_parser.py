@@ -307,18 +307,17 @@ class MinerUParser(RAGFlowPdfParser):
         """True when mineru_api points at the hosted mineru.net API, not a self-hosted FastAPI server."""
         parsed = urlparse(self.mineru_api or "")
         host = (parsed.hostname or "").lower()
-        if host == "mineru.net" or host.endswith(".mineru.net"):
-            return True
-        path = parsed.path or ""
-        return "/api/v4/" in path or "/api/v1/agent" in path
+        return host == "mineru.net" or host.endswith(".mineru.net")
 
     def _official_origin(self) -> str:
         parsed = urlparse(self.mineru_api or "")
         host = (parsed.hostname or "").lower()
-        if host == "mineru.net" or host.endswith(".mineru.net"):
-            scheme = parsed.scheme or "https"
-            return f"{scheme}://{parsed.netloc}"
-        return "https://mineru.net"
+        if host != "mineru.net" and not host.endswith(".mineru.net"):
+            raise RuntimeError(f"[MinerU] official API host required, got: {host or self.mineru_api}")
+        scheme = (parsed.scheme or "https").lower()
+        if scheme != "https":
+            raise RuntimeError("[MinerU] official mineru.net API requires HTTPS")
+        return f"https://{parsed.netloc}"
 
     def _official_token(self) -> str:
         token = (getattr(self, "mineru_api_token", "") or "").strip()
@@ -350,9 +349,9 @@ class MinerUParser(RAGFlowPdfParser):
 
         The hosted site does not publish ``/openapi.json`` (that path is the self-hosted FastAPI spec).
         """
-        origin = self._official_origin()
-        token = self._official_token()
         try:
+            origin = self._official_origin()
+            token = self._official_token()
             if token:
                 url = f"{origin}/api/v4/extract/task/ragflow-connectivity-probe"
                 response = requests.get(
@@ -362,6 +361,8 @@ class MinerUParser(RAGFlowPdfParser):
                 )
                 if response.status_code in (401, 403):
                     return False, f"[MinerU] official API authentication failed (HTTP {response.status_code}): {(response.text or '')[:300]}"
+                if response.status_code >= 500:
+                    return False, f"[MinerU] official precise API not accessible: {url} (HTTP {response.status_code})"
                 self.logger.info("[MinerU] official precise API reachable status=%s url=%s", response.status_code, url)
                 return True, ""
 
@@ -371,6 +372,8 @@ class MinerUParser(RAGFlowPdfParser):
                 return False, f"[MinerU] official agent API not accessible: {url} (HTTP {response.status_code})"
             self.logger.info("[MinerU] official agent API reachable status=%s url=%s", response.status_code, url)
             return True, ""
+        except RuntimeError as exc:
+            return False, str(exc)
         except requests.RequestException as exc:
             return False, f"[MinerU] official API check failed: {exc}"
 
@@ -435,6 +438,9 @@ class MinerUParser(RAGFlowPdfParser):
             "enable_formula": options.formula_enable,
             "enable_table": options.table_enable,
         }
+        method = options.method.value if isinstance(options.method, MinerUParseMethod) else options.method
+        if method == MinerUParseMethod.OCR.value:
+            payload["is_ocr"] = True
         if isinstance(options.lang, MinerULanguage):
             payload["language"] = options.lang.value
         elif options.lang:
@@ -451,6 +457,8 @@ class MinerUParser(RAGFlowPdfParser):
             file_name += ".pdf"
         shared, page_ranges, model_version = self._official_request_options(options, backend, page_from, page_to)
         file_item: dict[str, Any] = {"name": file_name}
+        if "is_ocr" in shared:
+            file_item["is_ocr"] = shared.pop("is_ocr")
         if page_ranges:
             file_item["page_ranges"] = page_ranges
         body = {**shared, "model_version": model_version, "files": [file_item]}
