@@ -464,6 +464,12 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(ctx context.Context, binary []byte) (string, error) {
+	release, err := sharedOCRMediaAdmission().acquire(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+
 	img, _, err := decodeOCRImage(binary)
 	if err != nil {
 		return "", err

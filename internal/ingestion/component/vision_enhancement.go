@@ -54,6 +54,8 @@ var (
 const (
 	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
+	visionOCRInvokeBudget            = 60 * time.Second
+	visionOCRItemBudget              = 10 * time.Second
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
 	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
@@ -165,12 +167,8 @@ func maybeDispatchVisionEnhancement(
 	setup := setups[family]
 	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
-	// Collect normalized visual resources. A table without an inline image or
-	// PDF crop locator is structured text, not an OCR target.
-	type target struct {
-		idx     int
-		vlmData string
-	}
+	// Collect visual resources. A table without an inline image or PDF crop
+	// locator is structured text, not an OCR target.
 	var items []int
 	for i, item := range dispatched.JSON {
 		kd, _ := item["doc_type_kwd"].(string)
@@ -189,98 +187,114 @@ func maybeDispatchVisionEnhancement(
 		return dispatched, false, nil
 	}
 
-	// Crop and OCR sequentially so each raster is released before any VLM call.
+	// Resolve VLM independently from local OCR. OCR still runs when the tenant
+	// has no configured vision model.
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var prompt string
+	vlmReady := false
+	if tenantID != "" {
+		modelRef := configuredMediaModelID(setup, family)
+		var err error
+		if modelRef != "" {
+			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+			if err != nil {
+				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
+					zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+			}
+		} else {
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
+		if err == nil {
+			prompt, err = figureVisionPromptBuilder(language)
+			vlmReady = err == nil
+		}
+	}
+
+	// Materialize one resource at a time. The VLM semaphore is acquired before
+	// materialization, so at most visionEnhancementConcurrency encoded payloads
+	// remain live while model requests run.
 	cropper, cerr := newVisionImageCropper(ctx, db, inputs)
 	if cerr != nil {
 		return dispatched, false, nil
 	}
 	defer cropper.Close()
 	modified := false
-	targets := make([]target, 0, len(items))
 	parseMethod := getStringOr(setup, "parse_method", "")
-	for _, itemIdx := range items {
-		if err := ctx.Err(); err != nil {
-			return dispatched, modified, err
-		}
-		resource, err := cropper.Crop(dispatched.JSON[itemIdx])
-		if err != nil || resource == nil {
-			continue
-		}
-		if resource.Raster != nil && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending {
-			if text, ocrErr := runLocalImageOCRImage(ctx, resource.Raster); ocrErr == nil && strings.TrimSpace(text) != "" {
-				appendItemText(dispatched.JSON[itemIdx], strings.TrimSpace(text))
-				modified = true
-			}
-		}
-		if resource.VLMData == "" && resource.Raster != nil {
-			resource.VLMData, err = encodeVisionRaster(resource.Raster)
-			if err != nil {
-				continue
-			}
-		}
-		if isUsableVisionImage(resource.VLMData) {
-			targets = append(targets, target{idx: itemIdx, vlmData: resource.VLMData})
-		}
-	}
-
-	// Local OCR does not require tenant configuration; only the VLM phase does.
-	if tenantID == "" || len(targets) == 0 {
-		return dispatched, modified, nil
-	}
-
-	// Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
-	// default. Mirror Python's vlm_conf["llm_id"] preference.
-	modelRef := configuredMediaModelID(setup, family)
-	var driver modelModule.ModelDriver
-	var modelName string
-	var apiConfig *modelModule.APIConfig
-	var err error
-	if modelRef != "" {
-		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
-		if err != nil {
-			common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-				zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
-			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
-		}
-	} else {
-		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
-	}
-	if err != nil {
-		return dispatched, modified, nil
-	}
-
-	// Hoist prompt once: language is invariant across items.
-	prompt, perr := figureVisionPromptBuilder(language)
-	if perr != nil {
-		//nolint:nilerr // Vision enhancement is best-effort.
-		return dispatched, modified, nil
-	}
-
-	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine
-	// so live goroutine count is bounded by visionEnhancementConcurrency.
-	// Stop scheduling new VLM calls after cancellation; already-running calls
-	// finish via wg.Wait() and cancellation propagates via ctx through
-	// visionChatInvoker.
-	descriptions := make([]string, len(targets))
+	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
+	defer cancelOCR()
+	descriptions := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
-
-dispatch:
-	for slot, tg := range targets {
-		if ctx.Err() != nil {
-			break dispatch
+	for slot, itemIdx := range items {
+		if err := ctx.Err(); err != nil {
+			break
 		}
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			break dispatch
+		vlmSlot := false
+		if vlmReady {
+			select {
+			case sem <- struct{}{}:
+				vlmSlot = true
+			case <-ctx.Done():
+				break
+			}
+			if !vlmSlot {
+				break
+			}
+		}
+		var resource *visionImage
+		func() {
+			release, err := sharedOCRMediaAdmission().acquire(ctx)
+			if err != nil {
+				return
+			}
+			defer release()
+			resource, err = cropper.Crop(dispatched.JSON[itemIdx])
+			if err != nil || resource == nil {
+				return
+			}
+			if imageWithinOCRLimits(resource.Raster) && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending && ocrCtx.Err() == nil {
+				itemCtx, cancelItem := context.WithTimeout(ocrCtx, visionOCRItemBudget)
+				text, ocrErr := runLocalImageOCRImage(itemCtx, resource.Raster)
+				cancelItem()
+				if ocrErr == nil && strings.TrimSpace(text) != "" {
+					appendItemText(dispatched.JSON[itemIdx], strings.TrimSpace(text))
+					modified = true
+				}
+			}
+			if ctx.Err() == nil && vlmReady && resource.VLMData == "" && resource.Raster != nil {
+				resource.VLMData, err = encodeVisionRaster(resource.Raster)
+				if err != nil {
+					resource.VLMData = ""
+				}
+			}
+		}()
+		if err := ctx.Err(); err != nil {
+			if vlmSlot {
+				<-sem
+			}
+			break
+		}
+		if resource == nil {
+			if vlmSlot {
+				<-sem
+			}
+			continue
+		}
+		if !vlmSlot || !isUsableVisionImage(resource.VLMData) {
+			if vlmSlot {
+				<-sem
+			}
+			continue
 		}
 		wg.Add(1)
-		go func(slot int, tg target) {
+		go func(slot int, imageData string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			messages := buildVisionMessages(prompt, tg.vlmData)
+			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {
 				return
 			}
@@ -289,25 +303,20 @@ dispatch:
 				return
 			}
 			descriptions[slot] = extractVisionAnswer(resp)
-		}(slot, tg)
+		}(slot, resource.VLMData)
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return dispatched, false, err
+		return dispatched, modified, err
 	}
 
 	// Append descriptions after any OCR text (single newline \n, matching Python).
-	for slot, tg := range targets {
+	for slot, itemIdx := range items {
 		desc := strings.TrimSpace(descriptions[slot])
 		if desc == "" {
 			continue
 		}
-		existing, _ := dispatched.JSON[tg.idx]["text"].(string)
-		if existing != "" {
-			dispatched.JSON[tg.idx]["text"] = existing + "\n" + desc
-		} else {
-			dispatched.JSON[tg.idx]["text"] = desc
-		}
+		appendItemText(dispatched.JSON[itemIdx], desc)
 		modified = true
 	}
 

@@ -109,6 +109,15 @@ func decodeOCRImage(data []byte) (image.Image, string, error) {
 	return img, decodedFormat, nil
 }
 
+func imageWithinOCRLimits(img image.Image) bool {
+	if img == nil {
+		return false
+	}
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	return width > 0 && height > 0 && width <= maxOCRImageEdge && height <= maxOCRImageEdge && int64(width)*int64(height) <= maxOCRImagePixels
+}
+
 func imageMIMEForFormat(format string) string {
 	switch strings.ToLower(format) {
 	case "jpeg":
@@ -132,9 +141,15 @@ func encodeVisionRaster(img image.Image) (string, error) {
 	if img == nil {
 		return "", nil
 	}
+	if !imageWithinOCRLimits(img) {
+		return "", fmt.Errorf("vision image: raster dimensions exceed limits")
+	}
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, img); err != nil {
 		return "", fmt.Errorf("vision image: encode raster: %w", err)
+	}
+	if encoded.Len() > maxOCRImageBytes {
+		return "", fmt.Errorf("vision image: encoded raster exceeds %d bytes", maxOCRImageBytes)
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), nil
 }

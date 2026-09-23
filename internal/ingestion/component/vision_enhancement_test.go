@@ -28,11 +28,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -45,6 +48,37 @@ import (
 type visionEnhanceFakeDriver struct {
 	modelModule.ModelDriver
 }
+
+type concurrentVisionOCRAnalyzer struct {
+	active atomic.Int32
+	peak   atomic.Int32
+}
+
+func (*concurrentVisionOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (*concurrentVisionOCRAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
+func (a *concurrentVisionOCRAnalyzer) OCRDetect(context.Context, image.Image) ([]deepdoctype.OCRBox, error) {
+	active := a.active.Add(1)
+	for peak := a.peak.Load(); active > peak; peak = a.peak.Load() {
+		if a.peak.CompareAndSwap(peak, active) {
+			break
+		}
+	}
+	time.Sleep(30 * time.Millisecond)
+	a.active.Add(-1)
+	return []deepdoctype.OCRBox{{X0: 1, Y0: 1, X1: 19, Y1: 1, X2: 19, Y2: 19, X3: 1, Y3: 19}}, nil
+}
+
+func (*concurrentVisionOCRAnalyzer) OCRRecognize(context.Context, image.Image) ([]deepdoctype.OCRText, error) {
+	return []deepdoctype.OCRText{{Text: "local text"}}, nil
+}
+
+func (*concurrentVisionOCRAnalyzer) Health() bool { return true }
 
 type visionEnhanceCaptureInvoker struct {
 	mu       sync.Mutex
@@ -224,6 +258,46 @@ func TestVisionEnhancement_RunsOCRWithoutTenantForVLM(t *testing.T) {
 	want := "Existing caption\n" + strings.TrimSpace(strings.Repeat("recognized ", 4))
 	if got := res.JSON[0]["text"]; got != want {
 		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+}
+
+func TestVisionEnhancement_BoundsConcurrentOCRMediaAcrossInvokes(t *testing.T) {
+	analyzer := &concurrentVisionOCRAnalyzer{}
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return analyzer, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+
+	imagePayload := visionTestPNGBase64(t)
+	limit := deepdocpdf.DeepDocConcurrency()
+	invokes := limit + 2
+	errs := make(chan error, invokes)
+	var wg sync.WaitGroup
+	for range invokes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dispatched := parser.ParseResult{
+				OutputFormat: "json",
+				JSON:         []map[string]any{{"text": "", "image": imagePayload, "doc_type_kwd": "image"}},
+			}
+			_, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypeXLSX, dispatched, nil,
+				map[string]schema.ParserSetup{"xlsx": {}},
+			)
+			if err != nil {
+				errs <- err
+			} else if !handled {
+				errs <- fmt.Errorf("enhancement was not handled")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent enhancement: %v", err)
+	}
+	if got := analyzer.peak.Load(); got > int32(limit) {
+		t.Errorf("peak OCR media tasks = %d, want at most configured limit %d", got, limit)
 	}
 }
 
