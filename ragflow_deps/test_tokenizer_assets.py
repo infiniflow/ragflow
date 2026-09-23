@@ -10,7 +10,7 @@
 #                                         Go side reads comes from here, and
 #                                         ragflow_deps/download_deps.py (upstream) is
 #                                         deliberately left alone;
-#   2. Dockerfile / Dockerfile_base / Dockerfile_go
+#   2. Dockerfile / Dockerfile_go
 #                                       - copy the runtime ones into the image at the
 #                                         path the counters search;
 #   3. internal/tokenizer/*.go          - pin the SHA-1 of the runtime ones.
@@ -29,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-RUNTIME_IMAGES = ("Dockerfile", "Dockerfile_base", "Dockerfile_go")
+RUNTIME_IMAGES = ("Dockerfile", "Dockerfile_go")
 GO_SOURCES = ("spm.go", "wordpiece.go", "bpe.go")
 KINDS = ("runtime", "oracle")
 DOWNLOADER = "download_go_deps.py"

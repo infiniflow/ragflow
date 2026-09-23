@@ -350,7 +350,7 @@ an unrelated `vocab.txt` there silently replaces the verified artifact; and audi
 2. **Add the artifact** to `ragflow_deps/download_go_deps.py`'s `TOKENIZER_ASSETS` list -
    individual files, not `snapshot_download` of a multi-GB repo - pin its SHA-1 in the
    loader map so a mismatch fails at load instead of counting with the wrong table, and add
-   it to the copy loop in `Dockerfile` / `Dockerfile_base` / `Dockerfile_go` so every runtime image ships it
+   it to the copy loop in `Dockerfile` / `Dockerfile_go` so every runtime image ships it
    (the `ragflow_deps` image is built from this script's output, so it needs a refresh too -
    see §Assets and the oracle for the whole chain).
 3. **Add the fixture line** to `ORACLES` in `scripts/gen_tokenizer_oracle.py`, generate it,
@@ -403,7 +403,7 @@ calibrated estimate, and the cl100k table - the one asset that still comes from
 **The whole chain, because a gap in it is invisible**: `download_go_deps.py` writes
 `ragflow_deps/huggingface.co/…`; the `ragflow_deps` image is built from that directory
 (`ragflow_deps/Dockerfile` copies `huggingface.co` to `/huggingface.co`); the root
-`Dockerfile`, `Dockerfile_base` and `Dockerfile_go` bind-mount that image and copy the four *runtime*
+`Dockerfile` and `Dockerfile_go` bind-mount that image and copy the four *runtime*
 tokenizer assets into `/ragflow/ragflow_deps/huggingface.co/…`, which is where the
 counters look (the working directory is `/ragflow`). The `tokenizer.json` files that
 exist only as cross-check oracles are deliberately **not** shipped. Two consequences
@@ -438,7 +438,7 @@ an operator can point at whichever tree they have:
 The variable is deliberately **not** embedding-specific: DeepDoc's weights use the same
 layout (`huggingface.co/InfiniFlow/deepdoc`) and `resolveDeepDocModelDir` honours it too,
 so one mount can serve every downloaded model asset. `ragflow_deps/download_go_deps.py` and
-the three runtime Dockerfiles keep writing the same tree, so nothing changes for a default
+the runtime Dockerfiles keep writing the same tree, so nothing changes for a default
 deployment. The layout and the precedence are pinned by tests:
 `internal/common/model_assets_test.go` for the candidate list, and
 `internal/tokenizer/asset_dir_test.go` for the end-to-end case (a child process with an
