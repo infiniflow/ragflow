@@ -865,7 +865,8 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		// header/footer on sight — no whitespace gap and no recurrence required,
 		// and this also fires on documents too short for the recurrence tracks.
 		if isSitePromo(b.Text) && (b.Bottom <= h*headerMaxZoneRatio || b.Top >= h*footerMinZoneRatio) {
-			common.Debug("header_footer: dropped by site promo", zap.Int("page", b.PageNumber), zap.Int("textLen", utf8.RuneCountInString(b.Text)))
+			common.Debug("header_footer: dropped by site promo",
+				zap.Int("page", b.PageNumber), zap.Int("textLen", utf8.RuneCountInString(b.Text)))
 			drop[i] = struct{}{}
 			if b.Bottom <= h*headerMaxZoneRatio {
 				promoSpots = append(promoSpots, promoSpot{page: b.PageNumber, band: "header"})
@@ -911,7 +912,8 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 	// engine, so the boxes it removes never enter the recurrence statistics
 	// (which already skip dropped indices) and cannot perturb any "#"-masked count.
 	for _, idx := range promoCompanionDrops(boxes, perPage, pageHeights, drop, promoSpots) {
-		common.Debug("header_footer: dropped by promo companion", zap.Int("page", boxes[idx].PageNumber), zap.String("zone", bandOf(boxes[idx], pageHeights[boxes[idx].PageNumber])), zap.Int("textLen", utf8.RuneCountInString(boxes[idx].Text)))
+		common.Debug("header_footer: dropped by promo companion",
+			zap.Int("page", boxes[idx].PageNumber), zap.String("zone", bandOf(boxes[idx], pageHeights[boxes[idx].PageNumber])), zap.Int("textLen", utf8.RuneCountInString(boxes[idx].Text)))
 		drop[idx] = struct{}{}
 	}
 
