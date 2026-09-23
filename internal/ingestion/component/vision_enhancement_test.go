@@ -249,6 +249,84 @@ func TestVisionEnhancement_SkipsOCRForPDFTableSourcesThatAlreadyTriedOrUnknown(t
 	}
 }
 
+func TestVisionEnhancement_TableCellImageUsesItsOwnOCRStatus(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	imagePayload := visionTestPNGBase64(t)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "<table><tr><td>figure</td></tr></table>", "image": imagePayload, "doc_type_kwd": "table"},
+			{
+				"text":            "cell alt",
+				"image":           imagePayload,
+				"doc_type_kwd":    "image",
+				"parent_table_id": "html-table-1",
+				"row_index":       1,
+				"column_index":    1,
+				"media_order":     1,
+			},
+		},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "deepdoc"}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want table and cell image VLM processing")
+	}
+	if analyzer.detectCalls != 1 {
+		t.Errorf("OCR detect calls = %d, want only the independent cell image", analyzer.detectCalls)
+	}
+	if got, want := result.JSON[0]["text"], "<table><tr><td>figure</td></tr></table>\na diagram of a pipeline"; got != want {
+		t.Errorf("table text = %q, want %q", got, want)
+	}
+	cellWant := "cell alt\n" + strings.TrimSpace(strings.Repeat("recognized ", 4)) + "\na diagram of a pipeline"
+	if got := result.JSON[1]["text"]; got != cellWant {
+		t.Errorf("cell image text = %q, want %q", got, cellWant)
+	}
+	if len(invoker.images) != 2 {
+		t.Errorf("VLM calls = %d, want table plus cell image", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_UnknownPDFImageRunsVLMWithoutLocalOCR(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON:         []map[string]any{{"text": "existing", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"}},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want VLM enhancement")
+	}
+	if analyzer.detectCalls != 0 {
+		t.Errorf("OCR detect calls = %d, want 0 for unknown parser text source", analyzer.detectCalls)
+	}
+	if got, want := result.JSON[0]["text"], "existing\na diagram of a pipeline"; got != want {
+		t.Errorf("image text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
 func TestVisionEnhancement_RunsOCRWithoutTenantForVLM(t *testing.T) {
 	analyzer := &requestContextAnalyzer{}
 	useRequestContextAnalyzer(t, analyzer)
