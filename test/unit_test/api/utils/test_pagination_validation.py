@@ -57,6 +57,7 @@ class TestValidateRestApiPageSize:
         assert validate_rest_api_page_size("25") == 25
 
     def test_boundary_max_is_accepted(self):
+        assert REST_API_MAX_PAGE_SIZE == 100
         assert validate_rest_api_page_size(REST_API_MAX_PAGE_SIZE) == REST_API_MAX_PAGE_SIZE
 
     def test_over_max_raises(self):
