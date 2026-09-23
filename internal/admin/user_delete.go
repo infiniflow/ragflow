@@ -235,33 +235,34 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 		if document.Location == nil || *document.Location == "" {
 			continue
 		}
+		docNameID := namedDocument(document)
 		exists, err := store.ObjectExists(ctx, document.KbID, *document.Location)
 		if err != nil {
 			return fmt.Errorf("check document %s: %w", document.ID, err)
 		}
 		if !exists {
-			common.Warn("Document object already missing", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
+			common.Warn("Document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
 			continue
 		}
 		if err := store.Remove(ctx, document.KbID, *document.Location); err != nil {
-			return fmt.Errorf("remove document %s: %w", document.ID, err)
+			return fmt.Errorf("remove document %s: %w", docNameID, err)
 		}
-		common.Info("Removed document object", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
+		common.Info("Removed document object", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
 	}
 	for _, dataset := range data.datasets {
+		datasetNameID := namedID(dataset.Name, dataset.ID)
 		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
 		if err != nil {
 			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
 		}
 		if !exists {
-			common.Warn("Dataset bucket already missing", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID))
+			common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 			continue
 		}
-		if err := store.RemoveEmptyBucket(ctx, dataset.ID); err != nil {
-			common.Warn("Unable to remove empty dataset bucket", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID), zap.Error(err))
-		} else {
-			common.Info("Removed empty dataset bucket", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID))
+		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
+			return fmt.Errorf("remove dataset bucket %s: %w", datasetNameID, err)
 		}
+		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
