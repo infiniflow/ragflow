@@ -6,9 +6,6 @@ import (
 	"math"
 	"strings"
 
-	"go.uber.org/zap"
-
-	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
