@@ -48,6 +48,11 @@ class ListOperationsParam(ComponentParamBase):
 class ListOperations(ComponentBase, ABC):
     component_name = "ListOperations"
 
+    def param_refs(self) -> list[str]:
+        # The query parameter is resolved through Canvas.get_variable_value at
+        # run time; the scheduler must see it to avoid reading a stale list.
+        return [getattr(self._param, "query", None)]
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         self.input_objects = []
