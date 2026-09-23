@@ -881,12 +881,28 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
 	var matrix [][]float64
-	if len(unit.Positions) > 0 {
+	// Spreadsheet items only: PDF items write layout boxes into the same
+	// field, and those must never be sliced into sub-tables as row tuples.
+	if unit.SheetIndex != nil && len(unit.Positions) > 0 {
 		if err := json.Unmarshal(unit.Positions, &matrix); err != nil {
 			matrix = nil
 		}
 	}
-	aligned := len(matrix) == len(tableRows(unit.Text))
+	// The matrix carries one five-field tuple per <tr>; the splitter cut those
+	// same rows, so its last range end is the total data-row count — no second
+	// full parse of the markup is needed to compare lengths.
+	aligned := false
+	if len(ranges) > 0 {
+		if expected := headerRows + ranges[len(ranges)-1][1]; expected > 0 && len(matrix) == expected {
+			aligned = true
+			for _, tuple := range matrix {
+				if len(tuple) != 5 {
+					aligned = false
+					break
+				}
+			}
+		}
+	}
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)

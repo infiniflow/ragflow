@@ -122,3 +122,44 @@ func TestSplitLargeHTMLTableHeaderlessReplicatesFirstRow(t *testing.T) {
 		t.Errorf("ranges index DATA rows below the treated header, want first range to start at 0, got %v", ranges[0])
 	}
 }
+
+// TestSplitLargeHTMLTableRefusesUncuttableMarkup: an open tag that never
+// closes, a longer tag name, or a nested table is markup this splitter must
+// not cut at a guessed boundary — the text comes back unchanged. The
+// "<table </table>" case used to invert the slice bounds.
+func TestSplitLargeHTMLTableRefusesUncuttableMarkup(t *testing.T) {
+	unchanged := []string{
+		"<table </table>",
+		"<tableau><tr><td>a</td></tr><tr><td>b</td></tr></table>",
+		"<table><tr><td>a</td></tr><table><tr><td>b</td></tr></table></table>",
+	}
+	for _, text := range unchanged {
+		parts, ranges, headerRows := splitLargeHTMLTable(text, 1, charTokens)
+		if len(parts) != 1 || parts[0] != text || ranges != nil || headerRows != 0 {
+			t.Errorf("text %q must pass through unchanged, got %d parts ranges=%v headerRows=%d", text, len(parts), ranges, headerRows)
+		}
+	}
+}
+
+// TestSplitLargeHTMLTableQuotedAngleBracketStaysInOpenTag: a ">" inside a
+// quoted attribute value must not end the open tag — every part repeats the
+// complete tag instead of being cut at the attribute.
+func TestSplitLargeHTMLTableQuotedAngleBracketStaysInOpenTag(t *testing.T) {
+	text := "<table data-meta=\"a>b\">" +
+		"<tr><td>r0</td></tr><tr><td>r1</td></tr><tr><td>r2</td></tr></table>"
+	parts, ranges, headerRows := splitLargeHTMLTable(text, 60, charTokens)
+	if headerRows != 1 {
+		t.Fatalf("headerRows = %d, want 1 (first row treated as header)", headerRows)
+	}
+	if len(parts) < 2 {
+		t.Fatalf("expected a split, got %d parts", len(parts))
+	}
+	if len(ranges) != len(parts) {
+		t.Fatalf("ranges count %d != parts count %d", len(ranges), len(parts))
+	}
+	for i, p := range parts {
+		if !strings.HasPrefix(p, "<table data-meta=\"a>b\">") {
+			t.Errorf("part %d lost the complete open tag: %q", i, p)
+		}
+	}
+}
