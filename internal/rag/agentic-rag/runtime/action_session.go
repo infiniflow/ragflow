@@ -938,8 +938,8 @@ func arrayParam(desc string, minItems, maxItems int) map[string]any {
 // The field is the paper's (its search tool requires a <100-word reason naming the new clue),
 // and what it buys is the failure mode our own logs showed — a call that is a paraphrase of the
 // last one. A reason that names a new clue cannot be written for a call that has none, so the
-// model has to say which one it is chasing; the near-duplicate check (SkippedDup) still catches
-// the case where it says one and searches another, but by then the call is already on record.
+// model has to say which one it is chasing; the near-duplicate check still catches the case where
+// it says one and searches another, but by then the call is already on record.
 //
 // It is optional in the schema on purpose: a REQUIRED field turns a retrieval the model needs
 // into a malformed call, which is a worse trade than an occasionally missing reason line.
@@ -1510,11 +1510,6 @@ const (
 	// SAME intent with many paraphrases (observed: 20+ variants in ONE session),
 	// each hitting the index even though the evidence is unchanged.
 	nearDupJaccard = 0.8
-	// skippedDupLimit: once this many near-duplicate retrievals were skipped,
-	// further turns are unlikely to surface new evidence, so the session
-	// converges to finalize instead of burning the remaining budget on
-	// paraphrases (Q30/Q759 timeout root cause).
-	skippedDupLimit = 2
 	// turnRunExtra is how many turns the MODEL may add beyond the mode's floor
 	// (see offerContinuation): medium/high run 8 → 16, ultra 10 → 18.
 	//
@@ -1977,8 +1972,6 @@ type sessionState struct {
 	ToolCache *ToolCache
 	// SearchQueries accumulates retrieval queries for near-dup detection.
 	SearchQueries []string
-	// SkippedDup counts near-duplicate retrievals suppressed so far.
-	SkippedDup int
 	// ToolStrikes counts dataset-level empties per tool.
 	ToolStrikes map[string]int
 	// ToolOutcomes is the audit trail of (name, status, reason, metrics).
@@ -2245,7 +2238,6 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 		s.ToolCache = NewToolCache()
 	}
 	seenQueries := append([]string(nil), s.SearchQueries...)
-	skipped := 0
 	strikes := map[string]int{}
 	for k, v := range s.ToolStrikes {
 		strikes[k] = v
@@ -2269,11 +2261,10 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 		// q = str(args.get("query") or "").strip: the query may
 		// be a LIST (retrieve takes up to 3), and its string form still counts
 		// for near-dup detection and the seen_queries ledger. A type assertion
-		// here degrades every array query to "" — seen_queries stays empty, and
-		// the skipped-dup convergence can never trigger.
+		// here degrades every array query to "" — seen_queries stays empty, so
+		// the paraphrase check never sees those queries at all.
 		q := argQueryString(c.Args["query"])
 		if retrievalTools[c.Name] && q != "" && isNearDup(q, seenQueries) {
-			skipped++
 			_LOG.Printf("[Action Session] skipping near-duplicate retrieval %q (already searched)", TruncateRunes(q, 80))
 			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
 				"kind": c.Name,
@@ -2446,7 +2437,6 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 	s.RetrievedEvidenceIDs = evidenceIDs
 	s.ToolChars = used
 	s.SearchQueries = seenQueries
-	s.SkippedDup += skipped
 	s.ToolStrikes = strikes
 	s.appendBatchProtocol(ranAny)
 	// Everything the model was shown EARLIER is folded: only the turn just produced stays
@@ -3125,12 +3115,6 @@ func (s *sessionState) route() routeTarget {
 		if s.canAffordAnotherTurn() && s.offerContinuation() {
 			return routeRunAction
 		}
-		return routeFinalize
-	}
-	// No-progress convergence: the model keeps re-issuing near-duplicate
-	// retrievals, so further turns are unlikely to surface new evidence.
-	if s.SkippedDup >= skippedDupLimit {
-		_LOG.Printf("[Action Session] %d near-duplicate retrieval(s) skipped; converging session early", s.SkippedDup)
 		return routeFinalize
 	}
 	return routeRunAction
@@ -4455,7 +4439,6 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ToolChars:     0,
 		ToolCache:     sharedToolCache,
 		SearchQueries: sharedSearchQueries,
-		SkippedDup:    0,
 		ToolStrikes:   map[string]int{},
 		ToolOutcomes:  nil,
 		Direction:     direction,
