@@ -27,6 +27,7 @@ import (
 // and the raw-config factory (used by the test-connection endpoint).
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
+	registerBuiltIn(registry, "feishu_wiki", NewFeishuWikiConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
 	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
@@ -66,6 +67,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
 	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
 	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
+	registerBuiltIn(registry, "zotero", NewZoteroConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {

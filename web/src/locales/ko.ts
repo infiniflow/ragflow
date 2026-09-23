@@ -508,13 +508,13 @@ export default {
         'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요. 키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
       similarityThreshold: '유사도 임계값',
       similarityThresholdTip:
-        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다.\n이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 20이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
+        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용하거나, 리랭커 모델이 선택된 경우 가중 키워드 유사도와 가중 리랭킹 점수의 조합을 사용합니다. 이 매개변수는 사용자 쿼리와 청크 간의 유사도 임계값을 설정합니다. 유사도 점수가 이 임계값보다 낮은 청크는 결과에서 제외됩니다. 기본 임계값은 20입니다. 즉, 하이브리드 유사도 점수가 20 이상인 청크만 검색됩니다. 벡터 유사도 가중치가 0으로 설정된 경우 이 임계값은 적용되지 않습니다.',
       vectorSimilarityWeight: '벡터 유사도 가중치',
       vectorSimilarityWeightTip:
-        '벡터 코사인 유사도 또는 rerank 점수와 함께 사용되는 결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
+        '벡터 코사인 유사도 또는 리랭킹 점수와 함께 사용되는 결합 유사도 점수에서 벡터 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
       keywordSimilarityWeight: '키워드 유사도 가중치',
       keywordSimilarityWeightTip:
-        '벡터 코사인 유사도 또는 rerank 점수와 함께 사용되는 결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
+        '결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 벡터와 키워드 가중치의 합은 1.0이어야 합니다.',
       testText: '테스트 텍스트',
       testTextPlaceholder: '질문을 입력하세요',
       testingLabel: '실행',
@@ -559,7 +559,7 @@ export default {
       close: '닫기',
       rerankModel: 'Rerank 모델',
       rerankPlaceholder: '값 선택',
-      rerankTip: `선택 사항입니다. 비워두면 RAGFlow는 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용합니다. rerank 모델을 선택하면 가중 rerank 점수가 가중 벡터 코사인 유사도를 대체합니다. rerank 모델을 사용하면 시스템 응답 시간이 크게 증가합니다. rerank 모델을 사용하려면 SaaS reranker를 사용하거나, 로컬 배포 rerank 모델을 선호하는 경우 docker-compose-gpu.yml로 RAGFlow를 시작해야 합니다.`,
+      rerankTip: `선택 사항입니다. 비워두면 RAGFlow는 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용합니다. rerank 모델을 선택하면 가중 rerank 점수가 가중 벡터 코사인 유사도를 대체합니다. rerank 모델을 사용하면 시스템 응답 시간이 크게 증가합니다.`,
       topK: 'Top-K',
       topKTip: `Rerank 모델과 함께 사용하며, 지정된 reranking 모델로 전송할 텍스트 chunk 수를 정의합니다.`,
       delimiter: `텍스트 구분자`,
@@ -573,9 +573,9 @@ export default {
       html4excel: 'Excel을 HTML로',
       html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
-      autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
+      autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       autoQuestions: '자동 질문',
-      autoQuestionsTip: `각 chunk에서 N개의 질문을 자동으로 추출하여 해당 질문이 포함된 쿼리에서의 순위를 높입니다. chunk 목록에서 추가된 질문을 확인하거나 업데이트할 수 있습니다. 오류가 발생해도 chunking 과정에 영향을 주지 않으나, 원래 chunk에 빈 결과가 추가될 수 있습니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
+      autoQuestionsTip: `각 chunk에서 N개의 질문을 자동으로 추출하여 해당 질문이 포함된 쿼리에서의 순위를 높입니다. chunk 목록에서 추가된 질문을 확인하거나 업데이트할 수 있습니다. 오류가 발생해도 chunking 과정에 영향을 주지 않으나, 원래 chunk에 빈 결과가 추가될 수 있습니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       redo: '기존 {{chunkNum}}개의 chunk를 초기화하시겠습니까?',
       setMetaData: '메타데이터 설정',
       pleaseInputJson: 'JSON을 입력해 주세요',
@@ -843,7 +843,7 @@ export default {
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/dev/enable_raptor 을 참조하세요.',
+        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree 을 참조하세요.',
       prompt: '프롬프트',
       promptTip:
         'LLM의 역할, 원하는 응답 길이, 톤, 언어 등을 포함한 시스템 프롬프트를 사용하세요. 시스템 프롬프트는 LLM에 대한 다양한 데이터 입력으로 사용되는 키(변수)와 함께 자주 사용됩니다. 사용할 키를 표시하려면 슬래시 `/` 또는 (x) 버튼을 사용하세요.',
@@ -894,7 +894,7 @@ export default {
       addTag: '태그 추가',
       useGraphRag: '지식 그래프',
       useGraphRagTip:
-        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/dev/construct_knowledge_graph 을 참조하세요.',
+        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph 을 참조하세요.',
       graphRagMethod: '방법',
       graphRagMethodTip: `
       Light: (기본값) github.com/HKUDS/LightRAG에서 제공하는 프롬프트를 사용하여 엔티티와 관계를 추출합니다. 더 적은 토큰, 메모리, 연산 리소스를 사용합니다.</br>
@@ -1124,7 +1124,7 @@ export default {
       tavilyApiKeyTip:
         'API 키가 올바르게 설정되면 Tavily 기반 웹 검색이 데이터셋 검색을 보완하는 데 사용됩니다.',
       tavilyApiKeyMessage: 'Tavily API 키를 입력해 주세요',
-      tavilyApiKeyHelp: '어떻게 얻나요?',
+      webSearchApiKeyHelp: '어떻게 얻나요?',
       crossLanguage: '교차 언어 검색',
       crossLanguagePlaceholder: '값 선택',
       crossLanguageTip: `교차 언어(cross-language) 검색을 위해 언어를 하나 이상 선택하세요. 언어를 선택하지 않으면 시스템은 원본 쿼리로 검색합니다.`,

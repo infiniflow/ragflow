@@ -184,12 +184,12 @@ export default {
       similarityThreshold: '類似度しきい値',
 
       similarityThresholdTip:
-        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は20に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
+        'RAGFlowは検索時に、重み付けされたキーワード類似度と重み付けされたベクトルコサイン類似度の組み合わせ、またはリランカーモデルが選択されている場合は、重み付けされたキーワード類似度と重み付けされたリランキングスコアの組み合わせを使用します。このパラメーターは、ユーザークエリとチャンク間の類似度のしきい値を設定します。類似度スコアがこのしきい値を下回るチャンクは結果から除外されます。デフォルトでは、しきい値は20に設定されています。つまり、ハイブリッド類似度スコアが20以上のチャンクのみが検索されます。ベクトル類似度の重みが0に設定されている場合、このしきい値は適用されません。',
 
       vectorSimilarityWeight: 'ベクトル類似度の重み',
 
       vectorSimilarityWeightTip:
-        'ベクトルコサイン類似度と併用する際のキーワード類似度の重みを設定します。2つの重みの合計は1.0でなければなりません。',
+        '総合類似度スコアにおけるベクトル類似度の重みを設定します。この重みは、ベクトルコサイン類似度またはリランキングスコアとともに使用されます。2つの重みの合計は1.0でなければなりません。',
 
       testText: 'テストテキスト',
       testTextPlaceholder: '質問を入力してください',
@@ -243,7 +243,7 @@ export default {
       cancel: 'キャンセル',
       rerankModel: 'リランキングモデル',
       rerankPlaceholder: '選択してください',
-      rerankTip: `任意です。空欄の場合、RAGFlowは加重キーワード類似度と加重ベクトルコサイン類似度の組み合わせを使用します。リランキングモデルが選択された場合は、加重リランキングスコアが加重ベクトルコサイン類似度に代わります。リランキングモデルを使用すると、システムの応答時間が大幅に増加することにご注意ください。リランキングモデルを使用する場合は、SaaSリランカーを使用してください。ローカルにデプロイされたリランキングモデルを使用する場合は、docker-compose-gpu.ymlでRAGFlowを起動してください。`,
+      rerankTip: `任意です。空欄の場合、RAGFlowは加重キーワード類似度と加重ベクトルコサイン類似度の組み合わせを使用します。リランキングモデルが選択された場合は、加重リランキングスコアが加重ベクトルコサイン類似度に代わります。リランキングモデルを使用すると、システムの応答時間が大幅に増加することにご注意ください。`,
       topK: 'トップK',
       topKTip: `Rerank modelと一緒に使用する場合、この設定は指定されたreranking modelに送信するテキストのチャンク数を定義します。`,
       delimiter: `テキストセグメンテーションの区切り文字`,
@@ -254,9 +254,9 @@ export default {
       html4excel: 'ExcelをHTMLに変換',
       html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration をご覧ください。`,
       autoKeywords: '自動キーワード',
-      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
+      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration をご覧ください。`,
       autoQuestions: '自動質問',
-      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
+      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration をご覧ください。`,
 
       metadata: {
         fields: 'フィールド',
@@ -371,7 +371,7 @@ export default {
         'まだテストが実行されていません。結果はここに表示されます。',
       keywordSimilarityWeight: 'キーワード類似度の重み',
       keywordSimilarityWeightTip:
-        'ベクトルのコサイン類似度または再ランクスコアと組み合わせた総合類似度スコアにおける、キーワード類似度の重みを設定します。2つの重みの合計は1.0にする必要があります。',
+        '総合類似度スコアにおけるキーワード類似度の重みを設定します。ベクトル類似度とキーワード類似度の重みの合計は1.0でなければなりません。',
       close: '閉じる',
       enableChildrenDelimiter: '子チャンクを検索に使用する',
       childrenDelimiter: 'テキストの区切り文字',
@@ -539,7 +539,7 @@ export default {
       useRaptor: 'RAPTORを使用して検索を強化',
 
       useRaptorTip:
-        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/dev/enable_raptor をご覧ください。',
+        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree をご覧ください。',
 
       prompt: 'プロンプト',
 
@@ -694,7 +694,7 @@ export default {
       addTag: 'タグを追加',
       useGraphRag: 'ナレッジグラフ',
       useGraphRagTip:
-        '現在のデータセットのファイルチャンクに対してナレッジグラフを構築し、入れ子になったロジックを含むマルチホップの質問応答を強化します。詳細は https://ragflow.io/docs/dev/construct_knowledge_graph をご覧ください。',
+        '現在のデータセットのファイルチャンクに対してナレッジグラフを構築し、入れ子になったロジックを含むマルチホップの質問応答を強化します。詳細は https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph をご覧ください。',
       graphRagMethod: '方法',
       graphRagMethodTip:
         '\n      Light: （デフォルト）github.com/HKUDS/LightRAG が提供するプロンプトを使用して、エンティティと関係性を抽出します。このオプションは、トークン・メモリ・計算リソースの消費が少なくて済みます。</br>\n      General: github.com/microsoft/graphrag が提供するプロンプトを使用して、エンティティと関係性を抽出します。</br>\n      NER: spaCyのNERとルールベースのキーワード抽出を使用して、エンティティと関係性を抽出します。抽出自体にLLMを必要としないため、高速でリソース効率に優れています。',
@@ -950,7 +950,7 @@ export default {
         'ここにTavilyのAPIキーを設定すると、ナレッジベース検索に加えてウェブ検索も利用できます。',
 
       tavilyApiKeyMessage: 'Tavily APIキーを入力してください',
-      tavilyApiKeyHelp: '取得方法はこちら',
+      webSearchApiKeyHelp: '取得方法はこちら',
       crossLanguage: 'クロス言語検索',
       crossLanguageTip: `1つ以上の言語を選択すると、その言語でも検索します。未選択の場合は元の言語で検索します。`,
       createChat: 'チャットを作成',
@@ -3626,6 +3626,14 @@ export default {
       skillEmpty: '利用可能なスキルがありません',
       representationEmpty: '利用可能な表現テンプレートがありません。',
       representationUnsupported: 'この表現形式にはまだ対応していません。',
+      claimsPanelTitle: 'アサーション · {{name}}',
+      claimsTotal: '全 {{count}} 件',
+      claimsLoading: 'アサーションを読み込み中…',
+      claimsEmpty: 'このクラスターからアサーションは抽出されませんでした。',
+      claimsLoadMore: 'さらに読み込む（残り {{remaining}} 件）',
+      claimsMoreEvidence: '他に {{count}} 件の証拠',
+      claimsCollapseEvidence: '折りたたむ',
+      claimsNodeDetail: '詳細',
     },
 
     llmTools: {

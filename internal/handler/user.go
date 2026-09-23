@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
 	"ragflow/internal/utility"
@@ -99,7 +99,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
@@ -169,7 +169,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	operationLog.UserID = user.ID
 
 	// Sign the access_token using itsdangerous (compatible with Python)
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
 		common.ResponseWithCodeData(c, common.CodeServerError, false, errMessage)
@@ -256,7 +256,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	operationLog.UserID = user.ID
 
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
 		common.ResponseWithCodeData(c, common.CodeServerError, false, errorMessage)
@@ -713,7 +713,7 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return

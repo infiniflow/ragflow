@@ -49,7 +49,7 @@ func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 		catalogURL:    nvidiaCatalogURL,
 		hostedAPIHost: nvidiaHostedAPIHost,
@@ -117,7 +117,7 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -179,10 +179,16 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, err
 	}
 
+	// Python NvidiaEmbed.encode sends input_type="passage" for documents and
+	// encode_queries sends "query"; the NIM API embeds each side differently.
+	inputType := "passage"
+	if request.Query {
+		inputType = "query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
 		"input":           request.Texts,
-		"input_type":      "query",
+		"input_type":      inputType,
 		"encoding_format": "float",
 		"truncate":        "END",
 	}

@@ -6,7 +6,7 @@ SHELL ["/bin/bash", "-c"]
 ARG NEED_MIRROR=0
 
 #Optional parameter
-#If set NEED_MIRROR=1, and set GITEE_TOKEN="xxxxx" , donwload source from gitee.
+# If set NEED_MIRROR=1 and GITEE_TOKEN="xxxxx", download the source from Gitee.
 #If don't set GITEE_TOKEN , download from github
 ARG GITEE_TOKEN=""
 
@@ -26,6 +26,29 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     cp -r /deps/nltk_data /root/ && \
     cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+
+# Embedding tokenizer assets (internal/tokenizer/embedding_token_limits.md). The Go
+# counters load them from ragflow_deps/huggingface.co/<repo>/<file>; an image without them
+# counts every tagged model with the calibrated cl100k estimate, which is the less precise
+# path these counters exist to replace (cl100k under-counts XLM-R on some content, and an
+# under-count is what makes a provider answer 400) - so a missing asset FAILS THE BUILD
+# instead of shipping a degraded counter nobody notices.
+# The tokenizer.json files that download_deps.py fetches as cross-check oracles are
+# test-only and deliberately not shipped here.
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    for asset in \
+        BAAI/bge-m3/sentencepiece.bpe.model \
+        BAAI/bge-large-en-v1.5/vocab.txt \
+        Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
+        intfloat/e5-mistral-7b-instruct/tokenizer.json ; do \
+        if [ -f "/huggingface.co/$asset" ]; then \
+            mkdir -p "/ragflow/ragflow_deps/huggingface.co/$(dirname "$asset")" && \
+            cp "/huggingface.co/$asset" "/ragflow/ragflow_deps/huggingface.co/$asset" ; \
+        else \
+            echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
+            exit 1 ; \
+        fi ; \
+    done
 
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
 ENV DEBIAN_FRONTEND=noninteractive

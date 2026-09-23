@@ -44,7 +44,7 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
-      figure: '图',
+      figure: '引文',
       close: '关闭',
       preview: '预览',
       move: '移动',
@@ -53,7 +53,7 @@ export default {
       s: '秒',
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
-      modelUnavailable: '之前选择的模型已被删除，请重新选择',
+      modelUnavailable: '所选模型不可用（已删除或无权限），请重新选择',
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
@@ -98,7 +98,7 @@ export default {
       title: 'A leading RAG engine for LLM context',
       start: '立即开始',
       description:
-        '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
+        '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强业务',
       review: '来自 500 多条评论',
     },
     header: {
@@ -130,7 +130,7 @@ export default {
       spaceName: 'Skills 空间名称',
       spaceNamePlaceholder: '例如：my-space',
       spaceNameRequired: '请输入空间名称',
-      noSpaces: '暂无 Skills 空间，创建您的第一个！',
+      noSpaces: '暂无 Skills 空间，创建第一个！',
       enterSpace: '进入',
       spaceCreated: 'Skills 空间创建成功',
       spaceDeleted: 'Skills 空间删除成功',
@@ -146,7 +146,7 @@ export default {
       skillExists: '同名 Skills 已存在，请先删除或使用其他名称',
       uploadSkill: '上传 Skills',
       searchPlaceholder: '搜索 Skills...',
-      noSkills: '暂无 Skills，上传您的第一个 Skill',
+      noSkills: '暂无 Skills，上传第一个 Skill',
       noSearchResults: '没有找到匹配的 Skill',
       filesCount: '{{count}} 个文件',
       foldersCount: '{{count}} 个文件夹',
@@ -318,7 +318,7 @@ export default {
       },
       config: {
         titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
-        descriptionPlaceholder: '描述你的记忆',
+        descriptionPlaceholder: '描述您的记忆',
         memorySizeTooltip: `记录每条消息的内容 + 其 Embedding（≈ 内容 + 维度 × 8 字节）。
 例如：一条带有 1024 维 Embedding 的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
@@ -346,6 +346,8 @@ export default {
       welcome: '欢迎回来',
       description: '今天我们要使用哪个知识库？',
       createKnowledgeBase: '创建知识库',
+      builtInTemplate: '内置模板',
+      ingestionPipeline: 'Ingestion pipeline',
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
@@ -355,11 +357,30 @@ export default {
       dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
+      continueUpload: '继续上传',
+      reselectParser: '重新选择解析方法',
+      goAddModel: '前往添加模型',
+      uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
+      fileModelMissing: '{{name}}（{{fileType}}）需要添加{{model}}模型',
+      missingModelAsr: '音频（ASR）',
+      missingModelVision: '视觉',
+      uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
+      fileTypeUnsupported:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      reselectParserAfterUploadHint:
+        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+      reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
+      addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
+      addModelToParseHint: '请前往添加模型后再解析。',
+      parseBlockedTitle: '无法解析',
+      parseBlockedPartialTitle: '部分文件无法解析',
+      parseValidFiles: '解析有效文件',
+      parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
-        builtIn: '内置',
+        builtIn: '内置解析模板',
         generation: '生成',
         toMetadataSettingTip: '在配置中设置自动元数据',
         toMetadataSetting: '生成设置',
@@ -417,9 +438,9 @@ export default {
       generateArtifact:
         '从配置了知识编译模板的每个文档中编译 Artifact 页面（Entity / Concept / Topic）。每次运行仅处理新添加的 Chunk。',
       generateToSkills:
-        '从该数据集构建分层 Skills 树，并存储生成的 Skills 页面以供搜索和复用。',
+        '从该知识库构建分层 Skills 树，并存储生成的 Skills 页面以供搜索和复用。',
       processingType: '处理类型',
-      dataPipeline: '切换或配置 ingestion pipeline。',
+      dataPipeline: '选择或切换解析方式',
       dataPipelineTitle: '数据管道',
       operations: '操作',
       taskId: '任务ID',
@@ -438,7 +459,7 @@ export default {
       completed: '已完成',
       datasetLog: '知识库日志',
       created: '创建于',
-      learnMore: '内置 pipeline 简介',
+      learnMore: '查看内置解析模板说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
@@ -457,7 +478,7 @@ export default {
       name: '名称',
       namePlaceholder: '请输入名称',
       doc: '文档',
-      datasetDescription: '解析成功后才能问答哦。',
+      datasetDescription: '只有解析成功后才能问答。',
       addFile: '新增文件',
       searchFiles: '搜索文件',
       localFiles: '本地文件',
@@ -481,15 +502,15 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 20，也就是说文本块的混合相似度得分至少 20 才会被召回。',
+        'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
       vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
-        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
+        '此项用于设置混合相似度分数中的向量相似度权重，该权重可用于向量余弦相似度或重排序分数。两个权重的总和必须等于 1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
       keywordSimilarityWeightTip:
-        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
+        '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
       testText: '测试文本',
-      testTextPlaceholder: '请输入您的问题！',
+      testTextPlaceholder: '请输问题！',
       testingLabel: '运行',
       similarity: '混合相似度',
       termSimilarity: '关键词相似度',
@@ -518,7 +539,7 @@ export default {
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任务页面大小',
-      taskPageSizeMessage: '请输入您的任务页面大小！',
+      taskPageSizeMessage: '请输入任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
       addPage: '新增页面',
       greaterThan: '当前值必须大于起始值！',
@@ -534,24 +555,27 @@ export default {
       close: '关闭',
       rerankModel: 'Rerank 模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `非必选项：若不选择 Rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 Rerank 模型，则混合查询中的向量相似度部分将被 Rerank 打分替代。请注意：采用 Rerank 模型会非常耗时。如需选用 Rerank 模型，建议使用 SaaS 的 Rerank 模型服务；如果你倾向使用本地部署的 Rerank 模型，请务必确保你使用 docker-compose-gpu.yml 启动 RAGFlow。`,
+      rerankTip: `非必选项：若不选择 Rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 Rerank 模型，则混合查询中的向量相似度部分将被 Rerank 打分替代。请注意：采用 Rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
       enableChildrenDelimiter: '子文本块用于检索',
       childrenDelimiter: '文本分段标识符',
       childrenDelimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
+      delimiterPreviewLabel: '切分位置：',
+      delimiterPreviewEmpty: '没有分隔符——文本将仅按大小切分。',
+      delimiterPreviewCount: '（{{count}}）',
 
       html4excel: '表格转 HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
-      autoKeywords: '自动关键词提取',
-      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
-      autoQuestions: '自动问题提取',
-      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
-      autoTags: '自动标签提取',
+      autoKeywords: '自动关键词提取数',
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
+      autoQuestions: '自动问题提取数',
+      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
+      autoTags: '自动标签提取数',
       redo: '是否清空已有 {{chunkNum}}个 Chunk？',
       setMetaData: '设置元数据',
       pleaseInputJson: '请输入JSON',
@@ -592,6 +616,12 @@ export default {
       imageTableContextWindow: '图像与表格上下文窗口',
       imageTableContextWindowTip:
         '抓取图像与表格上下方的 N 个 token，为该 Chunk 提供更丰富的背景上下文。',
+      tableContextWindow: '表格上下文窗口',
+      tableContextWindowTip:
+        '抓取表格上下方的 N 个 token，为该 Chunk 提供更丰富的背景上下文。',
+      imageContextWindow: '图像上下文窗口',
+      imageContextWindowTip:
+        '抓取图像上下方的 N 个 token，为该 Chunk 提供更丰富的背景上下文。',
       autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',
@@ -646,27 +676,29 @@ export default {
       editLinkDataPipeline: '编辑 pipeline',
       linkPipelineSetTip: '管理与此知识库的数据管道链接',
       default: '默认',
-      dataPipeline: '切换或配置 ingestion pipeline。',
+      dataPipeline: '选择或切换解析方式',
       linkDataPipeline: '关联 pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方法',
-      manualSetup: '选择pipeline',
-      builtIn: '内置',
-      titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
+      parseType: '解析方式',
+      manualSetup: '自定义Ingestion pipeline',
+      builtIn: '内置解析模板',
+      noConfigChunkerHint:
+        '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
+      titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
-      photoTip: '你可以上传 4MB 的文件',
+      photoTip: '可以上传 4MB 以内的文件',
       description: '描述',
       language: '文档语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请输入语言',
       permissions: '权限',
       embeddingModel: 'Embedding 模型',
-      chunkTokenNumber: '建议文本块大小',
+      chunkTokenNumber: '推荐分块大小',
       chunkTokenNumberMessage: '块 Token 数是必填项',
       embeddingModelTip:
         '知识库采用的默认 Embedding 模型。一旦知识库内已经产生了文本块，更换 Embedding 模型时，系统将随机抽取若干 Chunk 进行兼容性校验，使用新 Embedding 模型重新编码并计算新旧向量的余弦相似度，样本平均相似度需 ≥ 0.9 方可切换。否则，必须删除知识库内的所有文本块后才能更改。',
@@ -680,6 +712,7 @@ export default {
       english: '英文',
       chinese: '中文',
       embeddingModelPlaceholder: '请选择 Embedding 模型',
+      checkingEmbedding: '正在校验 Embedding 模型兼容性…',
       chunkMethodPlaceholder: '请选择分块方法',
       save: '保存',
       me: '只有我',
@@ -696,7 +729,7 @@ export default {
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
 <p>本方法解析电子邮件文件，提取头部字段（如发件人、收件人、抄送、主题和日期）、正文内容以及附件。</p>`,
-      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或数据集导航）。</p>
+      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或知识库导航）。</p>
 <p>编译后的知识单元以分块形式合并进分块流输出，适合在分块文档之上构建可检索的知识层。</p>`,
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
       由于一本书很长，并不是所有部分都有用，如果是 PDF，
@@ -720,7 +753,7 @@ export default {
       这样做的好处是 LLM 可以更好的概括论文中相关章节的内容，
       产生更全面的答案，帮助读者更好地理解论文。
       缺点是它增加了 LLM 对话的背景并增加了计算成本，
-      所以在对话过程中，你可以考虑减少‘<b>topN</b>’的设置。</p>`,
+      所以在对话过程中，可以考虑减少‘<b>topN</b>’的设置。</p>`,
       presentation: `<p>支持的文件格式为<b>PDF</b>、<b>PPTX</b>。</p><p>
       每个页面都将被视为一个块。 并且每个页面的缩略图都会被存储。</p><p>
       <i>您上传的所有 PPT 文件都会使用此方法自动分块，无需为每个PPT文件进行设置。</i></p>`,
@@ -780,7 +813,7 @@ export default {
       </p><p>
       对于一个文档，它将被视为一个完整的块，根本不会被分割。
       </p><p>
-      如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
+      如果需要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，可以尝试这种方法。
       </p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
@@ -794,7 +827,7 @@ export default {
 `,
       useRaptor: '使用召回增强 RAPTOR 策略',
       useRaptorTip:
-        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
+        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
@@ -827,6 +860,8 @@ export default {
       entityTypes: 'Entity 类型',
       compilationTemplate: '算子',
       compilationTemplateRequired: '请选择算子',
+      compilationTemplateUnavailable:
+        '所选算子不可用（已删除或无权限），请重新选择',
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
@@ -834,6 +869,8 @@ export default {
       tagName: '标签',
       tagMessage: '请选择标签',
       frequency: '频次',
+      frequencyMinMessage: '频次最小为 {{min}}',
+      frequencyMaxMessage: '频次最大为 {{max}}',
       searchTags: '搜索标签',
       tagCloud: '云',
       tagTable: '表',
@@ -846,7 +883,7 @@ export default {
       <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
       <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
-      <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
+      <li>在给知识库文本块批量打标签之前，需要先生成标签集作为样本。 </li>
       <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
       <p> 详见：https://ragflow.io/docs/dataset_configuration#basic-information </p>
@@ -855,7 +892,7 @@ export default {
       addTag: '增加标签',
       useGraphRag: '提取 Graph',
       useGraphRagTip:
-        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：Entities 和 Relations 提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：Entities 和 Relations 提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
@@ -909,7 +946,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
     chat: {
       chatSupport: '聊天支持',
       replyInstantly: '我们通常会即时回复',
-      typeYourMessage: '输入您的消息...',
+      typeYourMessage: '输入消息...',
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
@@ -927,7 +964,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       send: '发送',
       sendPlaceholder: '给助理发送消息...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '为你的知识库配置专属聊天助手！ 💕',
+      chatConfigurationDescription: '为知识库配置知识问答聊天！ 💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填项',
       namePlaceholder: '例如 贾维斯简历',
@@ -1007,7 +1044,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大 Token 数',
       maxTokensMessage: '最大 Token 数是必填项',
-      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       thinking: '思考中...',
@@ -1096,21 +1133,40 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '在问答过程中是否启用推理工作流，类似 Deepseek-R1 等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
-      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      tavilyApiKeyMessage: '请输入 Tavily API Key',
       webSearch: '网络搜索',
       webSearchProvider: '网络搜索服务',
       webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
       webSearchProviderPlaceholder: '请选择网络搜索服务',
+      webSearchApiKeyRequired:
+        '所选服务必须填写 API Key —— 否则不会发起联网搜索，聊天框里也不会出现联网开关。',
+      // 密钥输入框的标签。{{provider}} 是 provider 的品牌名，故意不翻译，
+      // 因此一个模板即可覆盖全部 9 个 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
+      // 每个 provider 一组 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
+      braveApiKeyMessage: '请输入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。选择 Exa 后，将使用其搜索结果补充知识库检索。即使是每月 1,000 次的免费额度，也仍然需要 Key。',
+      exaApiKeyMessage: '请输入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '选择 Firecrawl 后，将使用其搜索结果补充知识库检索。只取搜索摘要，不抓取整页。',
+      firecrawlApiKeyMessage: '请输入你的 Firecrawl API Key',
+      linkupApiKeyTip: '选择 Linkup 后，将使用其搜索结果补充知识库检索。',
+      linkupApiKeyMessage: '请输入你的 Linkup API Key',
+      parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
+      parallelApiKeyMessage: '请输入你的 Parallel API Key',
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
-      queritApiKeyMessage: '请输入你的 Querit API Key',
+      queritApiKeyMessage: '请输入 Querit API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
-      serplyApiKeyMessage: '请输入你的 Serply API Key',
+      serplyApiKeyMessage: '请输入 Serply API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
-      tavilyApiKeyHelp: '如何获取？',
+      webSearchApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
       crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
@@ -1185,6 +1241,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '连接你的 Oracle Cloud Object Storage 存储桶以导入和同步文件。',
       google_driveDescription:
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
+      feishu_wikiDescription: '同步飞书知识库指定范围内的可下载文件节点。',
       gmailDescription: '通过 OAuth 连接 Gmail，用于同步邮件。',
       google_driveTokenTip:
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
@@ -1263,8 +1320,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
+      azureDevOpsBaseUrlTip:
+        'Azure DevOps 实例的基础 URL（例如 https://dev.azure.com，或私有网络/本地部署的 Azure DevOps Server 例如 http://tfs.corp.local:8080/tfs）。留空默认使用 https://dev.azure.com。',
       azureDevOpsOrganizationTip:
-        '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+        '组织名称（例如 contoso），或项目集合名称（例如 DefaultCollection），或自托管 Azure DevOps Server 的集合地址。',
       azureDevOpsProjectsTip:
         '以逗号分隔的团队项目名称。例如：Project1,Project2',
       azureDevOpsRepositoriesTip:
@@ -1306,6 +1365,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldClientSecret: '客户端密钥',
       dataSourceFieldFolderPathOptional: '文件夹路径（可选）',
       dataSourceFieldBatchSize: '批量大小',
+      dataSourceFieldFeishuAppId: '飞书应用 App ID',
+      dataSourceFieldFeishuAppSecret: '飞书应用 App Secret',
+      dataSourceFieldWikiSpaceId: '知识库 Space ID',
+      dataSourceFieldRootNodeToken: '知识库根节点 Token',
+      dataSourceFieldIncludeExtensions: '允许的文件扩展名',
+      dataSourceFieldIncludeKeywords: '文件名必须包含的关键词',
+      dataSourceFieldExcludeKeywords: '文件名排除关键词',
+      dataSourceFieldMaxFileSizeBytes: '最大文件大小（字节）',
+      dataSourceValidationFeishuBatchSize: '批量大小必须介于 1 和 10 之间',
       dataSourceFieldMailFolder: '邮件文件夹',
       dataSourceFieldMailboxUserIds: '邮箱用户 ID（可选）',
       dataSourceFieldInstanceUrl: '实例 URL',
@@ -1381,7 +1449,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldProjectId: '项目 ID',
       dataSourceFieldLocation: '位置',
       dataSourceFieldServiceAccountJson: '服务账号 JSON',
-      dataSourceFieldDatasetId: '数据集 ID',
+      dataSourceFieldDatasetId: '知识库 ID',
       dataSourceFieldTableId: '表 ID',
       dataSourceFieldMaxBytesBilled: '最大计费字节数',
       dataSourceFieldJobTimeout: '作业超时时间（毫秒）',
@@ -1418,6 +1486,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldIsCloud: '是否为云版本',
       dataSourceFieldIndexMode: '索引模式',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps 个人访问令牌',
+      dataSourceFieldAzureDevOpsBaseUrl: '基础 URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps 组织',
       dataSourceFieldAzureDevOpsRepositories: '仓库',
       dataSourceFieldAzureDevOpsContentTypes: '内容类型',
@@ -1513,11 +1582,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceAzureSasTokenRequired: '使用 SAS 令牌认证时，SAS 令牌为必填项',
       dataSourceAzureContainerNameRequired: '在此认证模式下，容器名称为必填项',
       dataSourceBigqueryDatasetIdRequired:
-        '未使用自定义 SQL 查询时，数据集 ID 为必填项',
+        '未使用自定义 SQL 查询时，知识库 ID 为必填项',
       dataSourceBigqueryTableIdRequired:
         '未使用自定义 SQL 查询时，表 ID 为必填项',
       dataSourceBigqueryQueryRequired:
-        '请提供 SQL 查询，或同时提供数据集 ID 和表 ID',
+        '请提供 SQL 查询，或同时提供知识库 ID 和表 ID',
       dataSourceSalesforceInstanceUrlInvalid:
         '必须为合法的 Salesforce 域名 (https://...salesforce.com)',
       dataSourceSalesforceApiVersionInvalid: 'API 版本格式必须如 v59.0',
@@ -1611,9 +1680,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       avatar: '头像',
       avatarTip: '这会在你的个人主页展示',
       profileDescription: '在此更新您的照片和个人详细信息。',
-      maxTokens: '最大token数',
-      maxTokensMessage: '最大token数是必填项',
-      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
+      maxTokens: '最大上下文长度',
+      maxTokensMessage: '最大上下文长度是必填项',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
@@ -1930,7 +1999,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       batchRemoveModels: '移除全部模型',
       batchVerifyModels: '验证全部模型',
       editCustomModelTitle: '编辑模型',
-      modelMaxTokens: '最大 Token 数',
+      modelMaxTokens: '最大上下文长度',
       modelTypes: {
         chat: 'Chat',
         embedding: 'Embedding',
@@ -1984,6 +2053,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '实体模式：每个实体或概念对应一个 Wiki 页面。主题模式：让 LLM 按主题将相关实体或概念组合到同一个 Wiki 页面。',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
+      claimExtractionPrompt: 'Claim 抽取提示词',
+      claimExtractionPromptTip:
+        '聚类前从叶子 chunk 收割原子命题（附逐字证据）的系统提示词。留空使用内置契约。',
       maxToken: '最大 token 数',
       maxTokenRequired: '请输入最大 token 数',
       clusteringThreshold: '聚类阈值',
@@ -2003,7 +2075,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       jsonPreview: 'JSON 预览',
       processFlow: '流程视图',
       processFlowComingSoon: '流程视图预览即将到来',
-      compilationTitleSuffix: '的数据集',
+      compilationTitleSuffix: '的知识库',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -2022,7 +2094,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
-        '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
+        '确定要清空该知识库下的所有 Wiki 页面吗？此操作无法撤销。',
       update: '更新',
       updateTooltip:
         '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档，{{changed}} 个已变更文档。点击编译并合并到当前 Wiki。',
@@ -2056,6 +2128,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       skillDeleteTitle: '删除 Skill',
       skillDeleteDescription: '确定要删除该 Skill 吗？',
       navTitle: 'PageIndex',
+      navLogTitle: '导航树日志',
       navEmpty: '暂无导航节点',
       navLoadFailed: '加载目录树失败',
       navChildLoadFailed: '加载子节点失败',
@@ -2070,8 +2143,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       navDeleteAllDescription: '确定要删除整个 PageIndex 吗？此操作无法撤销。',
       navDeleteNodeTitle: '删除 PageIndex',
       navDeleteNodeDescription: '确定要删除该节点及其子节点吗？',
-      representationEmpty: '暂无Artifact模板。',
+      representationEmpty: '暂无 Artifact 模板。',
       representationUnsupported: '暂不支持该表征类型。',
+      claimsPanelTitle: '证据链 · {{name}}',
+      claimsTotal: '共 {{count}} 条',
+      claimsLoading: '正在加载证据链…',
+      claimsEmpty: '未提取到证据链。',
+      claimsLoadMore: '加载更多（还剩 {{remaining}} 条）',
+      claimsMoreEvidence: '还有 {{count}} 条证据',
+      claimsCollapseEvidence: '收起',
+      claimsNodeDetail: '详情',
     },
     message: {
       registered: '注册成功',
@@ -2153,17 +2234,20 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tagsPlaceholder: '输入标签后按回车',
       tagSuggestionsLabel: '现有标签',
       removeTagAriaLabel: '删除 {{tag}}',
-      includeHeadingContent: '分离上级标题正文',
+      includeHeadingContent: '分离上级标题内容',
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
-      rootAsHeading: '将首个切片设为 H0 标题',
+      chunkTokenCap: '分块 Token 上限',
+      chunkTokenCapTip:
+        '每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
+      rootAsHeading: '将首个分块设为全局上下文',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
-      hierarchyTip: `构建标题树并生成独立的块，每个块携带其完整的祖先标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
+      hierarchyTip: `构建标题层级树并生成独立分块，每个分块均包含完整的上级标题路径（例如 第1部分 › 第3章 › 第2节 + 正文）。\n
 适用场景：具有独立的、结构性重要章节的文档——如法律条款、法规、合同和技术规范——其中每个块即使没有上下文也能通过其结构位置来识别。`,
-      groupTip: `在选定的标题级别将文档扁平分割，并自动合并相邻的小节以保持内容连续性。不注入父标题路径。\n
-适用场景：具有流动性的、内容相关联的文档——如书籍、手册、报告和文章——其中相邻段落应保持在一起以维持叙述连贯性。`,
-      enableMultiColumn: '启用多栏',
+      groupTip: `在选定的标题层级对文档进行扁平分块，并合并相邻的小节，以保持语义连贯性。分块中不包含上级标题路径。\n
+适用场景：内容连续、上下文关联较强的文档，例如书籍、手册、报告和文章。这类文档通常需要保留相邻段落，以维持叙述连贯性。`,
+      enableMultiColumn: '多栏布局识别',
       enableMultiColumnTip:
         '检测并解析多栏页面布局以保持正确的阅读顺序。对于具有双栏或报纸式布局的 PDF 或文档，请开启此功能。',
       removeToc: '移除原始目录',
@@ -2251,6 +2335,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tab: '制表符',
       space: '空格',
       delimiters: '分隔符',
+      delimitersTip:
+        '每行一个分隔符，多字符分隔符可直接填写（如 ##）。加反引号（如 `##`）：强制切分，每个分隔符处独立成块，不再按 token 大小合并；不加反引号：只作为切分点，切出的段落仍会按 chunk_token_size 合并，因此短文本可能看不出效果。',
+      delimitersTipPython:
+        '每行一个分隔符。只有用反引号包裹的条目（如 `##`）生效：每个分隔符处独立成块，不再按 token 大小合并；不加反引号的条目会被忽略。',
+      childrenDelimitersTip:
+        '子块切分：每个父块会再按这些分隔符切成子块（子块用于检索），不受 chunk_token_size 影响。',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
@@ -2274,7 +2364,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       communication: '通信',
       developer: '开发者',
       typeCommandORsearch: '输入命令或或搜索...',
-      builtIn: '内置',
+      builtIn: '内置解析模板',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
@@ -2330,6 +2420,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       stringTransformDescription:
         '修改文本内容，目前支持文本分割、文本拼接操作',
       foundation: '基础',
+      tool: '工具',
       tools: '工具',
       dataManipulation: '数据操控',
       dialog: '对话',
@@ -2339,6 +2430,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       version: {
         details: '版本详情',
         download: '下载',
+        loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
       },
       cite: '引用',
@@ -2351,7 +2443,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       msg: '消息',
       msgTip: '输出上游组件的变量内容或者自己输入的文本。',
       messagePlaceholder: '请输入您的消息内容，使用‘/’快速插入变量。',
-      messageMsg: '请输入消息或删除此字段。',
+      messageMsg: '消息不能为空',
       addField: '新增字段',
       addMessage: '新增消息',
       loop: '循环',
@@ -2408,7 +2500,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       baiduDescription: `此组件用于从 www.baidu.com 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。',
+        '此组件用于从 [www.duckduckgo.com](http://www.duckduckgo.com) 获取搜索结果。通常，它作为知识库的补充。Top N 指定需要调整的搜索结果数量。',
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
@@ -2839,7 +2931,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         upload: '上传',
         photo: '照片',
         permissions: '权限',
-        permissionsTip: '你可以在这里设置团队访问权限。',
+        permissionsTip: '可以在这里设置团队访问权限。',
         me: '仅限自己',
         team: '团队',
       },
@@ -2849,7 +2941,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
-        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。可以通过斜杠或者 (x) 按钮显示可用的 key。',
       knowledgeBasesTip: '选择关联的知识库，或者在下方选择包含知识库ID的变量。',
       knowledgeBaseVars: '知识库变量',
       code: '代码',
@@ -2956,16 +3048,23 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: '索引器',
       tokenizerRequired: '请先添加索引器节点',
-      nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
-      agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
-      retrievalDatasetRequired: '请选择知识库',
-      retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      nodeFormInvalid: '配置有误，请先修正',
+      agentModelMissing: '未选择模型，请先选择',
+      retrievalDatasetMissing: '未选择知识库，请先选择',
+      retrievalMemoryMissing: '未选择记忆，请先选择',
+      checklist: '检查清单',
+      checklistEmpty: '未发现问题',
+      checklistTitle: '请先解决以下问题再运行或发布',
+      checklistResolveBefore: '请先解决检查清单中的问题',
+      issueNotConnected: '该步骤未与任何算子连接',
+      issueVariableInvalid: '变量失效：{{variable}}',
+      memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
-      retrievalMemoryRequired: '请选择记忆库',
-      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalTemplateMemoryHint:
-        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalDatasetRequired: '请先选择知识库',
+      retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
@@ -2974,6 +3073,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
+      oneChunkerDescription: '此 Chunker 无需额外配置。',
+      qAChunkerDescription: '此 Chunker 无需额外配置。',
+      tableChunkerDescription: '此 Chunker 无需额外配置。',
+      pageChunkerDescription: '此 Chunker 无需额外配置。',
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
@@ -2994,6 +3097,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         audio: '音频',
         video: '视频',
       },
+      addFileType: '添加文件类型',
+      atLeastOneFileType: '至少保留一个文件类型',
       fields: '字段',
       rule: '规则',
       addRule: '增加规则',
@@ -3001,12 +3106,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       // group: '聚合',
       // hierarchy: '层次结构',
       regularExpressions: '正则表达式',
-      overlappedPercent: '重叠百分比（%）',
+      overlappedPercent: '重叠比例（%）',
       searchMethod: '搜索方法',
       searchMethodTip: `决定该知识库启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名 Embedding 权重',
-      parserMethod: '解析方法',
+      parserMethod: '解析器',
       tableResultType: '表格返回形式',
       markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:
@@ -3015,12 +3120,12 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       viewResult: '查看结果',
       running: '运行中',
       summary: '增强上下文',
-      keywords: '关键词',
-      questions: '问题',
+      keywords: '自动关键词',
+      questions: '自动问题',
       metadata: '元数据',
       fieldName: '结果目的地',
       enableSummary: '启用增强上下文',
-      useBuiltInTemplate: '使用内置模板',
+      useBuiltInTemplate: '使用内置解析模板',
       prompts: {
         system: {
           keywords: `角色

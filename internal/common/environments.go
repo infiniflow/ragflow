@@ -19,6 +19,7 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -30,9 +31,40 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// SandboxArtifactBucket is the object-storage bucket that holds
+// code-exec sandbox artifacts, served back through
+// /api/v1/documents/artifact/<name>.
+func SandboxArtifactBucket() string {
+	if bucket := GetEnv(EnvSandboxArtifactBucket); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+// SandboxArtifactContentTypes maps the sandbox-artifact file extensions
+// the /api/v1/documents/artifact route serves to response content
+// types. Artifact publication derives storage-name extensions from the
+// same table so every published URL resolves to a servable type.
+var SandboxArtifactContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg":  "image/svg+xml",
+	".pdf":  "application/pdf",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+}
+
+func IsLLMDebugEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
+	return err == nil && enabled
+}
+
 // environment variables
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
+	EnvRAGFlowDevMode                    = "RAGFLOW_DEV_MODE"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
@@ -99,6 +131,7 @@ const (
 	EnvOpenAIAPIKey                      = "OPENAI_API_KEY"
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
+	EnvLLMDebug                          = "LLM_DEBUG"
 	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
@@ -224,6 +257,11 @@ const (
 	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
 	// backends apply the same text-blanking contract.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
+	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
+	// Runs may be in flight at once (each uses one core). It overrides the
+	// deepdoc.inference_concurrency config key and is itself overridden by the
+	// --deepdoc-inference-concurrency CLI flag.
+	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
@@ -267,11 +305,12 @@ func HasModelFiles(dir string) bool {
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
-// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is ONE OF
-// THREE raw version declarations that must stay equal (the other two are
-// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
-// — NOT a single source of truth. The download URL and extracted dir name are
-// built from those ORT_VERSION constants, not from this one. The Go binding
+// DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
+// FOUR raw version declarations that must stay equal (the other three are
+// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py,
+// and ARG ORT_VERSION in Dockerfile_go) — NOT a single source of truth. The
+// download URL and extracted dir name are built from those ORT_VERSION
+// constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
 // and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
@@ -279,11 +318,15 @@ func HasModelFiles(dir string) bool {
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT, ALL of the following must change together (drift breaks the
-// static link or the runtime OrtGetApiBase lookup):
-//   - DeepDocORTVersion (here, Go) AND ORT_VERSION in BOTH
-//     ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py;
-//   - the onnxruntime== pin in pyproject.toml and the onnxruntime /
-//     onnxruntime-gpu pins in .github/workflows/deepdoc-drift.yml;
+// To bump ORT, the four Go-side native pins above must change together
+// (drift breaks the static link or the runtime OrtGetApiBase lookup):
+//   - DeepDocORTVersion (here, Go)
+//   - ORT_VERSION in ragflow_deps/download_go_deps.py
+//   - ORT_VERSION in ragflow_deps/download_deps.py
+//   - ARG ORT_VERSION in Dockerfile_go
+//
+// Separately, keep these on the same ORT minor line but version them
+// independently of the Go native lib (see pyproject.toml / development.md):
+//   - the onnxruntime== / onnxruntime-gpu== pins in pyproject.toml (Python side)
 //   - the onnxruntime_go binding minor in go.mod.
-const DeepDocORTVersion = "1.23.2"
+const DeepDocORTVersion = "1.29.0"

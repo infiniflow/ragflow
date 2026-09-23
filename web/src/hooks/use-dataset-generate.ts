@@ -113,8 +113,10 @@ const useTraceQuery = (
         // MySQL inflight/backlog entry counts and the error diagnostic, and
         // derive the display status in useGenerateStatus. progress is only set
         // so the shared refetch/status helpers keep their contract (idle->0,
-        // running/pending->0, completed->1, error->0).
-        const res = await getDatasetCompilationStatus(id!);
+        // running/pending->0, completed->1, error->0). The traceType doubles as
+        // the backend `kind` alias, scoping state/counts/error to this compile
+        // type so views don't leak each other's dataset-wide aggregate.
+        const res = await getDatasetCompilationStatus(id!, traceType);
         const data = res?.data;
         // The handler returns HTTP 200 with a non-zero business code for
         // authorization/business errors (e.g. "no authorization"). The request
@@ -154,9 +156,9 @@ const TraceTypeMap: Record<GenerateType, TraceType> = {
   [GenerateType.SessionGraph]: TraceType.SessionGraph,
 };
 
-export const useTraceRunData = (type: GenerateType) => {
+export const useTraceRunData = (type: GenerateType, open = true) => {
   const { id } = useParams();
-  return useTraceQuery(type, TraceTypeMap[type], true, id);
+  return useTraceQuery(type, TraceTypeMap[type], open, id);
 };
 
 export const useUnBindTask = () => {

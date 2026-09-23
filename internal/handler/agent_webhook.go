@@ -68,7 +68,7 @@ import (
 	"net/http"
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
-	rediscli "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
@@ -605,7 +605,7 @@ func (h *AgentHandler) runWebhookSync(
 			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 		}
 		code, message := mapAgentError(err)
-		return newWebhookFailureResult(webhookHTTPStatusForAgentError(code, err), message, sessionID)
+		return newWebhookFailureResult(webhookHTTPStatusForAgentError(code), message, sessionID)
 	}
 
 	contents := []string{}
@@ -689,12 +689,10 @@ func webhookStartErrorEvent(err error, sessionID string) canvas.RunEvent {
 	}
 }
 
-func webhookHTTPStatusForAgentError(code common.ErrorCode, err error) int {
+func webhookHTTPStatusForAgentError(code common.ErrorCode) int {
 	switch {
 	case code == common.CodeServerError:
 		return http.StatusInternalServerError
-	case errors.Is(err, service.ErrAgentSessionBusy):
-		return http.StatusConflict
 	case code == common.CodeOperatingError:
 		return http.StatusForbidden
 	default:
@@ -822,7 +820,7 @@ const (
 // appendWebhookTrace appends a single RunEvent to the per-canvas trace
 // key in Redis. Each event is recorded as {"ts": <float>, "event": <type>, ...}.
 func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent) {
-	rdb := rediscli.Get()
+	rdb := kvrocks.Get()
 	if rdb == nil || rdb.GetClient() == nil {
 		return
 	}

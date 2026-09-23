@@ -28,13 +28,21 @@ export const normalizeCitationDigits = (text: string) => {
   });
 };
 
-export const parseCitationIndex = (value: string) => {
+export type CitationKey = number | string;
+
+export const parseCitationIndex = (value: string): CitationKey => {
   const normalized = normalizeCitationDigits(value);
-  const markerMatch = normalized.match(/\[(?:ID:)?(\d+)\]/);
-  if (markerMatch) return Number(markerMatch[1]);
+  const markerMatch = normalized.match(
+    /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/,
+  );
+  if (markerMatch) {
+    const captured = markerMatch[1];
+    return /^\d+$/.test(captured) ? Number(captured) : captured;
+  }
   if (/^\d+$/.test(normalized)) return Number(normalized);
+  if (/^[0-9a-fA-F]+$/.test(normalized)) return normalized;
   return Number.NaN;
 };
 
 export const citationMarkerReg =
-  /\[(?:ID:)?([0-9\u0660-\u0669\u06F0-\u06F9]+)\]/g;
+  /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/g;

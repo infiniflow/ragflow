@@ -88,10 +88,6 @@ const methods = {
     url: listPipelines,
     method: 'get',
   },
-  pipelineRerun: {
-    url: api.pipelineRerun,
-    method: 'post',
-  },
 };
 
 const baseKbService = registerServer<keyof typeof methods>(methods, request);
@@ -362,10 +358,15 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list.
-export const listDatasetByIds = (ids: string[]) =>
+// in the first page of the paginated list. `ownerTenantId` scopes the lookup
+// to the canvas owner's tenant when viewing a shared canvas.
+export const listDatasetByIds = (ids: string[], ownerTenantId?: string) =>
   request.get(api.kbList, {
-    params: { ids: ids.join(','), page_size: ids.length },
+    params: {
+      ids: ids.join(','),
+      page_size: ids.length,
+      ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+    },
   });
 
 export const datasetFilter = () => request.get(api.datasetFilter);
@@ -381,17 +382,23 @@ export const traceIndex = (datasetId: string, indexType: string) =>
 
 // getDatasetCompilationStatus reads the Go scheduler compile-status contract
 // (GET /datasets/:id/compilation/status), used on the Go backend to
-// replace the legacy traceIndex task-progress endpoint. Route it through the
+// replace the legacy traceIndex task-progress endpoint. The `kind` query param
+// scopes the status to one compile type, mirroring the per-type scoping the
+// Python branch gets from traceIndex's `type=` param. Route it through the
 // service-layer proxy (registerNextServer -> next-request) like the rest of the
 // *-service.ts HTTP proxies.
 const compilationStatusProxy = registerNextServer({
   getDatasetCompilationStatus: {
-    url: (datasetId: string) => api.compilationStatus(datasetId),
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.compilationStatus(datasetId),
     method: 'get',
   },
 } as const);
-export const getDatasetCompilationStatus = (datasetId: string) =>
-  compilationStatusProxy.getDatasetCompilationStatus(datasetId);
+export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
+  compilationStatusProxy.getDatasetCompilationStatus(
+    { datasetId, params: { kind } },
+    true,
+  );
 
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
@@ -506,6 +513,12 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const listIngestionMessages = (
+  datasetId: string,
+  logId: string,
+  params?: Record<string, any>,
+) => request.get(api.listIngestionMessages(datasetId, logId), { params });
 
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));

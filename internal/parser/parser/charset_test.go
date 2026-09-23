@@ -162,12 +162,20 @@ func TestCSVParser_GBK(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("CSVParser.ParseWithResult failed: %v", res.Err)
 	}
-	if strings.ContainsRune(res.HTML, '\ufffd') {
-		t.Errorf("CSV HTML output contains replacement runes: %s", res.HTML)
+	if len(res.JSON) == 0 {
+		t.Fatalf("CSVParser returned no JSON items")
+	}
+	var rowText strings.Builder
+	for _, item := range res.JSON {
+		text, _ := item["text"].(string)
+		rowText.WriteString(text)
+	}
+	if strings.ContainsRune(rowText.String(), '\ufffd') {
+		t.Errorf("CSV output contains replacement runes: %s", rowText.String())
 	}
 	for _, want := range []string{"笔记本电脑", "电子", "特价销售，送鼠标", "无线耳机"} {
-		if !strings.Contains(res.HTML, want) {
-			t.Errorf("CSV HTML missing expected substring %q; got: %s", want, res.HTML)
+		if !strings.Contains(rowText.String(), want) {
+			t.Errorf("CSV output missing expected substring %q; got: %s", want, rowText.String())
 		}
 	}
 	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" && enc != "gb2312" {

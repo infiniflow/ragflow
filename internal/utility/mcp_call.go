@@ -14,17 +14,6 @@
 //  limitations under the License.
 //
 
-// Phase 3.7: MCP tools/call implementation. The mcp_client.go
-// file handles tools/list discovery; this file adds the
-// tools/call invocation path so the MCPToolAdapter can return
-// real results instead of "not yet implemented" errors.
-//
-// The implementation focuses on the streamable-HTTP transport
-// (spec 2025-03-26) because that is the dominant transport for
-// modern MCP servers. The legacy SSE transport's session
-// lifecycle is more complex; deferring it matches the rest of
-// the package's "loud-fail with a clear error" pattern.
-
 package utility
 
 import (
@@ -33,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/common"
 	"time"
 )
 
@@ -83,7 +73,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Second
 	}
-	hostname, resolvedIP, err := AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := common.AssertURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +94,13 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 		// declaring the legacy SSE transport get the legacy path.
 		return callToolStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.ToolName, opts.Arguments, opts.Timeout)
 	case TransportSSE:
-		return nil, errors.New("MCP tools/call on legacy SSE transport is not yet implemented in Go (Phase 3.7 deferred; use streamable-http)")
+		result, err := requestSSE(connectCtx, opts.URL, headers, opts.HTTPClient, "tools/call", map[string]any{
+			"name": opts.ToolName, "arguments": opts.Arguments,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return parseCallResult(result)
 	default:
 		return nil, fmt.Errorf("Unsupported MCP server type.")
 	}

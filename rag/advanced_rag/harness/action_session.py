@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import re
@@ -38,7 +39,7 @@ _LOG = logging.getLogger(__name__)
 _INIT_TIMEOUT_S = 45.0
 _ACTION_TIMEOUT_S = 75.0
 _SNIPPETS_PER_QUERY = 4
-_MAX_TOOL_RESPONSE_CHARS = 12000
+_MAX_TOOL_RESPONSE_CHARS = 100000
 # Dataset-level empty results (reason="no_structure") a compiled-structure tool
 # must accumulate before it is disabled for the rest of the session. Kept above
 # 1: a single empty can be SCOPED — graph_explore over a doc_scope that has no
@@ -53,6 +54,16 @@ _EMPTY_STRIKES = 2
 # short-circuited with a nudge instead of burning a turn on a redundant search.
 _NEAR_DUP_JACCARD = 0.8
 _RETRIEVAL_TOOLS = ("search_chunks", "grep_chunks", "grep_search")
+
+# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Deliberately
+# LARGER than _SCA_VIEW_CAP (=60) in agentic_rag_graph.py so storage and review stay
+# DECOUPLED: the pool accumulates while the SCA reads a ranked top-60 view. Coupling them
+# at 60 starved the raw-evidence channel in 42% of rounds (every admit rejected -> status
+# REDUNDANT -> playbook told the model to vary the query -> it re-searched for nothing).
+_EVIDENCE_POOL_CAP = 120
+# Per-process flag so the "pool FULL" log line is emitted once per fill, not once
+# per rejected chunk. The pool never shrinks mid-session, so no reset is needed.
+_EVIDENCE_POOL_STATE = {"full_logged": False}
 
 
 def _search_tokens(q: str) -> set[str]:
@@ -189,10 +200,11 @@ _RETRIEVE_TOOL_SPEC = {
     "function": {
         "name": "retrieve",
         "description": (
-            "Keyword-first search of the fixed document corpus. Pass natural-"
-            "language queries; returns SHORT snippets of the most relevant "
-            "passages (exact-term matched where possible). Use multiple queries "
-            "to cover different aspects. Supports 1-3 queries per call."
+            "WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets."
+            "DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document."
+            "ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it."
+            "OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there."
+            "IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch."
         ),
         "parameters": {
             "type": "object",
@@ -214,10 +226,11 @@ _LIST_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "list_chunks",
         "description": (
-            "Deep-read the FULL text of one document by doc_id (returned in "
-            "retrieve snippets). Use for enumeration / count / arithmetic answers "
-            "when snippets are insufficient. Returns all chunks of the document "
-            "in reading order. One doc_id per call."
+            "WHEN TO CALL: You need the FULL text of one document (enumeration, counts, arithmetic over many passages) and you already have its doc_id from a prior tool result."
+            "DO NOT CALL: When you only need a single passage (use search_chunks or retrieve first); when you have no doc_id yet (locate it via navigate_tree or search_chunks first)."
+            "ARGUMENTS: doc_id — string, the document id seen in a retrieve / search_chunks / navigate result. ONLY doc_id is accepted; there is no chunk_ids argument, and the tool returns the whole document (capped at 30 chunks)."
+            "OUTPUT: All chunks of the document in reading order. ok = new evidence; redundant = already in pool."
+            "IF IT FAILS: An unknown or blank doc_id yields an empty result (query-level miss, not a dataset fact) — pick a different doc_id or locate one first. Do not treat this as a reason to disable the tool."
         ),
         "parameters": {
             "type": "object",
@@ -237,18 +250,13 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "search_chunks",
         "description": (
-            "SEMANTIC retrieval (hybrid vector+BM25) with COMPILED-STRUCTURE "
-            "EXPANSION. Use as the PRIMARY recall tool when exact-term "
-            "``retrieve`` returns nothing useful, or when the dataset is large and "
-            "you are unsure which document holds the answer — the answer passage "
-            "may share NO surface words with the query. "
-            "Compiled expansion: automatically appends related chunks from the "
-            "dataset's compiled structure (page index, tree/heading hierarchy, "
-            "knowledge graph, wiki pages when present) so a semantic hit carries "
-            "its structural neighbours (parent/child headings, sibling pages). "
-            "If the dataset has NO compiled structure (incl. no wiki), expansion "
-            "is a no-op — no error, just semantic hits. "
-            "Returns snippet chunks ranked by relevance. 1-2 queries per call."
+            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries; compiled-structure expansion is automatic (a no-op without compiled structure). "
+            "DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve."
+            "ARGUMENTS: query — array of 1-2 strings."
+            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours appended. "
+            "Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM source quotes. If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. "
+            "ok = new evidence; redundant = already seen."
+            "IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it."
         ),
         "parameters": {
             "type": "object",
@@ -272,11 +280,11 @@ _WEB_SEARCH_TOOL_SPEC = {
     "function": {
         "name": "web_search",
         "description": (
-            "Search the open WEB. Use ONLY when the needed fact is world "
-            "knowledge / recent event / not covered by the fixed corpus — e.g. "
-            "a current event, a person's alive-now status, or a statistic newer "
-            "than the corpus. If the fact plausibly lives in the documents, "
-            "prefer corpus tools (retrieve/search_chunks) first. 1-2 queries per call."
+            "WHEN TO CALL: The needed fact is world knowledge, a recent event, or newer than the corpus (a current event, a person's alive-now status, a fresh statistic). This tool only appears when a web provider is configured."
+            "DO NOT CALL: When the fact plausibly lives in the fixed corpus — prefer retrieve or search_chunks first. For corpus-only questions this tool is unavailable."
+            "ARGUMENTS: query — array of 1-2 strings."
+            "OUTPUT: Web results shaped like corpus chunks, merged into the same evidence pool."
+            "IF IT FAILS: error (no provider) — it will not appear at all this session; if it does appear and fails, switch to corpus tools permanently and do not retry it."
         ),
         "parameters": {
             "type": "object",
@@ -298,23 +306,11 @@ _NAVIGATE_TREE_TOOL_SPEC = {
     "function": {
         "name": "navigate_tree",
         "description": (
-            "LOCATE the RIGHT DOCUMENT among MANY before deep-reading. Use it "
-            "BEFORE search_chunks when the dataset is large and you have no "
-            "doc_id yet — it routes by TOPIC/CLUSTERING similarity over the "
-            "compiled document-navigation tree (not exact surface words), so it "
-            "finds the document even when your query words differ from its text. "
-            "Returns candidate doc_ids + a first-chunk summary of each. "
-            "This is the FIRST hop of a navigation chain: "
-            "navigate_tree(query) -> doc_id -> navigate_structure(doc_id, ...) "
-            "-> list_chunks(doc_id, chunk_ids). "
-            "Use when: the question names a topic/entity/alias but you do not "
-            "know which document discusses it; search_chunks returned scattered "
-            "hits across many docs and you must pick the source. "
-            "Do NOT use if you already hold a doc_id (go straight to "
-            "navigate_structure) or if the answer is likely a single exact "
-            "passage (prefer retrieve/search_chunks). "
-            "If the dataset has no compiled document navigation tree, it returns "
-            "empty — fall back to search_chunks."
+            "WHEN TO CALL: The question names a topic, entity, or alias but you do NOT know which document discusses it, especially on a large corpus. Routes by topic or cluster similarity over the compiled navigation tree."
+            "DO NOT CALL: When you already hold a doc_id (go straight to navigate_structure); when the answer is likely a single exact passage (use retrieve or search_chunks)."
+            "ARGUMENTS: query — string, the topic / entity / alias whose document(s) to locate. Note: keywords is read by the executor but is NOT a declared parameter; do not pass it."
+            "OUTPUT: Candidate doc_ids plus a first-chunk summary of each; these become your known-docs set for the next step."
+            "IF IT FAILS: empty (no_structure) means the dataset has no compiled navigation tree — immediately switch to search_chunks. A second such empty disables this tool for the rest of the session, so do not retry it."
         ),
         "parameters": {
             "type": "object",
@@ -334,18 +330,12 @@ _NAVIGATE_STRUCTURE_TOOL_SPEC = {
     "function": {
         "name": "navigate_structure",
         "description": (
-            "PINPOINT A PASSAGE inside ONE document using its compiled structure "
-            "(heading/catalog tree, concept mindmap, or entity graph) — the "
-            "in-document counterpart of navigate_tree. "
-            "Use AFTER you know the doc_id (from navigate_tree / search_chunks / "
-            "retrieve) and need to find where the answer lives WITHOUT reading "
-            "every chunk. Returns the structure outline annotated with matching "
-            "chunk_ids (reading-order aware). Then call list_chunks(doc_id, "
-            "chunk_ids) to read exactly those. "
-            "kind: 'catalog' (default) for page-index/heading/timeline trees, "
-            "'mindmap' for concept maps, 'graph' for entity-relation graphs. "
-            "If the document has NO compiled structure, an empty <doc/> is "
-            "returned — fall back to list_chunks to read the full document."
+            "WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree."
+            "DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document)."
+            "ARGUMENTS: doc_id — string, required. query — string, what to locate within the document. kind — enum catalog / mindmap / graph, default catalog (compiled-structure kind)."
+            "OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. [claim] lines carry VERBATIM quotes from the document — cite them and answer WITHOUT calling list_chunks when they directly answer the query (deep-read the claimed chunk ids only for surrounding context or numbers the quotes lack). "
+            "ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable."
+            "IF IT FAILS: empty (no_structure) — try another doc_id or kind, or fall back to list_chunks / search_chunks. poor — read the full document via list_chunks(doc_id). A second empty disables the tool for the session."
         ),
         "parameters": {
             "type": "object",
@@ -364,19 +354,11 @@ _CALCULATE_TOOL_SPEC = {
     "function": {
         "name": "calculate",
         "description": (
-            "COMPUTE a numeric answer by generating and safely running code. "
-            "MANDATORY whenever the question asks you to DERIVE a number by "
-            "combining facts you found (sum/difference/percentage/ratio/sort/"
-            "compare/difference in length/age, price, area, growth, etc.) — do "
-            "NOT do arithmetic mentally. Language-neutral: the question and "
-            "facts may be in ANY language (English, Chinese, ...); pass the "
-            "numbers verbatim as written in the evidence regardless of language. "
-            "Steps: (1) collect every needed number first (retrieve / "
-            "search_chunks / navigate_* / list_chunks); (2) call calculate with "
-            "the question + ALL those numbers; (3) report the computed result "
-            "verbatim. If a needed number is missing, search for it first — do "
-            "not estimate. If the answer IS one of the stated numbers (no "
-            "combination needed), answer directly without this tool."
+            "WHEN TO CALL: The question asks you to DERIVE a number by combining facts you found (sum / difference / percentage / ratio / sort / compare / length / age / price / area / growth). NEVER do arithmetic mentally."
+            "DO NOT CALL: When the answer IS one of the stated numbers (no combination needed) — answer directly. When a needed number is still missing — retrieve it first; do not estimate."
+            "ARGUMENTS: question — string, the user question verbatim. facts — array of strings, the numbers or facts found in evidence, verbatim (keep the original language; pass them exactly as written)."
+            "OUTPUT: an object with expression and result — report the computed result verbatim."
+            "IF IT FAILS: poor (no numeric answer derivable) — retrieve more numbers, or answer directly if the answer is already stated. Never fabricate a computation."
         ),
         "parameters": {
             "type": "object",
@@ -425,6 +407,66 @@ _GRAPH_EXPLORE_TOOL_SPEC = {
     },
 }
 
+_METADATA_SEARCH_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "metadata_search",
+        "description": (
+            "WHEN TO CALL: PRE-FILTER the document set by title BEFORE retrieving chunks — the question names a document by title or recognizable name; or you need a named document subset; or the corpus is large and a title filter would sharpen recall. Prefer 'contains' with a distinctive substring. "
+            "CALL AT MOST ONCE PER DIRECTION: then use search_chunks / retrieve inside those documents. "
+            "DO NOT CALL: nothing names a document/subset; you already hold a doc_id (use list_chunks); counting or enumerating. "
+            "ARGUMENTS: query — 1-2 strings. filters — [{key, value, op}]; key is only 'title'; op — see enum; logic 'and'|'or'. For the string ops the value MUST be ONE keyword, never a list — one call per keyword; 'in' takes a list; 'empty' takes no value. Example: [{key: 'title', op: 'contains', value: 'New York'}]. Titles use spaces, not underscores. "
+            "OUTPUT: ranked chunks from ONLY the matching documents. ok = new evidence; redundant = already seen; miss = nothing matched. "
+            "IF IT FAILS: 'no documents match' — shorten the substring, or drop the filter and use search_chunks. Do NOT retry the same filter."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 2,
+                },
+                "filters": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            # Only `title` is exposed for now. Extending to other
+                            # metadata fields is a matter of adding to this enum —
+                            # the executor below is already field-agnostic.
+                            "key": {
+                                "type": "string",
+                                "enum": ["title"],
+                                "description": "the document title",
+                            },
+                            "value": {
+                                "type": ["string", "array", "null"],
+                                "description": (
+                                    "The keyword/value to match. For contains/=/start with/end with/not "
+                                    "contains this MUST be a SINGLE string keyword (e.g. 'Bowling'), never "
+                                    "a list — to match several keywords, call metadata_search once per "
+                                    "keyword. 'in'/'not in' MAY be a list of strings; 'empty'/'not empty' "
+                                    "take no value."
+                                ),
+                            },
+                            "op": {
+                                "type": "string",
+                                "enum": ["=", "contains", "not contains", "start with", "end with", "in", "empty", "not empty"],
+                            },
+                        },
+                        "required": ["key", "op"],
+                    },
+                },
+                "logic": {"type": "string", "enum": ["and", "or"], "default": "and"},
+            },
+            "required": ["query", "filters"],
+        },
+    },
+}
+
 _TOOL_MAP = {
     "retrieve": _RETRIEVE_TOOL_SPEC,
     "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC,
@@ -434,6 +476,7 @@ _TOOL_MAP = {
     "calculate": _CALCULATE_TOOL_SPEC,
     "graph_explore": _GRAPH_EXPLORE_TOOL_SPEC,
     "web_search": _WEB_SEARCH_TOOL_SPEC,
+    "metadata_search": _METADATA_SEARCH_TOOL_SPEC,
 }
 
 
@@ -466,7 +509,12 @@ def _active_tool_specs(tools) -> list:
     disabled = getattr(tools, "_disabled_tools", None) or set()
     if disabled:
         names -= set(disabled)
-    return [spec for name, spec in _TOOL_MAP.items() if name in names]
+    specs = []
+    for name, spec in _TOOL_MAP.items():
+        if name not in names:
+            continue
+        specs.append(copy.deepcopy(spec))
+    return specs
 
 
 def _disable_tool(tools, name: str) -> None:
@@ -635,6 +683,21 @@ def _seed_evidence(tools):
     return kbinfos
 
 
+def _claim_covered_ids(kbinfos) -> set:
+    """Chunk ids already represented verbatim by a claim pseudo-chunk in the pool.
+
+    A claim carries its own verbatim quote plus the ids of the chunks it was
+    distilled from, so admitting those passages again is duplicate payload: the
+    answer material is already in the pool at a fraction of the size.
+    """
+    covered: set = set()
+    for c in kbinfos.get("chunks") or []:
+        if str(c.get("chunk_id") or "").startswith("claim_"):
+            for cid in c.get("source_chunk_ids") or []:
+                covered.add(str(cid))
+    return covered
+
+
 def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) -> bool:
     """Register one chunk into the session output AND the shared evidence pool.
 
@@ -652,23 +715,51 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     Imports the chunk helpers locally to keep ``tools.search`` (and its heavy
     deepdoc dependency chain) out of module-import time.
     """
+    # Early-stop: the shared evidence pool is hard-capped. Once it reaches the
+    # cap, admit no further chunk. The cap is deliberately ABOVE _SCA_VIEW_CAP
+    # (60): the SCA reads a ranked view while the pool accumulates, so extra
+    # admits still reach the view via ranking. Coupling them at 60 starved the
+    # raw channel in 42% of rounds (admits rejected -> REDUNDANT -> re-search).
+    _pool = kbinfos.get("chunks", []) if isinstance(kbinfos, dict) else (getattr(kbinfos, "chunks", []) or [])
+    if len(_pool) >= _EVIDENCE_POOL_CAP:
+        if not _EVIDENCE_POOL_STATE["full_logged"]:
+            _EVIDENCE_POOL_STATE["full_logged"] = True
+            _LOG.info(
+                "[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.",
+                len(_pool),
+                _EVIDENCE_POOL_CAP,
+            )
+        return False
+
     from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id, _is_table_chunk
 
     cid = _chunk_id(c)
     if cid in seen:
         return False
+    # Already in the pool as a claim's verbatim quote -> skip the full passage.
+    # Table chunks are exempt: their answer rows survive only in full text.
+    if not _is_table_chunk(c) and cid in _claim_covered_ids(kbinfos):
+        _LOG.debug("[Action Session] skip chunk %s: already covered by a claim", cid)
+        return False
     seen.add(cid)
     ids.append(cid)
-    # Table chunks pass through UN-truncated: the 1200-char cap hides answer
+    # Table chunks pass through UN-truncated: the 5000-char cap hides answer
     # rows in the mid/late table (Q86: rank-19 row at char 5181 of a 8274-char
     # standings table was cut, so the session model guessed the athlete). The
     # pool (kbinfos) already stores the full chunk; only the model-facing
     # session output was truncated here.
     _ct = _chunk_text(c) or ""
     if _is_table_chunk(c):
-        entry = {"id": str(cid), "content": _ct}
+        # Table chunks are shown to the model as a Markdown view (key-value for
+        # infoboxes, a full-row pipe table for ranked/result tables) instead of
+        # raw <table> markup: same rows, a fraction of the tokens, and the format
+        # comparison over 11 serializations ranks Markdown-KV/Markdown above raw
+        # HTML. The shared pool keeps the RAW chunk for citation and re-reads.
+        from rag.advanced_rag.harness.tools.table_view import table_view_or_raw
+
+        entry = {"id": str(cid), "content": table_view_or_raw(_ct)}
     else:
-        entry = {"id": str(cid), "content": _ct[:1200]}
+        entry = {"id": str(cid), "content": _ct[:5000]}
     if include_doc_id:
         entry["doc_id"] = _doc_id(c)
     out.append(entry)
@@ -679,6 +770,73 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     return False
 
 
+# Claim hits REPLACE the chunk search for that query (not stack on top of it):
+# a claim's verbatim evidence is the answer material, and echoing the same
+# passages as chunk snippets burns tokens without adding information.  Flip to
+# False for the additive behaviour (claims first, chunks after).
+_CLAIM_PREFETCH_EXCLUSIVE = True
+
+
+async def _claim_prefetch(tools, query: str, kbinfos: dict, kb_seen: set) -> tuple:
+    """Framework-automatic claim-first prefetch for every corpus search.
+
+    KB-wide KNN over claim rows; matched claims (with their verbatim evidence)
+    lead the search output AND enter the shared evidence pool as pseudo-chunks,
+    so the model sees and can cite them without having chosen
+    navigate_structure — retrieval priority must not rest on the model's tool
+    pick.  Best effort: any failure returns empty and the search proceeds
+    exactly as before.
+    """
+    import hashlib
+
+    if not query:
+        return [], []
+    try:
+        from rag.advanced_rag.harness.tools.navigation import (
+            _STRUCT_CLAIM_EVIDENCE_CHARS,
+            dataset_has_compilation,
+            recall_dataset_claims,
+        )
+
+        # No compiled rows at all -> no claim rows can exist.  Skip the recall
+        # instead of issuing legs that come back empty on every single turn.
+        if not await dataset_has_compilation(tools):
+            return [], []
+        claims = await recall_dataset_claims(tools, query)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[Action Session] claim prefetch failed", exc_info=True)
+        return [], []
+    entries: list = []
+    new_ids: list = []
+    for c in claims:
+        cid = "claim_" + hashlib.md5(f"{c['doc_id']}:{c['name']}".encode("utf-8", "ignore")).hexdigest()[:12]
+        if cid in kb_seen:
+            continue
+        content = f"[claim #{c.get('rank') or '?'}] {c['name']}"
+        if c.get("description") and c["description"] != c["name"]:
+            content += f" — {c['description']}"
+        if c.get("quote"):
+            content += f'\nEvidence (verbatim): "{str(c["quote"])[:_STRUCT_CLAIM_EVIDENCE_CHARS]}"'
+        doc_id = c.get("doc_id") or ""
+        entries.append({"id": cid, "content": content[:1200], "doc_id": doc_id})
+        new_ids.append(cid)
+        kb_seen.add(cid)
+        # Enter the shared pool as a pseudo-chunk so the compose stage can cite
+        # the verbatim evidence directly (search-context parity with chunks).
+        # source_chunk_ids ride along so a later deep-read of the underlying
+        # chunk can retire this pseudo-chunk (its quote would then duplicate
+        # the full text already in the pool).
+        kbinfos["chunks"].append({"chunk_id": cid, "content_with_weight": content, "doc_id": doc_id, "source_chunk_ids": c["chunk_ids"]})
+    _LOG.info(
+        "[Claim] prefetch q=%r -> recalled=%d new=%d (exclusive=%s)",
+        str(query)[:60],
+        len(claims or []),
+        len(new_ids),
+        _CLAIM_PREFETCH_EXCLUSIVE,
+    )
+    return entries, new_ids
+
+
 async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, **kw) -> tuple:
     """Run a corpus search fn per query and admit hits to output + evidence pool.
 
@@ -686,20 +844,40 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
     only differences are the search backend (grep vs hybrid), ``top_n``, the
     per-call query cap — all passed in. ``kw`` forwards backend kwargs such as
     ``use_compiled`` (search_chunks' compiled-structure expansion).
+
+    ``fail_hard`` (default False) controls exception handling: most tools want a
+    soft per-query skip so a single backend blip does not kill the whole turn;
+    ``metadata_search`` passes True so a real retrieval failure surfaces as
+    ``ERROR/infra`` instead of being silently downgraded to ``MISS/no_doc``
+    (which would mislead the model into thinking no document matched).
     """
     from rag.advanced_rag.harness.tools.search import _chunk_id
 
+    fail_hard = kw.pop("fail_hard", False)
     kb_ids = _kb_ids(tools)
     out, ids = [], []
     seen = set()
     new_evidence = 0
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
+    # Claim-first, MUTUALLY EXCLUSIVE: when claims hit, their verbatim evidence
+    # IS the answer material — shipping 20 chunk snippets on top would echo the
+    # same passages a second time and burn tokens.  Claims carry their chunk
+    # pointers, so deep-reading stays one list_chunks away.  No hits → chunk
+    # search runs exactly as before.
+    claim_entries, claim_ids = await _claim_prefetch(tools, (queries or [""])[0], kbinfos, kb_seen)
+    out.extend(claim_entries)
+    ids.extend(claim_ids)
+    new_evidence += len(claim_ids)
+    if claim_entries and _CLAIM_PREFETCH_EXCLUSIVE:
+        return out, ids, new_evidence
     for fq in queries[:max_q]:
         try:
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
             cands = res.get("chunks", []) or []
-        except Exception:  # noqa: BLE001
+        except Exception:
+            if fail_hard:
+                raise
             _LOG.warning("[Action Session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
             continue
         for c in cands[:_SNIPPETS_PER_QUERY]:
@@ -752,10 +930,10 @@ async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) 
     """Semantic retrieval (hybrid vector+BM25, narrow bypass) — the react-style
     channel that finds passages sharing NO surface words with the query.
 
-    ``use_compiled=True`` (high mode) turns on hybrid_search's COMPILED
-    expansion: page-index / tree / knowledge-graph / wiki pages (when the
-    dataset has them) are appended to a semantic hit so its structural
-    neighbours (parent/child headings, sibling wiki pages) come along.
+    ``use_compiled=True`` (enabled in ALL modes, not just high) turns on
+    hybrid_search's COMPILED expansion: page-index / tree / knowledge-graph /
+    wiki pages (when the dataset has them) are appended to a semantic hit so its
+    structural neighbours (parent/child headings, sibling wiki pages) come along.
     Datasets with NO compiled structure are unaffected — expansion is a no-op.
     """
     from rag.advanced_rag.harness.tools.search import hybrid_search
@@ -806,6 +984,183 @@ async def _exec_web_search(tools, queries: list) -> ToolOutcome:
     return _search_outcome(out, ids, new_ev)
 
 
+def _normalize_metadata_value(value, op):
+    """Coerce a model-supplied filter value to the single value the executor
+    expects. String ops (contains, =, start with, end with, not contains) take
+    ONE keyword; if a list sneaks in, collapse it to the first non-empty element
+    (one metadata_search call = one keyword) and log it. 'in'/'not in' keep
+    their list (the value set), and empty/not empty take no value."""
+    if op in ("in", "not in"):
+        return value
+    if isinstance(value, list):
+        flat = [str(v) for v in value if v not in (None, "")]
+        if not flat:
+            return None
+        chosen = flat[0]
+        if len(flat) > 1:
+            _LOG.info(
+                "[metadata search] value list collapsed to single keyword %r (ignored: %s); to match all, call metadata_search once per keyword",
+                chosen,
+                flat[1:],
+            )
+        return chosen
+    return value
+
+
+async def _exec_metadata_search(tools, args: dict) -> ToolOutcome:
+    """Metadata-filtered hybrid retrieval (metadata_search tool).
+
+    Pipeline: validate the requested metadata keys against the dataset's real
+    fields -> resolve matching doc_ids via ES/Infinity push-down (in-memory
+    ``meta_filter`` fallback) -> hybrid_search scoped to exactly those
+    documents.
+
+    The executor is field-agnostic: which keys are reachable is decided by the
+    ``key`` enum in :data:`_METADATA_SEARCH_TOOL_SPEC` (currently ``title``
+    only), so exposing another metadata field later needs no change here.
+    """
+    from api.db.services.doc_metadata_service import DocMetadataService
+    from common.metadata_utils import meta_filter
+    from common.misc_utils import thread_pool_exec
+    from rag.advanced_rag.harness.tools.search import hybrid_search
+
+    queries = _arg_query_list(args, 2)
+    filters = args.get("filters") or []
+    logic = str(args.get("logic") or "and")
+
+    if not queries:
+        _LOG.info("[metadata search] skipped — no query provided")
+        return ToolOutcome(payload=[], status=ERROR, reason="bad_args", metrics={"hits": 0, "new_evidence": 0})
+    if not filters:
+        _LOG.info("[metadata search] skipped — no metadata filters supplied (need ≥1 {key, op, value})")
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": "No metadata conditions given. metadata_search needs at least one {key, value, op} filter — otherwise use search_chunks / retrieve.",
+                }
+            ],
+            status=MISS,
+            reason="bad_args",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+
+    kb_ids = _kb_ids(tools)
+    if not kb_ids:
+        return ToolOutcome(payload=[], status=ERROR, reason="infra", metrics={"hits": 0, "new_evidence": 0})
+
+    # 1) Key validation against the dataset's REAL metadata fields. A dataset
+    #    without the requested key (e.g. no title) must degrade to a hint, not
+    #    to an empty retrieval the model would retry forever.
+    try:
+        known_keys = await thread_pool_exec(DocMetadataService.get_metadata_keys_by_kbs, kb_ids)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[metadata search] get_metadata_keys_by_kbs failed", exc_info=True)
+        known_keys = []
+    known_set = {str(k) for k in (known_keys or [])}
+    bad = [str(f.get("key")) for f in filters if str(f.get("key")) not in known_set]
+    if bad:
+        _LOG.info(
+            "[metadata search] bad key(s) %s — not in dataset metadata (available: %s)",
+            bad,
+            sorted(known_set)[:30],
+        )
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": f"Metadata key(s) {bad} do not exist in this dataset. Available: {sorted(known_set)[:30] or 'NONE — this dataset has no metadata, use search_chunks / retrieve'}.",
+                }
+            ],
+            status=MISS,
+            reason="bad_args",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+
+    # Normalize filter values BEFORE they reach meta_filter / ES push-down, so a
+    # model that mistakenly emits a list where one keyword is expected can never
+    # silently produce a no_doc TypeError again. 'in'/'not in' keep their list
+    # semantics; string ops collapse a list to its first keyword (one call = one
+    # keyword) and log it so the model can re-call per keyword if needed.
+    normalized_filters = [{**f, "value": _normalize_metadata_value(f.get("value"), f.get("op"))} for f in filters]
+
+    # 2) Resolve matching doc_ids: ES/Infinity push-down, in-memory fallback.
+    try:
+        doc_ids = await thread_pool_exec(DocMetadataService.filter_doc_ids_by_meta_pushdown, kb_ids, normalized_filters, logic)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[metadata search] push-down failed", exc_info=True)
+        doc_ids = None
+    if doc_ids is None:
+        try:
+            metas = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, kb_ids)
+            doc_ids = meta_filter(metas, normalized_filters, logic) or []
+        except Exception:  # noqa: BLE001
+            _LOG.warning("[metadata search] in-memory fallback failed", exc_info=True)
+            doc_ids = []
+    doc_ids = [str(d) for d in (doc_ids or [])]
+
+    if not doc_ids:
+        _LOG.info("[metadata search] no documents matched filters=%s logic=%s", normalized_filters, logic)
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": "No documents match the given metadata conditions. Loosen or change the "
+                    "filters (try a shorter substring, or the space form instead of underscores), "
+                    "or use search_chunks / retrieve for unfiltered search.",
+                }
+            ],
+            status=MISS,
+            reason="no_doc",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+
+    # 3) Intersect with the session's global document scope.
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_ids = tools.scoped_doc_ids(doc_ids) or []
+    if not doc_ids:
+        _LOG.info("[metadata search] 0 documents after doc-scope intersection")
+        return ToolOutcome(payload=[], status=MISS, reason="no_doc", metrics={"hits": 0, "new_evidence": 0})
+
+    # 4) Hybrid search restricted to exactly those documents.
+    #    use_compiled=False: compiled expansion would pull in out-of-scope chunks
+    #    and break the "only these documents" contract.
+    #    fail_hard=True: a genuine retrieval failure (embedding/infra) must surface
+    #    as ERROR/infra, NOT as MISS/no_doc (which would wrongly tell the model no
+    #    document matched). An empty-but-valid result still returns MISS correctly.
+    try:
+        out, ids, new_ev = await _run_search(
+            tools,
+            hybrid_search,
+            queries,
+            top_n=20,
+            max_q=2,
+            doc_scope=doc_ids,
+            use_compiled=False,
+            fail_hard=True,
+        )
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[metadata search] retrieval failed", exc_info=True)
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "metadata_search",
+                    "note": "Retrieval backend failed (embedding/infra). Retry later or fall back to search_chunks / retrieve for unfiltered search.",
+                }
+            ],
+            status=ERROR,
+            reason="infra",
+            metrics={"hits": 0, "new_evidence": 0},
+        )
+    _LOG.info(
+        "[metadata search] ok — %d doc(s) matched by filters, %d hit(s), %d new evidence",
+        len(doc_ids),
+        len(out),
+        new_ev,
+    )
+    return _search_outcome(out, ids, new_ev)
+
+
 async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     """Deep-read one document's full text (list_chunks tool).
 
@@ -813,7 +1168,7 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     QUERY-level miss (``miss``), never a dataset fact, so ``_tool_node`` must not
     disable the tool over it.
     """
-    from rag.advanced_rag.harness.tools.search import _chunk_id, list_chunks
+    from rag.advanced_rag.harness.tools.search import _LIST_CHUNKS_MAX_CHUNKS, _chunk_id, _chunk_text, list_chunks
 
     try:
         res = await list_chunks(tools, doc_id)
@@ -824,12 +1179,41 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
     seen = set()
-    for c in (res.get("chunks") or [])[:30]:
+    doc_chunks = [c for c in (res.get("chunks") or []) if _chunk_id(c)]
+    # Section index (generic, not per-question): deep-reading a long document only
+    # helps if the model can see WHICH sections it holds. A 39-chunk article
+    # otherwise arrives as one undifferentiated wall of text and the answer-bearing
+    # section is what gets skipped (2026-09-16 FRAMES attribution: the right
+    # document was retrieved and read, the model still answered from the wrong
+    # section). The index lists every section heading + chunk id + size, so the
+    # model can target a section with a scoped search instead of re-reading all of
+    # it; it is metadata, not evidence, so it is not added to the citation pool.
+    index_lines = []
+    for i, c in enumerate(doc_chunks, 1):
+        txt = _chunk_text(c) or ""
+        head = next((ln.strip() for ln in txt.splitlines() if ln.strip()), "")
+        index_lines.append(f"{i}. [{_chunk_id(c)}] {head[:120]} ({len(txt)} chars)")
+    if index_lines:
+        out.append(
+            {
+                "kind": "doc_index",
+                "doc_id": str(doc_id),
+                "content": "Sections of this document — read the ones the question needs:\n" + "\n".join(index_lines),
+            }
+        )
+    for c in doc_chunks[:_LIST_CHUNKS_MAX_CHUNKS]:
         cid = _chunk_id(c)
         if not cid:
             continue
         if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False):
             new_ev += 1
+    # A deep-read COVERS its claims: once the full chunk text is in the pool,
+    # the claim's 1200-char quote of the same passage is duplicated tokens in
+    # every later prompt. Retire claim pseudo-chunks whose source chunk was
+    # just read — the claim already did its job (it pointed here).
+    read_ids = set(ids)
+    if read_ids:
+        kbinfos["chunks"] = [c for c in kbinfos["chunks"] if not (str(c.get("chunk_id") or "").startswith("claim_") and read_ids.intersection(c.get("source_chunk_ids") or []))]
     return _search_outcome(out, ids, new_ev)
 
 
@@ -868,9 +1252,17 @@ async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
     routing falls through at ``_NAV_MIN_DOC_SCORE``, which is query-dependent,
     not a statement about the dataset.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Dataset-level fact, not a per-query miss: with no compiled rows every
+    # navigation leg comes back empty, so short-circuit instead of paying for it.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[{"kind": "navigate_tree", "note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead."}],
+            status=EMPTY,
+            reason="no_structure",
+        )
     query = str(args.get("query") or "")
     res = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
     if res.empty_reason:
@@ -895,9 +1287,19 @@ async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
     As with navigate_tree, classification only — ``_tool_node`` decides whether
     to disable.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Same dataset-level gate as navigate_tree: without compiled rows the
+    # in-document drill has nothing to walk.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[
+                {"kind": "navigate_structure", "doc_id": str(args.get("doc_id") or ""), "note": "This dataset has no compiled document structure; use search_chunks / retrieve / list_chunks instead."}
+            ],
+            status=EMPTY,
+            reason="no_structure",
+        )
     doc_id = str(args.get("doc_id") or "")
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")
@@ -1037,6 +1439,8 @@ async def execute_tool(tools, name: str, args: dict) -> ToolOutcome:
         return await _exec_graph_explore(tools, args)
     if name == "web_search":
         return await _exec_web_search(tools, _arg_query_list(args, 2))
+    if name == "metadata_search":
+        return await _exec_metadata_search(tools, args)
     _LOG.warning("[Action Session] unknown tool %r; ignored.", name)
     return ToolOutcome(payload=[], status=ERROR, reason="bad_args")
 
@@ -1063,6 +1467,8 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         kwargs = {"model": mdl.model_name, "messages": oai_messages, "temperature": temperature}
         if tools_list:
             kwargs["tools"] = tools_list
+        if timeout_s:
+            kwargs["timeout"] = timeout_s
         response = await create(**kwargs)
         from rag.advanced_rag.harness.stats import record_external_response
 
@@ -1125,7 +1531,7 @@ def _parse_tool_calls(msg) -> list:
             # Do NOT drop it. OpenAI's protocol requires every assistant
             # tool_call to be answered by a matching ``tool`` message — dropping
             # one leaves a dangling tool_call and the next request is rejected
-            # ("tool call result does not follow tool call"). Keep it as a
+            # ("tool call result does not follow tool call"). Keep it as an
             # "unknown" call so _tool_node replies with a correction instead.
             #
             # Models most often emit the XML protocol tags (state / answer) as
@@ -1199,6 +1605,8 @@ class _SessionState(TypedDict, total=False):
     _direction: str  # this slot's question — needed to re-run retrieval later
     _routed_docs: list  # navigate_tree's top-n: scope for the `scoped` rung
     _nav_rule_id: str  # which rung control currently rests on ("" = finished)
+    _search_queries: list
+    _skipped_dup: int
 
 
 async def _run_action_node(state: _SessionState) -> dict:
@@ -1293,6 +1701,7 @@ async def _tool_node(state: _SessionState) -> dict:
     # makes the model re-issue redundant retrieves. The same-session cache only
     # avoids RE-EXECUTING a repeated query, it still returns a response for it.
     pending = state.get("_pending_calls") or []
+    ms_used = bool(state.get("_metadata_search_used", False))
     seen_queries = list(state.get("_search_queries") or [])
     skipped = 0
     strikes = dict(state.get("_tool_strikes") or {})
@@ -1302,7 +1711,7 @@ async def _tool_node(state: _SessionState) -> dict:
     # tool_call that comes in — a call only advances its own rung, and a later
     # ladder continuation must continue from the SAME resting point.
     pending_rule = state.get("_nav_rule_id", "")
-    for c in pending:
+    for batch_index, c in enumerate(pending):
         # Near-duplicate retrieval suppression: if the model re-issues the same
         # intent as an earlier search (paraphrase), do NOT re-run ES — return a
         # nudge so it patches / reframes instead of burning turns (Q30 burned
@@ -1321,6 +1730,27 @@ async def _tool_node(state: _SessionState) -> dict:
                                 {
                                     "kind": c["name"],
                                     "note": "This query is a near-duplicate of an earlier retrieval and was skipped to avoid redundant searching. Patch the slot with what you have, or issue a genuinely NEW retrieval angle.",
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            )
+            continue
+        # metadata_search ONE-SHOT guard: block any 2nd call within this direction.
+        if c["name"] == "metadata_search" and ms_used:
+            _LOG.info("[Action Session] blocking 2nd metadata_search this direction (one-shot guard)")
+            tool_msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": c["id"],
+                    "content": json.dumps(
+                        {
+                            "passages": [
+                                {
+                                    "kind": "metadata_search",
+                                    "note": "metadata_search is a ONE-SHOT pre-filter and was ALREADY used this direction. Continue with search_chunks / retrieve inside the documents it returned — do NOT call metadata_search again this direction.",
                                 }
                             ]
                         },
@@ -1357,6 +1787,8 @@ async def _tool_node(state: _SessionState) -> dict:
         if q:
             seen_queries.append(q)
         evidence_ids.extend(oc.evidence_ids)
+        if c["name"] == "metadata_search":
+            ms_used = True
         chunks = list(oc.payload or [])
         # ── Policy: act on WHAT happened, not just on payload size ──────────
         if oc.status == OK:
@@ -1455,6 +1887,7 @@ async def _tool_node(state: _SessionState) -> dict:
         "_routed_docs": state.get("_routed_docs") or [],
         "_direction": state.get("_direction", ""),
         "_nav_rule_id": pending_rule,
+        "_metadata_search_used": ms_used,
     }
 
 
@@ -1964,6 +2397,32 @@ def _extract_relevant_evidence(tools, direction: str, max_chunks: int = 4) -> st
     return "\n".join(lines)
 
 
+def _dump_pool_evidence(tools) -> str:
+    """TEST-ONLY: full dump of the shared evidence pool for the session seed.
+
+    Counterpart to :func:`_extract_relevant_evidence`: no top-k cap and no
+    300-char truncation — every chunk currently in ``tools.kbinfos["chunks"]``
+    is injected verbatim so the action session sees ALL prior evidence.
+    """
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text
+
+    kbinfos = getattr(tools, "kbinfos", None) or {}
+    chunks = kbinfos.get("chunks") or []
+    lines = []
+    for c in chunks:
+        cid = _chunk_id(c)
+        text = (_chunk_text(c) or "").replace("\n", " ")
+        lines.append(f"[{cid}] {text}")
+    dump = "\n".join(lines)
+    _LOG.info(
+        "[Action Session] seed ALREADY RETRIEVED dump: %d chunk(s), %d chars (kbinfos pool=%d)",
+        len(lines),
+        len(dump),
+        len(chunks),
+    )
+    return dump
+
+
 async def run_action_session(
     tools,
     direction: str,
@@ -1979,7 +2438,11 @@ async def run_action_session(
     system = load_prompt("action_run")
     seed_user = f"Direction: {direction}\n\nState:\n{parent_state.render_slots()}"
 
-    existing = _extract_relevant_evidence(tools, direction, max_chunks=4)
+    # TEST: `_extract_relevant_evidence` (top-4 / 300-char relevance digest) is
+    # DISABLED. Instead inject the FULL shared evidence pool so the action session
+    # sees every passage already retrieved this round (and prior rounds).
+    # existing = _extract_relevant_evidence(tools, direction, max_chunks=4)
+    existing = _dump_pool_evidence(tools)
     if existing:
         seed_user += "\n\nALREADY RETRIEVED (do NOT re-retrieve these — use them to fill slots or identify gaps):\n" + existing
 
@@ -2104,7 +2567,20 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     if fanout_hint:
         user += "\n\nCandidate aspects already identified:\n" + "\n".join(f"- {h}" for h in fanout_hint)
     tmo = min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)
+
+    # ``_init_chat`` runs on the raw model (it bypasses CountingChatModel like
+    # ``_base_chat_mdl`` does), so the slot-table decomposition call would be
+    # invisible to the phase accounting.  Count it explicitly.
+    def _book_raw_call() -> None:
+        try:
+            from rag.advanced_rag.harness.stats import record_external_call
+
+            record_external_call(None)
+        except Exception:  # noqa: BLE001
+            _LOG.debug("[Action Session] slot-table decomposition usage booking skipped", exc_info=True)
+
     raw = await _init_chat(tools, system, user, tmo)
+    _book_raw_call()
     data = extract_json(raw) or {}
     if not data:
         # one quick retry — transient provider stalls were observed (45s with
@@ -2116,6 +2592,7 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
         # the session deadline so the retry cannot overrun the round budget.
         retry_tmo = _init_retry_timeout(tmo, deadline_left)
         raw = await _init_chat(tools, system, user, retry_tmo)
+        _book_raw_call()
         data = extract_json(raw) or {}
     slots = []
     for i, s in enumerate(data.get("slots") or []):

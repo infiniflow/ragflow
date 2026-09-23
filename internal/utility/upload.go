@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
@@ -49,7 +50,7 @@ func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSiz
 	}
 	currentURL := rawURL
 	for redirects := 0; redirects < 10; redirects++ {
-		hostname, resolvedIP, err := AssertURLSafe(currentURL)
+		hostname, resolvedIP, err := common.AssertURLSafe(currentURL)
 		if err != nil {
 			return nil, nil, "", err
 		}

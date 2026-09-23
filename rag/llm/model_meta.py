@@ -665,6 +665,22 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class Xiaomi(OpenAIAPICompatible):
+    """Xiaomi MiMo serves an OpenAI-compatible catalog behind an api-key header."""
+
+    _FACTORY_NAME = "Xiaomi"
+
+    async def _get_raw_model_list(self):
+        url = self._get_model_list_url()
+        if not url:
+            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"api-key": self._get_api_key()}) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
+
+
 class MWS(OpenAIAPICompatible):
     """Discover supported MWS deployments through the project models API."""
 
@@ -1147,6 +1163,127 @@ class Hubris(OpenAIAPICompatible):
     def _get_model_list_url(self):
         """Return the catalogue URL, ignoring any tenant-configured base URL."""
         return f"{self._BASE_URL}/models"
+
+
+class AnonRouter(OpenAIAPICompatible):
+    """AnonRouter model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat class pins
+    its endpoint: the catalogue must be read from the gateway itself, never
+    from a host supplied by the tenant. The listing is served in OpenAI format
+    and requires the tenant's bearer key, which ``Base._get_raw_model_list``
+    already sends.
+    """
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
+
+
+class ApiRoute(OpenAIAPICompatible):
+    """API-Route model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat class pins
+    its endpoint: the catalogue must be read from the gateway itself, never
+    from a host supplied by the tenant. The listing is served in OpenAI format
+    and requires the tenant's bearer key, which ``Base._get_raw_model_list``
+    already sends.
+    """
+
+    _FACTORY_NAME = "API-Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
+
+
+class CheaperInference(OpenAIAPICompatible):
+    """Cheaper Inference catalog lister.
+
+    ``conf/models/cheaperinference.json`` pins the catalog the gateway
+    documents, which is what the model pickers show. This lister covers the
+    on-demand refresh: it reads the gateway's own ``/v1/models`` endpoint so
+    routes added after this file shipped are still discoverable against the
+    tenant's own key.
+
+    The listing is richer than the OpenAI shape the parent assumes: each entry
+    names the endpoint that serves it, its modality and its own capability
+    flags. The parent infers model types from the model id, which would file
+    the gateway's image-generation and video routes as chat models and would
+    miss image input on every id that carries no ``vl``/``vision`` hint, so the
+    entry's own fields are read instead. The endpoint publishes no tool-calling
+    flag, so ``is_tools`` follows the pinned catalog and is set for every chat
+    model.
+    """
+
+    _FACTORY_NAME = "Cheaper Inference"
+
+    _CHAT_ENDPOINT = "/v1/chat/completions"
+    _CHAT_MODALITY = "text"
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+
+            model_name = model.get("id") or model.get("name")
+            if not model_name:
+                continue
+
+            endpoint = model.get("endpoint")
+            if endpoint and endpoint != self._CHAT_ENDPOINT:
+                continue
+            modality = model.get("type")
+            if modality and modality != self._CHAT_MODALITY:
+                continue
+
+            capabilities = model.get("capabilities")
+            if not isinstance(capabilities, dict):
+                capabilities = {}
+            model_types = [LLMType.CHAT.value]
+            if capabilities.get("vision"):
+                model_types.append(LLMType.VISION.value)
+            features = ["is_tools"]
+            if capabilities.get("reasoning"):
+                features.append("thinking")
+
+            context_length = model.get("context_length")
+            if not isinstance(context_length, int) or isinstance(context_length, bool) or context_length <= 0:
+                context_length = 8192
+
+            model_list.append(
+                {
+                    "name": model_name,
+                    "model_types": model_types,
+                    "features": features,
+                    "max_tokens": context_length,
+                }
+            )
+
+        return model_list
+
+
+class DaoXE(OpenAIAPICompatible):
+    """DaoXE catalog lister.
+
+    The live catalog is account-scoped and changes over time, so the list is
+    read from the gateway's own ``/v1/models`` endpoint (inherited behavior)
+    rather than pinned in ``conf/models/daoxe.json``, which stays empty on
+    purpose.
+    """
+
+    _FACTORY_NAME = "DaoXE"
 
 
 class NewAPI(OpenAIAPICompatible):

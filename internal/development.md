@@ -39,17 +39,7 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-# Native libs for the Go build (office_oxide, pdfium, pdf_oxide, onnxruntime).
-# download_go_deps.py is the Go-end script: it now fetches the ONNX Runtime
-# static lib too, so this single command covers every native dependency the
-# Go server binary needs (incl. the in-process DeepDoc backend).
-# It also fetches the Go model weights (four .ort + ocr.res) into rag/res/deepdoc/ (see §1.6).
 python3 ragflow_deps/download_go_deps.py
-# Shared (Go + Python) deps. Retains ONNX Runtime for the ragflow_deps image /
-# backward-compat; also pulls Python-side artifacts (models, nltk, tika, ...).
-# Its InfiniFlow/deepdoc snapshot carries BOTH weight formats: .ort (Go) and
-# .onnx (Python).
-uv run python3 ragflow_deps/download_deps.py
 ```
 
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
@@ -113,6 +103,44 @@ uv run python3 ragflow_deps/download_deps.py
 > startup, so the remedy is always to seed the static lib above, never to build
 > without it.
 
+> **Note**: The ONNX Runtime native version is pinned in several Go-side places
+> that must stay in sync. Bumping it in one spot and not the others fails the
+> build with `Error: ONNX Runtime version is inconsistent`:
+> - `internal/common/environments.go` — `DeepDocORTVersion`
+> - `Dockerfile_go` — `ARG ORT_VERSION`
+> - `ragflow_deps/download_go_deps.py` and `ragflow_deps/download_deps.py` — `ORT_VERSION`
+>
+> `build.sh` runs this consistency check automatically before the Go build
+> (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
+> with `./build.sh --check-ort-version`. To upgrade ORT, edit every entry above
+> to the same version, then run the check. The Python pip `onnxruntime==` pin in
+> `pyproject.toml` is versioned independently and is intentionally not part of
+> this check.
+
+> **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
+> **link cache**, because a silently-stale `.a` is easy to miss:
+> - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
+>   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the published
+>   `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar — the same source of
+>   truth the download scripts use. If they differ (the archive was re-issued
+>   under the same tag/asset name, or an older download is present) the build
+>   fails fast with `Error: ONNX Runtime archive ... is stale`, printing the
+>   expected/actual sha256 and the exact refresh command
+>   (`rm -f <zip>` + `uv run python3 ragflow_deps/download_go_deps.py`). CI seeds
+>   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
+>   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   ORT only through the OrtApi function-pointer table
+>   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
+>   successfully and only crashes at runtime — not at link time.
+> - The link passes `CGO_LDFLAGS` a version-stamped path
+>   `onnxruntime/static_lib/v<ver>-<sha256:0:16>/libonnxruntime.a`. Go's build
+>   cache keys `CGO_LDFLAGS` as a string and does NOT hash the referenced `.a`,
+>   so swapping the `.a` in place (same path, re-issued under the same name)
+>   would otherwise silently reuse a stale linked binary. Stamping the path with
+>   the archive's sha256 changes the flag string whenever the content changes →
+>   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
+>   re-run `uv run python3 ragflow_deps/download_go_deps.py` (or `download_deps.py`)
+>   so the stamp moves; a plain `go clean -cache` also forces it.
 
 ### 1.5 Build RAGFlow
 
@@ -141,10 +169,10 @@ The Go backend loads **`.ort`** (FlatBuffer) weights; the Python side loads
 **`.onnx`**. Both formats live side by side in `rag/res/deepdoc/` — neither
 supersedes the other, so do not delete one to "clean up".
 
-| | Go (in-process) | Python |
-|---|---|---|
-| Format | `.ort` | `.onnx` |
-| Files | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
+|        | Go (in-process)                                          | Python                                                       |
+|--------|----------------------------------------------------------|--------------------------------------------------------------|
+| Format | `.ort`                                                   | `.onnx`                                                      |
+| Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
 `download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
 `ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
@@ -198,19 +226,44 @@ missing from the model directory.
 docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
 ```
 
+- Point the host-run Go binaries at Kvrocks. Kvrocks is published on
+  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; the Go
+  deployment disables the Valkey/Redis service so there is no clash). Export these
+  before running `./bin/ragflow_server ...` on the host, or load them from
+  `docker/.env-go`:
+```bash
+export KVROCKS_HOST=127.0.0.1
+export KVROCKS_PORT=6379
+```
+  In docker the Go services override these to `kvrocks:6379` automatically
+  (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
+  process fails fast with `failed to connect to Kvrocks`.
+
 
 - Start RAGFlow
-Note: admin server must be started first; otherwise, api server will encounter errors when sending heartbeats.
+Note: Database migrations must complete before starting any server mode.
+After migration, start the admin server before the API and ingestor servers;
+otherwise, they will encounter errors when sending heartbeats.
+
+```bash
+# Run database migrations (standalone action; does not start a server)
+./bin/ragflow_server --migrate
+```
+`--migrate` writes the database version marker that server modes check on
+startup, and a development branch regularly records a version for a release
+that has not been tagged yet — a build from a `v0.27.x` commit that writes
+`v1.0.0-rc1.dev1` refuses to start afterwards, because the recorded version
+looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
+such a checkout: it turns the "code version must not be older than the database
+version" guard off. Leave it off in production.
+
 
 ```bash
 # Start admin server
 ./bin/ragflow_server --admin
 ```
 
-```bash
-# Start admin server and migrate database
-./bin/ragflow_server --admin --migrate
-```
+
 
 ```bash
 # Start RAGFlow server
@@ -656,19 +709,9 @@ RAGFlow(api/default)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/t
 RAGFlow(api/default)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
 ```
 
-- Insert data from JSON files
-```
-RAGFlow(api/default)> INSERT CHUNKS FROM FILE 'insert_kb.json'
-```
-
 - Update a chunk's content
 ```
 RAGFlow(api/default)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
-```
-
-- Remove tags from a dataset
-```
-RAGFlow(api/default)> REMOVE TAGS 'tag1', 'tag2' FROM DATASET 'test'
 ```
 
 - Remove specific chunks from a document
@@ -703,10 +746,6 @@ RAGFlow(api/default)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'b
 RAGFlow(api/default)> CREATE METADATA STORE
 ```
 
-- Insert metadata from JSON files
-```
-RAGFlow(api/default)> INSERT METADATA FROM FILE 'insert_metadata.json'
-```
 - Set metadata for a document
 ```
 RAGFlow(api/default)> SET METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' TO '{"author": ["John", "Tom"], "category": "tech"}';

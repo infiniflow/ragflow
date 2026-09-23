@@ -33,18 +33,25 @@ import (
 
 // realNumTokens / realTrimToTokenLimit are the production tokenizer functions.
 // They are referenced through package-level vars (numTokens /
-// trimToTokenLimit) so tests can swap in a deterministic stub.
+// trimToTokenLimit, and encodeTokens / decodeTokens for the raw token-id
+// API the O(L) hard-split walk drives on) so tests can swap in a
+// deterministic stub.
 var (
 	realNumTokens        = tokenizer.NumTokensFromString
 	realTrimToTokenLimit = tokenizer.TrimContentToTokenLimit
 
 	numTokens        = realNumTokens
 	trimToTokenLimit = realTrimToTokenLimit
+
+	encodeTokens = tokenizer.EncodeCL100KTokens
+	decodeTokens = tokenizer.DecodeCL100KTokens
 )
 
-// titleTokenCount counts tokens for text. numTokensFromString returns 0 when
-// the encoder is unavailable; in that case fall back to the rune count so the
-// cap is still enforced (mirrors Python #18455's character-count fallback).
+// titleTokenCount counts tokens for text. tokenizer.NumTokensFromString now
+// PANICS when the encoder is unavailable (mirroring Python's raise), so a 0 here
+// can only come from the counter itself (empty input, or the stubbed counter the
+// tests install); fall back to the rune count so the cap is still enforced
+// (mirrors Python #18455's character-count fallback).
 func titleTokenCount(text string) int {
 	if text == "" {
 		return 0

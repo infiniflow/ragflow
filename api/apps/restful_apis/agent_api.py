@@ -23,6 +23,7 @@ import inspect
 import ipaddress
 import json
 import logging
+import math
 import time
 from functools import partial, wraps
 from typing import Set
@@ -38,7 +39,6 @@ from quart import Response, jsonify, request, make_response
 from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
-from api.db.db_models import Task
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
@@ -46,11 +46,9 @@ from api.db.services.canvas_service import (
     completion as agent_completion,
     completion_openai,
 )
-from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
+from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
@@ -70,9 +68,50 @@ from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
+from valkey.exceptions import WatchError
 
 # Keeps strong references to fire-and-forget tasks so they are not GC'd before completion.
 _background_tasks: Set[asyncio.Task] = set()
+
+_WEBHOOK_TRACE_MAX_RETRIES = 3
+_WEBHOOK_TRACE_TTL_SECONDS = 600
+
+
+def _append_webhook_trace(redis_client, agent_id: str, start_ts: float, event: dict, ttl: int = _WEBHOOK_TRACE_TTL_SECONDS) -> None:
+    """Atomically append one event to a webhook trace."""
+    key = f"webhook-trace-{agent_id}-logs"
+    run_id = str(start_ts)
+
+    for _ in range(_WEBHOOK_TRACE_MAX_RETRIES):
+        with redis_client.pipeline() as pipeline:
+            try:
+                pipeline.watch(key)
+                raw = pipeline.get(key)
+                obj = json.loads(raw) if raw else {"webhooks": {}}
+                webhooks = obj.setdefault("webhooks", {})
+                run = webhooks.setdefault(run_id, {"start_ts": start_ts, "events": []})
+                events = run.setdefault("events", [])
+
+                event_ts = time.time()
+                latest_ts = max(
+                    (stored.get("ts", 0) for stored in events if isinstance(stored, dict) and isinstance(stored.get("ts"), (int, float))),
+                    default=0,
+                )
+                if event_ts <= latest_ts:
+                    event_ts = math.nextafter(latest_ts, math.inf)
+
+                record = dict(event)
+                record["ts"] = event_ts
+                events.append(record)
+
+                pipeline.multi()
+                pipeline.set(key, json.dumps(obj, ensure_ascii=False), ex=ttl)
+                pipeline.execute()
+                return
+            except WatchError:
+                continue
+
+    raise RuntimeError(f"Failed to update webhook trace after {_WEBHOOK_TRACE_MAX_RETRIES} retries")
 
 
 def _canvas_json_default(obj):
@@ -1259,55 +1298,6 @@ async def reset_agent(agent_id, tenant_id):
         return server_error_response(exc)
 
 
-@manager.route("/agents/rerun", methods=["POST"])  # noqa: F821
-@validate_request("id", "dsl", "component_id")
-@login_required
-@add_tenant_id_to_kwargs
-async def rerun_agent(tenant_id):
-    from rag.nlp import search
-
-    req = await get_request_json()
-    doc = PipelineOperationLogService.get_documents_info(req["id"])
-    if not doc:
-        return get_data_error_result(message="Document not found.")
-    doc = doc[0]
-    if not DocumentService.accessible(doc["id"], tenant_id):
-        logging.warning(
-            "rerun_agent denied: tenant_id=%s log_id=%s doc_id=%s",
-            tenant_id,
-            req["id"],
-            doc["id"],
-        )
-        return get_data_error_result(message="Document not found.")
-    if 0 < doc["progress"] < 1:
-        return get_data_error_result(message=f"`{doc['name']}` is processing...")
-
-    from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
-
-    remove_dataset_nav_doc_sync(tenant_id, doc["kb_id"], doc["id"])
-    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc["kb_id"]):
-        settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(tenant_id), doc["kb_id"])
-    doc["progress_msg"] = ""
-    doc["chunk_num"] = 0
-    doc["token_num"] = 0
-    DocumentService.clear_chunk_num_when_rerun(doc["id"])
-    DocumentService.update_by_id(doc["id"], doc)
-    TaskService.filter_delete([Task.doc_id == doc["id"]])
-
-    dsl = req["dsl"]
-    dsl["path"] = [req["component_id"]]
-    PipelineOperationLogService.update_by_id(req["id"], {"dsl": dsl})
-    queue_dataflow(
-        tenant_id=tenant_id,
-        flow_id=req["id"],
-        task_id=get_uuid(),
-        doc_id=doc["id"],
-        priority=0,
-        rerun=True,
-    )
-    return get_json_result(data=True)
-
-
 @manager.route("/agents/test_db_connection", methods=["POST"])  # noqa: F821
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
@@ -1496,6 +1486,14 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         if workflow_session:
             workflow_conv = conv.to_dict()
 
+    if not session_id:
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return get_json_result(
+                data=False,
+                message="Make sure you have permission to access the agent.",
+                code=RetCode.OPERATING_ERROR,
+            )
+
     if openai_compatible:
         # OpenAI-compatible mode uses a different wire format, keep it separate from regular agent events.
         messages = req.get("messages", [])
@@ -1592,13 +1590,6 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         )
 
     if not session_id:
-        if not UserCanvasService.accessible(agent_id, tenant_id):
-            return get_json_result(
-                data=False,
-                message="Make sure you have permission to access the agent.",
-                code=RetCode.OPERATING_ERROR,
-            )
-
         # Load the caller's runtime replica as the workflow template. Session-owned
         # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")
@@ -2348,19 +2339,14 @@ async def _webhook_impl(agent_id: str, is_test: bool):
     execution_mode = webhook_cfg.get("execution_mode", "Immediately")
     response_cfg = webhook_cfg.get("response", {})
 
-    def append_webhook_trace(agent_id: str, start_ts: float, event: dict, ttl=600):
+    def append_webhook_trace(agent_id: str, start_ts: float, event: dict, ttl: int = _WEBHOOK_TRACE_TTL_SECONDS) -> None:
         from rag.utils.redis_conn import REDIS_CONN
 
-        key = f"webhook-trace-{agent_id}-logs"
-
-        raw = REDIS_CONN.get(key)
-        obj = json.loads(raw) if raw else {"webhooks": {}}
-
-        ws = obj["webhooks"].setdefault(str(start_ts), {"start_ts": start_ts, "events": []})
-
-        ws["events"].append({"ts": time.time(), **event})
-
-        REDIS_CONN.set_obj(key, obj, ttl)
+        try:
+            _append_webhook_trace(REDIS_CONN.REDIS, agent_id, start_ts, event, ttl)
+        except Exception:
+            # Trace persistence is best-effort and must not fail the Agent run.
+            logging.exception("Failed to append webhook trace")
 
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)

@@ -171,6 +171,30 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	}
 }
 
+func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "questions.csv",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"doc_type_kwd": "text",
+			"ck_type":      "table_row",
+			"cells":        []string{"question", "answer", "unexpected"},
+		}},
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 0 {
+		t.Fatalf("chunks = %#v, want malformed CSV row rejected", chunks)
+	}
+}
+
 // Non-CSV names keep the old "first two non-empty cells" rule on the HTML
 // table path. Since #18800 an .xlsx file reaches the chunker as "json", not
 // "html", so this covers the shared HTML branch and not the XLSX pipeline.
@@ -355,5 +379,71 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 	if !strings.Contains(cww, "<strong>bold</strong>") &&
 		!strings.Contains(cww, "<b>bold</b>") {
 		t.Fatalf("markdown not rendered to HTML: %q", cww)
+	}
+}
+
+func TestQAChunker_XLSXJSONRegression(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text":         "<table><caption>Sheet1</caption><tr><th>question</th><th>answer</th></tr><tr><td>What is RAGFlow?</td><td>A RAG engine.</td></tr><tr><td>Where are the docs?</td><td>On the website.</td></tr></table>",
+				"doc_type_kwd": "table",
+			},
+		},
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	}
+	expected := []string{
+		"Question: question\tAnswer: answer",
+		// rmQAPrefix strips a leading "A " answer marker from "A RAG engine."
+		"Question: What is RAGFlow?\tAnswer: RAG engine.",
+		"Question: Where are the docs?\tAnswer: On the website.",
+	}
+	for i, want := range expected {
+		cww, _ := chunks[i]["text"].(string)
+		if cww != want {
+			t.Fatalf("chunk[%d] text = %q, want %q", i, cww, want)
+		}
+	}
+}
+
+func TestQAChunkerSpreadsheetRowIRTreatsFirstRowAsQAData(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "cells": []string{"ID", "Status"}},
+			{"text": "ID：A-100; Status：paid", "doc_type_kwd": "text", "ck_type": "table_row", "cells": []string{"A-100", "paid"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want both QA rows", out["chunks"])
+	}
+	if got, _ := chunks[0]["text"].(string); got != "Question: ID\tAnswer: Status" {
+		t.Fatalf("first-row QA = %q", got)
+	}
+	if got, _ := chunks[1]["text"].(string); got != "Question: A-100\tAnswer: paid" {
+		t.Fatalf("second-row QA = %q", got)
 	}
 }

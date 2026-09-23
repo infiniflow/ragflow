@@ -46,6 +46,7 @@ from .exceptions import (
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
+from .feishu_wiki_connector import FeishuWikiConnector
 from .github.connector import GithubConnector
 from .gitlab_connector import GitlabConnector
 from .gmail_connector import GmailConnector
@@ -69,6 +70,7 @@ from .teams_connector import TeamsConnector
 from .webdav_connector import WebDAVConnector
 from .xquik_connector import XquikConnector
 from .zendesk_connector import ZendeskConnector
+from .zotero_connector import ZoteroConnector
 
 CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.S3: BlobStorageConnector,
@@ -82,6 +84,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.GMAIL: GmailConnector,
     FileSource.DROPBOX: DropboxConnector,
     FileSource.GOOGLE_DRIVE: GoogleDriveConnector,
+    FileSource.FEISHU_WIKI: FeishuWikiConnector,
     FileSource.JIRA: JiraConnector,
     FileSource.SHAREPOINT: SharePointConnector,
     FileSource.SITEMAP: SitemapConnector,
@@ -95,6 +98,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.GITHUB: GithubConnector,
     FileSource.IMAP: ImapConnector,
     FileSource.ZENDESK: ZendeskConnector,
+    FileSource.ZOTERO: ZoteroConnector,
     FileSource.GITLAB: GitlabConnector,
     FileSource.BITBUCKET: BitbucketConnector,
     FileSource.AZURE_DEVOPS: AzureDevOpsConnector,
@@ -144,6 +148,7 @@ __all__ = [
     "Document",
     "DocumentSource",
     "DropboxConnector",
+    "FeishuWikiConnector",
     "GithubConnector",
     "GitlabConnector",
     "GmailConnector",
@@ -170,5 +175,6 @@ __all__ = [
     "WebDAVConnector",
     "XquikConnector",
     "ZendeskConnector",
+    "ZoteroConnector",
     "build_connector_for_source",
 ]

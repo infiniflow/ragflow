@@ -479,24 +479,117 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	}
 }
 
-func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
+func TestModelSolverResolveModelConfigByID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
 	ctx := t.Context()
-	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID(ctx, "user-1", entity.ModelTypeChat, "model-1")
+	target, err := NewModelSolver().ResolveModelConfig(ctx, "user-1", entity.ModelTypeChat, "model-1")
 	if err != nil {
-		t.Fatalf("GetModelConfigByID() error = %v", err)
+		t.Fatalf("ResolveModelConfig() error = %v", err)
 	}
-	if driver == nil {
-		t.Fatal("GetModelConfigByID() returned nil driver")
+	if target == nil || target.Driver == nil {
+		t.Fatal("ResolveModelConfig() returned nil target or driver")
 	}
-	if modelName != "gpt-test" {
-		t.Fatalf("modelName = %q, want %q", modelName, "gpt-test")
+	if target.ModelName != "gpt-test" {
+		t.Fatalf("modelName = %q, want %q", target.ModelName, "gpt-test")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != "sk-test" {
-		t.Fatalf("apiConfig.ApiKey = %v, want %q", apiConfig.ApiKey, "sk-test")
+	if target.APIConfig == nil || target.APIConfig.ApiKey == nil || *target.APIConfig.ApiKey != "sk-test" {
+		t.Fatalf("apiConfig.ApiKey = %v, want %q", target.APIConfig.ApiKey, "sk-test")
+	}
+}
+
+func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	for _, modelRef := range []string{
+		"unknown@ZHIPU-AI",
+		"unknown@default@OpenAI",
+	} {
+		t.Run(modelRef, func(t *testing.T) {
+			_, err := NewModelSolver().ResolveModelConfig(
+				t.Context(), "tenant-1", entity.ModelTypeEmbedding, modelRef,
+			)
+			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("ResolveModelConfig() error = %v, want unavailable record-not-found error", err)
+			}
+			if !strings.Contains(err.Error(), "lookup failed: record not found") {
+				t.Fatalf("ResolveModelConfig() error = %q, want lookup failure contract", err)
+			}
+		})
+	}
+}
+
+// TestModelProviderServiceDecodesCompatibleInstanceExtra verifies both model
+// resolution paths accept empty configuration and unrelated typed fields.
+func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	solver := NewModelSolver()
+	resolvers := []struct {
+		name    string
+		resolve func() (*ModelTarget, error)
+	}{
+		{
+			name: "model ID",
+			resolve: func() (*ModelTarget, error) {
+				return solver.ResolveModelConfig(t.Context(), "user-1", entity.ModelTypeChat, "model-1")
+			},
+		},
+		{
+			name: "provider instance",
+			resolve: func() (*ModelTarget, error) {
+				return solver.ResolveModelConfig(t.Context(), "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI")
+			},
+		},
+	}
+	configs := []struct {
+		name        string
+		raw         string
+		wantRegion  string
+		wantBaseURL string
+	}{
+		{name: "empty", raw: ""},
+		{
+			name:        "unrelated typed fields",
+			raw:         `{"region":"us-east-1","base_url":"https://models.example.com","enabled":true,"retries":3,"options":{"mode":"custom"}}`,
+			wantRegion:  "us-east-1",
+			wantBaseURL: "https://models.example.com",
+		},
+	}
+	for _, config := range configs {
+		t.Run(config.name, func(t *testing.T) {
+			if err := db.Model(&entity.TenantModelInstance{}).
+				Where("id = ?", "instance-1").
+				Update("extra", config.raw).Error; err != nil {
+				t.Fatalf("update instance extra: %v", err)
+			}
+
+			for _, resolver := range resolvers {
+				t.Run(resolver.name, func(t *testing.T) {
+					target, err := resolver.resolve()
+					if err != nil {
+						t.Fatalf("resolve model config: %v", err)
+					}
+					driver := target.Driver
+					apiConfig := target.APIConfig
+					if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != config.wantRegion || apiConfig.BaseURL == nil || *apiConfig.BaseURL != config.wantBaseURL {
+						t.Fatalf("resolved driver/config = %v/%+v, want region %q and base URL %q", driver, apiConfig, config.wantRegion, config.wantBaseURL)
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -512,106 +605,6 @@ func TestMaxTokensFromModelInfo(t *testing.T) {
 	}
 	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeChat); got != maxOutput {
 		t.Fatalf("chat max tokens = %d, want max output %d", got, maxOutput)
-	}
-}
-
-func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-	// Seed a tenant chat model that maps to a real factory-catalog model
-	// (Anthropic / claude-opus-4-8 has context_length=1000000, max_output=128000).
-	activeStatus := "1"
-	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
-		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active"},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("failed to seed %T: %v", row, err)
-		}
-	}
-
-	svc := NewModelProviderService()
-	ctx := t.Context()
-
-	// UUID path: resolves context_length (context window) from the factory
-	// catalog, NOT max_output.
-	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(uuid) error = %v", err)
-	}
-	if got != 1000000 {
-		t.Fatalf("uuid context_length = %d, want 1000000 (must be the context window, not max_output=128000)", got)
-	}
-
-	// Composite "model@instance@provider" path resolves the same value.
-	got2, err := svc.ResolveModelContextLength(ctx, "user-1", "claude-opus-4-8@default@Anthropic")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(composite) error = %v", err)
-	}
-	if got2 != 1000000 {
-		t.Fatalf("composite context_length = %d, want 1000000", got2)
-	}
-}
-
-func TestModelProviderServiceResolveModelContextLengthUnknownModel(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-
-	// A model that does not exist in the factory catalog resolves to 0 so the
-	// caller falls back to its default context length instead of failing.
-	got, err := NewModelProviderService().ResolveModelContextLength(
-		t.Context(), "user-1", "gpt-no-such-model@default@OpenAI")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(unknown) error = %v", err)
-	}
-	if got != 0 {
-		t.Fatalf("unknown model context_length = %d, want 0", got)
-	}
-}
-
-// TestModelProviderServiceResolveModelContextLengthOverride verifies that the
-// tenant-configured "max_tokens" override in tenant_model.extra wins over the
-// catalog context_length through the service delegation. UUID resolution is
-// unscoped (globally unique); the composite path needs the real tenant id to
-// locate the tenant's provider/instance/model rows.
-func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-	activeStatus := "1"
-	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
-		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"max_tokens": 4096}`},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("failed to seed %T: %v", row, err)
-		}
-	}
-
-	svc := NewModelProviderService()
-	ctx := t.Context()
-
-	// UUID path: the 4096 override wins over catalog context_length 1000000.
-	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(override uuid) error = %v", err)
-	}
-	if got != 4096 {
-		t.Fatalf("uuid override context_length = %d, want 4096 (custom override, not catalog 1000000)", got)
-	}
-
-	// Composite path with the real tenant id honors the same override.
-	got2, err := svc.ResolveModelContextLength(ctx, "tenant-cl", "claude-opus-4-8@default@Anthropic")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(override composite) error = %v", err)
-	}
-	if got2 != 4096 {
-		t.Fatalf("composite override context_length = %d, want 4096", got2)
 	}
 }
 
@@ -940,5 +933,218 @@ func TestSplitRightAnchoredModelName(t *testing.T) {
 				t.Errorf("splitRightAnchoredModelName(%q) provider = %q, want %q", tt.composite, provider, tt.wantProvider)
 			}
 		})
+	}
+}
+
+// TestModelSolverResolveModelConfigReportsToolSupport verifies that the
+// resolved target carries tool support and invalid references fail during the
+// same resolution.
+func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "ut-1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "tenant-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-own", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-other", TenantID: "tenant-2", ProviderName: "Anthropic"},
+		&entity.TenantModelInstance{ID: "instance-own", ProviderID: "provider-own", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModelInstance{ID: "instance-other", ProviderID: "provider-other", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-active", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-disabled", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "gpt-test-off", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-embedding", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "text-embedding-test", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-foreign", ProviderID: "provider-other", InstanceID: "instance-other", ModelName: "claude-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	solver := svc.modelSolver()
+	ctx := t.Context()
+
+	// A reference that passes validation still reads the persisted flag.
+	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-active")
+	if err != nil || target == nil || !target.SupportsTools {
+		t.Fatalf("active chat model = (%v, %v), want tool support", target, err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		modelID string
+	}{
+		{"disabled", "model-disabled"},
+		{"not enrolled as chat", "model-embedding"},
+		{"provider owned by another tenant", "model-foreign"},
+	} {
+		target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, tc.modelID)
+		if err == nil {
+			t.Errorf("%s: err = nil, want a validation error", tc.name)
+		}
+		if target != nil && target.SupportsTools {
+			t.Errorf("%s: tool support = true, want false", tc.name)
+		}
+	}
+}
+
+// TestModelSolverResolveModelConfigPrefersTenantToolFlag covers the
+// composite "<model>@<instance>@<provider>" reference shape (chat.llm_id and the
+// harness ModelID accept both a UUID and a composite ref): the flag persisted on
+// the tenant_model row must beat the provider catalog in both directions,
+// mirroring Python's model_extra.get("is_tools", is_tool), and a disabled row
+// must be rejected instead of falling back to the catalog.
+func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
+	catalog := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if catalog == nil {
+		t.Skip("OpenAI catalog is unavailable")
+	}
+	var toolsOn, toolsOff string
+	for _, m := range catalog.Models {
+		if strings.Contains(m.Name, "@") {
+			continue // the composite ref parser would split such a name
+		}
+		if toolsOn == "" && m.Tools != nil && m.Tools.Support {
+			toolsOn = m.Name
+		}
+		if toolsOff == "" && (m.Tools == nil || !m.Tools.Support) {
+			toolsOff = m.Name
+		}
+	}
+	if toolsOn == "" || toolsOff == "" {
+		t.Skipf("OpenAI catalog lacks both a tool-capable and a tool-incapable model (on=%q off=%q)", toolsOn, toolsOff)
+	}
+	if !catalogToolSupport("OpenAI", toolsOn) || catalogToolSupport("OpenAI", toolsOff) {
+		t.Fatalf("catalog baseline changed: on=%v off=%v", catalogToolSupport("OpenAI", toolsOn), catalogToolSupport("OpenAI", toolsOff))
+	}
+
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	rows := []interface{}{
+		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-openai", ProviderID: "provider-openai", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		// Catalog says tools are supported; the tenant disabled them.
+		&entity.TenantModel{ID: "model-on-off", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOn, ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
+		// Catalog does not declare tools; the tenant enabled them.
+		&entity.TenantModel{ID: "model-off-on", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOff, ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		// Disabled row: must be rejected rather than resolved from the catalog.
+		&entity.TenantModel{ID: "model-on-disabled", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOn + "-disabled", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	solver := svc.modelSolver()
+	ctx := t.Context()
+
+	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"@default@OpenAI")
+	if err != nil {
+		t.Fatalf("tool-capable model: err = %v", err)
+	}
+	if target.SupportsTools {
+		t.Errorf("tool support = true, want false: the tenant_model flag must win over the catalog")
+	}
+
+	target, err = solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOff+"@default@OpenAI")
+	if err != nil {
+		t.Fatalf("tool-incapable model: err = %v", err)
+	}
+	if !target.SupportsTools {
+		t.Errorf("tool support = false, want true: the tenant_model flag must win over the catalog")
+	}
+
+	target, err = solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
+	if err == nil || (target != nil && target.SupportsTools) {
+		t.Errorf("disabled model = (%v, %v), want (false, error)", target, err)
+	}
+}
+
+// TestModelSolverResolveModelConfigPropagatesLookupFailure verifies that model
+// resolution surfaces database failures instead of returning a partial target.
+func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "ut-1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "tenant-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	solver := svc.modelSolver()
+	ctx := t.Context()
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
+		t.Fatalf("baseline = (%v, %v), want tool support", target, err)
+	}
+
+	// Drop the provider table: the lookup now fails with a database error
+	// ("no such table"), which is neither a not-found fallback nor a
+	// tool-support verdict.
+	if err := db.Migrator().DropTable(&entity.TenantModelProvider{}); err != nil {
+		t.Fatalf("failed to drop provider table: %v", err)
+	}
+	// Composite refs resolve the provider row directly.
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
+		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", target)
+	}
+	// The UUID path too.
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", target)
+	}
+
+	// A failing tenant_model lookup must propagate as well.
+	if err := db.Migrator().DropTable(&entity.TenantModel{}); err != nil {
+		t.Fatalf("failed to drop model table: %v", err)
+	}
+	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+		t.Errorf("model lookup failure = (%v, nil), want a propagated error", target)
+	}
+}
+
+func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	// Force the second delete (tenant_model_instance) to fail so the
+	// transaction must roll back the already-applied tenant_model delete.
+	if err := db.Callback().Delete().Before("gorm:DELETE").Register(
+		"test:fail_tenant_model_instance_delete",
+		func(tx *gorm.DB) {
+			if tx.Statement != nil && tx.Statement.Table == "tenant_model_instance" {
+				_ = tx.AddError(errors.New("forced tenant_model_instance delete failure"))
+			}
+		},
+	); err != nil {
+		t.Fatalf("failed to register failing delete callback: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Delete().Remove("test:fail_tenant_model_instance_delete")
+	})
+
+	code, err := NewModelProviderService().DropProviderInstances(t.Context(), "provider-1", "user-1", []string{"instance-1"})
+	if err == nil {
+		t.Fatalf("DropProviderInstances() error = nil, want forced instance delete failure")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("code = %v, want %v", code, common.CodeServerError)
+	}
+
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", "instance-1").Count(&modelCount).Error; err != nil {
+		t.Fatalf("failed to count tenant models: %v", err)
+	}
+	if modelCount != 1 {
+		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
 	}
 }

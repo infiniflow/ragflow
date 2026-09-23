@@ -47,6 +47,7 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 //	@Param page query int false "page number" default(1)
 //	@Param page_size query int false "items per page" default(30)
 //	@Param orderby query string false "order field" default(create_time)
+//	@Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 //	@Param desc query bool false "descending" default(true)
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups [get]
@@ -68,8 +69,9 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	scope := c.Query("scope")
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := c.DefaultQuery("desc", "true") != "false"
+	terms := orderTermsFromQuery(c, orderby, desc)
 
-	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), user.ID, keywords, scope, orderby, desc)
+	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), user.ID, keywords, scope, terms)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return

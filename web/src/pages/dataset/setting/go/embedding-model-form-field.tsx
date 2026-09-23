@@ -1,4 +1,3 @@
-import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
 import {
   FormControl,
   FormField,
@@ -6,73 +5,16 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Spin } from '@/components/ui/spin';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { useMemo, useState } from 'react';
-import { FieldValues, useFormContext } from 'react-hook-form';
-import { useHandleKbEmbedding, useHasParsedDocument } from './hooks';
+import { useFormContext } from 'react-hook-form';
+import { EmbeddingSelect } from '../embedding-select';
+import { useHasParsedDocument } from './hooks';
 
 interface IProps {
   line?: 1 | 2;
   isEdit?: boolean;
 }
-
-export const EmbeddingSelect = ({
-  isEdit,
-  field,
-  name,
-  disabled = false,
-  testId,
-  ownerTenantId,
-}: {
-  isEdit: boolean;
-  field: FieldValues;
-  name?: string;
-  disabled?: boolean;
-  testId?: string;
-  ownerTenantId?: string;
-}) => {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-  const { handleChange } = useHandleKbEmbedding();
-
-  const oldValue = useMemo(() => {
-    const embdStr = form.getValues(name || 'embedding_model');
-    return embdStr || '';
-  }, [form, name]);
-  const [loading, setLoading] = useState(false);
-  return (
-    <Spin
-      spinning={loading}
-      className={cn('rounded-lg after:bg-bg-base', {
-        'opacity-20': loading,
-      })}
-    >
-      <ModelTreeSelect
-        modelTypes={ModelTypeMap.embd_id}
-        onChange={async (value) => {
-          field.onChange(value);
-          if (isEdit && disabled) {
-            setLoading(true);
-            const res = await handleChange({
-              embed_id: value,
-            });
-            if (res.code !== 0) {
-              field.onChange(oldValue);
-            }
-            setLoading(false);
-          }
-        }}
-        ownerTenantId={ownerTenantId}
-        disabled={disabled && !isEdit}
-        value={field.value}
-        placeholder={t('embeddingModelPlaceholder')}
-        testId={testId}
-      />
-    </Spin>
-  );
-};
 
 export function EmbeddingModelItem({
   line = 1,
@@ -104,9 +46,7 @@ export function EmbeddingModelItem({
               >
                 {t('embeddingModel')}
               </FormLabel>
-              <div
-                className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
-              >
+              <div className={cn('text-text-primary', { 'w-3/4': line === 1 })}>
                 <FormControl>
                   <EmbeddingSelect
                     isEdit={!!isEdit}

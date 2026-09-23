@@ -31,6 +31,7 @@
 # is unaffected by where these files live locally.
 
 import argparse
+import hashlib
 import os
 import shutil
 import sys
@@ -43,12 +44,48 @@ os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
 import nltk
 from huggingface_hub import snapshot_download
 
-# mirrors internal/common.DeepDocORTVersion (Go in-process backend). Single
-# source for the onnxruntime native release: the download URL, .tgz name,
-# extracted dir name, and SONAME below are all derived from it. The pip
-# onnxruntime== pin (pyproject.toml) and the onnxruntime_go binding minor
-# (go.mod) must stay on the same minor line.
-ORT_VERSION = "1.23.2"
+# mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
+# FOUR places (with that Go constant, ORT_VERSION in ragflow_deps/download_go_deps.py,
+# and ARG ORT_VERSION in Dockerfile_go) that must carry the same ONNX Runtime
+# native release for the statically-linked Go DeepDoc backend. This file's
+# download URL and extracted dir name are derived from ORT_VERSION here, but
+# there is no single source of truth — keep all four equal. build.sh
+# --check-ort-version greps this file (and the other three) to fail fast on
+# drift. (The Python pip onnxruntime== pin in pyproject.toml is versioned
+# independently and is not part of this check.)
+#
+# Source of the native static archives: infiniflow/ragflow-build (our own
+# ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
+# account. The release tag is `onnxruntime-v{ORT_VERSION}` and the asset is
+# `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`. The archive is occasionally
+# re-issued under this SAME tag/asset name with patched content; download_deps.py
+# detects that via a `{asset}.sha256` sidecar and re-downloads/re-extracts, so a
+# stale local copy never silently lingers.
+ORT_VERSION = "1.29.0"
+
+
+def _ort_asset_name(version):
+    """Release asset filename under infiniflow/ragflow-build tag onnxruntime-v{version}."""
+    return f"onnxruntime-v{version}-linux-x86_64.zip"
+
+
+def _ort_extracted_dir(version):
+    """Top-level directory name INSIDE the release zip (what extractall creates)."""
+    return f"onnxruntime-v{version}-linux-x86_64"
+
+
+def _ort_normalized_dir(version):
+    """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib."""
+    return f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+
+
+def _sha256_of(path):
+    """sha256 of a file, streamed in chunks so large archives don't blow memory."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
@@ -91,14 +128,15 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # kernels are dropped; only OrtGetApiBase is exported, via
             # --dynamic-list), so no libonnxruntime.so is needed at runtime —
             # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
-            # symbol table, not the executable's own path). csukuangfj's
-            # static_lib build is
-            # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
-            # (ABI-compatible with onnxruntime_go) and the onnxruntime the
-            # Python goldens were generated with.
+            # symbol table, not the executable's own path). Our own
+            # infiniflow/ragflow-build ORT-only minimal build
+            # (onnxruntime-v{ORT_VERSION}) is CPU-only and glibc2_28-based,
+            # matching ORT_VERSION's C-API line (ABI-compatible with
+            # onnxruntime_go) and the onnxruntime the Python goldens were
+            # generated with.
             [
-                f"https://github.com/csukuangfj/onnxruntime-libs/releases/download/v{ORT_VERSION}/onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
-                f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+                f"https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
+                _ort_asset_name(ORT_VERSION),
             ],
         ]
     else:
@@ -140,14 +178,15 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # kernels are dropped; only OrtGetApiBase is exported, via
             # --dynamic-list), so no libonnxruntime.so is needed at runtime —
             # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
-            # symbol table, not the executable's own path). csukuangfj's
-            # static_lib build is
-            # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
-            # (ABI-compatible with onnxruntime_go) and the onnxruntime the
-            # Python goldens were generated with.
+            # symbol table, not the executable's own path). Our own
+            # infiniflow/ragflow-build ORT-only minimal build
+            # (onnxruntime-v{ORT_VERSION}) is CPU-only and glibc2_28-based,
+            # matching ORT_VERSION's C-API line (ABI-compatible with
+            # onnxruntime_go) and the onnxruntime the Python goldens were
+            # generated with.
             [
-                f"https://github.com/csukuangfj/onnxruntime-libs/releases/download/v{ORT_VERSION}/onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
-                f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+                f"https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
+                _ort_asset_name(ORT_VERSION),
             ],
         ]
 
@@ -187,8 +226,52 @@ if __name__ == "__main__":
         download_url = url[0] if isinstance(url, list) else url
         filename = url[1] if isinstance(url, list) else url.split("/")[-1]
         print(f"Downloading {filename} from {download_url}...")
-        if not os.path.exists(filename):
+
+        # The ONNX Runtime archive is re-issued under the SAME release tag and
+        # asset name whenever its content changes (e.g. the patched build that
+        # exports SessionGetInitializer*). A pure existence check would then
+        # keep a colleague's stale local copy and fail to link onnxruntime_go.
+        # Verify against the published .sha256 sidecar so a re-issued archive
+        # is always re-downloaded and re-extracted. Every other archive keeps
+        # the legacy existence-based skip.
+        is_ort = filename == _ort_asset_name(ORT_VERSION)
+        expected_sha = None
+        if is_ort:
+            sidecar_url = download_url + ".sha256"
+            try:
+                with urllib.request.urlopen(sidecar_url) as resp:
+                    expected_sha = resp.read().decode().split()[0]
+            except Exception as exc:  # noqa: BLE001 - best-effort; fall back to legacy
+                print(f"  WARNING: could not fetch {sidecar_url} ({exc}); skipping checksum for {filename}")
+
+        needs_download = True
+        if os.path.exists(filename):
+            if expected_sha is not None:
+                actual = _sha256_of(filename)
+                if actual == expected_sha:
+                    print(f"  ✓ {filename} checksum matches released {expected_sha}; skipping download")
+                    needs_download = False
+                else:
+                    print(f"  {filename} checksum mismatch (local {actual} != released {expected_sha}); re-downloading")
+            else:
+                needs_download = False
+
+        if needs_download:
             urllib.request.urlretrieve(download_url, filename)
+            if expected_sha is not None:
+                actual = _sha256_of(filename)
+                if actual != expected_sha:
+                    print(f"  ERROR: {filename} checksum mismatch after download (got {actual}, expected {expected_sha})", file=sys.stderr)
+                    sys.exit(1)
+                print(f"  ✓ {filename} checksum verified ({actual})")
+            # Force re-extract below: drop any previously extracted version dir
+            # so the same-named re-issued archive actually refreshes the .a files.
+            if is_ort:
+                native_libs = os.path.expanduser("~/ragflow-native-libs")
+                version_dir = os.path.join(native_libs, "onnxruntime", "static_lib", _ort_normalized_dir(ORT_VERSION))
+                if os.path.isdir(version_dir):
+                    print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
+                    shutil.rmtree(version_dir)
 
     # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.
@@ -197,7 +280,7 @@ if __name__ == "__main__":
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
         ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
-        (f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip", os.path.join("onnxruntime", "static_lib")),
+        (_ort_asset_name(ORT_VERSION), os.path.join("onnxruntime", "static_lib")),
     ]
     import tarfile
     import zipfile
@@ -209,7 +292,7 @@ if __name__ == "__main__":
         symbols / wrong version, silently)."""
         if not os.path.isdir(static_lib_dir):
             return
-        expected = f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+        expected = _ort_normalized_dir(version)
         for name in os.listdir(static_lib_dir):
             if not name.startswith("onnxruntime-linux-x64-static_lib-"):
                 continue
@@ -226,8 +309,8 @@ if __name__ == "__main__":
             continue
         target = os.path.join(native_deps_dir, subdir)
 
-        # ONNX Runtime ships a version-stamped top-level dir inside the zip
-        # (onnxruntime-linux-x64-static_lib-<ORT_VERSION>-glibc2_28/). A plain
+        # The infiniflow/ragflow-build release zip carries a top-level dir
+        # named onnxruntime-v{ORT_VERSION}-linux-x86_64. A plain
         # "any .a present?" skip would keep a STALE version in place after a
         # bump: the new zip downloads, but extraction is skipped because the
         # old .a is still under static_lib, so the bump silently does nothing.
@@ -235,7 +318,7 @@ if __name__ == "__main__":
         # already extracted.
         if subdir == os.path.join("onnxruntime", "static_lib"):
             _prune_stale_onnxruntime(target, ORT_VERSION)
-            version_dir = os.path.join(target, f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28")
+            version_dir = os.path.join(target, _ort_normalized_dir(ORT_VERSION))
             if os.path.isdir(version_dir) and any(f.endswith(".a") for _, _, files in os.walk(version_dir) for f in files):
                 print(f"  ✓ {subdir} ({ORT_VERSION}) already extracted to {version_dir}")
                 continue
@@ -248,6 +331,19 @@ if __name__ == "__main__":
         if archive_path.endswith(".zip"):
             with zipfile.ZipFile(archive_path) as zf:
                 zf.extractall(target)
+            # The infiniflow/ragflow-build release zip carries a top-level dir
+            # named onnxruntime-v{version}-linux-x86_64, but build.sh's glob and
+            # the stale checks above all expect
+            # onnxruntime-linux-x64-static_lib-{version}-glibc2_28. Rename it so
+            # every consumer shares one name convention (driven by ORT_VERSION).
+            if subdir == os.path.join("onnxruntime", "static_lib"):
+                extracted = os.path.join(target, _ort_extracted_dir(ORT_VERSION))
+                normalized = os.path.join(target, _ort_normalized_dir(ORT_VERSION))
+                if os.path.isdir(extracted) and extracted != normalized:
+                    if os.path.exists(normalized):
+                        shutil.rmtree(normalized)
+                    print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
+                    os.rename(extracted, normalized)
         else:
             with tarfile.open(archive_path) as tf:
                 tf.extractall(target)
