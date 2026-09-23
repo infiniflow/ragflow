@@ -68,3 +68,19 @@ func TestSetIntraOpThreads(t *testing.T) {
 	// Restore the process default so other tests are unaffected.
 	SetIntraOpThreads(1)
 }
+
+// TestValidateInferenceConfigKNExceedsBudget pins that the CPU-core budget N is
+// a hard ceiling: when K > N the per-Run intra-op thread count (max(1, N/K))
+// floors at 1, so total occupancy would be K, exceeding N. ValidateInferenceConfig
+// must reject this rather than silently oversubscribing the box.
+func TestValidateInferenceConfigKNExceedsBudget(t *testing.T) {
+	if _, _, err := ValidateInferenceConfig(8, 2, 8); err == nil {
+		t.Fatal("expected error when concurrency K=8 exceeds cpu-core budget N=2")
+	}
+	// Sanity: K <= N is accepted and yields N/K intra-op threads.
+	if c, total, err := ValidateInferenceConfig(8, 4, 2); err != nil {
+		t.Fatalf("unexpected error for K<=N: %v", err)
+	} else if c != 2 || total != 4 {
+		t.Fatalf("coresPerInference=%d totalCPUCores=%d, want 2/4", c, total)
+	}
+}

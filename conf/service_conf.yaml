@@ -18,14 +18,24 @@ deepdoc:
   # K must be a positive integer and must not exceed the machine's CPU core count.
   # Override with the env var RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY, or the CLI
   # flag --deepdoc-inference-concurrency (highest precedence). Default 4.
-  inference_concurrency: 4
+  #
+  # Left unset on purpose: the built-in default (4) then applies and is clamped
+  # down to the machine's core count on hosts with fewer than 4 cores, so the
+  # server still starts there. Uncomment to pin an explicit value; an explicit
+  # value (via config, env, or CLI) that exceeds the core count is a startup
+  # error.
+  # inference_concurrency: 4
   # CPU-core budget (N) for DeepDoc in-process inference. Set to 0 to use all
   # available cores (runtime.NumCPU()). A single Run then uses N/K cores: with
   # K=1 it uses all N cores, with K=2 each Run uses N/2 cores. N must not exceed
   # the machine's CPU core count. Override with the env var
   # RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES, or the CLI flag
   # --deepdoc-inference-cpu-cores (highest precedence). Default 4.
-  inference_cpu_cores: 4
+  #
+  # Left unset for the same clamp-to-cores reason as above. Uncomment to pin an
+  # explicit value; an explicit value that exceeds the core count is a startup
+  # error.
+  # inference_cpu_cores: 4
 
 # Optional standalone MCP listener for the Go API server. Uncomment to enable.
 # RAGFLOW_MCP_* environment variables override these settings.

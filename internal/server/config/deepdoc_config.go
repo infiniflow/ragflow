@@ -17,6 +17,9 @@
 package config
 
 import (
+	"fmt"
+
+	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 )
 
@@ -63,11 +66,19 @@ func (c *Config) ParseDeepDocConfig(v *viper.Viper) error {
 	c.deepdoc.InferenceCPUCoresSet = false
 	if sub := v.Sub("deepdoc"); sub != nil {
 		if sub.IsSet("inference_concurrency") {
-			c.deepdoc.InferenceConcurrency = sub.GetInt("inference_concurrency")
+			n, err := cast.ToIntE(sub.Get("inference_concurrency"))
+			if err != nil {
+				return fmt.Errorf("invalid deepdoc.inference_concurrency: %w", err)
+			}
+			c.deepdoc.InferenceConcurrency = n
 			c.deepdoc.InferenceConcurrencySet = true
 		}
 		if sub.IsSet("inference_cpu_cores") {
-			c.deepdoc.InferenceCPUCores = sub.GetInt("inference_cpu_cores")
+			n, err := cast.ToIntE(sub.Get("inference_cpu_cores"))
+			if err != nil {
+				return fmt.Errorf("invalid deepdoc.inference_cpu_cores: %w", err)
+			}
+			c.deepdoc.InferenceCPUCores = n
 			c.deepdoc.InferenceCPUCoresSet = true
 		}
 	}

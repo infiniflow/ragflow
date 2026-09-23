@@ -75,3 +75,22 @@ func TestParseDeepDocConfigIgnoresEnvVar(t *testing.T) {
 		t.Fatalf("inference concurrency with only env set = %d, want default 4 (env must not be applied here)", got)
 	}
 }
+
+// TestParseDeepDocConfigRejectsNonInteger pins the fail-fast contract from the
+// resolver docs: a present-but-non-integer deepdoc value must surface as an
+// error rather than being silently coerced to 0 by viper/cast.
+func TestParseDeepDocConfigRejectsNonInteger(t *testing.T) {
+	v := viper.New()
+	v.Set("deepdoc", map[string]any{"inference_concurrency": "four"})
+	c := &Config{}
+	if err := c.ParseDeepDocConfig(v); err == nil {
+		t.Fatal("expected error for non-integer inference_concurrency, got nil (silently coerced to 0)")
+	}
+
+	v2 := viper.New()
+	v2.Set("deepdoc", map[string]any{"inference_cpu_cores": "alsobad"})
+	c2 := &Config{}
+	if err := c2.ParseDeepDocConfig(v2); err == nil {
+		t.Fatal("expected error for non-integer inference_cpu_cores, got nil (silently coerced to 0)")
+	}
+}

@@ -271,35 +271,57 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 
 // resolveDeepDocInferenceConcurrency applies the precedence
 // CLI flag > environment variable > config file > default(4) and returns the
-// resolved DeepDoc inference concurrency budget K. configuredSet distinguishes an
-// explicit config value (including 0) from an absent one (which falls back to the
-// default of 4). Any non-integer, non-positive, or otherwise invalid value is
-// reported as an error rather than silently ignored.
-func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int, configuredSet bool) (int, error) {
+// resolved DeepDoc inference concurrency budget K together with whether K was
+// explicitly set (config, env, or CLI). When nothing is set the built-in default
+// 4 is reported as not-explicit so the caller clamps it to the machine's core
+// count; any explicit value is hard-validated upstream by
+// native.ValidateInferenceConfig. configuredSet distinguishes an explicit config
+// value (including 0) from an absent one (which falls back to the default of 4).
+// Any non-integer, non-positive, or otherwise invalid value is reported as an
+// error rather than silently ignored.
+func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int, configuredSet bool) (int, bool, error) {
 	val := 4
+	explicit := false
 	if configuredSet {
 		if configured < 1 {
-			return 0, fmt.Errorf("invalid deepdoc.inference_concurrency %d: must be a positive integer", configured)
+			return 0, false, fmt.Errorf("invalid deepdoc.inference_concurrency %d: must be a positive integer", configured)
 		}
 		val = configured
+		explicit = true
 	}
 	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvDeepDocInferenceConcurrency, v, err)
+			return 0, false, fmt.Errorf("invalid %s %q: %w", common.EnvDeepDocInferenceConcurrency, v, err)
 		}
 		if n < 1 {
-			return 0, fmt.Errorf("invalid %s %d: must be a positive integer", common.EnvDeepDocInferenceConcurrency, n)
+			return 0, false, fmt.Errorf("invalid %s %d: must be a positive integer", common.EnvDeepDocInferenceConcurrency, n)
 		}
 		val = n
+		explicit = true
 	}
 	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
 	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
 	// value is already positive; no extra >0 guard is needed here.
 	if args.deepdocInferenceConcurrency != nil {
 		val = *args.deepdocInferenceConcurrency
+		explicit = true
 	}
-	return val, nil
+	return val, explicit, nil
+}
+
+// clampDefaultConcurrency mirrors clampDefaultCPUCores for the concurrency
+// budget K: the built-in default is 4, but on a machine with fewer than 4 cores
+// the default is clamped down to the available core count so the server still
+// starts. An explicit budget (explicit == true, i.e. set via config, env, or
+// CLI) is never clamped — a user asking for more parallel Runs than cores exist
+// is a misconfiguration and must surface as an error upstream
+// (native.ValidateInferenceConfig).
+func clampDefaultConcurrency(totalCores, rawK int, explicit bool) int {
+	if !explicit && rawK > totalCores {
+		return totalCores
+	}
+	return rawK
 }
 
 // resolveDeepDocInferenceCPUCores applies the precedence
@@ -1560,10 +1582,14 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 	// an error (surfaced by ValidateInferenceConfig below).
 	totalCores := goruntime.NumCPU()
 	rawN = clampDefaultCPUCores(totalCores, rawN, explicitN)
-	K, errK := resolveDeepDocInferenceConcurrency(arguments, cfg.InferenceConcurrency, cfg.InferenceConcurrencySet)
+	K, explicitK, errK := resolveDeepDocInferenceConcurrency(arguments, cfg.InferenceConcurrency, cfg.InferenceConcurrencySet)
 	if errK != nil {
 		common.Fatal("invalid deepdoc inference concurrency", zap.Error(errK))
 	}
+	// The default concurrency is 4, clamped to the available core count the same
+	// way (only an explicit env/CLI override is hard-validated) so the server
+	// still starts on hosts with fewer than 4 cores.
+	K = clampDefaultConcurrency(totalCores, K, explicitK)
 	// Validate K and N against the machine's core count and derive the per-Run
 	// intra-op thread count (max(1, N/K)). N == 0 resolves to all cores here.
 	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, rawN, K)

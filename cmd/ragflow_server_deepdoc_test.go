@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	native "ragflow/internal/deepdoc/native"
 )
 
 func intPtr(n int) *int { return &n }
@@ -39,28 +40,29 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 		env           string // "" means leave unset
 		cli           *int
 		want          int
+		wantExplicit  bool
 		wantErr       bool
 	}{
-		{"default", 0, false, "", nil, 4, false},
-		{"config only", 6, true, "", nil, 6, false},
-		{"env overrides config", 6, true, "8", nil, 8, false},
-		{"cli overrides env and config", 6, true, "8", intPtr(12), 12, false},
-		{"env only", 0, false, "9", nil, 9, false},
+		{"default", 0, false, "", nil, 4, false, false},
+		{"config only", 6, true, "", nil, 6, true, false},
+		{"env overrides config", 6, true, "8", nil, 8, true, false},
+		{"cli overrides env and config", 6, true, "8", intPtr(12), 12, true, false},
+		{"env only", 0, false, "9", nil, 9, true, false},
 		// Invalid values are rejected, not silently ignored.
-		{"env invalid -> error", 6, true, "notanint", nil, 0, true},
-		{"config zero -> error", 0, true, "", nil, 0, true},
-		{"config negative -> error", -3, true, "", nil, 0, true},
-		{"env negative -> error", 6, true, "-2", nil, 0, true},
+		{"env invalid -> error", 6, true, "notanint", nil, 0, false, true},
+		{"config zero -> error", 0, true, "", nil, 0, false, true},
+		{"config negative -> error", -3, true, "", nil, 0, false, true},
+		{"env negative -> error", 6, true, "-2", nil, 0, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// t.Setenv restores the previous value after the subtest.
 			t.Setenv(envKey, tc.env)
 			args := &serverArgs{deepdocInferenceConcurrency: tc.cli}
-			got, err := resolveDeepDocInferenceConcurrency(args, tc.configured, tc.configuredSet)
+			got, explicit, err := resolveDeepDocInferenceConcurrency(args, tc.configured, tc.configuredSet)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("expected error, got %d", got)
+					t.Fatalf("expected error, got %d (explicit=%v)", got, explicit)
 				}
 				return
 			}
@@ -70,6 +72,10 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q cli=%v)",
 					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.cli)
+			}
+			if explicit != tc.wantExplicit {
+				t.Fatalf("explicit = %v, want %v (configuredSet=%v env=%q cli=%v)",
+					explicit, tc.wantExplicit, tc.configuredSet, tc.env, tc.cli)
 			}
 		})
 	}
@@ -154,6 +160,87 @@ func TestClampDefaultCPUCores(t *testing.T) {
 			t.Errorf("clampDefaultCPUCores(%d, %d, %v) = %d, want %d",
 				c.totalCores, c.rawN, c.explicit, got, c.want)
 		}
+	}
+}
+
+// TestClampDefaultConcurrency pins the default-concurrency rule: the default 4
+// is clamped down to the available core count when 4 exceeds it, but only when
+// the budget was not explicitly set (env/CLI). An explicit budget is never
+// clamped (a genuine misconfiguration must surface as an error elsewhere).
+func TestClampDefaultConcurrency(t *testing.T) {
+	cases := []struct {
+		totalCores int
+		rawK       int
+		explicit   bool
+		want       int
+	}{
+		{8, 4, false, 4}, // default 4 fits
+		{2, 4, false, 2}, // default 4 clamped to M=2
+		{1, 4, false, 1}, // default 4 clamped to M=1
+		{2, 8, true, 8},  // explicit 8 NOT clamped (error handled upstream)
+		{4, 4, true, 4},  // explicit 4 unchanged
+		{8, 0, true, 0},  // explicit 0 (all cores) unchanged
+		{8, 0, false, 0}, // default 0 (all cores) unchanged
+	}
+	for _, c := range cases {
+		if got := clampDefaultConcurrency(c.totalCores, c.rawK, c.explicit); got != c.want {
+			t.Errorf("clampDefaultConcurrency(%d, %d, %v) = %d, want %d",
+				c.totalCores, c.rawK, c.explicit, got, c.want)
+		}
+	}
+}
+
+// TestResolveDeepDocInferenceSmallMachine pins the startup contract that the
+// shipped default configuration (both deepdoc keys unset, so the built-in
+// default of 4 applies) still boots on a host with fewer than 4 cores: K and N
+// are both clamped down to the available core count and ValidateInferenceConfig
+// accepts them, so registerNativeDeepDoc must not call common.Fatal.
+//
+// This is the regression guard for the small-machine startup failure: before the
+// clamp was applied to K (and config stopped pinning explicit values), the
+// default config fatally rejected K=4 on a 2-core box.
+func TestResolveDeepDocInferenceSmallMachine(t *testing.T) {
+	const totalCores = 2
+	args := &serverArgs{} // no CLI override
+
+	// Mirror registerNativeDeepDoc's resolution: both config keys unset, so
+	// configured/Set come back as the built-in default 4 with explicit == false.
+	rawN, explicitN, errN := resolveDeepDocInferenceCPUCores(args, 4, false)
+	if errN != nil {
+		t.Fatalf("resolveDeepDocInferenceCPUCores: %v", errN)
+	}
+	rawN = clampDefaultCPUCores(totalCores, rawN, explicitN)
+
+	K, explicitK, errK := resolveDeepDocInferenceConcurrency(args, 4, false)
+	if errK != nil {
+		t.Fatalf("resolveDeepDocInferenceConcurrency: %v", errK)
+	}
+	K = clampDefaultConcurrency(totalCores, K, explicitK)
+
+	if rawN != totalCores {
+		t.Fatalf("N not clamped to cores: got %d, want %d", rawN, totalCores)
+	}
+	if K != totalCores {
+		t.Fatalf("K not clamped to cores: got %d, want %d", K, totalCores)
+	}
+	if _, _, err := native.ValidateInferenceConfig(totalCores, rawN, K); err != nil {
+		t.Fatalf("default config on %d-core host must validate, got: %v", totalCores, err)
+	}
+}
+
+// TestValidateInferenceConfigKNExceedsBudget pins the CPU-core budget N as a hard
+// ceiling via the same exported function the server calls at startup. When K > N,
+// max(1, N/K) floors at 1 so total occupancy would be K, oversubscribing the box
+// beyond N. The native package's own unit test for this is testdata-gated (skipped
+// in light environments), so this cmd-level test guards the startup path locally.
+func TestValidateInferenceConfigKNExceedsBudget(t *testing.T) {
+	if _, _, err := native.ValidateInferenceConfig(8, 2, 8); err == nil {
+		t.Fatal("expected error when concurrency K=8 exceeds cpu-core budget N=2")
+	}
+	if c, total, err := native.ValidateInferenceConfig(8, 4, 2); err != nil {
+		t.Fatalf("unexpected error for K<=N: %v", err)
+	} else if c != 2 || total != 4 {
+		t.Fatalf("coresPerInference=%d totalCPUCores=%d, want 2/4", c, total)
 	}
 }
 

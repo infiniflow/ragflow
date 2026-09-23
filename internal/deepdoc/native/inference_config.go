@@ -54,7 +54,10 @@ func intraOpThreadCount() int {
 // and totalCPUCores (the resolved N). The following are rejected:
 //   - concurrency < 1 (not a valid integer / below the minimum),
 //   - concurrency > totalCores (cannot run more parallel Runs than cores),
-//   - rawCPUCores > totalCores (cannot allocate more cores than the machine has).
+//   - rawCPUCores > totalCores (cannot allocate more cores than the machine has),
+//   - concurrency > resolvedN (the CPU-core budget N is a hard ceiling: when
+//     K > N, max(1, N/K) floors at 1 so total occupancy would be K, oversubscribing
+//     the box beyond the budget N).
 //
 // totalCPUCores is returned as the resolved N so callers can log the effective
 // budget; it equals totalCores when rawCPUCores == 0.
@@ -74,6 +77,9 @@ func ValidateInferenceConfig(totalCores, rawCPUCores, concurrency int) (coresPer
 	}
 	if resolved > totalCores {
 		return 0, 0, fmt.Errorf("deepdoc inference_cpu_cores %d exceeds available CPU cores %d", resolved, totalCores)
+	}
+	if concurrency > resolved {
+		return 0, 0, fmt.Errorf("deepdoc inference_concurrency %d exceeds cpu-core budget %d (inference_cpu_cores)", concurrency, resolved)
 	}
 	return max(1, resolved/concurrency), resolved, nil
 }
