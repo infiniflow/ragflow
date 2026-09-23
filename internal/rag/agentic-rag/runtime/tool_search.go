@@ -457,10 +457,10 @@ type SearchDeps struct {
 }
 
 // QuestionLabeler labels a question against the KB objects: given the query and the KBs
-// it returns a map of question-type tag → weight the retriever uses to rank results. The
-// extractor (extractor_tag.go) writes tag_kwd (the tag-name list) and tag_feas (per-tag
-// weights) onto each chunk; the labeler aggregates tag_kwd to build the vocabulary and the
-// retriever ranks with tag_feas. No separate tag-library dataset is needed. The production
+// it returns a map of question-type tag → weight the retriever uses to rank results. Go has
+// no tag-library dataset: the labeler matches the query against the KBs' tag source files
+// (parser_config tags.tag_file_id), and the extractor (extractor_tag.go) writes only tag_feas
+// (per-tag weights) onto each chunk, which the retriever ranks with. The production
 // implementation is internal/service.MetadataService.LabelQuestion; tests supply a stub.
 type QuestionLabeler interface {
 	LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64

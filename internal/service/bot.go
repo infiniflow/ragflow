@@ -162,8 +162,14 @@ func (s *BotService) AgentbotCompletion(
 	// into a string field. Files remain a separate RunAgent argument
 	// so they can populate sys.files.
 	userInput := agentbotUserInput(req)
-	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
-		req.SessionID, "", userInput, req.Files)
+	var ch <-chan canvas.RunEvent
+	if req.Release != nil && *req.Release {
+		ch, err = s.agentService.runReleasedAgent(ctx, tenantID, agentID,
+			req.SessionID, userInput, req.Files)
+	} else {
+		ch, err = s.agentService.RunAgent(ctx, tenantID, agentID,
+			req.SessionID, "", userInput, req.Files)
+	}
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -210,6 +216,7 @@ type AgentbotCompletionRequest struct {
 	UserInput map[string]any           `json:"inputs"`
 	Question  string                   `json:"question"`
 	Files     []map[string]interface{} `json:"files"`
+	Release   *bool                    `json:"release,omitempty"`
 }
 
 // agentbotUserInput uses the resolved question, falling back to Begin form inputs.

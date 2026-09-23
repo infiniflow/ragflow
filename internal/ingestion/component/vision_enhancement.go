@@ -26,12 +26,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
@@ -226,8 +227,8 @@ func maybeDispatchVisionEnhancement(
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
 		if err != nil {
-			slog.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-				"family", family, "modelRef", modelRef, "tenant", tenantID, "err", err)
+			common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
+				zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 	} else {
@@ -274,8 +275,8 @@ dispatch:
 				return
 			}
 			if !isUsableVisionImage(img) {
-				slog.Warn("vision enhancement: invalid image data skipped",
-					"item", itemIdx)
+				common.Warn("vision enhancement: invalid image data skipped",
+					zap.Int("item", itemIdx))
 				return
 			}
 			messages := buildVisionMessages(prompt, img)

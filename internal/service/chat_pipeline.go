@@ -646,7 +646,7 @@ func (s *ChatPipelineService) AsyncChat(
 		if useKW, _ := chat.PromptConfig["keyword"].(bool); useKW && chatModel != nil && len(questions) > 0 {
 			if kw, err := KeywordExtraction(ctx, chatModel, questions[len(questions)-1], 3); err == nil && kw != "" {
 				original := questions[len(questions)-1]
-				questions[len(questions)-1] = questions[len(questions)-1] + "," + kw
+				questions[len(questions)-1] = AppendKeywords(original, kw)
 				common.Debug("keyword extraction applied",
 					zap.String("original_question", original),
 					zap.String("augmented_question", questions[len(questions)-1]))
@@ -1638,7 +1638,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
+		var target *ModelTarget
+		if strings.TrimSpace(chat.LLMID) == "" {
+			target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		} else {
+			target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		}
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -2130,12 +2135,13 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
-// extended so the tenant-default branch also probes vision capability:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561. Chat
+// model resolution always requires the enrolled Chat type; vision capability
+// is determined separately for attachment dispatch:
 //
 //	if chat.llm_id:
-//	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
-//	    else:                                            → CHAT
+//	    if "chat" and "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
+//	    else:                                                       → CHAT
 //	else:                                                → tenant default
 //	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
@@ -2166,15 +2172,14 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
-	// Branches 1/2: explicit LLM. Resolve the enrolled type first — IMAGE2TEXT
-	// when the LLM is registered as vision-capable, CHAT otherwise — and let the
-	// same resolution report the model's tool capability.
+	// Branches 1/2: explicit LLM. Resolve it as a Chat model first so an
+	// image2text-only enrollment is rejected. The enrolled type is resolved
+	// separately below only to decide whether image attachments are allowed.
 	//
 	// This mirrors Python, which resolves chat_mdl once in get_models() and then
 	// reads chat_mdl.is_tools off it (dialog_service.py rag_agent): one lookup, and
 	// the model that runs is by construction the model that was judged.
-	modelType := s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
+	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 	if err != nil {
 		return nil, "", "", "", err
 	}
@@ -2184,7 +2189,7 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = chatModelTypeName(modelType)
+	cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	cfg["is_tools"] = target.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
 }
@@ -2216,8 +2221,9 @@ func chatConfigSupportsTools(cfg map[string]interface{}) bool {
 	if cfg == nil {
 		return false
 	}
-	// Read the value the way the persisted flag is read (extraToolSupport): it is
-	// written as a JSON boolean but has historically also been spelled as a string.
+	// Read the resolved capability as a boolean. ModelSolver accepts the
+	// persisted JSON boolean and the historical string representation before it
+	// stores the result on ModelTarget.
 	switch v := cfg["is_tools"].(type) {
 	case bool:
 		return v
@@ -2330,7 +2336,13 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
+	var target *ModelTarget
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+	} else {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+	}
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
@@ -2904,7 +2916,13 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
+	var target *ModelTarget
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+	} else {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+	}
 	if err != nil {
 		return nil
 	}
@@ -3060,7 +3078,9 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
+	// Embed inside the model's window: the caller supplies arbitrary text and the
+	// provider rejects an over-window input with 400/20015 instead of truncating it.
+	embeds, err := e.embModel.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -5153,12 +5173,11 @@ type HarnessResult struct {
 	CiteChunkIDs []string
 }
 
-// harnessRetriever is wired at server bootstrap (cmd/ragflow_server.go:889) to
-// the agentic-RAG entry point advanced_rag.Rag (:1022). The advanced_rag package
-// imports internal/service (e.g. harness/tool_exploration.go), so the service
-// layer cannot import it back without an import cycle; the function is injected
-// instead. When nil, retrieveViaHarness reports an error and the pipeline
-// continues with empty kbinfos.
+// harnessRetriever is installed at server bootstrap using
+// retrievalbridge.NewHarnessRetriever. The bridge imports internal/service,
+// so this package receives the callback instead of importing the bridge.
+// When nil, retrieveViaHarness reports an error and the pipeline continues
+// with empty kbinfos.
 var harnessRetriever func(ctx context.Context, req HarnessRequest) (HarnessResult, error)
 
 // SetHarnessRetriever injects the agentic-RAG harness driver. Call once at

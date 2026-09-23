@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -366,6 +367,12 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 // visibility, while context cancellation still stops new dispatch and lets
 // in-flight work observe ctx.Err().
 //
+// OnPageDone is reported by the worker itself as its page finishes (see
+// pageProgress), not by the collection loop below: the loop only starts after
+// every page has been submitted, and SubmitTo blocks once the worker queue is
+// full, so collector-side reporting would stay silent until submission
+// finished, then deliver every completion in one burst.
+//
 // Pages are returned sorted by page number so callers can stream them
 // directly into downstream assembly without re-sorting.
 func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
@@ -389,6 +396,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 
 	type pageTaskResult = utility.WorkerPoolResult[pageTask, pageResult]
 	resultCh := make(chan pageTaskResult, len(pages))
+	progress := &pageProgress{total: len(pages), onDone: p.Config.OnPageDone}
 
 	submitted := 0
 	for _, pg := range pages {
@@ -398,6 +406,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 			pageNumber:  pg,
 			docAnalyzer: docAnalyzer,
 			tb:          tb,
+			progress:    progress,
 		}
 		if err := parserPageWorkerPool().SubmitTo(ctx, task, resultCh); err != nil {
 			recordErr(err)
@@ -455,7 +464,7 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 		if r == nil {
 			continue
 		}
-		if r.Err != nil {
+		if r.Err != nil && !errors.Is(r.Err, context.Canceled) {
 			common.Warn("deepdoc pdf parse: page worker failed",
 				zap.Int("page", r.PageNumber), zap.Error(r.Err))
 		}
@@ -639,7 +648,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
-	if pageErr != nil {
+	if pageErr != nil && !errors.Is(pageErr, context.Canceled) {
 		common.Warn("deepdoc pdf parse: runPageWorkers some pages failed",
 			zap.Error(pageErr))
 	}

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +41,10 @@ import (
 // is compiled behind `//go:build cgo`.
 var ErrPDFEngineUnavailable = errors.New("parser: PDF backend unavailable in this build")
 
+// supportedPDFParseMethods is the set of canonical tokens PDFParser can
+// execute; see pdfParseMethodSpellings for the accepted spellings and
+// TestPDFParseMethodTablesAgree for the two intentional divergences
+// ("" sentinel, dispatcher-handled monkeyocrv2).
 var supportedPDFParseMethods = map[string]struct{}{
 	"":               {},
 	"deepdoc":        {},
@@ -68,7 +71,12 @@ type PDFParser struct {
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
 	// the filetype setup map and forwarded to the deepdoc ParserConfig.
-	Pages                             [][]int
+	Pages [][]int
+	// OnPageDone, when set, is forwarded to the deepdoc ParserConfig so the
+	// caller observes per-page parse progress (done/total). Only the deepdoc
+	// backend invokes it; remote engines poll opaque HTTP jobs and never call
+	// it, so the fraction simply stays where it was.
+	OnPageDone                        func(done, total int)
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
@@ -261,12 +269,43 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 		// should already be normalized; degrade to "parse all pages" rather
 		// than failing the parse if an unexpected shape slips through.
 		if pages, err := utility.NormalizePDFPages(raw); err != nil {
-			slog.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
-				"raw", raw, "err", err)
+			common.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
+				zap.Any("raw", raw), zap.Error(err))
 		} else {
 			p.Pages = pages
 		}
 	}
+}
+
+// pdfParseMethodSpellings is the single vocabulary of PDF parse methods:
+// every accepted spelling (lower-cased and trimmed) mapped to its canonical
+// token. Consumers must not keep their own copies of this set — tell a parse
+// method apart from a VLM model selector via IsPDFParseMethod, and resolve
+// its canonical token via normalizePDFParseMethod.
+//
+// "plaintext" / "plain text" are the spellings the dataset configuration UI
+// persists for its plain-text option (ParseDocumentType.PlainText), so they
+// are parse methods rather than model names.
+var pdfParseMethodSpellings = map[string]string{
+	"deepdoc":        "deepdoc",
+	"plain_text":     "plain_text",
+	"plaintext":      "plain_text",
+	"plain text":     "plain_text",
+	"mineru":         "mineru",
+	"monkeyocrv2":    "monkeyocrv2",
+	"docling":        "docling",
+	"opendataloader": "opendataloader",
+	"tcadp parser":   "tcadp",
+	"paddleocr":      "paddleocr",
+	"somark":         "somark",
+}
+
+// IsPDFParseMethod reports whether raw names a PDF parse method rather than
+// a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
+// layout_recognizer selectors resolved separately, so they report false.
+func IsPDFParseMethod(raw string) bool {
+	_, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
+	return ok
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -281,11 +320,8 @@ func normalizePDFParseMethod(raw string) string {
 	case strings.HasSuffix(method, "@opendataloader"):
 		return "opendataloader"
 	}
-	switch method {
-	case "plaintext":
-		return "plain_text"
-	case "tcadp parser":
-		return "tcadp"
+	if canonical, ok := pdfParseMethodSpellings[method]; ok {
+		return canonical
 	}
 	return method
 }
@@ -496,8 +532,8 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 		}
 		img, err := deepdocpdf.RenderPageToImage(engine, pn)
 		if err != nil || img == nil {
-			slog.Warn("cropMediaSections: render failed, skipping section",
-				"page", pn, "err", err)
+			common.Warn("cropMediaSections: render failed, skipping section",
+				zap.Int("page", pn), zap.Error(err))
 			pageCache[pn] = nil
 			return nil
 		}

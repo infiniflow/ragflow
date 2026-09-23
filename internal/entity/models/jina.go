@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -41,13 +40,11 @@ func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
 	// Embed/Rerank/ListModels issue requests without a per-call context
 	// deadline, so keep an explicit 90s client-level timeout to bound them.
 	// Built on the shared transport via NewDriverHTTPClient.
-	client := common.GetSSRFHTTPClient()
-	client.Timeout = 90 * time.Second
 	return &JinaModel{
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: client,
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }

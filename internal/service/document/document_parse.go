@@ -186,7 +186,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if !exists {
 		return nil
 	}
-	_, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, doc.KbID, doc.ID)
+	variants, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, doc.KbID, doc.ID)
 	if err != nil {
 		return fmt.Errorf("resolve generated products for document %s: %w", doc.ID, err)
 	}
@@ -199,9 +199,13 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
+	if len(variants) == 0 {
+		common.Warn(fmt.Sprintf("skip document cleanup event for %s: existing knowledge products have no routing metadata", doc.ID))
+		return nil
+	}
 	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(publishCtx, tenantID, doc.KbID, doc.ID, taskTypes); err != nil {
+	if err := knowledge_compile.PublishDeleted(publishCtx, tenantID, doc.KbID, doc.ID, variants, taskTypes); err != nil {
 		return fmt.Errorf("publish document cleanup for %s: %w", doc.ID, err)
 	}
 	return nil

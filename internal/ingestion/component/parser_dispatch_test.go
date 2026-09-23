@@ -475,6 +475,11 @@ func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	}
 }
 
+// TestDispatch_PDFPlainText_UsesConfiguredBackend pins the plain-text
+// dispatch for every spelling the dataset configuration UI can persist.
+// The UI option is labelled "Naive" and stores "Plain Text"; treating that
+// spelling as a custom VLM model name made the run fail with
+// `provider name missing in model name: Plain Text`.
 func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
@@ -482,25 +487,29 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	setups := defaultSetups()
-	setups["pdf"]["parse_method"] = "plain_text"
-	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{setups: setups}
+	for _, method := range []string{"plain_text", "plaintext", "Plain Text"} {
+		t.Run(method, func(t *testing.T) {
+			setups := defaultSetups()
+			setups["pdf"]["parse_method"] = method
+			setups["pdf"]["output_format"] = "json"
+			c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(t.Context(), nil, map[string]any{
-		"binary":    data,
-		"file_type": "pdf",
-		"name":      "Doc1.pdf",
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	jsonItems, ok := out["json"].([]map[string]any)
-	if !ok || len(jsonItems) == 0 {
-		t.Fatalf("json payload missing or empty: %T", out["json"])
-	}
-	if got, _ := jsonItems[0]["text"].(string); strings.TrimSpace(got) == "" {
-		t.Fatalf("json first item text = %q, want non-empty", got)
+			out, err := c.Invoke(t.Context(), nil, map[string]any{
+				"binary":    data,
+				"file_type": "pdf",
+				"name":      "Doc1.pdf",
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			jsonItems, ok := out["json"].([]map[string]any)
+			if !ok || len(jsonItems) == 0 {
+				t.Fatalf("json payload missing or empty: %T", out["json"])
+			}
+			if got, _ := jsonItems[0]["text"].(string); strings.TrimSpace(got) == "" {
+				t.Fatalf("json first item text = %q, want non-empty", got)
+			}
+		})
 	}
 }
 

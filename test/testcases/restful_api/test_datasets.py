@@ -14,18 +14,18 @@
 #  limitations under the License.
 #
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
+
 from test.testcases.configs import INVALID_API_TOKEN, IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file, create_txt_file
-
 
 ARGUMENT_ERROR_CODE = 102 if IS_GO_PROXY else 101
 PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
@@ -2511,6 +2511,30 @@ def test_dataset_tags_and_aggregation(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_tags")
     second_dataset_id = create_dataset("dataset_tags_second")
 
+    # The aggregation route is served by both backends, so it is asserted
+    # before the backend-specific tag list contract below.
+    aggregate_res = rest_client.get(
+        "/datasets/tags/aggregation",
+        params={"dataset_ids": f"{dataset_id},{second_dataset_id}"},
+    )
+    assert aggregate_res.status_code == 200
+    aggregate_payload = aggregate_res.json()
+    assert aggregate_payload["code"] in (0, 102), aggregate_payload
+
+    empty_aggregate_res = rest_client.get("/datasets/tags/aggregation")
+    assert empty_aggregate_res.status_code == 200
+    empty_aggregate_payload = empty_aggregate_res.json()
+    assert empty_aggregate_payload["code"] != 0, empty_aggregate_payload
+
+    if IS_GO_PROXY:
+        # Go keeps no tag dataset, so the per-dataset tag routes are not served
+        # at all; tagging is driven by the dataset's tag source file and only
+        # the aggregation route survives. Assert the contract that replaced the
+        # old 200 responses instead of the route's payload.
+        assert rest_client.get(f"/datasets/{dataset_id}/tags").status_code == 404
+        assert rest_client.get("/datasets/invalid_id/tags").status_code == 404
+        return
+
     list_tags_res = rest_client.get(f"/datasets/{dataset_id}/tags")
     assert list_tags_res.status_code == 200
     list_tags_payload = list_tags_res.json()
@@ -2525,23 +2549,19 @@ def test_dataset_tags_and_aggregation(rest_client, create_dataset):
     invalid_list_tags_payload = invalid_list_tags_res.json()
     assert invalid_list_tags_payload["code"] != 0, invalid_list_tags_payload
 
-    aggregate_res = rest_client.get(
-        "/datasets/tags/aggregation",
-        params={"dataset_ids": f"{dataset_id},{second_dataset_id}"},
-    )
-    assert aggregate_res.status_code == 200
-    aggregate_payload = aggregate_res.json()
-    assert aggregate_payload["code"] in (0, 102), aggregate_payload
-
-    empty_aggregate_res = rest_client.get("/datasets/tags/aggregation")
-    assert empty_aggregate_res.status_code == 200
-    empty_aggregate_payload = empty_aggregate_res.json()
-    assert empty_aggregate_payload["code"] != 0, empty_aggregate_payload
-
 
 @pytest.mark.p2
 def test_dataset_tags_delete_and_rename_validation(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_tag_mutation")
+
+    if IS_GO_PROXY:
+        # Same removal as above: with no tag dataset there is nothing to rename
+        # or delete, so both the validation cases and the invalid-dataset cases
+        # are now unrouted instead of argument errors.
+        for url in (f"/datasets/{dataset_id}/tags", "/datasets/invalid_id/tags"):
+            assert rest_client.delete(url, json={"tags": ["tag1"]}).status_code == 404
+            assert rest_client.put(url, json={"from_tag": "old", "to_tag": "new"}).status_code == 404
+        return
 
     delete_missing_tags = rest_client.delete(f"/datasets/{dataset_id}/tags", json={})
     assert delete_missing_tags.status_code == 200

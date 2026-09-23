@@ -8,5 +8,6 @@
     "asr": "v1/audio/transcriptions",
     "tts": "v1/audio/speech"
   },
+  "url_hint": "http://host.docker.internal:9997",
   "class": "local"
 }

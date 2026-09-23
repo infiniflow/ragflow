@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -45,11 +46,6 @@ type ModelTarget struct {
 	ModelInfo     *modelModule.Model
 	ContextLength int
 	MaxTokens     int
-	// SupportsTools is the resolved model's tool-calling capability, computed
-	// while the model is being resolved (see resolvedModel.supportsTools) so
-	// callers never have to look the model up a second time to read it. Python
-	// carries the same value as the `is_tools` field of the model config it
-	// resolved once, and every consumer reads it from there.
 	SupportsTools bool
 }
 
@@ -120,17 +116,11 @@ func (s *ModelSolver) ResolveModelConfig(ctx context.Context, tenantID string, m
 	}, nil
 }
 
-// ResolveChatModelType returns the type a chat reference must be resolved as:
-// ModelTypeImage2Text when the reference is enrolled vision-capable, chat
-// otherwise.
-//
-// A dialog's llm_id may name a model that is enrolled ONLY as image-to-text, and
-// that model is still a valid chat-pipeline input. Resolving such a reference as
-// chat fails outright ("cannot be used as chat model"), so every caller that
-// needs a capability of the request's chat model must agree on which row to load
-// — otherwise the model the request runs on and the model it is judged by are two
-// different rows (or, for an image2text-only enrollment, the second lookup fails
-// and the capability reads as absent).
+// ResolveChatModelType returns the output type used by the chat pipeline for
+// attachment dispatch. A model enrolled as both chat and image2text is rendered
+// as image2text so image content can be passed to it; a chat-only model remains
+// chat. An image2text-only enrollment remains chat here so ResolveModelConfig
+// can reject it as an invalid chat model before this display type is used.
 //
 // Probe failures are conservative and yield chat: that is the type a plain chat
 // model is enrolled as, and it keeps image attachments out of a model whose
@@ -143,12 +133,14 @@ func (s *ModelSolver) ResolveChatModelType(ctx context.Context, tenantID, modelR
 	if err != nil {
 		return entity.ModelTypeChat
 	}
+	hasChat := false
+	hasImage2Text := false
 	for _, mt := range modelTypes {
-		// ModelType is a bitmask: a model enrolled as chat+image2text reports a
-		// combined value, so test membership, not equality.
-		if mt.Has(entity.ModelTypeImage2Text) {
-			return entity.ModelTypeImage2Text
-		}
+		hasChat = hasChat || mt.Has(entity.ModelTypeChat)
+		hasImage2Text = hasImage2Text || mt.Has(entity.ModelTypeImage2Text)
+	}
+	if hasChat && hasImage2Text {
+		return entity.ModelTypeImage2Text
 	}
 	return entity.ModelTypeChat
 }
@@ -260,9 +252,9 @@ type resolvedModel struct {
 	maxTokens      int
 }
 
-// supportsTools reports whether the resolved model can emit tool calls, using the
-// same precedence the standalone probe uses: the flag persisted on the enrolled
-// model, then the instance credential payload, then the provider catalog.
+// supportsTools reports whether the resolved model can emit tool calls. The
+// enrollment flag takes precedence over the instance credential and provider
+// catalog defaults.
 //
 // It is a method on the resolution rather than a separate lookup so that the
 // capability is answered by the row that was just loaded, instead of by a second
@@ -287,6 +279,50 @@ func (m *resolvedModel) supportsTools() bool {
 		instanceAPIKey = *m.apiConfig.ApiKey
 	}
 	return toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName)
+}
+
+func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
+	if supported, ok := extraToolSupport(extra); ok {
+		return supported
+	}
+	if supported, ok := extraToolSupport(instanceAPIKey); ok {
+		return supported
+	}
+	return catalogToolSupport(providerName, modelName)
+}
+
+func extraToolSupport(extra string) (bool, bool) {
+	if strings.TrimSpace(extra) == "" {
+		return false, false
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
+		return false, false
+	}
+	value, ok := fields["is_tools"]
+	if !ok {
+		return false, false
+	}
+	switch value := value.(type) {
+	case bool:
+		return value, true
+	case string:
+		return strings.EqualFold(strings.TrimSpace(value), "true"), true
+	case float64:
+		return value != 0, true
+	default:
+		return false, false
+	}
+}
+
+func catalogToolSupport(providerName, modelName string) bool {
+	providerManager := dao.GetModelProviderManager()
+	provider := providerManager.FindProvider(providerName)
+	if provider == nil {
+		return false
+	}
+	model := providerManager.FindModel(provider, modelName)
+	return model != nil && model.Tools != nil && model.Tools.Support
 }
 
 func (s *ModelSolver) lookupTenantModel(ctx context.Context, tenantID, modelRef string) (*entity.TenantModel, error) {

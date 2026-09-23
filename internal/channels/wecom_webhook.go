@@ -29,7 +29,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -38,6 +37,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -205,10 +208,10 @@ func acquireWeComWebhookServer(channel *wecomChannel) (*wecomWebhookServer, erro
 
 	go func() {
 		if err := server.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("[wecom] webhook server %s stopped: %v", listener.Addr(), err)
+			common.Error("wecom: webhook server stopped", err, zap.String("addr", listener.Addr().String()))
 		}
 	}()
-	log.Printf("[wecom] webhook listening on http://%s/wecom/<account_id>/callback", listener.Addr())
+	common.Info("wecom: webhook listening", zap.String("addr", listener.Addr().String()))
 	return server, nil
 }
 
@@ -270,13 +273,13 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, weComWebhookBodyLimit))
 	if err != nil {
-		log.Printf("[wecom:%s] failed to read request body: %v", accountID, err)
+		common.Warn("wecom: failed to read request body", zap.String("account_id", accountID), zap.Error(err))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	var envelope wecomEncryptedXML
 	if err := xml.Unmarshal(body, &envelope); err != nil || strings.TrimSpace(envelope.Encrypt) == "" {
-		log.Printf("[wecom:%s] invalid encrypted message: %v", accountID, err)
+		common.Warn("wecom: invalid encrypted message", zap.String("account_id", accountID), zap.Error(err))
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -287,7 +290,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	}
 	var message wecomXMLMessage
 	if err := xml.Unmarshal(plaintext, &message); err != nil {
-		log.Printf("[wecom:%s] failed to parse decrypted message: %v", accountID, err)
+		common.Warn("wecom: failed to parse decrypted message", zap.String("account_id", accountID), zap.Error(err))
 		w.WriteHeader(http.StatusOK)
 		return
 	}

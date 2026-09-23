@@ -58,6 +58,11 @@ type PipelineResult struct {
 	DocName               string
 	BuiltInMetadataConfig []any
 	AutoMetadataEnabled   bool
+	// CompiledVariants and CompiledTaskTypes identify the document-level
+	// products that the dataset consumer must merge after the ingestion task
+	// reaches its terminal COMPLETED state.
+	CompiledVariants  []string
+	CompiledTaskTypes []string
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -104,21 +109,27 @@ type noRefreshChunkInserter interface {
 	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
 }
 
-// insertChunksForIngestion writes chunks through the engine's no-refresh path
-// when it offers one, falling back to the plain inserter otherwise.
+// insertChunksForIngestion writes non-final chunks through the engine's
+// no-refresh path when it offers one, falling back to the plain inserter
+// otherwise.
 //
-// Waiting for a refresh costs ~0.5s per write (median; p90 1.0s, max 5.0s) with
-// the KB index's refresh_interval=1000ms, and it buys nothing during ingestion:
-// the index publishes the chunks on its own refresh cycle a moment later, so the
-// only difference is up to a second before they are searchable. It is also what
-// Python's ingestion does - it inserts with refresh=False
-// (rag/svr/task_executor_refactor/chunk_service.py:386 and :423) while its API
-// default stays "wait_for" - so this keeps the two ingestion paths in step.
+// Refreshing every batch adds unnecessary latency. The writer uses the regular
+// inserter for its final batch, so all preceding batches become searchable
+// before the document task is acknowledged and its completion event is sent.
 func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
 			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
 		}
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+	}
+}
+
+// insertFinalChunksForIngestion waits for the index refresh before returning.
+// The final write makes every preceding no-refresh batch searchable before the
+// document task is acknowledged and its completion event is published.
+func insertFinalChunksForIngestion(eng engine.DocEngine) InsertFunc {
+	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
 	}
 }
@@ -138,7 +149,12 @@ func NewPipelineExecutor(
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
-		indexWriter: newChunkIndexWriter(insertChunksForIngestion(engine.Get()), fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID), taskCtx.Doc.KbID, docBulkSize),
+		indexWriter: newChunkIndexWriter(
+			insertChunksForIngestion(engine.Get()),
+			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
+			taskCtx.Doc.KbID,
+			docBulkSize,
+		).withFinalInsertFunc(insertFinalChunksForIngestion(engine.Get())),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
 			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
 		},
@@ -153,6 +169,7 @@ type DeleteChunksFunc func(ctx context.Context, condition map[string]any, baseNa
 
 func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	s.indexWriter.insertFunc = f
+	s.indexWriter.finalInsertFunc = f
 	return s
 }
 
@@ -327,26 +344,13 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, fmt.Errorf("persist Wiki active MAP state: %w", err)
 	}
 
-	// All chunks are now persisted. Notify the dataset-level post-processing consumer
-	// (§11) that this document is complete: its compiled products were written
-	// available_int=0 and the consumer later merges them into dataset-level products
-	// (available_int=1). The notification is sent only after a successful persist
-	// and is best-effort / non-fatal — a delivery failure is logged but does not
-	// fail the pipeline task.
-	//
-	// The variants passed to PublishCompleted are the union of the compile types
-	// in the previous and current document generations. They are derived from the
-	// authoritative `compilation_template_kind_kwd` the KnowledgeCompiler
-	// component stamps on each compiled product (the resolved template's kind →
-	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
-	// consumer retract stale merged products when a template is removed.
+	// All chunks are now persisted. Defer the dataset-level post-processing
+	// notification until the enclosing ingestion task reaches COMPLETED. The
+	// index writes intentionally do not wait for refresh, so publishing here lets
+	// the consumer race the final task bookkeeping and read an incomplete view of
+	// the document's products.
 	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
 	eventTaskTypes := mergeTaskTypes(oldCompiledTaskTypes, compiledTaskTypes(chunks))
-	if len(eventVariants) > 0 {
-		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants, eventTaskTypes); err != nil {
-			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
-		}
-	}
 
 	// Compilation products are derived artifacts and must not inflate the
 	// document's source chunk counter shown by the document list API.
@@ -378,6 +382,8 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		DocName:               docNameValue(s.taskCtx.Doc.Name),
 		BuiltInMetadataConfig: builtInMetadata,
 		AutoMetadataEnabled:   autoMetaEnabled,
+		CompiledVariants:      eventVariants,
+		CompiledTaskTypes:     eventTaskTypes,
 	}, nil
 }
 

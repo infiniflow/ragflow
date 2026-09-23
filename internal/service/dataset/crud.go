@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -140,7 +142,15 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 	parserConfig["parent_child"] = parentChild
 
-	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, map[string]interface{}(parserConfig))
+	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	if req.ParserConfig != nil {
+		for componentID, value := range req.ParserConfig {
+			if pipelinepkg.IsChunkerComponent(componentID) {
+				parentChildConfig[componentID] = value
+			}
+		}
+	}
+	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
@@ -308,35 +318,71 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}
 
 	successCount := 0
-	errorsList := make([]string, 0)
 	for _, kb := range kbs {
 		if err := d.deleteDataset(ctx, tenantID, kb); err != nil {
-			errorsList = append(errorsList, err.Error())
-			common.Warn("deleteDataset failed", zap.String("kb_id", kb.ID), zap.Error(err))
-			continue
+			common.Warn("deleteDataset failed", zap.String("dataset", datasetNameAndID(kb)), zap.String("kb_id", kb.ID), zap.Error(err))
+			return nil, common.CodeServerError, err
 		}
 		successCount++
 	}
 
 	return map[string]interface{}{
 		"success_count": successCount,
-		"errors":        errorsList,
+		"errors":        []string{},
 	}, common.CodeSuccess, nil
 }
 
 func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb *entity.Knowledgebase) error {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+	dataset := datasetNameAndID(kb)
+
 	// Collect document IDs first so engine cleanup can run before the
 	// transaction (engine ops are not transactional).
 	var documents []entity.Document
 	if err := dao.DB.Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
 		return fmt.Errorf("delete dataset error for %s", kb.ID)
 	}
+	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	for _, document := range documents {
+		if document.Location == nil || *document.Location == "" {
+			continue
+		}
+		exists, err := storageImpl.ObjectExists(cleanupCtx, kb.ID, *document.Location)
+		if err != nil {
+			return fmt.Errorf("check document %s in dataset %s: %w", document.ID, kb.ID, err)
+		}
+		if !exists {
+			common.Warn("Dataset document object already missing", zap.String("document", documentNameAndID(document)), zap.String("document_id", document.ID), zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+			continue
+		}
+		if err := storageImpl.Remove(cleanupCtx, kb.ID, *document.Location); err != nil {
+			return fmt.Errorf("remove document %s from dataset %s: %w", document.ID, kb.ID, err)
+		}
+		common.Info("Removed dataset document object", zap.String("document", documentNameAndID(document)), zap.String("document_id", document.ID), zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+	}
+	exists, err := storageImpl.BucketExistsWithError(cleanupCtx, kb.ID)
+	if err != nil {
+		return fmt.Errorf("check dataset bucket %s: %w", kb.ID, err)
+	}
+	if !exists {
+		common.Warn("Dataset bucket already missing", zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+	} else {
+		if err := storageImpl.RemoveEmptyBucket(cleanupCtx, kb.ID); err != nil {
+			common.Warn("Unable to remove empty dataset bucket", zap.String("dataset", dataset), zap.String("bucket", kb.ID), zap.Error(err))
+		} else {
+			common.Info("Removed empty dataset bucket", zap.String("dataset", dataset), zap.String("bucket", kb.ID))
+		}
+	}
 	docIDs := extractDocIDs(documents)
 	if len(docIDs) > 0 {
 		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
 
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
+	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
@@ -379,7 +425,25 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 			return fmt.Errorf("delete dataset error for %s", kb.ID)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	common.Info("Deleted dataset", zap.String("dataset", dataset), zap.String("kb_id", kb.ID))
+	return nil
+}
+
+func documentNameAndID(document entity.Document) string {
+	if document.Name == nil || *document.Name == "" {
+		return document.ID
+	}
+	return fmt.Sprintf("%s (%s)", *document.Name, document.ID)
+}
+
+func datasetNameAndID(kb *entity.Knowledgebase) string {
+	if kb.Name == "" {
+		return kb.ID
+	}
+	return fmt.Sprintf("%s (%s)", kb.Name, kb.ID)
 }
 
 func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
@@ -485,14 +549,24 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		for _, accessibleID := range accessibleIDs {
 			accessible[accessibleID] = struct{}{}
 		}
+		filteredIDs := make([]string, 0, len(ids))
 		deniedIDs := make([]string, 0, len(ids))
 		for _, datasetID := range ids {
-			if _, ok := accessible[datasetID]; !ok {
+			if _, ok := accessible[datasetID]; ok {
+				filteredIDs = append(filteredIDs, datasetID)
+			} else {
 				deniedIDs = append(deniedIDs, datasetID)
 			}
 		}
 		if len(deniedIDs) > 0 {
-			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for datasets: '%s'", userID, strings.Join(deniedIDs, ", "))
+			common.Warn("User lacks permission for datasets",
+				zap.String("user_id", userID),
+				zap.Strings("dataset_ids", deniedIDs),
+			)
+		}
+		ids = filteredIDs
+		if len(ids) == 0 {
+			return []map[string]interface{}{}, 0, common.CodeSuccess, nil
 		}
 	}
 

@@ -301,9 +301,6 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["important_kwd"]; ok {
 			resultChunk["important_kwd"] = v
 		}
-		if v, ok := chunk["tag_kwd"]; ok {
-			resultChunk["tag_kwd"] = v
-		}
 		if v, ok := chunk["img_id"]; ok {
 			resultChunk["image_id"] = v
 		} else {
@@ -361,11 +358,10 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		} else {
 			resultChunk["row_id"] = nil
 		}
-		if v, ok := chunk["tag_kwd"]; ok {
-			resultChunk["tag_kwd"] = v
-		} else {
-			resultChunk["tag_kwd"] = []string{}
-		}
+		// Mirrors rag/nlp/search.py's chunk.get("tag_kwd", []): neither side
+		// selects tag_kwd (this file's src, search.py's default src), so the
+		// engine never returns it even when a legacy chunk carries it.
+		resultChunk["tag_kwd"] = []string{}
 
 		vectorColumn := fmt.Sprintf("q_%d_vec", dim)
 		if v, ok := chunk[vectorColumn]; ok {

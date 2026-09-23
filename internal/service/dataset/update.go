@@ -279,7 +279,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
-		if pipelineChanged {
+		if _, ok := updates["parser_config"]; pipelineChanged && !ok {
 			cfgParserID := lockedKB.ParserID
 			if parserIDProvided {
 				cfgParserID = parserID

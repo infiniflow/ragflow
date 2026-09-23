@@ -24,6 +24,7 @@ type AuthenticationConfig struct {
 }
 
 type APIServerConfig struct {
+	MCP      MCPConfig
 	Host     string `mapstructure:"host"`
 	HTTPPort int    `mapstructure:"http_port"`
 	// TrustedProxies lists the IPs / CIDRs whose X-Forwarded-For and
@@ -38,6 +39,10 @@ type APIServerConfig struct {
 }
 
 func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
+	if err := c.parseMCPConfig(v); err != nil {
+		return err
+	}
+
 	// Default Admin config
 	c.apiServer.Host = "localhost"
 	c.apiServer.HTTPPort = 9384

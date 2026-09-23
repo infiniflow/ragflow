@@ -337,8 +337,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		extractedKeywords, err := service.KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
 		if err != nil {
 			common.Warn("Failed to extract keywords from question", zap.Error(err))
-		} else if extractedKeywords != "" {
-			modifiedQuestion = modifiedQuestion + " " + extractedKeywords
+		} else {
+			modifiedQuestion = service.AppendKeywords(modifiedQuestion, extractedKeywords)
 		}
 	}
 
@@ -350,10 +350,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			zap.Bool("keywordExtraction", req.Keyword != nil && *req.Keyword))
 	}
 
-	// Get tag-based rank features via LabelQuestion
+	// Get tag-based rank features via LabelQuestion. The result is logged inside
+	// LabelQuestion (info on match, debug when skipped), so no log here.
 	metadataSvc := service.NewMetadataService()
 	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
-	common.Debug("LabelQuestion result", zap.Any("labels", labels))
 
 	// Determine embedding model.
 	var embeddingModel *models.EmbeddingModel
@@ -536,74 +536,70 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("user has no accessible tenants")
 	}
 
-	// Try each tenant to find the chunk
-	var chunk map[string]interface{}
+	// Find the tenant that owns this dataset
+	var targetTenantID string
 	for _, tenant := range tenants {
-		// Get kbIDs for this tenant
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, tenant.TenantID)
-		if err != nil {
-			continue
-		}
-
-		indexName := fmt.Sprintf("ragflow_%s", tenant.TenantID)
-
-		doc, err := s.docEngine.GetChunk(ctx, indexName, req.ChunkID, kbIDs)
-		if err != nil {
-			continue
-		}
-
-		if doc != nil {
-			chunk, ok := doc.(map[string]interface{})
-			if ok {
-				result := make(map[string]interface{})
-				skipFields := map[string]bool{
-					"id": true, "authors": true, "_score": true, "SCORE": true,
-				}
-				for k, v := range chunk {
-					if skipFields[k] || strings.HasSuffix(k, "_vec") || strings.Contains(k, "_sm_") || strings.HasSuffix(k, "_tks") || strings.HasSuffix(k, "_ltks") {
-						continue
-					}
-					switch k {
-					case "content":
-						result["content_with_weight"] = v
-					case "docnm":
-						result["docnm_kwd"] = v
-					case "important_keywords":
-						utility.SetFieldArray(result, "important_kwd", v)
-					case "questions":
-						utility.SetFieldArray(result, "question_kwd", v)
-					case "entities_kwd", "entity_kwd", "entity_type_kwd", "from_entity_kwd",
-						"name_kwd", "raptor_kwd", "removed_kwd", "source_id", "tag_kwd",
-						"to_entity_kwd", "toc_kwd", "authors_tks", "doc_type_kwd":
-						if utility.IsEmpty(v) {
-							result[k] = []interface{}{}
-						} else {
-							result[k] = v
-						}
-					case "tag_feas":
-						if utility.IsEmpty(v) {
-							result[k] = map[string]interface{}{}
-						} else {
-							result[k] = v
-						}
-					case "create_timestamp_flt", "rank_flt", "weight_flt":
-						if floatVal, ok := utility.ToFloat64(v); ok {
-							result[k] = utility.JSONFloat64(floatVal)
-						}
-					default:
-						result[k] = v
-					}
-				}
-				return &service.GetChunkResponse{Chunk: result}, nil
-			}
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
+		if err == nil && kb != nil {
+			targetTenantID = tenant.TenantID
+			break
 		}
 	}
+	if targetTenantID == "" {
+		return nil, fmt.Errorf("user does not have access to this dataset")
+	}
 
-	if chunk == nil {
+	// Verify the document belongs to the dataset, mirroring Python's get_chunk
+	// (DocumentService.query(id=document_id, kb_id=dataset_id)).
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, req.DocumentID)
+	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	if doc.KbID != req.DatasetID {
+		return nil, fmt.Errorf("document does not belong to this dataset")
+	}
+
+	// The lookup stays inside the dataset named in the route, and the row must
+	// resolve to the document named in the route: a chunk id alone is not
+	// authority to read another dataset's (or another document's) chunk.
+	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+	rawChunk, err := s.docEngine.GetChunk(ctx, indexName, req.ChunkID, []string{req.DatasetID})
+	if err != nil {
+		return nil, fmt.Errorf("chunk not found")
+	}
+	chunk, ok := rawChunk.(map[string]interface{})
+	if !ok || chunk == nil {
+		return nil, fmt.Errorf("chunk not found")
+	}
+	if documentID, _ := chunk["doc_id"].(string); documentID != req.DocumentID {
+		return nil, fmt.Errorf("chunk not found")
+	}
+	if !utility.IsEmpty(chunk["compile_kwd"]) {
 		return nil, fmt.Errorf("chunk not found")
 	}
 
-	return &service.GetChunkResponse{Chunk: chunk}, nil
+	// Return the stored row with only the tokenized/vector runtime fields
+	// dropped, mirroring Python's _strip_chunk_runtime_fields. The frontend
+	// normalizes both this shape and the renamed one (mapChunkToLegacy), so
+	// returning the row verbatim is what Python does and costs no UI change.
+	result := make(map[string]interface{}, len(chunk))
+	for k, v := range chunk {
+		if isChunkRuntimeField(k) {
+			continue
+		}
+		result[k] = v
+	}
+	return &service.GetChunkResponse{Chunk: result}, nil
+}
+
+// isChunkRuntimeField reports the fields Python's _strip_chunk_runtime_fields
+// removes before returning a chunk: the regex (_vec$|_sm_|_tks|_ltks) — _vec is
+// anchored at the end, the other three are substring matches.
+func isChunkRuntimeField(name string) bool {
+	return strings.HasSuffix(name, "_vec") ||
+		strings.Contains(name, "_sm_") ||
+		strings.Contains(name, "_tks") ||
+		strings.Contains(name, "_ltks")
 }
 
 const (
@@ -832,12 +828,6 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("user does not have access to this document")
 	}
 
-	// Get kbIDs for this tenant
-	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, targetTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get kb ids: %w", err)
-	}
-
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
 	page := common.CoalesceInt(req.Page, 1)
@@ -861,11 +851,15 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		}
 	}
 
-	// Build search request - same as retrieval test but filtered by doc_id
+	// Build search request - same as retrieval test but filtered by doc_id.
+	// KbIDs is pinned to the document's own dataset: searching every KB of the
+	// tenant also returned rows whose KB context is a different dataset (chunks
+	// carry img_id "<kb_id>-<chunk_id>"), so a document of dataset A could list
+	// dataset B's chunks. Mirrors Python's [dataset_id] scope.
 	searchReq := &types.SearchRequest{
 		IndexNames:         []string{indexName},
 		MatchExprs:         matchExprs,
-		KbIDs:              kbIDs,
+		KbIDs:              []string{doc.KbID},
 		Offset:             (page - 1) * size,
 		Limit:              size,
 		OrderBy:            orderBy,
@@ -1207,11 +1201,6 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		d["position_int"] = req.Positions
 	}
 
-	// Tag keywords
-	if req.TagKwd != nil {
-		d["tag_kwd"] = req.TagKwd
-	}
-
 	// Tag features
 	if req.TagFeas != nil {
 		tagFeas, err := validateTagFeatures(req.TagFeas)
@@ -1394,9 +1383,6 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"docnm_kwd":            docName,
 		"doc_id":               req.DocumentID,
 	}
-	if req.TagKwd != nil {
-		chunkData["tag_kwd"] = req.TagKwd
-	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
 	}
@@ -1422,7 +1408,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{docName, embeddingText}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	// Embed inside the model's window: Content arrives from the API and can be
+	// arbitrarily long, and the provider answers 400/20015 instead of truncating it.
+	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: []string{docName, embeddingText}}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
@@ -1457,9 +1445,6 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"dataset_id":         req.DatasetID,
 		"create_timestamp":   chunkData["create_timestamp_flt"],
 		"create_time":        chunkData["create_time"],
-	}
-	if req.TagKwd != nil {
-		renamedChunk["tag_kwd"] = req.TagKwd
 	}
 	if imgID, ok := chunkData["img_id"]; ok {
 		renamedChunk["image_id"] = imgID
