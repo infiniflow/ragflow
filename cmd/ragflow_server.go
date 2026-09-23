@@ -79,7 +79,6 @@ type serverArgs struct {
 	helpFlag      bool
 	versionFlag   bool
 	logLevel      *string
-	migrateDB     bool    // migrate mode: apply the migrations, then exit
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -93,6 +92,7 @@ type serverArgs struct {
 func parseArgs() (*serverArgs, error) {
 	args := &serverArgs{}
 
+	// Mode flags share one variable, so the last one passed wins.
 	var serverMode string
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
@@ -127,7 +127,6 @@ func parseArgs() (*serverArgs, error) {
 		case "--migrate":
 			serverMode = "migrate"
 			args.mode = &serverMode
-			args.migrateDB = true
 		case "-h", "--help":
 			args.helpFlag = true
 		case "-v", "--version":
@@ -444,13 +443,14 @@ func main() {
 	// downgrade check nor any of the engines started below, so it can run
 	// before any server mode boots (see docker/entrypoint-go.sh and
 	// docker/launch_backend_service.sh).
-	if arguments.migrateDB {
+	migrate := *arguments.mode == "migrate"
+	if migrate {
 		common.Info("Running database migrations")
 	}
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	if err = dao.InitDB(ctx, migrate); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
-	if arguments.migrateDB {
+	if migrate {
 		common.Info("Database migrations completed")
 		return
 	}
