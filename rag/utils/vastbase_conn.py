@@ -47,6 +47,7 @@ from common.float_utils import get_float
 
 logger = logging.getLogger("ragflow.vastbase_conn")
 
+
 def _parse_floatvector(value, cur):
     """psycopg2 typecaster: floatvector text "[0.1,0.2,...]" -> list[float].
 

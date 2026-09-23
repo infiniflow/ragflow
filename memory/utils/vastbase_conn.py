@@ -31,7 +31,7 @@ from common.float_utils import get_float
 from rag.nlp import is_english
 from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
 
-logger = logging.getLogger('ragflow.memory_vastbase_conn')
+logger = logging.getLogger("ragflow.memory_vastbase_conn")
 
 ATTEMPT_TIME = 2
 
@@ -60,14 +60,9 @@ class VBConnection:
         self.password = vb_config.get("password", "Infini_Rag@123")
         self.db_name = vb_config.get("db_name", "ragflow")
 
-        dsn = (
-            f"host={self.host} port={self.port} "
-            f"dbname={self.db_name} user={self.user} password={self.password}"
-        )
+        dsn = f"host={self.host} port={self.port} dbname={self.db_name} user={self.user} password={self.password}"
         self.pool = pg_pool.ThreadedConnectionPool(2, 10, dsn=dsn)
-        self.logger.info(
-            f"VBConnection pool initialized: {self.host}:{self.port}/{self.db_name}"
-        )
+        self.logger.info(f"VBConnection pool initialized: {self.host}:{self.port}/{self.db_name}")
 
     def _get_conn(self):
         return self.pool.getconn()
@@ -145,10 +140,7 @@ class VBConnection:
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
-                    (table_name,)
-                )
+                cur.execute("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = %s)", (table_name,))
                 exists = cur.fetchone()[0]
             if exists:
                 with self._table_exists_cache_lock:
@@ -183,22 +175,12 @@ class VBConnection:
                 if vector_size > 0:
                     columns.append(f"q_{vector_size}_vec floatvector({vector_size})")
 
-                create_sql = (
-                    f"CREATE TABLE IF NOT EXISTS {table_name} (\n  "
-                    + ",\n  ".join(columns)
-                    + "\n)"
-                )
+                create_sql = f"CREATE TABLE IF NOT EXISTS {table_name} (\n  " + ",\n  ".join(columns) + "\n)"
                 cur.execute(create_sql)
 
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{table_name}_memory_id ON {table_name} (memory_id)"
-                )
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{table_name}_message_id ON {table_name} (message_id)"
-                )
-                cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{table_name}_status ON {table_name} (status_int)"
-                )
+                cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_memory_id ON {table_name} (memory_id)")
+                cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_message_id ON {table_name} (message_id)")
+                cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_status ON {table_name} (status_int)")
             conn.commit()
             with self._table_exists_cache_lock:
                 self._table_exists_cache.add(table_name)
@@ -214,16 +196,9 @@ class VBConnection:
         try:
             with conn.cursor() as cur:
                 col_name = f"q_{vector_size}_vec"
-                cur.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = %s AND column_name = %s",
-                    (table_name, col_name)
-                )
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (table_name, col_name))
                 if not cur.fetchone():
-                    cur.execute(
-                        f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS "
-                        f"{col_name} floatvector({vector_size})"
-                    )
+                    cur.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} floatvector({vector_size})")
                     conn.commit()
                     self.logger.info(f"Added vector column {col_name} to {table_name}")
         except Exception:
@@ -260,11 +235,7 @@ class VBConnection:
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = %s AND column_name ~ '^q_[0-9]+_vec$'",
-                    (table_name,)
-                )
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name ~ '^q_[0-9]+_vec$'", (table_name,))
                 row = cur.fetchone()
                 return row[0] if row else None
         except Exception:
@@ -292,7 +263,7 @@ class VBConnection:
         memory_ids: list[str],
         agg_fields: list[str] | None = None,
         rank_feature: dict | None = None,
-        hide_forgotten: bool = True
+        hide_forgotten: bool = True,
     ):
         if isinstance(index_names, str):
             index_names = index_names.split(",")
@@ -391,11 +362,7 @@ class VBConnection:
                         order_by_expr = "ORDER BY " + ", ".join(orders) if orders else ""
                         limit_expr = f"LIMIT {limit}" if limit > 0 else ""
                         offset_expr = f"OFFSET {offset}" if offset > 0 else ""
-                        sql = (
-                            f"SELECT {fields_expr} FROM {index_name} "
-                            f"WHERE {filters_expr} "
-                            f"{order_by_expr} {limit_expr} {offset_expr}"
-                        )
+                        sql = f"SELECT {fields_expr} FROM {index_name} WHERE {filters_expr} {order_by_expr} {limit_expr} {offset_expr}"
                         cur.execute(sql)
                         rows = cur.fetchall()
                         for row in rows:
@@ -408,13 +375,7 @@ class VBConnection:
                         limit_expr = f"LIMIT {limit}" if limit > 0 else ""
                         offset_expr = f"OFFSET {offset}" if offset > 0 else ""
                         sim_filter = f"AND {score_expr} >= {vector_similarity_threshold}" if vector_similarity_threshold > 0 else ""
-                        sql = (
-                            f"SELECT {fields_expr}, {score_expr} AS _score "
-                            f"FROM {index_name} "
-                            f"WHERE {filters_expr} {sim_filter} "
-                            f"ORDER BY _score DESC "
-                            f"{limit_expr} {offset_expr}"
-                        )
+                        sql = f"SELECT {fields_expr}, {score_expr} AS _score FROM {index_name} WHERE {filters_expr} {sim_filter} ORDER BY _score DESC {limit_expr} {offset_expr}"
                         cur.execute(sql)
                         rows = cur.fetchall()
                         out_fields = db_output_fields + ["_score"]
@@ -490,11 +451,7 @@ class VBConnection:
             return None
         db_fields = [self.convert_field_name(f) for f in select_fields]
         fields_expr = ", ".join(db_fields)
-        sql = (
-            f"SELECT {fields_expr} FROM {index_name} "
-            f"WHERE memory_id = '{_escape_value(memory_id)}' AND forget_at IS NOT NULL "
-            f"ORDER BY forget_at ASC LIMIT {limit}"
-        )
+        sql = f"SELECT {fields_expr} FROM {index_name} WHERE memory_id = '{_escape_value(memory_id)}' AND forget_at IS NOT NULL ORDER BY forget_at ASC LIMIT {limit}"
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
@@ -516,11 +473,7 @@ class VBConnection:
         db_field = self.convert_field_name(field_name)
         db_fields = [self.convert_field_name(f) for f in select_fields]
         fields_expr = ", ".join(db_fields)
-        sql = (
-            f"SELECT {fields_expr} FROM {index_name} "
-            f"WHERE memory_id = '{_escape_value(memory_id)}' AND {db_field} IS NULL "
-            f"ORDER BY valid_at ASC LIMIT {limit}"
-        )
+        sql = f"SELECT {fields_expr} FROM {index_name} WHERE memory_id = '{_escape_value(memory_id)}' AND {db_field} IS NULL ORDER BY valid_at ASC LIMIT {limit}"
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
@@ -579,14 +532,8 @@ class VBConnection:
                 columns = list(docs[0].keys())
                 col_list = ", ".join(columns)
                 placeholders = ", ".join([f"%({col})s" for col in columns])
-                update_cols = ", ".join(
-                    f"{col} = EXCLUDED.{col}" for col in columns if col != "id"
-                )
-                insert_sql = (
-                    f"INSERT INTO {index_name} ({col_list}) "
-                    f"VALUES ({placeholders}) "
-                    f"ON CONFLICT (id) DO UPDATE SET {update_cols}"
-                )
+                update_cols = ", ".join(f"{col} = EXCLUDED.{col}" for col in columns if col != "id")
+                insert_sql = f"INSERT INTO {index_name} ({col_list}) VALUES ({placeholders}) ON CONFLICT (id) DO UPDATE SET {update_cols}"
                 for d in docs:
                     cur.execute(insert_sql, d)
             conn.commit()
@@ -672,14 +619,14 @@ class VBConnection:
     def get_total(self, res) -> int:
         if isinstance(res, tuple):
             return res[1]
-        if hasattr(res, 'total'):
+        if hasattr(res, "total"):
             return res.total
         return 0
 
     def get_doc_ids(self, res) -> list[str]:
         if isinstance(res, tuple):
             res = res[0]
-        if hasattr(res, 'messages'):
+        if hasattr(res, "messages"):
             return [row.get("id") for row in res.messages if row.get("id")]
         return []
 
@@ -689,7 +636,7 @@ class VBConnection:
         res_fields = {}
         if not fields:
             return {}
-        messages = res.messages if hasattr(res, 'messages') else []
+        messages = res.messages if hasattr(res, "messages") else []
         for doc in messages:
             message = self.get_message_from_vb_doc(doc)
             m = {}
@@ -715,9 +662,7 @@ class VBConnection:
         if isinstance(res, tuple):
             res = res[0]
         messages = getattr(res, "messages", None)
-        return get_highlight_from_messages(
-            messages, keywords, field_name, is_english_fn=lambda s: is_english([s])
-        )
+        return get_highlight_from_messages(messages, keywords, field_name, is_english_fn=lambda s: is_english([s]))
 
     def get_aggregation(self, res, field_name: str):
         if isinstance(res, tuple):
