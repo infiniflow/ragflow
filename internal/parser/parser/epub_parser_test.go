@@ -165,12 +165,17 @@ func TestEPUBParser_NoReadableChapterIsAnError(t *testing.T) {
 
 func TestEPUBParser_ImageOnlyChapterCountsAsRead(t *testing.T) {
 	// The image-only chapter was read and has no text; the book is not unreadable.
+	// No <title>: stripHTMLTags keeps its text, and the chapter would not be text-free.
+	imageOnly := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><img src="plate.png" alt=""/></body></html>`
 	res := parseTestEPUB(t, []epubTestChapter{
-		{name: "ch1.xhtml", content: epubTestHTML(`<img src="plate.png" alt=""/>`)},
+		{name: "ch1.xhtml", content: imageOnly},
 		{name: "ch2.xhtml", damaged: true},
 	})
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if text := epubTestText(res); text != "" {
+		t.Fatalf("image-only chapter produced text %q", text)
 	}
 }
 
