@@ -100,14 +100,15 @@ def test_switch_none_value_contains_does_not_raise():
 
 
 @pytest.mark.p1
-def test_switch_numeric_variable_with_unparseable_value_falls_through_to_else():
+@pytest.mark.parametrize("operator", ["=", "≠", "==", "!=", "<>"])
+def test_switch_equality_operator_with_unparseable_value_falls_through_to_else(operator):
     """A numeric variable compared against an unparseable value is a non-match,
     not a ValueError that kills the canvas run (#19416)."""
     param = SwitchParam()
     param.conditions = [
         {
             "logical_operator": "and",
-            "items": [{"cpn_id": "score", "operator": "=", "value": ""}],
+            "items": [{"cpn_id": "score", "operator": operator, "value": ""}],
             "to": ["case_target"],
         }
     ]
@@ -121,54 +122,33 @@ def test_switch_numeric_variable_with_unparseable_value_falls_through_to_else():
 
 
 @pytest.mark.p1
-@pytest.mark.parametrize("operator", [">", "<", "≥", "≤"])
-def test_switch_ordering_operator_with_incomparable_value_is_non_match(operator):
-    """An ordering operator on an incomparable pair is a non-match instead of a
-    TypeError from the numeric fallback (#19416)."""
+@pytest.mark.parametrize("operator", [">", "<", "≥", "≤", ">=", "<="])
+def test_switch_ordering_operator_requires_numeric_operands(operator):
+    """Ordering operators deliberately raise on non-numeric operands (#19987);
+    the equality guard must not leak into them."""
     cpn = _switch(SwitchParam())
 
-    assert cpn.process_operator(5, operator, "abc") is False
-    assert cpn.process_operator(None, operator, None) is False
-
-
-@pytest.mark.p1
-def test_switch_ordering_operator_still_compares_numerically_and_textually():
-    """Parseable pairs keep comparing numerically; text pairs keep their own ordering."""
-    cpn = _switch(SwitchParam())
-
-    assert cpn.process_operator(5, ">", "3") is True
-    assert cpn.process_operator("5", "<", 9) is True
-    assert cpn.process_operator("abc", ">", "abd") is False
+    with pytest.raises(ValueError, match="requires numeric operands"):
+        cpn.process_operator(5, operator, "abc")
+    with pytest.raises(ValueError, match="requires numeric operands"):
+        cpn.process_operator("abc", operator, "abd")
+    with pytest.raises(ValueError, match="requires numeric operands"):
+        cpn.process_operator(True, operator, 1)
 
 
 @pytest.mark.p1
 @pytest.mark.parametrize(
-    "operator, variable, value, expected_branch",
+    "operator, left, right, expected",
     [
-        # "empty"/"not empty" ignore the comparison value, so a "" value (or any
-        # unparseable one) must not turn the match into a non-match.
-        ("not empty", 5, "", "case_target"),
-        ("not empty", 0, "", "else_target"),
-        ("empty", 0, "", "case_target"),
-        ("empty", 5, "", "else_target"),
-        ("not empty", None, "", "else_target"),
+        (">", 5, "3", True),
+        ("<", "5", 9, True),
+        (">=", 5, 5, True),
+        ("<=", 5, 6, True),
+        (">", 1, 2, False),
     ],
 )
-def test_switch_value_independent_operators_skip_numeric_coercion(operator, variable, value, expected_branch):
-    """Numeric coercion of the comparison value must not affect operators that
-    ignore it (#19994)."""
-    param = SwitchParam()
-    param.conditions = [
-        {
-            "logical_operator": "and",
-            "items": [{"cpn_id": "score", "operator": operator, "value": value}],
-            "to": ["case_target"],
-        }
-    ]
-    param.end_cpn_ids = ["else_target"]
+def test_switch_ordering_operator_still_compares_numerically(operator, left, right, expected):
+    """Parseable pairs keep comparing numerically, operator aliases included."""
+    cpn = _switch(SwitchParam())
 
-    cpn = _switch(param, {"score": variable})
-    cpn._invoke()
-
-    assert cpn.output("_next") == [expected_branch]
-    assert cpn.output("next") == [expected_branch]
+    assert cpn.process_operator(left, operator, right) is expected
