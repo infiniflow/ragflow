@@ -33,10 +33,7 @@ def _search(api_key: str, params: dict, timeout_s: int = 30) -> dict:
     if not api_key:
         raise ValueError("Webz.io API token is required. Please set api_key or WEBZ_API_KEY environment variable.")
 
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": WEBZ_USER_AGENT
-    }
+    headers = {"Accept": "application/json", "User-Agent": WEBZ_USER_AGENT}
 
     query_params = {
         "token": api_key,
@@ -130,7 +127,7 @@ class WebzSearch(ToolBase, ABC):
                     data = {}
                 raw_posts = data.get("posts")
                 posts = [p for p in raw_posts if isinstance(p, dict)] if isinstance(raw_posts, list) else []
-                results = posts[:self._param.top_n]
+                results = posts[: self._param.top_n]
 
                 self._retrieve_chunks(
                     results,
