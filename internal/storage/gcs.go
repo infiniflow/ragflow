@@ -111,6 +111,9 @@ func (m *GCSStorage) Remove(ctx context.Context, bucketName, objectName string, 
 
 	obj := m.client.Bucket(bucketName).Object(objectName)
 	if err := obj.Delete(ctx); err != nil {
+		if errors.Is(err, storage.ErrObjectNotExist) || errors.Is(err, storage.ErrBucketNotExist) {
+			return nil
+		}
 		return fmt.Errorf("fail to delete object: %w", err)
 	}
 
@@ -128,6 +131,17 @@ func (m *GCSStorage) ObjExist(ctx context.Context, bucketName, objectName string
 	}
 
 	return true
+}
+
+func (m *GCSStorage) ObjectExists(ctx context.Context, bucketName, objectName string) (bool, error) {
+	_, err := m.client.Bucket(bucketName).Object(objectName).Attrs(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, storage.ErrObjectNotExist) || errors.Is(err, storage.ErrBucketNotExist) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (m *GCSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
@@ -182,6 +196,17 @@ func (m *GCSStorage) BucketExists(ctx context.Context, bucket string) bool {
 	return true
 }
 
+func (m *GCSStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	_, err := m.client.Bucket(bucket).Attrs(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, storage.ErrBucketNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
 // RemoveBucket removes a bucket and all its objects
 func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error {
 	if bucketName == "" {
@@ -210,6 +235,18 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 	}
 
 	return nil
+}
+
+// RemoveEmptyBucket removes a bucket only if GCS finds it empty.
+func (m *GCSStorage) RemoveEmptyBucket(ctx context.Context, bucketName string) error {
+	if bucketName == "" {
+		return fmt.Errorf("attempt to delete bucket without name")
+	}
+	err := m.client.Bucket(bucketName).Delete(ctx)
+	if errors.Is(err, storage.ErrBucketNotExist) {
+		return nil
+	}
+	return err
 }
 
 // Copy copies an object from source to destination

@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -32,8 +31,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -268,7 +269,7 @@ func (c *whatsappChannel) run(ctx context.Context) {
 	for ctx.Err() == nil {
 		if err := c.runEvents(ctx); err != nil && ctx.Err() == nil {
 			c.setError(err)
-			log.Printf("[whatsapp:%s] event loop error: %v", c.account.AccountID, err)
+			common.Error("whatsapp: event loop error", err, zap.String("account_id", c.account.AccountID))
 			time.Sleep(defaultReconnect)
 		}
 	}
@@ -285,7 +286,7 @@ func (c *whatsappChannel) startSession(ctx context.Context) error {
 		return c.waitForStatus(ctx)
 	}
 	if statusErr := c.waitForStatus(ctx); statusErr == nil {
-		log.Printf("[whatsapp:%s] start request returned error after gateway created the session: %v", c.account.AccountID, err)
+		common.Warn("whatsapp: start request returned error after gateway created the session", zap.String("account_id", c.account.AccountID), zap.Error(err))
 		return nil
 	}
 	return err
@@ -452,7 +453,7 @@ func (c *whatsappChannel) enqueueIncoming(ctx context.Context, incoming core.Inc
 		go c.runChatWorker(ctx, incoming.ChatID, worker)
 	}
 	if queueFull {
-		log.Printf("[whatsapp:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+		common.Warn("whatsapp: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", incoming.MessageID), zap.String("chat_id", incoming.ChatID))
 	}
 	return false
 }
@@ -506,7 +507,7 @@ func (c *whatsappChannel) handleIncoming(ctx context.Context, incoming core.Inco
 		return
 	}
 	if err := handler(ctx, incoming); err != nil {
-		log.Printf("[whatsapp:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("whatsapp: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 

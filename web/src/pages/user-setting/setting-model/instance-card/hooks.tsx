@@ -108,6 +108,10 @@ function pickDefaultUrl(
  * `base_url` dropdown options for the current provider.
  * Used to pre-fill the URL field with the provider's default URL when
  * creating a new instance.
+ *
+ * Also exposes `url_hint`: a display-only example endpoint that becomes
+ * the endpoint input's placeholder. Providers that ship no default URL
+ * (most self-hosted ones) still get a useful hint.
  */
 export function useProviderBaseUrlOptions(providerName: string) {
   const { data: availableProviders } = useFetchAvailableProviders();
@@ -145,7 +149,9 @@ export function useProviderBaseUrlOptions(providerName: string) {
     return options.length > 0 ? options : undefined;
   }, [currentProvider]);
 
-  return { baseUrlOptions, availableProviders };
+  const urlHint = useMemo(() => currentProvider?.url_hint, [currentProvider]);
+
+  return { baseUrlOptions, availableProviders, urlHint };
 }
 
 // ---------------------------------------------------------------------------
@@ -727,6 +733,7 @@ export function useFormFields(
   initialValues: Record<string, any>,
   baseUrlOptions: SelectOption[] | undefined,
   hideWhenInstanceExists: (values: any) => boolean,
+  urlHint?: string,
 ) {
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
@@ -740,6 +747,7 @@ export function useFormFields(
     initialValues,
     baseUrlOptions,
     hideWhenInstanceExists,
+    urlHint,
   });
 
   const formFields = useMemo(

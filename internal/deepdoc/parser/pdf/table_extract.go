@@ -3,10 +3,12 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -126,7 +128,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	}
 	imgB64, encErr := util.EncodeImageToBase64PNG(cropped)
 	if encErr != nil {
-		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
+		common.Warn("table PNG encode failed", zap.Int("page", pageNum), zap.Error(encErr))
 	}
 	// Hand the crop origin to TSR so a replay TableBuilder can map Python
 	// page-space TSR cells into this exact crop frame. Production callers

@@ -87,6 +87,9 @@ type serverArgs struct {
 	name          *string // server name
 	enablePProf   bool    // enable pprof
 
+	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
+	// concurrency from env/config. nil means "unspecified".
+	deepdocInferenceConcurrency *int
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -104,6 +107,16 @@ func parseArgs() (*serverArgs, error) {
 					return nil, err
 				}
 				args.logLevel = &value
+				continue
+			case "--deepdoc-inference-concurrency":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+				}
+				args.deepdocInferenceConcurrency = &n
 				continue
 			}
 		}
@@ -187,6 +200,19 @@ func parseArgs() (*serverArgs, error) {
 			args.name = &os.Args[i]
 		case "--profile":
 			args.enablePProf = true
+		case "--deepdoc-inference-concurrency":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-concurrency requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+			}
+			args.deepdocInferenceConcurrency = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
@@ -214,6 +240,28 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	}
 
 	return configured
+}
+
+// resolveDeepDocInferenceConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(4) and returns the
+// resolved DeepDoc inference concurrency budget.
+func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
+	val := 4
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			val = n
+		}
+	}
+	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
+	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
+	// value is already positive; no extra >0 guard is needed here.
+	if args.deepdocInferenceConcurrency != nil {
+		val = *args.deepdocInferenceConcurrency
+	}
+	return val
 }
 
 func printHelp(args *serverArgs) {
@@ -421,7 +469,7 @@ func main() {
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		registerNativeDeepDoc()
+		registerNativeDeepDoc(arguments)
 	default:
 	}
 
@@ -1382,7 +1430,7 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // Fail-fast contract (P0): the in-process backend must be available at startup
 // (ORT + models present). There is NO silent degradation to an empty analyzer:
 // if the backend is not serving, the server aborts.
-func registerNativeDeepDoc() {
+func registerNativeDeepDoc(arguments *serverArgs) {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1405,13 +1453,15 @@ func registerNativeDeepDoc() {
 		zap.String("model_dir", modelDir))
 
 	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Register it with the native gate every inference
-	// call passes through (internal/deepdoc/native/inference_limit.go); without
-	// this the process would let every page worker call inference at once.
-	limit := pdf.DeepDocConcurrency()
-	native.SetInferenceLimit(limit)
+	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
+	// and register it with the native gate every inference call passes through
+	// (internal/deepdoc/native/inference_limit.go); without this the process
+	// would let every page worker call inference at once.
+	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
+	pdf.SetDeepDocConcurrency(budget)
+	native.SetInferenceLimit(budget)
 	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", limit),
+		zap.Int("max_concurrent_inference", budget),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 }
 

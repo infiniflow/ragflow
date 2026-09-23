@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,8 +32,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -249,7 +250,7 @@ func (c *wecomChannel) Start(ctx context.Context) error {
 		c.mu.Lock()
 		c.server = server
 		c.mu.Unlock()
-		log.Printf("[wecom:%s] registered webhook at /wecom/%s/callback", c.account.AccountID, c.account.AccountID)
+		common.Info("wecom: registered webhook", zap.String("account_id", c.account.AccountID))
 		return nil
 	}
 
@@ -317,12 +318,12 @@ func (c *wecomChannel) Stop(ctx context.Context) error {
 func (c *wecomChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	if c.account.ConnectionType == "websocket" {
 		if err := c.sendWebSocketMessage(msg); err != nil {
-			log.Printf("[wecom:%s] websocket send failed: %v", c.account.AccountID, err)
+			common.Error("wecom: websocket send failed", err, zap.String("account_id", c.account.AccountID))
 		}
 		return nil
 	}
 	if err := c.sendApplicationMessage(ctx, msg); err != nil {
-		log.Printf("[wecom:%s] application send failed: %v", c.account.AccountID, err)
+		common.Error("wecom: application send failed", redactURLError(err), zap.String("account_id", c.account.AccountID))
 	}
 	return nil
 }
@@ -334,11 +335,11 @@ func (c *wecomChannel) runWebSocket(ctx context.Context) {
 			return
 		}
 		if errors.Is(err, errWeComAuthentication) || errors.Is(err, errWeComDisconnected) {
-			log.Printf("[wecom:%s] websocket stopped: %v", c.account.AccountID, err)
+			common.Error("wecom: websocket stopped", err, zap.String("account_id", c.account.AccountID))
 			return
 		}
 		if err != nil {
-			log.Printf("[wecom:%s] websocket loop error: %v", c.account.AccountID, err)
+			common.Error("wecom: websocket loop error", err, zap.String("account_id", c.account.AccountID))
 		}
 		if !waitForWeComRetry(ctx) {
 			return
@@ -393,7 +394,7 @@ func (c *wecomChannel) runWebSocketOnce(ctx context.Context) error {
 		}
 		disconnect, err := c.handleWebSocketPayload(ctx, payload)
 		if err != nil {
-			log.Printf("[wecom:%s] invalid websocket payload: %v", c.account.AccountID, err)
+			common.Warn("wecom: invalid websocket payload", zap.String("account_id", c.account.AccountID), zap.Error(err))
 			continue
 		}
 		if disconnect {
@@ -422,7 +423,7 @@ func (c *wecomChannel) subscribeWebSocket(conn *websocket.Conn) error {
 		return fmt.Errorf("WeCom websocket subscribe acknowledgement: %w", err)
 	}
 	if cmd := weComRawStringValue(response["cmd"]); cmd != "aibot_subscribe" {
-		log.Printf("[wecom:%s] unexpected subscribe response command %q", c.account.AccountID, cmd)
+		common.Warn("wecom: unexpected subscribe response command", zap.String("account_id", c.account.AccountID), zap.String("cmd", cmd))
 	}
 	errCode := weComIntValue(response["errcode"])
 	if errCode == 853000 {
@@ -431,7 +432,7 @@ func (c *wecomChannel) subscribeWebSocket(conn *websocket.Conn) error {
 	if errCode != 0 {
 		return fmt.Errorf("WeCom websocket subscribe failed: errcode=%d errmsg=%s", errCode, weComStringValue(response["errmsg"]))
 	}
-	log.Printf("[wecom:%s] websocket subscribed", c.account.AccountID)
+	common.Info("wecom: websocket subscribed", zap.String("account_id", c.account.AccountID))
 	return nil
 }
 
@@ -473,7 +474,7 @@ func (c *wecomChannel) handleWebSocketPayload(ctx context.Context, payload []byt
 		}
 	case "aibot_subscribe", "aibot_respond_msg", "aibot_respond_welcome_msg", "aibot_send_msg", "ping":
 		if code := weComIntValue(object["errcode"]); code != 0 {
-			log.Printf("[wecom:%s] websocket response error: %s", c.account.AccountID, string(payload))
+			common.Warn("wecom: websocket response error", zap.String("account_id", c.account.AccountID), zap.String("payload", string(payload)))
 		}
 	}
 	return false, nil
@@ -645,6 +646,22 @@ func (c *wecomChannel) requestJSON(ctx context.Context, method, endpoint string,
 	return nil
 }
 
+// redactURLError strips the query string from transport errors. WeCom carries
+// the access token / corp secret in the request URL query, and *url.Error keeps
+// the full URL in its message, so raw errors must not reach the log sinks.
+func redactURLError(err error) error {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		return err
+	}
+	parsed, parseErr := url.Parse(urlErr.URL)
+	if parseErr != nil {
+		return urlErr
+	}
+	parsed.RawQuery = ""
+	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: urlErr.Err}
+}
+
 func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {
 	if strings.TrimSpace(text) == "" {
 		return
@@ -665,7 +682,7 @@ func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, 
 		Text:      text,
 		Raw:       raw,
 	}); err != nil {
-		log.Printf("[wecom:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("wecom: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 

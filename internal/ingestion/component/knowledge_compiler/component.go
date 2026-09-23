@@ -7,7 +7,6 @@ package knowledge_compiler
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
@@ -800,7 +799,7 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 			raw = append(raw, m)
 		}
 	default:
-		log.Printf("knowledge_compiler: mergeChunks: unexpected chunks type %T", inputs["chunks"])
+		clog.Warn("knowledge_compiler: mergeChunks: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
 	}
 	merged := make([]any, 0, len(raw)+len(compiled))
 	for _, r := range raw {
@@ -869,9 +868,9 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	case []map[string]any:
 		raw = v
 	default:
-		log.Printf("knowledge_compiler: buildInputs: unexpected chunks type %T", inputs["chunks"])
+		clog.Warn("knowledge_compiler: buildInputs: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
 	}
-	log.Printf("knowledge_compiler: buildInputs: accepted %d chunk(s) from inputs[chunks]", len(raw))
+	clog.Info("knowledge_compiler: buildInputs: accepted chunks from inputs[chunks]", zap.Int("chunks", len(raw)))
 	for _, m := range raw {
 		ch := common.Chunk{Meta: m}
 		if id, ok := m["id"].(string); ok {

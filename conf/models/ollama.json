@@ -6,5 +6,6 @@
     "models": "api/tags",
     "embedding": "api/embed"
   },
+  "url_hint": "http://host.docker.internal:11434",
   "class": "local"
 }

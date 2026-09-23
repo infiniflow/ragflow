@@ -21,23 +21,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	models "ragflow/internal/entity/models"
 	"ragflow/internal/service/nlp"
-
-	"gorm.io/gorm"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -467,7 +467,8 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	if req.LLMID != "" && req.TenantLLMID == nil {
 		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
-			slog.Warn("CreateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", req.LLMID, "err", err)
+			common.Warn("CreateMemory: failed to resolve tenant LLM id",
+				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
 		} else if target != nil && target.ModelID != "" {
 			tenantLLMID := target.ModelID
 			req.TenantLLMID = &tenantLLMID
@@ -476,7 +477,8 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
 		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
-			slog.Warn("CreateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", req.EmbdID, "err", err)
+			common.Warn("CreateMemory: failed to resolve tenant embedding id",
+				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
 		} else if target != nil && target.ModelID != "" {
 			tenantEmbdID := target.ModelID
 			req.TenantEmbdID = &tenantEmbdID
@@ -621,7 +623,8 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 		if req.TenantLLMID == nil && *req.LLMID != "" {
 			target, err := modelSolver.ResolveModelConfig(ctx, ownerTenantID, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", ownerTenantID, "llm_id", *req.LLMID, "err", err)
+				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
+					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
 			} else if target != nil && target.ModelID != "" {
 				updateDict["tenant_llm_id"] = target.ModelID
 			}
@@ -633,7 +636,8 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
 			target, err := modelSolver.ResolveModelConfig(ctx, ownerTenantID, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", ownerTenantID, "embd_id", *req.EmbdID, "err", err)
+				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
+					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
 			} else if target != nil && target.ModelID != "" {
 				updateDict["tenant_embd_id"] = target.ModelID
 			}
@@ -918,7 +922,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 
 	// TODO: Delete associated message index - Implementation pending MessageService
 	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
-		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
+		if err := s.docEngine.DropChunkStore(ctx, MemoryIndexName(memory.TenantID), memoryID); err != nil {
 			return fmt.Errorf("delete memory messages: %w", err)
 		}
 	}
@@ -960,7 +964,7 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	condition := map[string]interface{}{
 		"id": messageDocID,
 	}
-	indexName := memoryIndexName(memory.TenantID)
+	indexName := MemoryIndexName(memory.TenantID)
 
 	if err = s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
@@ -1093,7 +1097,7 @@ func (s *MemoryService) UpdateMessageStatus(ctx context.Context, userID, memoryI
 	condition := map[string]interface{}{
 		"id": messageDocID,
 	}
-	indexName := memoryIndexName(memory.TenantID)
+	indexName := MemoryIndexName(memory.TenantID)
 	if err = s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
 			return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
@@ -1117,7 +1121,7 @@ func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID 
 		return nil, errors.New("message store is not initialized")
 	}
 
-	indexName := memoryIndexName(memory.TenantID)
+	indexName := MemoryIndexName(memory.TenantID)
 	docID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	res, err := s.docEngine.GetChunk(ctx, indexName, docID, []string{memoryID})
 	if err != nil {
@@ -1419,7 +1423,8 @@ func memoryMessageSelectFields() []string {
 	}
 }
 
-func memoryIndexName(tenantID string) string {
+// MemoryIndexName returns the message index shared by a tenant's memories.
+func MemoryIndexName(tenantID string) string {
 	prefix := strings.TrimSpace(common.GetEnv(common.EnvESIndexPrefix))
 	if prefix == "" {
 		return fmt.Sprintf("memory_%s", tenantID)
@@ -1434,7 +1439,7 @@ func memorySearchIndexNames(memories []*entity.Memory) []string {
 		if memory == nil {
 			continue
 		}
-		indexName := memoryIndexName(memory.TenantID)
+		indexName := MemoryIndexName(memory.TenantID)
 		if engine.GetEngineType() == "infinity" {
 			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
 		}
