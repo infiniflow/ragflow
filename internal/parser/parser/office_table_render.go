@@ -97,6 +97,11 @@ func renderSpreadsheetTable(sheet string, header []string, rows [][]string) stri
 // size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
 // ignored the user's chunk size; that budget belongs to the chunker (see the
 // chunker's splitSpreadsheetTable).
+//
+// Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
+// colEnd]. The same `positions` field carries PDF layout boxes
+// ([page, left, right, top, bottom]) on PDF items, so a consumer must key the
+// vocabulary off sheet_index / ck_type and never reinterpret one as the other.
 func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any) []map[string]any {
 	sortImagesByAnchor(images)
 	if len(records) == 0 {
@@ -117,7 +122,7 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	if headerColEnd == 0 {
 		headerColEnd = 1
 	}
-	headerTuple := []float64{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)}
+	headerTuple := []float64{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)} // [sheet, rowStart, rowEnd, colStart, colEnd]
 
 	rows := make([]spreadsheetSegmentRow, 0, len(records)-1)
 	for i, source := range records[1:] {
