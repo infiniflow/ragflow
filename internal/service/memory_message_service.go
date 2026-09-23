@@ -353,7 +353,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		message["doc_id"] = message["memory_id"]
 	}
 
-	indexName := memoryIndexName(mem.TenantID)
+	indexName := MemoryIndexName(mem.TenantID)
 	exists, err := s.memories.docEngine.ChunkStoreExists(ctx, indexName, mem.ID)
 	if err != nil {
 		return fmt.Errorf("check message index: %w", err)

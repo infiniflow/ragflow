@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,8 +34,10 @@ import (
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/clientV2"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
+	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -190,7 +191,7 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 	sessionWebhook := c.sessionWebhooks[msg.ChatID]
 	c.mu.Unlock()
 	if strings.TrimSpace(sessionWebhook) == "" {
-		log.Printf("[dingtalk:%s] no sessionWebhook cached for chat_id=%s; dropping reply", c.account.AccountID, msg.ChatID)
+		common.Warn("dingtalk: no sessionWebhook cached, dropping reply", zap.String("account_id", c.account.AccountID), zap.String("chat_id", msg.ChatID))
 		return nil
 	}
 
@@ -225,11 +226,11 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 		c.mu.Unlock()
 	}()
 	if c.stream == nil {
-		log.Printf("[dingtalk:%s] stream client is not initialized", c.account.AccountID)
+		common.Warn("dingtalk: stream client is not initialized", zap.String("account_id", c.account.AccountID))
 		return
 	}
 	if err := c.stream.Start(ctx); err != nil && ctx.Err() == nil {
-		log.Printf("[dingtalk:%s] stream client exited: %v", c.account.AccountID, err)
+		common.Error("dingtalk: stream client exited", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 
@@ -246,7 +247,7 @@ func (c *dingTalkChannel) handleBotCallback(data *chatbot.BotCallbackDataModel) 
 		return &chatbot.BotCallbackRespModel{}, nil
 	}
 	if dedupKey != "" && !c.beginMessage(dedupKey) {
-		log.Printf("[dingtalk:%s] skipping duplicate message=%s", c.account.AccountID, dedupKey)
+		common.Info("dingtalk: skipping duplicate message", zap.String("account_id", c.account.AccountID), zap.String("dedup_key", dedupKey))
 		return &chatbot.BotCallbackRespModel{}, nil
 	}
 	if !c.enqueueIncoming(ctx, dingTalkQueuedMessage{incoming: incoming, dedupKey: dedupKey}) && dedupKey != "" {
@@ -327,7 +328,7 @@ func (c *dingTalkChannel) enqueueIncoming(ctx context.Context, item dingTalkQueu
 		go c.runWorker(ctx, item.incoming.ChatID, worker)
 	}
 	if queueFull {
-		log.Printf("[dingtalk:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, item.incoming.MessageID, item.incoming.ChatID)
+		common.Warn("dingtalk: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", item.incoming.MessageID), zap.String("chat_id", item.incoming.ChatID))
 	}
 	return false
 }
@@ -382,7 +383,7 @@ func (c *dingTalkChannel) handleIncoming(ctx context.Context, incoming core.Inco
 		return
 	}
 	if err := handler(ctx, incoming); err != nil {
-		log.Printf("[dingtalk:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("dingtalk: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 

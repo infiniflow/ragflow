@@ -137,9 +137,7 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "document not found",
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "document not found")
 		return
 	}
 

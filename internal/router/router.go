@@ -542,6 +542,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// provider pool route group
+			llm := v1.Group("/llm")
+			{
+				llm.GET("/factories", r.llmHandler.Factories)
+				llm.GET("/list", r.llmHandler.ListApp)
+			}
+			webLLM := engine.Group("/v1/llm")
+			webLLM.Use(r.authHandler.AuthMiddleware())
+			{
+				webLLM.GET("/factories", r.llmHandler.Factories)
+				webLLM.GET("/list", r.llmHandler.ListApp)
+			}
+
 			provider := v1.Group("/providers")
 			{
 				provider.GET("", r.providerHandler.ListProviders)
@@ -654,6 +666,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/status", r.systemHandler.GetStatus)
+				system.GET("/oceanbase/status", r.systemHandler.GetOceanBaseStatus)
 				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 
 				config := system.Group("/config")

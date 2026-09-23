@@ -116,17 +116,11 @@ func (s *ModelSolver) ResolveModelConfig(ctx context.Context, tenantID string, m
 	}, nil
 }
 
-// ResolveChatModelType returns the type a chat reference must be resolved as:
-// ModelTypeImage2Text when the reference is enrolled vision-capable, chat
-// otherwise.
-//
-// A dialog's llm_id may name a model that is enrolled ONLY as image-to-text, and
-// that model is still a valid chat-pipeline input. Resolving such a reference as
-// chat fails outright ("cannot be used as chat model"), so every caller that
-// needs a capability of the request's chat model must agree on which row to load
-// — otherwise the model the request runs on and the model it is judged by are two
-// different rows (or, for an image2text-only enrollment, the second lookup fails
-// and the capability reads as absent).
+// ResolveChatModelType returns the output type used by the chat pipeline for
+// attachment dispatch. A model enrolled as both chat and image2text is rendered
+// as image2text so image content can be passed to it; a chat-only model remains
+// chat. An image2text-only enrollment remains chat here so ResolveModelConfig
+// can reject it as an invalid chat model before this display type is used.
 //
 // Probe failures are conservative and yield chat: that is the type a plain chat
 // model is enrolled as, and it keeps image attachments out of a model whose
@@ -139,12 +133,14 @@ func (s *ModelSolver) ResolveChatModelType(ctx context.Context, tenantID, modelR
 	if err != nil {
 		return entity.ModelTypeChat
 	}
+	hasChat := false
+	hasImage2Text := false
 	for _, mt := range modelTypes {
-		// ModelType is a bitmask: a model enrolled as chat+image2text reports a
-		// combined value, so test membership, not equality.
-		if mt.Has(entity.ModelTypeImage2Text) {
-			return entity.ModelTypeImage2Text
-		}
+		hasChat = hasChat || mt.Has(entity.ModelTypeChat)
+		hasImage2Text = hasImage2Text || mt.Has(entity.ModelTypeImage2Text)
+	}
+	if hasChat && hasImage2Text {
+		return entity.ModelTypeImage2Text
 	}
 	return entity.ModelTypeChat
 }

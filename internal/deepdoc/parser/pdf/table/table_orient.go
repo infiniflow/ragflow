@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"log/slog"
 	"math"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 )
@@ -59,7 +61,7 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 		if rot.angle != 0 {
 			rotated = util.RotateImageCW(tableImg, rot.angle)
 			if rotated == nil {
-				slog.Warn("table rotate failed", "angle", rot.angle)
+				common.Warn("table rotate failed", zap.Int("angle", rot.angle))
 				continue
 			}
 		}
@@ -110,11 +112,11 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 		combined := avgConf * (1 + 0.1*math.Min(float64(regions), 50)/50)
 		scores[rot.angle] = combined
 
-		slog.Debug("table orientation",
-			"angle", rot.angle,
-			"regions", regions,
-			"avg_conf", fmt.Sprintf("%.4f", avgConf),
-			"combined", fmt.Sprintf("%.4f", combined))
+		common.Debug("table orientation",
+			zap.Int("angle", rot.angle),
+			zap.Int("regions", regions),
+			zap.String("avg_conf", fmt.Sprintf("%.4f", avgConf)),
+			zap.String("combined", fmt.Sprintf("%.4f", combined)))
 
 		if combined > bestScore {
 			bestScore = combined
@@ -136,9 +138,9 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 		}
 	}
 
-	slog.Debug("best table orientation",
-		"angle", bestAngle,
-		"score", fmt.Sprintf("%.4f", bestScore))
+	common.Debug("best table orientation",
+		zap.Int("angle", bestAngle),
+		zap.String("score", fmt.Sprintf("%.4f", bestScore)))
 
 	return bestAngle, bestImg, scores
 }
