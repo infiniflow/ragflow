@@ -107,3 +107,13 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 	walk(raw)
 	return pages
 }
+
+// pdfTableDocType labels a table region "table" only when its text is <table>
+// markup, because consumers of that label read the text as HTML rows. Free
+// text recognized inside a table region is labelled "text".
+func pdfTableDocType(text string) string {
+	if isTableHTML(text) {
+		return "table"
+	}
+	return "text"
+}

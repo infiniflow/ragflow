@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"ragflow/internal/deepdoc/parser/pdf/table"
 	"strings"
 )
 
@@ -93,13 +94,13 @@ func tcadpAnyToItems(raw any) []map[string]any {
 		}
 		switch contentType {
 		case "table":
-			if text == "" {
-				text = tcadpTableRowsText(v["table_data"])
+			if rows := tcadpTableRows(v["table_data"]); len(rows) > 0 {
+				text = table.SimpleRowsToHTML(rows)
 			}
 			if text == "" {
 				return nil
 			}
-			return emit(text, "table", "table")
+			return emit(text, pdfTableDocType(text), "table")
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {
@@ -135,17 +136,17 @@ func extractTCADPPage(v map[string]any) int {
 	return 0
 }
 
-func tcadpTableRowsText(raw any) string {
-	table, ok := raw.(map[string]any)
+func tcadpTableRows(raw any) [][]string {
+	data, ok := raw.(map[string]any)
 	if !ok {
-		return ""
+		return nil
 	}
-	rows, ok := table["rows"].([]any)
+	rawRows, ok := data["rows"].([]any)
 	if !ok {
-		return ""
+		return nil
 	}
-	lines := make([]string, 0, len(rows))
-	for _, rowRaw := range rows {
+	rows := make([][]string, 0, len(rawRows))
+	for _, rowRaw := range rawRows {
 		row, ok := rowRaw.([]any)
 		if !ok {
 			continue
@@ -154,9 +155,9 @@ func tcadpTableRowsText(raw any) string {
 		for _, col := range row {
 			cols = append(cols, stringValue(col))
 		}
-		lines = append(lines, strings.Join(cols, " | "))
+		rows = append(rows, cols)
 	}
-	return strings.Join(lines, "\n")
+	return rows
 }
 
 func bearer(apiKey string) string {
