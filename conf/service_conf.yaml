@@ -12,11 +12,20 @@ ragflow:
 
 # DeepDoc in-process (Go) ONNX inference settings.
 deepdoc:
-  # Max concurrent DeepDoc ONNX inference Runs in this process; each Run uses
-  # exactly one CPU core (intraOpThreads is pinned to 1 in the native package).
+  # Max concurrent DeepDoc ONNX inference Runs in this process (K). Each Run opens
+  # with max(1, inference_cpu_cores / inference_concurrency) intra-op threads, so
+  # the total CPU cores inference may occupy is bounded by inference_cpu_cores.
+  # K must be a positive integer and must not exceed the machine's CPU core count.
   # Override with the env var RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY, or the CLI
   # flag --deepdoc-inference-concurrency (highest precedence). Default 4.
   inference_concurrency: 4
+  # CPU-core budget (N) for DeepDoc in-process inference. Set to 0 to use all
+  # available cores (runtime.NumCPU()). A single Run then uses N/K cores: with
+  # K=1 it uses all N cores, with K=2 each Run uses N/2 cores. N must not exceed
+  # the machine's CPU core count. Override with the env var
+  # RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES, or the CLI flag
+  # --deepdoc-inference-cpu-cores (highest precedence). Default 4.
+  inference_cpu_cores: 4
 
 # Optional standalone MCP listener for the Go API server. Uncomment to enable.
 # RAGFLOW_MCP_* environment variables override these settings.

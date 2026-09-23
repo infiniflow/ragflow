@@ -16,16 +16,17 @@ import (
 // ── Process inference budget ─────────────────────────────────────────────
 //
 // Real page parallelism exposes the parser to multiplicative DeepDoc inference
-// fan-out (DLA + TSR per table region + OCR per region). Every ONNX session runs
-// single-threaded (see the intraOpThreads constant in the native package), so the
-// threads DeepDoc inference occupies in this process are exactly the number of
-// Runs in flight at once — one number to bound.
+// fan-out (DLA + TSR per table region + OCR per region). Each ONNX session runs
+// intraOpThreadCount() intra-op threads (see inference_config.go in the native
+// package); the process owner sets that to max(1, N/K) from the CPU-core budget N
+// and the concurrency K, so the total cores DeepDoc inference occupies in this
+// process are bounded by N (intraOpThreadCount × K ≤ N).
 //
-// That number is the process inference budget. It is (a) registered with the
-// native gate every inference call passes through (native.SetInferenceLimit,
-// called by the server's backend wiring) and (b) used to size the page worker
-// pool. It is configurable: the server resolves it once at start from
-// CLI > env (RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY) > config
+// The number of Runs in flight at once is the process inference budget K. It is
+// (a) registered with the native gate every inference call passes through
+// (native.SetInferenceLimit, called by the server's backend wiring) and (b) used
+// to size the page worker pool. It is configurable: the server resolves it once
+// at start from CLI > env (RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY) > config
 // (deepdoc.inference_concurrency) > default 4, then injects it with
 // SetDeepDocConcurrency. Callers read it via DeepDocConcurrency(); they never
 // have to reason about the precedence themselves.
@@ -39,8 +40,9 @@ import (
 
 // deepDocInferenceConcurrency is the process-wide DeepDoc ONNX inference budget,
 // set once at server start via SetDeepDocConcurrency. It is the maximum number
-// of Runs in flight; each Run is single-threaded (intraOpThreads = 1 in the
-// native package), so it is also the number of cores inference may occupy.
+// of Runs in flight. Each Run occupies intraOpThreadCount() cores (set once at
+// startup from the CPU-core budget N and this concurrency K, so total occupancy
+// stays within N).
 var deepDocInferenceConcurrency = 4
 
 // SetDeepDocConcurrency sets the process inference budget. It is called exactly
@@ -51,8 +53,9 @@ func SetDeepDocConcurrency(n int) {
 }
 
 // DeepDocConcurrency returns how many DeepDoc ONNX Runs this process may have in
-// flight at once — its inference budget. Sessions run single-threaded, so this
-// is also the number of threads inference occupies.
+// flight at once — its inference budget. Each Run occupies intraOpThreadCount()
+// cores, so the total cores inference may occupy is bounded by the CPU-core
+// budget N (intraOpThreadCount × DeepDocConcurrency ≤ N).
 func DeepDocConcurrency() int {
 	return deepDocInferenceConcurrency
 }

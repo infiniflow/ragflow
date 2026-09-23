@@ -262,6 +262,11 @@ const (
 	// deepdoc.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	// EnvDeepDocInferenceCPUCores is the CPU-core budget N for DeepDoc in-process
+	// inference (0 means "use all available cores"). It overrides the
+	// deepdoc.inference_cpu_cores config key and is itself overridden by the
+	// --deepdoc-inference-cpu-cores CLI flag.
+	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the

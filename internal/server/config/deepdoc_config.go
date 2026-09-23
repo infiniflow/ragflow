@@ -23,25 +23,53 @@ import (
 // DeepDocConfig holds DeepDoc (in-process ONNX) inference settings.
 type DeepDocConfig struct {
 	// InferenceConcurrency bounds how many DeepDoc ONNX Runs this process may
-	// have in flight at once. Each Run is single-threaded (intraOpThreads = 1
-	// in the native package), so this is also the number of cores inference may
-	// occupy. Default 4.
+	// have in flight at once. The process owner pairs it with InferenceCPUCores:
+	// each Run opens with max(1, InferenceCPUCores/InferenceConcurrency)
+	// intra-op threads (see internal/deepdoc/native/inference_config.go), so the
+	// total cores inference may occupy is at most InferenceCPUCores. K must be a
+	// positive integer and may not exceed the machine's CPU core count. Default 4.
 	InferenceConcurrency int `mapstructure:"inference_concurrency"`
+	// InferenceConcurrencySet is true when inference_concurrency was explicitly
+	// present in the config file. It lets the server distinguish "unset" (fall
+	// back to the default of 4) from an explicit value such as 0 (which is
+	// invalid for K and must be rejected).
+	InferenceConcurrencySet bool
+	// InferenceCPUCores is the CPU-core budget N for DeepDoc in-process
+	// inference. A value of 0 means "use all available cores" and is resolved to
+	// runtime.NumCPU() at startup. The per-Run intra-op thread count is
+	// max(1, N/K); N may not exceed the machine's CPU core count. Default 4.
+	InferenceCPUCores int `mapstructure:"inference_cpu_cores"`
+	// InferenceCPUCoresSet is true when inference_cpu_cores was explicitly
+	// present in the config file. It distinguishes "unset" (fall back to the
+	// default of 4) from an explicit 0 (which means "use all cores").
+	InferenceCPUCoresSet bool
 }
 
 // ParseDeepDocConfig populates DeepDocConfig from the viper instance. It reads
-// only the deepdoc.inference_concurrency YAML key (default 4). The environment
-// variable RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY does NOT override it here:
-// v.Sub("deepdoc") does not inherit viper's AutomaticEnv settings (env prefix,
-// replacer, AutomaticEnv are all dropped by Sub), so the env override would be
-// missed if applied only through viper. The env override is therefore resolved
-// later in the server boot path by cmd.resolveDeepDocInferenceConcurrency via
-// os.Getenv, which also applies the --deepdoc-inference-concurrency CLI flag
-// (highest precedence) over both.
+// the deepdoc.inference_concurrency and deepdoc.inference_cpu_cores YAML keys
+// (both default 4). The environment variables
+// RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY / RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES
+// do NOT override them here: v.Sub("deepdoc") does not inherit viper's
+// AutomaticEnv settings (env prefix, replacer, AutomaticEnv are all dropped by
+// Sub), so the env override would be missed if applied only through viper. The
+// env overrides are therefore resolved later in the server boot path by
+// cmd.resolveDeepDocInferenceConcurrency / cmd.resolveDeepDocInferenceCPUCores
+// via os.Getenv, which also apply the --deepdoc-inference-concurrency /
+// --deepdoc-inference-cpu-cores CLI flags (highest precedence) over both.
 func (c *Config) ParseDeepDocConfig(v *viper.Viper) error {
 	c.deepdoc.InferenceConcurrency = 4
-	if sub := v.Sub("deepdoc"); sub != nil && sub.IsSet("inference_concurrency") {
-		c.deepdoc.InferenceConcurrency = sub.GetInt("inference_concurrency")
+	c.deepdoc.InferenceConcurrencySet = false
+	c.deepdoc.InferenceCPUCores = 4
+	c.deepdoc.InferenceCPUCoresSet = false
+	if sub := v.Sub("deepdoc"); sub != nil {
+		if sub.IsSet("inference_concurrency") {
+			c.deepdoc.InferenceConcurrency = sub.GetInt("inference_concurrency")
+			c.deepdoc.InferenceConcurrencySet = true
+		}
+		if sub.IsSet("inference_cpu_cores") {
+			c.deepdoc.InferenceCPUCores = sub.GetInt("inference_cpu_cores")
+			c.deepdoc.InferenceCPUCoresSet = true
+		}
 	}
 	return nil
 }

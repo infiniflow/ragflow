@@ -26,10 +26,11 @@ import (
 
 // TestMultiPDFThroughput parses every PDF in DEEPDOC_BENCH_DIR as a single
 // request and reports how long each document takes, plus its peak resident
-// memory. Inference runs single-threaded per session (intraOpThreads is pinned
-// to 1 in native/session.go), so the process-wide inference ceiling is exactly
-// the number of concurrent Runs the parser admits — the page worker pool and
-// the native inference gate are both sized to DeepDocConcurrency(). See
+// memory. Each inference session runs intraOpThreadCount() intra-op threads
+// (registered at startup from the CPU-core budget N and the concurrency K, so the
+// per-Run core count is max(1, N/K)); the process-wide inference ceiling is the
+// number of concurrent Runs the parser admits — the page worker pool and the
+// native inference gate are both sized to DeepDocConcurrency(). See
 // pdf.parser_concurrency.go and native/inference_limit.go.
 //
 // Run:
@@ -62,9 +63,10 @@ func TestMultiPDFThroughput(t *testing.T) {
 		outPath = "/tmp/deepdoc_throughput.csv"
 	}
 
-	// Sessions run single-threaded (intraOpThreads is pinned to 1), so the
-	// process inference ceiling is simply the parser's concurrency budget: both
-	// the page worker pool and the native inference gate are sized to it.
+	// Each session runs intraOpThreadCount() intra-op threads (registered at
+	// startup as max(1, N/K)), so the process inference ceiling is the parser's
+	// concurrency budget: both the page worker pool and the native inference gate
+	// are sized to it.
 	budget := pdf.DeepDocConcurrency()
 	pdf.SetPageWorkerPoolSize(budget)
 	native.SetInferenceLimit(budget)

@@ -5,13 +5,15 @@ package native
 // inference_limit.go — the process-wide DeepDoc inference budget.
 //
 // ONNX Runtime gives every session its own intra-op thread pool (the C API
-// never switches a session onto a shared/global pool), so the threads DeepDoc
-// inference occupies in this process are (threads per session) × (sessions
-// running at once). Sessions are created single-threaded (see the intraOpThreads
-// constant in session.go), which leaves exactly one lever: how many Runs may be
-// in flight at once.
+// never switches a session onto a shared/global pool), so the threads a single
+// DeepDoc inference Run occupies equal the per-session intra-op thread count
+// (see intraOpThreadCount in inference_config.go, registered once at startup as
+// max(1, N/K) from the CPU-core budget N and the concurrency K). The number of
+// Runs in flight at once is bounded by the capacity registered here. Together
+// the two levers set the total cores inference may occupy: intraOpThreadCount ×
+// concurrency ≤ N.
 //
-// That lever lives here — at the one boundary every inference call passes
+// This capacity lives here — at the one boundary every inference call passes
 // through — instead of at the call sites, so neither a new caller nor a new call
 // site inside an existing caller can bypass the budget by forgetting to acquire
 // a slot.

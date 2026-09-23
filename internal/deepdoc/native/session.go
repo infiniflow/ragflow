@@ -24,16 +24,16 @@ import (
 	ort "github.com/infiniflow/onnxruntime_go"
 )
 
-// intraOpThreads is the intra-op thread count every session is opened with.
+// intraOpThreads (the per-session intra-op thread count) and SetIntraOpThreads
+// now live in inference_config.go: it is process-global policy registered once
+// at startup, not a per-file constant. Sessions read it via
+// intraOpThreadCount() at creation time.
 //
-// ONNX Runtime gives each session its own intra-op thread pool (the C API
-// never switches a session onto a shared/global pool), so the threads DeepDoc
-// inference occupies in this process are intraOpThreads × the number of
-// concurrently running sessions. Pinning it to 1 keeps every Run to a single
-// thread, which is what makes the process ceiling a plain concurrency budget:
-// the capacity registered in inference_limit.go bounds how many Runs may be in
-// flight, and each of them costs exactly one thread.
-const intraOpThreads = 1
+// ONNX Runtime gives each session its own intra-op thread pool (the C API never
+// switches a session onto a shared/global pool), so the threads a single DeepDoc
+// inference Run occupies equal intraOpThreadCount(); the process-wide inference
+// budget (see inference_limit.go) bounds how many Runs may be in flight at once,
+// so the total cores inference may occupy is intraOpThreadCount × concurrency.
 
 var (
 	ortOnce    sync.Once
@@ -178,9 +178,9 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 // NewSession opens modelPath. inShape describes the fixed input tensor
 // dimensions; output tensors are allocated per Run (their shape is
 // model-determined, so no outShape argument is needed). The session runs
-// intraOpThreads intra-op threads (see the constant): one thread per Run, with
-// the process-wide ceiling owned by the inference budget the process owner
-// registers (see inference_limit.go). Input/output tensors are allocated and
+// intraOpThreadCount() intra-op threads (see inference_config.go): that many
+// threads per Run, with the process-wide ceiling owned by the inference budget
+// the process owner registers (see inference_limit.go). Input/output tensors are allocated and
 // freed on every Run (see session.Run), so a pooled session holds only its
 // weights in steady state. Weight sharing is applied transparently: the model's
 // constant initializers are extracted once per modelPath and injected into the
@@ -231,21 +231,32 @@ func newRawSession(modelPath, inName string, inShape []int64, outName string, we
 }
 
 // newSessionOptions builds the SessionOptions shared by every running session:
-// one intra-op thread (so each Run costs exactly one CPU thread — see the
-// intraOpThreads constant and inference_limit.go) and the BFC arena disabled
-// (idle sessions then keep only their weights; activation tensors are allocated
-// per Run and freed after). When weights != nil, each shared initializer is
-// injected so the model's constant buffers live in memory a single time across
+// intraOpThreadCount() intra-op threads (so each Run occupies that many CPU
+// threads — see inference_config.go and inference_limit.go) and the BFC arena
+// disabled (idle sessions then keep only their weights; activation tensors are
+// allocated per Run and freed after). The inter-op thread count is pinned to 1
+// so a single Run cannot fan out across more threads than intraOpThreadCount
+// leaves it: the process-wide inference ceiling is hence exactly
+// intraOpThreadCount × concurrency. When weights != nil, each shared initializer
+// is injected so the model's constant buffers live in memory a single time across
 // every pooled session of the same model.
 func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	opts, err := ort.NewSessionOptions()
 	if err != nil {
 		return nil, err
 	}
-	// One intra-op thread per session: the session's Runs then cost one thread
-	// each, so the process-wide inference ceiling is exactly the number of
-	// concurrent Runs the caller admits (see the intraOpThreads constant).
-	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
+	// intraOpThreadCount() intra-op threads per session: the session's Runs then
+	// cost that many threads each. The value is process-global policy registered
+	// once at startup (SetIntraOpThreads), and stable for the life of the
+	// process after sessions start being created.
+	if err := opts.SetIntraOpNumThreads(intraOpThreadCount()); err != nil {
+		opts.Destroy()
+		return nil, err
+	}
+	// Pin the inter-op thread count to 1: without this ORT defaults to one
+	// inter-op thread per physical core, which would let a single Run exceed the
+	// intra-op budget and break the total-core accounting.
+	if err := opts.SetInterOpNumThreads(1); err != nil {
 		opts.Destroy()
 		return nil, err
 	}
