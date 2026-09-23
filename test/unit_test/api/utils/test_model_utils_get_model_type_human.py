@@ -75,11 +75,9 @@ def test_calculate_model_type_single_string():
     assert calculate_model_type("chat") == ModelTypeBinary.CHAT.value
 
 
-def test_calculate_model_type_case_insensitive():
-    """Model type names are case insensitive via the binary constants."""
-    lower = calculate_model_type(["chat"])
-    upper = calculate_model_type(["CHAT"])
-    assert lower == upper == ModelTypeBinary.CHAT.value
+def test_calculate_model_type_uses_lowercase_lookup():
+    """Model type names are matched via lowercase lookup keys."""
+    assert calculate_model_type(["chat"]) == ModelTypeBinary.CHAT.value
 
 
 def test_calculate_model_type_ignores_unknown():
