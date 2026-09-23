@@ -102,7 +102,7 @@ ingestor:
     # may occupy. Override with env RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY or the
     # CLI flag --deepdoc-inference-concurrency (highest precedence). Default 1.
     inference_concurrency: 1
-  file_syncer:
+file_syncer:
   max_concurrent_syncs: 5
 user_default_llm:
   default_models:
