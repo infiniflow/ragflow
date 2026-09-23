@@ -39,7 +39,7 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/rag/agentic-rag"
+	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -65,7 +65,7 @@ import (
 	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
@@ -94,7 +94,6 @@ func parseArgs() (*serverArgs, error) {
 	args := &serverArgs{}
 
 	var serverMode string
-	var serverModeSelected bool
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
@@ -112,23 +111,18 @@ func parseArgs() (*serverArgs, error) {
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--ingestor":
 			serverMode = "ingestor"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--api":
 			serverMode = "api"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--syncer":
 			serverMode = "syncer"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--deepdoc":
 			serverMode = "deepdoc"
-			serverModeSelected = true
 			args.mode = &serverMode
 		case "--migrate":
 			serverMode = "migrate"
@@ -199,9 +193,6 @@ func parseArgs() (*serverArgs, error) {
 		}
 	}
 
-	if args.migrateDB && serverModeSelected {
-		return nil, errors.New("--migrate cannot be combined with a server mode")
-	}
 	return args, nil
 }
 
