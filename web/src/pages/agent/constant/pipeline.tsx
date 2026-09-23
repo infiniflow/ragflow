@@ -438,8 +438,12 @@ export const NoDebugOperatorsList = [Operator.File];
 // legacy Python operator and is deliberately excluded.
 export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
+// Pipeline operators limited to a single instance per canvas. Title/Token
+// chunkers are separate entries here (each blocks its own duplication) but
+// also share one slot: see the chunker group rule in buildPipelineNextOperators.
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.Compiler,
   Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
