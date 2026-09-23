@@ -557,6 +557,16 @@ class TestEpubParserNothingReadable:
         with pytest.raises(ValueError, match="No readable content in EPUB: 1 of 2 content items"):
             self._parse(_make_epub(chapters))
 
+    def test_an_image_only_chapter_next_to_an_unreadable_one_does_not_raise(self):
+        """A chapter that parses to no text was still read, so the book is not unreadable."""
+        image_only = "<?xml version='1.0' encoding='utf-8'?><html xmlns='http://www.w3.org/1999/xhtml'><head><title>Plate</title></head><body><img src='plate.png' alt=''/></body></html>"
+        chapters = [
+            ("ch1.xhtml", image_only),
+            ("ch2.xhtml", bytes(range(256)) * 8),
+        ]
+
+        assert self._parse(_make_epub(chapters)) == []
+
     def test_a_book_whose_only_chapter_is_empty_still_returns_nothing(self):
         """An empty chapter is not a failure, so there is nothing to report."""
         assert self._parse(_make_epub([("ch1.xhtml", b"")])) == []

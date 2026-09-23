@@ -42,8 +42,9 @@ class RAGFlowEpubParser:
         """Return the text sections of every readable content item, in spine order.
 
         An item that cannot be read or parsed is skipped with a warning. Raises
-        ValueError for an empty payload, and when items failed and nothing
-        readable is left.
+        ValueError for an empty payload, and when items failed and no other item
+        could be parsed. An item that parses to no text (an image-only chapter)
+        still counts as read.
         """
         if binary is not None:
             if not binary:
@@ -60,6 +61,7 @@ class RAGFlowEpubParser:
             content_items = self._get_spine_items(zf)
             all_sections = []
             failures = []
+            parsed = 0
             html_parser = RAGFlowHtmlParser()
 
             for item_path in content_items:
@@ -87,9 +89,10 @@ class RAGFlowEpubParser:
                     logger.warning("Skipping EPUB content item '%s' that failed to parse: %s", item_path, e)
                     failures.append(f"{item_path}: {e}")
                     continue
+                parsed += 1
                 all_sections.extend(sections)
 
-            if failures and not all_sections:
+            if failures and not parsed:
                 raise ValueError(f"No readable content in EPUB: {len(failures)} of {len(content_items)} content items could not be read or parsed ({failures[0]})")
             return all_sections
         finally:
