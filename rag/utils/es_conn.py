@@ -265,7 +265,7 @@ class ESConnection(ESConnectionBase):
                     k,
                     num_candidates,
                     query_vector=list(m.embedding_data),
-                    filter=bool_query.to_dict(),  # filter=_build_knn_filter_query(bool_query, vector_similarity_weight),
+                    filter=_build_knn_filter_query(bool_query, vector_similarity_weight),
                     similarity=similarity,
                 )
 
@@ -289,7 +289,7 @@ class ESConnection(ESConnectionBase):
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 elif field == "id":
-                    continue  # id as "text", not a "keyword", order by it will cause error
+                    continue
                 else:
                     order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
@@ -304,15 +304,9 @@ class ESConnection(ESConnectionBase):
 
         if limit > 0 and not use_search_after:
             s = s[offset : offset + limit]
-        # Filter _source to only requested fields for efficiency, and add vector
-        # fields to "fields" param so they appear in hit.fields when ES 9.x
-        # exclude_source_vectors is enabled (dense_vector not in _source).
         if select_fields:
             s = s.source(select_fields)
         q = s.to_dict()
-        # ES 9.x: dense_vector fields excluded from _source; request them via fields.
-        # Note: knn does NOT have a "fields" parameter - adding it inside the knn
-        # object causes BadRequestError on ES 9.x. We add "fields" at top level.
         vector_fields = [f for f in (select_fields or []) if f.endswith("_vec")]
         if vector_fields:
             q["fields"] = vector_fields
@@ -323,7 +317,6 @@ class ESConnection(ESConnectionBase):
                 if use_search_after:
                     res = self._search_with_search_after(index_names, q, offset, limit)
                 else:
-                    # print(json.dumps(q, ensure_ascii=False))
                     res = self._es_search_once(index_names, q, track_total_hits=True)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
@@ -334,7 +327,6 @@ class ESConnection(ESConnectionBase):
                 self._connect()
                 continue
             except Exception as e:
-                # Only log debug for NotFoundError(accepted when metadata index doesn't exist)
                 if "NotFound" in str(e):
                     self.logger.debug(f"ESConnection.search {index_names!s} query: " + str(q) + " - " + str(e))
                 else:
@@ -345,14 +337,12 @@ class ESConnection(ESConnectionBase):
         raise Exception("ESConnection.search timeout.")
 
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None, refresh: str | bool = "wait_for") -> list[str]:
-        # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
             assert "_id" not in d
             assert "id" in d
             d_copy = copy.deepcopy(d)
             d_copy["kb_id"] = knowledgebase_id
-            # Use id as _id for uniqueness, also keep "id" as a regular field for sorting
             meta_id = d_copy.get("id", "")
             operations.append({"index": {"_index": index_name, "_id": meta_id}})
             operations.append(d_copy)
@@ -386,7 +376,6 @@ class ESConnection(ESConnectionBase):
         doc.pop("id", None)
         condition["kb_id"] = knowledgebase_id
         if "id" in condition and isinstance(condition["id"], str):
-            # update specific single document
             chunk_id = condition["id"]
             for i in range(ATTEMPT_TIME):
                 doc_part = copy.deepcopy(doc)
@@ -430,7 +419,6 @@ class ESConnection(ESConnectionBase):
                     break
             return False
 
-        # update unspecific maybe-multiple documents
         bool_query = Q("bool")
         for k, v in condition.items():
             if not isinstance(k, str) or not v:
@@ -559,23 +547,18 @@ class ESConnection(ESConnectionBase):
         assert "_id" not in condition
         condition["kb_id"] = knowledgebase_id
 
-        # Build a bool query that combines id filter with other conditions
         bool_query = Q("bool")
 
-        # Handle chunk IDs if present
         if "id" in condition:
             chunk_ids = condition["id"]
             if not isinstance(chunk_ids, list):
                 chunk_ids = [chunk_ids]
             if chunk_ids:
-                # Filter by specific chunk IDs
                 bool_query.filter.append(Q("ids", values=chunk_ids))
-            # If chunk_ids is empty, we don't add an ids filter - rely on other conditions
 
-        # Add all other conditions as filters
         for k, v in condition.items():
             if k == "id":
-                continue  # Already handled above
+                continue
             if k == "exists":
                 bool_query.filter.append(Q("exists", field=v))
             elif k == "must_not":
@@ -590,7 +573,6 @@ class ESConnection(ESConnectionBase):
             elif v is not None:
                 raise Exception("Condition value must be int, str or list.")
 
-        # If no filters were added, use match_all (for tenant-wide operations)
         if not bool_query.filter and not bool_query.must and not bool_query.must_not:
             qry = Q("match_all")
         else:
@@ -623,17 +605,13 @@ class ESConnection(ESConnectionBase):
         for hit in hits:
             doc_id = hit.get("_id")
             d = hit.get("_source", {})
-            # Also extract fields from ES "fields" response (used by dense_vector in ES 9.x)
             hit_fields = hit.get("fields", {})
             m = {}
             for n in fields:
-                # First check _source
                 if d.get(n) is not None:
                     m[n] = d.get(n)
-                # Then check fields (ES 9.x stores dense_vector here, not in _source)
                 elif n in hit_fields:
                     vals = hit_fields[n]
-                    # ES fields response wraps dense_vector in 2 levels: [[v1,v2,...]] -> [v1,v2,...]
                     if isinstance(vals, list) and len(vals) == 1:
                         vals = vals[0]
                     m[n] = vals
@@ -646,8 +624,6 @@ class ESConnection(ESConnectionBase):
                     continue
                 if not isinstance(v, str):
                     m[n] = str(m[n])
-                # if n.find("tks") > 0:
-                #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
                 res_fields[doc_id] = m
