@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/tokenizer"
 )
@@ -52,17 +54,17 @@ const (
 // a session is allowed to see.
 func documentReadAllowed(ctx context.Context, deps SearchDeps, docID string) bool {
 	if deps.DocChunks == nil || docID == "" || len(deps.KbIDs) == 0 {
-		_LOG.Printf("[Fetch full document] skipped (doc_id=%q, datasets=%d)", docID, len(deps.KbIDs))
+		common.Warn("fetch full document: skipped", zap.String("doc_id", docID), zap.Int("datasets", len(deps.KbIDs)))
 		return false
 	}
 	// a session-wide document scope is authoritative.
 	if len(deps.DocScope) > 0 && !containsStr(deps.DocScope, docID) {
-		_LOG.Printf("[Fetch full document] doc_id %q is outside the session document scope", docID)
+		common.Warn("fetch full document: doc_id is outside the session document scope", zap.String("doc_id", docID))
 		return false
 	}
 	// never read a document that is not in the bound datasets.
 	if belongs, verified := docInDatasets(ctx, deps, docID); verified && !belongs {
-		_LOG.Printf("[Fetch full document] doc_id %q is not in any bound dataset — refusing to fetch", docID)
+		common.Warn("fetch full document: doc_id is not in any bound dataset, refusing to fetch", zap.String("doc_id", docID))
 		return false
 	}
 	return true
@@ -95,7 +97,7 @@ func fetchDocumentPage(ctx context.Context, deps SearchDeps, docID string, offse
 		Limit:      want + 1,
 	})
 	if err != nil {
-		_LOG.Printf("[Fetch document page] page at offset %d failed: %v", offset, err)
+		common.Warn("fetch document page: page failed", zap.Int("offset", offset), zap.Error(err))
 		return nil, false
 	}
 	if len(page) <= want {
@@ -237,7 +239,7 @@ func fetchFullDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 			Limit:      docFetchPageSize,
 		})
 		if err != nil {
-			_LOG.Printf("[Fetch full document] page at offset %d failed: %v", offset, err)
+			common.Warn("fetch full document: page failed", zap.Int("offset", offset), zap.Error(err))
 			break
 		}
 		if len(page) == 0 {
@@ -257,7 +259,7 @@ func fetchFullDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 		}
 	}
 	if len(chunks) == 0 {
-		_LOG.Printf("[Fetch full document] no chunks for doc_id %q", docID)
+		common.Info("fetch full document: no chunks", zap.String("doc_id", docID))
 		return nil, nil
 	}
 

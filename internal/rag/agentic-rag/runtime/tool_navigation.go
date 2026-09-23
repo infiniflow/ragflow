@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
@@ -440,7 +442,7 @@ func navigateTree(ctx context.Context, router navTreeRouter, in navTreeInput) na
 		routed, err := router.Route(ctx, in.TenantID, kbID, full, in.DocScope, navSearchMaxDocs)
 		if err != nil {
 			anyError = err
-			_LOG.Printf("[Dataset navigation search] nav-tree descent failed for kb=%s: %v", kbID, err)
+			common.Warn("dataset navigation search: nav-tree descent failed", zap.String("kb", kbID), zap.Error(err))
 			continue
 		}
 		if routed == nil {

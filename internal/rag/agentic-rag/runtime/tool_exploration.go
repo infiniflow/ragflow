@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -202,7 +204,7 @@ func (e *searchExecutor) graphExplore(ctx context.Context, args map[string]any) 
 		// The failure is swallowed (res = {}) and falls into
 		// the empty branch below — an infra failure here is reported as a
 		// dataset-level EMPTY/no_structure, never an ERROR.
-		_LOG.Printf("[graph_explore] failed: %v", err)
+		common.Warn("graph explore: failed", zap.Error(err))
 		res = exploreResult{}
 	}
 	answer := strings.TrimSpace(res.Answer)
@@ -341,7 +343,8 @@ func resolveKGScope(deps SearchDeps, docScope, datasetIDs []string) []kgScope {
 		} else {
 			// The per-doc lookup failed; the bound datasets are used instead, so the lost
 			// owner grouping must not be silent.
-			_LOG.Printf("[Graph explore] doc-tenant resolution failed for %d doc(s); falling back to the bound datasets: %v", len(docScope), err)
+			common.Warn("graph explore: doc-tenant resolution failed, falling back to the bound datasets",
+				zap.Int("docs", len(docScope)), zap.Error(err))
 		}
 	}
 
@@ -603,7 +606,7 @@ func encodeSeedVector(ctx context.Context, deps SearchDeps, tenantID, text strin
 func safeEncodeEmbedder(emb nlp.NavEmbedder, ctx context.Context, tenantID, text string) ([][]float32, error) {
 	defer func() {
 		if r := recover(); r != nil {
-			_LOG.Printf("[graph_explore] seed encode panicked; falling back to keyword: %v", r)
+			common.Warn("graph explore: seed encode panicked, falling back to keyword", zap.Any("panic", r))
 		}
 	}()
 	// Seed encoding is a QUERY, not a document: graph_explore and navigation seed through

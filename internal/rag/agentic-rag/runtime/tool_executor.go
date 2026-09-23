@@ -35,6 +35,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/service/nav"
@@ -1612,7 +1613,8 @@ func NormalizeMetadataValue(value any, op string) any {
 		return nil
 	}
 	if len(flat) > 1 {
-		_LOG.Printf("[Metadata search] value list collapsed to the single keyword %q (ignored: %v); to match all, issue one condition per keyword", flat[0], flat[1:])
+		common.Warn("metadata search: value list collapsed to the single keyword; to match all, issue one condition per keyword",
+			zap.String("keyword", flat[0]), zap.Any("ignored", flat[1:]))
 	}
 	return flat[0]
 }

@@ -23,8 +23,10 @@ import (
 	"unicode"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 )
 
 // Ask the chat model to answer a question from a compiled-structure outline.
@@ -105,7 +107,7 @@ func renderStructure(entities, relations []map[string]any) string {
 // empty.
 func askStructure(ctx context.Context, model SessionModel, topic, noun, label string, entities, relations []map[string]any) (string, []string) {
 	if model == nil {
-		_LOG.Printf("[%s] structure QA skipped (no chat model)", label)
+		common.Warn("structure QA skipped (no chat model)", zap.String("label", label))
 		return "", nil
 	}
 	system := strings.ReplaceAll(navSystemPrompt, "{noun}", "the "+noun)
@@ -125,7 +127,7 @@ func askStructure(ctx context.Context, model SessionModel, topic, noun, label st
 		*schema.UserMessage(user),
 	}, budget)
 	if fitErr != "" {
-		_LOG.Printf("[%s] prompt fitting failed: %s", label, fitErr)
+		common.Warn("structure QA: prompt fitting failed", zap.String("label", label), zap.Any("error", fitErr))
 		return "", nil
 	}
 	// FitMessages may prepend/trim a system message; re-extract it so the model
@@ -148,17 +150,19 @@ func askStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	if tm, ok := model.(TemperatureModel); ok {
 		resp, err = tm.CompleteWithTemperature(ctx, msgs, nil, structureQATemperature)
 	} else {
-		_LOG.Printf("[%s] model %T cannot carry per-call temperature; using its default (wanted %v)", label, model, structureQATemperature)
+		common.Info("structure QA: model cannot carry per-call temperature, using its default",
+			zap.String("label", label), zap.String("model_type", fmt.Sprintf("%T", model)),
+			zap.Any("wanted_temp", structureQATemperature))
 		resp, err = model.Complete(ctx, msgs, nil)
 	}
 	if err != nil {
-		_LOG.Printf("[%s] could not read the outline with the model: %v", label, err)
+		common.Warn("structure QA: could not read the outline with the model", zap.String("label", label), zap.Error(err))
 		return "", nil
 	}
 
 	var verdict structureNavVerdict
 	if err := unmarshalModelJSON(resp.Content, &verdict); err != nil {
-		_LOG.Printf("[%s] could not parse the outline verdict: %v", label, err)
+		common.Warn("structure QA: could not parse the outline verdict", zap.String("label", label), zap.Error(err))
 		return "", nil
 	}
 
@@ -176,7 +180,8 @@ func askStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	if verdict.IsSufficient {
 		outcome = "answers"
 	}
-	_LOG.Printf("[%s] the %s %s the question; %d relevant entity(ies)", label, noun, outcome, len(relevant))
+	common.Info("structure QA: outline verdict", zap.String("label", label), zap.Any("noun", noun),
+		zap.Any("outcome", outcome), zap.Int("entities", len(relevant)))
 	return answer, relevant
 }
 

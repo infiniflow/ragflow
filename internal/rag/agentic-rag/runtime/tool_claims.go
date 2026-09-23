@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	nlp "ragflow/internal/service/nlp"
@@ -684,7 +686,8 @@ func publishClaimHits(deps SearchDeps, hits []docClaimHit, docID string) int {
 		}
 	})
 	if added > 0 {
-		_LOG.Printf("[navigate_structure] published %d claim(s) to the evidence pool (doc=%s)", added, docID)
+		common.Info("navigate_structure: published claims to the evidence pool",
+			zap.Int("claims", added), zap.String("doc_id", docID))
 	}
 	return added
 }

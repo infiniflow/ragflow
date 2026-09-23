@@ -18,7 +18,9 @@ package runtime
 
 import (
 	"fmt"
+	"go.uber.org/zap"
 	"log"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"unicode"
@@ -926,8 +928,9 @@ func grepSummaryFromClaims(chunks []map[string]any, claimSources []string) strin
 }
 
 func logGrepSed(s narrowStats) {
-	_LOG.Printf("[grep-sed] chunks=%d->%d chars=%d->%d matched=%t terms=%d",
-		s.ChunksIn, s.ChunksKpt, s.CharsIn, s.CharsOut, s.Matched, s.UsedTerms)
+	common.Info("grep-sed: narrowing summary", zap.Any("chunks_in", s.ChunksIn), zap.Any("chunks_kept", s.ChunksKpt),
+		zap.Any("chars_in", s.CharsIn), zap.Any("chars_out", s.CharsOut), zap.Any("matched", s.Matched),
+		zap.Any("terms", s.UsedTerms))
 }
 
 // Local helpers shared with the narrowing paths

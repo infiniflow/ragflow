@@ -26,8 +26,10 @@ import (
 	"unicode"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 )
 
 // Deterministic arithmetic over retrieved evidence.
@@ -1490,7 +1492,7 @@ func computeFromFacts(ctx context.Context, model SessionModel, question string, 
 		*schema.UserMessage(user),
 	}, budget)
 	if fitErr != "" {
-		_LOG.Printf("[Compute] prompt fitting failed: %s", fitErr)
+		common.Warn("compute: prompt fitting failed", zap.Any("error", fitErr))
 		return nil
 	}
 	// FitMessages may prepend/trim a system message; re-extract it so the model
@@ -1517,12 +1519,12 @@ func computeFromFacts(ctx context.Context, model SessionModel, question string, 
 		reply, err = model.Complete(ctx, msgs, nil)
 	}
 	if err != nil {
-		_LOG.Printf("[Compute] LLM call failed: %v", err)
+		common.Warn("compute: LLM call failed", zap.Error(err))
 		return nil
 	}
 	data, _ := ExtractJSON(stripThinkAndFences(reply.Content)).(map[string]any)
 	if data == nil {
-		_LOG.Printf("[Compute] could not parse LLM JSON")
+		common.Warn("compute: could not parse LLM JSON")
 		return nil
 	}
 	// A truthy non-bool (1, "true", a non-empty list) counts as needed — i.e. builtin bool()
@@ -1556,7 +1558,8 @@ func computeFromFacts(ctx context.Context, model SessionModel, question string, 
 
 	value, problem := compute(expression)
 	if problem != "" {
-		_LOG.Printf("[Compute] refused %q — %s", TruncateRunes(expression, 120), problem)
+		common.Warn("compute: refused expression", zap.String("expression", TruncateRunes(expression, 120)),
+			zap.Any("problem", problem))
 		return nil
 	}
 	return &computedFact{

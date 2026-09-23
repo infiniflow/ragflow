@@ -17,6 +17,8 @@
 package runtime
 
 import (
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"regexp"
 	"sort"
 	"strings"
@@ -111,7 +113,7 @@ func memoryAdd(kb *Kbinfos, chunks []map[string]any) {
 		added++
 	}
 	if added > 0 {
-		_LOG.Printf("[Memory] stored %d new raw chunk(s); memory now has %d.", added, len(kb.Memory))
+		common.Info("memory: stored new raw chunks", zap.Int("added", added), zap.Int("total", len(kb.Memory)))
 	}
 }
 
@@ -379,7 +381,8 @@ func memorySearch(kb *Kbinfos, query string, topN int, minRatio float64) []map[s
 	if len(rq) > 60 {
 		rq = rq[:60]
 	}
-	_LOG.Printf("[Memory.search] query=%q -> %d relevant chunk(s) (ratio>=%.2f, %d terms)", string(rq), len(out), minRatio, n)
+	common.Info("memory search: relevant chunks", zap.String("query", string(rq)), zap.Int("chunks", len(out)),
+		zap.Float64("min_ratio", minRatio), zap.Any("terms", n))
 	return out
 }
 

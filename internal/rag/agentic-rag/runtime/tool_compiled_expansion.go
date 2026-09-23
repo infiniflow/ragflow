@@ -25,6 +25,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/tokenizer"
 )
@@ -212,7 +214,7 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 				return err
 			}
 			if n := admitExpansion(chunks); n > 0 {
-				_LOG.Printf("[Compiled expand] %s: +%d chunks", tk.label, n)
+				common.Info("compiled expand: added chunks", zap.String("kind", tk.label), zap.Int("chunks", n))
 			}
 		}
 		// Tree structure graph, selected by compile_kwd:
@@ -230,7 +232,7 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 			chunks = e.expandTreeBlobStrategy(ctx, sc, match, seen, 5)
 		}
 		if n := admitExpansion(chunks); n > 0 {
-			_LOG.Printf("[Compiled expand] tree: +%d chunks", n)
+			common.Info("compiled expand: tree added chunks", zap.Int("chunks", n))
 		}
 		// Synthesis pages — standalone rendered articles, searched directly
 		// (synthesis pages are searched directly).
@@ -240,7 +242,7 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 				return err
 			}
 			if n := admitExpansion(chunks); n > 0 {
-				_LOG.Printf("[Compiled expand] %s: +%d chunks", ck.label, n)
+				common.Info("compiled expand: added chunks", zap.String("kind", ck.label), zap.Int("chunks", n))
 			}
 		}
 		// Claims adjacent to the passages the hybrid leg just hit. Non-redundant with the
@@ -249,7 +251,7 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 		// QUERY, chunk hits are a different key and their sibling claims may
 		// still match.
 		if n := admitExpansion(e.expandClaimNeighborStrategy(ctx, sc, hitChunks, seen, 6)); n > 0 {
-			_LOG.Printf("[Compiled expand] claim neighbours: +%d chunks", n)
+			common.Info("compiled expand: claim neighbours added chunks", zap.Int("chunks", n))
 		}
 	}
 
@@ -264,7 +266,7 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 		}
 	})
 
-	_LOG.Printf("[Hybrid search] Compiled expansion added %d chunks.", expanded)
+	common.Info("hybrid search: compiled expansion added chunks", zap.Int("chunks", expanded))
 	return nil
 }
 
@@ -296,7 +298,8 @@ func (e *compiledExpander) searchCompiledRows(ctx context.Context, sc compiledSc
 	if err != nil {
 		// The failed search is logged and carried on with no rows: the expansion is an
 		// enrichment, so a missing compiled leg must not fail the regular retrieval.
-		_LOG.Printf("[Compiled expand] compiled-row search failed (kb=%s tenant=%s); treating as no rows: %v", sc.kbID, sc.tenantID, err)
+		common.Warn("compiled expand: compiled-row search failed, treating as no rows",
+			zap.String("kb", sc.kbID), zap.String("tenant", sc.tenantID), zap.Error(err))
 		return nil
 	}
 	return rows
@@ -492,7 +495,7 @@ func (e *compiledExpander) loadByDoc(ctx context.Context, sc compiledScope, orde
 		if err != nil {
 			// The failed load is logged per doc and only that doc is dropped; the remaining
 			// docs still load.
-			_LOG.Printf("[Compiled expand] failed to load chunks for doc_id=%s: %v", docID, err)
+			common.Warn("compiled expand: failed to load chunks", zap.String("doc_id", docID), zap.Error(err))
 			continue
 		}
 		for _, c := range rows {
@@ -728,7 +731,7 @@ func (e *compiledExpander) expandTreeBlobStrategy(ctx context.Context, sc compil
 	if err != nil {
 		// The store error is reported the same way Expand reports it for the other
 		// strategies.
-		_LOG.Printf("[Compiled expand] tree blob chunk load failed: %v", err)
+		common.Warn("compiled expand: tree blob chunk load failed", zap.Error(err))
 		return nil
 	}
 	return loaded

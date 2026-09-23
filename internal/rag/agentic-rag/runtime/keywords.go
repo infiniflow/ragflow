@@ -23,8 +23,10 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 )
 
 // Four-aspect keyword extraction with entity weighting.
@@ -195,7 +197,7 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 			*schema.UserMessage(question),
 		}, budget)
 		if fitErr != "" {
-			_LOG.Printf("[Keywords] prompt fitting failed: %s", fitErr)
+			common.Warn("keywords: prompt fitting failed", zap.Any("error", fitErr))
 		}
 		// FitMessages may prepend/trim a system message; re-extract it so the
 		// model call is exactly [system, user...].
@@ -225,13 +227,14 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 		if tm, ok := model.(TemperatureModel); ok {
 			reply, err = tm.CompleteWithTemperature(ctx, msgs, nil, keywordExtractionTemperature)
 		} else {
-			_LOG.Printf("[Keywords] model %T cannot carry per-call temperature; using its default (wanted %v)", model, keywordExtractionTemperature)
+			common.Info("keywords: model cannot carry per-call temperature, using its default",
+				zap.String("model_type", fmt.Sprintf("%T", model)), zap.Any("wanted_temp", keywordExtractionTemperature))
 			reply, err = model.Complete(ctx, msgs, nil)
 		}
 		if err == nil {
 			aspects = parseAspects(reply.Content)
 		} else {
-			_LOG.Printf("[Keywords] extraction failed: %v", err)
+			common.Warn("keywords: extraction failed", zap.Error(err))
 		}
 	}
 
@@ -270,9 +273,10 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 	query = TruncateRunes(query, keywordMaxChars)
 	keywords = TruncateRunes(keywords, keywordMaxChars)
 
-	_LOG.Printf("[Keywords] entity x%d: %s | aliases: %s | fact-type: %s | qualifiers x%d: %s",
-		keywordEntityRepeat, joinOrDash(aspects["entity"]), joinOrDash(aspects["aliases"]),
-		joinOrDash(aspects["fact_type"]), keywordQualifierRepeat, joinOrDash(aspects["qualifiers"]))
+	common.Info("keywords: entity", zap.Int("repeat", keywordEntityRepeat),
+		zap.String("entity", joinOrDash(aspects["entity"])), zap.String("aliases", joinOrDash(aspects["aliases"])),
+		zap.String("fact_type", joinOrDash(aspects["fact_type"])), zap.Int("qualifier_repeat", keywordQualifierRepeat),
+		zap.String("qualifiers", joinOrDash(aspects["qualifiers"])))
 	return query, keywords
 }
 
