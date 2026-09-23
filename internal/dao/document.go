@@ -434,6 +434,35 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kb
 	return result, nil
 }
 
+// ListParserConfigsByKBIDs returns each dataset's distinct document
+// parser_config, keyed by dataset ID. A document copies the dataset's config
+// at upload and may then be overridden per document, so a dataset whose
+// documents were never customized collapses to a single row.
+func (dao *DocumentDAO) ListParserConfigsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) (map[string][]entity.JSONMap, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		KbID         string         `gorm:"column:kb_id"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config;type:longtext"`
+	}
+	if err := db.WithContext(ctx).Table("document").
+		Distinct("kb_id", "parser_config").
+		Where("kb_id IN ?", kbIDs).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]entity.JSONMap, len(kbIDs))
+	for _, row := range rows {
+		if len(row.ParserConfig) == 0 {
+			continue
+		}
+		result[row.KbID] = append(result[row.KbID], row.ParserConfig)
+	}
+	return result, nil
+}
+
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if len(ids) == 0 {

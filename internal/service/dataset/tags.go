@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"ragflow/internal/common"
@@ -15,9 +16,13 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
-	// merged holds the selectable-tag vocabulary sourced exclusively from each
-	// dataset's configured tag source file (parser_config.tags.tag_file_id). The
-	// count for a tag is the number of times it appears in that source file.
+	// merged holds the selectable-tag vocabulary sourced from every tag source
+	// file (parser_config.tags.tag_file_id) declared by the datasets and by
+	// their documents. A document copies the dataset config at upload and the
+	// document parser dialog may then override it, and that document-level copy
+	// is the one the extractor reads at parse time (see
+	// ingestion/task/pipeline_executor.go), so both levels must be read here.
+	// The count for a tag is the number of times it appears in that source file.
 	// The Go backend has no Python-style tag-library datasets, so there is no
 	// chunk-level aggregation.
 	loader := d.tagVocabularyLoader
@@ -26,11 +31,12 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	}
 	merged := make(map[string]int)
 	// The handler accepts repeated IDs, and distinct raw IDs can normalize to
-	// the same dataset (hyphenated vs. compact form). Track the normalized IDs
-	// so each dataset is loaded and merged exactly once — otherwise a repeated
-	// dataset (e.g. dataset_ids=A,A) would load the same vocabulary twice and
-	// double every count.
+	// the same dataset (hyphenated vs. compact form). Normalize up front so
+	// each dataset is authorized, loaded and merged exactly once — otherwise a
+	// repeated dataset (e.g. dataset_ids=A,A) would load the same vocabulary
+	// twice and double every count.
 	seen := make(map[string]struct{}, len(datasetIDs))
+	orderedIDs := make([]string, 0, len(datasetIDs))
 	for _, rawID := range datasetIDs {
 		rawID = strings.TrimSpace(rawID)
 		if rawID == "" {
@@ -44,6 +50,18 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			continue
 		}
 		seen[datasetID] = struct{}{}
+		orderedIDs = append(orderedIDs, datasetID)
+	}
+
+	// Authorize and load every dataset before reading any document config, so
+	// nothing belonging to an inaccessible dataset is fetched.
+	type authorizedDataset struct {
+		id     string
+		tenant string
+		config map[string]any
+	}
+	authorized := make([]authorizedDataset, 0, len(orderedIDs))
+	for _, datasetID := range orderedIDs {
 		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
 		}
@@ -54,16 +72,53 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			}
 			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
+		authorized = append(authorized, authorizedDataset{
+			id:     datasetID,
+			tenant: kb.TenantID,
+			config: map[string]any(kb.ParserConfig),
+		})
+	}
 
-		// Include the dataset's tag-source vocabulary. The count for each tag is
-		// the number of times it occurs in the tag source file. The file is
-		// resolved against the dataset's own tenant: tag_file_id is user-writable,
-		// so a foreign file ID must not resolve (IDOR, CWE-639).
-		if tagFileID := component.TagFileIDFromParserConfig(map[string]any(kb.ParserConfig)); tagFileID != "" {
-			counts, vErr := loader(ctx, tagFileID, kb.TenantID)
+	docConfigs, err := d.documentDAO.ListParserConfigsByKBIDs(ctx, dao.DB, orderedIDs)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	// A source file is scoped to its owning tenant, and the same file is
+	// normally referenced by the dataset itself and by every document seeded
+	// from it. Load each (tenant, file) once so its counts are not added again.
+	loaded := make(map[string]struct{})
+	for _, ds := range authorized {
+		sources := make(map[string]struct{}, 1+len(docConfigs[ds.id]))
+		if id := component.TagFileIDFromParserConfig(ds.config); id != "" {
+			sources[id] = struct{}{}
+		}
+		for _, docConfig := range docConfigs[ds.id] {
+			if id := component.TagFileIDFromParserConfig(map[string]any(docConfig)); id != "" {
+				sources[id] = struct{}{}
+			}
+		}
+		// Sorted so the vocabulary and any load error are deterministic when a
+		// dataset carries more than one source file.
+		ids := make([]string, 0, len(sources))
+		for id := range sources {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+
+		for _, tagFileID := range ids {
+			key := ds.tenant + "\x00" + tagFileID
+			if _, dup := loaded[key]; dup {
+				continue
+			}
+			loaded[key] = struct{}{}
+			// The file is resolved against the dataset's own tenant:
+			// tag_file_id is user-writable, so a foreign file ID must not
+			// resolve (IDOR, CWE-639).
+			counts, vErr := loader(ctx, tagFileID, ds.tenant)
 			if vErr != nil {
 				return nil, common.CodeServerError,
-					fmt.Errorf("load tag vocabulary for dataset %q: %w", datasetID, vErr)
+					fmt.Errorf("load tag vocabulary for dataset %q: %w", ds.id, vErr)
 			}
 			for tag, c := range counts {
 				merged[tag] += c
