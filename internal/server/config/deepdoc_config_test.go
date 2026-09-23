@@ -26,38 +26,38 @@ import (
 )
 
 // TestParseIngestorConfigDeepDocDefaultsToOne pins the default inference
-// concurrency when the ingestor.deepdoc key is absent.
+// concurrency when the ingestor.inference_concurrency key is absent.
 func TestParseIngestorConfigDeepDocDefaultsToOne(t *testing.T) {
 	v := viper.New()
 	c := &Config{}
 	if err := c.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 1 {
+	if got := c.ingestor.deepDocInferenceConcurrency; got != 1 {
 		t.Fatalf("default inference concurrency = %d, want 1", got)
 	}
 }
 
 // TestParseIngestorConfigReadsDeepDocYAML pins that the
-// ingestor.deepdoc.inference_concurrency key is honoured when present.
+// ingestor.inference_concurrency key is honoured when present.
 func TestParseIngestorConfigReadsDeepDocYAML(t *testing.T) {
 	v := viper.New()
 	v.Set("ingestor", map[string]any{
-		"deepdoc": map[string]any{"inference_concurrency": 6},
+		"inference_concurrency": 6,
 	})
 	c := &Config{}
 	if err := c.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 6 {
+	if got := c.ingestor.deepDocInferenceConcurrency; got != 6 {
 		t.Fatalf("inference concurrency = %d, want 6", got)
 	}
 }
 
 // TestParseIngestorConfigDeepDocIgnoresEnvVar pins the provenance of the env
-// override: ParseIngestorConfig reads ONLY the ingestor.deepdoc YAML key and
-// does not apply RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY. The env override is
-// resolved separately by Config.ResolveDeepDocInferenceConcurrency.
+// override: ParseIngestorConfig reads ONLY the ingestor.inference_concurrency
+// YAML key and does not apply RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY. The env
+// override is resolved separately by Config.ResolveDeepDocInferenceConcurrency.
 func TestParseIngestorConfigDeepDocIgnoresEnvVar(t *testing.T) {
 	t.Setenv(common.EnvDeepDocInferenceConcurrency, "9")
 
@@ -66,35 +66,35 @@ func TestParseIngestorConfigDeepDocIgnoresEnvVar(t *testing.T) {
 	if err := c.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 1 {
+	if got := c.ingestor.deepDocInferenceConcurrency; got != 1 {
 		t.Fatalf("inference concurrency with only env set = %d, want default 1 (env applied later)", got)
 	}
 }
 
 // TestParseIngestorConfigDeepDocIgnoresAutoEnvVar pins that the auto-derived
-// (undocumented) env var RAGFLOW_INGESTOR_DEEPDOC_INFERENCE_CONCURRENCY does
-// NOT override the YAML ingestor.deepdoc.inference_concurrency. viper's Sub()
-// inherits AutomaticEnv, so a plain GetInt would consult that variable before
-// the file value. The config parse must be file-only; env precedence is
-// applied later by ResolveDeepDocInferenceConcurrency via os.Getenv. This test
-// uses the production Viper settings (env prefix + replacer + AutomaticEnv) to
-// reproduce the real precedence resolution path.
+// (undocumented) env var RAGFLOW_INGESTOR_INFERENCE_CONCURRENCY does NOT
+// override the YAML ingestor.inference_concurrency. viper's Sub() inherits
+// AutomaticEnv, so a plain GetInt would consult that variable before the file
+// value. The config parse must be file-only; env precedence is applied later by
+// ResolveDeepDocInferenceConcurrency via os.Getenv. This test uses the
+// production Viper settings (env prefix + replacer + AutomaticEnv) to reproduce
+// the real precedence resolution path.
 func TestParseIngestorConfigDeepDocIgnoresAutoEnvVar(t *testing.T) {
-	t.Setenv("RAGFLOW_INGESTOR_DEEPDOC_INFERENCE_CONCURRENCY", "bad")
+	t.Setenv("RAGFLOW_INGESTOR_INFERENCE_CONCURRENCY", "bad")
 
 	v := viper.New()
 	v.SetEnvPrefix("RAGFLOW")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 	v.Set("ingestor", map[string]any{
-		"deepdoc": map[string]any{"inference_concurrency": 6},
+		"inference_concurrency": 6,
 	})
 
 	c := &Config{}
 	if err := c.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetIngestorConfig().DeepDoc.InferenceConcurrency; got != 6 {
+	if got := c.ingestor.deepDocInferenceConcurrency; got != 6 {
 		t.Fatalf("inference concurrency = %d, want 6 (auto-env must not override YAML)", got)
 	}
 }
@@ -136,8 +136,8 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 			if err := c.ParseIngestorConfig(viper.New()); err != nil {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
-			c.ingestor.DeepDoc.InferenceConcurrency = tc.configured
-			c.ingestor.DeepDoc.InferenceConcurrencySet = tc.configuredSet
+			c.ingestor.deepDocInferenceConcurrency = tc.configured
+			c.ingestor.deepDocInferenceConcurrencySet = tc.configuredSet
 			got, explicit, err := c.ResolveDeepDocInferenceConcurrency(tc.cli)
 			if tc.wantErr {
 				if err == nil {
@@ -198,8 +198,8 @@ func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
 			if err := c.ParseIngestorConfig(viper.New()); err != nil {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
-			c.ingestor.DeepDoc.InferenceCPUCores = tc.configured
-			c.ingestor.DeepDoc.InferenceCPUCoresSet = tc.configuredSet
+			c.ingestor.deepDocInferenceCPUCores = tc.configured
+			c.ingestor.deepDocInferenceCPUCoresSet = tc.configuredSet
 			got, explicit, err := c.ResolveDeepDocInferenceCPUCores(tc.cli)
 			if tc.wantErr {
 				if err == nil {
@@ -222,12 +222,13 @@ func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
 }
 
 // TestParseIngestorConfigDeepDocRejectsNonInteger pins the fail-fast contract:
-// a present-but-non-integer ingestor.deepdoc value must surface as an error
-// rather than being silently coerced to 0 by viper/cast.
+// a present-but-non-integer ingestor.inference_concurrency / inference_cpu_cores
+// value must surface as an error rather than being silently coerced to 0 by
+// viper/cast.
 func TestParseIngestorConfigDeepDocRejectsNonInteger(t *testing.T) {
 	v := viper.New()
 	v.Set("ingestor", map[string]any{
-		"deepdoc": map[string]any{"inference_concurrency": "four"},
+		"inference_concurrency": "four",
 	})
 	c := &Config{}
 	if err := c.ParseIngestorConfig(v); err == nil {
@@ -236,7 +237,7 @@ func TestParseIngestorConfigDeepDocRejectsNonInteger(t *testing.T) {
 
 	v2 := viper.New()
 	v2.Set("ingestor", map[string]any{
-		"deepdoc": map[string]any{"inference_cpu_cores": "alsobad"},
+		"inference_cpu_cores": "alsobad",
 	})
 	c2 := &Config{}
 	if err := c2.ParseIngestorConfig(v2); err == nil {
@@ -245,21 +246,21 @@ func TestParseIngestorConfigDeepDocRejectsNonInteger(t *testing.T) {
 }
 
 // TestParseIngestorConfigReadsDeepDocCPUCoresYAML pins that the
-// ingestor.deepdoc.inference_cpu_cores key is honoured when present.
+// ingestor.inference_cpu_cores key is honoured when present.
 func TestParseIngestorConfigReadsDeepDocCPUCoresYAML(t *testing.T) {
 	v := viper.New()
 	v.Set("ingestor", map[string]any{
-		"deepdoc": map[string]any{"inference_cpu_cores": 8},
+		"inference_cpu_cores": 8,
 	})
 	c := &Config{}
 	if err := c.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := c.GetIngestorConfig().DeepDoc.InferenceCPUCores; got != 8 {
+	if got := c.ingestor.deepDocInferenceCPUCores; got != 8 {
 		t.Fatalf("inference cpu cores = %d, want 8", got)
 	}
-	if !c.GetIngestorConfig().DeepDoc.InferenceCPUCoresSet {
-		t.Fatal("InferenceCPUCoresSet should be true when key present")
+	if !c.ingestor.deepDocInferenceCPUCoresSet {
+		t.Fatal("deepDocInferenceCPUCoresSet should be true when key present")
 	}
 }
 

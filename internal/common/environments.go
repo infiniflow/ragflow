@@ -261,12 +261,12 @@ const (
 	// Runs may be in flight at once. Each Run opens with max(1, N/K) intra-op
 	// threads (N = EnvDeepDocInferenceCPUCores budget, K = this value), so the
 	// total cores inference may occupy is at most N. It overrides the
-	// ingestor.deepdoc.inference_concurrency config key and is itself overridden by the
+	// ingestor.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
 	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
 	// in-process inference (0 = all cores). It overrides the
-	// ingestor.deepdoc.inference_cpu_cores config key and is itself overridden by the
+	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
