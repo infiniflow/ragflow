@@ -28,7 +28,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/tokenizer"
@@ -116,7 +118,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	if err != nil {
 		// a failed composition degrades to the raw evidence
 		// (capped at 4000, unlike the composed draft's 6000).
-		_LOG.Printf("[Draft] fallback composition failed; using snippet text: %v", err)
+		common.Warn("draft: fallback composition failed, using snippet text", zap.Error(err))
 		return runtime.TruncateRunes(evidence, draftFallbackChars)
 	}
 	answer := ""
@@ -530,8 +532,8 @@ func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
 			// Said out loud, because this path is otherwise INVISIBLE: the chat pipeline's citation
 			// line reports the markers the model wrote, and on this path it wrote none — so without
 			// this line the run looks like (and used to be) an answer with zero citations.
-			_LOG.Printf("[Citations] no [ID:n] handle resolved; %d id(s) the answer named were "+
-				"resolved against the pool instead (the answer had no handle to write).", len(loose))
+			common.Info("citations: no [ID:n] handle resolved, resolving named ids against the pool instead",
+				zap.Int("ids", len(loose)))
 			ans = looseAns
 			kb.CiteChunkIDs = loose
 		} else {

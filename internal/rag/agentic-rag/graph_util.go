@@ -28,6 +28,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 )
 
@@ -81,8 +83,8 @@ func queryToTerms(q string) []string {
 // comment).
 func asSliceOfAny(v any) []any {
 	if isPoisoned(v) {
-		_LOG.Printf("[StateGuard] dropping poisoned value of kind %s; treating as empty",
-			reflect.ValueOf(v).Kind())
+		common.Warn("state guard: dropping poisoned value, treating as empty",
+			zap.String("kind", reflect.ValueOf(v).Kind().String()))
 		return nil
 	}
 	switch x := v.(type) {

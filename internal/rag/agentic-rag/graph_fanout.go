@@ -25,7 +25,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 )
 
@@ -291,7 +293,7 @@ func ExtractFanoutFilters(ctx context.Context, deps RAGTools, fanouts []string) 
 		*schema.UserMessage("Sub-questions:\n" + strings.Join(listed, "\n")),
 	}, nil)
 	if err != nil {
-		_LOG.Printf("[Prefetch] metadata filter extraction failed; skipping the metadata channel: %v", err)
+		common.Warn("prefetch: metadata filter extraction failed, skipping the metadata channel", zap.Error(err))
 		return nil
 	}
 	filterSets := parseFanoutFilters(reply.Content, queries, allowed)
@@ -312,10 +314,10 @@ func ExtractFanoutFilters(ctx context.Context, deps RAGTools, fanouts []string) 
 		// value; a non-empty reply here means the guards rejected something.) Newlines are
 		// flattened so the reply stays one log line.
 		flat := strings.ReplaceAll(runtime.TruncateRunes(reply.Content, 300), "\n", " ")
-		_LOG.Printf("[Prefetch] metadata channel produced no usable condition; reply was: %s", flat)
+		common.Warn("prefetch: metadata channel produced no usable condition", zap.String("reply", flat))
 		return nil
 	}
-	_LOG.Printf("[Prefetch] metadata filters: %v", out)
+	common.Info("prefetch: metadata filters", zap.Any("filters", out))
 	return out
 }
 
@@ -430,7 +432,7 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		if _, _, ok := fanoutMetadataVocabulary(deps); ok {
 			filtersByQuery = ExtractFanoutFilters(ctx, deps, qs)
 		} else {
-			_LOG.Printf("[Prefetch] metadata channel skipped — the dataset offers no filterable metadata field")
+			common.Info("prefetch: metadata channel skipped, the dataset offers no filterable metadata field")
 		}
 	}
 	pairs := make([]fanoutPair, len(qs))

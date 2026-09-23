@@ -22,6 +22,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/agentic-rag/slots"
 )
@@ -188,7 +190,7 @@ func PrefillSlotsFromEvidence(slotTable *runtime.State, kb *runtime.Kbinfos) int
 func BuildSlotTable(ctx context.Context, deps runtime.SessionDeps, question string, fanouts []string, deadlineLeft float64) (runtime.State, []string) {
 	root, firstQueries, err := buildSlotTableFrom(ctx, deps, question, fanouts, deadlineLeft)
 	if err != nil {
-		_LOG.Printf("[SlotTable] initialize_state failed; building from fanouts: %v", err)
+		common.Warn("slot table: initialize_state failed, building from fanouts", zap.Error(err))
 		// _build_slot_table — the exception path keeps the FULL fan-out list as
 		// first_queries; the [:3] cap below belongs to the empty-root path only.
 		if len(fanouts) > 0 {
@@ -221,7 +223,7 @@ func BuildSlotTable(ctx context.Context, deps runtime.SessionDeps, question stri
 			}
 		}
 	}
-	_LOG.Printf("[SlotTable] built %d slot(s): %s", len(root.State), root.Brief())
+	common.Info("slot table: built", zap.Int("slots", len(root.State)), zap.String("brief", root.Brief()))
 	if len(firstQueries) == 0 {
 		firstQueries = []string{question}
 	}
@@ -257,7 +259,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	}
 	prefillN := PrefillSlotsFromEvidence(&slotTable, kb)
 	if prefillN > 0 {
-		_LOG.Printf("[SlotResearch] evidence prefill answered %d slot(s) with no session", prefillN)
+		common.Info("slot research: evidence prefill answered slots with no session", zap.Int("slots", prefillN))
 		unresolved = slotTable.Unresolved()
 	}
 
@@ -331,8 +333,8 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 			"\nThat is what THIS round exists for: probe it directly."
 	}
 	dirs := []direction{{slotID: -1, text: dirText}}
-	_LOG.Printf("[SlotResearch] one session this round (clue(s)=%d, review gap(s)=%d, open part=%t).",
-		len(st.Plan), len(gapTexts), strings.TrimSpace(st.SessionUnresolved) != "")
+	common.Info("slot research: one session this round", zap.Int("clues", len(st.Plan)),
+		zap.Int("gaps", len(gapTexts)), zap.Bool("open_part", strings.TrimSpace(st.SessionUnresolved) != ""))
 
 	// The session's own tool cache and query list. They used to be SHARED, because a round ran
 	// several sessions at once and a duplicate retrieval was worth serving once; with one
@@ -458,7 +460,7 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 		for sid, ev := range sessionEvidence {
 			bounds[sid] = len(ev.EvidenceIDs)
 		}
-		_LOG.Printf("[SlotResearch] slot evidence bound: %v", bounds)
+		common.Info("slot research: slot evidence bound", zap.Any("bounds", bounds))
 	}
 
 	unresolvedOut := make([]map[string]any, 0, len(unresolved))
@@ -476,9 +478,9 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps runti
 	}
 
 	record := RenderSlotRecord(slotTable, collected)
-	_LOG.Printf("[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%v",
-		countFilled(slotTable), len(unresolvedOut), collected != "")
-	_LOG.Printf("[SlotResearch] slot table after round:\n%s", record)
+	common.Info("slot research: round done", zap.Int("filled", countFilled(slotTable)),
+		zap.Int("unresolved", len(unresolvedOut)), zap.Bool("collected_answer", collected != ""))
+	common.Info("slot research: slot table after round", zap.String("record", record))
 
 	return &SlotResearchResult{
 		SlotTable:       slotTable,
@@ -537,8 +539,9 @@ func logSessionPatch(directionSlot int, before, after, patch runtime.State) {
 				result = "merged (the union kept both; the slot's value is not this candidate verbatim)"
 			}
 		}
-		_LOG.Printf("[SlotResearch] patch (direction slot %d) → slot %d: %q (%.2f); base was %s; result: %s",
-			directionSlot, pv.ID, runtime.TruncateRunes(*pv.Candidate, 120), strengthOf(pv), base, result)
+		common.Info("slot research: patch", zap.Int("direction_slot", directionSlot), zap.Int("slot", pv.ID),
+			zap.String("candidate", runtime.TruncateRunes(*pv.Candidate, 120)), zap.Float64("strength", strengthOf(pv)),
+			zap.String("base", base), zap.String("result", result))
 	}
 }
 

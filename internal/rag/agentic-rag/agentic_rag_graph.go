@@ -45,6 +45,7 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/prompts"
@@ -1133,33 +1134,35 @@ func routeResearch(st *AgenticState, maxRounds int) agenticNode {
 	}
 
 	if ans != "" && open == "" {
-		_LOG.Printf("[Routing] closing out: the session wrote an answer and named no open part (%d rune(s)).",
-			utf8.RuneCountInString(ans))
+		common.Info("routing: closing out, the session wrote an answer and named no open part",
+			zap.Int("runes", utf8.RuneCountInString(ans)))
 		return nodeFormalizeAnswer
 	}
 	if ans == "" && open == "" && !grew {
-		_LOG.Printf("[Routing] closing out: the round wrote no answer, named no open part and added no passage (+%d chunks).",
-			st.LastRoundNew)
+		common.Info("routing: closing out, the round wrote no answer, named no open part and added no passage",
+			zap.Int("chunks", st.LastRoundNew))
 		return nodeFormalizeAnswer
 	}
 	if !grew && st.ZeroGrowthRounds > 1 {
 		// The one free hop the previous round was given did not turn into evidence either.
-		_LOG.Printf("[Routing] closing out: %d consecutive rounds added no passage (open part=%t).",
-			st.ZeroGrowthRounds, open != "")
+		common.Info("routing: closing out, consecutive rounds added no passage",
+			zap.Int("zero_growth_rounds", st.ZeroGrowthRounds), zap.Bool("open_part", open != ""))
 		return nodeFormalizeAnswer
 	}
 	if st.SearchRounds >= maxRounds {
-		_LOG.Printf("[Routing] closing out: the round budget is spent (%d/%d); open part=%t, +%d chunks this round.",
-			st.SearchRounds, maxRounds, open != "", st.LastRoundNew)
+		common.Info("routing: closing out, the round budget is spent", zap.Int("rounds", st.SearchRounds),
+			zap.Int("max_rounds", maxRounds), zap.Bool("open_part", open != ""), zap.Int("chunks", st.LastRoundNew))
 		return nodeFormalizeAnswer
 	}
 	if !canOpenRound(st.RemainingS()) {
-		_LOG.Printf("[Routing] closing out: only %.0fs of the question left, and the finale keeps %.0fs of it (a round needs %.0fs) — open part=%t.",
-			st.RemainingS(), finaleShareS(st.RemainingS()), MinRoundS, open != "")
+		common.Info("routing: closing out, not enough clock left for another round",
+			zap.Float64("left_s", st.RemainingS()), zap.Float64("finale_share_s", finaleShareS(st.RemainingS())),
+			zap.Float64("min_round_s", MinRoundS), zap.Bool("open_part", open != ""))
 		return nodeFormalizeAnswer
 	}
-	_LOG.Printf("[Routing] another round: open part=%q, +%d chunks this round, rounds=%d/%d, research room %.0fs of %.0fs left.",
-		runtime.TruncateRunes(open, 160), st.LastRoundNew, st.SearchRounds, maxRounds, researchRoomS(st.RemainingS()), st.RemainingS())
+	common.Info("routing: another round", zap.String("open_part", runtime.TruncateRunes(open, 160)),
+		zap.Int("chunks", st.LastRoundNew), zap.Int("rounds", st.SearchRounds), zap.Int("max_rounds", maxRounds),
+		zap.Float64("room_s", researchRoomS(st.RemainingS())), zap.Float64("left_s", st.RemainingS()))
 	return nodeRagAgentLoop
 }
 
@@ -2126,9 +2129,9 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 		// The numbers behind the evidence, in the log: a selection that quietly renders 176 blocks instead
 		// of the constant 30 is a run whose answers will not cite (see the evidence constants).
 		carried, neglected, candidates := kb.EvidenceSelection()
-		_LOG.Printf("[Formalize][evidence] blocks=%d/%d (offered %d, near-duplicates dropped %d) "+
-			"chunk_runes=%d budget=%d", len(blocks), carried, candidates, neglected,
-			answerEvidenceChunkRunes, maxTokens)
+		common.Info("formalize evidence: blocks", zap.Int("blocks", len(blocks)), zap.Int("carried", carried),
+			zap.Int("offered", candidates), zap.Int("near_duplicates_dropped", neglected),
+			zap.Int("chunk_runes", answerEvidenceChunkRunes), zap.Int("budget", maxTokens))
 	}
 	evidence := strings.Join(blocks, "\n")
 

@@ -40,8 +40,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -339,7 +341,8 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// self-contained question risks silently changing its meaning), and extract only the
 	// search keywords.
 	if !isMultiTurn(messages) {
-		_LOG.Printf("[Formalize] Single-turn self-contained question — kept verbatim (no rewrite): %s", runtime.TruncateRunes(lastUser, 120))
+		common.Info("formalize: single-turn self-contained question kept verbatim (no rewrite)",
+			zap.String("question", runtime.TruncateRunes(lastUser, 120)))
 		_, kw := runtime.ExtractWeightedKeywords(ctx, deps.Model, lastUser)
 		return lastUser, kw
 	}
@@ -357,7 +360,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 		*schema.UserMessage("Conversation:\n" + transcript + "\n\nOutput JSON:"),
 	}, maxLength)
 	if fitErr != "" {
-		_LOG.Printf("[Formalize] prompt fitting failed: %s", fitErr)
+		common.Warn("formalize: prompt fitting failed", zap.Any("error", fitErr))
 		return lastUser, ""
 	}
 	system := formalizePrompt
@@ -373,7 +376,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// async_chat(system, history, {"temperature": 0.1}).
 	reply, err := modelWithTemperature(deps.Model, formalizeTemperature).Complete(callCtx, msgs, nil)
 	if err != nil {
-		_LOG.Printf("[Formalize] failed; keeping the raw question: %v", err)
+		common.Warn("formalize: failed, keeping the raw question", zap.Error(err))
 		return lastUser, ""
 	}
 
@@ -1469,8 +1472,8 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		if log == nil {
 			log = _LOG
 		}
-		log.Printf("[Agentic RAG] Using the answer the research session wrote (%d character(s)); %d passage(s) in the citation registry.",
-			utf8.RuneCountInString(resp.Answer), len(kb.CiteChunkIDs))
+		common.Info("agentic rag: using the answer the research session wrote",
+			zap.Int("chars", utf8.RuneCountInString(resp.Answer)), zap.Int("passages", len(kb.CiteChunkIDs)))
 		return
 	}
 	if why := sessionAnswerBlocked(kb, false); why != "" {
@@ -1480,7 +1483,7 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		if log == nil {
 			log = _LOG
 		}
-		log.Printf("[Agentic RAG] the session's answer will not stand (%s); composing instead.", why)
+		common.Info("agentic rag: the session's answer will not stand, composing instead", zap.String("why", why))
 	}
 
 	// Stream the answer when the model and the caller both support it, so the

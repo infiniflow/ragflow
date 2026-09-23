@@ -24,6 +24,9 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // Test doubles
@@ -531,10 +534,10 @@ func TestRunSlotResearchPassLedgerRecordsSessionHint(t *testing.T) {
 // reports how many passages each slot's session bound, so a slot whose session
 // retrieved nothing is visible in the run log.
 func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
-	var buf bytes.Buffer
-	orig := _LOG
-	_LOG = log.New(&buf, "", 0)
-	defer func() { _LOG = orig }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	orig := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = orig })
 
 	st := &AgenticState{
 		Question: "who opened it?",
@@ -555,8 +558,8 @@ func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
 	if res := RunSlotResearchPass(context.Background(), context.Background(), deps, "who opened it?", st, 60); res == nil {
 		t.Fatal("RunSlotResearchPass returned nil")
 	}
-	if !strings.Contains(buf.String(), "slot evidence bound") {
-		t.Errorf("missing the per-slot evidence report; log:\n%s", buf.String())
+	if logs.FilterMessage("slot research: slot evidence bound").Len() == 0 {
+		t.Errorf("missing the per-slot evidence report; log: %v", logs.All())
 	}
 }
 
@@ -2920,10 +2923,10 @@ func TestAnswerPromptLabelsTheRecordAndForbidsQuoting(t *testing.T) {
 // The log line is the only place that fact can exist, so it has to name both the
 // claim and the base it lost to.
 func TestSessionPatchLogNamesBothSidesOfTheTournament(t *testing.T) {
-	var buf bytes.Buffer
-	orig := _LOG
-	_LOG = log.New(&buf, "", 0)
-	defer func() { _LOG = orig }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	orig := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = orig })
 
 	strong, weak := 0.97, 0.85
 	base := runtime.NewState([]runtime.Variable{
@@ -2935,21 +2938,27 @@ func TestSessionPatchLogNamesBothSidesOfTheTournament(t *testing.T) {
 
 	// The weaker claim loses: the slot still holds the base afterwards.
 	logSessionPatch(2, base, base, patch)
-	got := buf.String()
-	for _, want := range []string{"华雄、颜良、庞德", "0.85", "孔秀、孟坦", "0.97", "NOT ADOPTED"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("log %q missing %q", got, want)
-		}
+	entries := logs.FilterMessage("slot research: patch").All()
+	if len(entries) != 1 {
+		t.Fatalf("patch log entries = %d, want 1", len(entries))
+	}
+	got := entries[0].ContextMap()
+	if got["candidate"] != "华雄、颜良、庞德" || got["strength"] != 0.85 ||
+		!strings.Contains(got["base"].(string), "孔秀、孟坦") || !strings.Contains(got["base"].(string), "0.97") ||
+		got["result"] != "NOT ADOPTED (the base stands)" {
+		t.Errorf("patch log = %v, want the weaker claim named against the base it lost to", got)
 	}
 
 	// Adopted: the slot holds the patch's candidate afterwards.
-	buf.Reset()
+	core2, logs2 := observer.New(zapcore.DebugLevel)
+	common.Logger = zap.New(core2)
 	merged := runtime.NewState([]runtime.Variable{
 		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
 	}, 1, nil)
 	logSessionPatch(2, base, merged, patch)
-	if got := buf.String(); !strings.Contains(got, "adopted") || strings.Contains(got, "NOT ADOPTED") {
-		t.Errorf("log %q, want the adopted verdict", got)
+	adopted := logs2.FilterMessage("slot research: patch").All()
+	if len(adopted) != 1 || adopted[0].ContextMap()["result"] != "adopted" {
+		t.Errorf("patch log = %v, want the adopted verdict", adopted)
 	}
 }
 
