@@ -89,4 +89,11 @@ def html_to_markdown(html: str, **options: Any) -> str:
 
     `options` are markdownify's own, so this is a drop-in for `markdownify(html, ...)`.
     """
+    # A Markdown table cannot start with a body row, so markdownify puts an empty
+    # header above a table that has no <th>, and the column names end up in the
+    # first body row. Word writes exactly such a table -- mammoth emits <thead>
+    # only for a row the author marked as repeating -- and the header is what
+    # gives every value in the table its meaning.
+    options.setdefault("table_infer_header", True)
+
     return _WhitespacePreservingConverter(**options).convert(html)
