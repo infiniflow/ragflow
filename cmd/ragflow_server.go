@@ -1121,7 +1121,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		datasetsService,
-		modelProviderService,
+		modelSolver,
 		metadataService,
 		retrievalService,
 		documentDAO,

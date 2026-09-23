@@ -3460,33 +3460,6 @@ func (m *ModelProviderService) ParseFile(ctx context.Context, providerName, inst
 	return response, common.CodeSuccess, nil
 }
 
-// GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
-func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, compositeModelName)
-	if err != nil {
-		return nil, err
-	}
-	return modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
-}
-
-// GetChatModel  returns a ChatModel wrapper for the given tenant
-func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, compositeModelName)
-	if err != nil {
-		return nil, err
-	}
-	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig), nil
-}
-
-// GetRerankModel returns a RerankModel wrapper for the given tenant
-func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
-	if err != nil {
-		return nil, err
-	}
-	return modelModule.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
-}
-
 type AddModelRequest struct {
 	ProviderName string                 `json:"provider_name"`
 	InstanceName string                 `json:"instance_name"`

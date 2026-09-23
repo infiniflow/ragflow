@@ -47,10 +47,10 @@ type KBServiceIface interface {
 	Accessible(ctx context.Context, kbID, userID string) bool
 }
 
-// ModelServiceIface abstracts ModelProviderService for the Dify handler.
-type ModelServiceIface interface {
-	GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error)
+// ModelResolver abstracts model configuration resolution for the Dify handler.
+type ModelResolver interface {
+	ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*service.ModelTarget, error)
+	ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*service.ModelTarget, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -131,12 +131,12 @@ type difyRecord struct {
 
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
 type DifyRetrievalHandler struct {
-	kbSvc        KBServiceIface
-	modelSvc     ModelServiceIface
-	metadataSvc  MetadataServiceIface
-	retrievalSvc RetrievalServiceIface
-	docDAO       DocumentDAOIface
-	docEngine    engine.DocEngine
+	kbSvc         KBServiceIface
+	modelResolver ModelResolver
+	metadataSvc   MetadataServiceIface
+	retrievalSvc  RetrievalServiceIface
+	docDAO        DocumentDAOIface
+	docEngine     engine.DocEngine
 }
 
 // NewDifyRetrievalHandler creates a new DifyRetrievalHandler.
@@ -144,19 +144,19 @@ type DifyRetrievalHandler struct {
 // a pipeline that depends on per-request model configuration.
 func NewDifyRetrievalHandler(
 	kbSvc KBServiceIface,
-	modelSvc ModelServiceIface,
+	modelResolver ModelResolver,
 	metadataSvc MetadataServiceIface,
 	retrievalSvc RetrievalServiceIface,
 	docDAO DocumentDAOIface,
 	docEngine engine.DocEngine,
 ) *DifyRetrievalHandler {
 	return &DifyRetrievalHandler{
-		kbSvc:        kbSvc,
-		modelSvc:     modelSvc,
-		metadataSvc:  metadataSvc,
-		retrievalSvc: retrievalSvc,
-		docDAO:       docDAO,
-		docEngine:    docEngine,
+		kbSvc:         kbSvc,
+		modelResolver: modelResolver,
+		metadataSvc:   metadataSvc,
+		retrievalSvc:  retrievalSvc,
+		docDAO:        docDAO,
+		docEngine:     docEngine,
 	}
 }
 
@@ -235,11 +235,12 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	// Get embedding model
-	embModel, err := h.modelSvc.GetEmbeddingModel(ctx, kb.TenantID, kb.EmbdID)
+	target, err := h.modelResolver.ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, kb.EmbdID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
+	embModel := modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	// Metadata filter
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
@@ -291,10 +292,11 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// KG retrieval (optional)
 	if req.UseKG {
-		chatModel, kgErr := h.modelSvc.GetChatModel(ctx, kb.TenantID, "")
+		target, kgErr := h.modelResolver.ResolveDefaultModelConfig(ctx, kb.TenantID, entity.ModelTypeChat)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
-		} else if chatModel != nil {
+		} else if target != nil {
+			chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 			kgPipeline := graph.NewPipeline(
 				h.docEngine,
 				[]string{req.KnowledgeID},

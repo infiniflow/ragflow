@@ -658,9 +658,8 @@ const kcChatAttemptTimeout = 20 * time.Minute
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second
 
-// kcEmbedder adapts service.ModelProviderService.GetEmbeddingModel to the
-// knowledge_compiler Embedder seam. Vectors are returned as []float32 to match
-// the component's product schema.
+// kcEmbedder adapts model resolution to the knowledge_compiler Embedder seam.
+// Vectors are returned as []float32 to match the component's product schema.
 type kcEmbedder struct {
 	svc      *service.ModelProviderService
 	solver   *service.ModelSolver
@@ -744,14 +743,14 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 // loudly instead of silently producing empty vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
 	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
+		target, err := e.solver.ResolveModelConfig(ctx, e.tenantID, entity.ModelTypeEmbedding, embdID)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 		}
-		if mdl == nil || mdl.ModelDriver == nil {
+		if target == nil || target.Driver == nil || target.ModelName == "" {
 			return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
 		}
-		return mdl, nil
+		return models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
 	}
 	target, err := e.solver.ResolveDefaultModelConfig(ctx, e.tenantID, entity.ModelTypeEmbedding)
 	if err != nil {
@@ -760,7 +759,7 @@ func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, 
 	if target == nil || target.Driver == nil || target.ModelName == "" {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
 	}
-	return &models.EmbeddingModel{ModelDriver: target.Driver, ModelName: &target.ModelName, APIConfig: target.APIConfig}, nil
+	return models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
 }
 
 func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }

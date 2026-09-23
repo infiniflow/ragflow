@@ -31,7 +31,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
@@ -62,24 +61,23 @@ func (m *mockKBService) Accessible(ctx context.Context, kbID, userID string) boo
 	return true
 }
 
-type mockModelService struct {
-	ModelServiceIface
-	getEmbeddingFn func(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	getChatModelFn func(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error)
+type mockModelResolver struct {
+	resolveModelConfigFn        func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*service.ModelTarget, error)
+	resolveDefaultModelConfigFn func(ctx context.Context, tenantID string, modelType entity.ModelType) (*service.ModelTarget, error)
 }
 
-func (m *mockModelService) GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error) {
-	if m.getEmbeddingFn != nil {
-		return m.getEmbeddingFn(ctx, tenantID, embdID)
+func (m *mockModelResolver) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*service.ModelTarget, error) {
+	if m.resolveModelConfigFn != nil {
+		return m.resolveModelConfigFn(ctx, tenantID, modelType, modelRef)
 	}
-	return &modelModule.EmbeddingModel{}, nil
+	return &service.ModelTarget{ModelName: "test-model"}, nil
 }
 
-func (m *mockModelService) GetChatModel(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error) {
-	if m.getChatModelFn != nil {
-		return m.getChatModelFn(ctx, tenantID, llmID)
+func (m *mockModelResolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*service.ModelTarget, error) {
+	if m.resolveDefaultModelConfigFn != nil {
+		return m.resolveDefaultModelConfigFn(ctx, tenantID, modelType)
 	}
-	return &modelModule.ChatModel{}, nil
+	return &service.ModelTarget{ModelName: "test-model"}, nil
 }
 
 type mockMetadataService struct {
@@ -163,12 +161,12 @@ func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (
 
 func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 	h := &DifyRetrievalHandler{
-		kbSvc:        &mockKBService{},
-		modelSvc:     &mockModelService{},
-		metadataSvc:  &mockMetadataService{},
-		retrievalSvc: &mockRetrievalService{},
-		docDAO:       &mockDocDAO{},
-		docEngine:    &mockDocEngine{},
+		kbSvc:         &mockKBService{},
+		modelResolver: &mockModelResolver{},
+		metadataSvc:   &mockMetadataService{},
+		retrievalSvc:  &mockRetrievalService{},
+		docDAO:        &mockDocDAO{},
+		docEngine:     &mockDocEngine{},
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -184,12 +182,12 @@ func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 
 func setupDifyTestNoAuth() (*DifyRetrievalHandler, *gin.Engine) {
 	h := &DifyRetrievalHandler{
-		kbSvc:        &mockKBService{},
-		modelSvc:     &mockModelService{},
-		metadataSvc:  &mockMetadataService{},
-		retrievalSvc: &mockRetrievalService{},
-		docDAO:       &mockDocDAO{},
-		docEngine:    &mockDocEngine{},
+		kbSvc:         &mockKBService{},
+		modelResolver: &mockModelResolver{},
+		metadataSvc:   &mockMetadataService{},
+		retrievalSvc:  &mockRetrievalService{},
+		docDAO:        &mockDocDAO{},
+		docEngine:     &mockDocEngine{},
 	}
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
