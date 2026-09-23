@@ -1360,6 +1360,65 @@ func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64
 	}
 }
 
+func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"llm_id":          "kb-llm",
+		"enable_metadata": true,
+		"metadata":        map[string]interface{}{"author": "team"},
+	}).Error; err != nil {
+		t.Fatalf("set kb parser_config: %v", err)
+	}
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	// The document keeps its own parser_config keys; ApplyKB must merge over it.
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"location":      "loc-1",
+		"parser_config": entity.JSONMap{"llm_id": "doc-llm", "chunk_token_num": 128},
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{ApplyKB: true}); err != nil {
+		t.Fatalf("StartParseDocuments: %v", err)
+	}
+
+	got, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload doc: %v", err)
+	}
+	if got.ParserConfig["llm_id"] != "kb-llm" {
+		t.Fatalf("llm_id = %v, want kb-llm", got.ParserConfig["llm_id"])
+	}
+	if got.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("enable_metadata = %v, want true", got.ParserConfig["enable_metadata"])
+	}
+	meta, ok := got.ParserConfig["metadata"].(map[string]interface{})
+	if !ok || meta["author"] != "team" {
+		t.Fatalf("metadata = %#v, want author=team", got.ParserConfig["metadata"])
+	}
+	// A document-only key must survive the merge.
+	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
+		t.Fatalf("chunk_token_num dropped from parser_config: %#v", got.ParserConfig)
+	}
+}
+
 func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
