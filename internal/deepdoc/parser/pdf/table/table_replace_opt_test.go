@@ -42,7 +42,10 @@ func referenceBuildReplacementsAfterMerge(boxes []pdf.TextBox, tables []pdf.Tabl
 }
 
 // referenceMarkNoMergeTables mirrors MarkNoMergeTables with the full cross
-// product, so we can assert the indexed version mutates NoMerge identically.
+// product, so we can assert the indexed version mutates NoMerge identically. It
+// faithfully reproduces the original pre-index semantics: tables are scanned in
+// ascending index order and lastTableTI keeps the HIGHEST-indexed matching
+// table (there is no early break on the first match).
 func referenceMarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
 	var lastTableTI int = -1
 	for i := range boxes {
@@ -56,9 +59,6 @@ func referenceMarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
 						matched = true
 						break
 					}
-				}
-				if matched {
-					break
 				}
 			}
 			if !matched {
@@ -253,5 +253,50 @@ func TestMarkNoMergeTablesCrossPageSpanningTable(t *testing.T) {
 	}
 	if tables[1].NoMerge {
 		t.Errorf("page-6 table must NOT be marked NoMerge: page-6 box did not match it")
+	}
+}
+
+// TestMarkNoMergeTablesNoPagePrecedence locks the original semantics of
+// MarkNoMergeTables: when a single table-layout box overlaps several tables, the
+// caption/title that immediately follows must mark the HIGHEST-indexed matching
+// table as NoMerge. This must hold even when one of the overlapping tables is
+// page-agnostic (its Position carries no PageNumbers) and sits at a LOWER index
+// than a page-specific table. The old (page-blind) candidate ordering appended
+// the page-agnostic positions last and overwrote lastTableTI on every match, so
+// a low-index page-agnostic table could wrongly win and receive the NoMerge mark
+// instead of the higher-index page-specific table.
+func TestMarkNoMergeTablesNoPagePrecedence(t *testing.T) {
+	// Lower-index table, page-agnostic: its position carries no PageNumbers, so
+	// it matches any box that overlaps it in X/Y regardless of page.
+	noPageTable := pdf.TableItem{Positions: []pdf.Position{
+		{Left: 10, Right: 100, Top: 10, Bottom: 50},
+	}}
+	// Higher-index table, anchored on page 5.
+	pageTable := pdf.TableItem{Positions: []pdf.Position{
+		{PageNumbers: []int{5}, Left: 10, Right: 100, Top: 10, Bottom: 50},
+	}}
+	tables := []pdf.TableItem{noPageTable, pageTable} // index 0 = noPage, index 1 = page 5
+
+	// A table-layout box on page 5 overlapping BOTH table positions.
+	box := pdf.TextBox{
+		PageNumber: 5, HasPageNumber: true,
+		X0: 10, X1: 100, Top: 10, Bottom: 50,
+		LayoutType: pdf.LayoutTypeTable,
+	}
+	// A caption following on the same page: it must mark the highest-indexed
+	// matching table (index 1, the page-5 table), not the lower-index noPage one.
+	caption := pdf.TextBox{
+		PageNumber: 5, HasPageNumber: true,
+		X0: 10, X1: 100, Top: 60, Bottom: 70,
+		LayoutType: pdf.LayoutTypeTitle, Text: "表 1",
+	}
+
+	MarkNoMergeTables([]pdf.TextBox{box, caption}, tables)
+
+	if !tables[1].NoMerge {
+		t.Errorf("highest-indexed matching table (page 5, index 1) should be marked NoMerge by the following caption")
+	}
+	if tables[0].NoMerge {
+		t.Errorf("lower-index page-agnostic table must NOT win NoMerge over the higher-index page-specific table")
 	}
 }
