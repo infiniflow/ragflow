@@ -72,6 +72,36 @@ func TestBuildDOCXJSONSections_PreservesInlineImageOrder(t *testing.T) {
 	}
 }
 
+func TestBuildDOCXJSONSections_ExtractsTableCellImages(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"table","rows":[{"cells":[
+			{"content":[{"type":"paragraph","content":[
+				{"type":"text","text":"before"},
+				{"type":"image","data":"aGVsbG8="},
+				{"type":"text","text":"after"}
+			]}]},
+			{"content":[{"type":"image","data":"aW1hZ2U="}]}
+		]}]}
+	]}]}`
+
+	got := buildDOCXJSONSections(irJSON)
+	if len(got) != 3 {
+		t.Fatalf("sections = %+v, want table plus two cell image items", got)
+	}
+	if got[0]["doc_type_kwd"] != "table" || got[0]["text"] != "<table><tr><td>beforeafter</td><td></td></tr></table>" || got[0]["source_table_id"] != "docx-table-1" {
+		t.Fatalf("table item = %+v", got[0])
+	}
+	for i, want := range []string{"aGVsbG8=", "aW1hZ2U="} {
+		item := got[i+1]
+		if item["doc_type_kwd"] != "image" || item["image"] != want {
+			t.Errorf("image item %d = %+v, want payload %q", i, item, want)
+		}
+		if item["parent_table_id"] != "docx-table-1" || item["row_index"] != 1 || item["column_index"] != i+1 || item["media_order"] != i+1 {
+			t.Errorf("image item %d metadata = %+v", i, item)
+		}
+	}
+}
+
 // TestJoinDOCXIRRuns pins that only text-type runs are concatenated;
 // non-text runs (e.g. nested image runs) are skipped.
 func TestJoinDOCXIRRuns(t *testing.T) {

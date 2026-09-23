@@ -19,7 +19,9 @@ package parser
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -53,19 +55,17 @@ func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult emits one item per block-level HTML element
-// (headings, paragraphs, lists, pre blocks). The walker is a
-// pure-Go replacement for the previous `fmt.Printf` debug output:
-// it descends the html.Parse tree, joins the leaf text of each
-// block-level element, and emits the python-compatible
-// `{text, doc_type_kwd:"text"}` shape.
+// ParseWithResult emits normalized text items for block-level HTML elements
+// and independent image items for supported <img> sources. The walker is a
+// pure-Go replacement for the previous `fmt.Printf` debug output: it descends
+// the html.Parse tree, joins visible text, and keeps image payloads available
+// to the parser's media enhancement stage.
 //
 // Phase 2.5 (Slice 1) of port-rag-flow-pipeline-to-go.md makes
 // HTMLParser a ParseResultProducer so the dispatch seam routes
-// the html family through the structured path. Inline formatting
-// (bold / links / images) is intentionally NOT surfaced as a
-// separate ck_type — the python HtmlParser collapses inline
-// formatting into the parent block's text.
+// the html family through the structured path. Inline formatting such as
+// bold and links stays in the parent text; supported images are emitted as
+// separate items so OCR and vision enhancement can consume their payloads.
 func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// x/net/html assumes UTF-8 input, so a GBK/Big5/Shift-JIS page would
 	// otherwise surface as U+FFFD mojibake. Decode first, mirroring the
@@ -118,6 +118,15 @@ func decodeHTMLToUTF8(data []byte) ([]byte, string) {
 // <style>, and <noscript> blocks are skipped entirely so they
 // don't pollute the downstream chunker input.
 func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
+	walkHTMLBlocksWithState(root, out, &htmlWalkState{})
+}
+
+type htmlWalkState struct {
+	tableSequence int
+	mediaOrder    int
+}
+
+func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.TextNode {
 			if emitsLooseHTMLText(root) {
@@ -138,7 +147,7 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 			continue
 		case "html", "body":
 			// Wrapper elements: descend into their children.
-			walkHTMLBlocks(child, out)
+			walkHTMLBlocksWithState(child, out, state)
 			continue
 		case "table":
 			// Emit the <table> as a SINGLE structured doc_type_kwd:"table"
@@ -149,19 +158,12 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 			// table context). We emit ONLY this item — no duplicate
 			// doc_type_kwd:"text" copy — so the table is embedded once and
 			// its markup does not pollute neighbouring prose chunks.
-			markup := renderTableHTML(child)
-			if strings.TrimSpace(markup) != "" {
-				*out = append(*out, map[string]any{
-					"text":         markup,
-					"doc_type_kwd": "table",
-					"ck_type":      "table",
-				})
-			}
+			emitHTMLTable(child, out, state)
 			continue
 		}
 		ckType := htmlTagToCkType(tag)
 		trim := tag != "pre" && tag != "textarea"
-		htmlLeafText(child, out, ckType, trim)
+		htmlLeafTextWithState(child, out, ckType, trim, state)
 	}
 }
 
@@ -285,7 +287,7 @@ func (w *leafWriter) hardBreak() {
 	w.endsNL = true
 }
 
-// htmlLeafText joins the visible text of an HTML node and its
+// htmlLeafTextWithState joins the visible text of an HTML node and its
 // descendants and emits items directly into out. <script>/<style>/<noscript>
 // subtrees are skipped. Whitespace is folded per CSS rules (so
 // "<h1>Hello   world</h1>" becomes "Hello world" and "<br>" survives as a
@@ -297,10 +299,10 @@ func (w *leafWriter) hardBreak() {
 // doc_type_kwd:"table" item at its document position (see walkHTMLLeaf's
 // "table" case) — the prose around it is flushed as ordinary text items, so
 // the table is never relocated to the end and never duplicated.
-func htmlLeafText(n *html.Node, out *[]map[string]any, ckType string, trim bool) {
+func htmlLeafTextWithState(n *html.Node, out *[]map[string]any, ckType string, trim bool, state *htmlWalkState) {
 	var b bytes.Buffer
 	w := &leafWriter{b: &b}
-	walkHTMLLeaf(n, w, out)
+	walkHTMLLeaf(n, w, out, ckType, trim, state)
 	flushLeafText(w, out, ckType, trim)
 }
 
@@ -325,7 +327,7 @@ func flushLeafText(w *leafWriter, out *[]map[string]any, ckType string, trim boo
 	w.endsNL = false
 }
 
-func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any) {
+func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType string, trim bool, state *htmlWalkState) {
 	switch n.Type {
 	case html.TextNode:
 		w.writeText(n.Data)
@@ -337,11 +339,19 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any) {
 			w.hardBreak()
 			return
 		}
+		if n.Data == "img" {
+			src := htmlAttribute(n, "src")
+			if usableHTMLImageSource(src) {
+				flushLeafText(w, out, ckType, trim)
+				appendHTMLImageItem(out, state, src, htmlAttribute(n, "alt"), "", 0, 0)
+			}
+			return
+		}
 		if n.Data == "pre" || n.Data == "textarea" {
 			// Verbatim: no folding, no injected block breaks.
 			w.pre = true
 			for child := n.FirstChild; child != nil; child = child.NextSibling {
-				walkHTMLLeaf(child, w, out)
+				walkHTMLLeaf(child, w, out, ckType, trim, state)
 			}
 			w.pre = false
 			return
@@ -355,15 +365,8 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any) {
 			// row/column structure survives; we do NOT also inline the markup
 			// into the parent's text, which would duplicate the table and
 			// pollute the prose chunk with raw tags.
-			markup := renderTableHTML(n)
-			if strings.TrimSpace(markup) != "" {
-				flushLeafText(w, out, "text", true)
-				*out = append(*out, map[string]any{
-					"text":         markup,
-					"doc_type_kwd": "table",
-					"ck_type":      "table",
-				})
-			}
+			flushLeafText(w, out, "text", true)
+			emitHTMLTable(n, out, state)
 			return
 		}
 		// Add a line break between block children so headings, paragraphs,
@@ -378,12 +381,128 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any) {
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLLeaf(child, w, out)
+			walkHTMLLeaf(child, w, out, ckType, trim, state)
 		}
 		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
 			w.hardBreak()
 		}
 	}
+}
+
+type htmlTableImage struct {
+	src    string
+	alt    string
+	row    int
+	column int
+}
+
+func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	markup := renderTableHTML(n)
+	if strings.TrimSpace(markup) == "" {
+		return
+	}
+	images := htmlTableImages(n)
+	table := map[string]any{
+		"text":         markup,
+		"doc_type_kwd": "table",
+		"ck_type":      "table",
+	}
+	tableID := ""
+	if len(images) > 0 {
+		state.tableSequence++
+		tableID = fmt.Sprintf("html-table-%d", state.tableSequence)
+		table["source_table_id"] = tableID
+	}
+	*out = append(*out, table)
+	for _, media := range images {
+		appendHTMLImageItem(out, state, media.src, media.alt, tableID, media.row, media.column)
+	}
+}
+
+func htmlTableImages(table *html.Node) []htmlTableImage {
+	var images []htmlTableImage
+	rowCount := 0
+	columnCounts := make(map[int]int)
+	var walk func(node *html.Node, row, column int)
+	walk = func(node *html.Node, row, column int) {
+		if node.Type == html.ElementNode {
+			switch node.Data {
+			case "tr":
+				rowCount++
+				row = rowCount
+				column = 0
+			case "td", "th":
+				columnCounts[row]++
+				column = columnCounts[row]
+			case "img":
+				src := htmlAttribute(node, "src")
+				if usableHTMLImageSource(src) {
+					images = append(images, htmlTableImage{
+						src:    src,
+						alt:    htmlAttribute(node, "alt"),
+						row:    row,
+						column: column,
+					})
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child, row, column)
+		}
+	}
+	walk(table, 0, 0)
+	return images
+}
+
+func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
+	if comma := strings.IndexByte(src, ','); comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
+		src = strings.ToLower(src[:comma]) + src[comma:]
+	}
+	state.mediaOrder++
+	item := map[string]any{
+		"text":         strings.TrimSpace(alt),
+		"doc_type_kwd": "image",
+		"ck_type":      "image",
+		"image":        src,
+		"media_order":  state.mediaOrder,
+	}
+	if parentTableID != "" {
+		item["parent_table_id"] = parentTableID
+		item["row_index"] = row
+		item["column_index"] = column
+	}
+	*out = append(*out, item)
+}
+
+func usableHTMLImageSource(src string) bool {
+	src = strings.TrimSpace(src)
+	const dataPrefix = "data:image/"
+	if len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix) {
+		separator := strings.IndexByte(src, ',')
+		if separator <= len(dataPrefix) || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
+			return false
+		}
+		payload := src[separator+1:]
+		if payload == "" {
+			return false
+		}
+		if _, err := base64.StdEncoding.DecodeString(payload); err == nil {
+			return true
+		}
+		_, err := base64.RawStdEncoding.DecodeString(payload)
+		return err == nil
+	}
+	u, err := url.Parse(src)
+	return err == nil && (strings.EqualFold(u.Scheme, "https") || strings.EqualFold(u.Scheme, "http")) && u.Host != ""
+}
+
+func htmlAttribute(n *html.Node, key string) string {
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, key) {
+			return attr.Val
+		}
+	}
+	return ""
 }
 
 func isBlockTag(tag string) bool {

@@ -17,16 +17,17 @@
 package parser
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
 )
 
-// buildPPTXJSONSections converts office_oxide presentation IR JSON into
-// one JSON item per slide. The IR carries exactly one section per slide,
-// so section index + 1 is the slide number. Per-slide text is flattened
-// with the shared IR walker (docxElementText), which covers paragraphs,
-// headings, text boxes, tables, and (nested) lists.
+// buildPPTXJSONSections converts office_oxide presentation IR JSON into one
+// text item per slide followed by that slide's image items. The IR carries
+// exactly one section per slide, so section index + 1 is the slide number.
+// Per-slide text is flattened with the shared IR walker (docxElementText),
+// which covers paragraphs, headings, text boxes, tables, and (nested) lists.
 //
 // A slide without extractable text (blank layout, image-only) still
 // yields an item with an empty text field, so slide_number stays
@@ -58,17 +59,34 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 			"doc_type_kwd": "text",
 			"slide_number": i + 1,
 		})
+		var images [][]byte
+		for _, el := range sec.Elements {
+			images = append(images, docxIRImagesInElements([]docxIRElement{el})...)
+		}
+		for mediaOrder, data := range images {
+			items = append(items, map[string]any{
+				"text":         "",
+				"image":        base64.StdEncoding.EncodeToString(data),
+				"doc_type_kwd": "image",
+				"ck_type":      "image",
+				"slide_number": i + 1,
+				"media_order":  mediaOrder + 1,
+			})
+		}
 	}
 	return items, nil
 }
 
-// itemsAllEmpty reports whether every item carries no extractable text.
-// A deck whose IR sections all flatten to "" (e.g. text the IR walker does
-// not yet cover) must fall back to PlainText instead of emitting empty
-// chunks that the Tokenizer later filters, silently yielding 0 chunks.
+// itemsAllEmpty reports whether every item lacks both text and image payloads.
+// A deck whose IR sections all flatten to "" and contain no images must fall
+// back to PlainText instead of emitting empty chunks that the Tokenizer later
+// filters, silently yielding 0 chunks.
 func itemsAllEmpty(items []map[string]any) bool {
 	for _, it := range items {
 		if text, _ := it["text"].(string); strings.TrimSpace(text) != "" {
+			return false
+		}
+		if image, _ := it["image"].(string); strings.TrimSpace(image) != "" {
 			return false
 		}
 	}
