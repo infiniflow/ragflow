@@ -19,7 +19,7 @@ package task
 import (
 	"time"
 
-	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/ingestion/task/indexdoc"
 )
 
 // GoldenCompareResult is the structured output used by the local golden tools.
