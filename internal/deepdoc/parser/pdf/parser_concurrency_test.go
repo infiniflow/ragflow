@@ -18,15 +18,19 @@ package pdf
 
 import "testing"
 
-// TestDeepDocConcurrencyDefaultsToFour pins the process inference budget
-// default: when nothing configures it, DeepDocConcurrency() returns 4.
-func TestDeepDocConcurrencyDefaultsToFour(t *testing.T) {
+// TestDeepDocConcurrencyDefaultOne pins the process inference budget default:
+// when nothing configures it, DeepDocConcurrency() returns 1.
+func TestDeepDocConcurrencyDefaultOne(t *testing.T) {
+	if got := DeepDocConcurrency(); got != 1 {
+		t.Fatalf("initial DeepDocConcurrency() = %d, want 1", got)
+	}
+
 	orig := DeepDocConcurrency()
 	t.Cleanup(func() { SetDeepDocConcurrency(orig) })
 
-	SetDeepDocConcurrency(4)
-	if got := DeepDocConcurrency(); got != 4 {
-		t.Fatalf("DeepDocConcurrency() = %d, want 4", got)
+	SetDeepDocConcurrency(7)
+	if got := DeepDocConcurrency(); got != 7 {
+		t.Fatalf("DeepDocConcurrency() after SetDeepDocConcurrency(7) = %d, want 7", got)
 	}
 }
 
