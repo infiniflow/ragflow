@@ -57,12 +57,22 @@ func NewHarnessRetriever(modelProviderService *service.ModelProviderService, met
 		// "gpt-4o"), i.e. Python chat_mdl.llm_name. It is the gen_json reply-cache
 		// key's model component; empty disables that cache.
 		resolvedModelName := ""
-		// The resolution goes through the same entry point the pipeline's own
-		// capability probe uses, so the model decided there is the model wired
-		// here: req.ModelID may be empty (a dialog without an llm_id), and both
-		// layers must then fall back to the tenant default rather than resolving
-		// nothing here and judging capability there.
-		if target, mErr := modelProviderService.ResolveChatModelTarget(ctx, req.TenantID, req.ModelID); mErr == nil {
+		// Resolve the same Chat model that the pipeline uses. An empty model ID
+		// selects the tenant default; an explicit reference must be enrolled as
+		// Chat, so an image2text-only model is rejected here.
+		var target *service.ModelTarget
+		var mErr error
+		if modelProviderService == nil {
+			mErr = errors.New("model provider service is not initialized")
+		} else {
+			solver := service.NewModelSolver()
+			if strings.TrimSpace(req.ModelID) == "" {
+				target, mErr = solver.ResolveDefaultModelConfig(ctx, req.TenantID, entity.ModelTypeChat)
+			} else {
+				target, mErr = solver.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID)
+			}
+		}
+		if mErr == nil {
 			if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
 				// MaxLength mirrors Python LLMBundle.max_length (the model's
 				// context window in tokens); message-fitting nodes (calculate,

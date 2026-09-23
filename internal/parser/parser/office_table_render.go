@@ -65,16 +65,10 @@ func recordsToSpreadsheetItems(records [][]string, sheet string, sheetIndex, hea
 		return nil
 	}
 	header := append([]string(nil), records[0]...)
-	if len(header) == 0 && maxCols > 0 {
+	if len(header) == 0 {
 		header = padSpreadsheetRow(header, maxCols)
 	}
 	headerColEnd := len(header)
-	if headerColEnd == 0 {
-		headerColEnd = maxCols
-	}
-	if headerColEnd == 0 {
-		headerColEnd = 1
-	}
 	tableID := fmt.Sprintf("sheet-%d", sheetIndex)
 	items := make([]map[string]any, 0, len(records))
 	headerText := spreadsheetRowText(header, nil, sheet)
