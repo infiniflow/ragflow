@@ -97,11 +97,21 @@ ingestor:
   max_concurrent_workers: 2
   compiler_pool_size: 0
   deepdoc:
-    # Max concurrent in-process DeepDoc ONNX inference Runs in this process;
-    # each Run pins intraOpThreads=1, so this is also the core count inference
-    # may occupy. Override with env RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY or the
-    # CLI flag --deepdoc-inference-concurrency (highest precedence). Default 1.
+    # Max concurrent in-process DeepDoc ONNX inference Runs in this process (K).
+    # Each Run opens with max(1, inference_cpu_cores / K) intra-op threads, so
+    # the total CPU cores inference may occupy is bounded by inference_cpu_cores.
+    # Override with env RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY or the CLI flag
+    # --deepdoc-inference-concurrency (highest precedence). Default 1. K must be
+    # a positive integer and must not exceed the machine's CPU core count.
     inference_concurrency: 1
+    # CPU-core budget (N) for DeepDoc in-process inference. A value of 0 means
+    # "use all available cores" (runtime.NumCPU()). The per-Run intra-op thread
+    # count is max(1, N/K); N may not exceed the machine's CPU core count.
+    # Override with env RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES or the CLI flag
+    # --deepdoc-inference-cpu-cores (highest precedence). When this key is left
+    # unset (recommended), N is derived from K so each Run stays single-threaded
+    # by default (the prior behaviour); an explicit 0 opts into "all cores".
+    # inference_cpu_cores: 0
 file_syncer:
   max_concurrent_syncs: 5
 user_default_llm:

@@ -90,6 +90,9 @@ type serverArgs struct {
 	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".
 	deepdocInferenceConcurrency *int
+	// deepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
+	// budget from env/config. nil means "unspecified" (0 means "all cores").
+	deepdocInferenceCPUCores *int
 }
 
 func parseArgs() (*serverArgs, error) {
@@ -117,6 +120,16 @@ func parseArgs() (*serverArgs, error) {
 					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
 				}
 				args.deepdocInferenceConcurrency = &n
+				continue
+			case "--deepdoc-inference-cpu-cores":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
+				}
+				if n < 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
+				}
+				args.deepdocInferenceCPUCores = &n
 				continue
 			}
 		}
@@ -213,6 +226,19 @@ func parseArgs() (*serverArgs, error) {
 				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
 			}
 			args.deepdocInferenceConcurrency = &n
+		case "--deepdoc-inference-cpu-cores":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-cpu-cores requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
+			}
+			if n < 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
+			}
+			args.deepdocInferenceCPUCores = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
@@ -1430,16 +1456,47 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
 
-	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Resolve it from CLI > env > config > default(1)
-	// and register it with the native gate every inference call passes through
-	// (internal/deepdoc/native/inference_limit.go); without this the process
-	// would let every page worker call inference at once.
-	budget := server.GetConfig().ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
-	pdf.SetDeepDocConcurrency(budget)
-	native.SetInferenceLimit(budget)
+	// Resolve the DeepDoc in-process inference configuration: the concurrency
+	// budget K (max in-flight Runs) and the CPU-core budget N (max cores
+	// inference may occupy). Both resolve from CLI > env > config > default. K
+	// defaults to 1; N defaults to "unset", which is derived from K so each Run
+	// stays single-threaded by default (the prior behaviour). An explicit N = 0
+	// means "all cores". All values are fail-fast validated against the machine
+	// core count at startup (see native.ValidateInferenceConfig), so a
+	// misconfiguration aborts rather than silently oversubscribing the box.
+	cfg := server.GetConfig()
+	K, _, errK := cfg.ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
+	if errK != nil {
+		common.Fatal("invalid deepdoc inference concurrency", zap.Error(errK))
+	}
+	rawN, explicitN, errN := cfg.ResolveDeepDocInferenceCPUCores(arguments.deepdocInferenceCPUCores)
+	if errN != nil {
+		common.Fatal("invalid deepdoc inference cpu cores", zap.Error(errN))
+	}
+	// When N is unset, derive it from K so each Run opens with a single intra-op
+	// thread (coresPerInference = max(1, K/K) = 1), preserving the prior
+	// single-core-per-run semantics. An explicit N (including 0 = all cores) is
+	// honoured as-is below.
+	resolvedN := rawN
+	if !explicitN {
+		resolvedN = K
+	}
+	totalCores := goruntime.NumCPU()
+	// Validate K and N against the machine's core count and derive the per-Run
+	// intra-op thread count (max(1, N/K)). N == 0 resolves to all cores here.
+	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
+	if errV != nil {
+		common.Fatal("invalid deepdoc inference configuration", zap.Error(errV))
+	}
+	// Register the per-session intra-op thread count before any model session is
+	// created (the native package reads it on every SessionOptions build).
+	native.SetIntraOpThreads(coresPerInference)
+	pdf.SetDeepDocConcurrency(K)
+	native.SetInferenceLimit(K)
 	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", budget),
+		zap.Int("max_concurrent_inference", K),
+		zap.Int("cpu_cores_per_inference", coresPerInference),
+		zap.Int("total_cpu_cores_budget", totalCPUCores),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 }
 

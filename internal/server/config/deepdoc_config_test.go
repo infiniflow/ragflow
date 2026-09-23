@@ -100,23 +100,33 @@ func TestParseIngestorConfigDeepDocIgnoresAutoEnvVar(t *testing.T) {
 }
 
 // TestResolveDeepDocInferenceConcurrency pins the precedence
-// CLI > environment > config file > default(1).
+// CLI > environment > config file > default(1) and the fail-fast contract: any
+// non-integer, non-positive, or otherwise invalid value is an error, never a
+// silent fallback. The second return reports whether K was explicitly set by any
+// layer (as opposed to the built-in default of 1).
 func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 	const envKey = common.EnvDeepDocInferenceConcurrency
 
 	cases := []struct {
-		name       string
-		configured int
-		env        string // "" means leave unset
-		cli        *int
-		want       int
+		name          string
+		configured    int
+		configuredSet bool
+		env           string // "" means leave unset
+		cli           *int
+		want          int
+		wantExplicit  bool
+		wantErr       bool
 	}{
-		{"default", 0, "", nil, 1},
-		{"config only", 6, "", nil, 6},
-		{"env overrides config", 6, "8", nil, 8},
-		{"cli overrides env and config", 6, "8", intPtr(12), 12},
-		{"env invalid falls back to config", 6, "notanint", nil, 6},
-		{"env only", 0, "9", nil, 9},
+		{"default", 0, false, "", nil, 1, false, false},
+		{"config only", 6, true, "", nil, 6, true, false},
+		{"env overrides config", 6, true, "8", nil, 8, true, false},
+		{"cli overrides env and config", 6, true, "8", intPtr(12), 12, true, false},
+		{"env only", 0, false, "9", nil, 9, true, false},
+		// Invalid values are rejected, not silently ignored.
+		{"env invalid -> error", 6, true, "notanint", nil, 0, false, true},
+		{"config zero -> error", 0, true, "", nil, 0, false, true},
+		{"config negative -> error", -3, true, "", nil, 0, false, true},
+		{"env negative -> error", 6, true, "-2", nil, 0, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,14 +136,130 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 			if err := c.ParseIngestorConfig(viper.New()); err != nil {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
-			if tc.configured > 0 {
-				c.ingestor.DeepDoc.InferenceConcurrency = tc.configured
+			c.ingestor.DeepDoc.InferenceConcurrency = tc.configured
+			c.ingestor.DeepDoc.InferenceConcurrencySet = tc.configuredSet
+			got, explicit, err := c.ResolveDeepDocInferenceConcurrency(tc.cli)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %d (explicit=%v)", got, explicit)
+				}
+				return
 			}
-			if got := c.ResolveDeepDocInferenceConcurrency(tc.cli); got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.env, tc.cli)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q cli=%v)",
+					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.cli)
+			}
+			if explicit != tc.wantExplicit {
+				t.Fatalf("explicit = %v, want %v", explicit, tc.wantExplicit)
 			}
 		})
+	}
+}
+
+// TestResolveDeepDocInferenceCPUCores pins the precedence
+// CLI > environment > config file > default(0, "derive from K") for the CPU-core
+// budget N, and that the second return reports whether N was explicitly set by
+// any layer. An explicit 0 means "use all cores" and is returned as 0 (resolved
+// against runtime.NumCPU() by the caller); only non-integer or negative values
+// error.
+func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
+	const envKey = common.EnvDeepDocInferenceCPUCores
+
+	cases := []struct {
+		name          string
+		configured    int
+		configuredSet bool
+		env           string
+		cli           *int
+		want          int
+		wantExplicit  bool
+		wantErr       bool
+	}{
+		{"default unset", 0, false, "", nil, 0, false, false},
+		{"config zero -> all cores sentinel", 0, true, "", nil, 0, true, false},
+		{"config only", 8, true, "", nil, 8, true, false},
+		{"env overrides config", 8, true, "16", nil, 16, true, false},
+		{"cli overrides env and config", 8, true, "16", intPtr(32), 32, true, false},
+		{"env only", 0, false, "12", nil, 12, true, false},
+		{"cli zero valid -> all cores sentinel", 0, true, "", intPtr(0), 0, true, false},
+		// Invalid values are rejected.
+		{"env invalid -> error", 8, true, "notanint", nil, 0, false, true},
+		{"env negative -> error", 8, true, "-1", nil, 0, false, true},
+		{"config negative -> error", -1, true, "", nil, 0, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envKey, tc.env)
+
+			c := &Config{}
+			if err := c.ParseIngestorConfig(viper.New()); err != nil {
+				t.Fatalf("ParseIngestorConfig: %v", err)
+			}
+			c.ingestor.DeepDoc.InferenceCPUCores = tc.configured
+			c.ingestor.DeepDoc.InferenceCPUCoresSet = tc.configuredSet
+			got, explicit, err := c.ResolveDeepDocInferenceCPUCores(tc.cli)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %d (explicit=%v)", got, explicit)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q cli=%v)",
+					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.cli)
+			}
+			if explicit != tc.wantExplicit {
+				t.Fatalf("explicit = %v, want %v", explicit, tc.wantExplicit)
+			}
+		})
+	}
+}
+
+// TestParseIngestorConfigDeepDocRejectsNonInteger pins the fail-fast contract:
+// a present-but-non-integer ingestor.deepdoc value must surface as an error
+// rather than being silently coerced to 0 by viper/cast.
+func TestParseIngestorConfigDeepDocRejectsNonInteger(t *testing.T) {
+	v := viper.New()
+	v.Set("ingestor", map[string]any{
+		"deepdoc": map[string]any{"inference_concurrency": "four"},
+	})
+	c := &Config{}
+	if err := c.ParseIngestorConfig(v); err == nil {
+		t.Fatal("expected error for non-integer inference_concurrency, got nil (silently coerced to 0)")
+	}
+
+	v2 := viper.New()
+	v2.Set("ingestor", map[string]any{
+		"deepdoc": map[string]any{"inference_cpu_cores": "alsobad"},
+	})
+	c2 := &Config{}
+	if err := c2.ParseIngestorConfig(v2); err == nil {
+		t.Fatal("expected error for non-integer inference_cpu_cores, got nil (silently coerced to 0)")
+	}
+}
+
+// TestParseIngestorConfigReadsDeepDocCPUCoresYAML pins that the
+// ingestor.deepdoc.inference_cpu_cores key is honoured when present.
+func TestParseIngestorConfigReadsDeepDocCPUCoresYAML(t *testing.T) {
+	v := viper.New()
+	v.Set("ingestor", map[string]any{
+		"deepdoc": map[string]any{"inference_cpu_cores": 8},
+	})
+	c := &Config{}
+	if err := c.ParseIngestorConfig(v); err != nil {
+		t.Fatalf("ParseIngestorConfig: %v", err)
+	}
+	if got := c.GetIngestorConfig().DeepDoc.InferenceCPUCores; got != 8 {
+		t.Fatalf("inference cpu cores = %d, want 8", got)
+	}
+	if !c.GetIngestorConfig().DeepDoc.InferenceCPUCoresSet {
+		t.Fatal("InferenceCPUCoresSet should be true when key present")
 	}
 }
 

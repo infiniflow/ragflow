@@ -258,10 +258,17 @@ const (
 	// backends apply the same text-blanking contract.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
-	// Runs may be in flight at once (each uses one core). It overrides the
+	// Runs may be in flight at once. Each Run opens with max(1, N/K) intra-op
+	// threads (N = EnvDeepDocInferenceCPUCores budget, K = this value), so the
+	// total cores inference may occupy is at most N. It overrides the
 	// ingestor.deepdoc.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
+	// in-process inference (0 = all cores). It overrides the
+	// ingestor.deepdoc.inference_cpu_cores config key and is itself overridden by the
+	// --deepdoc-inference-cpu-cores CLI flag.
+	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
