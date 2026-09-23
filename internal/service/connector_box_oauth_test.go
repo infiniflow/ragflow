@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
-	kvrocks "ragflow/internal/engine/kvrocks"
+	"ragflow/internal/engine/kvrocks"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
