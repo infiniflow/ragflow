@@ -147,12 +147,7 @@ class WebzSearch(ToolBase, ABC):
                 last_e = e
                 logger.error(f"Webz.io error: {type(e).__name__}")
                 # Do not retry non-transient validation errors or client 4xx (except rate-limit 429)
-                if isinstance(e, ValueError) or (
-                    isinstance(e, requests.HTTPError)
-                    and e.response is not None
-                    and 400 <= e.response.status_code < 500
-                    and e.response.status_code != 429
-                ):
+                if isinstance(e, ValueError) or (isinstance(e, requests.HTTPError) and e.response is not None and 400 <= e.response.status_code < 500 and e.response.status_code != 429):
                     break
                 if attempt < attempts - 1:
                     time.sleep(self._param.delay_after_error)
