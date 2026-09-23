@@ -207,11 +207,11 @@ export const useProviderFields = ({
         const tooltipText = resolveText(field.tooltip, llmFactory, t);
         const validation = field.validation
           ? {
-            ...field.validation,
-            message: field.validation.message
-              ? t(field.validation.message)
-              : undefined,
-          }
+              ...field.validation,
+              message: field.validation.message
+                ? t(field.validation.message)
+                : undefined,
+            }
           : undefined;
         const baseField: Omit<FormFieldConfig, 'type'> = {
           name: field.name,
@@ -234,8 +234,8 @@ export const useProviderFields = ({
           disabled: !!viewMode && !LIST_MODEL_FIELD_NAMES.has(field.name),
           dependencies:
             field.shouldRender === 'modelTypeIncludesChat' ||
-              field.shouldRender === 'modelTypeSupportsToolCall' ||
-              field.shouldRender === 'modelTypeIncludesTtsAndNotExists'
+            field.shouldRender === 'modelTypeSupportsToolCall' ||
+            field.shouldRender === 'modelTypeIncludesTtsAndNotExists'
               ? ['model_type']
               : ['model_type', 'instance_name'].includes(field.name)
                 ? ['model_type', 'instance_name']
