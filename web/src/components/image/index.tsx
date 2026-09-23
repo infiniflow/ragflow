@@ -105,7 +105,10 @@ const fetchDocumentImage = (url: string, authorization: string) => {
         return item.objectUrl;
       })
       .catch((error) => {
-        imageCache.delete(cacheKey);
+        // A re-fetch may have installed a newer entry under this key.
+        if (imageCache.get(cacheKey) === item) {
+          imageCache.delete(cacheKey);
+        }
         throw error;
       });
   }
@@ -120,7 +123,10 @@ const fetchDocumentImage = (url: string, authorization: string) => {
             if (item.objectUrl) {
               URL.revokeObjectURL(item.objectUrl);
             }
-            imageCache.delete(cacheKey);
+            // Eviction or a re-fetch may have replaced this entry meanwhile.
+            if (imageCache.get(cacheKey) === item) {
+              imageCache.delete(cacheKey);
+            }
           }
         }, 30000);
       }

@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   buildDocumentImageUrl,
   evictDocumentImage,
@@ -63,6 +63,37 @@ describe('document image cache', () => {
 
     renderHook(() => useDocumentImageUrl(id, documentId));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not let an evicted entry delete a newer one', async () => {
+    jest.useFakeTimers();
+    try {
+      const id = 'kb-1-chunk-stale';
+      const documentId = 'doc-1';
+
+      const first = renderHook(() => useDocumentImageUrl(id, documentId));
+      await waitFor(() => expect(first.result.current).toBeTruthy());
+
+      // Evicted while still mounted, then released: the release arms a 30s
+      // cleanup timer on an entry the map no longer holds.
+      evictDocumentImage(id, documentId);
+      first.unmount();
+
+      // A later mount fetches again and installs a fresh entry.
+      const second = renderHook(() => useDocumentImageUrl(id, documentId));
+      await waitFor(() => expect(second.result.current).toBeTruthy());
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        jest.advanceTimersByTime(31000);
+      });
+
+      // The stale timer must leave the new entry alone (and not leak its blob).
+      renderHook(() => useDocumentImageUrl(id, documentId));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('fetches again when the cache-busting key changes', async () => {

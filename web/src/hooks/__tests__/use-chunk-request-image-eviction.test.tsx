@@ -73,9 +73,11 @@ describe('useCreateChunk image eviction', () => {
 
   it('drops the cached image of the chunk it updated', async () => {
     const wrapper = createWrapper();
-    const image = renderHook(() => useDocumentImageUrl('chunk-1', 'doc-1'), {
-      wrapper,
-    });
+    // The card renders the backend's img_id, `<dataset_id>-<chunk_id>`.
+    const image = renderHook(
+      () => useDocumentImageUrl('kb-1-chunk-1', 'doc-1'),
+      { wrapper },
+    );
     await waitFor(() => expect(image.result.current).toBeTruthy());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -84,12 +86,13 @@ describe('useCreateChunk image eviction', () => {
       await result.current.createChunk({
         chunk_id: 'chunk-1',
         doc_id: 'doc-1',
+        kb_id: 'kb-1',
         image_base64: 'aGVsbG8=',
       });
     });
     expect(mockSetChunk).toHaveBeenCalledTimes(1);
 
-    renderHook(() => useDocumentImageUrl('chunk-1', 'doc-1'), { wrapper });
+    renderHook(() => useDocumentImageUrl('kb-1-chunk-1', 'doc-1'), { wrapper });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 });

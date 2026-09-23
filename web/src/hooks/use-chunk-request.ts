@@ -103,11 +103,13 @@ export const useCreateChunk = () => {
       if (data.code === 0) {
         message.success(t('message.created'));
         const updatedChunkId = payload.chunk_id || payload.id;
-        if (payload.image_base64 && updatedChunkId) {
-          // Replacing a chunk's image keeps its img_id, so every mounted
-          // <Image> would keep showing the previous picture.
+        const updatedDatasetId = payload.kb_id || knowledgeId;
+        if (payload.image_base64 && updatedChunkId && updatedDatasetId) {
+          // The UI renders a chunk image under the backend's img_id,
+          // `<dataset_id>-<chunk_id>` (see the Go/Python chunk APIs). That id
+          // survives an image replacement, so it is the cache entry to drop.
           evictDocumentImage(
-            updatedChunkId,
+            `${updatedDatasetId}-${updatedChunkId}`,
             payload.doc_id || payload.document_id,
           );
         }
