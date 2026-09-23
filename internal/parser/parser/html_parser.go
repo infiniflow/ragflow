@@ -56,8 +56,9 @@ func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult emits normalized text items for block-level HTML elements
-// and independent image items for supported <img> sources. The walker is a
-// pure-Go replacement for the previous `fmt.Printf` debug output: it descends
+// and independent image items for supported <img> sources. Relative sources
+// are carried as locators for the ingestion component to resolve from storage.
+// The walker is a pure-Go replacement for the previous `fmt.Printf` debug output: it descends
 // the html.Parse tree, joins visible text, and keeps image payloads available
 // to the parser's media enhancement stage.
 //
@@ -341,7 +342,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			if usableHTMLImageSource(src) {
+			if usableHTMLImageSource(src) || relativeHTMLImageSource(src) {
 				flushLeafText(w, out, ckType, trim)
 				appendHTMLImageItem(out, state, src, htmlAttribute(n, "alt"), "", 0, 0)
 			}
@@ -436,7 +437,7 @@ func htmlTableImages(table *html.Node) []htmlTableImage {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				if usableHTMLImageSource(src) {
+				if usableHTMLImageSource(src) || relativeHTMLImageSource(src) {
 					images = append(images, htmlTableImage{
 						src:    src,
 						alt:    htmlAttribute(node, "alt"),
@@ -455,7 +456,7 @@ func htmlTableImages(table *html.Node) []htmlTableImage {
 }
 
 func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
-	if comma := strings.IndexByte(src, ','); comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
+	if comma := strings.IndexByte(src, ','); usableHTMLImageSource(src) && comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
 		src = strings.ToLower(src[:comma]) + src[comma:]
 	}
 	state.mediaOrder++
@@ -463,8 +464,12 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 		"text":         strings.TrimSpace(alt),
 		"doc_type_kwd": "image",
 		"ck_type":      "image",
-		"image":        src,
 		"media_order":  state.mediaOrder,
+	}
+	if usableHTMLImageSource(src) {
+		item["image"] = src
+	} else {
+		item["image_src"] = strings.TrimSpace(src)
 	}
 	if parentTableID != "" {
 		item["parent_table_id"] = parentTableID
@@ -494,6 +499,15 @@ func usableHTMLImageSource(src string) bool {
 	}
 	u, err := url.Parse(src)
 	return err == nil && (strings.EqualFold(u.Scheme, "https") || strings.EqualFold(u.Scheme, "http")) && u.Host != ""
+}
+
+func relativeHTMLImageSource(src string) bool {
+	src = strings.TrimSpace(src)
+	if src == "" {
+		return false
+	}
+	u, err := url.Parse(strings.ReplaceAll(src, " ", "%20"))
+	return err == nil && !u.IsAbs() && u.Host == "" && u.Opaque == "" && u.Path != "" && !strings.HasPrefix(u.Path, "/")
 }
 
 func htmlAttribute(n *html.Node, key string) string {

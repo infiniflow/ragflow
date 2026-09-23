@@ -182,6 +182,10 @@ func maybeDispatchVisionEnhancement(
 			items = append(items, i)
 			continue
 		}
+		if src, _ := item["image_src"].(string); strings.TrimSpace(src) != "" {
+			items = append(items, i)
+			continue
+		}
 		if _, ok := parser.ExtractPDFPositions(item); ok {
 			items = append(items, i)
 		}
@@ -228,6 +232,14 @@ func maybeDispatchVisionEnhancement(
 	defer cropper.Close()
 	modified := false
 	parseMethod := getStringOr(setup, "parse_method", "")
+	var htmlBucket, htmlPath string
+	var hasHTMLLocation bool
+	for _, itemIdx := range items {
+		if source, _ := dispatched.JSON[itemIdx]["image_src"].(string); strings.TrimSpace(source) != "" {
+			htmlBucket, htmlPath, hasHTMLLocation = htmlSourceStorageLocation(ctx, db, inputs)
+			break
+		}
+	}
 	descriptions := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
@@ -254,7 +266,11 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			defer release()
-			resource, err = cropper.Crop(dispatched.JSON[itemIdx])
+			item := dispatched.JSON[itemIdx]
+			if imagePayload, _ := item["image"].(string); imagePayload == "" && hasHTMLLocation {
+				resolveHTMLImageSource(ctx, htmlBucket, htmlPath, item)
+			}
+			resource, err = cropper.Crop(item)
 			if err != nil || resource == nil {
 				return
 			}

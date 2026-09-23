@@ -114,6 +114,7 @@ func TestChunker_PreservesVisionMetadata(t *testing.T) {
 	items := []map[string]any{{
 		"text":              "A chart showing annual growth.",
 		"doc_type_kwd":      "image",
+		"image_src":         "images/chart.png",
 		"vision_source_kwd": "deepdoc",
 		"ocr_status_kwd":    "pending",
 	}}
@@ -127,6 +128,9 @@ func TestChunker_PreservesVisionMetadata(t *testing.T) {
 	}
 	if got, want := chunks[0]["ocr_status_kwd"], "pending"; got != want {
 		t.Errorf("chunks[0].ocr_status_kwd = %v, want %v", got, want)
+	}
+	if got, want := chunks[0]["image_src"], "images/chart.png"; got != want {
+		t.Errorf("chunks[0].image_src = %v, want %v", got, want)
 	}
 }
 
