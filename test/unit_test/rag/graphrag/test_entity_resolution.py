@@ -14,7 +14,11 @@
 #  limitations under the License.
 #
 
+import networkx as nx
+import pytest
+
 from rag.graphrag.entity_resolution import EntityResolution
+from rag.graphrag.utils import ENTITY_RESOLUTION_ALIASES_KEY, GraphChange
 
 
 def _resolver():
@@ -32,3 +36,28 @@ def test_is_similarity_identical_strings():
     resolver = _resolver()
 
     assert resolver.is_similarity("openai", "openai") is True
+
+
+@pytest.mark.asyncio
+async def test_merge_graph_nodes_preserves_existing_canonical(monkeypatch):
+    resolver = _resolver()
+
+    async def keep_description(_name, description, task_id=""):
+        return description
+
+    monkeypatch.setattr(resolver, "_handle_entity_relation_summary", keep_description)
+    graph = nx.Graph()
+    graph.add_node("ALIAS", entity_type="ORG", description="alias", source_id=["doc2"])
+    graph.add_node("CANONICAL", entity_type="ORG", description="canonical", source_id=["doc1"])
+    graph.graph[ENTITY_RESOLUTION_ALIASES_KEY] = {"OLD_ALIAS": "ALIAS", "ALIAS": "CANONICAL"}
+
+    change = GraphChange()
+    await resolver._merge_graph_nodes(graph, ["ALIAS", "CANONICAL"], change)
+
+    assert set(graph.nodes) == {"CANONICAL"}
+    assert graph.graph[ENTITY_RESOLUTION_ALIASES_KEY] == {
+        "OLD_ALIAS": "CANONICAL",
+        "ALIAS": "CANONICAL",
+    }
+    assert change.removed_nodes == {"ALIAS"}
+    assert change.added_updated_nodes == {"CANONICAL"}

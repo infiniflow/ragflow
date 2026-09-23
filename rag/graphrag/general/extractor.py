@@ -27,6 +27,7 @@ from api.db.services.task_service import has_canceled
 from common.token_utils import truncate
 from rag.graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from rag.graphrag.utils import (
+    ENTITY_RESOLUTION_ALIASES_KEY,
     GraphChange,
     chat_limiter,
     flat_uniq_list,
@@ -34,6 +35,7 @@ from rag.graphrag.utils import (
     get_llm_cache,
     handle_single_entity_extraction,
     handle_single_relationship_extraction,
+    record_entity_resolution_aliases,
     set_llm_cache,
     split_string_by_multi_markers,
 )
@@ -295,6 +297,19 @@ class Extractor:
 
         if len(nodes) <= 1:
             return
+        existing_aliases = graph.graph.get(ENTITY_RESOLUTION_ALIASES_KEY, {})
+
+        def resolved_alias(node):
+            while node in existing_aliases:
+                node = existing_aliases[node]
+            return node
+
+        preferred_canonical = sorted({resolved_alias(node) for node in nodes} & set(nodes))
+        if preferred_canonical and nodes[0] != preferred_canonical[0]:
+            canonical = preferred_canonical[0]
+            nodes = [canonical, *(node for node in nodes if node != canonical)]
+
+        record_entity_resolution_aliases(graph, nodes[0], nodes[1:])
         change.added_updated_nodes.add(nodes[0])
         change.removed_nodes.update(nodes[1:])
         nodes_set = set(nodes)

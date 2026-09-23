@@ -44,6 +44,8 @@ from rag.graphrag.phase_markers import (
     set_phase_marker,
 )
 from rag.graphrag.utils import (
+    SOURCE_SUBGRAPH_VERSION,
+    SOURCE_SUBGRAPH_VERSION_KEY,
     GraphChange,
     chunk_id,
     does_graph_contains,
@@ -486,10 +488,11 @@ async def run_graphrag_for_kb(
             try:
 
                 async def merge_subgraph_attempt():
-                    current_graph = await get_graph(tenant_id, kb_id)
-                    if current_graph and doc_id in current_graph.graph.get("source_id", []):
-                        callback(msg=f"[GraphRAG] merge_subgraph doc:{doc_id} already merged, skipping retry.")
-                        return current_graph
+                    if await does_graph_contains(tenant_id, kb_id, doc_id):
+                        current_graph = await get_graph(tenant_id, kb_id)
+                        if current_graph and doc_id in current_graph.graph.get("source_id", []):
+                            callback(msg=f"[GraphRAG] merge_subgraph doc:{doc_id} already merged, skipping retry.")
+                            return current_graph
                     return await merge_subgraph(
                         tenant_id,
                         kb_id,
@@ -790,6 +793,7 @@ async def generate_subgraph(
     tidy_graph(subgraph, callback, check_attribute=False)
 
     subgraph.graph["source_id"] = [doc_id]
+    subgraph.graph[SOURCE_SUBGRAPH_VERSION_KEY] = SOURCE_SUBGRAPH_VERSION
     chunk = {
         "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
         "knowledge_graph_kwd": "subgraph",

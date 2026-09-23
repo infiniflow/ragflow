@@ -36,6 +36,12 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 GRAPH_FIELD_SEP = "<SEP>"
+SOURCE_SUBGRAPH_VERSION_KEY = "source_subgraph_version"
+SOURCE_SUBGRAPH_VERSION = 1
+ENTITY_RESOLUTION_ALIASES_KEY = "entity_resolution_aliases"
+_REBUILD_INDEX_KEY = "_rebuild_index"
+_REBUILD_GRAPH_ID_KEY = "_rebuild_graph_id"
+_REBUILD_OLD_EDGES_KEY = "_rebuild_old_edges"
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
@@ -336,6 +342,84 @@ def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
     return g1
 
 
+def record_entity_resolution_aliases(graph: nx.Graph, canonical: str, merged_nodes: list[str]):
+    """Record entity names merged into *canonical* for future graph rebuilds."""
+    aliases = graph.graph.setdefault(ENTITY_RESOLUTION_ALIASES_KEY, {})
+    merged = set(merged_nodes)
+    for alias, target in list(aliases.items()):
+        if target in merged:
+            aliases[alias] = canonical
+    for alias in merged:
+        if alias != canonical:
+            aliases[alias] = canonical
+    aliases.pop(canonical, None)
+
+
+def apply_entity_resolution_aliases(graph: nx.Graph, aliases: dict[str, str]):
+    """Apply persisted entity-resolution aliases without reviving deleted canonical nodes."""
+    if not aliases:
+        return graph
+
+    available_nodes = set(graph.nodes)
+
+    def resolved_name(node):
+        target = aliases.get(node, node)
+        while target in aliases:
+            target = aliases[target]
+        return target if target in available_nodes else node
+
+    resolved_nodes = {node: resolved_name(node) for node in graph.nodes}
+    if all(node == resolved for node, resolved in resolved_nodes.items()):
+        graph.graph[ENTITY_RESOLUTION_ALIASES_KEY] = aliases
+        return graph
+
+    resolved_graph = nx.Graph()
+    resolved_graph.graph.update(deepcopy(graph.graph))
+    node_groups = defaultdict(list)
+    for node, attrs in graph.nodes(data=True):
+        node_groups[resolved_nodes[node]].append((node, attrs))
+
+    for canonical, entries in node_groups.items():
+        entries.sort(key=lambda item: item[0] != canonical)
+        attrs = deepcopy(entries[0][1])
+        descriptions = [entry_attrs["description"] for _, entry_attrs in entries]
+        source_ids = [source for _, entry_attrs in entries for source in entry_attrs["source_id"]]
+        attrs["description"] = GRAPH_FIELD_SEP.join(descriptions)
+        attrs["source_id"] = sorted(set(source_ids))
+        if "entity_name" in attrs:
+            attrs["entity_name"] = canonical
+        resolved_graph.add_node(canonical, **attrs)
+
+    for source, target, attrs in graph.edges(data=True):
+        resolved_source = resolved_nodes[source]
+        resolved_target = resolved_nodes[target]
+        if resolved_source == resolved_target:
+            continue
+        edge = resolved_graph.get_edge_data(resolved_source, resolved_target)
+        if edge is None:
+            resolved_graph.add_edge(resolved_source, resolved_target, **deepcopy(attrs))
+            continue
+        edge["weight"] += attrs.get("weight", 0)
+        edge["description"] += GRAPH_FIELD_SEP + attrs["description"]
+        edge["keywords"] = sorted(set(edge["keywords"] + attrs["keywords"]))
+        edge["source_id"] = sorted(set(edge["source_id"] + attrs["source_id"]))
+
+    resolved_graph.graph[ENTITY_RESOLUTION_ALIASES_KEY] = aliases
+    return resolved_graph
+
+
+def _compose_graph_snapshots(graph: nx.Graph, next_graph: nx.Graph):
+    """Compose already-aggregated per-document snapshots without double-counting."""
+    merged_graph = nx.compose(graph, next_graph)
+    merged_source = {n: graph.nodes[n]["source_id"] + next_graph.nodes[n]["source_id"] for n in graph.nodes & next_graph.nodes}
+    nx.set_node_attributes(merged_graph, merged_source, "source_id")
+    if "source_id" in graph.graph:
+        merged_graph.graph["source_id"] = graph.graph["source_id"] + next_graph.graph["source_id"]
+    else:
+        merged_graph.graph["source_id"] = next_graph.graph["source_id"]
+    return merged_graph
+
+
 def compute_args_hash(*args):
     """Return a hex MD5 digest of the string representation of *args* (used as a cache key)."""
     return md5(str(args).encode()).hexdigest()
@@ -534,12 +618,23 @@ async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
     if not res.total == 0:
         for id in res.ids:
             try:
+                g = json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
                 if res.field[id]["removed_kwd"] == "N":
-                    g = json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
                     if "source_id" not in g.graph:
                         g.graph["source_id"] = res.field[id]["source_id"]
                 else:
-                    g = await rebuild_graph(tenant_id, kb_id, exclude_rebuild)
+                    stored_graph = g
+                    g = await rebuild_graph(
+                        tenant_id,
+                        kb_id,
+                        exclude_rebuild,
+                        source_subgraph_version=g.graph.get(SOURCE_SUBGRAPH_VERSION_KEY),
+                        entity_resolution_aliases=g.graph.get(ENTITY_RESOLUTION_ALIASES_KEY),
+                    )
+                    if g is not None and g.graph.get(SOURCE_SUBGRAPH_VERSION_KEY) == SOURCE_SUBGRAPH_VERSION:
+                        g.graph[_REBUILD_INDEX_KEY] = True
+                        g.graph[_REBUILD_GRAPH_ID_KEY] = id
+                        g.graph[_REBUILD_OLD_EDGES_KEY] = {get_from_to(src, dst): attrs.get("description") for src, dst, attrs in stored_graph.edges(data=True)}
                 return g
             except Exception:
                 continue
@@ -557,14 +652,28 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     global chat_limiter
     start = asyncio.get_running_loop().time()
 
-    # Build all new chunks first (graph, subgraphs, node/edge embeddings) before
+    source_subgraphs = graph.graph.get(SOURCE_SUBGRAPH_VERSION_KEY) == SOURCE_SUBGRAPH_VERSION
+    rebuild_index = bool(graph.graph.get(_REBUILD_INDEX_KEY))
+    if rebuild_index:
+        if not graph.graph.get(_REBUILD_GRAPH_ID_KEY):
+            raise ValueError("A rebuilt graph needs its persisted graph ID for a safe index replacement")
+        # A deleted document can leave its contributions in surviving entity
+        # and relation chunks. Refresh the whole derived index after rebuilding.
+        change.added_updated_nodes.update(graph.nodes)
+        change.added_updated_edges.update(get_from_to(source, target) for source, target in graph.edges)
+    serialized_graph = nx.node_link_data(graph, edges="edges")
+    serialized_graph["graph"] = serialized_graph["graph"].copy()
+    serialized_graph["graph"].pop(_REBUILD_INDEX_KEY, None)
+    serialized_graph["graph"].pop(_REBUILD_GRAPH_ID_KEY, None)
+    serialized_graph["graph"].pop(_REBUILD_OLD_EDGES_KEY, None)
+
+    # Build all new chunks first (graph, snapshot subgraphs, node/edge embeddings) before
     # deleting anything.  This ensures that if embedding generation or any other
-    # step crashes, the old graph and per-doc subgraph checkpoints remain intact
-    # so the pipeline can resume without re-running earlier phases.
+    # step crashes, the old graph remains intact.
     chunks = [
         {
-            "id": get_uuid(),
-            "content_with_weight": json.dumps(nx.node_link_data(graph, edges="edges"), ensure_ascii=False),
+            "id": graph.graph[_REBUILD_GRAPH_ID_KEY] if rebuild_index else get_uuid(),
+            "content_with_weight": json.dumps(serialized_graph, ensure_ascii=False),
             "knowledge_graph_kwd": "graph",
             "kb_id": kb_id,
             "source_id": graph.graph.get("source_id", []),
@@ -573,23 +682,25 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         }
     ]
 
-    # generate updated subgraphs
-    for source in graph.graph["source_id"]:
-        subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
-        subgraph.graph["source_id"] = [source]
-        for n in subgraph.nodes:
-            subgraph.nodes[n]["source_id"] = [source]
-        chunks.append(
-            {
-                "id": get_uuid(),
-                "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
-                "knowledge_graph_kwd": "subgraph",
-                "kb_id": kb_id,
-                "source_id": [source],
-                "available_int": 0,
-                "removed_kwd": "N",
-            }
-        )
+    if not source_subgraphs:
+        # Snapshot-backed graphs keep the established persistence format.
+        for source in graph.graph["source_id"]:
+            subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
+            subgraph.graph["source_id"] = [source]
+            subgraph.graph.pop(ENTITY_RESOLUTION_ALIASES_KEY, None)
+            for n in subgraph.nodes:
+                subgraph.nodes[n]["source_id"] = [source]
+            chunks.append(
+                {
+                    "id": get_uuid(),
+                    "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
+                    "knowledge_graph_kwd": "subgraph",
+                    "kb_id": kb_id,
+                    "source_id": [source],
+                    "available_int": 0,
+                    "removed_kwd": "N",
+                }
+            )
 
     # ── batch pre-warm entity embeddings ───────────────────────────────────────
     # Without this, set_graph spawns one asyncio task per entity, each calling
@@ -648,6 +759,9 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     _all_edge_data = [(f, t, a) for f, t, a in _all_edge_data if a]
     _edge_lookup_keys = [f"{f}->{t}" for f, t, _ in _all_edge_data]
     _edge_misses = await thread_pool_exec(_batch_embed_cache_misses, embd_mdl.llm_name, _edge_lookup_keys) if _all_edge_data else []
+    if rebuild_index:
+        old_edges = graph.graph.get(_REBUILD_OLD_EDGES_KEY, {})
+        _edge_misses = [miss or old_edges.get(get_from_to(f, t)) != attrs["description"] for (f, t, attrs), miss in zip(_all_edge_data, _edge_misses)]
     _uncached_edge_items = [item for item, miss in zip(_all_edge_data, _edge_misses) if miss]
     logging.debug(
         "set_graph edge pre-warm: %d edges, %d cache misses",
@@ -700,10 +814,17 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
     start = now
 
+    if rebuild_index:
+        await _commit_rebuilt_graph_index(tenant_id, kb_id, chunks, callback)
+        for key in (_REBUILD_INDEX_KEY, _REBUILD_GRAPH_ID_KEY, _REBUILD_OLD_EDGES_KEY):
+            graph.graph.pop(key, None)
+        return
+
     # All new chunks are ready.  Now delete old data and insert the new data.
     # Deleting only after chunks are built ensures that a crash during embedding
     # generation above does not destroy the old graph/subgraph checkpoints.
-    await thread_pool_exec(settings.docStoreConn.delete, {"knowledge_graph_kwd": ["graph", "subgraph"]}, search.index_name(tenant_id), kb_id)
+    graph_kinds = ["graph"] if source_subgraphs else ["graph", "subgraph"]
+    await thread_pool_exec(settings.docStoreConn.delete, {"knowledge_graph_kwd": graph_kinds}, search.index_name(tenant_id), kb_id)
 
     if change.removed_nodes:
         BATCH_SIZE = 100
@@ -753,6 +874,97 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     now = asyncio.get_running_loop().time()
     if callback:
         callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges from index in {now - start:.2f}s.")
+
+
+async def _commit_rebuilt_graph_index(tenant_id: str, kb_id: str, chunks: list[dict], callback):
+    """Stage derived rows before replacing an invalidated graph checkpoint."""
+    index_name = search.index_name(tenant_id)
+    graph_chunk, *derived = chunks
+    generation = chunk_id({"content_with_weight": graph_chunk["content_with_weight"], "kb_id": kb_id})
+    for chunk in derived:
+        kind = chunk["knowledge_graph_kwd"]
+        if kind == "entity":
+            identity = json.dumps([generation, "entity", chunk["entity_kwd"]], ensure_ascii=False)
+        else:
+            source, target = get_from_to(chunk["from_entity_kwd"], chunk["to_entity_kwd"])
+            identity = json.dumps([generation, "relation", source, target], ensure_ascii=False)
+        chunk["id"] = chunk_id({"content_with_weight": identity, "kb_id": kb_id})
+        chunk["removed_kwd"] = "N"
+
+    # The graph remains marked removed until every derived row is in place.
+    # A failed insert can be retried from the preserved source subgraphs.
+    marked = await thread_pool_exec(
+        settings.docStoreConn.update,
+        {"knowledge_graph_kwd": ["entity", "relation"]},
+        {"removed_kwd": "Y"},
+        index_name,
+        kb_id,
+    )
+    if not marked:
+        raise RuntimeError("Could not mark the previous graph index for replacement")
+    await insert_chunks_bounded(derived, tenant_id, kb_id, callback=callback, label="Stage rebuilt graph index")
+
+    # Delete only old rows. Always read from offset zero as the matched set
+    # shrinks; this also avoids the ES 10k result-window limit.
+    fields = ["id"]
+    condition = {"kb_id": kb_id, "knowledge_graph_kwd": ["entity", "relation"], "removed_kwd": "Y"}
+    for _ in range(0, 1_000_000, _INSERT_BULK_SIZE):
+        result = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            _INSERT_BULK_SIZE,
+            index_name,
+            [kb_id],
+        )
+        stale_ids = list(settings.docStoreConn.get_fields(result, fields))
+        if not stale_ids:
+            break
+        removed = await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"id": stale_ids, "knowledge_graph_kwd": ["entity", "relation"], "removed_kwd": "Y"},
+            index_name,
+            kb_id,
+        )
+        if not removed:
+            raise RuntimeError("Could not prune the previous graph index")
+    else:
+        raise RuntimeError("Graph index pruning exceeded one million rows")
+
+    # ES update_by_query can report success even when a version conflict
+    # skipped an old row. Count the active generation explicitly: Infinity's
+    # unqualified total_hits_count can be wrong for a large mixed index.
+    remaining = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        {"kb_id": kb_id, "knowledge_graph_kwd": ["entity", "relation"], "removed_kwd": "N"},
+        [],
+        OrderByExpr(),
+        0,
+        1,
+        index_name,
+        [kb_id],
+    )
+    indexed_count = settings.docStoreConn.get_total(remaining)
+    if indexed_count != len(derived):
+        raise RuntimeError(f"Graph index row count mismatch: expected {len(derived)}, found {indexed_count}")
+
+    committed = await thread_pool_exec(
+        settings.docStoreConn.update,
+        {"id": graph_chunk["id"], "knowledge_graph_kwd": ["graph"]},
+        {"content_with_weight": graph_chunk["content_with_weight"], "source_id": graph_chunk["source_id"], "removed_kwd": "N"},
+        index_name,
+        kb_id,
+    )
+    if not committed:
+        raise RuntimeError("Could not commit the rebuilt graph after indexing")
+    if callback:
+        callback(msg=f"Rebuilt graph index committed with {len(derived)} entity/relation chunks.")
 
 
 def is_continuous_subsequence(subseq, seq):
@@ -866,7 +1078,7 @@ def flat_uniq_list(arr, key):
     return list(set(res))
 
 
-async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
+async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None, *, source_subgraph_version=None, entity_resolution_aliases=None):
     """Reconstruct the full knowledge-graph for *kb_id* from its stored subgraph chunks."""
     graph = nx.Graph()
     flds = ["knowledge_graph_kwd", "content_with_weight", "source_id"]
@@ -888,16 +1100,19 @@ async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
                 continue
 
             next_graph = json_graph.node_link_graph(json.loads(d["content_with_weight"]), edges="edges")
-            merged_graph = nx.compose(graph, next_graph)
-            merged_source = {n: graph.nodes[n]["source_id"] + next_graph.nodes[n]["source_id"] for n in graph.nodes & next_graph.nodes}
-            nx.set_node_attributes(merged_graph, merged_source, "source_id")
-            if "source_id" in graph.graph:
-                merged_graph.graph["source_id"] = graph.graph["source_id"] + next_graph.graph["source_id"]
+            if source_subgraph_version == SOURCE_SUBGRAPH_VERSION:
+                graph = graph_merge(graph, next_graph, GraphChange())
             else:
-                merged_graph.graph["source_id"] = next_graph.graph["source_id"]
-            graph = merged_graph
+                graph = _compose_graph_snapshots(graph, next_graph)
 
     if len(graph.nodes) == 0:
         return None
+    graph = apply_entity_resolution_aliases(graph, entity_resolution_aliases or {})
+    for node, degree in graph.degree:
+        graph.nodes[node]["rank"] = int(degree)
     graph.graph["source_id"] = sorted(graph.graph["source_id"])
+    if source_subgraph_version == SOURCE_SUBGRAPH_VERSION:
+        graph.graph[SOURCE_SUBGRAPH_VERSION_KEY] = SOURCE_SUBGRAPH_VERSION
+    if entity_resolution_aliases:
+        graph.graph[ENTITY_RESOLUTION_ALIASES_KEY] = entity_resolution_aliases
     return graph
