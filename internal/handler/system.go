@@ -120,26 +120,6 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 	common.SuccessWithData(c, status, "success")
 }
 
-// GetOceanBaseStatus returns the Python-compatible OceanBase health envelope.
-func (h *SystemHandler) GetOceanBaseStatus(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	if server.GetConfig().DocEngineType() != "oceanbase" {
-		common.ResponseWithCodeData(c, common.CodeServerError, map[string]interface{}{
-			"status":  "error",
-			"message": "OceanBase is not in use.",
-		}, "OceanBase is not in use.")
-		return
-	}
-	common.SuccessWithData(c, map[string]interface{}{
-		"status":  "timeout",
-		"message": "OceanBase health check is unavailable.",
-	}, "success")
-}
-
 // GetVersion get RAGFlow version
 // @Summary Get RAGFlow Version
 // @Description Get the current version of the application
