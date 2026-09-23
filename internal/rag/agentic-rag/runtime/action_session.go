@@ -33,6 +33,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/kaptinlin/jsonrepair"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/chat"
@@ -2054,7 +2055,7 @@ func executeTool(ctx context.Context, tools *Toolset, name string, args map[stri
 	// structure of its kind). We still return a note, not an error, so the model
 	// learns to switch to the corpus tools rather than loop.
 	if tools != nil && tools.IsDisabled(name) {
-		_LOG.Printf("[Action Session] tool %q disabled (no compiled structure); returning note", name)
+		common.Warn("action session: tool disabled (no compiled structure); returning note", zap.String("tool", name))
 		return ToolOutcome{
 			Payload: []any{map[string]any{
 				"kind": name,
@@ -2088,8 +2089,8 @@ func (s *sessionState) runActionNode(ctx context.Context) error {
 	if !s.LastTurnNoticed && s.Attempts >= s.effectiveTurnFloor() {
 		s.LastTurnNoticed = true
 		s.Messages = append(s.Messages, *schema.UserMessage(lastSearchTurnNotice))
-		_LOG.Printf("[Action Session] last search turn (turn %d; the clock affords %d): told the session to close out with a patch and an answer.",
-			s.Attempts, s.effectiveTurnFloor())
+		common.Info("action session: last search turn; told the session to close out with a patch and an answer",
+			zap.Int("turn", s.Attempts), zap.Int("turn_floor", s.effectiveTurnFloor()))
 	}
 	// Per-turn wall budget: max(15, min(75, deadline_left - answerReserveS)).
 	//
@@ -2118,11 +2119,11 @@ func (s *sessionState) runActionNode(ctx context.Context) error {
 		// What a failed turn means is only "no more searching": the session still has its reserve
 		// and the answer turn that the reserve exists for, so it goes there (see route).
 		if callCtx.Err() == context.DeadlineExceeded {
-			_LOG.Printf("[Action Session] turn timed out after %.0fs; keeping the %d branch(es) it had and asking for the answer",
-				wall, len(s.NewStates))
+			common.Warn("action session: turn timed out; keeping the branches it had and asking for the answer",
+				zap.Float64("wall_s", wall), zap.Int("branches", len(s.NewStates)))
 		} else {
-			_LOG.Printf("[Action Session] LLM call failed (%T); keeping the %d branch(es) it had and asking for the answer",
-				err, len(s.NewStates))
+			common.Warn("action session: LLM call failed; keeping the branches it had and asking for the answer",
+				zap.String("error_type", fmt.Sprintf("%T", err)), zap.Int("branches", len(s.NewStates)))
 		}
 		s.ForceAnswer = true
 		return nil
@@ -2147,8 +2148,8 @@ func (s *sessionState) runActionNode(ctx context.Context) error {
 		// Same signal, same treatment as a failed turn: stop SEARCHING, keep the record, and let
 		// the answer turn ask with a different prompt (tools off) instead of ending the session
 		// with no answer at all.
-		_LOG.Printf("[Action Session] two consecutive identical replies (%d rune(s)); stopping the search and asking for the answer.",
-			utf8.RuneCountInString(replyText))
+		common.Info("action session: two consecutive identical replies; stopping the search and asking for the answer",
+			zap.Int("reply_runes", utf8.RuneCountInString(replyText)))
 		s.ForceAnswer = true
 		return nil
 	} else {
@@ -2199,19 +2200,19 @@ func (s *sessionState) runActionNode(ctx context.Context) error {
 		// Whether the model used the open-parts protocol is otherwise invisible until the routing
 		// line says a round was reopened for it: log the statement itself.
 		if u := strings.TrimSpace(s.Unresolved); u != "" {
-			_LOG.Printf("[Action Session] answered with an open part (%s)", TruncateRunes(u, 200))
+			common.Info("action session: answered with an open part", zap.String("part", TruncateRunes(u, 200)))
 		}
 		if len(newStates) > 0 {
 			// Both blocks in one reply is the finalize shape, so it is worth a line: the answer
 			// ends the session AND the patches beside it are kept (see parseTerminal).
-			_LOG.Printf("[Action Session] answered with %d branch(es) recorded from the same reply (turn %d/%d).",
-				len(newStates), s.Attempts, s.turnRunCap())
+			common.Info("action session: answered with branches recorded from the same reply",
+				zap.Int("branches", len(newStates)), zap.Int("turn", s.Attempts), zap.Int("turn_cap", s.turnRunCap()))
 		}
 		return nil
 	}
 	if len(newStates) > 0 {
-		_LOG.Printf("[Action Session] %d branch(es) checkpointed (turn %d/%d); the session keeps working until it can answer.",
-			len(newStates), s.Attempts, s.turnRunCap())
+		common.Info("action session: branches checkpointed; the session keeps working until it can answer",
+			zap.Int("branches", len(newStates)), zap.Int("turn", s.Attempts), zap.Int("turn_cap", s.turnRunCap()))
 		return nil
 	}
 	// Neither a call nor a terminal block: nudge once per turn.
@@ -2265,7 +2266,7 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 		// the paraphrase check never sees those queries at all.
 		q := argQueryString(c.Args["query"])
 		if retrievalTools[c.Name] && q != "" && isNearDup(q, seenQueries) {
-			_LOG.Printf("[Action Session] skipping near-duplicate retrieval %q (already searched)", TruncateRunes(q, 80))
+			common.Info("action session: skipping near-duplicate retrieval (already searched)", zap.String("query", TruncateRunes(q, 80)))
 			s.Messages = appendMessages(s.Messages, toolMessage(c.ID, []any{map[string]any{
 				"kind": c.Name,
 				"note": "This query is a near-duplicate of an earlier retrieval and was skipped to avoid redundant searching. Patch the slot with what you have, or issue a genuinely NEW retrieval angle.",
@@ -2318,7 +2319,8 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 			strikes[c.Name] = n
 			if n >= emptyStrikes {
 				s.Tools.DisableTool(c.Name)
-				_LOG.Printf("[Action Session] %s disabled after %d dataset-level empty results", c.Name, n)
+				common.Warn("action session: tool disabled after dataset-level empty results",
+					zap.String("tool", c.Name), zap.Int("empties", n))
 			}
 		case oc.Status == statusRedundant:
 			// Ran fine, but every hit was already in the shared evidence pool.
@@ -2349,7 +2351,7 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 			// continuation hint that got cut is a session that concludes the corpus is short
 			// instead of asking for the next page (measured 2026-09-22, c1 bowling question).
 			payload = oc.Note + "\n" + payload
-			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, TruncateRunes(oc.Note, 280))
+			common.Info("action session: result note", zap.String("tool", c.Name), zap.String("note", TruncateRunes(oc.Note, 280)))
 		}
 		// If the session is already heavy, cut this payload proportionally.
 		// -1514 counts len of a str — CODE POINTS, not bytes — so
@@ -2422,8 +2424,7 @@ func (s *sessionState) toolNode(ctx context.Context) error {
 					evidenceIDs = append(evidenceIDs, ex.EvidenceIDs...)
 					s.ToolOutcomes = append(s.ToolOutcomes, ex.Outcomes...)
 					if oc.Status != StatusOK {
-						_LOG.Printf("[Action Session] ladder %q -> %q (reason=%s)",
-							rule.ID, nxt, oc.Reason)
+						common.Info("action session: ladder step", zap.String("rule", rule.ID), zap.String("next", nxt), zap.String("reason", oc.Reason))
 					}
 				}
 			}
@@ -2503,7 +2504,7 @@ func (s *sessionState) compactEarlierToolResults() {
 		folded++
 	}
 	if folded > 0 {
-		_LOG.Printf("[Action Session] folded %d earlier tool result(s) into digests", folded)
+		common.Info("action session: folded earlier tool results into digests", zap.Int("folded", folded))
 	}
 }
 
@@ -2694,8 +2695,8 @@ func (s *sessionState) appendBatchProtocol(ranAny bool) {
 	// the caller just wrote is the proof that this direction is assembling a set
 	// (see Kbinfos.MarkSetDirection).
 	s.KB.MarkSetDirection()
-	_LOG.Printf("[Action Session] the caller wrote a batch — set-direction method appended to the turn (%d char(s))",
-		len(s.EnumerationProtocol))
+	common.Info("action session: the caller wrote a batch, set-direction method appended to the turn",
+		zap.Int("chars", len(s.EnumerationProtocol)))
 }
 
 // appendRecordLine appends the per-turn RECORD line to the last tool result.
@@ -2729,7 +2730,7 @@ func (s *sessionState) appendRecordLine(ranAny bool) {
 	// The line the model steers by is message content, so the log could not show
 	// whether a mechanism fired at all: three rounds of analysis here ended up
 	// inferring it from side effects. One truncated line per turn ends that.
-	_LOG.Printf("[Action Session] record line: %s", TruncateRunes(rec.Line(), 320))
+	common.Info("action session: record line", zap.String("line", TruncateRunes(rec.Line(), 320)))
 	last := &s.Messages[len(s.Messages)-1]
 	if last.Role != schema.Tool || rec.Pool == 0 {
 		// No pool bound (or no tool result to annotate): keep the record, skip the
@@ -2747,7 +2748,7 @@ func (s *sessionState) appendRecordLine(ranAny bool) {
 		if excerpt := s.unreadPoolExcerpt(); excerpt != "" {
 			// Logged as well as delivered: whether the mechanism fired is otherwise
 			// only visible inside the message content.
-			_LOG.Printf("[Action Session] pool excerpt: %s", TruncateRunes(excerpt, 240))
+			common.Info("action session: pool excerpt", zap.String("excerpt", TruncateRunes(excerpt, 240)))
 			last.Content += "\n" + excerpt
 		}
 	}
@@ -2794,8 +2795,9 @@ func (s *sessionState) offerContinuation() bool {
 	s.ContinuationAsked = s.Attempts
 	ask := continuationAsk(s.Attempts, s.turnRunCap(), s.Record.Brief(), s.Record.Verbose())
 	s.Messages = appendMessages(s.Messages, *schema.UserMessage(ask))
-	_LOG.Printf("[Action Session] turn %d/%d — the floor is spent; offered the model one more turn while the record says something is missing (%s, %.0fs left).\noffer=%q",
-		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, TruncateRunes(ask, 700))
+	common.Info("action session: the floor is spent; offered the model one more turn while the record says something is missing",
+		zap.Int("turn", s.Attempts), zap.Int("turn_cap", s.turnRunCap()), zap.String("record", s.Record.Brief()),
+		zap.Float64("left_s", s.DeadlineLeft), zap.String("offer", TruncateRunes(ask, 700)))
 	return true
 }
 
@@ -2934,7 +2936,7 @@ func (s *sessionState) finalizeNode(ctx context.Context) error {
 		// sixteen-member answer whose evidence the session had already read, and the fallback
 		// composition answered from the few passages its own budget admitted (six members). The
 		// init call retries once for the same reason (see initRetryTimeout).
-		_LOG.Printf("[Action Session] salvage call failed: %v — retrying once.", err)
+		common.Warn("action session: salvage call failed, retrying once", zap.Error(err))
 		s.refreshClock()
 		if left := s.DeadlineLeft - finalizeMarginS; left > minSalvageRetryS {
 			retryCtx, cancelRetry := context.WithTimeout(ctx,
@@ -2948,7 +2950,7 @@ func (s *sessionState) finalizeNode(ctx context.Context) error {
 		// loose-clue harvest below. Returning early here drops the last-narration
 		// breadcrumb exactly when the salvage model is unavailable, which is the case the
 		// harvest exists for.
-		_LOG.Printf("[Action Session] salvage call failed twice: %v", err)
+		common.Error("action session: salvage call failed twice", err)
 	} else {
 		newStates, foundAnswer, terminalType, payload := parseTerminal(reply.Content, s.ParentState)
 		// APPEND, like every other checkpoint: the answer turn is the last word, not the only
@@ -2972,9 +2974,9 @@ func (s *sessionState) finalizeNode(ctx context.Context) error {
 			s.Unresolved = u
 		}
 		if foundAnswer != nil {
-			_LOG.Printf("[Action Session] answer salvaged from exhausted session")
+			common.Info("action session: answer salvaged from exhausted session")
 		} else if len(newStates) > 0 {
-			_LOG.Printf("[Action Session] %d branch(es) salvaged from exhausted session", len(newStates))
+			common.Info("action session: branches salvaged from exhausted session", zap.Int("branches", len(newStates)))
 		}
 	}
 
@@ -3095,11 +3097,11 @@ func (s *sessionState) route() routeTarget {
 	// ForceAnswer is the same destination reached the other way: a turn that failed, timed out or
 	// got stuck has no more searching to do either, and it keeps the record it has.
 	if s.ForceAnswer {
-		_LOG.Printf("[Action Session] no more searching this session; asking for the answer with the record it has.")
+		common.Info("action session: no more searching this session; asking for the answer with the record it has")
 		return routeFinalize
 	}
 	if s.DeadlineLeft <= answerReserveS {
-		_LOG.Printf("[Action Session] %.0fs left: stopping the search so the answer has its own clock", s.DeadlineLeft)
+		common.Info("action session: stopping the search so the answer has its own clock", zap.Float64("left_s", s.DeadlineLeft))
 		return routeFinalize
 	}
 	// Run pending tool_calls now that the answer's clock is safe: leaving an assistant.tool_calls
@@ -3133,7 +3135,7 @@ func (s *sessionState) routeAfterTool() routeTarget {
 		return routeFinalize
 	}
 	if s.DeadlineLeft <= answerReserveS {
-		_LOG.Printf("[Action Session] %.0fs left: stopping the search so the answer has its own clock", s.DeadlineLeft)
+		common.Info("action session: stopping the search so the answer has its own clock", zap.Float64("left_s", s.DeadlineLeft))
 		return routeFinalize
 	}
 	if s.Attempts >= s.effectiveTurnFloor() {
@@ -4027,7 +4029,7 @@ func runNavChain(ctx context.Context, ts *Toolset, nav *navContext, startID stri
 		}
 		remaining := budgetS - time.Since(started).Seconds()
 		if remaining <= 1.0 {
-			_LOG.Printf("[Action Session] nav chain out of budget before %q", ruleID)
+			common.Info("action session: nav chain out of budget", zap.String("rule", ruleID))
 			break
 		}
 
@@ -4350,7 +4352,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	if deps.Tools != nil && deps.Tools.MetadataFields != nil {
 		if block := deps.Tools.MetadataFields.Render(); block != "" {
 			seedUser += "\n\n" + block
-			_LOG.Printf("[Action Session] metadata catalog in the seed (%d field(s))", len(deps.Tools.MetadataFields.Keys))
+			common.Info("action session: metadata catalog in the seed", zap.Int("fields", len(deps.Tools.MetadataFields.Keys)))
 		}
 	}
 
@@ -4402,7 +4404,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	}
 
 	if deps.Model == nil {
-		_LOG.Printf("[Action Session] no usable model resolved for action session")
+		common.Warn("action session: no usable model resolved for action session")
 		return Result{Messages: nil, NewStates: nil}
 	}
 
@@ -4480,15 +4482,15 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		st.NavRuleID = prefix.PendingRule
 		st.RoutedDocs = nav.KnownDocs
 		st.NavHint = nav.NavHint
-		_LOG.Printf("[Action Session] nav prefix: %d exchange(s), %d evidence id(s), resting on %q",
-			len(prefix.Messages)/2, len(prefix.EvidenceIDs), prefix.PendingRule)
+		common.Info("action session: nav prefix", zap.Int("exchanges", len(prefix.Messages)/2),
+			zap.Int("evidence_ids", len(prefix.EvidenceIDs)), zap.String("resting_on", prefix.PendingRule))
 		// The ladder's payloads print no handle, and nothing registered them: they are the FIRST
 		// passages the model reads, so they are the first it may answer from (see seedEvidenceRefs).
 		if lines := st.seedEvidenceRefs(prefix.EvidenceIDs); len(lines) > 0 {
 			st.Messages = append(st.Messages, *schema.UserMessage(
 				"NAV PREFIX EVIDENCE — the ladder already read these passages; [ID:n] is the handle to cite each of them:\n- " +
 					strings.Join(lines, "\n- ")))
-			_LOG.Printf("[Action Session] nav prefix: %d passage(s) numbered for citation.", len(lines))
+			common.Info("action session: nav prefix passages numbered for citation", zap.Int("passages", len(lines)))
 		}
 	}
 
@@ -4500,8 +4502,8 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// every patch and every evidence id, so the round had no answer AND a thin registry, and the
 		// composition that replaced it answered from whatever ranked first. A cut is the normal end
 		// of a session that ran to its clock; it is not a reason to discard the research.
-		_LOG.Printf("[Action Session] session cut: %v — returning the %d passage(s) and %d patch(es) it had.",
-			err, len(st.EvidenceRefs), len(st.NewStates))
+		common.Warn("action session: session cut; returning the passages and patches it had",
+			zap.Error(err), zap.Int("passages", len(st.EvidenceRefs)), zap.Int("patches", len(st.NewStates)))
 	}
 	return sessionResult(st)
 }
@@ -4587,7 +4589,8 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			}
 			id, ok := asInt(rawID)
 			if !ok {
-				_LOG.Printf("[Action Session:init] slot %d has a non-integer id (%v); discarding the decomposition", i, rawID)
+				common.Warn("action session init: slot has a non-integer id; discarding the decomposition",
+					zap.Int("slot", i), zap.Any("id", rawID))
 				return initResult{}
 			}
 			// `str(s.get("type") or "entity")`: a falsy type is replaced, any
@@ -4598,7 +4601,8 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			}
 			clues, ok := asStringList(m["clues"])
 			if !ok {
-				_LOG.Printf("[Action Session:init] slot %d has non-iterable clues (%v); discarding the decomposition", i, m["clues"])
+				common.Warn("action session init: slot has non-iterable clues; discarding the decomposition",
+					zap.Int("slot", i), zap.Any("clues", m["clues"]))
 				return initResult{}
 			}
 			if len(clues) > 4 {
@@ -4637,7 +4641,8 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 	// a non-iterable value raises exactly like the slot parsing above.
 	rawFirst, ok := asStringList(data["first_queries"])
 	if !ok {
-		_LOG.Printf("[Action Session:init] first_queries is not iterable (%v); discarding the decomposition", data["first_queries"])
+		common.Warn("action session init: first_queries is not iterable; discarding the decomposition",
+			zap.Any("first_queries", data["first_queries"]))
 		return initResult{}
 	}
 	var firstQueries []string
@@ -4679,7 +4684,7 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 	}
 
 	root := NewState(slots, 0, nil)
-	_LOG.Printf("[Action Session:init] %s\n%s", root.Brief(), root.RenderSlots())
+	common.Info("action session init", zap.String("brief", root.Brief()), zap.String("slots", root.RenderSlots()))
 	return initResult{Root: root, FirstQueries: firstQueries}
 }
 
@@ -4709,7 +4714,7 @@ func initChat(ctx context.Context, deps SessionDeps, system, user string, tmo fl
 		// the next tick, so the turn is abandoned before it starts. Going through
 		// deadlineToDuration would silently hand it the full ACTION_TIMEOUT
 		// instead, spending a budget the round no longer has.
-		_LOG.Printf("[Action Session:init] timed out (%ds)", int(tmo))
+		common.Warn("action session init: timed out", zap.Int("timeout_s", int(tmo)))
 		return ""
 	}
 	callCtx, cancel := context.WithTimeout(ctx, DeadlineToDuration(tmo))
@@ -4719,7 +4724,7 @@ func initChat(ctx context.Context, deps SessionDeps, system, user string, tmo fl
 		*schema.UserMessage(user),
 	}, nil)
 	if err != nil {
-		_LOG.Printf("[Action Session:init] failed: %v", err)
+		common.Error("action session init: failed", err)
 		return ""
 	}
 	return reply.Content
@@ -5058,7 +5063,7 @@ func renderOpening(kb *Kbinfos, direction string, declaredSubjects int) string {
 			continue
 		}
 		fmt.Fprintf(&b, "[ID:%d] %s | doc %s\n", nums[0], text, DocIDOf(c))
-		_LOG.Printf("[Action Session] opening preview %d: %s", shown, TruncateRunes(text, 200))
+		common.Info("action session: opening preview", zap.Int("shown", shown), zap.String("preview", TruncateRunes(text, 200)))
 		shown++
 	}
 	if shown == 0 {
