@@ -1643,20 +1643,20 @@ def test_chat_create_prompt_contract(rest_client, clear_chats):
 
 @pytest.mark.p2
 @pytest.mark.parametrize(
-    ("field", "value", "kind"),
+    ("field", "value", "expected_type"),
     [
-        ("similarity_threshold", "a", "number"),
-        ("vector_similarity_weight", "a", "number"),
-        ("top_n", "a", "integer"),
+        ("similarity_threshold", "a", "a number"),
+        ("vector_similarity_weight", "a", "a number"),
+        ("top_n", "a", "an integer"),
     ],
 )
-def test_chat_create_invalid_numeric_contract(rest_client, clear_chats, field, value, kind):
+def test_chat_create_invalid_numeric_contract(rest_client, clear_chats, field, value, expected_type):
     res = rest_client.post("/chats", json={"name": f"invalid_create_{field}", "dataset_ids": [], field: value})
     assert res.status_code == 200, res.text
     payload = res.json()
     if IS_GO_PROXY:
         assert payload["code"] == 102, payload
-        assert payload["message"] == f"`{field}` must be a {kind}", payload
+        assert payload["message"] == f"`{field}` must be {expected_type}", payload
     else:
         assert payload["code"] == 0, payload
         assert payload["data"][field] == 0, payload
@@ -1965,14 +1965,14 @@ def test_chat_update_prompt_contract(rest_client, clear_chats, ensure_parsed_doc
 
 @pytest.mark.p2
 @pytest.mark.parametrize(
-    ("field", "value", "kind"),
+    ("field", "value", "expected_type"),
     [
-        ("similarity_threshold", "a", "number"),
-        ("vector_similarity_weight", "a", "number"),
-        ("top_n", "a", "integer"),
+        ("similarity_threshold", "a", "a number"),
+        ("vector_similarity_weight", "a", "a number"),
+        ("top_n", "a", "an integer"),
     ],
 )
-def test_chat_update_invalid_numeric_contract(rest_client, clear_chats, field, value, kind):
+def test_chat_update_invalid_numeric_contract(rest_client, clear_chats, field, value, expected_type):
     create_res = rest_client.post("/chats", json={"name": f"invalid_update_{field}", "dataset_ids": []})
     assert create_res.status_code == 200, create_res.text
     create_payload = create_res.json()
@@ -1990,7 +1990,7 @@ def test_chat_update_invalid_numeric_contract(rest_client, clear_chats, field, v
     assert get_payload["code"] == 0, get_payload
     if IS_GO_PROXY:
         assert update_payload["code"] == 102, update_payload
-        assert update_payload["message"] == f"`{field}` must be a {kind}", update_payload
+        assert update_payload["message"] == f"`{field}` must be {expected_type}", update_payload
         assert get_payload["data"][field] == original_value, get_payload
         assert get_payload["data"]["name"] == original_name, get_payload
     else:
