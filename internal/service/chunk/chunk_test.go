@@ -3,9 +3,11 @@ package chunk
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
+	_ "image/jpeg"
 	"image/png"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -751,6 +753,205 @@ func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
 	}
 }
 
+func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
+	cases := []struct {
+		name     string
+		mode     *string
+		wantMode string
+	}{
+		{"mode defaults to append", nil, imageUpdateModeAppend},
+		{"mode is normalized", strPtr(" REPLACE "), imageUpdateModeReplace},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			var storedBucket, storedChunkID, storedMode string
+			var storedBinary []byte
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+				storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
+					storedBucket, storedChunkID, storedMode, storedBinary = bucket, chunkID, mode, imageBinary
+					return nil
+				},
+			}
+
+			imageBase64 := base64.StdEncoding.EncodeToString([]byte("image-bytes"))
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:       "kb-1",
+				DocumentID:      "doc-a",
+				ChunkID:         "chunk-1",
+				ImageBase64:     &imageBase64,
+				ImageUpdateMode: tc.mode,
+			}, "user-1")
+			if err != nil {
+				t.Fatalf("UpdateChunk() error = %v", err)
+			}
+
+			if storedBucket != "kb-1" || storedChunkID != "chunk-1" || storedMode != tc.wantMode {
+				t.Fatalf("store args = %q/%q/%q, want kb-1/chunk-1/%s", storedBucket, storedChunkID, storedMode, tc.wantMode)
+			}
+			if string(storedBinary) != "image-bytes" {
+				t.Fatalf("stored binary = %q, want image-bytes", storedBinary)
+			}
+
+			if len(engine.updateCalls) != 1 {
+				t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+			}
+			updated := engine.updateCalls[0].newValue
+			if updated["img_id"] != "kb-1-chunk-1" {
+				t.Fatalf("img_id = %#v, want kb-1-chunk-1", updated["img_id"])
+			}
+			if updated["doc_type_kwd"] != "image" {
+				t.Fatalf("doc_type_kwd = %#v, want image", updated["doc_type_kwd"])
+			}
+		})
+	}
+}
+
+func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	order := &[]string{}
+	engine := &orderedUpdateChunkTestEngine{
+		updateChunkTestEngine: updateChunkTestEngine{
+			existingChunk: map[string]interface{}{
+				"doc_id":              "doc-a",
+				"content_with_weight": "existing content",
+			},
+		},
+		order: order,
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		storeChunkImageFunc: func(string, string, []byte, string) error {
+			t.Fatal("remove mode must not store an image")
+			return nil
+		},
+		removeChunkImageFunc: func(bucket, chunkID string) error {
+			*order = append(*order, "storage")
+			if bucket != "kb-1" || chunkID != "chunk-1" {
+				t.Fatalf("remove args = %q/%q, want kb-1/chunk-1", bucket, chunkID)
+			}
+			return nil
+		},
+	}
+
+	removeMode := imageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:       "kb-1",
+		DocumentID:      "doc-a",
+		ChunkID:         "chunk-1",
+		ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	updated := engine.updateCalls[0].newValue
+	if imgID, ok := updated["img_id"]; !ok || imgID != "" {
+		t.Fatalf("img_id = %#v, want empty string", updated["img_id"])
+	}
+	if updated["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", updated["doc_type_kwd"])
+	}
+	if !reflect.DeepEqual(*order, []string{"index", "storage"}) {
+		t.Fatalf("call order = %#v, want index before storage removal", *order)
+	}
+}
+
+func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
+	cases := []struct {
+		name      string
+		imageB64  *string
+		mode      *string
+		wantError string
+	}{
+		{"undecodable base64", strPtr("not base64!!"), nil, "invalid `image_base64`"},
+		{"empty base64", strPtr(""), nil, "`image_base64` must be a non-empty string"},
+		{"unknown mode", strPtr("aGVsbG8="), strPtr("grow"), "`image_update_mode` must be one of: append, replace, remove"},
+		{"empty mode", strPtr("aGVsbG8="), strPtr(""), "`image_update_mode` must be one of: append, replace, remove"},
+		{"append without base64", nil, strPtr(imageUpdateModeAppend), "`image_base64` is required when `image_update_mode` is `append` or `replace`"},
+		{"replace without base64", nil, strPtr(imageUpdateModeReplace), "`image_base64` is required when `image_update_mode` is `append` or `replace`"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+				storeChunkImageFunc: func(string, string, []byte, string) error {
+					t.Fatal("invalid input must not reach storage")
+					return nil
+				},
+			}
+
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:       "kb-1",
+				DocumentID:      "doc-a",
+				ChunkID:         "chunk-1",
+				ImageBase64:     tc.imageB64,
+				ImageUpdateMode: tc.mode,
+			}, "user-1")
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("UpdateChunk() error = %v, want %q", err, tc.wantError)
+			}
+			var coded interface {
+				Code() common.ErrorCode
+			}
+			if !errors.As(err, &coded) || coded.Code() != common.CodeDataError {
+				t.Fatalf("error code = %v, want %d (Python: DATA_ERROR)", err, common.CodeDataError)
+			}
+			if len(engine.updateCalls) != 0 {
+				t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+			}
+		})
+	}
+}
+
+type orderedUpdateChunkTestEngine struct {
+	updateChunkTestEngine
+	order *[]string
+}
+
+func (e *orderedUpdateChunkTestEngine) UpdateChunks(ctx context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	*e.order = append(*e.order, "index")
+	return e.updateChunkTestEngine.UpdateChunks(ctx, condition, newValue, indexName, datasetID)
+}
+
 func TestAddChunkSuccess(t *testing.T) {
 	ctx := t.Context()
 	db := setupChunkTestDB(t)
@@ -923,10 +1124,13 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
 		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
-		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte) error {
+		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
 			storeCalls++
 			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
 				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
+			}
+			if mode != imageUpdateModeAppend {
+				t.Fatalf("store mode = %q, want %q", mode, imageUpdateModeAppend)
 			}
 			return nil
 		},
@@ -1046,11 +1250,76 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeAppend); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
 		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	merged, format, err := image.Decode(bytes.NewReader(mockStorage.lastPut))
+	if err != nil {
+		t.Fatalf("decode stored image: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("stored format = %q, want jpeg", format)
+	}
+	// Append stacks the new image below the old one.
+	if got, want := merged.Bounds().Dy(), 3; got != want {
+		t.Fatalf("merged height = %d, want %d", got, want)
+	}
+}
+
+func TestStoreChunkImageReplaceOverwritesExistingImage(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: oldImage,
+	}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeReplace); err != nil {
+		t.Fatalf("storeChunkImage() error = %v", err)
+	}
+	if mockStorage.putCalls != 1 {
+		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	if !bytes.Equal(mockStorage.lastPut, newImage) {
+		t.Fatalf("replace stored %d bytes, want the new image verbatim (%d bytes)", len(mockStorage.lastPut), len(newImage))
+	}
+}
+
+func TestRemoveChunkImageSkipsMissingObject(t *testing.T) {
+	mockStorage := &chunkImageStorage{exists: false}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.removeChunkImage(t.Context(), "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0 for a missing object", mockStorage.removeCalls)
+	}
+
+	mockStorage.exists = true
+	if err := svc.removeChunkImage(t.Context(), "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", mockStorage.removeCalls)
 	}
 }
 
@@ -1568,21 +1837,25 @@ func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newVa
 }
 
 type chunkImageStorage struct {
-	exists    bool
-	oldBinary []byte
-	putCalls  int
+	exists      bool
+	oldBinary   []byte
+	putCalls    int
+	removeCalls int
+	lastPut     []byte
 }
 
 func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
 func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
 func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
+	s.lastPut = binary
 	return nil
 }
 func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
 }
 func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	s.removeCalls++
 	return nil
 }
 func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
