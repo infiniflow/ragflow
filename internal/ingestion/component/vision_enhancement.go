@@ -54,12 +54,15 @@ var (
 const (
 	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
-	visionOCRInvokeBudget            = 60 * time.Second
-	visionOCRItemBudget              = 10 * time.Second
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
 	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
 	visionChatTimeout = 30 * time.Second
+)
+
+var (
+	visionOCRInvokeBudget = 60 * time.Second
+	visionOCRItemBudget   = 10 * time.Second
 )
 
 var (
@@ -186,6 +189,8 @@ func maybeDispatchVisionEnhancement(
 	if len(items) == 0 {
 		return dispatched, false, nil
 	}
+	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
+	defer cancelOCR()
 
 	// Resolve VLM independently from local OCR. OCR still runs when the tenant
 	// has no configured vision model.
@@ -223,8 +228,6 @@ func maybeDispatchVisionEnhancement(
 	defer cropper.Close()
 	modified := false
 	parseMethod := getStringOr(setup, "parse_method", "")
-	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
-	defer cancelOCR()
 	descriptions := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)

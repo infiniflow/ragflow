@@ -54,6 +54,30 @@ type concurrentVisionOCRAnalyzer struct {
 	peak   atomic.Int32
 }
 
+type budgetVisionOCRAnalyzer struct {
+	detectCalls atomic.Int32
+}
+
+func (*budgetVisionOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (*budgetVisionOCRAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
+func (a *budgetVisionOCRAnalyzer) OCRDetect(ctx context.Context, _ image.Image) ([]deepdoctype.OCRBox, error) {
+	a.detectCalls.Add(1)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (*budgetVisionOCRAnalyzer) OCRRecognize(context.Context, image.Image) ([]deepdoctype.OCRText, error) {
+	return nil, nil
+}
+
+func (*budgetVisionOCRAnalyzer) Health() bool { return true }
+
 func (*concurrentVisionOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
 	return nil, nil
 }
@@ -298,6 +322,54 @@ func TestVisionEnhancement_BoundsConcurrentOCRMediaAcrossInvokes(t *testing.T) {
 	}
 	if got := analyzer.peak.Load(); got > int32(limit) {
 		t.Errorf("peak OCR media tasks = %d, want at most configured limit %d", got, limit)
+	}
+}
+
+func TestVisionEnhancement_OCRInvokeBudgetFallsBackToVLM(t *testing.T) {
+	analyzer := &budgetVisionOCRAnalyzer{}
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return analyzer, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+
+	originalInvokeBudget, originalItemBudget := visionOCRInvokeBudget, visionOCRItemBudget
+	visionOCRInvokeBudget = 20 * time.Millisecond
+	visionOCRItemBudget = time.Second
+	t.Cleanup(func() {
+		visionOCRInvokeBudget = originalInvokeBudget
+		visionOCRItemBudget = originalItemBudget
+	})
+
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	imagePayload := visionTestPNGBase64(t)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "first", "image": imagePayload, "doc_type_kwd": "image"},
+			{"text": "second", "image": imagePayload, "doc_type_kwd": "image"},
+		},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"xlsx": {}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want VLM fallback after the OCR budget expires")
+	}
+	if got := analyzer.detectCalls.Load(); got != 1 {
+		t.Errorf("OCR detect calls = %d, want one before the invoke budget expires", got)
+	}
+	if len(invoker.images) != 2 {
+		t.Errorf("VLM calls = %d, want both images to use the parent context", len(invoker.images))
+	}
+	for i, want := range []string{"first\na diagram of a pipeline", "second\na diagram of a pipeline"} {
+		if got := result.JSON[i]["text"]; got != want {
+			t.Errorf("item %d text = %q, want %q", i, got, want)
+		}
 	}
 }
 
