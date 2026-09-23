@@ -8,12 +8,15 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// captionText is a caption box's text plus its top edge, used to order
-// multiple captions of one table in READING order (top→bottom) before
-// concatenation. Section order is not guaranteed to match the PDF layout
-// (e.g. 06's lower caption box precedes the upper one in sections), so the
-// top coordinate is carried explicitly.
+// captionText is a caption box's text plus its page and top edge, used to
+// order multiple captions of one table in DOCUMENT order before
+// concatenation: page first, then top→bottom within the page. Sorting by the
+// page-local top edge ALONE scrambles a cross-page table: every continuation
+// page's header block sits near its page top (small local Y), so its caption
+// interleaved ahead of the anchor page's ("八、电管类二、卫生洁具类…" before
+// "一、阀门类" on the 江西 price list).
 type captionText struct {
+	page int
 	top  float64
 	text string
 }
@@ -79,17 +82,32 @@ func dedupCaptions(captions []string) []string {
 	return seen
 }
 
-// mergeCaptionTexts joins raw (unescaped) caption texts after dedupCaptions
-// normalization, separating survivors with the language-aware captionSep.
-func mergeCaptionTexts(captions ...string) string {
-	var b strings.Builder
-	for _, t := range dedupCaptions(captions) {
-		if b.Len() > 0 {
-			b.WriteString(captionSep(t))
-		}
-		b.WriteString(t)
+// pickMergedCaption decides the caption of a cross-page merged table. A
+// merged table is ONE logical table with ONE caption: the anchor page's.
+// Continuation pages of such documents typically repeat the whole page-header
+// block (report title + that page's section names) and TSR hands each repeat
+// over as a caption. Only the longest rendering of the SAME text is a
+// caption variant and may replace the anchor's (TSR splitting differs per
+// page); an UNRELATED continuation text is dropped instead of concatenated —
+// concatenation produced a 150-char scrambled mega-caption ("…八、电管类二、
+// 卫生洁具类十二、…一、阀门类…") on the 江西 price list, bloating every
+// chunk that carries the table. Nothing is lost: the continuation pages'
+// section names also appear inside the merged table as their own banner rows.
+func pickMergedCaption(anchor, continuation string) string {
+	a := strings.TrimSpace(anchor)
+	c := strings.TrimSpace(continuation)
+	switch {
+	case c == "":
+		return a
+	case a == "":
+		return c
+	case strings.Contains(a, c):
+		return a
+	case strings.Contains(c, a):
+		return c
+	default:
+		return a
 	}
-	return b.String()
 }
 
 func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
@@ -113,10 +131,14 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 			// content-loss go_bug table-html-emission-format; it is NOT a
 			// table-assembly change (cell content/structure are untouched).
 			top := 1e9
+			page := 0
 			if len(s.Positions) > 0 {
 				top = s.Positions[0].Top
+				if len(s.Positions[0].PageNumbers) > 0 {
+					page = s.Positions[0].PageNumbers[0]
+				}
 			}
-			byTarget[target] = append(byTarget[target], captionText{top: top, text: s.Text})
+			byTarget[target] = append(byTarget[target], captionText{page: page, top: top, text: s.Text})
 			captions = append(captions, i)
 			continue
 		}
@@ -132,9 +154,14 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		}
 	}
 	// Inject one combined <caption> per target. Captions of the same table are
-	// ordered by top edge (reading order, top→bottom) before concatenation.
+	// ordered by (page, top edge) — document order — before concatenation.
 	for idx, entries := range byTarget {
-		sort.SliceStable(entries, func(i, j int) bool { return entries[i].top < entries[j].top })
+		sort.SliceStable(entries, func(i, j int) bool {
+			if entries[i].page != entries[j].page {
+				return entries[i].page < entries[j].page
+			}
+			return entries[i].top < entries[j].top
+		})
 		texts := make([]string, len(entries))
 		for i, e := range entries {
 			texts[i] = e.text

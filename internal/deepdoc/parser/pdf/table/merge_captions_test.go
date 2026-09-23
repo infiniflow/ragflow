@@ -158,3 +158,52 @@ func TestDedupCaptions_ReplacementKeepsPositionOfFirstReplaced(t *testing.T) {
 		}
 	}
 }
+
+func TestPickMergedCaption(t *testing.T) {
+	cases := []struct {
+		name, anchor, cont, want string
+	}{
+		{"empty anchor takes continuation", "", "Table 1", "Table 1"},
+		{"empty continuation keeps anchor", "Table 1", "", "Table 1"},
+		{"identical stays single", "报告标题", "报告标题", "报告标题"},
+		{"anchor contains continuation", "全省价格信息2025年2月", "全省价格信息", "全省价格信息2025年2月"},
+		{"longer continuation replaces", "汇总表", "汇总表信息参考价", "汇总表信息参考价"},
+		{"unrelated continuation dropped, never concatenated", "全省价格信息一、阀门类", "全省价格信息八、电管类", "全省价格信息一、阀门类"},
+	}
+	for _, tc := range cases {
+		if got := pickMergedCaption(tc.anchor, tc.cont); got != tc.want {
+			t.Errorf("%s: pickMergedCaption(%q, %q) = %q, want %q", tc.name, tc.anchor, tc.cont, got, tc.want)
+		}
+	}
+}
+
+// TestMergeCaptions_CrossPageCaptionsFollowPageOrder pins the 江西 fix: a
+// continuation page's caption sits at a SMALL page-local top, so sorting by
+// top alone merged "八、电管类" (page 2) ahead of "一、阀门类" (page 1).
+// Captions must concatenate in (page, top) document order.
+func TestMergeCaptions_CrossPageCaptionsFollowPageOrder(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table></table>", LayoutType: "table", Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 40, Right: 300, Top: 300, Bottom: 750},
+			{PageNumbers: []int{1}, Left: 40, Right: 300, Top: 60, Bottom: 750},
+		}},
+		{Text: "报告标题", LayoutType: "table caption", Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 40, Right: 300, Top: 400, Bottom: 430}}},
+		{Text: "分类甲", LayoutType: "table caption", Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 40, Right: 300, Top: 350, Bottom: 380}}},
+		{Text: "副标题", LayoutType: "table caption", Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 40, Right: 300, Top: 500, Bottom: 530}}},
+	}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+
+	caption := ""
+	for _, s := range result {
+		i := strings.Index(s.Text, "<caption>")
+		if i < 0 {
+			continue
+		}
+		j := strings.Index(s.Text[i:], "</caption>")
+		caption = s.Text[i+len("<caption>") : i+j]
+	}
+	if want := "报告标题副标题分类甲"; caption != want {
+		t.Errorf("merged caption = %q, want %q (page order, then top order within a page)", caption, want)
+	}
+}

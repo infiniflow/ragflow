@@ -841,3 +841,29 @@ func TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX(t *testing.T) {
 		t.Errorf("column 1 must stay empty for the merged cell (no invented data), got %q", anchor.Grid[3][1].Text)
 	}
 }
+
+// TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped pins the
+// 江西 price-list shape: every continuation page carries a page-header block
+// that TSR labels as a caption; the merged table keeps only the anchor's
+// caption instead of concatenating every page's section name.
+func TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped(t *testing.T) {
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell1"}},
+		Caption:   "全省价格信息汇总表一、阀门类",
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell2"}},
+		Caption:   "全省价格信息汇总表八、电管类",
+	}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, map[int]float64{0: 842, 1: 842})
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	if merged[0].Caption != "全省价格信息汇总表一、阀门类" {
+		t.Errorf("merged caption = %q, want the anchor caption only (no concatenation)", merged[0].Caption)
+	}
+}

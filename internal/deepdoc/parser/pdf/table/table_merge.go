@@ -147,7 +147,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
 			contGrids = append(contGrids, tables[jt.idx].Grid)
 			if tables[jt.idx].Caption != "" {
-				anchor.Caption = mergeCaptionTexts(anchor.Caption, tables[jt.idx].Caption)
+				anchor.Caption = pickMergedCaption(anchor.Caption, tables[jt.idx].Caption)
 			}
 			merged[jt.idx] = true
 			anchorPg = bpg
