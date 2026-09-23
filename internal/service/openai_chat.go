@@ -249,11 +249,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		modelType := entity.ModelTypeChat
-		if s.pipeline.ModelProviderSvc.isImage2TextLLM(ctx, dialog.TenantID, resolvedModel) {
-			modelType = entity.ModelTypeImage2Text
-		}
-		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, modelType, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}

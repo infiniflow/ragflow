@@ -59,11 +59,11 @@ var defaultPDFLatinFontPaths = []string{
 }
 
 var defaultPDFCJKFontPaths = []string{
+	// Use the language-specific Noto CJK Variable TTF shipped by Dockerfile_go.
+	// gopdf uses its default variation instance; it does not expose variable
+	// font axes, so this is used as the regular CJK face.
+	"/usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf",
 	"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-	"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
-	"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-	"/usr/share/fonts/truetype/arphic/uming.ttc",
-	"/usr/share/fonts/truetype/arphic/ukai.ttc",
 }
 
 type pdfFontSet struct {

@@ -39,7 +39,6 @@ type userDeletionData struct {
 	documents     []entity.Document
 	files         []entity.File
 	memories      []entity.Memory
-	spaces        []entity.SkillSpace
 	datasetIDs    []string
 	documentIDs   []string
 	fileIDs       []string
@@ -211,9 +210,6 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 		if err := db.Select("id", "tenant_id").Where("tenant_id = ?", data.ownedTenantID).Find(&data.memories).Error; err != nil {
 			return nil, fmt.Errorf("load memories: %w", err)
 		}
-		if err := db.Select("id", "tenant_id").Where("tenant_id = ?", data.ownedTenantID).Find(&data.spaces).Error; err != nil {
-			return nil, fmt.Errorf("load skill spaces: %w", err)
-		}
 	}
 	return data, nil
 }
@@ -367,11 +363,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 					return fmt.Errorf("remove document metadata for dataset %s: %w", kbID, err)
 				}
 			}
-		}
-	}
-	for _, space := range data.spaces {
-		if err := docEngine.DropChunkStore(ctx, servicepkg.SkillIndexName(space.TenantID, space.ID), "skill"); err != nil {
-			return fmt.Errorf("remove skill index %s: %w", space.ID, err)
 		}
 	}
 	return nil
@@ -700,7 +691,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 			{"memories", &entity.Memory{}},
 			{"MCP servers", &entity.MCPServer{}},
 			{"skill search configurations", &entity.SkillSearchConfig{}},
-			{"skill spaces", &entity.SkillSpace{}},
 			{"compilation templates", &entity.CompilationTemplate{}},
 			{"compilation template groups", &entity.CompilationTemplateGroup{}},
 			{"pipeline logs", &entity.PipelineOperationLog{}},
