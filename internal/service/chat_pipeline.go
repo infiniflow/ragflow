@@ -1638,7 +1638,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
+		var target *ModelTarget
+		if strings.TrimSpace(chat.LLMID) == "" {
+			target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		} else {
+			target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		}
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -2130,12 +2135,13 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
-// extended so the tenant-default branch also probes vision capability:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561. Chat
+// model resolution always requires the enrolled Chat type; vision capability
+// is determined separately for attachment dispatch:
 //
 //	if chat.llm_id:
-//	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
-//	    else:                                            → CHAT
+//	    if "chat" and "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
+//	    else:                                                       → CHAT
 //	else:                                                → tenant default
 //	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
@@ -2166,15 +2172,14 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 		return cfg, modelName, factoryName, baseURL, nil
 	}
 
-	// Branches 1/2: explicit LLM. Resolve the enrolled type first — IMAGE2TEXT
-	// when the LLM is registered as vision-capable, CHAT otherwise — and let the
-	// same resolution report the model's tool capability.
+	// Branches 1/2: explicit LLM. Resolve it as a Chat model first so an
+	// image2text-only enrollment is rejected. The enrolled type is resolved
+	// separately below only to decide whether image attachments are allowed.
 	//
 	// This mirrors Python, which resolves chat_mdl once in get_models() and then
 	// reads chat_mdl.is_tools off it (dialog_service.py rag_agent): one lookup, and
 	// the model that runs is by construction the model that was judged.
-	modelType := s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID)
+	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 	if err != nil {
 		return nil, "", "", "", err
 	}
@@ -2184,7 +2189,7 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = chatModelTypeName(modelType)
+	cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	cfg["is_tools"] = target.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
 }
@@ -2331,7 +2336,13 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
+	var target *ModelTarget
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+	} else {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+	}
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
@@ -2905,7 +2916,13 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	target, err := s.ModelProviderSvc.ResolveChatModelTarget(ctx, chat.TenantID, chat.LLMID)
+	var target *ModelTarget
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+	} else {
+		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+	}
 	if err != nil {
 		return nil
 	}
