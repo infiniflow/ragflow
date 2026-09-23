@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -412,7 +411,7 @@ func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []p
 		}
 	}
 	if added > 0 {
-		slog.Debug("rescueUnmatchedChars", "page", pg, "unmatchedChars", len(unmatched), "rescuedBoxes", added)
+		common.Debug("rescueUnmatchedChars", zap.Int("page", pg), zap.Int("unmatchedChars", len(unmatched)), zap.Int("rescuedBoxes", added))
 	}
 	return boxes
 }

@@ -1,11 +1,13 @@
 package table
 
 import (
-	"log/slog"
 	"math"
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -227,8 +229,8 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 			if gridsHaveUniformWidth(allGrids) {
 				anchor.Grid = padGridCols(rebuilt, uniCols)
 			} else if cols := canonicalColumns(widestGrid(allGrids)); len(cols) >= 2 {
-				slog.Debug("rebuildMergedGrid: per-page column counts differ, aligning by X",
-					"maxCols", uniCols, "canonicalCols", len(cols), "rows", len(rebuilt))
+				common.Debug("rebuildMergedGrid: per-page column counts differ, aligning by X",
+					zap.Int("maxCols", uniCols), zap.Int("canonicalCols", len(cols)), zap.Int("rows", len(rebuilt)))
 				anchor.Grid = alignGridColsByX(rebuilt, cols)
 			} else {
 				anchor.Grid = padGridCols(rebuilt, uniCols)
@@ -292,7 +294,7 @@ func stackGrids(grids ...[][]pdf.TSRCell) [][]pdf.TSRCell {
 			continue
 		}
 		if len(out) > 0 && len(g) > 1 && isRepeatedHeader(out[0], g[0]) {
-			slog.Debug("stackGrids: stripped repeated header row", "grid", gi, "cells", len(g[0]))
+			common.Debug("stackGrids: stripped repeated header row", zap.Int("grid", gi), zap.Int("cells", len(g[0])))
 			g = g[1:]
 		}
 		minY, maxY := gridYExtent(g)
