@@ -90,8 +90,13 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	loaded := make(map[string]struct{})
 	for _, ds := range authorized {
 		sources := make(map[string]struct{}, 1+len(docConfigs[ds.id]))
+		// datasetSources records what the dataset configured itself. Only a
+		// source that exists nowhere but in a document may be skipped when it
+		// stops resolving: an explicitly configured one must still fail.
+		datasetSources := make(map[string]struct{}, 1)
 		if id := component.TagFileIDFromParserConfig(ds.config); id != "" {
 			sources[id] = struct{}{}
+			datasetSources[id] = struct{}{}
 		}
 		for _, docConfig := range docConfigs[ds.id] {
 			if id := component.TagFileIDFromParserConfig(map[string]any(docConfig)); id != "" {
@@ -111,15 +116,29 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			if _, dup := loaded[key]; dup {
 				continue
 			}
-			loaded[key] = struct{}{}
 			// The file is resolved against the dataset's own tenant:
 			// tag_file_id is user-writable, so a foreign file ID must not
 			// resolve (IDOR, CWE-639).
 			counts, vErr := loader(ctx, tagFileID, ds.tenant)
 			if vErr != nil {
+				_, explicitlyConfigured := datasetSources[tagFileID]
+				if !explicitlyConfigured && component.IsTagSourceNotFound(vErr) {
+					// Deleting a tag file leaves its references behind — nothing
+					// clears them — and a document's parser_config is never
+					// validated against the file table. One dead document-level
+					// reference must not discard every other dataset in the
+					// request along with it.
+					common.Warn(fmt.Sprintf("tag_vocab: skipping unresolvable document tag source %q for dataset %q: %v",
+						tagFileID, ds.id, vErr))
+					continue
+				}
 				return nil, common.CodeServerError,
 					fmt.Errorf("load tag vocabulary for dataset %q: %w", ds.id, vErr)
 			}
+			// Marked only after a successful load: a skipped source above must
+			// not suppress a later dataset that configured the same file
+			// explicitly, which has to keep failing.
+			loaded[key] = struct{}{}
 			for tag, c := range counts {
 				merged[tag] += c
 			}

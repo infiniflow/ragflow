@@ -438,6 +438,11 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kb
 // parser_config, keyed by dataset ID. A document copies the dataset's config
 // at upload and may then be overridden per document, so a dataset whose
 // documents were never customized collapses to a single row.
+//
+// That collapse is the premise this query relies on: parser_config also carries
+// per-document state such as page ranges, so once every document has been
+// customized the DISTINCT stops collapsing and the caller reads one full
+// longtext row per distinct config.
 func (dao *DocumentDAO) ListParserConfigsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) (map[string][]entity.JSONMap, error) {
 	if len(kbIDs) == 0 {
 		return nil, nil

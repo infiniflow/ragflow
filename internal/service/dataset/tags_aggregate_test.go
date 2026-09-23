@@ -2,12 +2,14 @@ package dataset
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component"
 )
 
 func testDatasetServiceForAggregateTags(t *testing.T, loader func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error)) *DatasetService {
@@ -403,4 +405,116 @@ func TestDatasetServiceAggregateTagsCountsSharedFileOnce(t *testing.T) {
 		t.Fatalf("loader called %d times, want 1", loads)
 	}
 	assertTagCounts(t, result, map[string]int{"finance": 2})
+}
+
+// missingTagSourceLoader resolves ids that no longer exist through the real
+// loader, so the error carries the production sentinel rather than a stub's
+// approximation of it.
+func missingTagSourceLoader(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+	return component.TagVocabularyFromTagFileID(ctx, tagFileID, ownerTenantID)
+}
+
+// TestDatasetServiceAggregateTagsSkipsUnresolvableDocumentTagSource is the
+// availability regression the review flagged: a document keeps referencing a
+// tag file that has been deleted, and nothing clears that reference. One dead
+// document-level source must not discard the vocabulary of every other dataset
+// in the same request.
+func TestDatasetServiceAggregateTagsSkipsUnresolvableDocumentTagSource(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	deadKB := "b23e4567-e89b-12d3-a456-426614174010"
+	liveKB := "c23e4567-e89b-12d3-a456-426614174011"
+	insertAggregateTagsKB(t, strings.ReplaceAll(deadKB, "-", ""), "user-1", string(entity.TenantPermissionMe), "", 0)
+	insertAggregateTagsDoc(t, "doc-dead", strings.ReplaceAll(deadKB, "-", ""), "file-dead")
+	insertAggregateTagsKB(t, strings.ReplaceAll(liveKB, "-", ""), "user-1", string(entity.TenantPermissionMe), "", 0)
+	insertAggregateTagsDoc(t, "doc-live", strings.ReplaceAll(liveKB, "-", ""), "file-live")
+
+	loader := func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+		if tagFileID == "file-dead" {
+			return missingTagSourceLoader(ctx, tagFileID, ownerTenantID)
+		}
+		return map[string]int{"finance": 2}, nil
+	}
+
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(t.Context(), []string{deadKB, liveKB}, "user-1")
+	if err != nil {
+		t.Fatalf("AggregateTags failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%d want=%d", code, common.CodeSuccess)
+	}
+	assertTagCounts(t, result, map[string]int{"finance": 2})
+}
+
+// TestDatasetServiceAggregateTagsFailsOnUnresolvableDatasetTagSource pins the
+// other half of the policy: a source the dataset configured itself keeps
+// failing loudly even when the file no longer resolves, so a broken explicit
+// configuration stays visible instead of degrading to an empty vocabulary.
+func TestDatasetServiceAggregateTagsFailsOnUnresolvableDatasetTagSource(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kbInput := "d23e4567-e89b-12d3-a456-426614174012"
+	insertAggregateTagsKB(t, strings.ReplaceAll(kbInput, "-", ""), "user-1", string(entity.TenantPermissionMe), "file-dead", 0)
+
+	_, code, err := testDatasetServiceForAggregateTags(t, missingTagSourceLoader).AggregateTags(t.Context(), []string{kbInput}, "user-1")
+	if err == nil {
+		t.Fatal("expected an error for an unresolvable dataset-level tag source")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("code=%d want=%d", code, common.CodeServerError)
+	}
+}
+
+// TestDatasetServiceAggregateTagsFailsOnStorageErrorForDocumentTagSource pins
+// the boundary of the skip: only a source that cannot be resolved by id may be
+// dropped. A storage-layer failure says nothing about that id and must stay a
+// hard failure even for a document-level source.
+func TestDatasetServiceAggregateTagsFailsOnStorageErrorForDocumentTagSource(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kbInput := "e23e4567-e89b-12d3-a456-426614174013"
+	insertAggregateTagsKB(t, strings.ReplaceAll(kbInput, "-", ""), "user-1", string(entity.TenantPermissionMe), "", 0)
+	insertAggregateTagsDoc(t, "doc-storage", strings.ReplaceAll(kbInput, "-", ""), "file-1")
+
+	loader := func(_ context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+		return nil, errors.New("tag source file: no storage backend registered")
+	}
+
+	_, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(t.Context(), []string{kbInput}, "user-1")
+	if err == nil {
+		t.Fatal("expected an error for a storage failure on a document-level tag source")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("code=%d want=%d", code, common.CodeServerError)
+	}
+}
+
+// TestDatasetServiceAggregateTagsScopesDocumentTagSourceToDatasetTenant: the
+// document-level id is reached through the same union, so it must be resolved
+// against the dataset's tenant rather than the caller's (IDOR, CWE-639).
+func TestDatasetServiceAggregateTagsScopesDocumentTagSourceToDatasetTenant(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kbInput := "f23e4567-e89b-12d3-a456-426614174014"
+	const kbTenant = "tenant-owner"
+	insertAggregateTagsKB(t, strings.ReplaceAll(kbInput, "-", ""), kbTenant, string(entity.TenantPermissionTeam), "", 0)
+	insertAggregateTagsMembership(t, kbTenant, "user-1")
+	insertAggregateTagsDoc(t, "doc-owned", strings.ReplaceAll(kbInput, "-", ""), "file-foreign")
+
+	var gotOwner string
+	loader := func(_ context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+		gotOwner = ownerTenantID
+		return map[string]int{"finance": 1}, nil
+	}
+
+	if _, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(t.Context(), []string{kbInput}, "user-1"); err != nil {
+		t.Fatalf("AggregateTags failed: code=%d err=%v", code, err)
+	}
+	if gotOwner != kbTenant {
+		t.Fatalf("loader ownerTenantID = %q, want %q (document sources must resolve against the dataset tenant)", gotOwner, kbTenant)
+	}
 }
