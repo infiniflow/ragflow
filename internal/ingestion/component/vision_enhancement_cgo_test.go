@@ -13,7 +13,10 @@ import (
 // mockVisionEngine returns a fixed image for any rendered page so the
 // on-demand cropper can exercise CropSectionPositions without a real PDF.
 type mockVisionEngine struct {
-	closed *bool
+	closed      *bool
+	pageWidth   float64
+	pageHeight  float64
+	renderCalls *int
 }
 
 func (m mockVisionEngine) ExtractChars(int) ([]deepdoctype.TextChar, error) {
@@ -21,7 +24,20 @@ func (m mockVisionEngine) ExtractChars(int) ([]deepdoctype.TextChar, error) {
 }
 func (m mockVisionEngine) RenderPage(int, float64) ([]byte, error) { return nil, nil }
 func (m mockVisionEngine) RenderPageImage(int, float64) (image.Image, error) {
+	if m.renderCalls != nil {
+		*m.renderCalls++
+	}
 	return image.NewRGBA(image.Rect(0, 0, 1000, 1000)), nil
+}
+func (m mockVisionEngine) PageSize(int) (float64, float64, error) {
+	width, height := m.pageWidth, m.pageHeight
+	if width == 0 {
+		width = 333
+	}
+	if height == 0 {
+		height = 333
+	}
+	return width, height, nil
 }
 func (m mockVisionEngine) RawData() []byte                          { return nil }
 func (m mockVisionEngine) PageCount() (int, error)                  { return 1, nil }
@@ -76,6 +92,39 @@ func TestVisionCropImage_OnDemandFromPositions(t *testing.T) {
 	}
 	if closed {
 		t.Fatal("engine closed before use completed")
+	}
+}
+
+func TestVisionCropImage_RejectsOversizedPageBeforeRendering(t *testing.T) {
+	renderCalls := 0
+	oldFetcher := visionSourceFetcher
+	oldOpener := visionEngineOpener
+	defer func() {
+		visionSourceFetcher = oldFetcher
+		visionEngineOpener = oldOpener
+	}()
+	visionSourceFetcher = func(context.Context, string, string) ([]byte, error) {
+		return []byte("%PDF-fake-engine-bytes"), nil
+	}
+	visionEngineOpener = func([]byte) (deepdoctype.PDFEngine, error) {
+		return mockVisionEngine{pageWidth: 5000, pageHeight: 1000, renderCalls: &renderCalls}, nil
+	}
+
+	cropper, err := newVisionImageCropper(context.Background(), nil, map[string]any{"bucket": "b", "path": "p"})
+	if err != nil {
+		t.Fatalf("newVisionImageCropper: %v", err)
+	}
+	defer cropper.Close()
+
+	img, err := cropper.Crop(cgoPositions())
+	if err != nil {
+		t.Fatalf("Crop: %v", err)
+	}
+	if img != nil {
+		t.Fatalf("Crop = %#v, want nil for an oversized page", img)
+	}
+	if renderCalls != 0 {
+		t.Fatalf("render calls = %d, want page rejected before raster allocation", renderCalls)
 	}
 }
 

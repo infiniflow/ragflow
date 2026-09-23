@@ -21,6 +21,7 @@ package component
 import (
 	"context"
 	"image"
+	"math"
 	"sync"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
@@ -102,6 +103,9 @@ func (c *visionPDFCropper) Crop(item map[string]any) (*visionImage, error) {
 	}
 	single := make(map[int]image.Image, len(pages))
 	for pn := range pages {
+		if !pdfPageRasterWithinOCRLimits(c.engine, pn) {
+			return nil, nil
+		}
 		img, rerr := deepdocpdf.RenderPageToImage(c.engine, pn)
 		if rerr != nil || img == nil {
 			continue
@@ -116,6 +120,24 @@ func (c *visionPDFCropper) Crop(item map[string]any) (*visionImage, error) {
 		return nil, nil
 	}
 	return &visionImage{Raster: raster}, nil
+}
+
+func pdfPageRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNum int) bool {
+	sizer, ok := engine.(interface {
+		PageSize(int) (float64, float64, error)
+	})
+	if !ok {
+		return true
+	}
+	widthPoints, heightPoints, err := sizer.PageSize(pageNum)
+	if err != nil {
+		return false
+	}
+	widthPixels := math.Ceil(widthPoints * deepdoctype.DlaScale)
+	heightPixels := math.Ceil(heightPoints * deepdoctype.DlaScale)
+	return widthPixels > 0 && heightPixels > 0 &&
+		widthPixels <= maxOCRImageEdge && heightPixels <= maxOCRImageEdge &&
+		widthPixels*heightPixels <= maxOCRImagePixels
 }
 
 func (c *visionPDFCropper) ensureEngine() error {
