@@ -791,6 +791,7 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 		Positions:    it.Positions,
 		Image:        it.Image,
 		PageNumber:   it.PageNumber,
+		Extra:        cloneExtra(it.Extra),
 	}
 	if ctxAbove != "" {
 		out.ContextAbove = ctxAbove
@@ -1601,11 +1602,17 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 	if in.Positions != nil {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
 	}
-	if in.Extra != nil {
-		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
-		for k, v := range in.Extra {
-			out.Extra[k] = append(json.RawMessage(nil), v...)
-		}
+	out.Extra = cloneExtra(in.Extra)
+	return out
+}
+
+func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for key, value := range in {
+		out[key] = append(json.RawMessage(nil), value...)
 	}
 	return out
 }

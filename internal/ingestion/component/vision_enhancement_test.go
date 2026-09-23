@@ -49,6 +49,53 @@ type visionEnhanceFakeDriver struct {
 	modelModule.ModelDriver
 }
 
+func TestMediaOCRStatus_UsesPerItemMarker(t *testing.T) {
+	tests := []struct {
+		name        string
+		fileType    utility.FileType
+		parseMethod string
+		item        map[string]any
+		want        ocrStatus
+	}{
+		{
+			name:        "pending marker overrides deepdoc table default",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "deepdoc",
+			item:        map[string]any{"doc_type_kwd": "table", "ocr_status_kwd": "pending"},
+			want:        ocrPending,
+		},
+		{
+			name:        "attempted marker overrides external image default",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "mineru",
+			item:        map[string]any{"doc_type_kwd": "image", "ocr_status_kwd": "attempted"},
+			want:        ocrAttempted,
+		},
+		{
+			name:        "unknown marker overrides deepdoc image default",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "deepdoc",
+			item:        map[string]any{"doc_type_kwd": "image", "ocr_status_kwd": "unknown"},
+			want:        ocrUnknown,
+		},
+		{
+			name:        "unrecognized marker falls back to existing policy",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "deepdoc",
+			item:        map[string]any{"doc_type_kwd": "table", "ocr_status_kwd": "later"},
+			want:        ocrAttempted,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mediaOCRStatus(tt.fileType, tt.parseMethod, tt.item); got != tt.want {
+				t.Errorf("mediaOCRStatus() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 type concurrentVisionOCRAnalyzer struct {
 	active atomic.Int32
 	peak   atomic.Int32
