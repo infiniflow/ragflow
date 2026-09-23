@@ -299,7 +299,7 @@ function AdminServiceStatus() {
           </CardHeader>
 
           <CardContent>
-            <Table className="table-fixed">
+            <Table>
               <colgroup>
                 <col className="w-[22%]" />
                 <col className="w-[22%]" />
