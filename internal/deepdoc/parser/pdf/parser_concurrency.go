@@ -3,7 +3,6 @@ package pdf
 import (
 	"context"
 	"image"
-	"runtime"
 	"sync"
 
 	"go.uber.org/zap"
@@ -59,6 +58,45 @@ func DeepDocConcurrency() int {
 	return deepDocInferenceConcurrency
 }
 
+// ── Process-wide page concurrency (N) ──────────────────────────────────────
+//
+// PageConcurrency (N) is the total number of PDF pages parsed concurrently
+// across the whole process. It is the size of the shared page
+// worker pool (see parserPageWorkerPool) and is resolved once at server start
+// via SetPageConcurrency from CLI > env > config (ingestor.page_concurrency) >
+// default(2). It is deliberately independent of the process inference budget
+// (DeepDocConcurrency): a page worker that is not currently holding an
+// inference slot only queues a rendered bitmap while it waits, so N governs
+// page-level scheduling and memory, not inference throughput. The CLI/env/config
+// resolver in cmd validates N against [MinPageConcurrency, MaxPageConcurrency]
+// and fails fast on out-of-range values; the setter below clamps defensively so
+// an already-validated value is never distorted by a stray caller.
+const (
+	minPageConcurrency = 1
+	maxPageConcurrency = 16
+)
+
+var pageConcurrency = 2
+
+// SetPageConcurrency sets the per-document page parallelism (N). It is called
+// exactly once at server boot after CLI/env/config resolution; the resolved
+// value is already within [1, 16], and any out-of-range input is clamped here
+// as a last-resort safety net (the setter never shrinks below 1).
+func SetPageConcurrency(n int) {
+	if n < minPageConcurrency {
+		n = minPageConcurrency
+	}
+	if n > maxPageConcurrency {
+		n = maxPageConcurrency
+	}
+	pageConcurrency = n
+}
+
+// PageConcurrency returns the per-document page parallelism (N).
+func PageConcurrency() int {
+	return pageConcurrency
+}
+
 // ── Page worker pool ─────────────────────────────────────────────────────
 
 // pageTask holds the per-page work handed to the shared worker pool.
@@ -110,11 +148,14 @@ var (
 	pagePool     *utility.WorkerPool[pageTask, pageResult]
 )
 
-// defaultPageWorkerCount sizes the shared page worker pool from the process
-// inference budget: workers beyond that budget only queue rendered bitmaps in
-// memory while they wait for an inference slot.
+// defaultPageWorkerCount sizes the shared page worker pool from the
+// process-wide page concurrency (N), resolved once at server start via
+// SetPageConcurrency. N is independent of the process inference budget: page
+// workers beyond DeepDocConcurrency() simply queue rendered bitmaps while they
+// wait for an inference slot, so sizing the pool to N never over-subscribes
+// inference.
 func defaultPageWorkerCount() int {
-	return min(runtime.GOMAXPROCS(0), DeepDocConcurrency())
+	return PageConcurrency()
 }
 
 func parserPageWorkerPool() *utility.WorkerPool[pageTask, pageResult] {
@@ -138,14 +179,16 @@ func PageWorkerPoolStats() utility.WorkerPoolStats {
 	return parserPageWorkerPool().Stats()
 }
 
-// SetPageWorkerPoolSize adjusts the process-wide PDF page worker pool size,
-// clamped to the process inference budget. Workers beyond that budget have no
-// throughput to gain — rendering is serialized by pdfsync.Mu and inference by
-// the native gate — so they only add CPU contention and hold more rendered
-// bitmaps while they wait. A size of zero or less still panics, as in Resize.
+// SetPageWorkerPoolSize adjusts the process-wide PDF page worker pool size.
+// The pool is sized to the per-document page concurrency (N) at server start;
+// this setter exists for runtime tuning and the throughput benchmark. N is
+// independent of the process inference budget: a page worker not holding an
+// inference slot only queues a rendered bitmap while it waits for one, so a
+// larger pool does not over-subscribe inference. A size of zero or less is
+// floored to 1, matching the Resize contract.
 func SetPageWorkerPoolSize(workers int) {
-	if budget := DeepDocConcurrency(); workers > budget {
-		workers = budget
+	if workers <= 0 {
+		workers = 1
 	}
 	parserPageWorkerPool().Resize(workers)
 }

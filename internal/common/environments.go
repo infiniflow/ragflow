@@ -264,6 +264,16 @@ const (
 	// ingestor.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
+	// ingestor runs in parallel (the NATS consumer worker count). It overrides
+	// the ingestor.max_concurrent_workers config key and is itself overridden
+	// by the --ingestor-max-concurrent-workers CLI flag.
+	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	// EnvIngestorPageConcurrency bounds how many pages of a single document are
+	// parsed concurrently inside one ingestor worker. It overrides the
+	// ingestor.page_concurrency config key and is itself overridden by the
+	// --ingestor-page-concurrency CLI flag.
+	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
 	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
 	// in-process inference (0 = all cores). It overrides the
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
