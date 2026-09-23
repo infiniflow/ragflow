@@ -657,3 +657,35 @@ func TestMatchTableRegions_DeduplicatesOverlappingRegions(t *testing.T) {
 		t.Errorf("expected second independent table kept with conf 0.85, got %.2f", matches[1].Region.Confidence)
 	}
 }
+
+// TestCleanupOverlappingTableRegions_ContainedFragmentCannotSwallowParent
+// pins the DLA failure mode: a dense-grid sub-table false positive sits
+// entirely inside the real table region yet scores HIGHER confidence than the
+// whole-table box. Confidence-only arbitration drops the parent and truncates
+// the table to the fragment; the containment branch must drop the child.
+func TestCleanupOverlappingTableRegions_ContainedFragmentCannotSwallowParent(t *testing.T) {
+	reg := func(x0, y0, x1, y1, conf float64) pdf.DLARegion {
+		return pdf.DLARegion{X0: x0, Y0: y0, X1: x1, Y1: y1, Confidence: conf,
+			Label: pdf.LayoutTypeTable}
+	}
+	parent := reg(0, 0, 100, 100, 0.88) // whole table, slightly lower score
+	child := reg(10, 10, 30, 30, 0.92)  // nested fragment, higher score
+	out := cleanupOverlappingTableRegions([]pdf.DLARegion{parent, child})
+	if len(out) != 1 || out[0].X1 != 100 {
+		t.Fatalf("expected only the parent region to survive, got %+v", out)
+	}
+
+	// Mirror image: the EARLIER region is the contained fragment.
+	out = cleanupOverlappingTableRegions([]pdf.DLARegion{child, parent})
+	if len(out) != 1 || out[0].X1 != 100 {
+		t.Fatalf("expected only the parent region to survive (child first), got %+v", out)
+	}
+
+	// Similar-size heavy overlap is NOT containment: confidence still rules.
+	a := reg(0, 0, 100, 100, 0.85)
+	b := reg(5, 0, 105, 100, 0.92) // ~95% mutual overlap, duplicate detection
+	out = cleanupOverlappingTableRegions([]pdf.DLARegion{a, b})
+	if len(out) != 1 || out[0].X0 != 5 {
+		t.Fatalf("near-duplicate overlap should keep the higher-confidence box, got %+v", out)
+	}
+}

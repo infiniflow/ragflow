@@ -19,39 +19,54 @@ func TestRescueBoxes_SplitsWideCellGapsKeepsTightGroups(t *testing.T) {
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 rescue boxes (split at the 30pt cell gap), got %d", len(boxes))
 	}
-	if boxes[0].box.Text != "a b" || boxes[1].box.Text != "c d" {
-		t.Errorf("grouping = %q / %q, want %q / %q", boxes[0].box.Text, boxes[1].box.Text, "a b", "c d")
+	if boxes[0].Text != "a b" || boxes[1].Text != "c d" {
+		t.Errorf("grouping = %q / %q, want %q / %q", boxes[0].Text, boxes[1].Text, "a b", "c d")
 	}
 }
 
-// TestRescueBoxes_StraddlingGroupSurvives: OCR kept the middle digit of
-// "345"; the rescued "3" and "5" merge into one box whose SPANNING bbox
-// overlaps the retained box heavily. The old bbox-level filter discarded the
-// whole group (losing both digits); constituents must decide instead.
-func TestRescueBoxes_StraddlingGroupSurvives(t *testing.T) {
+// TestRescueUnmatchedChars_StraddlingGroupSurvives is the "345" case end to
+// end: OCR kept the middle digit, so "3" and "5" pass the per-char coverage
+// filter, merge into one rescue group whose SPANNING bbox overlaps the kept
+// box heavily — and must still be added (the old bbox-level dedup discarded
+// the whole group, losing both rescued digits).
+func TestRescueUnmatchedChars_StraddlingGroupSurvives(t *testing.T) {
 	kept := []pdf.TextBox{{Text: "4", X0: 4, X1: 13, Top: 8, Bottom: 22}}
-	groups := rescueBoxes([]pdf.TextChar{rch("3", 0, 5), rch("5", 12, 17)}, 0)
-	if len(groups) != 1 || groups[0].box.Text != "3 5" {
-		t.Fatalf("expected one merged rescue box '3 5', got %d groups", len(groups))
+	out := rescueUnmatchedChars(kept, []pdf.TextChar{rch("3", 0, 5), rch("5", 12, 17)}, 0)
+	if len(out) != 2 {
+		t.Fatalf("expected kept box + one rescue box, got %d boxes", len(out))
 	}
-	if majorityCovered(groups[0].chars, kept) {
-		t.Error("straddling rescue group must survive: neither constituent is covered")
+	if out[1].Text != "3 5" {
+		t.Errorf("rescued group = %q, want %q", out[1].Text, "3 5")
 	}
 }
 
-func TestMajorityCovered_DropsTrueDuplicate(t *testing.T) {
-	kept := []pdf.TextBox{{Text: "78", X0: 0, X1: 20, Top: 8, Bottom: 22}}
-	groups := rescueBoxes([]pdf.TextChar{rch("7", 1, 6), rch("8", 8, 13), rch("9", 60, 65)}, 0)
-	for _, g := range groups {
-		switch g.box.Text {
-		case "7 8":
-			if !majorityCovered(g.chars, kept) {
-				t.Error(`rescued "7 8" sits inside a retained box; must be dropped`)
-			}
-		case "9":
-			if majorityCovered(g.chars, kept) {
-				t.Error(`rescued "9" is far from any box; must survive`)
-			}
+// TestRescueBoxes_CappedThresholdSplitsCrossCellChars pins the P0 shape: a
+// line consisting ONLY of isolated chars from far-apart cells has inter-char
+// gaps equal to the cell gaps themselves (80pt, 120pt). The uncapped
+// median+8pt rule computes a threshold above every gap and never splits,
+// gluing whole rows into one giant box; the 12pt cap forces per-cell boxes.
+func TestRescueBoxes_CappedThresholdSplitsCrossCellChars(t *testing.T) {
+	boxes := rescueBoxes([]pdf.TextChar{
+		rch("3", 0, 5), rch("7", 85, 90), rch("9", 210, 215),
+	}, 0)
+	if len(boxes) != 3 {
+		t.Fatalf("expected 3 single-char boxes (gaps 80/120 exceed the 12pt cap), got %d: %q",
+			len(boxes), []string{boxes[0].Text, boxes[len(boxes)-1].Text})
+	}
+	for i, want := range []string{"3", "7", "9"} {
+		if boxes[i].Text != want {
+			t.Errorf("box %d = %q, want %q", i, boxes[i].Text, want)
 		}
+	}
+}
+
+// TestRescueUnmatchedChars_CoveredCharsNeverRescued: the per-char coverage
+// pre-filter (<=30% overlap to count as unmatched) is the real dedup — chars
+// sitting inside a retained box never reach rescueBoxes at all.
+func TestRescueUnmatchedChars_CoveredCharsNeverRescued(t *testing.T) {
+	kept := []pdf.TextBox{{Text: "78", X0: 0, X1: 20, Top: 8, Bottom: 22}}
+	out := rescueUnmatchedChars(kept, []pdf.TextChar{rch("7", 1, 6), rch("8", 8, 13)}, 0)
+	if len(out) != 1 {
+		t.Fatalf("covered chars must be filtered before grouping; got %d boxes", len(out))
 	}
 }

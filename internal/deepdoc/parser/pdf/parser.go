@@ -390,10 +390,7 @@ func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []p
 	}
 	added := 0
 	for _, rb := range rescueBoxes(unmatched, pg) {
-		if majorityCovered(rb.chars, boxes) {
-			continue // true duplicate: most constituent glyphs already sit inside a retained box
-		}
-		boxes = append(boxes, rb.box)
+		boxes = append(boxes, rb)
 		added++
 	}
 	if added > 0 {
@@ -402,24 +399,29 @@ func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []p
 	return boxes
 }
 
-// rescuedBox is a rescue TextBox together with the glyphs it groups, so the
-// redundancy test can run on the actual constituents instead of the bbox.
-type rescuedBox struct {
-	box   pdf.TextBox
-	chars []pdf.TextChar
-}
+// maxRescueIntraWordGap caps the gap that may still join two rescued glyphs
+// into one box. Typographic reality: glyphs of a single value never sit more
+// than a dozen points apart at body sizes, so any wider gap is cell
+// whitespace and must split — without the cap the median stays self-fulfilling
+// on a line made entirely of isolated cross-cell chars (median IS the cell
+// gap, nothing exceeds it and the whole row glues into one box).
+const maxRescueIntraWordGap = 12.0
 
-// rescueBoxes packs unmatched chars into text boxes WITHOUT CharsToBoxes:
-// that builder derives its split threshold from the rescued sample's own
-// inter-char gaps, but rescued chars are by construction sparse (mostly
-// single glyphs in different table cells) — a gap-derived threshold on few
-// samples is meaningless, either merging several cells into one wide box or
-// shredding one value into one box per digit. Instead: group per text line
-// and cut only where a gap exceeds the line's median gap by 8pt — enough to
-// cross a rendered cell whitespace, tight enough to keep a single value
-// ("1", "5") of an interrupted OCR box together.
-func rescueBoxes(chars []pdf.TextChar, pg int) []rescuedBox {
-	var out []rescuedBox
+// rescueBoxes packs unmatched chars into per-cell text boxes. Grouping must
+// NOT reuse CharsToBoxes: that builder derives its split threshold from the
+// sample's own inter-char gaps, but rescued chars are by construction sparse
+// isolated glyphs, so on such a sample the median gap IS the inter-cell gap —
+// a threshold that never fires. Instead: group per text line and cut where a
+// gap exceeds min(line median + 8pt, maxRescueIntraWordGap).
+//
+// No redundancy filter is applied to the results: rescueUnmatchedChars
+// already dropped every char overlapping a retained box by more than 30% of
+// its own area, so a rescued group can not duplicate existing text — not even
+// when its bbox straddles a retained box (OCR keeping the middle digit of
+// "345" while "3" and "5" are rescued around it), which an older bbox-level
+// dedup check wrongly discarded whole.
+func rescueBoxes(chars []pdf.TextChar, pg int) []pdf.TextBox {
+	var out []pdf.TextBox
 	for _, line := range lyt.GroupCharsToLines(chars, false) {
 		sorted := append([]pdf.TextChar(nil), line...)
 		sort.Slice(sorted, func(i, j int) bool { return sorted[i].X0 < sorted[j].X0 })
@@ -431,14 +433,13 @@ func rescueBoxes(chars []pdf.TextChar, pg int) []rescuedBox {
 		if len(gaps) > 0 {
 			srt := append([]float64(nil), gaps...)
 			sort.Float64s(srt)
-			thr = srt[len(srt)/2] + 8
+			thr = math.Min(srt[len(srt)/2]+8, maxRescueIntraWordGap)
 		}
 		start := 0
 		flush := func(end int) {
-			sub := sorted[start:end]
-			box := lyt.LineToTextBox(sub)
+			box := lyt.LineToTextBox(sorted[start:end])
 			box.PageNumber = pg
-			out = append(out, rescuedBox{box: box, chars: sub})
+			out = append(out, box)
 		}
 		for i := 1; i < len(sorted); i++ {
 			if sorted[i].X0-sorted[i-1].X1 > thr {
@@ -449,27 +450,6 @@ func rescueBoxes(chars []pdf.TextChar, pg int) []rescuedBox {
 		flush(len(sorted))
 	}
 	return out
-}
-
-// majorityCovered reports whether more than half of the glyphs already lie
-// inside a single retained box (over 50% of each glyph's own area). The old
-// bbox-level filter discarded a whole rescued group whenever its SPANNING
-// bbox happened to sit over an existing box — losing the very chars this
-// function exists to rescue (e.g. OCR kept the middle digit "4" of "345" and
-// the rescued "3" and "5" merged into one group straddling it).
-func majorityCovered(chars []pdf.TextChar, boxes []pdf.TextBox) bool {
-	for i := range boxes {
-		covered := 0
-		for _, c := range chars {
-			if charBoxOverlapRatio(c, boxes[i].X0, boxes[i].X1, boxes[i].Top, boxes[i].Bottom) > 0.5 {
-				covered++
-			}
-		}
-		if covered*2 > len(chars) {
-			return true
-		}
-	}
-	return false
 }
 
 // runPageWorkers executes pages through the single process-wide worker
